@@ -1451,7 +1451,10 @@ public partial class LlvmEmitter
     /// Emits an indirect call through a fat Routine value <c>{ ptr fn, ptr bound }</c> (v0.4.1).
     /// Extracts <c>fn</c> and <c>bound</c>, evaluates the explicit args once, then branches on
     /// <c>bound == null</c>: captureless calls <c>fn(args)</c>, capturing calls <c>fn(args, ptr bound)</c>
-    /// (bound = C userdata, passed TRAILING). Returns the result SSA, or <c>"undef"</c> for a void return.
+    /// (bound = C userdata, passed TRAILING). The call follows the same platform ABI as the routine's
+    /// definition: an ABI-indirect result comes back through an sret slot, a small struct result in an
+    /// integer register, and struct arguments are passed indirectly or register-coerced. Returns the result
+    /// SSA, or <c>"undef"</c> for a void return.
     /// </summary>
     private string EmitFatRoutineIndirectCall(StringBuilder sb, string fatVal,
         RoutineTypeSymbol routineType, List<Expression> arguments)
@@ -1461,27 +1464,64 @@ public partial class LlvmEmitter
         string bound = NextTemp();
         EmitLine(sb: sb, line: $"  {bound} = extractvalue {{ ptr, ptr }} {fatVal}, 1");
 
+        // The signature the definition was emitted with, for the ABI decisions shared with direct calls.
+        var signature = new RoutineInfo(name: "<routine value>")
+        {
+            Parameters = routineType.ParameterTypes
+                                    .Select(selector: (t, i) => new ParamInfo(name: $"p{i}", type: t))
+                                    .ToList(),
+            ReturnType = routineType.ReturnType
+        };
+
         // Evaluate the explicit arguments once; both branches reuse them.
         var argValues = new List<string>();
         var argTypes = new List<string>();
-        foreach (Expression arg in arguments)
+        for (int i = 0; i < arguments.Count; i++)
         {
+            Expression arg = arguments[index: i];
             string v = EmitExpression(sb: sb, expr: arg);
-            argValues.Add(item: v);
             TypeSymbol? argType = GetExpressionType(expr: arg);
+            if (argType != null && i < routineType.ParameterTypes.Count)
+            {
+                (string cv, string ct) = CoerceCallArgumentToParameter(sb: sb,
+                    argValue: v,
+                    actualType: argType,
+                    parameterType: routineType.ParameterTypes[index: i],
+                    callee: signature);
+                argValues.Add(item: cv);
+                argTypes.Add(item: ct);
+                continue;
+            }
+
+            argValues.Add(item: v);
             argTypes.Add(item: argType != null
                 ? GetParameterLlvmType(type: argType)
                 : GetExpressionLlvmType(expr: arg));
         }
 
+        string retLlvm = routineType.ReturnType != null
+            ? GetLlvmType(type: routineType.ReturnType)
+            : "void";
+        string? sretSlot = null;
+        if (routineType.ReturnType != null && ReturnsViaSret(routine: signature))
+        {
+            sretSlot = NextTemp();
+            EmitEntryAlloca(llvmName: sretSlot, llvmType: retLlvm);
+            argTypes.Insert(index: 0, item: $"ptr sret({retLlvm})");
+            argValues.Insert(index: 0, item: sretSlot);
+        }
+
+        string? retCoerce = sretSlot == null && routineType.ReturnType != null
+            ? ReturnCoerceType(routine: signature)
+            : null;
+        string callRet = sretSlot != null
+            ? "void"
+            : retCoerce ?? retLlvm;
+
         string baseArgs = BuildCallArgs(types: argTypes, values: argValues);
         string capArgs = argTypes.Count > 0
             ? $"{baseArgs}, ptr {bound}"
             : $"ptr {bound}";
-
-        string retLlvm = routineType.ReturnType != null
-            ? GetLlvmType(type: routineType.ReturnType)
-            : "void";
 
         string isNull = NextTemp();
         EmitLine(sb: sb, line: $"  {isNull} = icmp eq ptr {bound}, null");
@@ -1490,7 +1530,7 @@ public partial class LlvmEmitter
         string lmerge = NextLabel(prefix: "cl.merge");
         EmitLine(sb: sb, line: $"  br i1 {isNull}, label %{lless}, label %{lcap}");
 
-        if (retLlvm == "void")
+        if (callRet == "void")
         {
             EmitLine(sb: sb, line: $"{lless}:");
             EmitLine(sb: sb, line: $"  call void {fn}({baseArgs})");
@@ -1499,22 +1539,31 @@ public partial class LlvmEmitter
             EmitLine(sb: sb, line: $"  call void {fn}({capArgs})");
             EmitLine(sb: sb, line: $"  br label %{lmerge}");
             EmitLine(sb: sb, line: $"{lmerge}:");
-            return "undef";
+            if (sretSlot == null)
+            {
+                return "undef";
+            }
+
+            string loaded = NextTemp();
+            EmitLine(sb: sb, line: $"  {loaded} = load {retLlvm}, ptr {sretSlot}");
+            return loaded;
         }
 
         string r0 = NextTemp();
         EmitLine(sb: sb, line: $"{lless}:");
-        EmitLine(sb: sb, line: $"  {r0} = call {retLlvm} {fn}({baseArgs})");
+        EmitLine(sb: sb, line: $"  {r0} = call {callRet} {fn}({baseArgs})");
         EmitLine(sb: sb, line: $"  br label %{lmerge}");
         string r1 = NextTemp();
         EmitLine(sb: sb, line: $"{lcap}:");
-        EmitLine(sb: sb, line: $"  {r1} = call {retLlvm} {fn}({capArgs})");
+        EmitLine(sb: sb, line: $"  {r1} = call {callRet} {fn}({capArgs})");
         EmitLine(sb: sb, line: $"  br label %{lmerge}");
         EmitLine(sb: sb, line: $"{lmerge}:");
         string result = NextTemp();
         EmitLine(sb: sb,
-            line: $"  {result} = phi {retLlvm} [ {r0}, %{lless} ], [ {r1}, %{lcap} ]");
-        return result;
+            line: $"  {result} = phi {callRet} [ {r0}, %{lless} ], [ {r1}, %{lcap} ]");
+        return retCoerce != null
+            ? CoerceAbiToStruct(sb: sb, abiValue: result, abiType: retCoerce, structLlvm: retLlvm)
+            : result;
     }
 
     /// <summary>

@@ -881,6 +881,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         return $"#wrapper_projection({node.Wrapper.Accept(visitor: this)}, {node.Kind})";
     }
 
+    /// <inheritdoc/>
+    public string VisitClosureValueExpression(ClosureValueExpression node)
+    {
+        return $"#closure({node.Function.Accept(visitor: this)}, {node.Bound.Accept(visitor: this)})";
+    }
+
 
     /// <inheritdoc/>
     public string VisitIsPatternExpression(IsPatternExpression node)

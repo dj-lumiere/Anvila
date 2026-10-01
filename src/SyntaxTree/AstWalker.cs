@@ -303,6 +303,11 @@ public static class AstWalker
             {
                 e.Wrapper
             },
+            ClosureValueExpression e => new object[]
+            {
+                e.Function,
+                e.Bound
+            },
             IsPatternExpression e => new object[]
             {
                 e.Expression,

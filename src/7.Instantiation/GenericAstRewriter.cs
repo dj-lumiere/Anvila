@@ -1529,6 +1529,11 @@ internal static class GenericAstRewriter
                 Wrapper = RewriteExpression(expr: wpe.Wrapper, ctx: ctx)
             },
 
+            ClosureValueExpression cve => cve with
+            {
+                Bound = RewriteExpression(expr: cve.Bound, ctx: ctx)
+            },
+
             NamedArgumentExpression nae => nae with
             {
                 Value = RewriteExpression(expr: nae.Value, ctx: ctx)

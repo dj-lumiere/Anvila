@@ -428,6 +428,7 @@ public abstract class AstRewriter
             GenericMemberRoutineCallExpression e => VisitGenericMemberRoutineCall(e: e),
             GenericMemberExpression e => VisitGenericMember(e: e),
             WrapperProjectionExpression e => VisitWrapperProjection(e: e),
+            ClosureValueExpression e => VisitClosureValue(e: e),
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
     }
@@ -518,6 +519,20 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: o, objB: e.Object)
             ? e
             : e with { Object = o };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="ClosureValueExpression"/> by visiting the expression that builds its bound
+    /// payload. Returns the original node when it is unchanged.
+    /// </summary>
+    /// <param name="e">The closure value to rewrite.</param>
+    /// <returns>The rewritten closure value, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitClosureValue(ClosureValueExpression e)
+    {
+        Expression bound = VisitExpression(expr: e.Bound);
+        return ReferenceEquals(objA: bound, objB: e.Bound)
+            ? e
+            : e with { Bound = bound };
     }
 
     /// <summary>

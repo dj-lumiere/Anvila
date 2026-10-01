@@ -273,6 +273,11 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the wrapper-projection expression</returns>
     T VisitWrapperProjectionExpression(WrapperProjectionExpression node);
 
+    /// <summary>Visits a closure value expression node (a capturing lambda's lifted routine + bound payload)</summary>
+    /// <param name="node">The closure value expression to visit</param>
+    /// <returns>Result of visiting the closure value expression</returns>
+    T VisitClosureValueExpression(ClosureValueExpression node);
+
     /// <summary>Visits an is-pattern expression node (pattern matching like 'value is Point (x, y)')</summary>
     /// <param name="node">The is-pattern expression to visit</param>
     /// <returns>Result of visiting the is-pattern expression</returns>

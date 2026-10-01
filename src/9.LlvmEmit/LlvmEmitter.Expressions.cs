@@ -53,6 +53,7 @@ public partial class LlvmEmitter
                     dispatch: dispatch),
                 WrapperProjectionExpression projection => EmitWrapperProjection(sb: sb,
                     projection: projection),
+                ClosureValueExpression closure => EmitClosureValueExpression(sb: sb, closure: closure),
                 // Named arguments appear inside synthesized AST bodies (e.g., me.eq(you: you)).
                 // The name is irrelevant to codegen -> just emit the inner value positionally.
                 NamedArgumentExpression named => EmitExpression(sb: sb, expr: named.Value),
@@ -67,50 +68,22 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Materializes a lifted lambda as a fat Routine value <c>{ ptr fn, ptr bound }</c> (v0.4.1) and
-    /// returns the SSA aggregate. A CAPTURELESS lambda is <c>{ @fn, null }</c> (no heap — the fn field
-    /// is a bare C-ABI symbol). A CAPTURING lambda heap-allocates a bound payload
-    /// <c>{ capture0, ... }</c>, stores each captured value (loaded from the locals live at this capture
-    /// site) into it, and returns <c>{ @fn, bound }</c>. The body reads captures from the trailing
-    /// <c>ptr %__bound</c>; indirect calls branch on <c>bound == null</c>. See [[cabi-callback-ffi]].
+    /// Emits a <see cref="ClosureValueExpression"/>: the fat Routine value <c>{ ptr fn, ptr bound }</c> pairing
+    /// the lifted routine's symbol with the bound payload the expression builds. Indirect calls pass
+    /// <c>bound</c> as the trailing argument when it is not null. See [[cabi-callback-ffi]].
     /// </summary>
-    private string EmitClosureValue(StringBuilder sb, RoutineInfo lambda)
+    private string EmitClosureValueExpression(StringBuilder sb, ClosureValueExpression closure)
     {
-        string fnSym = $"@{MangleRoutineName(routine: lambda)}";
-        string boundVal = "null";
-
-        // Capturing: allocate the pure-captures bound payload and fill it from the live locals.
-        if (lambda.ClosureCaptures is { Count: > 0 } captures)
-        {
-            string boundStruct = ClosureStructName(lambda: lambda);
-            string sizeTemp = NextTemp();
-            EmitLine(sb: sb, line: $"  {sizeTemp} = getelementptr {boundStruct}, ptr null, i32 1");
-            string size = NextTemp();
-            EmitLine(sb: sb, line: $"  {size} = ptrtoint ptr {sizeTemp} to i64");
-            string boundPtr = NextTemp();
-            EmitLine(sb: sb, line: $"  {boundPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
-            for (int i = 0; i < captures.Count; i++)
-            {
-                (string capName, TypeSymbol capType) = captures[index: i];
-                string capLlvm = GetLlvmType(type: capType);
-                string llvmName =
-                    _localVarLlvmNames.GetValueOrDefault(key: capName, defaultValue: capName);
-                string capVal = NextTemp();
-                EmitLine(sb: sb, line: $"  {capVal} = load {capLlvm}, ptr %{llvmName}.addr");
-                string capFieldPtr = NextTemp();
-                EmitLine(sb: sb,
-                    line:
-                    $"  {capFieldPtr} = getelementptr {boundStruct}, ptr {boundPtr}, i32 0, i32 {i}");
-                EmitLine(sb: sb, line: $"  store {capLlvm} {capVal}, ptr {capFieldPtr}");
-            }
-
-            boundVal = boundPtr;
-        }
-
+        RoutineInfo lifted = closure.Function.ResolvedRoutine ??
+                             throw new InvalidOperationException(
+                                 message: "A closure value carries no lifted routine.");
+        GenerateRoutineDeclaration(routine: lifted);
+        string bound = EmitExpression(sb: sb, expr: closure.Bound);
         string t0 = NextTemp();
-        EmitLine(sb: sb, line: $"  {t0} = insertvalue {{ ptr, ptr }} undef, ptr {fnSym}, 0");
+        EmitLine(sb: sb,
+            line: $"  {t0} = insertvalue {{ ptr, ptr }} undef, ptr @{MangleRoutineName(routine: lifted)}, 0");
         string fat = NextTemp();
-        EmitLine(sb: sb, line: $"  {fat} = insertvalue {{ ptr, ptr }} {t0}, ptr {boundVal}, 1");
+        EmitLine(sb: sb, line: $"  {fat} = insertvalue {{ ptr, ptr }} {t0}, ptr {bound}, 1");
         return fat;
     }
 
@@ -399,9 +372,8 @@ public partial class LlvmEmitter
             return $"@{MangleRoutineName(routine: preResolved)}";
         }
 
-        return preResolved.IsLambda
-            ? EmitClosureValue(sb: sb, lambda: preResolved)
-            : EmitRoutineValueClosure(sb: sb, routine: preResolved);
+        // A captureless lambda or plain routine: `{ @fn, null }` (a capturing lambda is a ClosureValueExpression).
+        return EmitRoutineValueClosure(sb: sb, routine: preResolved);
     }
 
     /// <summary>

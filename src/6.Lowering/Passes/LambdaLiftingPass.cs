@@ -6,11 +6,12 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Phase 8 pass: lift lambdas into synthesized top-level routines after verification is complete.
-/// Non-capturing lambdas are lifted as-is. Capturing lambdas (explicit <c>given</c> clause) are
-/// supported only in the immediately-invoked form — captures become leading parameters and the
-/// call site is expanded inline. Escaping capturing lambdas (stored in variables or passed as
-/// arguments) still require full closure lowering and are rejected here.
+/// Phase 8 pass, first in the pipeline: lift lambdas into synthesized top-level routines, so every later
+/// pass lowers a lifted body like any other routine's. A non-capturing lambda is lifted as-is. An
+/// immediately-invoked capturing lambda takes its captures as leading parameters and the call is expanded
+/// inline. Any other capturing lambda becomes a closure (<see cref="ClosurePlumbing"/>): the lifted routine
+/// takes its bound payload as a trailing <c>__bound</c> parameter and copies each captured value out of it,
+/// and the lambda's value is a <see cref="ClosureValueExpression"/> that builds the payload.
 /// </summary>
 internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
 {
@@ -865,7 +866,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             original: whenExpr);
     }
 
-    private IdentifierExpression LiftLambda(LambdaExpression lambda, HashSet<string> scope,
+    private Expression LiftLambda(LambdaExpression lambda, HashSet<string> scope,
         List<string>? inheritedGenericParameters,
         List<GenericConstraintDeclaration>? inheritedGenericConstraints, bool includeMe)
     {
@@ -920,16 +921,34 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             inheritedGenericConstraints: genericConstraints,
             includeMe: false);
 
+        // A capturing lambda takes its bound payload as a trailing `__bound: CPtr` and starts by copying
+        // each captured value out of it into a local of the captured name (Core's closure_get).
+        ClosurePlumbing? closure = closureCaptures.Count > 0
+            ? new ClosurePlumbing(registry: ctx.Registry, location: lambda.Location)
+            : null;
+        List<Parameter> liftedParameters = BuildLiftedParameters(lambda: lambda, routineType: routineType);
+        List<ParamInfo> liftedParamInfos = BuildLiftedParameterInfos(lambda: lambda, routineType: routineType);
+        var liftedStatements = new List<Statement>();
+        if (closure != null)
+        {
+            liftedParameters.Add(item: closure.BoundParameter());
+            liftedParamInfos.Add(item: closure.BoundParamInfo());
+            for (int i = 0; i < closureCaptures.Count; i++)
+            {
+                liftedStatements.Add(item: closure.CaptureLocal(name: closureCaptures[index: i].Name,
+                    type: closureCaptures[index: i].Type,
+                    slot: i));
+            }
+        }
+
+        liftedStatements.Add(item: new ReturnStatement(Value: loweredBody, Location: lambda.Location));
+
         var liftedRoutine = new RoutineDeclaration(Name: liftedName,
-            Parameters: BuildLiftedParameters(lambda: lambda, routineType: routineType),
+            Parameters: liftedParameters,
             ReturnType: routineType.ReturnType != null
                 ? TypeInfoToTypeExpression(type: routineType.ReturnType, location: lambda.Location)
                 : null,
-            Body: new BlockStatement(Statements:
-                [
-                    new ReturnStatement(Value: loweredBody, Location: lambda.Location)
-                ],
-                Location: lambda.Location),
+            Body: new BlockStatement(Statements: liftedStatements, Location: lambda.Location),
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
             Location: lambda.Location,
@@ -944,7 +963,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         var liftedInfo = new RoutineInfo(name: liftedName)
         {
             Kind = RoutineKind.Lambda,
-            Parameters = BuildLiftedParameterInfos(lambda: lambda, routineType: routineType),
+            Parameters = liftedParamInfos,
             ReturnType = routineType.ReturnType,
             Visibility = VisibilityModifier.Secret,
             Location = lambda.Location,
@@ -953,8 +972,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                                             .ToList(),
             GenericParameters = genericParameters,
             GenericConstraints = genericConstraints,
-            IsSynthesized = true,
-            ClosureCaptures = closureCaptures
+            IsSynthesized = true
         };
         ctx.Registry.RegisterRoutine(routine: liftedInfo);
         // Attach the RoutineInfo to the lifted declaration so the codegen-input AST dump
@@ -962,13 +980,21 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         // "unregistered surface decl", leaving the dump showing a call to `__lambda_*` with no body.
         liftedRoutine.ResolvedInfo = liftedInfo;
 
-        // The reference carries the lifted routine itself, so the emitter builds the closure from it
-        // instead of looking the synthesized name up.
-        return new IdentifierExpression(Name: liftedName, Location: lambda.Location)
+        // The reference carries the lifted routine itself, so the emitter builds the routine value from
+        // it instead of looking the synthesized name up. A capturing lambda pairs it with its payload.
+        var function = new IdentifierExpression(Name: liftedName, Location: lambda.Location)
         {
             ResolvedType = lambda.ResolvedType,
             ResolvedRoutine = liftedInfo
         };
+        if (closure == null)
+        {
+            return function;
+        }
+
+        return new ClosureValueExpression(Function: function,
+            Bound: closure.BuildPayload(captures: closureCaptures),
+            Location: lambda.Location) { ResolvedType = lambda.ResolvedType };
     }
 
     private Expression LiftCapturingLambdaIife(CallExpression call, LambdaExpression lambda,

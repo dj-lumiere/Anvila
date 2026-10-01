@@ -98,13 +98,6 @@ public partial class LlvmEmitter
     private readonly SortedDictionary<string, string> _typeDeclarationsEntity = new();
     private readonly SortedDictionary<string, string> _typeDeclarationsCrashable = new();
 
-    /// <summary>
-    /// Closure environment struct declarations for lifted lambdas: <c>%"Closure.&lt;name&gt;" =
-    /// type { ptr, &lt;capture types&gt; }</c>. Keyed by struct name; emitted with the other type
-    /// declarations. See closure conversion in <c>GenerateRoutineBody</c> / the lambda value path.
-    /// </summary>
-    private readonly SortedDictionary<string, string> _typeDeclarationsClosure = new();
-
     /// <summary>Output buffer for global declarations (constants, presets).</summary>
     private readonly StringBuilder _globalDeclarations = new();
 
@@ -1005,7 +998,7 @@ public partial class LlvmEmitter
     {
         bool anyTypes = _typeDeclarationsRecord.Count > 0 || _typeDeclarationsVariant.Count > 0 ||
                         _typeDeclarationsEntity.Count > 0 ||
-                        _typeDeclarationsCrashable.Count > 0 || _typeDeclarationsClosure.Count > 0;
+                        _typeDeclarationsCrashable.Count > 0;
         if (!anyTypes)
         {
             return;
@@ -1031,7 +1024,6 @@ public partial class LlvmEmitter
         EmitTypeSection(header: "variants", bucket: _typeDeclarationsVariant);
         EmitTypeSection(header: "entities", bucket: _typeDeclarationsEntity);
         EmitTypeSection(header: "crashables", bucket: _typeDeclarationsCrashable);
-        EmitTypeSection(header: "closures", bucket: _typeDeclarationsClosure);
         output.AppendLine();
     }
 

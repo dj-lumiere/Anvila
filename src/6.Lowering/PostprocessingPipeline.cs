@@ -18,6 +18,10 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
     /// </summary>
     public void Run(Program program)
     {
+        // Lift lambdas FIRST: a lifted lambda is an ordinary routine appended to the program, so every pass
+        // below lowers its body (f-strings, conversions, operators) like any other. Lifted last, its body
+        // reached the emitter unlowered — the rewriters do not descend into a lambda expression.
+        new LambdaLiftingPass(ctx: ctx).Run(program: program);
         // Route Suflae module-level `global`s through the hidden __ModuleGlobals entity FIRST, so every
         // subsequent pass (f-string, operator, Roamed projection/lock-bracket) sees the field accesses
         // and the globals inherit the entity's thread-safe access-lock brackets.
@@ -84,7 +88,6 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         new RoamedLockBracketLoweringPass(ctx: ctx).Run(program: program);
         new BecomesLoweringPass(_: ctx).Run(program: program);
         new UsingLoweringPass(ctx: ctx).Run(program: program);
-        new LambdaLiftingPass(ctx: ctx).Run(program: program);
     }
 
     /// <summary>

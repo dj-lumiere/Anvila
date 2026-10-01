@@ -229,37 +229,6 @@ public partial class LlvmEmitter
         }
     }
 
-    /// <summary>
-    /// Returns the LLVM named-struct type for a lifted lambda's BOUND payload (v0.4.1) —
-    /// <c>%"Closure.&lt;liftedName&gt;" = type { &lt;capture types&gt; }</c> — declaring it on first use.
-    /// The payload holds ONLY the captured (pre-bound) values in <see cref="RoutineInfo.ClosureCaptures"/>
-    /// order (capture 0 at field 0). The function pointer is NOT in here — it lives in element 0 of the
-    /// fat Routine value <c>{ ptr fn, ptr bound }</c>; this struct is what <c>bound</c> points to, and
-    /// it is passed to the body as a trailing <c>ptr %__bound</c> (= C userdata). See [[cabi-callback-ffi]].
-    /// </summary>
-    /// <param name="lambda">The lifted lambda's RoutineInfo; its Name and ClosureCaptures determine the struct name and fields.</param>
-    private string ClosureStructName(RoutineInfo lambda)
-    {
-        string name = $"%\"Closure.{lambda.Name}\"";
-        if (_typeDeclarationsClosure.ContainsKey(key: name))
-        {
-            return name;
-        }
-
-        var fields = new List<string>();
-        if (lambda.ClosureCaptures != null)
-        {
-            foreach ((string _, TypeSymbol capType) in lambda.ClosureCaptures)
-            {
-                fields.Add(item: GetLlvmType(type: capType));
-            }
-        }
-
-        _typeDeclarationsClosure[key: name] =
-            $"{name} = type {{ {string.Join(separator: ", ", values: fields)} }}\n";
-        return name;
-    }
-
     private void GenerateRoutineDefinition(RoutineDeclaration routine,
         RoutineInfo? preResolvedInfo = null, string? nameOverride = null,
         string? moduleContext = null)
@@ -466,18 +435,14 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Builds the LLVM parameter list (with names) for a routine definition: the hidden closure
-    /// pointer for lambdas, the implicit <c>me</c> receiver for memberRoutines, and each explicit
-    /// parameter in its ABI form (by-ref thread arg / byval / coerce / plain value).
+    /// Builds the LLVM parameter list (with names) for a routine definition: the implicit <c>me</c>
+    /// receiver for memberRoutines, and each explicit parameter in its ABI form (by-reference / byval /
+    /// coerce / plain value). A capturing lifted lambda's payload is its explicit trailing
+    /// <c>__bound</c> parameter (LambdaLiftingPass).
     /// </summary>
     private List<string> BuildDefinitionParameterList(RoutineInfo info)
     {
         var paramList = new List<string>();
-
-        // Closure ABI (v0.4.1): a CAPTURING lifted lambda receives its bound payload as a hidden
-        // TRAILING `ptr %__bound` parameter (added AFTER the explicit params below) = C's userdata-last
-        // convention. A captureless lambda gets NO extra param — its body is a plain C-ABI `ret(args)`.
-        // The trailing param is appended at the end of this method, not here.
 
         // For memberRoutines, add implicit 'me' parameter first (skip create factories, common routines,
         // and void/None owner types).
@@ -494,13 +459,6 @@ public partial class LlvmEmitter
         paramList.AddRange(collection:
             from param in info.Parameters
             select FormatDefinitionParameter(info: info, param: param));
-
-        // v0.4.1 closure ABI: a CAPTURING lifted lambda takes its bound payload as a TRAILING
-        // `ptr %__bound` (= C userdata-last). Captureless lambdas / plain routines get nothing.
-        if (info.IsLambda && info.ClosureCaptures is { Count: > 0 })
-        {
-            paramList.Add(item: "ptr %__bound");
-        }
 
         return paramList;
     }
@@ -695,7 +653,6 @@ public partial class LlvmEmitter
         ResetPerRoutineState(routine: routine);
         BindImplicitMeReceiver(sb: sb, body: body, routine: routine);
         RegisterParametersAsLocals(sb: sb, routine: routine);
-        EmitClosurePrologue(sb: sb, routine: routine);
         EmitTracePush(sb: sb, routine: routine);
 
         // Emit the body statements — returns true if the block ends with a terminator
@@ -824,35 +781,6 @@ public partial class LlvmEmitter
         EmitEntryAlloca(llvmName: paramPtr, llvmType: storeType);
         EmitLine(sb: sb, line: $"  store {storeType} %{emittedParamName}, ptr {paramPtr}");
         _localVariables[key: param.Name] = param.Type;
-    }
-
-    /// <summary>
-    /// Closure prologue (v0.4.1): loads each captured value out of the trailing bound payload (the
-    /// hidden `ptr %__bound` parameter) into a local. The bound layout is `{ capture0, capture1, … }`
-    /// (pure captures, NO leading fn pointer); captures start at field 0.
-    /// </summary>
-    private void EmitClosurePrologue(StringBuilder sb, RoutineInfo routine)
-    {
-        if (!routine.IsLambda || routine.ClosureCaptures is not { Count: > 0 } closureCaptures)
-        {
-            return;
-        }
-
-        string boundStruct = ClosureStructName(lambda: routine);
-        for (int i = 0; i < closureCaptures.Count; i++)
-        {
-            (string capName, TypeSymbol capType) = closureCaptures[index: i];
-            string capLlvm = GetLlvmType(type: capType);
-            string capPtr = NextTemp();
-            EmitLine(sb: sb,
-                line: $"  {capPtr} = getelementptr {boundStruct}, ptr %__bound, i32 0, i32 {i}");
-            string capVal = NextTemp();
-            EmitLine(sb: sb, line: $"  {capVal} = load {capLlvm}, ptr {capPtr}");
-            string capAddr = $"%{capName}.addr";
-            EmitEntryAlloca(llvmName: capAddr, llvmType: capLlvm);
-            EmitLine(sb: sb, line: $"  store {capLlvm} {capVal}, ptr {capAddr}");
-            _localVariables[key: capName] = capType;
-        }
     }
 
     /// <summary>

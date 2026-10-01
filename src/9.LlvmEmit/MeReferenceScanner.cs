@@ -179,6 +179,10 @@ internal sealed class MeReferenceScanner : ISyntaxTreeVisitor<bool>
     {
         return node.Wrapper.Accept(visitor: this);
     }
+    public bool VisitClosureValueExpression(ClosureValueExpression node)
+    {
+        return node.Bound.Accept(visitor: this);
+    }
     public bool VisitIsPatternExpression(IsPatternExpression node)
     {
         return node.Expression.Accept(visitor: this) || ScanPattern(pattern: node.Pattern);

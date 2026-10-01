@@ -1265,6 +1265,29 @@ public record WrapperProjectionExpression(
 
 #endregion
 
+#region Closure Expressions
+
+/// <summary>
+/// A capturing lambda's value, produced by lowering (never parsed): <c>LambdaLiftingPass</c> lifts the lambda
+/// into a routine that takes its bound payload as a trailing <c>__bound: CPtr</c> parameter, and builds the
+/// payload as <see cref="Bound"/> (a chain of Core's <c>closure_new</c>/<c>closure_put</c> calls). The emitter
+/// pairs the lifted routine's symbol with the payload into the two-word Routine value <c>{ fn, bound }</c>.
+/// </summary>
+/// <param name="Function">The lifted routine (its <c>ResolvedRoutine</c>).</param>
+/// <param name="Bound">The expression that builds the bound payload (a <c>CPtr</c>).</param>
+/// <param name="Location">Source location of the lambda.</param>
+public record ClosureValueExpression(IdentifierExpression Function, Expression Bound, SourceLocation Location)
+    : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitClosureValueExpression(node: this);
+    }
+}
+
+#endregion
+
 #region Ownership Transfer Expressions
 
 /// <summary>
