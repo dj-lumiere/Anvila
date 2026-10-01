@@ -105,13 +105,6 @@ internal sealed class AutoWiredRegistrationPass
             u64Type: u64Type,
             s64Type: s64Type);
 
-        // Auto-register Text.create(from: T) for all concrete user types so every type
-        // structurally satisfies Representable[T].
-        if (textType != null)
-        {
-            RegisterTextFromCreators(textType: textType);
-        }
-
         // Register builder-service routines + represent/diagnose as universal member routines so
         // T.data_size(), K.type_id(), T.represent(), etc. resolve in generic function bodies.
         RegisterUniversalTypeParamRoutines(bundle: bundle);
@@ -333,55 +326,6 @@ internal sealed class AutoWiredRegistrationPass
         };
         return members == null || members.Count > 0 &&
             members.All(predicate: mv => mv.Visibility != VisibilityModifier.Secret);
-    }
-
-    /// <summary>
-    /// Auto-registers <c>Text.create(from: T)</c> for every concrete user-defined type so that
-    /// every type structurally satisfies <c>Representable[T]</c>. Extracted from
-    /// <see cref="Run"/> to reduce its cognitive complexity.
-    /// </summary>
-    private void RegisterTextFromCreators(TypeSymbol textType)
-    {
-        var textCreateMemberRoutines = _registry.GetMemberRoutinesForType(type: textType)
-                                                .Where(predicate: m => m.IsCreator)
-                                                .ToList();
-
-        foreach (TypeSymbol type in _registry.GetAllTypes())
-        {
-            if (type.Category is not (TypeCategory.Record or TypeCategory.Entity
-                or TypeCategory.Choice or TypeCategory.Flags or TypeCategory.Variant))
-            {
-                continue;
-            }
-
-            // Skip generic-definition types and WrapperTypeSymbol definitions — registering a
-            // create(from: T) for the bare wrapper produces a phantom Text.create(Core.Owned) symbol
-            // that overload-resolution can drift onto, then the linker fails (no definition emitted).
-            if (type.IsGenericDefinition || type is WrapperTypeSymbol)
-            {
-                continue;
-            }
-
-            bool alreadyDefined = textCreateMemberRoutines.Any(predicate: m =>
-                m.Parameters.Count == 1 && m.Parameters[index: 0].Type.FullName == type.FullName);
-            if (alreadyDefined)
-            {
-                continue;
-            }
-
-            _registry.RegisterRoutine(routine: new RoutineInfo(name: RoutineInfo.CreatorName)
-            {
-                Kind = RoutineKind.Creator,
-                OwnerType = textType,
-                Parameters = [new ParamInfo(name: "from", type: type)],
-                ReturnType = textType,
-                IsFailable = false,
-                DeclaredMutation = MutationCategory.Readonly,
-                MutationCategory = MutationCategory.Readonly,
-                Visibility = VisibilityModifier.Open,
-                IsSynthesized = true
-            });
-        }
     }
 
     /// <summary>

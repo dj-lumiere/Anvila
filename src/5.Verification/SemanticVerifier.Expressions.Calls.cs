@@ -2211,8 +2211,17 @@ public sealed partial class SemanticVerifier
                 Callee: new IdentifierExpression(Name: potentialTypeName, Location: call.Location),
                 Arguments: [convMember.Object],
                 Location: call.Location);
+            // The detour is speculative: when `Type(x)` binds no creator (it falls back to a field-wise
+            // construction and reports why), the conversion simply does not exist — drop those
+            // diagnostics and let the caller report the missing conversion.
+            int errorsBefore = _errors.Count;
             TypeSymbol ctorType = AnalyzeExpression(expression: freeCtor);
-            if (ctorType is not ErrorTypeSymbol)
+            bool bound = ctorType is not ErrorTypeSymbol && _errors.Count == errorsBefore;
+            if (!bound)
+            {
+                _errors.RemoveRange(index: errorsBefore, count: _errors.Count - errorsBefore);
+            }
+            else
             {
                 call.ConstructedType = freeCtor.ConstructedType ?? targetType;
                 call.LoweringKind = CallLoweringKind.TypeConstructor;
@@ -2226,10 +2235,6 @@ public sealed partial class SemanticVerifier
                 return ctorType;
             }
         }
-
-        // Fall back to default overload if no match by arg type
-        string creatorFullName = $"{targetType.FullName}.{creatorName}";
-        creator ??= _registry.LookupRoutine(fullName: creatorFullName);
 
         if (creator == null)
         {
