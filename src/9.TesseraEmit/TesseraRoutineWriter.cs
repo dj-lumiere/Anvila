@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Builder.LlvmEmit;
 using Builder.Tokenizer;
+using Builder.Verification;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -411,6 +412,47 @@ internal sealed class TesseraRoutineWriter
 
     // ── Expressions ───────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// A value moved to another representation, as the LLVM emitter's scalar cast does it: the same
+    /// representation is the same value, an integer and a pointer convert with <c>inttoptr</c>/<c>ptrtoint</c>,
+    /// and two integers of different widths truncate, or extend by the target's signedness.
+    /// </summary>
+    private Operand EvaluateRepresentationCast(Operand inner, TypeSymbol? target)
+    {
+        string from = TypeText(type: inner.Type);
+        string to = TypeText(type: target);
+        if (from == to)
+        {
+            return inner with { Type = target };
+        }
+
+        string value = Value(operand: inner);
+        int? fromBits = IntegerBits(text: from);
+        int? toBits = IntegerBits(text: to);
+        string expression = (from, to) switch
+        {
+            (_, "Addr") when fromBits != null => $"inttoptr<{from}, Addr>({value})",
+            ("Addr", _) when toBits != null => $"ptrtoint<Addr, {to}>({value})",
+            _ when fromBits > toBits => $"trunc<{from}, {to}>({value})",
+            _ when fromBits < toBits => $"{(to[0] == 'U' ? "zext" : "sext")}<{from}, {to}>({value})",
+            _ when fromBits == toBits => $"bitcast<{from}, {to}>({value})",
+            _ => throw Unsupported(what: $"a representation cast from {from} to {to}")
+        };
+        return new Operand(Text: Temp(type: target, expression: expression), Type: target, IsPlace: false);
+    }
+
+    /// <summary>The width of a Tessera integer type, or null for any other type.</summary>
+    private static int? IntegerBits(string text)
+    {
+        return text switch
+        {
+            "Bool" => 1,
+            "USize" or "SSize" => 64,
+            _ when text.Length > 1 && text[0] is 'S' or 'U' && int.TryParse(s: text[1..], result: out int bits) => bits,
+            _ => null
+        };
+    }
+
     /// <summary>The operand as a value: a place is loaded into a temporary.</summary>
     private string Value(Operand operand)
     {
@@ -473,11 +515,22 @@ internal sealed class TesseraRoutineWriter
         {
             case LiteralExpression { Value: string text, LiteralType: TokenType.TextLiteral } literal:
                 return TextLiteral(text: text, type: literal.ResolvedType);
+            case LiteralExpression { Value: string text, LiteralType: TokenType.B16Literal or TokenType.B32Literal or
+                TokenType.B64Literal } literal:
+                return new Operand(Text: Temp(type: literal.ResolvedType, expression: FloatLiteral(text: text,
+                        type: literal.LiteralType)),
+                    Type: literal.ResolvedType, IsPlace: false);
             case LiteralExpression literal:
                 return new Operand(Text: LiteralText(literal: literal), Type: literal.ResolvedType, IsPlace: false);
+            case IdentifierExpression { ResolvedType: ConstGenericValueTypeSymbol constant }:
+                // A const generic parameter: the monomorphizer stamped its value on the reference.
+                return new Operand(Text: constant.Value.ToString(provider: CultureInfo.InvariantCulture),
+                    Type: _module.ConstantType(constant: constant), IsPlace: false);
             case IdentifierExpression identifier:
-                return new Operand(Text: Lookup(name: identifier.Name).Place, Type: Lookup(name: identifier.Name).Type,
-                    IsPlace: true);
+            {
+                Local local = Lookup(name: identifier.Name);
+                return new Operand(Text: local.Place, Type: local.Type, IsPlace: true);
+            }
             case MemberExpression member:
                 return EvaluateField(member: member);
             case CallExpression call:
@@ -495,11 +548,13 @@ internal sealed class TesseraRoutineWriter
             case BackendCastExpression cast:
             {
                 Operand inner = Evaluate(expression: cast.Value);
-                string from = TypeText(type: inner.Type);
-                string to = TypeText(type: cast.ResolvedType);
-                return from == to
-                    ? inner with { Type = cast.ResolvedType }
-                    : throw Unsupported(what: $"a representation cast from {from} to {to}");
+                if (inner.Type is null)
+                {
+                    // An untyped value (a bare literal) is written in the cast's own representation.
+                    return inner with { Type = cast.ResolvedType };
+                }
+
+                return EvaluateRepresentationCast(inner: inner, target: cast.ResolvedType);
             }
             default:
                 throw Unsupported(what: $"the expression {expression.GetType().Name}");
@@ -515,6 +570,12 @@ internal sealed class TesseraRoutineWriter
             {
                 return local;
             }
+        }
+
+        // An aggregate preset (a constant table): its global is the place that holds it.
+        if (_module.AggregatePreset(name: name, routine: _routine) is var (global, type))
+        {
+            return new Local(Place: global, Type: type);
         }
 
         throw Unsupported(what: $"the name '{name}', which is not a local of {_routine.Name}");
@@ -543,6 +604,59 @@ internal sealed class TesseraRoutineWriter
         string record = Receiver(operand: owner);
         return new Operand(Text: Temp(type: member.ResolvedType, expression: $"{record}.{member.MemberName}"),
             Type: member.ResolvedType, IsPlace: false);
+    }
+
+    /// <summary>
+    /// A float literal as its exact bits (<c>F64.from_bits(0x...)</c>), so Tessera does no rounding of its own.
+    /// The value is the one the LLVM emitter writes: the text read as a double, then narrowed to the literal's
+    /// width; a hexadecimal literal is encoded exactly.
+    /// </summary>
+    private static string FloatLiteral(string text, TokenType type)
+    {
+        (string tessera, int mantissa, int exponent) = type switch
+        {
+            TokenType.B16Literal => ("F16", 10, 5),
+            TokenType.B32Literal => ("F32", 23, 8),
+            _ => ("F64", 52, 11)
+        };
+        string digits = LlvmEmitter.StripNumericSuffix(text: text);
+        UInt128 bits;
+        if (NumericLiteralParser.IsHexFloatText(text: text))
+        {
+            string cleaned = SemanticVerifier.StripHexFloatSuffix(rawValue: text)
+                                             .Replace(oldValue: "_", newValue: "");
+            if (NumericLiteralParser.TryEncodeHexFloat(cleaned: cleaned, mantBits: mantissa, expBits: exponent,
+                    bits: out bits) != NumericLiteralParser.HexFloatStatus.Exact)
+            {
+                throw new NotSupportedException(message: $"The Tessera backend cannot encode the literal {text}.");
+            }
+        }
+        else
+        {
+            double value = digits switch
+            {
+                "inf" => double.PositiveInfinity,
+                "nan" => double.NaN,
+                _ => double.Parse(s: digits, style: NumberStyles.Float, provider: CultureInfo.InvariantCulture)
+            };
+            bits = type switch
+            {
+                TokenType.B16Literal => BitConverter.HalfToUInt16Bits(value: (Half)value),
+                TokenType.B32Literal => BitConverter.SingleToUInt32Bits(value: (float)value),
+                _ => BitConverter.DoubleToUInt64Bits(value: value)
+            };
+        }
+
+        return $"{tessera}.from_bits(0x{bits:X})";
+    }
+
+    /// <summary>A scalar literal as a Tessera constant, usable in a global's initializer.</summary>
+    internal static string ConstantText(LiteralExpression literal)
+    {
+        return literal is { Value: string text, LiteralType: TokenType.B16Literal or TokenType.B32Literal or
+            TokenType.B64Literal }
+            ? FloatLiteral(text: text, type: literal.LiteralType)
+            : LiteralText(literal: literal);
     }
 
     private static string LiteralText(LiteralExpression literal)
@@ -586,6 +700,12 @@ internal sealed class TesseraRoutineWriter
             throw Unsupported(what: $"the unresolved call {DescribeCall(call: call)}");
         }
 
+        if (call.Callee is MemberExpression addressed && call.Arguments.Count == 0 &&
+            InterceptedMemberCall(call: call, member: addressed) is { } intercepted)
+        {
+            return intercepted;
+        }
+
         if (routine.LlvmIrTemplate != null)
         {
             string operation = TesseraIntrinsics.Translate(routine: routine,
@@ -597,7 +717,15 @@ internal sealed class TesseraRoutineWriter
                           .ToList(),
                 resultType: call.ResolvedType,
                 typeText: TypeText,
-                zero: ZeroValue);
+                zero: ZeroValue,
+                spill: (value, type) => Place(operand: new Operand(Text: value, Type: type, IsPlace: false)),
+                emit: Emit);
+            if (TesseraWriter.IsVoid(type: routine.ReturnType))
+            {
+                Emit(line: operation);
+                return null;
+            }
+
             return new Operand(Text: Temp(type: call.ResolvedType, expression: operation), Type: call.ResolvedType,
                 IsPlace: false);
         }
@@ -644,6 +772,49 @@ internal sealed class TesseraRoutineWriter
 
         return new Operand(Text: Temp(type: routine.ReturnType, expression: text), Type: routine.ReturnType,
             IsPlace: false);
+    }
+
+    /// <summary>
+    /// The zero-argument member calls the LLVM emitter answers at the call site instead of calling the body:
+    /// <c>var_name()</c> is the receiver's name, and on a struct record (or a non-pointer primitive, for
+    /// <c>hijack</c>) <c>get_address()</c> and <c>hijack()</c> are the address of the caller's storage, since
+    /// the body would only see a copy. Null when the call is not one of them.
+    /// </summary>
+    private Operand? InterceptedMemberCall(CallExpression call, MemberExpression member)
+    {
+        if (member.MemberName == "var_name")
+        {
+            return TextLiteral(text: member.Object is IdentifierExpression named
+                    ? named.Name
+                    : "<expr>",
+                type: _module.TextType);
+        }
+
+        bool takesAddress = member.MemberName switch
+        {
+            "get_address" => member.Object.ResolvedType is RecordTypeSymbol { BackendType: null },
+            Declaration.RuntimeContract.RawPointer.Hijack => member.Object.ResolvedType is RecordTypeSymbol
+            {
+                BackendType: null or not "ptr"
+            },
+            _ => false
+        };
+        if (!takesAddress)
+        {
+            return null;
+        }
+
+        Operand receiver = Evaluate(expression: member.Object);
+        if (!receiver.IsPlace)
+        {
+            throw Unsupported(what: $"{member.MemberName}() on a value that has no storage");
+        }
+
+        TypeSymbol? resultType = call.ResolvedType;
+        return member.MemberName == "get_address"
+            ? new Operand(Text: Temp(type: _module.AddressType, expression: $"ptrtoint<Addr, U64>({receiver.Text})"),
+                Type: _module.AddressType, IsPlace: false)
+            : new Operand(Text: receiver.Text, Type: resultType, IsPlace: false);
     }
 
     /// <summary>The call's arguments in the routine's parameter order: a named argument goes to the parameter of
@@ -696,6 +867,21 @@ internal sealed class TesseraRoutineWriter
         if (type is EntityTypeSymbol entity)
         {
             return EvaluateEntityCreator(creator: creator, entity: entity);
+        }
+
+        if (type is TupleTypeSymbol tuple)
+        {
+            var items = creator.MemberVariables
+                               .Select(selector: m => Value(operand: Evaluate(expression: m.Value)))
+                               .ToList();
+            return new Operand(Text: Temp(type: tuple, expression: $"({string.Join(separator: ", ", values: items)})"),
+                Type: tuple, IsPlace: false);
+        }
+
+        // A backend-represented record (a number, an Array) built from nothing is its zero value.
+        if (type is RecordTypeSymbol { BackendType: not null } && creator.MemberVariables.Count == 0)
+        {
+            return new Operand(Text: Temp(type: type, expression: ZeroValue(type: type)), Type: type, IsPlace: false);
         }
 
         if (type is RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup } carrier)

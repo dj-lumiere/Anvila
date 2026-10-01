@@ -401,6 +401,16 @@ public partial class LlvmEmitter
     /// </summary>
     private bool ShouldSkipRoutineDefinition(RoutineInfo? routineInfo)
     {
+        return SkipsDefinition(routineInfo: routineInfo, liveRoutineKeys: _liveRoutineKeys);
+    }
+
+    /// <summary>
+    /// The definition gate every backend shares: true for a routine with no body of its own to emit (unresolved,
+    /// a template, owned by a generic parameter or a protocol, a signature still generic or error-typed), and for
+    /// one the reachability set (<paramref name="liveRoutineKeys"/>, when not empty) leaves out.
+    /// </summary>
+    internal static bool SkipsDefinition(RoutineInfo? routineInfo, IReadOnlyCollection<string> liveRoutineKeys)
+    {
         if (routineInfo == null || routineInfo.IsGenericDefinition ||
             routineInfo.OwnerType is GenericParameterTypeSymbol)
         {
@@ -430,8 +440,8 @@ public partial class LlvmEmitter
         // Reachability gate: when LiveRoutineKeys is populated, skip routines not reachable from
         // program entry points. Lifted lambdas are exempt — LambdaLiftingPass runs after
         // reachability, so their keys aren't in the live set even when referenced by address.
-        return _liveRoutineKeys.Count > 0 &&
-               !_liveRoutineKeys.Contains(item: routineInfo.RegistryKey) && !routineInfo.IsLambda;
+        return liveRoutineKeys.Count > 0 &&
+               !liveRoutineKeys.Contains(value: routineInfo.RegistryKey) && !routineInfo.IsLambda;
     }
 
     /// <summary>

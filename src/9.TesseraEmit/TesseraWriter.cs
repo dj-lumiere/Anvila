@@ -28,6 +28,7 @@ internal sealed class TesseraWriter
     private readonly Dictionary<string, string> _texts = new(comparer: StringComparer.Ordinal);
     private readonly StringBuilder _globals = new();
     private readonly Dictionary<string, string> _entityRecords = new(comparer: StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _presets = new(comparer: StringComparer.Ordinal);
 
     public TesseraWriter(BackendInput input)
     {
@@ -50,7 +51,17 @@ internal sealed class TesseraWriter
         var definitions = new StringBuilder();
         foreach ((RoutineInfo info, Statement body) in routines)
         {
-            definitions.Append(value: new TesseraRoutineWriter(module: this, routine: info, body: body).Write());
+            try
+            {
+                definitions.Append(value: new TesseraRoutineWriter(module: this, routine: info, body: body).Write());
+            }
+            catch (NotSupportedException ex) when (!ex.Message.Contains(value: " (in ",
+                                                       comparisonType: StringComparison.Ordinal))
+            {
+                throw new NotSupportedException(
+                    message: $"{ex.Message} (in {LlvmEmitter.MangleRoutineName(routine: info)})", innerException: ex);
+            }
+
             definitions.Append(value: '\n');
         }
 
@@ -110,27 +121,28 @@ internal sealed class TesseraWriter
                 continue;
             }
 
-            Add(info: body.Info, body: body.IsSynthesized
-                ? body.Ast.Body
-                : BodyOf(routine: body.Ast, info: body.Info));
+            if (body.IsSynthesized)
+            {
+                Add(info: body.Info, body: body.Ast.Body);
+            }
+            else if (!LlvmEmitter.SkipsDefinition(routineInfo: body.Info, liveRoutineKeys: LiveKeys))
+            {
+                Add(info: body.Info, body: BodyOf(routine: body.Ast, info: body.Info));
+            }
         }
 
         return result;
     }
 
-    /// <summary>A user routine with no body of its own to emit: a template, a foreign declaration, or one the
-    /// demand collector did not reach.</summary>
+    /// <summary>A user routine with no body of its own to emit: a foreign declaration, or one the shared
+    /// definition gate skips (a template, or one the demand collector did not reach).</summary>
     private bool IsSkippedUserRoutine(RoutineInfo info)
     {
-        if (info.IsGenericDefinition || info.OwnerType is GenericParameterTypeSymbol or ProtocolTypeSymbol ||
-            info.CallingConvention != null)
-        {
-            return true;
-        }
-
-        IReadOnlyCollection<string>? live = _input.LiveRoutineKeys;
-        return live is { Count: > 0 } && !live.Contains(value: info.RegistryKey) && !info.IsLambda;
+        return info.CallingConvention != null ||
+               LlvmEmitter.SkipsDefinition(routineInfo: info, liveRoutineKeys: LiveKeys);
     }
+
+    private IReadOnlyCollection<string> LiveKeys => _input.LiveRoutineKeys ?? [];
 
     /// <summary>A declaration's body, or the body the builder wrote for a declaration without one.</summary>
     private Statement? BodyOf(RoutineDeclaration routine, RoutineInfo info)
@@ -215,8 +227,66 @@ internal sealed class TesseraWriter
                                     .Select(selector: rune => rune.Value)
                                     .ToList();
         string type = $"Array<U32, {codePoints.Count}>";
-        _globals.Append(value: $"global {name}: {type} = {type} {{ {string.Join(separator: ", ", values: codePoints)} }}\n\n");
+        _globals.Append(value: $"global {name}: @{type} <- {type} {{ {string.Join(separator: ", ", values: codePoints)} }}\n\n");
         return name;
+    }
+
+    /// <summary>
+    /// The aggregate preset (an <c>Array[T, N]</c> or <c>BitArray[N]</c> table) <paramref name="name"/> names,
+    /// seen from <paramref name="routine"/>: the bare name, then qualified by the routine's module, as in the LLVM
+    /// emitter. Its table is a global, declared once; the global's name is the table's address. Null when the
+    /// name is not an aggregate preset.
+    /// </summary>
+    public (string Global, TypeSymbol Type)? AggregatePreset(string name, RoutineInfo routine)
+    {
+        string? module = routine.OwnerType?.Module ?? routine.Module;
+        VariableInfo? preset = _input.Registry.LookupVariable(name: name) is { IsPresettableAggregate: true } direct
+            ? direct
+            : module != null && !name.Contains(value: '.') &&
+              _input.Registry.LookupVariable(name: $"{module}.{name}") is { IsPresettableAggregate: true } qualified
+                ? qualified
+                : null;
+        if (preset is null)
+        {
+            return null;
+        }
+
+        if (_presets.TryGetValue(key: preset.QualifiedName, value: out string? global))
+        {
+            return (global, preset.Type);
+        }
+
+        global = UniqueName(wanted: $"RF_PRESET_{_presets.Count}");
+        _presets[key: preset.QualifiedName] = global;
+        var elements = ((ListLiteralExpression)preset.PresetValue!).Elements;
+        string type = TypeText(type: preset.Type);
+        IEnumerable<string> values = preset.Type is RecordTypeSymbol { BareName: "BitArray" } ||
+                                     preset.Type.Name.StartsWith(value: "BitArray", comparisonType: StringComparison.Ordinal)
+            ? PackBits(elements: elements)
+            : elements.Select(selector: e => e is LiteralExpression literal
+                ? TesseraRoutineWriter.ConstantText(literal: literal)
+                : throw new NotSupportedException(
+                    message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
+        _globals.Append(value: $"global {global}: @{type} <- {type} {{ {string.Join(separator: ", ", values: values)} }}\n\n");
+        return (global, preset.Type);
+    }
+
+    /// <summary>Bool literals packed eight to a byte, lowest bit first, as a <c>BitArray</c> lays them out.</summary>
+    private static IEnumerable<string> PackBits(List<Expression> elements)
+    {
+        for (int start = 0; start < elements.Count; start += 8)
+        {
+            int value = 0;
+            for (int bit = 0; bit < 8 && start + bit < elements.Count; bit++)
+            {
+                if (elements[index: start + bit] is LiteralExpression { Value: true })
+                {
+                    value |= 1 << bit;
+                }
+            }
+
+            yield return value.ToString(provider: System.Globalization.CultureInfo.InvariantCulture);
+        }
     }
 
     /// <summary>The Tessera record laid out like an entity's heap block (its fields in order, no header), declared
@@ -305,6 +375,8 @@ internal sealed class TesseraWriter
                 return $"({string.Join(separator: ", ", values: tuple.ElementTypes.Select(selector: TypeText))})";
             case EntityTypeSymbol:
                 return "Addr";
+            case ConstGenericValueTypeSymbol constant:
+                return TypeText(type: ConstantType(constant: constant));
             case RecordTypeSymbol { BackendType: { } backend } record:
                 return PrimitiveTypeText(record: record, backend: backend);
             case RecordTypeSymbol { IsGenericDefinition: false } record:
@@ -314,6 +386,23 @@ internal sealed class TesseraWriter
                     message: $"The Tessera backend does not translate {type.GetType().Name} '{type.FullName}' yet.");
         }
     }
+
+    /// <summary>The integer type of a const generic value: its declared type, else <c>U64</c> (as in the LLVM
+    /// emitter).</summary>
+    public TypeSymbol ConstantType(ConstGenericValueTypeSymbol constant)
+    {
+        return _input.Registry.LookupType(name: constant.ExplicitTypeName ?? "U64") ??
+               throw new NotSupportedException(
+                   message: $"The Tessera backend found no type '{constant.ExplicitTypeName ?? "U64"}' for a constant.");
+    }
+
+    /// <summary>The builder's <c>Text</c> type.</summary>
+    public TypeSymbol TextType => _input.Registry.LookupType(name: "Text") ??
+                                  throw new NotSupportedException(message: "The Tessera backend found no Text type.");
+
+    /// <summary>The builder's <c>Address</c> type.</summary>
+    public TypeSymbol AddressType => _input.Registry.LookupType(name: "Address") ??
+                                     throw new NotSupportedException(message: "The Tessera backend found no Address type.");
 
     /// <summary>True for the unit type <c>None</c>, which has no value.</summary>
     public static bool IsVoid(TypeSymbol? type)
