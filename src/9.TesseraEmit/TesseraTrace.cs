@@ -6,8 +6,8 @@ namespace Builder.TesseraEmit;
 /// <summary>
 /// The crash trace in Tessera, the same shadow stack the LLVM emitter writes: each thread has 32 frames of
 /// (routine name, file, line, column) and a depth. A routine that can crash pushes a frame on entry, moves the
-/// frame's position before each call, and pops it at each return; on a crash the runtime asks the printer
-/// <c>main</c> registered to print the frames.
+/// frame's position before each call, and pops it at each return. Core's <c>crash_report</c> reads the frames
+/// through the <c>LLVM::trace_depth</c> and <c>LLVM::trace_frames</c> primitives and prints them itself.
 /// </summary>
 internal static class TesseraTrace
 {
@@ -19,9 +19,6 @@ internal static class TesseraTrace
 
     /// <summary>The routine that moves the top frame to another source position.</summary>
     public const string UpdateLocation = "rf_trace_update_loc";
-
-    /// <summary>The routine the runtime calls to print the frames.</summary>
-    public const string Printer = "rf_print_trace_stack";
 
     /// <summary>The frame stack, the depth, and the routines over them.</summary>
     public const string Support = """
@@ -37,12 +34,6 @@ internal static class TesseraTrace
 
         #threadlocal
         global RF_TRACE_DEPTH: @S32
-
-        #[external("c"), symbol("rf_print_shadow_stack_data")]
-        routine c_rf_print_shadow_stack_data(%stack: Addr, %depth: S32) -> Void
-
-        #[external("c"), symbol("rf_set_stack_printer")]
-        routine c_rf_set_stack_printer(%printer: Callable<(), Void>) -> Void
 
         /// Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(%routine: @Byte, %file: @Byte, %line: S32, %column: S32) -> Void
@@ -73,11 +64,6 @@ internal static class TesseraTrace
                 %frame : @RfTraceFrame = RF_TRACE_STACK.cast<RfTraceFrame>().stride(%index)
                 %frame.line.store(%line)
                 %frame.column.store(%column)
-                return()
-
-        routine rf_print_trace_stack() -> Void
-            block entry():
-                c_rf_print_shadow_stack_data(RF_TRACE_STACK, RF_TRACE_DEPTH.load())
                 return()
 
 

@@ -955,15 +955,13 @@ public partial class LlvmEmitter
 
         AppendRfForwardDeclarations(output: output);
 
-        // Inline shadow-stack helpers (only when tracing is on)
-        if (ShouldEmitTrace)
-        {
-            // A DELTA build (resident base present, not the base itself) must REFERENCE the base's shared
-            // trace TLS globals as extern, not re-define them — else the base+delta JIT combine hits a
-            // duplicate-definition of `__emutls_v._rf_trace_stack`. Base/normal-cold builds define them.
-            AppendShadowStackHelpers(output: output,
-                deltaMode: _forExternalJitModule || (_residentSymbols.Count > 0 && !_baseMode));
-        }
+        // Shadow-stack helpers, in every mode: Core's crash_report reads the trace through the accessors
+        // (a build without a trace pushes nothing, so its depth stays 0).
+        // A DELTA build (resident base present, not the base itself) must REFERENCE the base's shared
+        // trace TLS globals as extern, not re-define them — else the base+delta JIT combine hits a
+        // duplicate-definition of `__emutls_v._rf_trace_stack`. Base/normal-cold builds define them.
+        AppendShadowStackHelpers(output: output,
+            deltaMode: _forExternalJitModule || (_residentSymbols.Count > 0 && !_baseMode));
 
         // FreeRoutine definitions
         if (_functionDefinitions.Length > 0)
@@ -1064,8 +1062,9 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Appends the inline shadow-stack helpers (push/pop/update-loc/print). A 32-entry power-of-2
-    /// ring; indices mask with AND so push/pop stay branchless. Only emitted when tracing is on.
+    /// Appends the inline shadow-stack helpers (push/pop/update-loc, and the two accessors Core's
+    /// crash_report reads the trace through). A 32-entry power-of-2 ring; indices mask with AND so
+    /// push/pop stay branchless.
     /// </summary>
     private static void AppendShadowStackHelpers(StringBuilder output, bool deltaMode = false)
     {
@@ -1151,37 +1150,47 @@ public partial class LlvmEmitter
         output.AppendLine(value: RetVoidInstruction);
         output.AppendLine(value: "}");
         output.AppendLine();
-        // printer helper — passes exe TLS data to the DLL
-        output.AppendLine(value: "declare void @rf_print_shadow_stack_data(ptr, i32)");
-        output.AppendLine(value: "define private void @_rf_print_trace_stack() {");
+        // accessors — Core's crash_report (LLVM::trace_depth / LLVM::trace_frames) reads the trace here
+        output.AppendLine(value: "define private i32 @_rf_trace_get_depth() alwaysinline {");
         output.AppendLine(value: EntryLabel);
-        output.AppendLine(value: "  %depth = load i32, ptr @_rf_trace_depth");
-        output.AppendLine(
-            value: "  call void @rf_print_shadow_stack_data(ptr @_rf_trace_stack, i32 %depth)");
-        output.AppendLine(value: RetVoidInstruction);
+        output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  ret i32 %d");
+        output.AppendLine(value: "}");
+        output.AppendLine();
+        output.AppendLine(value: "define private ptr @_rf_trace_get_frames() alwaysinline {");
+        output.AppendLine(value: EntryLabel);
+        output.AppendLine(value: "  ret ptr @_rf_trace_stack");
         output.AppendLine(value: "}");
         output.AppendLine();
 
         // Exported entry points for the modules that do not own the stack (see AppendShadowStackForwarders).
-        foreach ((string name, string parameters, string arguments) in ShadowStackHelpers)
+        foreach ((string name, string returns, string parameters, string arguments) in ShadowStackHelpers)
         {
-            output.AppendLine(value: $"define void @{name}_shared({parameters}) {{");
+            output.AppendLine(value: $"define {returns} @{name}_shared({parameters}) {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: $"  call void @{name}({arguments})");
-            output.AppendLine(value: RetVoidInstruction);
+            output.AppendLine(value: ForwardingCall(returns: returns, callee: name, arguments: arguments));
             output.AppendLine(value: "}");
             output.AppendLine();
         }
     }
 
-    /// <summary>The shadow-stack helpers as (name, LLVM parameter list, forwarded argument list).</summary>
-    private static readonly (string Name, string Parameters, string Arguments)[] ShadowStackHelpers =
+    /// <summary>The shadow-stack helpers as (name, LLVM return type, parameter list, forwarded argument list).</summary>
+    private static readonly (string Name, string Returns, string Parameters, string Arguments)[] ShadowStackHelpers =
     [
-        ("_rf_trace_push", "ptr %r, ptr %f, i32 %ln, i32 %col", "ptr %r, ptr %f, i32 %ln, i32 %col"),
-        ("_rf_trace_pop", "", ""),
-        ("_rf_trace_update_loc", "i32 %ln, i32 %col", "i32 %ln, i32 %col"),
-        ("_rf_print_trace_stack", "", "")
+        ("_rf_trace_push", "void", "ptr %r, ptr %f, i32 %ln, i32 %col", "ptr %r, ptr %f, i32 %ln, i32 %col"),
+        ("_rf_trace_pop", "void", "", ""),
+        ("_rf_trace_update_loc", "void", "i32 %ln, i32 %col", "i32 %ln, i32 %col"),
+        ("_rf_trace_get_depth", "i32", "", ""),
+        ("_rf_trace_get_frames", "ptr", "", "")
     ];
+
+    /// <summary>The body of a helper that forwards to <paramref name="callee"/>: the call, then its value.</summary>
+    private static string ForwardingCall(string returns, string callee, string arguments)
+    {
+        return returns == "void"
+            ? $"  call void @{callee}({arguments})\n  ret void"
+            : $"  %v = call {returns} @{callee}({arguments})\n  ret {returns} %v";
+    }
 
     /// <summary>
     /// The shadow-stack helpers of a module that does not own the stack (a resident-JIT delta or layer): each
@@ -1193,13 +1202,12 @@ public partial class LlvmEmitter
     private static void AppendShadowStackForwarders(StringBuilder output)
     {
         output.AppendLine(value: "; Shadow stack (owned by the resident base — forward to it)");
-        foreach ((string name, string parameters, string arguments) in ShadowStackHelpers)
+        foreach ((string name, string returns, string parameters, string arguments) in ShadowStackHelpers)
         {
-            output.AppendLine(value: $"declare void @{name}_shared({parameters})");
-            output.AppendLine(value: $"define private void @{name}({parameters}) alwaysinline {{");
+            output.AppendLine(value: $"declare {returns} @{name}_shared({parameters})");
+            output.AppendLine(value: $"define private {returns} @{name}({parameters}) alwaysinline {{");
             output.AppendLine(value: EntryLabel);
-            output.AppendLine(value: $"  call void @{name}_shared({arguments})");
-            output.AppendLine(value: RetVoidInstruction);
+            output.AppendLine(value: ForwardingCall(returns: returns, callee: $"{name}_shared", arguments: arguments));
             output.AppendLine(value: "}");
             output.AppendLine();
         }
@@ -1226,10 +1234,6 @@ public partial class LlvmEmitter
         };
 
         output.AppendLine(value: "declare void @__rf_set_trace_mode(i32)");
-        if (ShouldEmitTrace)
-        {
-            output.AppendLine(value: "declare void @rf_set_stack_printer(ptr)");
-        }
 
         output.AppendLine();
         output.AppendLine(value: "; Entry point");
@@ -1237,11 +1241,6 @@ public partial class LlvmEmitter
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  call void @rf_runtime_init()");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
-        if (ShouldEmitTrace)
-        {
-            output.AppendLine(
-                value: "  call void @rf_set_stack_printer(ptr @_rf_print_trace_stack)");
-        }
 
         output.AppendLine(handler: $"  call void @{startFunc}()");
         output.AppendLine(value: "  ret i32 0");

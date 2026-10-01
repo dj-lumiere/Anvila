@@ -124,6 +124,11 @@ internal sealed class TesseraIntrinsics
             "store" => $"{Argument(index: 0)}.cast<{Type(index: 1)}>().store({Argument(index: 1)})",
             "zeroed" => _zero(arg: _resultType),
             "ptr_same" => $"{Argument(index: 0)}.ptr_eq({Argument(index: 1)})",
+            // The crash trace the routines keep (TesseraTrace), read by Core's crash_report.
+            "trace_depth" => "RF_TRACE_DEPTH.load()",
+            "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
+                ? $"RF_TRACE_STACK.cast<{pointee}>()"
+                : "RF_TRACE_STACK",
             "element_pointer" => ElementPointer(),
             "atomic_load" => $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().atomic_load()",
             "atomic_store" => Atomic(method: "atomic_store"),
