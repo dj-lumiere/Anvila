@@ -572,6 +572,8 @@ internal sealed class TesseraRoutineWriter
                 return EvaluatePayload(payload: payload);
             case TaggedCreatorExpression tagged:
                 return EvaluateTaggedCreator(tagged: tagged);
+            case WrapperProjectionExpression projection:
+                return EvaluateProjection(projection: projection);
             case AddressOfExpression address:
             {
                 Operand storage = Evaluate(expression: address.Target);
@@ -616,6 +618,53 @@ internal sealed class TesseraRoutineWriter
         }
 
         throw Unsupported(what: $"the name '{name}', which is not a local of {_routine.Name}");
+    }
+
+    /// <summary>
+    /// The entity or record a wrapper stands for (WrapperProjectionLoweringPass decides how it is read out): the
+    /// controller's <c>data</c> field, the wrapper pointer itself, the struct wrapper's pointer field, or, for a
+    /// record behind a pointer, that pointer as the record's place.
+    /// </summary>
+    private Operand EvaluateProjection(WrapperProjectionExpression projection)
+    {
+        Operand wrapper = Evaluate(expression: projection.Wrapper);
+        TypeSymbol inner = projection.ResolvedType ??
+                           throw Unsupported(what: "a wrapper projection without a type");
+        switch (projection.Kind)
+        {
+            case WrapperProjectionKind.Direct:
+                return new Operand(Text: Value(operand: wrapper), Type: inner, IsPlace: false);
+            case WrapperProjectionKind.RecordAddress:
+            {
+                // The pointer is the record's storage: an untyped address is cast to say what is there.
+                string pointer = Receiver(operand: wrapper);
+                return new Operand(Text: TypeText(type: wrapper.Type).StartsWith(value: '@')
+                        ? pointer
+                        : $"{pointer}.cast<{TypeText(type: inner)}>()",
+                    Type: inner, IsPlace: true);
+            }
+            case WrapperProjectionKind.ControllerData:
+            {
+                EntityTypeSymbol controller = projection.Controller ??
+                                              throw Unsupported(what: "a controller projection without its controller");
+                string block = Receiver(operand: wrapper);
+                return new Operand(
+                    Text: Temp(type: inner,
+                        expression: $"{block}.cast<{_module.EntityRecord(entity: controller)}>()." +
+                                    $"{Declaration.RuntimeContract.ControllerData}.load()"),
+                    Type: inner, IsPlace: false);
+            }
+            default:
+            {
+                var record = (RecordTypeSymbol)projection.Wrapper.ResolvedType!;
+                string field = record.MemberVariables[index: projection.FieldIndex].Name;
+                return new Operand(Text: Temp(type: inner,
+                        expression: wrapper.IsPlace
+                            ? $"{wrapper.Text}.{field}.load()"
+                            : $"{Receiver(operand: wrapper)}.{field}"),
+                    Type: inner, IsPlace: false);
+            }
+        }
     }
 
     private Operand EvaluateField(MemberExpression member)
