@@ -285,9 +285,40 @@ internal sealed class TesseraRoutineWriter
             case ContinueStatement:
                 Terminate(line: $"jump {Target(label: CurrentLoop.Continue)}");
                 break;
+            case CancellationPushStatement push:
+                WriteCancellationPush(push: push);
+                break;
+            case CancellationPopStatement pop:
+                Emit(line: $"{_module.RuntimeRoutine(symbol: Declaration.RuntimeContract.Runtime.CoroCfPop, parameters: "%node: Addr", returnType: "Void")}" +
+                           $"({Lookup(name: CancellationNodeName(local: pop.Local)).Place})");
+                break;
             default:
                 throw Unsupported(what: $"the statement {statement.GetType().Name}");
         }
+    }
+
+    /// <summary>
+    /// Links a local into the running coroutine's cancellation chain: a node slot for it, the local (its address for a
+    /// value, the reference it holds for an entity) and its own <c>destroy</c>, which an abandoned coroutine runs.
+    /// </summary>
+    private void WriteCancellationPush(CancellationPushStatement push)
+    {
+        Local local = Lookup(name: push.Local);
+        string value = push.PassesAddress
+            ? local.Place
+            : Temp(type: local.Type, expression: $"{local.Place}.load()");
+        Local node = ClaimLocal(name: CancellationNodeName(local: push.Local), type: _module.CancellationNodeType,
+            initial: null);
+        _scopes[^1][key: CancellationNodeName(local: push.Local)] = node;
+        string runtime = _module.RuntimeRoutine(symbol: Declaration.RuntimeContract.Runtime.CoroCfPush,
+            parameters: "%node: Addr, %value: Addr, %destroy: Addr", returnType: "Void");
+        Emit(line: $"{runtime}({node.Place}, {value}, {_module.RoutineName(routine: push.Destroy)}.addr())");
+    }
+
+    /// <summary>The slot name of a local's cancellation node.</summary>
+    private static string CancellationNodeName(string local)
+    {
+        return $"cfnode_{local}";
     }
 
     private (string Continue, string Break) CurrentLoop => _loops.Count > 0
@@ -477,6 +508,17 @@ internal sealed class TesseraRoutineWriter
             : operand.Text;
     }
 
+    /// <summary>
+    /// A pointer value as the pointer type it is handed to: the same address, cast when it is untyped (an
+    /// <c>Addr</c>, e.g. a pointer the builder typed through a protocol) and the parameter says what is there.
+    /// </summary>
+    private string Typed(string value, TypeSymbol? from, TypeSymbol? to)
+    {
+        return TypeText(type: from) == "Addr" && TypeText(type: to) is ['@', .. var pointee]
+            ? $"{value}.cast<{pointee}>()"
+            : value;
+    }
+
     /// <summary>The operand as a place: a value is spilled into a fresh slot.</summary>
     private string Place(Operand operand)
     {
@@ -574,6 +616,20 @@ internal sealed class TesseraRoutineWriter
                 return EvaluateTaggedCreator(tagged: tagged);
             case WrapperProjectionExpression projection:
                 return EvaluateProjection(projection: projection);
+            case NativeRoutineExpression { Routine: IdentifierExpression { ResolvedRoutine: { } native } } address:
+                // The routine's code address, as native code takes it.
+                return new Operand(Text: Temp(type: address.ResolvedType, expression: $"{_module.RoutineName(routine: native)}.addr()"),
+                    Type: address.ResolvedType, IsPlace: false);
+            case ListLiteralExpression { ResolvedType: { } arrayType } list:
+            {
+                // Only a fixed-array literal reaches a backend (every other collection literal is lowered to calls).
+                List<string> elements = list.Elements.Select(selector: element => Value(operand: Evaluate(expression: element)))
+                                            .ToList();
+                return new Operand(
+                    Text: Temp(type: arrayType,
+                        expression: $"{TypeText(type: arrayType)} {{ {string.Join(separator: ", ", values: elements)} }}"),
+                    Type: arrayType, IsPlace: false);
+            }
             case AddressOfExpression address:
             {
                 Operand storage = Evaluate(expression: address.Target);
@@ -581,6 +637,8 @@ internal sealed class TesseraRoutineWriter
                     ? new Operand(Text: storage.Text, Type: address.ResolvedType, IsPlace: false)
                     : throw Unsupported(what: "the address of a value that has no storage");
             }
+            case BinaryExpression { Operator: BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual } identity:
+                return EvaluateIdentity(identity: identity);
             case BinaryExpression { Operator: BinaryOperator.Assign } assign:
                 return new Operand(Text: WriteAssignment(target: assign.Left, value: assign.Right),
                     Type: assign.Right.ResolvedType, IsPlace: false);
@@ -665,6 +723,25 @@ internal sealed class TesseraRoutineWriter
                     Type: inner, IsPlace: false);
             }
         }
+    }
+
+    /// <summary>
+    /// <c>a === b</c> / <c>a !== b</c>: whether two references point at the same thing, compared as addresses.
+    /// </summary>
+    private Operand EvaluateIdentity(BinaryExpression identity)
+    {
+        string Address(Expression side)
+        {
+            Operand operand = Evaluate(expression: side);
+            return Temp(type: _module.AddressType,
+                expression: $"ptrtoint<{TypeText(type: operand.Type)}, U64>({Value(operand: operand)})");
+        }
+
+        string left = Address(side: identity.Left);
+        string right = Address(side: identity.Right);
+        string compare = identity.Operator == BinaryOperator.IdentityEqual ? "eq" : "ne";
+        return new Operand(Text: Temp(type: identity.ResolvedType, expression: $"{left}.{compare}({right})"),
+            Type: identity.ResolvedType, IsPlace: false);
     }
 
     private Operand EvaluateField(MemberExpression member)
@@ -833,7 +910,7 @@ internal sealed class TesseraRoutineWriter
                 : Evaluate(expression: receiverExpression);
             arguments.Add(item: Declaration.ReceiverFacts.MeByReference(ownerType: routine.OwnerType)
                 ? Place(operand: receiver)
-                : Value(operand: receiver));
+                : Typed(value: Value(operand: receiver), from: receiver.Type, to: routine.OwnerType));
         }
 
         List<Expression?> ordered = OrderedArguments(call: call, routine: routine);
@@ -844,7 +921,7 @@ internal sealed class TesseraRoutineWriter
             Operand operand = Evaluate(expression: argument);
             arguments.Add(item: routine.Parameters[index: i].IsByReference
                 ? Place(operand: operand)
-                : Value(operand: operand));
+                : Typed(value: Value(operand: operand), from: operand.Type, to: routine.Parameters[index: i].Type));
         }
 
         string text = $"{_module.RoutineName(routine: routine)}({string.Join(separator: ", ", values: arguments)})";

@@ -138,6 +138,7 @@ internal sealed class TesseraIntrinsics
             "atomic_or" => Atomic(method: "atomic_fetch_or"),
             "atomic_xor" => Atomic(method: "atomic_fetch_xor"),
             "atomic_exchange" => Atomic(method: "atomic_swap"),
+            "atomic_compare_and_exchange" => CompareExchange(),
             "load_element_ref" =>
                 $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().stride({Index(index: 1)}).load()",
             "store_element_ref" =>
@@ -212,6 +213,20 @@ internal sealed class TesseraIntrinsics
         return text is "F16" or "BF16" or "F32" or "F64"
             ? 'f'
             : 'a';
+    }
+
+    /// <summary>
+    /// A sequentially consistent compare-and-exchange as the pair RazorForge returns: the value the address held and
+    /// whether it was replaced. Tessera's raw form returns the flag and stores the held value in a slot.
+    /// </summary>
+    private string CompareExchange()
+    {
+        string type = Type(index: 1);
+        string previous = _spill(arg1: Argument(index: 1), arg2: _arguments[index: 1].Type);
+        _emit(obj: $"{previous}_swapped : Bool = {Argument(index: 0)}.cast<{type}>()" +
+                   $".atomic_compare_exchange_raw({Argument(index: 1)}, {Argument(index: 2)}, {previous})");
+        _emit(obj: $"{previous}_held : {type} = {previous}.load()");
+        return $"{{ {previous}_held, {previous}_swapped }}";
     }
 
     /// <summary>A sequentially consistent atomic operation on the value at the address, of the value's type.</summary>

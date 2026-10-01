@@ -7,7 +7,8 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Writes each text and bytes literal as the record it builds, so a backend has no literal layout of its own:
+/// Writes each text and bytes literal as the record it builds, and each typed <c>none</c> as the zero value of its
+/// type, so a backend has no literal layout of its own:
 /// <c>"héllo"</c> becomes <c>Text(data: #constant_data[...], count: 5)</c>, its characters as Unicode code points,
 /// and <c>b"abc"</c> becomes <c>Bytes(data: #constant_data[...], count: 3)</c>, one byte per character. The data is
 /// a <see cref="ConstantDataExpression"/> the backend lays down once as module data. The controller field is the
@@ -51,13 +52,18 @@ internal sealed class TextLiteralLoweringPass(TypeSymbol character, TypeSymbol b
             guarded.StealGuardCrash = VisitExpression(expr: guard);
         }
 
-        return expr is LiteralExpression
+        return expr switch
         {
-            Value: string text,
-            LiteralType: TokenType.TextLiteral or TokenType.RawText or TokenType.BytesLiteral
-        } literal
-            ? Lower(literal: literal, text: text)
-            : base.VisitExpression(expr: expr);
+            LiteralExpression
+            {
+                Value: string text,
+                LiteralType: TokenType.TextLiteral or TokenType.RawText or TokenType.BytesLiteral
+            } literal => Lower(literal: literal, text: text),
+            // `none` is the zero value of the optional (or handle) it stands for.
+            LiteralExpression { LiteralType: TokenType.NoneValue, ResolvedType: { IsNone: false } type } none =>
+                new ZeroValueExpression(Location: none.Location) { ResolvedType = type },
+            _ => base.VisitExpression(expr: expr)
+        };
     }
 
     private CreatorExpression Lower(LiteralExpression literal, string text)

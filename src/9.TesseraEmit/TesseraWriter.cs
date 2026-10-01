@@ -248,7 +248,9 @@ internal sealed class TesseraWriter
         name = UniqueName(wanted: "c_" + Sanitize(text: symbol));
         _externNames[key: symbol] = name;
         string parameters = string.Join(separator: ", ",
-            values: routine.Parameters.Select(selector: p => $"%{p.Name}: {TypeText(type: p.Type)}"));
+            // A C parameter's name is only a label; Tessera reserves `self` for a receiver.
+            values: routine.Parameters.Select(selector: p =>
+                $"%{(p.Name == "self" ? "self_" : p.Name)}: {TypeText(type: p.Type)}"));
         _externs.Append(value: $"#[external(\"c\"), symbol(\"{symbol}\")]\n" +
                                $"routine {name}({parameters}) -> {TypeText(type: routine.ReturnType)}\n\n");
         return name;
@@ -446,6 +448,17 @@ internal sealed class TesseraWriter
     public TypeSymbol TextType => _input.Registry.LookupType(name: "Text") ??
                                   throw new NotSupportedException(message: "The Tessera backend found no Text type.");
 
+    /// <summary>A cancellation node: the three untyped addresses the coroutine runtime links a local by.</summary>
+    public TypeSymbol CancellationNodeType
+    {
+        get
+        {
+            TypeSymbol pointer = _input.Registry.LookupType(name: Declaration.RuntimeContract.CPtr) ??
+                                 throw new NotSupportedException(message: "The Tessera backend found no CPtr type.");
+            return _input.Registry.GetOrCreateTupleType(elementTypes: [pointer, pointer, pointer]);
+        }
+    }
+
     /// <summary>The builder's <c>Address</c> type.</summary>
     public TypeSymbol AddressType => _input.Registry.LookupType(name: "Address") ??
                                      throw new NotSupportedException(message: "The Tessera backend found no Address type.");
@@ -478,10 +491,17 @@ internal sealed class TesseraWriter
         // record is an untyped address.
         if (backend == "ptr")
         {
+            // A pointer to a protocol has no layout to point at: an untyped address (a marker protocol points at
+            // what it stands for).
             return record is { GenericDefinition.Name: RuntimeContract.Hijacked, TypeArguments: [var target] }
-                ? target is EntityTypeSymbol entity
-                    ? $"@{EntityRecord(entity: entity)}"
-                    : $"@{TypeText(type: target)}"
+                ? target switch
+                {
+                    EntityTypeSymbol entity => $"@{EntityRecord(entity: entity)}",
+                    ProtocolTypeSymbol { TypeArguments: [{ } inner] } marker when RuntimeContract.IsMarkerProtocol(
+                        baseName: (marker.GenericDefinition ?? marker).BareName) => $"@{TypeText(type: inner)}",
+                    ProtocolTypeSymbol => "Addr",
+                    _ => $"@{TypeText(type: target)}"
+                }
                 : "Addr";
         }
 

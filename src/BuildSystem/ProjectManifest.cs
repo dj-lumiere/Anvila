@@ -150,8 +150,8 @@ public sealed class DebugOptions
     /// <c>.ll</c>) and suppresses the post-run <c>.ll</c> cleanup.</summary>
     public bool DumpIr { get; set; }
 
-    /// <summary>Keep the Tessera source the Tessera backend writes as <c>&lt;entry&gt;.tess</c> next to the
-    /// source (<c>dump-tessera</c>).</summary>
+    /// <summary>Write the program's Tessera translation as <c>&lt;entry&gt;.tess</c> next to the source
+    /// (<c>dump-tessera</c>), whichever backend builds it.</summary>
     public bool DumpTessera { get; set; }
 
     /// <summary>Path to dump the routine-reachability set (<c>reachability-dump</c>); null = off.</summary>

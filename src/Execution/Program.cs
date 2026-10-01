@@ -1615,6 +1615,12 @@ internal partial class Program
 
         BackendOutput emitted = p3.Backend.Emit(input: backendInput);
         string llvmIr = emitted.LlvmIr;
+
+        // dump-tessera with another backend still writes the Tessera translation, for reading side by side.
+        if (backendInput.SourceDumpPath is { } tesseraDump && p3.Backend is not Builder.TesseraEmit.TesseraBackend)
+        {
+            Builder.TesseraEmit.TesseraBackend.DumpSource(input: backendInput, path: tesseraDump);
+        }
         if (swPhase != null)
         {
             Console.Error.WriteLine(

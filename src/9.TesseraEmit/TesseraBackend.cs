@@ -22,6 +22,28 @@ public sealed class TesseraBackend : IBuilderBackend
     /// <inheritdoc/>
     public bool SupportsResidentJit => false;
 
+    /// <summary>
+    /// Writes the Tessera translation of a build another backend emits (<c>[debug] dump-tessera</c> with the LLVM
+    /// backend), to <paramref name="path"/>: the whole module, or as far as translation got with the reason it
+    /// stopped. Only the file is written; nothing is compiled, and a failure never fails the build.
+    /// </summary>
+    public static void DumpSource(BackendInput input, string path)
+    {
+        var writer = new TesseraWriter(input: input);
+        try
+        {
+            File.WriteAllText(path: path, contents: writer.Write());
+        }
+        catch (NotSupportedException ex)
+        {
+            File.WriteAllText(path: path, contents: writer.PartialModule(stoppedBecause: ex.Message));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            File.WriteAllText(path: path, contents: $"// The Tessera translation failed: {ex.Message}\n");
+        }
+    }
+
     /// <inheritdoc/>
     public BackendOutput Emit(BackendInput input)
     {
