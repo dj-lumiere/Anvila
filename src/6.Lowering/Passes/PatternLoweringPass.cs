@@ -58,14 +58,11 @@ namespace Builder.Lowering.Passes;
 /// <item><see cref="ElsePattern"/> with binding on <c>Maybe[T entity]</c> -> binding -> <c>subject.value.extract()</c>.</item>
 /// </list>
 ///
-/// <para>Left unchanged for codegen's <c>EmitWhen</c>:</para>
-/// <list type="bullet">
-/// <item><see cref="NegatedTypePattern"/> on user variant.</item>
-/// <item><see cref="CrashablePattern"/> -> expanded by <see cref="CrashableExpansionPass"/> before this pass;
-/// any remaining instances pass through to codegen.</item>
-/// <item><see cref="VariantPattern"/> (type-based; use <see cref="TypePattern"/> instead).</item>
-/// <item><see cref="DestructuringPattern"/>/<see cref="TypeDestructuringPattern"/> with nested patterns.</item>
-/// </list>
+/// <para><see cref="NegatedTypePattern"/> (<c>isnot T</c>) lowers to the negation of <c>is T</c>'s condition,
+/// for every subject <c>is T</c> lowers on.</para>
+///
+/// <para>The emitter has no <c>when</c> translation: a <c>when</c> this pass leaves in place is a build
+/// error there.</para>
 /// </summary>
 internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewriter
 {
@@ -469,8 +466,8 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             // Lowerable -> condition is `type_id != 0 && type_id != <T>.type_id()` (i.e. "holds an error").
             CrashablePattern when IsResultOrLookup(type: subjectType) => true,
 
-            // NegatedTypePattern on user variant: lowerable -> condition is type_id != constant.
-            NegatedTypePattern when subjectType is VariantTypeSymbol => true,
+            // `isnot T`: lowerable wherever `is T` is (the condition is its negation).
+            NegatedTypePattern neg => IsLowerablePattern(pattern: AsTypePattern(negated: neg), subjectType: subjectType),
 
             DestructuringPattern dp when subjectType is RecordTypeSymbol or EntityTypeSymbol &&
                                          AreDestructuringBindingsLowerable(bindings: dp.Bindings,
@@ -585,11 +582,23 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     loc: loc,
                     boolType: boolType);
 
-            case NegatedTypePattern negType when subjectType is VariantTypeSymbol:
-                return GetNegatedTypePatternCondition(negType: negType,
+            case NegatedTypePattern negType:
+            {
+                // `isnot T` matches exactly when `is T` does not; it binds nothing.
+                (Expression? positive, _) = GetPatternCondition(pattern: AsTypePattern(negated: negType),
                     subject: subject,
-                    loc: loc,
-                    boolType: boolType);
+                    subjectType: subjectType);
+                Expression negated = positive != null
+                    ? new UnaryExpression(Operator: UnaryOperator.Not, Operand: positive, Location: loc)
+                    {
+                        ResolvedType = boolType
+                    }
+                    : new LiteralExpression(Value: false, LiteralType: TokenType.False, Location: loc)
+                    {
+                        ResolvedType = boolType
+                    };
+                return (negated, null);
+            }
 
             case VariantPattern:
                 throw new InvalidOperationException(
@@ -743,36 +752,10 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         return (cond, binding);
     }
 
-    /// <summary>
-    /// Returns the condition for a <see cref="NegatedTypePattern"/> over a variant subject
-    /// (<c>subject.type_id != FNV-1a(type)</c>). Extracted from <see cref="GetPatternCondition"/>.
-    /// </summary>
-    private (Expression? Cond, Statement? Binding) GetNegatedTypePatternCondition(
-        NegatedTypePattern negType, Expression subject, SourceLocation loc,
-        TypeSymbol? boolType)
+    /// <summary>The positive <c>is T</c> pattern an <c>isnot T</c> negates (no binding).</summary>
+    private static TypePattern AsTypePattern(NegatedTypePattern negated)
     {
-        TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
-        TypeSymbol? targetType = negType.Type.ResolvedType ??
-                               ctx.Registry.LookupType(name: negType.Type.Name);
-
-        if (targetType == null)
-        {
-            return (null, null); // Unknown type -> always matches negation (optimistic)
-        }
-
-        string fullName = targetType.FullName ?? negType.Type.Name;
-        ulong typeId = TypeIdHelper.ComputeTypeId(fullName: fullName);
-        Expression cond = new BinaryExpression(
-            Left: MakeMemberAccess(subject: subject,
-                field: TypeIdFieldName,
-                fieldType: u64Type,
-                loc: loc),
-            Operator: BinaryOperator.NotEqual,
-            Right: new LiteralExpression(Value: typeId,
-                LiteralType: TokenType.U64Literal,
-                Location: loc) { ResolvedType = u64Type },
-            Location: loc) { ResolvedType = boolType };
-        return (cond, null);
+        return new TypePattern(Type: negated.Type, VariableName: null, Bindings: null, Location: negated.Location);
     }
 
     // -----------------------------------------------------------------------------

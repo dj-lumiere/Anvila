@@ -51,6 +51,16 @@ public sealed partial class SemanticVerifier
                 HandleTypePattern(typePat: typePat, matchedType: matchedType);
                 break;
 
+            case NegatedTypePattern negated:
+                // `isnot T` checks (and resolves) T exactly like `is T`, sharing its TypeExpression; it binds
+                // nothing.
+                HandleTypePattern(typePat: new TypePattern(Type: negated.Type,
+                        VariableName: null,
+                        Bindings: null,
+                        Location: negated.Location),
+                    matchedType: matchedType);
+                break;
+
             case WildcardPattern:
                 // Wildcards don't bind variables
                 break;

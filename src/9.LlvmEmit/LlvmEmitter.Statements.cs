@@ -69,7 +69,10 @@ public partial class LlvmEmitter
                     return EmitBlock(sb: sb, block: danger.Body);
 
                 case WhenStatement whenStmt:
-                    return EmitWhen(sb: sb, whenStmt: whenStmt);
+                    throw new InvalidOperationException(
+                        message:
+                        $"WhenStatement reached codegen in '{_currentEmittingRoutine?.RegistryKey}' -> " +
+                        $"PatternLoweringPass must lower it (patterns: {string.Join(separator: ", ", values: whenStmt.Clauses.Select(selector: c => c.Pattern.GetType().Name))}).");
 
                 case AtomicRmwStatement atomic:
                     EmitAtomicRmw(sb: sb, atomic: atomic);
