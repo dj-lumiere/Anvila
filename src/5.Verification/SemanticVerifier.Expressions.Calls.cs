@@ -1134,7 +1134,7 @@ public sealed partial class SemanticVerifier
 
     private static CallLoweringKind ClassifyConstruction(TypeSymbol type)
     {
-        return type is WrapperTypeSymbol
+        return WrapperShape.Is(type: type)
             ? CallLoweringKind.WrapperConstruction
             : CallLoweringKind.TypeConstructor;
     }

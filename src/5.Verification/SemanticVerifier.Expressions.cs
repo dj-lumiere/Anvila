@@ -1544,11 +1544,11 @@ public sealed partial class SemanticVerifier
         ValidateCompoundAssignmentTarget(compound: compound);
 
         // #67: Cannot use compound assignment on read-only token (Viewing or Consulting)
-        if (targetType is WrapperTypeSymbol { IsReadOnly: true } readOnlyWrapper)
+        if (WrapperShape.IsReadOnly(type: targetType))
         {
             ReportError(code: SemanticDiagnosticCode.CompoundAssignmentOnReadOnlyToken,
                 message:
-                $"Cannot use compound assignment on read-only token '{readOnlyWrapper.Name}'. " +
+                $"Cannot use compound assignment on read-only token '{targetType.BareName}'. " +
                 "Read-only tokens (Viewing, Consulting) do not allow modifications.",
                 location: compound.Location);
             return ErrorTypeSymbol.Instance;

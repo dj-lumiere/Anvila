@@ -636,9 +636,9 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     {
         // Strip Retained/Tracked/Viewing/Modifying/Hijacked/Accessing/Controlling layers
         // to get at the implementer record/entity.
-        while (t is WrapperTypeSymbol w)
+        while (WrapperShape.InnerOf(type: t) is { } wrapped)
         {
-            t = w.InnerType;
+            t = wrapped;
         }
 
         return t;

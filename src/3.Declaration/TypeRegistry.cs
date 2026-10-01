@@ -1784,7 +1784,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     public void RefreshEntityResolutions(EntityTypeSymbol genericDef)
     {
-        foreach (TypeSymbol resolution in _resolutions.Values)
+        foreach (TypeSymbol resolution in _resolutions.Values.ToList())
         {
             if (resolution is EntityTypeSymbol entityRes &&
                 entityRes.GenericDefinition == genericDef &&
@@ -1807,7 +1807,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     public void RefreshRecordResolutions(RecordTypeSymbol genericDef)
     {
-        foreach (TypeSymbol resolution in _resolutions.Values)
+        foreach (TypeSymbol resolution in _resolutions.Values.ToList())
         {
             if (resolution is RecordTypeSymbol recordRes &&
                 recordRes.GenericDefinition == genericDef &&
@@ -1818,6 +1818,30 @@ public sealed partial class TypeRegistry
                     (RecordTypeSymbol)genericDef.CreateInstance(
                         typeArguments: recordRes.TypeArguments);
                 recordRes.MemberVariables = fresh.MemberVariables;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Refreshes cached record resolutions created before <paramref name="genericDef"/>'s protocol
+    /// conformances were resolved (a field typed <c>Modifying[Random]</c> resolves while the stdlib still
+    /// registers its type shells, before <c>Modifying</c> lists <c>Accessing[T]</c>): each such resolution
+    /// takes the definition's substituted protocol list, so a member reached through a protocol resolves on
+    /// it like on a resolution made later.
+    /// </summary>
+    public void RefreshRecordResolutionProtocols(RecordTypeSymbol genericDef)
+    {
+        foreach (TypeSymbol resolution in _resolutions.Values.ToList())
+        {
+            if (resolution is RecordTypeSymbol recordRes &&
+                recordRes.GenericDefinition == genericDef &&
+                recordRes.ImplementedProtocols.Count < genericDef.ImplementedProtocols.Count &&
+                recordRes.TypeArguments != null)
+            {
+                var fresh =
+                    (RecordTypeSymbol)genericDef.CreateInstance(
+                        typeArguments: recordRes.TypeArguments);
+                recordRes.ImplementedProtocols = fresh.ImplementedProtocols;
             }
         }
     }
@@ -2153,37 +2177,21 @@ public sealed partial class TypeRegistry
     /// <param name="innerType">The type being wrapped.</param>
     /// <param name="isReadOnly">Whether this is a read-only wrapper (Viewing, Consulting).</param>
     /// <returns>The cached or newly created wrapper type.</returns>
-    public WrapperTypeSymbol GetOrCreateWrapperType(string wrapperName, TypeSymbol innerType,
+    public TypeSymbol GetOrCreateWrapperType(string wrapperName, TypeSymbol innerType,
         bool isReadOnly)
     {
-        // Build the cache key using the inner type's FullName for uniqueness.
-        // Stored in _wrapperResolutions (not _resolutions) to avoid collisions with
-        // GetOrCreateResolution's FullName-based keys for record types like Hijacked[Core.Byte].
-        string key = $"{wrapperName}[{innerType.FullName}]";
-
-        // Check cache
-        if (_wrapperResolutions.TryGetValue(key: key, value: out WrapperTypeSymbol? wrapperType))
+        // A wrapper is the standard library's generic record of that name (`record Hijacked[T]` …): its
+        // resolution is THE wrapper type, so every phase sees one representation. Callers reach this only
+        // once the stdlib's wrapper records are registered (a type expression met earlier, during stdlib
+        // registration, resolves through the ordinary generic path and is re-resolved in pass 1c).
+        if (LookupType(name: wrapperName) is { IsGenericDefinition: true } wrapperDef)
         {
-            if (!_stdlibAnalysisActive)
-            {
-                ClearStdlibLazy(type: wrapperType);
-            }
-
-            return wrapperType;
+            return GetOrCreateResolution(genericDef: wrapperDef, typeArguments: [innerType]);
         }
 
-        // Create and cache — all wrapper types live in Core
-        var newType = new WrapperTypeSymbol(wrapperName: wrapperName,
-            innerType: innerType,
-            isReadOnly: isReadOnly) { Module = "Core" };
-        _wrapperResolutions[key: key] = newType;
-
-        if (_stdlibAnalysisActive)
-        {
-            MarkStdlibLazy(type: newType);
-        }
-
-        return newType;
+        throw new InvalidOperationException(
+            message: $"Wrapper '{wrapperName}[{innerType.FullName}]' was requested before the standard library " +
+                     $"registered its record '{wrapperName}'.");
     }
 
     /// <summary>

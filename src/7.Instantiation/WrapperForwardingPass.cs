@@ -692,12 +692,8 @@ internal sealed class WrapperForwardingPass
             ? _registry.GetOrCreateResolution(genericDef: retainControllerDef,
                 typeArguments: [innerType])
             : retainControllerDef;
-        TypeSymbol hijackedCtrlType = new WrapperTypeSymbol(wrapperName: RuntimeContract.Hijacked,
-            innerType: retainControllerType ?? innerType,
-            isReadOnly: false);
-        TypeSymbol hijackedInnerType = new WrapperTypeSymbol(wrapperName: RuntimeContract.Hijacked,
-            innerType: innerType,
-            isReadOnly: false);
+        TypeSymbol hijackedCtrlType = _registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked, innerType: retainControllerType ?? innerType, isReadOnly: false);
+        TypeSymbol hijackedInnerType = _registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked, innerType: innerType, isReadOnly: false);
         RoutineInfo? ctrlRevealMemberRoutine = _registry.LookupMemberRoutine(
             type: hijackedCtrlType,
             memberRoutineName: RuntimeContract.RawPointer.AsEntity);
@@ -923,9 +919,7 @@ internal sealed class WrapperForwardingPass
                 Visibility: VisibilityModifier.Open,
                 Location: _synthLoc),
             Location: _synthLoc);
-        TypeSymbol hijackedInnerType = new WrapperTypeSymbol(wrapperName: RuntimeContract.Hijacked,
-            innerType: ctx.InnerType,
-            isReadOnly: false);
+        TypeSymbol hijackedInnerType = _registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked, innerType: ctx.InnerType, isReadOnly: false);
         RoutineInfo? accessMemberRoutine = _registry.LookupMemberRoutine(type: hijackedInnerType,
             memberRoutineName: accessMemberRoutineName);
         var readCall = new CallExpression(

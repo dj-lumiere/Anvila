@@ -321,6 +321,10 @@ public sealed partial class StdlibLoader
         if (protocols.Count > existing.ImplementedProtocols.Count)
         {
             existing.ImplementedProtocols = protocols;
+            if (existing.IsGenericDefinition)
+            {
+                registry.RefreshRecordResolutionProtocols(genericDef: existing);
+            }
         }
 
         existing.ConditionalObeys ??= BuildConditionalObeys(protoExprs: record.Protocols);

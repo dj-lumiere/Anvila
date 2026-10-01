@@ -976,25 +976,6 @@ public sealed partial class StdlibLoader
         TypeExpression typeExpr, string typeName, List<string>? genericParams,
         string? moduleName, out bool resolved)
     {
-        // Wrapper types (Hijacked, Viewing, Modifying, etc.) are not in _types — create directly
-        if (typeExpr.GenericArguments!.Count == 1 && typeName is RuntimeContract.Hijacked
-                or RuntimeContract.Viewing or RuntimeContract.Modifying or RuntimeContract.Retained
-                or RuntimeContract.Tracked or RuntimeContract.Guarded or RuntimeContract.Witnessed)
-        {
-            TypeSymbol? wrapperInner = ResolveSimpleType(registry: registry,
-                typeExpr: typeExpr.GenericArguments[index: 0],
-                genericParams: genericParams,
-                moduleName: moduleName);
-            if (wrapperInner != null)
-            {
-                bool isReadOnly = typeName is RuntimeContract.Viewing;
-                resolved = true;
-                return registry.GetOrCreateWrapperType(wrapperName: typeName,
-                    innerType: wrapperInner,
-                    isReadOnly: isReadOnly);
-            }
-        }
-
         // Tuple types are not registered as generic definitions — handle specially
         if (typeName is "Tuple")
         {

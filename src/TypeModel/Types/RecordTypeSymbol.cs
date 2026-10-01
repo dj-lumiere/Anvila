@@ -206,7 +206,8 @@ public class RecordTypeSymbol : TypeSymbol
 
     /// <summary>Whether this record has RC wrapper fields needing retain-on-copy / release-on-drop.</summary>
     public bool HasRCMemberVariables => MemberVariables.Any(predicate: f =>
-        f.Type is WrapperTypeSymbol w && RCWrapperBaseNames.Contains(item: w.Name));
+        WrapperShape.TryGet(type: f.Type, name: out string wrapper, inner: out _) &&
+        RCWrapperBaseNames.Contains(item: wrapper));
 
     /// <summary>
     /// Whether this is a compiler-known error-handling carrier (Maybe, Result, Lookup).

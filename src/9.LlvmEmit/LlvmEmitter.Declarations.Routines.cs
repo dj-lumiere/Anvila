@@ -627,11 +627,36 @@ public partial class LlvmEmitter
 
         if (effectiveBody != null)
         {
+            DumpRoutineBodyIfRequested(info: info, body: effectiveBody);
             GenerateRoutineBody(sb: bodyBuilder, body: effectiveBody, routine: info);
         }
 
         _functionDefinitions.Append(value: _currentRoutineEntryAllocas);
         _functionDefinitions.Append(value: bodyBuilder);
+    }
+
+    /// <summary>
+    /// Debug aid: when <c>RF_DUMP_ROUTINE</c> names part of a routine's diagnostic name, prints the body
+    /// the emitter receives (its statements, then every expression with its resolved type) to stderr.
+    /// </summary>
+    private void DumpRoutineBodyIfRequested(RoutineInfo info, Statement body)
+    {
+        string? wanted = Environment.GetEnvironmentVariable(variable: "RF_DUMP_ROUTINE");
+        string shown = $"{info.OwnerType?.FullName}.{info.Name}";
+        if (string.IsNullOrEmpty(value: wanted) ||
+            !shown.Contains(value: wanted, comparisonType: StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var dump = new StringBuilder();
+        dump.AppendLine(value: $"=== {shown} ({info.RegistryKey}) ===");
+        dump.AppendLine(value: body.Accept(visitor: new Builder.RfSyntaxTreePrinter()));
+        AstWalker.WalkExpressions(root: body,
+            visit: e => dump.AppendLine(
+                value: $"  {e.Location.Line}:{e.Location.Column} {e.GetType().Name}" +
+                       $"{(e is IdentifierExpression id ? " " + id.Name : "")} : {e.ResolvedType?.FullName ?? "<null>"}"));
+        Console.Error.Write(value: dump.ToString());
     }
 
     /// <summary>
@@ -1233,10 +1258,7 @@ public partial class LlvmEmitter
         //     at the call boundary by the entity-ownership rule),
         //   - `Modifying[T]` (scope-bound exclusive borrow — its definition).
         bool isExclusive = routine.OwnerType is EntityTypeSymbol ||
-                           routine.OwnerType is WrapperTypeSymbol
-                           {
-                               Name: Declaration.RuntimeContract.Modifying
-                           };
+                           WrapperShape.Is(type: routine.OwnerType, name: Declaration.RuntimeContract.Modifying);
         if (isExclusive)
         {
             return routine.MutationCategory == MutationCategory.Readonly
@@ -1265,10 +1287,8 @@ public partial class LlvmEmitter
 
     private static string GetExplicitParameterAttributes(TypeSymbol? type)
     {
-        return type is EntityTypeSymbol || type is WrapperTypeSymbol
-        {
-            Name: Declaration.RuntimeContract.Modifying
-        }
+        return type is EntityTypeSymbol ||
+               WrapperShape.Is(type: type, name: Declaration.RuntimeContract.Modifying)
             ? "noalias"
             : string.Empty;
     }

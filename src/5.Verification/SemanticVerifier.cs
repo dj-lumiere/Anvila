@@ -646,6 +646,7 @@ public sealed partial class SemanticVerifier
             AnalyzeStdlibBodies();
             if (_errors.Count > errorsBeforeStdlib)
             {
+                TraceDroppedErrors(from: errorsBeforeStdlib);
                 _errors.RemoveRange(index: errorsBeforeStdlib,
                     count: _errors.Count - errorsBeforeStdlib);
             }
@@ -1205,6 +1206,7 @@ public sealed partial class SemanticVerifier
 
     private void AnnotateBodyForBackend(Statement body, HashSet<string>? everStolen, RoutineInfo? routine)
     {
+        LocalTypeStampPass.Run(body: body);
         ConstructionLoweringPass.Run(body: body);
         StealGuardLoweringPass.Run(body: body, everStolen: everStolen, registry: _registry);
         CrashLoweringPass.Run(body: body, routine: routine, registry: _registry);
@@ -1589,6 +1591,7 @@ public sealed partial class SemanticVerifier
         {
             if (_errors.Count > errorsBefore)
             {
+                TraceDroppedErrors(from: errorsBefore);
                 _errors.RemoveRange(index: errorsBefore, count: _errors.Count - errorsBefore);
             }
 
@@ -1800,6 +1803,7 @@ public sealed partial class SemanticVerifier
                                                                       or SemanticDiagnosticCode
                                                                          .BinaryOperatorNotFound)
                                                              .ToList();
+                TraceDroppedErrors(from: errorsBeforeStdlib);
                 _errors.RemoveRange(index: errorsBeforeStdlib,
                     count: _errors.Count - errorsBeforeStdlib);
                 _errors.AddRange(collection: unresolvedNames);
@@ -2293,6 +2297,7 @@ public sealed partial class SemanticVerifier
             Mark(label: $"Phase 5 global -> {nameof(AnalyzeStdlibBodies)}");
             if (_errors.Count > errorsBeforeStdlib)
             {
+                TraceDroppedErrors(from: errorsBeforeStdlib);
                 _errors.RemoveRange(index: errorsBeforeStdlib,
                     count: _errors.Count - errorsBeforeStdlib);
             }
@@ -2571,6 +2576,7 @@ public sealed partial class SemanticVerifier
         AnalyzeStatement(statement: body);
         if (_errors.Count > errorsBefore)
         {
+            TraceDroppedErrors(from: errorsBefore);
             _errors.RemoveRange(index: errorsBefore, count: _errors.Count - errorsBefore);
         }
 
@@ -2806,6 +2812,22 @@ public sealed partial class SemanticVerifier
     /// <param name="code">The diagnostic code for this error.</param>
     /// <param name="message">The error message.</param>
     /// <param name="location">The source location of the error.</param>
+    /// <summary>Debug aid: with <c>RF_TRACE_STDLIB_ERRORS</c> set, prints the diagnostics from index
+    /// <paramref name="from"/> on before they are dropped (stdlib and builder-written bodies).</summary>
+    private void TraceDroppedErrors(int from)
+    {
+        if (Environment.GetEnvironmentVariable(variable: "RF_TRACE_STDLIB_ERRORS") is not { Length: > 0 })
+        {
+            return;
+        }
+
+        for (int i = from; i < _errors.Count; i++)
+        {
+            Console.Error.WriteLine(value: $"[dropped] {_errors[index: i].Location.FileName}:{_errors[index: i].Location.Line}:" +
+                                           $"{_errors[index: i].Location.Column} {_errors[index: i].Message}");
+        }
+    }
+
     internal void ReportError(SemanticDiagnosticCode code, string message, SourceLocation location)
     {
         AddError(error: new SemanticError(Code: code, Message: message, Location: location));

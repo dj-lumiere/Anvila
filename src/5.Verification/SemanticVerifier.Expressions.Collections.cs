@@ -15,9 +15,9 @@ public sealed partial class SemanticVerifier
         TypeSymbol current = type;
         while (true)
         {
-            if (current is WrapperTypeSymbol wrapper)
+            if (WrapperShape.InnerOf(type: current) is { } wrapped)
             {
-                current = wrapper.InnerType;
+                current = wrapped;
                 continue;
             }
 

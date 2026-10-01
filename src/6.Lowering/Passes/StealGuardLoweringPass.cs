@@ -103,7 +103,7 @@ internal static class StealGuardLoweringPass
     private static bool IsGuarded(IdentifierExpression id, HashSet<string> everStolen)
     {
         return everStolen.Contains(item: id.Name) && id.ResolvedType is { } t &&
-               (t is EntityTypeSymbol or WrapperTypeSymbol ||
+               (t is EntityTypeSymbol || WrapperShape.Is(type: t) ||
                 TypeRegistry.GetRcWrapperBaseName(type: t) is not null);
     }
 

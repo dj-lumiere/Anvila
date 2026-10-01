@@ -208,10 +208,10 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
     {
         for (int i = 0; i < wrapper.MemberVariables.Count; i++)
         {
-            if (wrapper.MemberVariables[index: i].Type is WrapperTypeSymbol
-                {
-                    Name: RuntimeContract.Hijacked, InnerType: EntityTypeSymbol fieldInner
-                } && fieldInner.FullName == inner.FullName)
+            if (WrapperShape.TryGet(type: wrapper.MemberVariables[index: i].Type, name: out string fieldWrapper,
+                    inner: out TypeSymbol fieldInner) &&
+                fieldWrapper == RuntimeContract.Hijacked && fieldInner is EntityTypeSymbol &&
+                fieldInner.FullName == inner.FullName)
             {
                 return i;
             }

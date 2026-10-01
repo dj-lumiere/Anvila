@@ -707,8 +707,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             null => true,
             GenericParameterTypeSymbol => true,
             ProtocolTypeSymbol => true,
-            WrapperTypeSymbol w => BorrowWrapperNames.Contains(item: w.Name),
-            _ => false
+            _ => WrapperShape.TryGet(type: resultType, name: out string wrapper, inner: out _) &&
+                 BorrowWrapperNames.Contains(item: wrapper)
         };
     }
 

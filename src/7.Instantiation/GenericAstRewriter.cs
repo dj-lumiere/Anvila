@@ -399,7 +399,7 @@ internal static class GenericAstRewriter
             return null;
         }
 
-        private WrapperTypeSymbol? ResolveWrapper(WrapperTypeSymbol wrapper)
+        private TypeSymbol? ResolveWrapper(WrapperTypeSymbol wrapper)
         {
             var newWrapperArgs = new List<TypeSymbol>(capacity: wrapper.TypeArguments?.Count ?? 1);
             foreach (TypeSymbol arg in wrapper.TypeArguments ?? [])

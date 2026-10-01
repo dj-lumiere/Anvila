@@ -569,9 +569,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         }
 
         // Wrappers (Retained/Modifying/etc) report the inner type's kind.
-        TypeSymbol kindType = type is WrapperTypeSymbol wt
-            ? wt.InnerType
-            : type;
+        TypeSymbol kindType = WrapperShape.InnerOf(type: type) ?? type;
         string caseName = kindType.Category switch
         {
             TypeCategory.Record => "RECORD",
