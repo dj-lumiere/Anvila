@@ -180,6 +180,7 @@ internal static unsafe class OrcJitExecutor
         JitStage(s: "LLJIT created");
 
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
+        AddIngridTessera(jit: jit, dylib: dylib);
 
         CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: tsm),
             what: "OrcLLJITAddLLVMIRModule");
@@ -189,6 +190,15 @@ internal static unsafe class OrcJitExecutor
         JitStage(s: $"main resolved @ 0x{addr:X} — calling");
 
         return InvokeMain(addr: addr, programName: programName, programArgs: programArgs);
+    }
+
+    /// <summary>Adds Ingrid's Tessera library (see <see cref="Builder.IngridTessera"/>) to the dylib: its routines are
+    /// not in the runtime DLL, so the process-search generator can't find them.</summary>
+    private static void AddIngridTessera(LLVMOrcOpaqueLLJIT* jit, LLVMOrcOpaqueJITDylib* dylib)
+    {
+        string ir = File.ReadAllText(path: Builder.IngridTessera.IrPath(exeDir: AppContext.BaseDirectory));
+        CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: ParseToTsm(llvmIr: ir, modName: "ingrid")),
+            what: "AddLLVMIRModule(ingrid)");
     }
 
     /// <summary>Adds the process-search generator to the JIT's main dylib and returns that dylib. The
@@ -428,6 +438,7 @@ internal static unsafe class OrcJitExecutor
         CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
 
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
+        AddIngridTessera(jit: jit, dylib: dylib);
 
         // Base + delta into ONE dylib: delta's extern declares for base symbols resolve to base's defines.
         CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: tsmBase),
@@ -482,6 +493,7 @@ internal static unsafe class OrcJitExecutor
         LLVMOrcOpaqueLLJIT* jit;
         CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
+        AddIngridTessera(jit: jit, dylib: dylib);
 
         // Load the precompiled stdlib base object — linked into the dylib, NOT JIT-compiled.
         AddObjectFile(jit: jit, dylib: dylib, objectPath: baseObjectPath);
@@ -556,6 +568,7 @@ internal static unsafe class OrcJitExecutor
         CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
         _lazyJit = jit;
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
+        AddIngridTessera(jit: jit, dylib: dylib);
 
         // Attach the on-demand generator BEFORE adding main, so main's unresolved stdlib callees route to it.
         // LLVMSharp 20 binds F as a raw `delegate* unmanaged[Cdecl]` fn-ptr (not the managed delegate type),

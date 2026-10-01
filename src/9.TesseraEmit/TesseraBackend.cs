@@ -85,7 +85,7 @@ public sealed class TesseraBackend : IBuilderBackend
         return Tessera.BuildTarget.Parse(triple: $"{target.TargetArch}-{target.TargetOS}-{abi}");
     }
 
-    private static List<Tessera.Decl> Parse(string file, string source, bool isLibrary)
+    internal static List<Tessera.Decl> Parse(string file, string source, bool isLibrary)
     {
         List<Tessera.Token> tokens = new Tessera.Lexer(file: file, src: source).Lex();
         return new Tessera.Parser(tokens: tokens, file: file, isLibrary: isLibrary).ParseModule()
@@ -95,7 +95,7 @@ public sealed class TesseraBackend : IBuilderBackend
     /// <summary>
     /// Tessera's standard library: <c>TESSERA_STDLIB</c> when set, else the copy shipped next to the builder.
     /// </summary>
-    private static string StdlibDirectory()
+    internal static string StdlibDirectory()
     {
         if (Environment.GetEnvironmentVariable(variable: "TESSERA_STDLIB") is { Length: > 0 } fromEnvironment)
         {

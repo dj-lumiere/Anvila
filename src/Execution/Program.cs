@@ -2024,11 +2024,21 @@ internal partial class Program
         // and internalize during opt, so the allocators/divide shims inline across the RF↔runtime
         // seam. LTO is skipped transparently (plain opt on the un-linked module) if the toolchain or
         // sources are unavailable — it must never break a build that would otherwise succeed.
-        string moduleToOptimize = llFile;
+        // Ingrid's Tessera library always goes in first: its routines are not in the runtime DLL.
+        if (!NativeToolchain.TryLinkIngridTessera(exeDir: exeDir,
+                llFile: llFile,
+                linkedFile: out string withIngrid,
+                error: out string ingridError))
+        {
+            Console.WriteLine(value: ingridError);
+            return 1;
+        }
+
+        string moduleToOptimize = withIngrid;
         bool internalizeForLto = false;
         if (buildMode != RfBuildMode.Debug &&
             NativeToolchain.TryLinkHotRuntimeBitcode(exeDir: exeDir,
-                llFile: llFile,
+                llFile: withIngrid,
                 linkedFile: out string linkedFile))
         {
             moduleToOptimize = linkedFile;

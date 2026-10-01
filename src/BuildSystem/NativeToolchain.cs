@@ -797,6 +797,41 @@ internal static class NativeToolchain
     }
 
     /// <summary>
+    /// llvm-links the emitted RF module (<paramref name="llFile"/>) with Ingrid's Tessera library
+    /// (<see cref="IngridTessera"/>) into <paramref name="linkedFile"/>. Unlike the hot-runtime LTO below this isn't
+    /// optional: the library's routines are not in the runtime DLL, so a module that calls one links only with it.
+    /// Returns false, with the reason in <paramref name="error"/>, when the library can't be built or linked.
+    /// </summary>
+    internal static bool TryLinkIngridTessera(string exeDir, string llFile, out string linkedFile, out string error)
+    {
+        linkedFile = "";
+        string ingrid;
+        try
+        {
+            ingrid = IngridTessera.IrPath(exeDir: exeDir);
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+
+        string linked = Path.ChangeExtension(path: llFile, extension: ".ingrid.ll");
+        int rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
+            args: $"-S \"{llFile}\" \"{ingrid}\" -o \"{linked}\"",
+            stderr: out string err);
+        if (rc != 0)
+        {
+            error = $"llvm-link could not merge Ingrid's Tessera library into the module: {err.Trim()}";
+            return false;
+        }
+
+        linkedFile = linked;
+        error = "";
+        return true;
+    }
+
+    /// <summary>
     /// llvm-links the emitted RF module (<paramref name="llFile"/>) with the hot-runtime bitcode into
     /// <paramref name="linkedFile"/>, so a subsequent <c>opt -passes=internalize,default&lt;Ox&gt;</c>
     /// can inline the runtime allocators/divide shims across the RF↔runtime seam. Returns false
