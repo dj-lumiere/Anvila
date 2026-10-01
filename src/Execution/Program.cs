@@ -2143,35 +2143,35 @@ internal partial class Program
                 });
             }
 
-            // Drain stdout and stderr CONCURRENTLY. Reading them sequentially (all of stdout,
-            // then all of stderr) deadlocks whenever the child fills the OS stderr pipe buffer
-            // while we are still blocked on stdout: the child blocks writing stderr, we block
-            // reading stdout, and neither side progresses. Kicking off both async reads first
-            // keeps both pipes draining continuously.
-            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
-            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
-            string stdout = stdoutTask.GetAwaiter()
-                                      .GetResult();
-            string stderr = stderrTask.GetAwaiter()
-                                      .GetResult();
+            // Relay stdout and stderr CONCURRENTLY and as they arrive. Reading them sequentially
+            // deadlocks whenever the child fills the OS stderr pipe buffer while we are still blocked
+            // on stdout. Relaying as the output arrives (not once the child exits) keeps an interactive
+            // program's output live, and leaves what a hung or crashed program printed in our output,
+            // where a harness timeout can read it.
+            Task stdoutTask = RelayAsync(source: process.StandardOutput, target: Console.Out);
+            Task stderrTask = RelayAsync(source: process.StandardError, target: Console.Error);
+            Task.WaitAll(stdoutTask, stderrTask);
             process.WaitForExit();
-
-            if (!string.IsNullOrEmpty(value: stdout))
-            {
-                Console.Write(value: stdout);
-            }
-
-            if (!string.IsNullOrEmpty(value: stderr))
-            {
-                Console.Error.Write(value: stderr);
-            }
-
             return process.ExitCode;
         }
         catch (Exception ex)
         {
             Console.WriteLine(value: $"Failed to execute {exeFile}: {ex.Message}");
             return 1;
+        }
+    }
+
+    /// <summary>Copies a child's output stream to <paramref name="target"/> chunk by chunk, flushing each
+    /// chunk, until the child closes the stream.</summary>
+    private static async Task RelayAsync(StreamReader source, TextWriter target)
+    {
+        var buffer = new char[4096];
+        int read;
+        while ((read = await source.ReadAsync(buffer: buffer, index: 0, count: buffer.Length)
+                                   .ConfigureAwait(continueOnCapturedContext: false)) > 0)
+        {
+            target.Write(buffer: buffer, index: 0, count: read);
+            target.Flush();
         }
     }
 }
