@@ -337,6 +337,12 @@ public static class ManifestLoader
             target.Incremental = incremental is true;
         }
 
+        if (table.TryGetValue(key: "backend", value: out object? backend) &&
+            !string.IsNullOrWhiteSpace(value: backend?.ToString()))
+        {
+            target.Backend = backend.ToString()!;
+        }
+
         // Resolve the executable's module name to a file path
         if (moduleIndex == null)
         {

@@ -113,6 +113,10 @@ public sealed class BuildTarget
     /// ONCE, then ships only the small per-run DELTA IR (see <c>CompileDaemon.TryDaemonIr</c>). Base/delta is
     /// no longer a separate opt-in — it is part of the incremental JIT path.</summary>
     public bool Incremental { get; set; }
+
+    /// <summary>The backend that translates the program, by registered name (<c>[target] backend</c>):
+    /// <c>"llvm"</c> (the default, the LLVM emitter) or another registered backend such as Tessera.</summary>
+    public string Backend { get; set; } = "llvm";
 }
 
 /// <summary>

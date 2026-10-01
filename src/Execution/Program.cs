@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Builder.Backends;
 using Builder.LlvmEmit;
 using Builder.Declaration;
 using Builder.Diagnostics;
@@ -463,6 +464,7 @@ internal partial class Program
         bool ShowBuildStages,
         Action<string>? IrCallback,
         Stopwatch? SwPhase,
+        IBuilderBackend Backend,
         Action<LazyJitInputs>? LazyJitSink = null,
         IReadOnlyCollection<string>? ResidentSymbols = null,
         Action<BuildObservation>? BuildObserver = null);
@@ -518,6 +520,9 @@ internal partial class Program
 
         /// <summary>Use the ORC-JIT dev-loop path for buildandrun (manifest <c>mode = "debug-jit"</c>).</summary>
         public bool Jit { get; init; }
+
+        /// <summary>The backend that translates the program (manifest <c>[target] backend</c>).</summary>
+        public string Backend { get; init; } = BuilderBackends.DefaultName;
 
         /// <summary>Incremental JIT dev loop (manifest <c>[target] incremental</c>): fully-lazy on-demand JIT +
         /// per-routine IR cache. Also enables the resident-JIT base/delta split (daemon AOTs the stdlib base
@@ -645,6 +650,7 @@ internal partial class Program
             }
 
             ApplyDiagnosticFlags(manifest: manifest);
+            bool residentJit = BuilderBackends.Get(name: target.Backend).SupportsResidentJit;
             return new ResolvedEntry
             {
                 EntryFile = explicitEntry,
@@ -659,9 +665,10 @@ internal partial class Program
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
-                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
+                UseDaemon = target.UseDaemon && residentJit && !DaemonDisabledByEnv(),
                 Jit = ModeUsesJit(mode: target.Mode),
-                Incremental = target.Incremental
+                Incremental = target.Incremental && residentJit,
+                Backend = target.Backend
             };
         }
         catch (Exception ex)
@@ -728,6 +735,7 @@ internal partial class Program
             }
 
             ApplyDiagnosticFlags(manifest: manifest);
+            bool residentJit = BuilderBackends.Get(name: target.Backend).SupportsResidentJit;
             return new ResolvedEntry
             {
                 EntryFile = target.Executable,
@@ -742,9 +750,10 @@ internal partial class Program
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
-                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
+                UseDaemon = target.UseDaemon && residentJit && !DaemonDisabledByEnv(),
                 Jit = ModeUsesJit(mode: target.Mode),
-                Incremental = target.Incremental
+                Incremental = target.Incremental && residentJit,
+                Backend = target.Backend
             };
         }
         catch (Exception ex)
@@ -1241,6 +1250,7 @@ internal partial class Program
                     ShowBuildStages: showBuildStages,
                     IrCallback: irCallback,
                     SwPhase: _swPhase,
+                    Backend: BuilderBackends.Get(name: config.Backend),
                     LazyJitSink: lazyJitSink,
                     ResidentSymbols: residentSymbols,
                     BuildObserver: buildObserver),
@@ -1549,42 +1559,45 @@ internal partial class Program
             return 0;
         }
 
-        var generator = new LlvmEmitter(userPrograms: userPrograms,
-            registry: result.Registry,
-            options: new LlvmEmitterOptions
-            {
-                StdlibPrograms = stdlibPrograms,
-                Target = target,
-                BuildMode = buildMode,
-                SynthesizedBodies = result.SynthesizedBodies,
-                InstantiatedGenericBodies = result.InstantiatedGenericBodies,
-                LiveRoutineKeys = result.LiveRoutineKeys,
-                MaySuspendRoutineKeys = result.MaySuspendRoutineKeys,
-                // Resident-JIT base/delta: when the daemon supplies the base's defined-symbol set, this
-                // emission is the DELTA — C4 skips defining resident symbols and extern-declares them instead.
-                ResidentSymbols = p3.ResidentSymbols
-            }) { Timing = saTiming, EntryModule = entryModule };
+        var backendInput = new BackendInput
+        {
+            UserPrograms = userPrograms,
+            StdlibPrograms = stdlibPrograms,
+            Registry = result.Registry,
+            Target = target,
+            BuildMode = buildMode,
+            SynthesizedBodies = result.SynthesizedBodies,
+            InstantiatedGenericBodies = result.InstantiatedGenericBodies,
+            LiveRoutineKeys = result.LiveRoutineKeys,
+            MaySuspendRoutineKeys = result.MaySuspendRoutineKeys,
+            EntryModule = entryModule,
+            // Resident-JIT base/delta: when the daemon supplies the base's defined-symbol set, this
+            // emission is the DELTA — it skips defining resident symbols and extern-declares them instead.
+            ResidentSymbols = p3.ResidentSymbols,
+            Timing = saTiming
+        };
 
-        // dump-ast dumps the EXACT AST that LLVM codegen consumes — captured immediately BEFORE
-        // Generate(), after all desugaring/monomorphization + the final CancellationInstrumentation
-        // mutation. Codegen is a pure translator, so this snapshot fully defines its input.
+        // dump-ast dumps the EXACT AST the backend consumes — captured immediately BEFORE emission,
+        // after all desugaring/monomorphization + the final CancellationInstrumentation mutation. The
+        // backend is a pure translator, so this snapshot fully defines its input.
         if (dumpAst)
         {
             DumpCodegenInputAst(entryFile: entryFile, userPrograms: userPrograms,
                 stdlibPrograms: stdlibPrograms, result: result, showBuildStages: showBuildStages);
         }
 
-        string llvmIr = generator.Generate();
+        BackendOutput emitted = p3.Backend.Emit(input: backendInput);
+        string llvmIr = emitted.LlvmIr;
         if (swPhase != null)
         {
             Console.Error.WriteLine(
                 value:
-                $"[phase] codegen Generate(): {swPhase.ElapsedMilliseconds} ms ({llvmIr.Length} chars, {generator.EmittedRoutineCount} routines)");
+                $"[phase] {p3.Backend.Name} backend: {swPhase.ElapsedMilliseconds} ms ({llvmIr.Length} chars, {emitted.DefinedRoutineSymbols.Count} routines)");
         }
 
         if (showBuildStages)
         {
-            Console.Error.WriteLine(value: $"Routines emitted: {generator.EmittedRoutineCount}");
+            Console.Error.WriteLine(value: $"Routines emitted: {emitted.DefinedRoutineSymbols.Count}");
         }
 
         WriteCodegenOutput(llvmIr: llvmIr, irCallback: irCallback, outputFile: outputFile,
@@ -1595,7 +1608,7 @@ internal partial class Program
                 Target: target,
                 BuildMode: buildMode,
                 EntryModule: entryModule),
-            DefinedSymbols: generator.GetEmittedRoutineSymbols()));
+            DefinedSymbols: emitted.DefinedRoutineSymbols));
 
         if (showBuildStages)
         {
