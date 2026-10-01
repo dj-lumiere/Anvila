@@ -45,7 +45,7 @@ public sealed partial class SemanticVerifier
             narrowing: narrowing,
             variantNarrowing: variantNarrowing);
 
-        bool thenExits = HasDefiniteExit(statement: ifStmt.ThenStatement);
+        bool thenExits = ControlFlowExits.HasDefiniteExit(statement: ifStmt.ThenStatement);
         var afterThen = new HashSet<string>(collection: _deadrefVariables);
         // Re-analyze the else branch from the pre-if dead set — the branches are mutually
         // exclusive, so the else must not see the then branch's steals.
@@ -61,7 +61,7 @@ public sealed partial class SemanticVerifier
         }
 
         bool elseExits = ifStmt.ElseStatement != null &&
-                         HasDefiniteExit(statement: ifStmt.ElseStatement);
+                         ControlFlowExits.HasDefiniteExit(statement: ifStmt.ElseStatement);
         var afterElse = new HashSet<string>(collection: _deadrefVariables);
         // Merge: a variable is dead after the `if` iff it is dead on some path that FALLS
         // THROUGH. Steals confined to an exiting branch are dropped. (With no else branch,
@@ -79,7 +79,7 @@ public sealed partial class SemanticVerifier
 
         // Guard clause narrowing: if the then branch definitely exits,
         // apply else narrowing to the remainder of the current scope
-        if (ifStmt.ElseStatement == null && HasDefiniteExit(statement: ifStmt.ThenStatement))
+        if (ifStmt.ElseStatement == null && ControlFlowExits.HasDefiniteExit(statement: ifStmt.ThenStatement))
         {
             ApplyGuardClauseNarrowing(narrowing: narrowing, variantNarrowing: variantNarrowing);
         }

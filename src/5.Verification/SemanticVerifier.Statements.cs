@@ -362,7 +362,7 @@ public sealed partial class SemanticVerifier
         // Validate that all routines terminate explicitly on every path (#144).
         // None-returning routines still require an explicit `return` — implicit fall-off
         // is rejected so control-flow analysis remains uniform across return types.
-        if (!StatementAlwaysTerminates(statement: routine.Body))
+        if (!ControlFlowExits.AlwaysTerminates(statement: routine.Body, exhaustiveWhens: _exhaustiveWhens))
         {
             ReportError(code: SemanticDiagnosticCode.MissingReturn,
                 message: routineInfo.ReturnType is { IsNone: false }

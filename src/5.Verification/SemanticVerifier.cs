@@ -996,7 +996,10 @@ public sealed partial class SemanticVerifier
         // from_literal builder) rather than a per-type reflection routine — no such routine is synthesized, so
         // none survives into codegen. Must run after the marker/crashable AST rewrites above (stable call
         // shape) and before ReachableGenericCollectionPass/RRP below.
-        FoldListBuilderQueryReflection();
+        new BuilderQueryReflectionFold(registry: _registry,
+            variantBodies: _variantBodies,
+            analyzeList: (list, expectedType) => AnalyzeListLiteralExpression(list: list, expectedType: expectedType))
+           .Run();
 
         // Full-stdlib-closure FIXPOINT (only when SeedAllStdlibRoutines is set, i.e. building the precompiled
         // stdlib base): each reachability+monomorphization round materializes new instances whose bodies then

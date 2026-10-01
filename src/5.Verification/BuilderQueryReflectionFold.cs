@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -5,7 +6,15 @@ using TypeModel.Types;
 
 namespace Builder.Verification;
 
-public partial class SemanticVerifier
+/// <summary>
+/// The fold described on <see cref="Run"/>, over <paramref name="registry"/>'s user and freshly loaded
+/// stdlib programs and the recovery-variant bodies in <paramref name="variantBodies"/>. A folded literal is
+/// analyzed through <paramref name="analyzeList"/> (the verifier's list-literal analysis), so it carries
+/// the same resolved types as a written one.
+/// </summary>
+internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
+    Dictionary<string, Statement> variantBodies,
+    Func<ListLiteralExpression, TypeSymbol?, TypeSymbol> analyzeList)
 {
     /// <summary>
     /// Folds constant list-returning BuilderQuery reflection calls
@@ -23,16 +32,16 @@ public partial class SemanticVerifier
     /// base then no longer emits per-type reflection routines dangling an unmaterialized from_literal.
     /// </para>
     /// </summary>
-    private void FoldListBuilderQueryReflection()
+    internal void Run()
     {
-        FoldReflectionInPrograms(programs: _registry.UserPrograms);
-        FoldReflectionInPrograms(programs: _registry.FreshlyLoadedStdlibPrograms);
-        foreach (string key in _variantBodies.Keys.ToList())
+        FoldReflectionInPrograms(programs: registry.UserPrograms);
+        FoldReflectionInPrograms(programs: registry.FreshlyLoadedStdlibPrograms);
+        foreach (string key in variantBodies.Keys.ToList())
         {
-            Statement lowered = FoldReflectionStmt(stmt: _variantBodies[key: key]);
-            if (!ReferenceEquals(objA: lowered, objB: _variantBodies[key: key]))
+            Statement lowered = FoldReflectionStmt(stmt: variantBodies[key: key]);
+            if (!ReferenceEquals(objA: lowered, objB: variantBodies[key: key]))
             {
-                _variantBodies[key: key] = lowered;
+                variantBodies[key: key] = lowered;
             }
         }
     }
@@ -654,7 +663,7 @@ public partial class SemanticVerifier
             return null;
         }
 
-        TypeSymbol? textType = _registry.LookupType(name: "Text");
+        TypeSymbol? textType = registry.LookupType(name: "Text");
         if (textType == null)
         {
             return null;
@@ -669,7 +678,7 @@ public partial class SemanticVerifier
             new ListLiteralExpression(Elements: elements, ElementType: null, Location: loc);
         // Analyze as a source `[...]` literal would be — sets ResolvedType (Owned[List[Text]]) AND resolves
         // the per-arity from_literal(Array[Text,N]) builder onto ResolvedLiteralBuilder so reachability seeds it.
-        AnalyzeListLiteralExpression(list: literal, expectedType: returnType);
+        analyzeList(arg1: literal, arg2: returnType);
         return literal;
     }
 
@@ -677,7 +686,7 @@ public partial class SemanticVerifier
     /// Folds a constant entity-list-returning BuilderQuery reflection call (member_variable_info/
     /// protocol_info/routine_info) into an inline analyzed <c>List[E]</c> literal of <c>E(...)</c> creators
     /// (E = FieldInfo/ProtocolInfo/RoutineInfo). The rows are built as RAW (un-analyzed) AST — the wrapping
-    /// <see cref="AnalyzeListLiteralExpression"/> recursively analyzes each creator (construction, nested
+    /// the verifier's list-literal analysis recursively analyzes each creator (construction, nested
     /// <c>List[Text]</c> builders, the bare Visibility case-name identifier) AND resolves the list's own
     /// <c>from_literal</c> builder, so reachability seeds every collection <c>create</c>/<c>add_last</c> body.
     /// MUST stay behaviourally identical to the (now-removed) synthesized bodies in
@@ -707,8 +716,8 @@ public partial class SemanticVerifier
         // The BuilderQuery entity type must resolve (import BuilderQuery); otherwise defer. Use a name the
         // creator's construction analysis (LookupTypeWithImports) will re-resolve regardless of the analyzed
         // module's imports — the qualified `BuilderQuery.FieldInfo` when available, else the bare name.
-        TypeSymbol? entityType = _registry.LookupType(name: $"BuilderQuery.{entityTypeName}") ??
-                                 _registry.LookupType(name: entityTypeName);
+        TypeSymbol? entityType = registry.LookupType(name: $"BuilderQuery.{entityTypeName}") ??
+                                 registry.LookupType(name: entityTypeName);
         if (entityType == null)
         {
             return null;
@@ -729,7 +738,7 @@ public partial class SemanticVerifier
         // Analyze as a source `[E(...), ...]` literal would be: recursively analyzes each creator (+ nested
         // list-of-Text and the bare Visibility identifier) and resolves ResolvedLiteralBuilder so reachability
         // seeds List[E].from_literal / create / add_last.
-        AnalyzeListLiteralExpression(list: literal, expectedType: returnType);
+        analyzeList(arg1: literal, arg2: returnType);
         return literal;
     }
 
@@ -790,7 +799,7 @@ public partial class SemanticVerifier
     private List<List<(string Name, Expression Value)>> BuildRoutineInfoRows(TypeSymbol owner,
         SourceLocation loc)
     {
-        return _registry
+        return registry
               .GetMemberRoutinesForType(type: owner)
               .Select(selector: r => new List<(string Name, Expression Value)>
                {
@@ -920,7 +929,7 @@ public partial class SemanticVerifier
                                      .ToList(),
                 _ => new List<string>()
             },
-            "routine_names" => _registry.GetMemberRoutinesForType(type: owner)
+            "routine_names" => registry.GetMemberRoutinesForType(type: owner)
                                         .Select(selector: r => r.Name)
                                         .Distinct()
                                         .ToList(),
@@ -929,7 +938,7 @@ public partial class SemanticVerifier
                                    .ToList() ?? owner.GenericParameters?.ToList() ??
                 new List<string>(),
             "annotations" => owner.Annotations?.ToList() ?? new List<string>(),
-            "dependencies" => _registry.GetModuleDependencies(module: owner.Module)
+            "dependencies" => registry.GetModuleDependencies(module: owner.Module)
                                        .ToList(),
             _ => null
         };
