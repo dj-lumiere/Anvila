@@ -515,7 +515,7 @@ internal sealed class WrapperForwardingPass
     ///
     /// where T is the wrapper's generic parameter name.
     /// </summary>
-    private DangerStatement BuildWrapperForwarderBody(TypeSymbol wrapperType,
+    private BlockStatement BuildWrapperForwarderBody(TypeSymbol wrapperType,
         string genericParamName, RoutineInfo innerMemberRoutine, List<ParamInfo> parameters,
         string? dataFieldName = null, bool innerIsEntity = false)
     {
@@ -562,8 +562,14 @@ internal sealed class WrapperForwardingPass
                 ctx: callCtx);
         }
 
-        return new DangerStatement(
-            Body: new BlockStatement(Statements: innerStatements, Location: _synthLoc),
+        // A routine body is a block, like every parsed one (later passes rewrite its statement list).
+        return new BlockStatement(
+            Statements:
+            [
+                new DangerStatement(
+                    Body: new BlockStatement(Statements: innerStatements, Location: _synthLoc),
+                    Location: _synthLoc)
+            ],
             Location: _synthLoc);
     }
 

@@ -867,7 +867,9 @@ public partial class LlvmEmitter
     private void EmitTracePush(StringBuilder sb, RoutineInfo routine)
     {
         bool isInline = routine.Annotations.Contains(value: "inline");
-        _traceCurrentRoutine = ShouldEmitTrace && !routine.IsSynthesized && !isInline &&
+        // `@untraced`: the routine's own frame is noise in a crash trace (Core's crash_report, which prints it).
+        bool isUntraced = routine.Annotations.Contains(value: "untraced");
+        _traceCurrentRoutine = ShouldEmitTrace && !routine.IsSynthesized && !isInline && !isUntraced &&
                                _crashReachability?.CanCrash(routine: routine) != false;
         if (!_traceCurrentRoutine)
         {

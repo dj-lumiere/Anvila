@@ -503,8 +503,14 @@ public sealed partial class SemanticVerifier
             Pattern: new ElsePattern(VariableName: null, Location: loc),
             Body: new AbsentStatement(Location: loc),
             Location: loc);
-        return new WhenStatement(Expression: fromRef,
-            Clauses: [matchClause, elseClause],
+        // A routine body is a block, like every parsed one (later passes rewrite its statement list).
+        return new BlockStatement(
+            Statements:
+            [
+                new WhenStatement(Expression: fromRef,
+                    Clauses: [matchClause, elseClause],
+                    Location: loc)
+            ],
             Location: loc);
     }
 

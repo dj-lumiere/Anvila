@@ -227,17 +227,27 @@ public record ThrowStatement(Expression Error, SourceLocation Location, bool IsF
     /// </summary>
     public bool IsFatal { get; init; } = IsFatal;
 
-    /// <summary>
-    /// The error type's resolved <c>crash_message()</c>, stamped by
-    /// <see cref="Builder.Lowering.Passes.CrashMessageStampPass"/> before emission. The emitter calls it
-    /// for the crash text; null when the error type has none (the crash then carries no message).
-    /// </summary>
-    public RoutineInfo? CrashMessageRoutine { get; set; }
-
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
         return visitor.VisitThrowStatement(node: this);
+    }
+}
+
+/// <summary>
+/// A crash, produced by lowering (never parsed): <c>CrashLoweringPass</c> turns a <c>throw</c> nothing
+/// recovers, an <c>absent</c> in a failable routine and a crashable returned from one into a call of Core's
+/// <c>crash_report</c> (the error type's name, its <c>crash_message()</c>, the source location). The
+/// emitter translates the call and ends the block: <c>crash_report</c> never returns.
+/// </summary>
+/// <param name="Report">The <c>crash_report(...)</c> call.</param>
+/// <param name="Location">Source location of the crash.</param>
+public record CrashStatement(CallExpression Report, SourceLocation Location) : Statement(Location: Location)
+{
+    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitCrashStatement(node: this);
     }
 }
 

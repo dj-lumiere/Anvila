@@ -119,6 +119,10 @@ public static class AstWalker
             {
                 s.Error
             },
+            CrashStatement s => new object[]
+            {
+                s.Report
+            },
             VariantReturnStatement s => s.Value != null
                 ? new object[]
                 {

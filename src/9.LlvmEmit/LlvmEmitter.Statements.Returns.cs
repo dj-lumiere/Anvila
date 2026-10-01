@@ -43,14 +43,6 @@ public partial class LlvmEmitter
             return;
         }
 
-        TypeSymbol? retValType = GetExpressionType(expr: ret.Value);
-        if (retValType is CrashableTypeSymbol && _currentRoutineIsFailable)
-        {
-            EmitThrow(sb: sb,
-                throwStmt: new ThrowStatement(Error: ret.Value, Location: ret.Location));
-            return;
-        }
-
         EmitValueReturn(sb: sb, ret: ret);
     }
 
@@ -188,161 +180,15 @@ public partial class LlvmEmitter
 
     #region Throw / Absent / Becomes
 
-    private void EmitThrow(StringBuilder sb, ThrowStatement throwStmt)
-    {
-        TypeSymbol? errorType = GetExpressionType(expr: throwStmt.Error);
-        string typeName = errorType?.Name ?? "UnknownError";
-
-        bool isEmptyRecord = errorType is RecordTypeSymbol { MemberVariables.Count: 0 };
-        string errorVal;
-        if (isEmptyRecord)
-        {
-            errorVal = "zeroinitializer";
-        }
-        else
-        {
-            errorVal = EmitExpression(sb: sb, expr: throwStmt.Error);
-        }
-
-        string dataPtr = "null";
-        string msgLen = "0";
-        ResolvedMemberRoutine? resolvedCrash = throwStmt.CrashMessageRoutine is { } crashMessage
-            ? new ResolvedMemberRoutine(Routine: crashMessage,
-                OwnerType: errorType!,
-                IsFailable: crashMessage.IsFailable,
-                ModulePath: crashMessage.ModulePath,
-                MangledName: MangleRoutineName(routine: crashMessage),
-                IsMonomorphized: false,
-                memberRoutineTypeArgs: null)
-            : null;
-        if (resolvedCrash != null)
-        {
-            EmitCrashMessageText(sb: sb,
-                resolvedCrash: resolvedCrash,
-                errorType: errorType!,
-                errorVal: errorVal,
-                dataPtr: out dataPtr,
-                msgLen: out msgLen);
-        }
-
-        string typeCStr = EmitCStringConstant(value: typeName);
-        string fileCStr = EmitCStringConstant(value: throwStmt.Location.FileName);
-        string typeNameAsInt = NextTemp();
-        EmitLine(sb: sb, line: $"  {typeNameAsInt} = ptrtoint ptr {typeCStr} to i64");
-        string fileAsInt = NextTemp();
-        EmitLine(sb: sb, line: $"  {fileAsInt} = ptrtoint ptr {fileCStr} to i64");
-
-        string msgDataAsInt;
-        if (dataPtr == "null")
-        {
-            msgDataAsInt = "0";
-        }
-        else
-        {
-            msgDataAsInt = NextTemp();
-            EmitLine(sb: sb, line: $"  {msgDataAsInt} = ptrtoint ptr {dataPtr} to i64");
-        }
-
-        EmitLine(sb: sb,
-            line:
-            $"  call void @rf_crash(i64 {typeNameAsInt}, i64 {typeName.Length}, i64 {fileAsInt}, i64 {throwStmt.Location.FileName.Length}, i32 {throwStmt.Location.Line}, i32 {throwStmt.Location.Column}, i64 {msgDataAsInt}, i64 {msgLen})");
-        EmitLine(sb: sb, line: "  unreachable");
-    }
-
-    /// <summary>
-    /// Calls the error's <c>crash_message()</c> (sret- or by-value-returning a Text) and extracts the
-    /// codepoint-buffer pointer and count into <paramref name="dataPtr"/> / <paramref name="msgLen"/>.
-    /// </summary>
-    private void EmitCrashMessageText(StringBuilder sb, ResolvedMemberRoutine resolvedCrash,
-        TypeSymbol errorType, string errorVal, out string dataPtr,
-        out string msgLen)
-    {
-        GenerateRoutineDeclaration(routine: resolvedCrash.Routine);
-        string mangledCrash = resolvedCrash.MangledName;
-        string llvmReceiverType = GetLlvmType(type: errorType);
-
-        // crash_message() returns a Text by value. Derive the Text record type AND the buffer/count
-        // field indices from the registered Text type — never assume the physical field order.
-        RecordTypeSymbol? textRecord = _registry.LookupType(name: "Text") as RecordTypeSymbol ??
-                                     _registry.LookupType(name: "Core.Text") as RecordTypeSymbol;
-        string textLlvm = textRecord != null
-            ? EnsureRecordTypeDeclared(record: textRecord)
-            : "%Record.Core.Text";
-        int dataIdx = textRecord != null
-            ? ResolveRecordFieldIndex(record: textRecord, memberVariableName: "data")
-            : 0;
-        int countIdx = textRecord != null
-            ? ResolveRecordFieldIndex(record: textRecord, memberVariableName: "count")
-            : 1;
-
-        // crash_message() returns a Text (24 bytes) — ABI-Indirect on every target, so it comes
-        // back through a hidden sret pointer (definition, declaration, and this call must all agree,
-        // see ReturnsViaSret). Calling it with the by-value return ABI binds the receiver as the sret
-        // result pointer and reads `me` from an uninitialized slot, producing a Text with a garbage
-        // count — rf_crash then walks a wild UTF-32 range and the crash REPORT itself garbles or
-        // AccessViolation-crashes. Mirror the sret call form the normal call path uses.
-        string textVal = NextTemp();
-        if (ReturnsViaSret(routine: resolvedCrash.Routine))
-        {
-            string sretPtr = NextTemp();
-            EmitEntryAlloca(llvmName: sretPtr, llvmType: textLlvm);
-            EmitLine(sb: sb,
-                line:
-                $"  call void @{mangledCrash}(ptr sret({textLlvm}) {sretPtr}, {llvmReceiverType} {errorVal})");
-            EmitLine(sb: sb, line: $"  {textVal} = load {textLlvm}, ptr {sretPtr}");
-        }
-        else
-        {
-            EmitLine(sb: sb,
-                line:
-                $"  {textVal} = call {textLlvm} @{mangledCrash}({llvmReceiverType} {errorVal})");
-        }
-
-        dataPtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {dataPtr} = extractvalue {textLlvm} {textVal}, {dataIdx}");
-        msgLen = NextTemp();
-        EmitLine(sb: sb, line: $"  {msgLen} = extractvalue {textLlvm} {textVal}, {countIdx}");
-    }
-
     private void EmitAbsent(StringBuilder sb, AbsentStatement absentStmt)
     {
+        // An `absent` in a failable routine is a crash (CrashLoweringPass); here it is a recovery
+        // variant's empty carrier.
         if (_currentRoutineIsFailable)
         {
-            // The original failable routine (not a try_/check_/lookup_ variant) treats `absent`
-            // as a runtime crash with `AbsentValueError`. Use the same rf_crash shape as
-            // EmitThrow so the error message + location aren't blank in the trace.
-            // type name + filename go through @rf_crash as cstr (i64 = byte-data pointer + length).
-            // The message goes as a UTF-32 codepoint buffer (Text data layout), so we load
-            // field 0 (codepoint ptr) and field 1 (codepoint count) from a Text-formatted
-            // string constant — same shape EmitThrow extracts from crash_message().
-            const string typeName = "AbsentValueError";
-            string message =
-                $"Routine '{_currentEmittingRoutine?.BaseName ?? "<unknown>"}' signaled absent.";
-            string typeCStr = EmitCStringConstant(value: typeName);
-            string fileCStr = EmitCStringConstant(value: absentStmt.Location.FileName);
-            string msgTextPtr = EmitStringLiteralGlobal(value: message);
-
-            string typeNameAsInt = NextTemp();
-            EmitLine(sb: sb, line: $"  {typeNameAsInt} = ptrtoint ptr {typeCStr} to i64");
-            string fileAsInt = NextTemp();
-            EmitLine(sb: sb, line: $"  {fileAsInt} = ptrtoint ptr {fileCStr} to i64");
-            // Extract codepoint buffer + count from the Text-shaped global.
-            string msgDataPtr = NextTemp();
-            EmitLine(sb: sb, line: $"  {msgDataPtr} = load ptr, ptr {msgTextPtr}");
-            string msgCountField = NextTemp();
-            EmitLine(sb: sb,
-                line:
-                $"  {msgCountField} = getelementptr {{ptr, i64}}, ptr {msgTextPtr}, i32 0, i32 1");
-            string msgCount = NextTemp();
-            EmitLine(sb: sb, line: $"  {msgCount} = load i64, ptr {msgCountField}");
-            string msgAsInt = NextTemp();
-            EmitLine(sb: sb, line: $"  {msgAsInt} = ptrtoint ptr {msgDataPtr} to i64");
-
-            EmitLine(sb: sb,
-                line:
-                $"  call void @rf_crash(i64 {typeNameAsInt}, i64 {typeName.Length}, i64 {fileAsInt}, i64 {absentStmt.Location.FileName.Length}, i32 {absentStmt.Location.Line}, i32 {absentStmt.Location.Column}, i64 {msgAsInt}, i64 {msgCount})");
-            EmitLine(sb: sb, line: "  unreachable");
-            return;
+            throw new InvalidOperationException(
+                message:
+                $"An absent in failable routine '{_currentEmittingRoutine?.RegistryKey}' reached codegen -> CrashLoweringPass must lower it.");
         }
 
         TypeSymbol absentRetType = _currentEmittingRoutine!.ReturnType!;

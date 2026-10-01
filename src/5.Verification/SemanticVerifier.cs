@@ -1155,8 +1155,8 @@ public sealed partial class SemanticVerifier
 
 
     /// <summary>Stamps the last emitter-facing decisions on every routine body of a program: the
-    /// use-after-steal guards (<see cref="StealGuardLoweringPass"/>), each throw's crash message
-    /// routine (<see cref="CrashMessageStampPass"/>) and the entity behind each wrapper access
+    /// use-after-steal guards (<see cref="StealGuardLoweringPass"/>), each crash as a <c>crash_report</c>
+    /// call (<see cref="CrashLoweringPass"/>) and the entity behind each wrapper access
     /// (<see cref="WrapperProjectionLoweringPass"/>).</summary>
     private void AnnotateForBackend(Program program)
     {
@@ -1165,15 +1165,17 @@ public sealed partial class SemanticVerifier
             {
                 if (node is RoutineDeclaration { Body: { } body } routine)
                 {
-                    AnnotateBodyForBackend(body: body, everStolen: routine.EverStolenVariableNames);
+                    AnnotateBodyForBackend(body: body,
+                        everStolen: routine.EverStolenVariableNames,
+                        routine: routine.ResolvedInfo);
                 }
             });
     }
 
-    private void AnnotateBodyForBackend(Statement body, HashSet<string>? everStolen)
+    private void AnnotateBodyForBackend(Statement body, HashSet<string>? everStolen, RoutineInfo? routine)
     {
         StealGuardLoweringPass.Run(body: body, everStolen: everStolen);
-        CrashMessageStampPass.Run(body: body, registry: _registry);
+        CrashLoweringPass.Run(body: body, routine: routine, registry: _registry);
         WrapperProjectionLoweringPass.Run(body: body, registry: _registry);
     }
 
@@ -1235,7 +1237,9 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            AnnotateBodyForBackend(body: body, everStolen: null);
+            AnnotateBodyForBackend(body: body,
+                everStolen: null,
+                routine: _registry.LookupRoutine(fullName: key));
             reprPass.Run(statement: body);
             foreach (SemanticError error in validator.ValidateStatement(statement: body))
             {
@@ -1268,7 +1272,9 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            AnnotateBodyForBackend(body: mono.Ast.Body, everStolen: mono.Ast.EverStolenVariableNames);
+            AnnotateBodyForBackend(body: mono.Ast.Body,
+                everStolen: mono.Ast.EverStolenVariableNames,
+                routine: mono.Info);
             if (!mono.IsSynthesized)
             {
                 reprPass.Run(statement: mono.Ast.Body);

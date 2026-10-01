@@ -406,6 +406,11 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(e: node.Error);
         return false;
     }
+    public bool VisitCrashStatement(CrashStatement node)
+    {
+        Visit(e: node.Report);
+        return false;
+    }
     public bool VisitIfStatement(IfStatement node)
     {
         Visit(e: node.Condition);

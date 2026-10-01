@@ -185,6 +185,10 @@ public static class RuntimeContract
     /// <remarks>Sites: LlvmEmitter.Statements.Returns, WiredRoutinePass, RoutineReachabilityPass.</remarks>
     public const string CrashMessage = "crash_message";
 
+    /// <summary>Core's <c>crash_report(type_name:, message:, file:, line:, column:)</c>: every crash the
+    /// builder writes out (CrashLoweringPass) calls it.</summary>
+    public const string CrashReport = "crash_report";
+
     /// <summary><c>crash_title()</c> on error types — the second Crashable protocol member.</summary>
     /// <remarks>Sites: CrashableExpansionPass (dispatchable-member set), ImplicitCallContract (reachability seed).</remarks>
     public const string CrashTitle = "crash_title";

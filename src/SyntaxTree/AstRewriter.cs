@@ -42,6 +42,7 @@ public abstract class AstRewriter
             ReturnStatement s => VisitReturn(s: s),
             BecomesStatement s => VisitBecomes(s: s),
             ThrowStatement s => VisitThrow(s: s),
+            CrashStatement s => VisitCrash(s: s),
             VariantReturnStatement s => VisitVariantReturn(s: s),
             AtomicRmwStatement s => VisitAtomicRmw(s: s),
             DiscardStatement s => VisitDiscard(s: s),
@@ -244,6 +245,26 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: e, objB: s.Error)
             ? s
             : s with { Error = e };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="CrashStatement"/> by visiting its <c>crash_report</c> call.
+    /// Returns the original node when the call is unchanged.
+    /// </summary>
+    /// <param name="s">The crash statement to rewrite.</param>
+    /// <returns>The rewritten crash statement, or the original reference if nothing changed.</returns>
+    protected virtual Statement VisitCrash(CrashStatement s)
+    {
+        Expression report = VisitExpression(expr: s.Report);
+        if (ReferenceEquals(objA: report, objB: s.Report))
+        {
+            return s;
+        }
+
+        return report is CallExpression call
+            ? s with { Report = call }
+            : throw new InvalidOperationException(
+                message: "A crash statement's report must stay a call after rewriting.");
     }
 
     /// <summary>

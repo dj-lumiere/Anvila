@@ -368,6 +368,11 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the throw statement</returns>
     T VisitThrowStatement(ThrowStatement node);
 
+    /// <summary>Visits a crash statement node (a lowered throw/absent: the crash_report call)</summary>
+    /// <param name="node">The crash statement to visit</param>
+    /// <returns>Result of visiting the crash statement</returns>
+    T VisitCrashStatement(CrashStatement node);
+
     /// <summary>Visits an absent statement node (value not found, triggers T? or Lookup&lt;T&gt;)</summary>
     /// <param name="node">The absent statement to visit</param>
     /// <returns>Result of visiting the absent statement</returns>

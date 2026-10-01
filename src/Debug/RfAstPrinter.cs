@@ -1284,6 +1284,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         return $"{I}throw {node.Error.Accept(visitor: this)}";
     }
 
+    /// <inheritdoc/>
+    public string VisitCrashStatement(CrashStatement node)
+    {
+        return $"{I}#crash {node.Report.Accept(visitor: this)}";
+    }
+
 
     /// <inheritdoc/>
     public string VisitAbsentStatement(AbsentStatement node)

@@ -54,9 +54,14 @@ internal sealed class DerivedOperatorPass
             }
 
             string title = CrashableTypeSymbol.SynthesizeCrashTitle(typeName: type.Name);
-            var titleBody = new ReturnStatement(Value: new LiteralExpression(Value: title,
-                    LiteralType: TokenType.TextLiteral,
-                    Location: _synthLoc),
+            var titleBody = new BlockStatement(
+                Statements:
+                [
+                    new ReturnStatement(Value: new LiteralExpression(Value: title,
+                            LiteralType: TokenType.TextLiteral,
+                            Location: _synthLoc),
+                        Location: _synthLoc)
+                ],
                 Location: _synthLoc);
 
             _synthesizedBodies[key: titleMemberRoutine.RegistryKey] =

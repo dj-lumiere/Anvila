@@ -254,6 +254,10 @@ internal sealed class MeReferenceScanner : ISyntaxTreeVisitor<bool>
     {
         return node.Error.Accept(visitor: this);
     }
+    public bool VisitCrashStatement(CrashStatement node)
+    {
+        return node.Report.Accept(visitor: this);
+    }
     public bool VisitIfStatement(IfStatement node)
     {
         return node.Condition.Accept(visitor: this) || node.ThenStatement.Accept(visitor: this) ||

@@ -86,9 +86,16 @@ public partial class LlvmEmitter
                         message:
                         "UsingStatement reached codegen -> UsingLoweringPass must run before codegen.");
 
-                case ThrowStatement throwStmt:
-                    EmitThrow(sb: sb, throwStmt: throwStmt);
-                    return true; // Throw terminates the block
+                case CrashStatement crash:
+                    // crash_report never returns: the call ends the block.
+                    EmitExpression(sb: sb, expr: crash.Report);
+                    EmitLine(sb: sb, line: "  unreachable");
+                    return true;
+
+                case ThrowStatement:
+                    throw new InvalidOperationException(
+                        message:
+                        "ThrowStatement reached codegen -> CrashLoweringPass must turn it into a crash_report call.");
 
                 case AbsentStatement absentStmt:
                     EmitAbsent(sb: sb, absentStmt: absentStmt);

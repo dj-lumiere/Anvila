@@ -2259,6 +2259,8 @@ internal static class GenericAstRewriter
 
             ThrowStatement ts => ts with { Error = RewriteExpression(expr: ts.Error, ctx: ctx) },
 
+            CrashStatement cs => cs with { Report = (CallExpression)RewriteExpression(expr: cs.Report, ctx: ctx) },
+
             DiscardStatement disc => disc with
             {
                 Expression = RewriteExpression(expr: disc.Expression, ctx: ctx)

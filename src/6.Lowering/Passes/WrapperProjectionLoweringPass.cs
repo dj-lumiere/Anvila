@@ -28,9 +28,12 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
     /// <summary>Projects the wrapper accesses of one routine body in place.</summary>
     public static void Run(Statement body, TypeRegistry registry)
     {
+        // A routine body is a block: its statement list is rewritten in place (the body itself is
+        // referenced from several places and cannot be replaced).
         if (body is not BlockStatement block)
         {
-            return;
+            throw new InvalidOperationException(
+                message: $"A routine body must be a block, got {body.GetType().Name}.");
         }
 
         var pass = new WrapperProjectionLoweringPass(registry: registry);

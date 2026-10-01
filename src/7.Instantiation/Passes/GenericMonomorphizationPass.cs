@@ -485,34 +485,73 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// A `throw X` in an emitted body needs X's crash_message live: codegen's EmitThrow calls it
-    /// directly with no source CallExpression. Enlivens that crash_message. Returns true if it newly
-    /// marked a routine live.
+    /// Core's <c>crash_report</c>: CrashLoweringPass (Phase 9, after collection) turns every throw, every
+    /// absent in a failable routine and every crashable return from one into a call of it, so a body with
+    /// one of those needs it live.
+    /// </summary>
+    internal static RoutineInfo? CrashReportRoutine(TypeRegistry registry)
+    {
+        if (registry.LookupType(name: "Text") is not { } text || registry.LookupType(name: "S32") is not { } s32)
+        {
+            return null;
+        }
+
+        return registry.LookupRoutineOverload(baseName: $"Core.{RuntimeContract.CrashReport}",
+            argTypes: [text, text, text, s32, s32]);
+    }
+
+    /// <summary>Whether a statement becomes a <c>crash_report</c> call at Phase 9 (a throw, an absent, or a
+    /// returned crashable; the absent and the return only in a failable routine, which over-approximates
+    /// here).</summary>
+    internal static bool MayBecomeCrash(object? node)
+    {
+        return node is ThrowStatement or AbsentStatement ||
+               node is ReturnStatement { Value.ResolvedType: CrashableTypeSymbol };
+    }
+
+    /// <summary>
+    /// A statement that CrashLoweringPass turns into a <c>crash_report</c> call after collection needs that
+    /// call's routines live: <c>crash_report</c>, and for a thrown or returned error its type's
+    /// <c>crash_message</c> (and the <c>represent</c> it formats with). Returns true if it newly marked a
+    /// routine live.
     /// </summary>
     private bool EnliveThrowCrashMessage(object? node)
     {
-        if (node is not ThrowStatement throwStmt)
+        if (!MayBecomeCrash(node: node) || ctx.LiveRoutineKeys.Count == 0)
         {
             return false;
         }
 
-        TypeSymbol? errorType = throwStmt.Error.ResolvedType ??
-                              (throwStmt.Error is CreatorExpression cre
+        bool reportChanged = CrashReportRoutine(registry: ctx.Registry) is { } report &&
+                             ctx.LiveRoutineKeys.Add(item: report.RegistryKey);
+        Expression? error = node switch
+        {
+            ThrowStatement t => t.Error,
+            ReturnStatement r => r.Value,
+            _ => null
+        };
+        if (error == null)
+        {
+            return reportChanged;
+        }
+
+        TypeSymbol? errorType = error.ResolvedType ??
+                              (error is CreatorExpression cre
                                   ? cre.ConstructedType
                                   : null);
         if (errorType == null)
         {
-            return false;
+            return reportChanged;
         }
 
         RoutineInfo? crashMsg = ctx.Registry.LookupMemberRoutine(type: errorType,
             memberRoutineName: RuntimeContract.CrashMessage);
-        if (crashMsg == null || ctx.LiveRoutineKeys.Count == 0)
+        if (crashMsg == null)
         {
-            return false;
+            return reportChanged;
         }
 
-        bool changed = ctx.LiveRoutineKeys.Add(item: crashMsg.RegistryKey);
+        bool changed = ctx.LiveRoutineKeys.Add(item: crashMsg.RegistryKey) | reportChanged;
         // crash_message's body formats via `me.represent()` (no source AST call), so a thrown error's
         // represent is otherwise never built → link-undefined. Enliven it alongside crash_message.
         if (ctx.Registry.LookupMemberRoutine(type: errorType,
@@ -1040,10 +1079,19 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             AstWalker.Walk(root: body,
                 visit: n =>
                 {
-                    if (n is ThrowStatement { Error.ResolvedType: { } errType })
+                    if (!MayBecomeCrash(node: n))
                     {
-                        MarkOwner(t: errType);
+                        return;
                     }
+
+                    // CrashLoweringPass (Phase 9) writes the crash out as a crash_report call.
+                    Discover(r: CrashReportRoutine(registry: _ctx.Registry));
+                    MarkOwner(t: n switch
+                    {
+                        ThrowStatement t => t.Error.ResolvedType,
+                        ReturnStatement r => r.Value?.ResolvedType,
+                        _ => null
+                    });
                 });
             AstWalker.WalkExpressions(root: body,
                 visit: expr =>
@@ -3778,10 +3826,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private static RoutineDeclaration WrapInShellDecl(string name, Statement body,
         RoutineInfo info)
     {
+        // A routine body is a block, like every parsed one: later passes rewrite its statement list in place.
         return new RoutineDeclaration(Name: name,
             Parameters: [],
             ReturnType: null,
-            Body: body,
+            Body: body as BlockStatement ?? new BlockStatement(Statements: [body], Location: body.Location),
             Visibility: VisibilityModifier.Open,
             Annotations: [],
             Location: info.Location ?? new SourceLocation(FileName: "",
