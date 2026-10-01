@@ -303,6 +303,10 @@ public static class AstWalker
             {
                 e.Wrapper
             },
+            AddressOfExpression e => new object[]
+            {
+                e.Target
+            },
             BackendCastExpression e => new object[]
             {
                 e.Value

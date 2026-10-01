@@ -21,11 +21,6 @@ public partial class LlvmEmitter
         List<Expression> arguments, List<TypeExpression>? typeArguments,
         TypeSymbol? resolvedReturnType = null)
     {
-        // Named arguments may be written out of order; the template substitution and generic
-        // inference below bind args to parameters positionally, so reorder into declaration order
-        // first (no-op for all-positional or count-mismatched calls).
-        arguments = ReorderCallArgsToParamOrder(arguments: arguments, routine: routine);
-
         // Emit argument values.
         var argValues = new List<string>();
         if (receiver != null)

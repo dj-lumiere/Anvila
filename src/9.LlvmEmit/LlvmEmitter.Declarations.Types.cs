@@ -32,38 +32,15 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Refreshes an entity's member variables when a generic resolution was created before its
-    /// definition's members were populated — re-creating from the definition, rebuilding from the
-    /// AST, or re-looking-up from the registry.
+    /// The entity, checked to carry its definition's member variables: the registry refreshes every cached
+    /// resolution when a definition's members are set.
     /// </summary>
-    private EntityTypeSymbol RefreshEntityMembers(EntityTypeSymbol entity)
+    private static EntityTypeSymbol RefreshEntityMembers(EntityTypeSymbol entity)
     {
-        if (entity is
-            {
-                IsGenericResolution: true, MemberVariables.Count: 0,
-                GenericDefinition: { MemberVariables.Count: > 0 } genDef,
-                TypeArguments: not null
-            } && genDef.CreateInstance(typeArguments: entity.TypeArguments) is EntityTypeSymbol
-            {
-                MemberVariables.Count: > 0
-            } refreshed)
-        {
-            entity = refreshed;
-        }
-
-        // Structural re-lookup ONLY (a registered entity carries its members). No AST rebuild / no
-        // name-based type re-resolution: codegen consumes resolved TypeSymbol, it does not reconstruct it.
-        if (entity.MemberVariables.Count == 0 &&
-            (_registry.LookupType(name: entity.FullName) ??
-             _registry.LookupType(name: entity.Name)) is EntityTypeSymbol
-            {
-                MemberVariables.Count: > 0
-            } resolvedEntity)
-        {
-            entity = resolvedEntity;
-        }
-
-        return entity;
+        return entity is { MemberVariables.Count: 0, GenericDefinition.MemberVariables.Count: > 0 }
+            ? throw new InvalidOperationException(
+                message: $"The entity '{entity.FullName}' reached the LLVM emitter without its member variables.")
+            : entity;
     }
 
     /// <summary>
@@ -200,25 +177,15 @@ public partial class LlvmEmitter
 
 
     /// <summary>
-    /// Refreshes a record's member variables when a generic resolution was created before its
-    /// definition's members were populated — re-creating from the definition.
+    /// The record, checked to carry its definition's member variables: the registry refreshes every cached
+    /// resolution when a definition's members are set.
     /// </summary>
     private static RecordTypeSymbol RefreshRecordMembers(RecordTypeSymbol record)
     {
-        if (record is
-            {
-                IsGenericResolution: true, MemberVariables.Count: 0,
-                GenericDefinition: { MemberVariables.Count: > 0 } genDef,
-                TypeArguments: not null
-            } && genDef.CreateInstance(typeArguments: record.TypeArguments) is RecordTypeSymbol
-            {
-                MemberVariables.Count: > 0
-            } refreshed)
-        {
-            return refreshed;
-        }
-
-        return record;
+        return record is { MemberVariables.Count: 0, GenericDefinition.MemberVariables.Count: > 0 }
+            ? throw new InvalidOperationException(
+                message: $"The record '{record.FullName}' reached the LLVM emitter without its member variables.")
+            : record;
     }
 
     /// <summary>

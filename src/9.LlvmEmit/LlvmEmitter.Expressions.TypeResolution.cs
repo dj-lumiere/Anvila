@@ -38,57 +38,15 @@ public partial class LlvmEmitter
 
 
     /// <summary>
-    /// Resolves the creator type from semantic builder state.
+    /// The type a creator builds, stamped by <c>ConstructionLoweringPass</c>.
     /// </summary>
-    private TypeSymbol? ResolveCreatorType(CreatorExpression creator)
+    private TypeSymbol ResolveCreatorType(CreatorExpression creator)
     {
-        if (creator.ConstructedType is not null and not ErrorTypeSymbol)
-        {
-            return ApplyTypeSubstitutions(type: creator.ConstructedType);
-        }
-
-        if (creator.ResolvedType is not null and not ErrorTypeSymbol)
-        {
-            return ApplyTypeSubstitutions(type: creator.ResolvedType);
-        }
-
-        TypeSymbol? tupleType = ResolveTupleTypeExpression(typeExpr: new TypeExpression(
-            Name: creator.TypeName,
-            GenericArguments: creator.TypeArguments,
-            Location: creator.Location));
-        if (tupleType != null)
-        {
-            return tupleType;
-        }
-
-        TypeSymbol? type = LookupTypeInCurrentModule(name: creator.TypeName);
-        if (type == null)
-        {
-            return null;
-        }
-
-        if (type.IsGenericDefinition && creator.TypeArguments is { Count: > 0 })
-        {
-            var resolvedArgs = new List<TypeSymbol>(capacity: creator.TypeArguments.Count);
-            foreach (TypeExpression ta in creator.TypeArguments)
-            {
-                TypeSymbol? resolved = ResolveTypeArgument(ta: ta);
-                if (resolved == null)
-                {
-                    return type;
-                }
-
-                resolvedArgs.Add(item: resolved);
-            }
-
-            if (resolvedArgs.Count == type.GenericParameters?.Count)
-            {
-                return _registry.GetOrCreateResolution(genericDef: type,
-                    typeArguments: resolvedArgs);
-            }
-        }
-
-        return type;
+        return creator.ConstructedType is { } constructed and not ErrorTypeSymbol
+            ? ApplyTypeSubstitutions(type: constructed)
+            : throw new InvalidOperationException(
+                message: $"The creator of '{creator.TypeName}' at {creator.Location} reached the LLVM emitter " +
+                         $"without a constructed type in [{_currentRoutineDiagName}].");
     }
 
     /// <summary>
@@ -170,13 +128,6 @@ public partial class LlvmEmitter
         }
 
         TypeSymbol? lookupType = MarkerProtocolInner(type: targetType) ?? targetType;
-
-        // Refresh stale entity metadata for member variable lookup.
-        if (lookupType is EntityTypeSymbol entityType)
-        {
-            lookupType = RefreshEntityMemberVariables(entity: entityType,
-                memberVariableName: member.MemberName);
-        }
 
         MemberVariableInfo? memberVariable = lookupType switch
         {

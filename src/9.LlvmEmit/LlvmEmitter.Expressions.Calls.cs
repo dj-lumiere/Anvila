@@ -1,4 +1,5 @@
 using System.Text;
+using Builder.Lowering.Passes;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -124,33 +125,15 @@ public partial class LlvmEmitter
         }
     }
 
-    /// <summary>Binds each written argument in <paramref name="arguments"/> to its declared parameter
-    /// slot (by name for named args, by position otherwise). Returns an array indexed by param slot
-    /// where each entry is the bound expression, or null when no argument was supplied.</summary>
+    /// <summary>The argument bound to each parameter slot (<c>CallArgumentOrderPass</c> listed them in
+    /// parameter order), or null when no argument was supplied.</summary>
     private static Expression?[] BindFreeCallArgumentsToSlots(RoutineInfo routine,
         List<Expression> arguments, int paramCount)
     {
         var slotArg = new Expression?[paramCount];
-        for (int argIdx = 0; argIdx < arguments.Count; argIdx++)
+        for (int p = 0; p < paramCount; p++)
         {
-            Expression a = arguments[index: argIdx];
-            int p = argIdx;
-            if (a is NamedArgumentExpression na)
-            {
-                p = FindNamedParameterSlot(routine: routine,
-                    name: na.Name,
-                    paramCount: paramCount);
-
-                if (p < 0)
-                {
-                    p = argIdx;
-                }
-            }
-
-            if (p >= 0 && p < paramCount)
-            {
-                slotArg[p] = a;
-            }
+            slotArg[p] = CallArgumentOrderPass.ArgumentInSlot(arguments: arguments, routine: routine, slot: p);
         }
 
         return slotArg;
@@ -264,13 +247,6 @@ public partial class LlvmEmitter
         // concrete entity type is known. Codegen therefore never sees the `roam_*_ref` member call —
         // it materializes the closure through the pre-resolved-routine path in EmitIdentifier, with no
         // LookupMemberRoutine of its own.
-
-        string? interceptResult =
-            TryEmitInterceptedMemberRoutineCall(sb: sb, member: member, arguments: arguments);
-        if (interceptResult != null)
-        {
-            return interceptResult;
-        }
 
         (string receiver, TypeSymbol? receiverType) =
             ResolveMemberRoutineCallReceiver(sb: sb, member: member);
@@ -792,105 +768,20 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits the zero-arg member-call intercepts that codegen resolves directly (bypassing the stdlib
-    /// body): <c>var_name()</c> (inlines the receiver identifier name), <c>get_address()</c>
-    /// (<c>ptrtoint</c> of the caller's lvalue), and <c>hijack()</c> (the caller's lvalue address as a
-    /// <c>Hijacked[T]</c>). Returns the emitted result, or null when no intercept applies.
-    /// </summary>
-    private string? TryEmitInterceptedMemberRoutineCall(StringBuilder sb, MemberExpression member,
-        List<Expression> arguments)
-    {
-        // Intercept var_name() -> inline the variable name from the receiver expression
-        if (member.MemberName == "var_name" && arguments.Count == 0)
-        {
-            string varName = member.Object is IdentifierExpression varId
-                ? varId.Name
-                : "<expr>";
-            return EmitStringLiteral(sb: sb, value: varName);
-        }
-
-        // Intercept `record.get_address()` -> emit `ptrtoint ptr %<receiver-lvalue> to i64`
-        // directly, using the caller's lvalue address rather than the body's broken
-        // struct->ptr bitcast (records' `me` is a by-value copy whose address lives in the
-        // callee's frame). Supported receiver forms:
-        //   - identifier x                  -> %x.addr
-        //   - member chain obj.field[.f...] -> GEP into the root lvalue, chained per field
-        // Entity receivers fall through to the regular call path — `me` for entities is
-        // already a ptr, so the stdlib body works. Index access (arr[i].get_address()) is
-        // deferred to post-v0.0.1a (requires per-collection `getitem_addr`).
-        if (member.MemberName == "get_address" && arguments.Count == 0)
-        {
-            TypeSymbol? receiverTypeForIntercept = GetExpressionType(expr: member.Object);
-            // Intercept only for struct-typed records — records that ARE pointer-shaped
-            // (@llvm("ptr") records like CPtr, Hijacked[T], Viewing[T], Modifying[T]) have
-            // their own working bodies that return the wrapped pointer value, not the
-            // storage address of the wrapper itself.
-            if (receiverTypeForIntercept is RecordTypeSymbol { BackendType: null })
-            {
-                string lvaluePtr = EmitLvalueAddress(sb: sb, expr: member.Object);
-                string addrTemp = NextTemp();
-                EmitLine(sb: sb, line: $"  {addrTemp} = ptrtoint ptr {lvaluePtr} to i64");
-                return addrTemp;
-            }
-        }
-
-        // Intercept `record.hijack()` -> emit the caller's lvalue address directly as the
-        // resulting `Hijacked[T]` (which is `@llvm("ptr")`). The stdlib body
-        // `Hijacked[T](me.get_address())` runs in a callee frame where `me` is a by-value
-        // copy of the record; the address it would capture dies as soon as `hijack` returns,
-        // making subsequent `.extract()`/`.inject()` operate on dead stack. Intercepting at
-        // the caller keeps the Hijacked bound to the caller's storage. Same lvalue-shape
-        // restrictions and pointer-shaped-record exclusion as the `get_address` intercept.
-        if (member.MemberName == Declaration.RuntimeContract.RawPointer.Hijack &&
-            arguments.Count == 0)
-        {
-            TypeSymbol? receiverTypeForHijack = GetExpressionType(expr: member.Object);
-            if (receiverTypeForHijack is RecordTypeSymbol { BackendType: null } ||
-                receiverTypeForHijack is RecordTypeSymbol { BackendType: not null } primShape &&
-                primShape.BackendType != "ptr")
-            {
-                string lvaluePtr = EmitLvalueAddress(sb: sb, expr: member.Object);
-                return lvaluePtr;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Returns a slot-index array where <c>result[p]</c> is the index of the argument in
-    /// <paramref name="arguments"/> that binds to parameter slot <c>p</c>, or -1 when no argument
-    /// was provided for that slot. Named arguments are matched by name; positional by index.
+    /// The written-argument index bound to each parameter slot (<c>CallArgumentOrderPass</c> listed them in
+    /// parameter order), or -1 when no argument was provided for that slot.
     /// </summary>
     private static int[] BindArgumentsToParameterSlots(RoutineInfo memberRoutine,
         List<Expression> arguments, int paramCount)
     {
         int[] slotArgIndex = new int[paramCount];
-        for (int s = 0; s < paramCount; s++)
+        for (int p = 0; p < paramCount; p++)
         {
-            slotArgIndex[s] = -1;
-        }
-
-        for (int j = 0; j < arguments.Count; j++)
-        {
-            Expression a = arguments[index: j];
-            int p = j;
-            if (a is NamedArgumentExpression na)
-            {
-                p = FindNamedParameterSlot(routine: memberRoutine,
-                    name: na.Name,
-                    paramCount: paramCount);
-
-                if (p < 0)
-                {
-                    p = j;
-                }
-            }
-
-            if (p >= 0 && p < paramCount)
-            {
-                slotArgIndex[p] = j;
-            }
+            slotArgIndex[p] = CallArgumentOrderPass.ArgumentInSlot(arguments: arguments,
+                routine: memberRoutine,
+                slot: p) is null
+                ? -1
+                : p;
         }
 
         return slotArgIndex;
@@ -1521,30 +1412,11 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Finds a record field's index, refreshing <see cref="RecordTypeSymbol.MemberVariables"/> from the
-    /// generic definition when the resolution arrived as an empty carrier shell (e.g. a cached
-    /// <c>Maybe[Text]</c> registered before <c>Maybe</c>'s body was resolved). Mirrors the fallback in
-    /// <c>EmitRecordMemberVariableRead</c> so address-of and value reads agree on field offsets.
+    /// Finds a record field's index, or -1.
     /// </summary>
     private static int ResolveRecordFieldIndex(RecordTypeSymbol record, string memberVariableName)
     {
-        int idx = IndexOfMemberVariable(memberVariables: record.MemberVariables,
-            name: memberVariableName);
-        if (idx >= 0)
-        {
-            return idx;
-        }
-
-        if (record.GenericDefinition is RecordTypeSymbol gdef && record.TypeArguments != null &&
-            gdef.MemberVariables.Count > 0)
-        {
-            var fresh = (RecordTypeSymbol)gdef.CreateInstance(typeArguments: record.TypeArguments);
-            record.MemberVariables = fresh.MemberVariables;
-            return IndexOfMemberVariable(memberVariables: record.MemberVariables,
-                name: memberVariableName);
-        }
-
-        return -1;
+        return IndexOfMemberVariable(memberVariables: record.MemberVariables, name: memberVariableName);
     }
 
     /// <summary>
@@ -1583,19 +1455,6 @@ public partial class LlvmEmitter
     private static bool ReceiverPassedByRef(TypeSymbol? receiverType)
     {
         return IsByRefMeRecord(ownerType: receiverType);
-    }
-
-    private static int FindNamedParameterSlot(RoutineInfo routine, string name, int paramCount)
-    {
-        for (int i = 0; i < paramCount; i++)
-        {
-            if (routine.Parameters[index: i].Name == name)
-            {
-                return i;
-            }
-        }
-
-        return -1;
     }
 
     private string EmitFreeCallInstruction(StringBuilder sb, List<Expression> arguments,

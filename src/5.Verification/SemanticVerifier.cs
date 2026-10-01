@@ -1208,9 +1208,13 @@ public sealed partial class SemanticVerifier
     {
         LocalTypeStampPass.Run(body: body);
         ConstructionLoweringPass.Run(body: body);
+        CallArgumentOrderPass.Run(body: body);
         StealGuardLoweringPass.Run(body: body, everStolen: everStolen, registry: _registry);
         CrashLoweringPass.Run(body: body, routine: routine, registry: _registry);
+        MaybeReturnLoweringPass.Run(body: body, routine: routine, registry: _registry);
         WrapperProjectionLoweringPass.Run(body: body, registry: _registry);
+        AddressLoweringPass.Run(body: body, registry: _registry);
+        RepresentationCastPass.Run(body: body);
     }
 
     /// <summary>

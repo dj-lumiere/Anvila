@@ -53,11 +53,8 @@ public partial class LlvmEmitter
                     dispatch: dispatch),
                 WrapperProjectionExpression projection => EmitWrapperProjection(sb: sb,
                     projection: projection),
-                BackendCastExpression cast => EmitBackendScalarCast(sb: sb,
-                    value: EmitExpression(sb: sb, expr: cast.Value),
-                    sourceType: GetExpressionType(expr: cast.Value),
-                    targetType: cast.ResolvedType ??
-                                throw new InvalidOperationException(message: "A backend cast has no target type.")),
+                BackendCastExpression cast => EmitBackendCast(sb: sb, cast: cast),
+                AddressOfExpression address => EmitLvalueAddress(sb: sb, expr: address.Target),
                 ClosureValueExpression closure => EmitClosureValueExpression(sb: sb, closure: closure),
                 // Named arguments appear inside synthesized AST bodies (e.g., me.eq(you: you)).
                 // The name is irrelevant to codegen -> just emit the inner value positionally.
@@ -113,111 +110,6 @@ public partial class LlvmEmitter
         string fat = NextTemp();
         EmitLine(sb: sb, line: $"  {fat} = insertvalue {{ ptr, ptr }} {t0}, ptr null, 1");
         return fat;
-    }
-
-    /// <summary>
-    /// Reorders call arguments into the routine's parameter-declaration order. Named arguments may be
-    /// written in any order, and a caller that binds arguments to parameters positionally would otherwise
-    /// put values into the wrong parameter slots. Only applied when every parameter is provided (defaults
-    /// are not materialized); otherwise the original list is returned unchanged.
-    /// </summary>
-    private static List<Expression> ReorderCallArgsToParamOrder(List<Expression> arguments,
-        RoutineInfo routine)
-    {
-        int paramCount = routine.Parameters.Count;
-        if (arguments.Count != paramCount)
-        {
-            return arguments;
-        }
-
-        if (!arguments.Any(predicate: a => a is NamedArgumentExpression))
-        {
-            return arguments;
-        }
-
-        var ordered = new Expression?[paramCount];
-        var leftovers = new List<Expression>();
-        foreach (Expression a in arguments)
-        {
-            PlaceArgument(a: a,
-                routine: routine,
-                ordered: ordered,
-                leftovers: leftovers);
-        }
-
-        return BuildOrderedResult(ordered: ordered,
-            leftovers: leftovers,
-            fallback: arguments,
-            paramCount: paramCount);
-    }
-
-    /// <summary>
-    /// Places a single call argument into its named slot in <paramref name="ordered"/>, or into
-    /// <paramref name="leftovers"/> when no matching parameter name is found or the slot is already
-    /// taken.
-    /// </summary>
-    private static void PlaceArgument(Expression a, RoutineInfo routine, Expression?[] ordered,
-        List<Expression> leftovers)
-    {
-        if (a is not NamedArgumentExpression na)
-        {
-            leftovers.Add(item: a);
-            return;
-        }
-
-        int p = FindParamIndex(routine: routine, name: na.Name);
-        if (p >= 0 && ordered[p] == null)
-        {
-            ordered[p] = a;
-        }
-        else
-        {
-            leftovers.Add(item: a);
-        }
-    }
-
-    /// <summary>
-    /// Returns the zero-based index of the parameter named <paramref name="name"/> in
-    /// <paramref name="routine"/>, or <c>-1</c> if not found.
-    /// </summary>
-    private static int FindParamIndex(RoutineInfo routine, string name)
-    {
-        for (int k = 0; k < routine.Parameters.Count; k++)
-        {
-            if (routine.Parameters[index: k].Name == name)
-            {
-                return k;
-            }
-        }
-
-        return -1;
-    }
-
-    /// <summary>
-    /// Fills any unoccupied slots in <paramref name="ordered"/> from <paramref name="leftovers"/>
-    /// in order, then returns the assembled list if it is complete, or <paramref name="fallback"/>
-    /// if any slot remained unfilled.
-    /// </summary>
-    private static List<Expression> BuildOrderedResult(Expression?[] ordered,
-        List<Expression> leftovers, List<Expression> fallback, int paramCount)
-    {
-        int next = 0;
-        var result = new List<Expression>(capacity: paramCount);
-        foreach (Expression? slot in ordered)
-        {
-            if (slot != null)
-            {
-                result.Add(item: slot);
-            }
-            else if (next < leftovers.Count)
-            {
-                result.Add(item: leftovers[index: next++]);
-            }
-        }
-
-        return result.Count == paramCount
-            ? result
-            : fallback;
     }
 
     /// <summary>
@@ -401,243 +293,40 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emit backend scalar cast as part of this builder phase.
+    /// Carries out a representation cast: the conversion <c>RepresentationCastPass</c> stamped on it, as the
+    /// LLVM instruction of that name.
     /// </summary>
-    private string EmitBackendScalarCast(StringBuilder sb, string value, TypeSymbol? sourceType,
-        TypeSymbol targetType)
+    private string EmitBackendCast(StringBuilder sb, BackendCastExpression cast)
     {
-        string targetLlvm = GetLlvmType(type: targetType);
-        string sourceLlvm = sourceType != null
-            ? GetLlvmType(type: sourceType)
-            : targetLlvm;
-
-        if (sourceLlvm == targetLlvm)
+        string value = EmitExpression(sb: sb, expr: cast.Value);
+        if (cast.Conversion == RepresentationConversion.Same)
         {
             return value;
         }
 
-        if (targetLlvm == "ptr" && sourceLlvm != "ptr")
+        string source = GetLlvmType(type: GetExpressionType(expr: cast.Value) ??
+                                          throw new InvalidOperationException(message: "A converting cast has an untyped value."));
+        string target = GetLlvmType(type: cast.ResolvedType ??
+                                          throw new InvalidOperationException(message: "A backend cast has no target type."));
+        string instruction = cast.Conversion switch
         {
-            string cast = NextTemp();
-            EmitLine(sb: sb, line: $"  {cast} = inttoptr {sourceLlvm} {value} to ptr");
-            return cast;
-        }
-
-        if (targetLlvm != "ptr" && sourceLlvm == "ptr")
-        {
-            string cast = NextTemp();
-            EmitLine(sb: sb, line: $"  {cast} = ptrtoint ptr {value} to {targetLlvm}");
-            return cast;
-        }
-
-        if (TryGetLlvmIntegerWidth(llvmType: sourceLlvm, bitWidth: out int sourceIntBits) &&
-            TryGetLlvmIntegerWidth(llvmType: targetLlvm, bitWidth: out int targetIntBits))
-        {
-            string integerResult = NextTemp();
-            if (sourceIntBits > targetIntBits)
-            {
-                EmitLine(sb: sb,
-                    line: $"  {integerResult} = trunc {sourceLlvm} {value} to {targetLlvm}");
-            }
-            else if (sourceIntBits < targetIntBits)
-            {
-                string op = IsUnsignedIntegerType(type: targetType)
-                    ? "zext"
-                    : "sext";
-                EmitLine(sb: sb,
-                    line: $"  {integerResult} = {op} {sourceLlvm} {value} to {targetLlvm}");
-            }
-            else
-            {
-                EmitLine(sb: sb,
-                    line: $"  {integerResult} = bitcast {sourceLlvm} {value} to {targetLlvm}");
-            }
-
-            return integerResult;
-        }
-
-        return EmitScalarWidthOrFloatCast(sb: sb,
-            value: value,
-            sourceType: sourceType,
-            targetType: targetType,
-            sourceLlvm: sourceLlvm,
-            targetLlvm: targetLlvm);
-    }
-
-    /// <summary>
-    /// Emits the float↔float / float↔int / int-width-change cast for two same-kind-or-mixed scalar
-    /// LLVM types (both already known to be non-ptr and not equal). The signedness comes from the
-    /// RazorForge <paramref name="sourceType"/>/<paramref name="targetType"/>.
-    /// </summary>
-    private string EmitScalarWidthOrFloatCast(StringBuilder sb, string value, TypeSymbol? sourceType,
-        TypeSymbol targetType, string sourceLlvm, string targetLlvm)
-    {
-        bool sourceIsFloat =
-            sourceLlvm is "half" or FloatTypeName or DoubleTypeName or Fp128TypeName;
-        bool targetIsFloat =
-            targetLlvm is "half" or FloatTypeName or DoubleTypeName or Fp128TypeName;
-        bool targetUnsigned = IsUnsignedIntegerType(type: targetType);
-
+            RepresentationConversion.Truncate => "trunc",
+            RepresentationConversion.ZeroExtend => "zext",
+            RepresentationConversion.SignExtend => "sext",
+            RepresentationConversion.Bitcast => "bitcast",
+            RepresentationConversion.IntToPointer => "inttoptr",
+            RepresentationConversion.PointerToInt => "ptrtoint",
+            RepresentationConversion.FloatTruncate => "fptrunc",
+            RepresentationConversion.FloatExtend => "fpext",
+            RepresentationConversion.FloatToSigned => "fptosi",
+            RepresentationConversion.FloatToUnsigned => "fptoui",
+            RepresentationConversion.SignedToFloat => "sitofp",
+            RepresentationConversion.UnsignedToFloat => "uitofp",
+            _ => throw new InvalidOperationException(message: $"Unknown representation conversion {cast.Conversion}.")
+        };
         string result = NextTemp();
-        if (sourceIsFloat && targetIsFloat)
-        {
-            EmitFloatToFloatCast(sb: sb,
-                result: result,
-                value: value,
-                sourceLlvm: sourceLlvm,
-                targetLlvm: targetLlvm);
-        }
-        else if (sourceIsFloat)
-        {
-            EmitFloatToIntCast(sb: sb,
-                result: result,
-                value: value,
-                sourceLlvm: sourceLlvm,
-                targetLlvm: targetLlvm,
-                targetUnsigned: targetUnsigned);
-        }
-        else if (targetIsFloat)
-        {
-            EmitIntToFloatCast(sb: sb,
-                result: result,
-                value: value,
-                sourceLlvm: sourceLlvm,
-                targetLlvm: targetLlvm,
-                sourceType: sourceType);
-        }
-        else
-        {
-            EmitIntWidthCast(sb: sb,
-                result: result,
-                value: value,
-                sourceLlvm: sourceLlvm,
-                targetLlvm: targetLlvm,
-                targetUnsigned: targetUnsigned);
-        }
-
+        EmitLine(sb: sb, line: $"  {result} = {instruction} {source} {value} to {target}");
         return result;
-    }
-
-    /// <summary>Emits a float-to-float cast (fptrunc or fpext) based on relative bit widths.</summary>
-    private void EmitFloatToFloatCast(StringBuilder sb, string result, string value,
-        string sourceLlvm, string targetLlvm)
-    {
-        string op = GetTypeBitWidth(llvmType: sourceLlvm) > GetTypeBitWidth(llvmType: targetLlvm)
-            ? "fptrunc"
-            : "fpext";
-        EmitLine(sb: sb, line: $"  {result} = {op} {sourceLlvm} {value} to {targetLlvm}");
-    }
-
-    /// <summary>Emits a float-to-integer cast (fptoui or fptosi) based on target signedness.</summary>
-    private static void EmitFloatToIntCast(StringBuilder sb, string result, string value,
-        string sourceLlvm, string targetLlvm, bool targetUnsigned)
-    {
-        string op = targetUnsigned
-            ? "fptoui"
-            : "fptosi";
-        EmitLine(sb: sb, line: $"  {result} = {op} {sourceLlvm} {value} to {targetLlvm}");
-    }
-
-    /// <summary>Emits an integer-to-float cast (uitofp or sitofp) based on source signedness.</summary>
-    private static void EmitIntToFloatCast(StringBuilder sb, string result, string value,
-        string sourceLlvm, string targetLlvm, TypeSymbol? sourceType)
-    {
-        bool sourceUnsigned = IsUnsignedIntegerType(type: sourceType);
-        string op = sourceUnsigned
-            ? "uitofp"
-            : "sitofp";
-        EmitLine(sb: sb, line: $"  {result} = {op} {sourceLlvm} {value} to {targetLlvm}");
-    }
-
-    /// <summary>
-    /// Emits an integer width-change cast: trunc (narrowing), zext/sext (widening), or bitcast
-    /// (same width). Widening sign depends on the RazorForge <paramref name="targetUnsigned"/> flag.
-    /// </summary>
-    private void EmitIntWidthCast(StringBuilder sb, string result, string value,
-        string sourceLlvm, string targetLlvm, bool targetUnsigned)
-    {
-        int srcBits = GetTypeBitWidth(llvmType: sourceLlvm);
-        int dstBits = GetTypeBitWidth(llvmType: targetLlvm);
-        if (srcBits > dstBits)
-        {
-            EmitLine(sb: sb, line: $"  {result} = trunc {sourceLlvm} {value} to {targetLlvm}");
-        }
-        else if (srcBits < dstBits)
-        {
-            string op = targetUnsigned
-                ? "zext"
-                : "sext";
-            EmitLine(sb: sb, line: $"  {result} = {op} {sourceLlvm} {value} to {targetLlvm}");
-        }
-        else
-        {
-            EmitLine(sb: sb, line: $"  {result} = bitcast {sourceLlvm} {value} to {targetLlvm}");
-        }
-    }
-
-    /// <summary>
-    /// Attempts to get LLVM integer width and reports whether it succeeded.
-    /// </summary>
-    private static bool TryGetLlvmIntegerWidth(string llvmType, out int bitWidth)
-    {
-        bitWidth = 0;
-        if (!llvmType.StartsWith(value: 'i') || llvmType.Length < 2)
-        {
-            return false;
-        }
-
-        return int.TryParse(s: llvmType.AsSpan(start: 1), result: out bitWidth);
-    }
-
-    /// <summary>
-    /// Emits a primitive type cast (trunc/zext/sext/bitcast) from one LLVM primitive type to another.
-    /// Used when an explicitly typed variable declaration has an initializer of a different type.
-    /// </summary>
-    private string EmitPrimitiveCast(StringBuilder sb, string value, string fromLlvm,
-        string toLlvm)
-    {
-        if (fromLlvm == toLlvm)
-        {
-            return value;
-        }
-
-        bool fromIsFloat = fromLlvm is "half" or FloatTypeName or DoubleTypeName or Fp128TypeName;
-        bool toIsFloat = toLlvm is "half" or FloatTypeName or DoubleTypeName or Fp128TypeName;
-
-        string cast = NextTemp();
-        if (fromIsFloat && toIsFloat)
-        {
-            string op = GetTypeBitWidth(llvmType: fromLlvm) > GetTypeBitWidth(llvmType: toLlvm)
-                ? "fptrunc"
-                : "fpext";
-            EmitLine(sb: sb, line: $"  {cast} = {op} {fromLlvm} {value} to {toLlvm}");
-        }
-        else if (fromIsFloat)
-        {
-            EmitLine(sb: sb, line: $"  {cast} = fptosi {fromLlvm} {value} to {toLlvm}");
-        }
-        else if (toIsFloat)
-        {
-            EmitLine(sb: sb, line: $"  {cast} = sitofp {fromLlvm} {value} to {toLlvm}");
-        }
-        else
-        {
-            int srcBits = GetTypeBitWidth(llvmType: fromLlvm);
-            int dstBits = GetTypeBitWidth(llvmType: toLlvm);
-            string op = "bitcast";
-            if (srcBits > dstBits)
-            {
-                op = "trunc";
-            }
-            else if (srcBits < dstBits)
-            {
-                op = "zext";
-            }
-
-            EmitLine(sb: sb, line: $"  {cast} = {op} {fromLlvm} {value} to {toLlvm}");
-        }
-
-        return cast;
     }
 
     /// <summary>

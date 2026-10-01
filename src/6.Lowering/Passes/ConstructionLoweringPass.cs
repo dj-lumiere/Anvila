@@ -101,11 +101,18 @@ internal sealed class ConstructionLoweringPass : AstRewriter
             };
         }
 
+        // The backend builds the type the creator is stamped with: the one analysis constructed, else the
+        // creator's own type.
+        creator.ConstructedType = creator.ConstructedType is null or ErrorTypeSymbol
+            ? creator.ResolvedType is null or ErrorTypeSymbol
+                ? throw new InvalidOperationException(
+                    message: $"The creator of '{creator.TypeName}' at {creator.Location} has no type.")
+                : creator.ResolvedType
+            : creator.ConstructedType;
+
         return creator is { MemberVariables: [(_, var value)] } &&
-               (creator.ConstructedType ?? creator.ResolvedType) is RecordTypeSymbol
-               {
-                   BackendType: not null
-               } target and not VariantTypeSymbol
+               creator.ConstructedType is RecordTypeSymbol { BackendType: not null } target and
+                   not VariantTypeSymbol
             ? Cast(value: value, target: target, location: creator.Location)
             : creator;
     }

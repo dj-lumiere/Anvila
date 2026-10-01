@@ -1,4 +1,5 @@
 using TypeModel.Symbols;
+using TypeModel.Types;
 
 namespace SyntaxTree;
 
@@ -130,6 +131,12 @@ public record VariableDeclaration(
     bool IsLateInit = false,
     bool IsGlobal = false) : Declaration(Location: Location)
 {
+    /// <summary>
+    /// The type of the local's storage, stamped at Phase 9 by <c>LocalTypeStampPass</c> for the backends:
+    /// the declared type, else the initializer's.
+    /// </summary>
+    public TypeSymbol? LocalType { get; set; }
+
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

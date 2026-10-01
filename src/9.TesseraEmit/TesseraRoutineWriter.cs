@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Builder.LlvmEmit;
+using Builder.Lowering.Passes;
 using Builder.Tokenizer;
 using Builder.Verification;
 using SyntaxTree;
@@ -62,7 +63,7 @@ internal sealed class TesseraRoutineWriter
         _body = body;
     }
 
-    private bool HasMe => _routine.OwnerType != null && !_routine.IsCreator && !_routine.IsCommon &&
+    private bool HasMe => _routine is { OwnerType: not null, IsCreator: false, IsCommon: false } &&
                           !TesseraWriter.IsVoid(type: _routine.OwnerType);
 
     private bool MeByReference => LlvmEmitter.IsByRefMeRecord(ownerType: _routine.OwnerType);
@@ -295,7 +296,7 @@ internal sealed class TesseraRoutineWriter
 
     private void WriteDeclaration(VariableDeclaration declaration)
     {
-        TypeSymbol type = declaration.Type?.ResolvedType ?? declaration.Initializer?.ResolvedType ??
+        TypeSymbol type = declaration.LocalType ??
                           throw Unsupported(what: $"the untyped local '{declaration.Name}'");
         string? value = declaration.Initializer is { } initializer
             ? Value(operand: Evaluate(expression: initializer))
@@ -422,44 +423,37 @@ internal sealed class TesseraRoutineWriter
     // ── Expressions ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A value moved to another representation, as the LLVM emitter's scalar cast does it: the same
-    /// representation is the same value, an integer and a pointer convert with <c>inttoptr</c>/<c>ptrtoint</c>,
-    /// and two integers of different widths truncate, or extend by the target's signedness.
+    /// A value moved to another representation: the conversion <c>RepresentationCastPass</c> stamped on the
+    /// cast, as Tessera's raw operation of the same instruction.
     /// </summary>
-    private Operand EvaluateRepresentationCast(Operand inner, TypeSymbol? target)
+    private Operand EvaluateRepresentationCast(Operand inner, BackendCastExpression cast)
     {
-        string from = TypeText(type: inner.Type);
-        string to = TypeText(type: target);
-        if (from == to)
+        TypeSymbol? target = cast.ResolvedType;
+        if (cast.Conversion == RepresentationConversion.Same)
         {
             return inner with { Type = target };
         }
 
-        string value = Value(operand: inner);
-        int? fromBits = IntegerBits(text: from);
-        int? toBits = IntegerBits(text: to);
-        string expression = (from, to) switch
+        string from = TypeText(type: inner.Type);
+        string to = TypeText(type: target);
+        string operation = cast.Conversion switch
         {
-            (_, "Addr") when fromBits != null => $"inttoptr<{from}, Addr>({value})",
-            ("Addr", _) when toBits != null => $"ptrtoint<Addr, {to}>({value})",
-            _ when fromBits > toBits => $"trunc<{from}, {to}>({value})",
-            _ when fromBits < toBits => $"{(to[0] == 'U' ? "zext" : "sext")}<{from}, {to}>({value})",
-            _ when fromBits == toBits => $"bitcast<{from}, {to}>({value})",
-            _ => throw Unsupported(what: $"a representation cast from {from} to {to}")
+            RepresentationConversion.Truncate => "trunc",
+            RepresentationConversion.ZeroExtend => "zext",
+            RepresentationConversion.SignExtend => "sext",
+            RepresentationConversion.Bitcast => "bitcast",
+            RepresentationConversion.IntToPointer => "inttoptr",
+            RepresentationConversion.PointerToInt => "ptrtoint",
+            RepresentationConversion.FloatTruncate => "fptrunc",
+            RepresentationConversion.FloatExtend => "fpext",
+            RepresentationConversion.FloatToSigned => "fptosi",
+            RepresentationConversion.FloatToUnsigned => "fptoui",
+            RepresentationConversion.SignedToFloat => "sitofp",
+            RepresentationConversion.UnsignedToFloat => "uitofp",
+            _ => throw Unsupported(what: $"the representation conversion {cast.Conversion}")
         };
-        return new Operand(Text: Temp(type: target, expression: expression), Type: target, IsPlace: false);
-    }
-
-    /// <summary>The width of a Tessera integer type, or null for any other type.</summary>
-    private static int? IntegerBits(string text)
-    {
-        return text switch
-        {
-            "Bool" => 1,
-            "USize" or "SSize" => 64,
-            _ when text.Length > 1 && text[0] is 'S' or 'U' && int.TryParse(s: text[1..], result: out int bits) => bits,
-            _ => null
-        };
+        return new Operand(Text: Temp(type: target, expression: $"{operation}<{from}, {to}>({Value(operand: inner)})"),
+            Type: target, IsPlace: false);
     }
 
     /// <summary>The operand as a value: a place is loaded into a temporary.</summary>
@@ -550,6 +544,13 @@ internal sealed class TesseraRoutineWriter
                 return EvaluateCreator(creator: creator);
             case CarrierPayloadExpression payload:
                 return EvaluatePayload(payload: payload);
+            case AddressOfExpression address:
+            {
+                Operand storage = Evaluate(expression: address.Target);
+                return storage.IsPlace
+                    ? new Operand(Text: storage.Text, Type: address.ResolvedType, IsPlace: false)
+                    : throw Unsupported(what: "the address of a value that has no storage");
+            }
             case BinaryExpression { Operator: BinaryOperator.Assign } assign:
                 return new Operand(Text: WriteAssignment(target: assign.Left, value: assign.Right),
                     Type: assign.Right.ResolvedType, IsPlace: false);
@@ -562,7 +563,7 @@ internal sealed class TesseraRoutineWriter
                     return inner with { Type = cast.ResolvedType };
                 }
 
-                return EvaluateRepresentationCast(inner: inner, target: cast.ResolvedType);
+                return EvaluateRepresentationCast(inner: inner, cast: cast);
             }
             default:
                 throw Unsupported(what: $"the expression {expression.GetType().Name}");
@@ -714,12 +715,6 @@ internal sealed class TesseraRoutineWriter
             throw Unsupported(what: $"the unresolved call {DescribeCall(call: call)}");
         }
 
-        if (call.Callee is MemberExpression addressed && call.Arguments.Count == 0 &&
-            InterceptedMemberCall(call: call, member: addressed) is { } intercepted)
-        {
-            return intercepted;
-        }
-
         if (routine.LlvmIrTemplate != null)
         {
             string operation = TesseraIntrinsics.Translate(routine: routine,
@@ -788,70 +783,15 @@ internal sealed class TesseraRoutineWriter
             IsPlace: false);
     }
 
-    /// <summary>
-    /// The zero-argument member calls the LLVM emitter answers at the call site instead of calling the body:
-    /// <c>var_name()</c> is the receiver's name, and on a struct record (or a non-pointer primitive, for
-    /// <c>hijack</c>) <c>get_address()</c> and <c>hijack()</c> are the address of the caller's storage, since
-    /// the body would only see a copy. Null when the call is not one of them.
-    /// </summary>
-    private Operand? InterceptedMemberCall(CallExpression call, MemberExpression member)
+    /// <summary>The call's arguments by parameter (<c>CallArgumentOrderPass</c> listed them in parameter order).
+    /// A parameter left without one is null.</summary>
+    private static List<Expression?> OrderedArguments(CallExpression call, RoutineInfo routine)
     {
-        if (member.MemberName == "var_name")
-        {
-            return TextLiteral(text: member.Object is IdentifierExpression named
-                    ? named.Name
-                    : "<expr>",
-                type: _module.TextType);
-        }
-
-        bool takesAddress = member.MemberName switch
-        {
-            "get_address" => member.Object.ResolvedType is RecordTypeSymbol { BackendType: null },
-            Declaration.RuntimeContract.RawPointer.Hijack => member.Object.ResolvedType is RecordTypeSymbol
-            {
-                BackendType: null or not "ptr"
-            },
-            _ => false
-        };
-        if (!takesAddress)
-        {
-            return null;
-        }
-
-        Operand receiver = Evaluate(expression: member.Object);
-        if (!receiver.IsPlace)
-        {
-            throw Unsupported(what: $"{member.MemberName}() on a value that has no storage");
-        }
-
-        TypeSymbol? resultType = call.ResolvedType;
-        return member.MemberName == "get_address"
-            ? new Operand(Text: Temp(type: _module.AddressType, expression: $"ptrtoint<Addr, U64>({receiver.Text})"),
-                Type: _module.AddressType, IsPlace: false)
-            : new Operand(Text: receiver.Text, Type: resultType, IsPlace: false);
-    }
-
-    /// <summary>The call's arguments in the routine's parameter order: a named argument goes to the parameter of
-    /// its name, a positional one to the next. A parameter left without one is null.</summary>
-    private List<Expression?> OrderedArguments(CallExpression call, RoutineInfo routine)
-    {
-        var ordered = new Expression?[routine.Parameters.Count];
-        int next = 0;
-        foreach (Expression argument in call.Arguments)
-        {
-            int index = argument is NamedArgumentExpression named
-                ? routine.Parameters.FindIndex(match: p => p.Name == named.Name)
-                : next;
-            if (index < 0 || index >= ordered.Length)
-            {
-                throw Unsupported(what: $"an argument that matches no parameter of {routine.Name}");
-            }
-
-            ordered[index] = argument;
-            next = index + 1;
-        }
-
-        return [.. ordered];
+        return Enumerable.Range(start: 0, count: routine.Parameters.Count)
+                         .Select(selector: slot => CallArgumentOrderPass.ArgumentInSlot(arguments: call.Arguments,
+                              routine: routine,
+                              slot: slot))
+                         .ToList();
     }
 
     /// <summary>A struct record built from named field values: a Tessera record literal.</summary>
@@ -875,9 +815,7 @@ internal sealed class TesseraRoutineWriter
     /// <summary>A record built from its field values, given in field order: a Tessera record literal.</summary>
     private Operand EvaluateCreator(CreatorExpression creator)
     {
-        TypeSymbol? type = creator.ConstructedType is not (null or ErrorTypeSymbol)
-            ? creator.ConstructedType
-            : creator.ResolvedType;
+        TypeSymbol? type = creator.ConstructedType;
         if (type is EntityTypeSymbol entity)
         {
             return EvaluateEntityCreator(creator: creator, entity: entity);

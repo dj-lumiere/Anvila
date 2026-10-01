@@ -302,6 +302,12 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(e: node.Wrapper);
         return false;
     }
+    public bool VisitAddressOfExpression(AddressOfExpression node)
+    {
+        Visit(e: node.Target);
+        return false;
+    }
+
     public bool VisitBackendCastExpression(BackendCastExpression node)
     {
         Visit(e: node.Value);

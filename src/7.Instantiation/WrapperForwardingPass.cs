@@ -691,6 +691,8 @@ internal sealed class WrapperForwardingPass
             : retainControllerDef;
         TypeSymbol hijackedCtrlType = _registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked, innerType: retainControllerType ?? innerType, isReadOnly: false);
         TypeSymbol hijackedInnerType = _registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked, innerType: innerType, isReadOnly: false);
+        hijackedCtrlCtor.ConstructedType = hijackedCtrlType;
+        hijackedCtrlCtor.ResolvedType = hijackedCtrlType;
         RoutineInfo? ctrlRevealMemberRoutine = _registry.LookupMemberRoutine(
             type: hijackedCtrlType,
             memberRoutineName: RuntimeContract.RawPointer.AsEntity);
@@ -917,6 +919,8 @@ internal sealed class WrapperForwardingPass
                 Location: _synthLoc),
             Location: _synthLoc);
         TypeSymbol hijackedInnerType = _registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked, innerType: ctx.InnerType, isReadOnly: false);
+        hijackedCall.ConstructedType = hijackedInnerType;
+        hijackedCall.ResolvedType = hijackedInnerType;
         RoutineInfo? accessMemberRoutine = _registry.LookupMemberRoutine(type: hijackedInnerType,
             memberRoutineName: accessMemberRoutineName);
         var readCall = new CallExpression(

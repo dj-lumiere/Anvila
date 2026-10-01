@@ -23,9 +23,7 @@ public partial class LlvmEmitter
 
         List<string> paramList = BuildSynthesizedParameterList(routine: routine);
 
-        string returnType = routine.ReturnType != null
-            ? GetLlvmType(type: routine.ReturnType)
-            : "void";
+        string returnType = ComputeDefinitionReturnType(info: routine);
 
         // Mirror GenerateRoutineDefinition's ABI return handling (sret for Indirect, integer coercion
         // for small structs): this synthesized define path must agree with the declaration
@@ -84,7 +82,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Builds the LLVM parameter list (with names) for a synthesized routine body: the implicit
     /// <c>me</c> receiver for memberRoutines (skipping create factories, common routines, and void
-    /// <c>me</c>), then each explicit parameter in its ABI passing form (byval / coerce / plain value).
+    /// <c>me</c>), then each explicit parameter as an ordinary definition writes it.
     /// </summary>
     private List<string> BuildSynthesizedParameterList(RoutineInfo routine)
     {
@@ -98,35 +96,8 @@ public partial class LlvmEmitter
             }
         }
 
-        paramList.AddRange(collection:
-            from param in routine.Parameters
-            let byval = ParameterPassedByval(routine: routine, paramType: param.Type)
-            let coerce = byval
-                ? null
-                : ParameterCoerceType(routine: routine, paramType: param.Type)
-            let paramType = byval
-                ? IndirectParameterLlvmType(paramType: param.Type)
-                : coerce ?? GetParameterLlvmType(type: param.Type)
-            let emittedName = GetEmittedParamName(byval: byval, name: param.Name)
-            select $"{paramType} %{emittedName}");
+        paramList.AddRange(collection: routine.Parameters.Select(selector: param =>
+            FormatDefinitionParameter(info: routine, param: param)));
         return paramList;
-    }
-
-    /// <summary>Returns the LLVM parameter name for a routine parameter. Byval parameters use a
-    /// <c>.addr</c> suffix; the reserved name <c>entry</c> is escaped to <c>entry_</c> to avoid
-    /// colliding with the LLVM basic-block label of the same name; all other names are used as-is.</summary>
-    private static string GetEmittedParamName(bool byval, string name)
-    {
-        if (byval)
-        {
-            return $"{name}.addr";
-        }
-
-        if (name == "entry")
-        {
-            return "entry_";
-        }
-
-        return name;
     }
 }

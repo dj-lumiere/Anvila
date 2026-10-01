@@ -278,6 +278,11 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the backend cast expression</returns>
     T VisitBackendCastExpression(BackendCastExpression node);
 
+    /// <summary>Visits an address-of expression node (the address of a value's storage)</summary>
+    /// <param name="node">The address-of expression to visit</param>
+    /// <returns>Result of visiting the address-of expression</returns>
+    T VisitAddressOfExpression(AddressOfExpression node);
+
     /// <summary>Visits a closure value expression node (a capturing lambda's lifted routine + bound payload)</summary>
     /// <param name="node">The closure value expression to visit</param>
     /// <returns>Result of visiting the closure value expression</returns>

@@ -202,11 +202,6 @@ public partial class LlvmEmitter
             return;
         }
 
-        value = CoerceInitializerToDeclaredType(sb: sb,
-            varDecl: varDecl,
-            varType: varType,
-            llvmType: llvmType,
-            value: value);
         EmitLine(sb: sb, line: $"  store {llvmType} {value}, ptr {varPtr}");
 
         // NOTE: the per-RC-field retain on an initial RC-field-record copy is now an explicit AST call
@@ -312,135 +307,13 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// When the declaration has an explicit type annotation, emits an inline primitive cast so the
-    /// stored value's LLVM type matches the alloca type (e.g. <c>var e: U32 = s128Expr</c> truncs).
-    /// Only applies between scalar @llvm-annotated records; aggregates share shape and need no cast.
-    /// </summary>
-    private string CoerceInitializerToDeclaredType(StringBuilder sb, VariableDeclaration varDecl,
-        TypeSymbol varType, string llvmType, string value)
-    {
-        if (varDecl.Type == null)
-        {
-            return value;
-        }
-
-        TypeSymbol? initType = GetExpressionType(expr: varDecl.Initializer!);
-        if (initType == null)
-        {
-            return value;
-        }
-
-        string initLlvm = GetLlvmType(type: initType);
-        bool initIsScalar = initType is RecordTypeSymbol { BackendType: not null };
-        bool varIsScalar = varType is RecordTypeSymbol { BackendType: not null };
-        return initLlvm != llvmType && initIsScalar && varIsScalar
-            ? EmitPrimitiveCast(sb: sb,
-                value: value,
-                fromLlvm: initLlvm,
-                toLlvm: llvmType)
-            : value;
-    }
-
-    /// <summary>
-    /// Resolves the variable decl type from semantic builder state.
+    /// The storage type of a local, stamped by <c>LocalTypeStampPass</c>.
     /// </summary>
     private TypeSymbol? ResolveVariableDeclType(VariableDeclaration varDecl)
     {
-        TypeSymbol? varType = null;
-        if (varDecl.Type != null)
-        {
-            varType = ResolveTypeExpression(typeExpr: varDecl.Type);
-        }
-
-        // Declared-type resolution failed (a bare cross-module annotation whose TypeExpression lost its
-        // SA-stamped ResolvedType during a body-reconstructing pass — e.g. failable-variant expansion of
-        // `var abs_val: Integer = …` in `Integer.to_digit_bytes!()`, IO referencing the Numerics `Integer`,
-        // which codegen cannot re-resolve by bare name without the short-name scan). Fall back to the
-        // initializer's own resolved type (a hoisted temp identifier already carries it).
-        if (varType is null or ErrorTypeSymbol && varDecl.Initializer != null)
-        {
-            varType = GetExpressionType(expr: varDecl.Initializer) ?? varType;
-        }
-
-        // Fall back to the call's explicit generic-return-type resolution only when the
-        // inferred varType is null or unresolved-generic. The earlier "ptr-typed" heuristic
-        // was too loose — for `var x = entity.retain()`, the initializer's ResolvedType is
-        // the fully-substituted `Retained[Entity[S64]]`, but the underlying routine's
-        // declared ReturnType is the universal-memberRoutine-baked `Retained[Entity]` (with the
-        // inner type-arg lost). TryResolveExplicitGenericCallReturnType reads
-        // `routine.ReturnType` directly and would overwrite our correct varType with the
-        // bare form. Only re-resolve when the existing varType is missing or still has
-        // unresolved generic parameters.
-        bool varTypeIsUnresolved = varType is null || varType is ErrorTypeSymbol ||
-                                   varType is GenericParameterTypeSymbol ||
-                                   ContainsGenericParameter(type: varType);
-        if (varDecl.Initializer is CallExpression genericCallInit && varTypeIsUnresolved)
-        {
-            TypeSymbol? explicitGenericReturn =
-                TryResolveExplicitGenericCallReturnType(call: genericCallInit);
-            if (explicitGenericReturn != null)
-            {
-                varType = explicitGenericReturn;
-            }
-        }
-
-        if (varType == null && varDecl.Initializer is CallExpression
-            {
-                ConstructedType: { } constructedType
-            })
-        {
-            varType = constructedType;
-        }
-
-        // No name-based fuzzy fallback: the type must come structurally (declared type, initializer's
-        // ResolvedType, the call's generic-return, or ConstructedType). If none resolved, the caller
-        // hard-errors (UndeterminableVariableType) — codegen never fails silently, never string-parses a name.
-        return varType;
-    }
-
-    /// <summary>
-    /// Resolves a type expression to a TypeSymbol.
-    /// </summary>
-    private TypeSymbol? ResolveTypeExpression(TypeExpression typeExpr)
-    {
-        return ResolveTypeArgument(ta: typeExpr);
-    }
-
-    /// <summary>
-    /// Attempts to resolve explicit generic call return type and reports whether it succeeded.
-    /// </summary>
-    private TypeSymbol? TryResolveExplicitGenericCallReturnType(CallExpression call)
-    {
-        if (call.ConstructedType is not null and not ErrorTypeSymbol)
-        {
-            return call.ConstructedType;
-        }
-
-        RoutineInfo? routine = call.ResolvedRoutine;
-
-        if (routine == null || call.TypeArguments is not { Count: > 0 } explicitTypeArgs)
-        {
-            return routine?.ReturnType;
-        }
-
-        if (routine is
-                { IsGenericDefinition: true, GenericParameters: { Count: > 0 } genericParams } &&
-            explicitTypeArgs.Count == genericParams.Count)
-        {
-            var resolvedTypeArgs = explicitTypeArgs
-                                  .Select(selector: selector =>
-                                       ResolveTypeExpression(typeExpr: selector))
-                                  .Where(predicate: t => t != null)
-                                  .Cast<TypeSymbol>()
-                                  .ToList();
-            if (resolvedTypeArgs.Count == explicitTypeArgs.Count)
-            {
-                routine = _registry.GetOrCreateRoutineResolution(genericDef: routine,
-                    typeArguments: resolvedTypeArgs);
-            }
-        }
-
-        return routine.ReturnType;
+        return varDecl.LocalType is { } local
+            ? ApplyTypeSubstitutions(type: local)
+            : null;
     }
 
     #endregion
@@ -587,7 +460,7 @@ public partial class LlvmEmitter
     private string EmitEntityMemberVariableFieldPointer(StringBuilder sb, string entityPtr,
         EntityTypeSymbol entity, string memberVariableName)
     {
-        entity = RefreshEntityMemberVariables(entity: entity,
+        entity = EntityHavingMemberVariable(entity: entity,
             memberVariableName: memberVariableName);
         GenerateEntityType(entity: entity);
 

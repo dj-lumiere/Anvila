@@ -1281,10 +1281,30 @@ public record WrapperProjectionExpression(
 /// <param name="Location">Source location of the construction.</param>
 public record BackendCastExpression(Expression Value, SourceLocation Location) : Expression(Location: Location)
 {
+    /// <summary>What the cast does to the bits, stamped by <c>RepresentationCastPass</c> before the backend.</summary>
+    public RepresentationConversion Conversion { get; set; }
+
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
         return visitor.VisitBackendCastExpression(node: this);
+    }
+}
+
+/// <summary>
+/// The address of a value's storage, produced by lowering (never parsed): <c>AddressLoweringPass</c> writes
+/// <c>x.hijack()</c> and <c>x.get_address()</c> on a record held in storage as this, so the backend takes the
+/// caller's storage address instead of calling a body that would only see a copy. Its resolved type is the
+/// pointer type (<c>Hijacked[T]</c>).
+/// </summary>
+/// <param name="Target">The storage: a local, a parameter, or a field path on one.</param>
+/// <param name="Location">Source location of the call it replaces.</param>
+public record AddressOfExpression(Expression Target, SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitAddressOfExpression(node: this);
     }
 }
 

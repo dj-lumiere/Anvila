@@ -469,6 +469,7 @@ public abstract class AstRewriter
             GenericMemberExpression e => VisitGenericMember(e: e),
             WrapperProjectionExpression e => VisitWrapperProjection(e: e),
             BackendCastExpression e => VisitBackendCast(e: e),
+            AddressOfExpression e => VisitAddressOf(e: e),
             ClosureValueExpression e => VisitClosureValue(e: e),
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
@@ -588,6 +589,20 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: w, objB: e.Wrapper)
             ? e
             : e with { Wrapper = w };
+    }
+
+    /// <summary>
+    /// Rewrites an <see cref="AddressOfExpression"/> by visiting the storage it takes the address of.
+    /// Returns the original node when the storage expression is unchanged.
+    /// </summary>
+    /// <param name="e">The address-of expression to rewrite.</param>
+    /// <returns>The rewritten expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitAddressOf(AddressOfExpression e)
+    {
+        Expression target = VisitExpression(expr: e.Target);
+        return ReferenceEquals(objA: target, objB: e.Target)
+            ? e
+            : e with { Target = target };
     }
 
     /// <summary>

@@ -64,12 +64,14 @@ public partial class LlvmEmitter
             EmitLine(sb: sb, line: TracePop);
         }
 
+        // MaybeReturnLoweringPass wrapped every bare value an optional-returning routine returns.
         TypeSymbol? exprType = GetExpressionType(expr: ret.Value!);
         if (IsMaybeType(type: retType) && value != "zeroinitializer" &&
             (exprType == null || !IsMaybeType(type: exprType)))
         {
-            EmitMaybeWrappedReturn(sb: sb, retType: retType, innerValue: value);
-            return;
+            throw new InvalidOperationException(
+                message: $"A bare value returned as '{retType.FullName}' reached the LLVM emitter in " +
+                         $"[{_currentRoutineDiagName}].");
         }
 
         // Indirect (sret) return: the struct value is stored through the hidden %sret pointer and
@@ -142,24 +144,6 @@ public partial class LlvmEmitter
         {
             EmitLine(sb: sb, line: RetVoid);
         }
-    }
-
-    private void EmitMaybeWrappedReturn(StringBuilder sb, TypeSymbol retType, string innerValue)
-    {
-        TypeSymbol innerType = retType.TypeArguments is { Count: > 0 }
-            ? retType.TypeArguments[index: 0]
-            : retType;
-        string carrierType = GetLlvmType(type: retType);
-        string innerLlvm = innerType is EntityTypeSymbol
-            ? "ptr"
-            : GetLlvmType(type: innerType);
-        // Maybe `present` (field 0) is a Bool, stored as i8 (see GetFieldStorageLlvmType).
-        string v0 = NextTemp();
-        EmitLine(sb: sb, line: $"  {v0} = insertvalue {carrierType} zeroinitializer, i8 1, 0");
-        string v1 = NextTemp();
-        EmitLine(sb: sb,
-            line: $"  {v1} = insertvalue {carrierType} {v0}, {innerLlvm} {innerValue}, 1");
-        EmitLine(sb: sb, line: $"  ret {carrierType} {v1}");
     }
 
     private bool IsEntityConstructorCall(Expression? expr)

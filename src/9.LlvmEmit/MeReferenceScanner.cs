@@ -179,6 +179,11 @@ internal sealed class MeReferenceScanner : ISyntaxTreeVisitor<bool>
     {
         return node.Wrapper.Accept(visitor: this);
     }
+    public bool VisitAddressOfExpression(AddressOfExpression node)
+    {
+        return node.Target.Accept(visitor: this);
+    }
+
     public bool VisitBackendCastExpression(BackendCastExpression node)
     {
         return node.Value.Accept(visitor: this);

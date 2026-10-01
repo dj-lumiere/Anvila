@@ -71,12 +71,7 @@ public partial class LlvmEmitter
     /// <returns>The temporary variable holding the result.</returns>
     private string EmitConstructorCall(StringBuilder sb, CreatorExpression expr)
     {
-        TypeSymbol? type = ResolveCreatorType(creator: expr);
-        if (type == null)
-        {
-            throw new InvalidOperationException(
-                message: $"Unknown type in constructor: {expr.TypeName}");
-        }
+        TypeSymbol type = ResolveCreatorType(creator: expr);
 
         // A creator naming a `create` overload is that overload's call (ConstructionLoweringPass).
         if (expr.ResolvedCreatorRoutine != null)
@@ -506,8 +501,7 @@ public partial class LlvmEmitter
     private string EmitEntityMemberVariableRead(StringBuilder sb, string entityPtr,
         EntityTypeSymbol entity, string memberVariableName)
     {
-        // Refresh stale generic resolutions (member variables may be empty or missing the target member)
-        entity = RefreshEntityMemberVariables(entity: entity,
+        entity = EntityHavingMemberVariable(entity: entity,
             memberVariableName: memberVariableName);
 
         // Ensure entity type struct definition exists in LLVM IR
@@ -636,25 +630,6 @@ public partial class LlvmEmitter
             }
         }
 
-        // Fallback: stale generic-instance resolutions (e.g. Maybe[Bool] cached from the
-        // pre-registered carrier shell before Maybe's source body was resolved) may have empty
-        // MemberVariables. Refresh from the GenericDefinition and retry.
-        if (memberVariableIndex < 0 && record.GenericDefinition is RecordTypeSymbol gdef &&
-            record.TypeArguments != null && gdef.MemberVariables.Count > 0)
-        {
-            var fresh = (RecordTypeSymbol)gdef.CreateInstance(typeArguments: record.TypeArguments);
-            record.MemberVariables = fresh.MemberVariables;
-            for (int i = 0; i < record.MemberVariables.Count; i++)
-            {
-                if (record.MemberVariables[index: i].Name == memberVariableName)
-                {
-                    memberVariableIndex = i;
-                    memberVariable = record.MemberVariables[index: i];
-                    break;
-                }
-            }
-        }
-
         if (memberVariableIndex < 0 || memberVariable == null)
         {
             throw new InvalidOperationException(
@@ -721,8 +696,7 @@ public partial class LlvmEmitter
         EntityTypeSymbol entity, string memberVariableName, string value,
         TypeSymbol? valueType = null)
     {
-        // Refresh stale generic resolutions
-        entity = RefreshEntityMemberVariables(entity: entity,
+        entity = EntityHavingMemberVariable(entity: entity,
             memberVariableName: memberVariableName);
 
         // Find member variable index
@@ -764,77 +738,25 @@ public partial class LlvmEmitter
         // must drop its old strong ref and take a fresh one on the new value, or the count is off by
         // one and teardown double-frees. BOTH sides are now explicit AST calls, NOT codegen emits:
         // the retain-new `.share()` on the RHS, and the release-old (snapshot-then-`.destroy()`)
-        // inserted by RcRetainLoweringPass. So this method just emits the raw store — the RC balance
+        // inserted by ScopeTeardownLoweringPass. So this method just emits the raw store — the RC balance
         // lives in the AST, keeping codegen out of refcount business (and letting the cycle-collector
         // lock cover field-write releases through the single RoamController.unhold chokepoint).
         EmitLine(sb: sb, line: $"  store {memberVariableType} {value}, ptr {memberVariablePtr}");
     }
 
     /// <summary>
-    /// Refreshes entity member variables for resolved generic types that may have stale or empty members.
-    /// Tries the generic definition first, then falls back to registry lookup.
+    /// The entity, checked to have the member variable an access names: monomorphization finalizes every
+    /// concrete entity's member list before the backend runs.
     /// </summary>
-    /// <param name="entity">The entity type to refresh.</param>
-    /// <param name="memberVariableName">The member variable name being probed.</param>
-    private EntityTypeSymbol RefreshEntityMemberVariables(EntityTypeSymbol entity,
+    /// <param name="entity">The entity type accessed.</param>
+    /// <param name="memberVariableName">The member variable name being accessed.</param>
+    private EntityTypeSymbol EntityHavingMemberVariable(EntityTypeSymbol entity,
         string memberVariableName)
     {
-        if (entity.MemberVariables.Any(predicate: mv => mv.Name == memberVariableName))
-        {
-            return entity;
-        }
-
-        // Non-generic entities can also be observed before pass 1c repopulates their member list.
-        // Structural re-lookup / re-instantiation only — no AST rebuild or name-based type re-resolution.
-        TypeSymbol? directLookup = _registry.LookupType(name: entity.FullName) ??
-                                 LookupTypeInCurrentModule(name: entity.FullName) ??
-                                 _registry.LookupType(name: entity.Name) ??
-                                 LookupTypeInCurrentModule(name: entity.Name);
-        if (directLookup is EntityTypeSymbol directEntity &&
-            directEntity.MemberVariables.Any(predicate: mv => mv.Name == memberVariableName))
-        {
-            return directEntity;
-        }
-
-        if (!entity.IsGenericResolution || entity.TypeArguments == null)
-        {
-            return entity;
-        }
-
-        // Try GenericDefinition if available
-        if (entity.GenericDefinition is { MemberVariables.Count: > 0 } genDef &&
-            TryReinstantiateEntity(genericDef: genDef,
-                typeArguments: entity.TypeArguments,
-                memberVariableName: memberVariableName,
-                refreshed: out EntityTypeSymbol? fromGenDef))
-        {
-            return fromGenDef!;
-        }
-
-        // Fallback: look up the generic definition from the registry
-        string baseName = GetGenericBaseName(type: entity) ?? entity.Name;
-        var lookupDef = LookupTypeInCurrentModule(name: baseName) as EntityTypeSymbol;
-        if (lookupDef is { IsGenericDefinition: true, MemberVariables.Count: > 0 } &&
-            TryReinstantiateEntity(genericDef: lookupDef,
-                typeArguments: entity.TypeArguments,
-                memberVariableName: memberVariableName,
-                refreshed: out EntityTypeSymbol? fromLookup))
-        {
-            return fromLookup!;
-        }
-
-        return entity;
-    }
-
-    /// <summary>
-    /// Re-instantiates <paramref name="genericDef"/> with the given type arguments and returns the
-    /// fresh resolution when it carries the requested member variable. Returns false otherwise.
-    /// </summary>
-    private static bool TryReinstantiateEntity(EntityTypeSymbol genericDef,
-        List<TypeSymbol> typeArguments, string memberVariableName, out EntityTypeSymbol? refreshed)
-    {
-        refreshed = genericDef.CreateInstance(typeArguments: typeArguments) as EntityTypeSymbol;
-        return refreshed != null &&
-               refreshed.MemberVariables.Any(predicate: mv => mv.Name == memberVariableName);
+        return entity.MemberVariables.Any(predicate: mv => mv.Name == memberVariableName)
+            ? entity
+            : throw new InvalidOperationException(
+                message: $"The entity '{entity.FullName}' reached the LLVM emitter without its member variable " +
+                         $"'{memberVariableName}' in [{_currentRoutineDiagName}].");
     }
 }

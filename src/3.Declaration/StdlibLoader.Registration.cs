@@ -197,6 +197,7 @@ public sealed partial class StdlibLoader
         if (members.Count > existing.MemberVariables.Count)
         {
             existing.MemberVariables = members;
+            registry.RefreshRecordResolutions(genericDef: existing);
         }
     }
 

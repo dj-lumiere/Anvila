@@ -153,26 +153,8 @@ public partial class LlvmEmitter
     /// </summary>
     private string ComputeDeclarationReturnType(RoutineInfo routine, bool isCExtern)
     {
-        string returnType = routine.ReturnType != null
-            ? GetLlvmType(type: routine.ReturnType)
-            : "void";
-
-        if (routine.FailableVariant == FailableVariant.Lookup)
-        {
-            // Lookup[None] degenerates to Result[None]: a None value payload makes the
-            // "found vs not-found" distinction meaningless, so use the Result carrier instead.
-            returnType = routine.ReturnType?.IsNone == true
-                ? GetResultCarrierLlvmType(valueType: routine.ReturnType)
-                : GetLookupCarrierLlvmType(valueType: routine.ReturnType!);
-        }
-        else if (routine.FailableVariant == FailableVariant.Check)
-        {
-            returnType = GetResultCarrierLlvmType(valueType: routine.ReturnType!);
-        }
-        else if (routine.FailableVariant == FailableVariant.TryBool)
-        {
-            returnType = "i1";
-        }
+        // The same carrier form the definition returns.
+        string returnType = ComputeDefinitionReturnType(info: routine);
 
         if (isCExtern && returnType == "half")
         {

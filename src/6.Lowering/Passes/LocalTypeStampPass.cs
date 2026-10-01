@@ -4,7 +4,9 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Phase 9 (backend annotation): gives a local reference that is still untyped, or typed as an error, the
+/// Phase 9 (backend annotation): stamps each local declaration's storage type
+/// (<see cref="VariableDeclaration.LocalType"/>: the declared type, else the initializer's, else the bound
+/// routine's return type), and gives a local reference that is still untyped, or typed as an error, the
 /// type its declaration settled on. A temporary that a lowering pass introduced while its value was not yet
 /// typed (the teardown return spill <c>var __td_ret = EXPR</c> in a template body, whose <c>EXPR</c> gets
 /// its concrete type only after monomorphization and operator lowering) keeps the stale type on its
@@ -23,8 +25,8 @@ internal static class LocalTypeStampPass
                 switch (node)
                 {
                     case DeclarationStatement { Declaration: VariableDeclaration v }
-                        when (Concrete(type: v.Type?.ResolvedType) ?? Concrete(type: v.Initializer?.ResolvedType)) is
-                            { } localType:
+                        when StorageType(declaration: v) is { } localType:
+                        v.LocalType = localType;
                         declared[key: v.Name] = localType;
                         break;
                     case IdentifierExpression { ResolvedType: null or ErrorTypeSymbol } id
@@ -33,6 +35,18 @@ internal static class LocalTypeStampPass
                         break;
                 }
             });
+    }
+
+    private static TypeSymbol? StorageType(VariableDeclaration declaration)
+    {
+        return Concrete(type: declaration.Type?.ResolvedType) ??
+               Concrete(type: declaration.Initializer?.ResolvedType) ??
+               declaration.Initializer switch
+               {
+                   CallExpression { ConstructedType: { } constructed } => Concrete(type: constructed),
+                   CallExpression { ResolvedRoutine.ReturnType: { } returned } => Concrete(type: returned),
+                   _ => null
+               };
     }
 
     private static TypeSymbol? Concrete(TypeSymbol? type)
