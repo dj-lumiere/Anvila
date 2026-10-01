@@ -13,9 +13,10 @@ namespace Builder.TesseraEmit;
 /// <summary>
 /// Writes one routine as Tessera. Every local lives in a claimed stack slot, as in the LLVM emitter's
 /// alloca-per-local output (LLVM promotes the slots to registers): a read is a <c>load</c>, a write a
-/// <c>store</c>. A Tessera block sees only its own parameters and the routine's, so every block after
-/// <c>entry</c> takes the local slots as parameters and every jump passes them on. Each value a statement
-/// computes is bound to a temporary, in evaluation order.
+/// <c>store</c>. A slot is claimed where its local is declared, with the value it starts with
+/// (<c>claim %x : @T &lt;- value</c>). A Tessera block sees only its own parameters and the routine's, so a
+/// block takes the slots visible where the statement that makes it stands, and every jump to it passes them.
+/// Each value a statement computes is bound to a temporary, in evaluation order.
 /// </summary>
 internal sealed class TesseraRoutineWriter
 {
@@ -23,11 +24,13 @@ internal sealed class TesseraRoutineWriter
     private readonly RoutineInfo _routine;
     private readonly Statement _body;
 
-    /// <summary>The slot claimed for each local declaration, made before the body is written.</summary>
-    private readonly Dictionary<VariableDeclaration, Local> _declarationSlots = new();
+    /// <summary>The slots visible here, in claim order: the parameters a block made here takes.</summary>
+    private List<Local> _visible = [];
 
-    /// <summary>The local slots in claim order: the parameters every later block takes.</summary>
-    private readonly List<Local> _slots = [];
+    /// <summary>The slots each block takes, fixed when its label is made.</summary>
+    private readonly Dictionary<string, List<Local>> _labelSlots = new(comparer: StringComparer.Ordinal);
+
+    private int _slotCount;
 
     private readonly List<Dictionary<string, Local>> _scopes = [];
     private readonly List<Block> _blocks = [];
@@ -108,8 +111,6 @@ internal sealed class TesseraRoutineWriter
             }
         }
 
-        ClaimDeclaredLocals();
-
         _traced = _module.TracesRoutine(routine: _routine);
         if (_traced)
         {
@@ -154,58 +155,41 @@ internal sealed class TesseraRoutineWriter
 
     // ── Slots and blocks ──────────────────────────────────────────────────────
 
-    /// <summary>Claims a slot in the entry block, stores <paramref name="initial"/> into it if given.</summary>
+    /// <summary>
+    /// Claims a slot for a local where it is declared, starting with <paramref name="initial"/>, or
+    /// <c>uninit</c> for a local declared without a value (a <c>lateinit</c>, or one the builder fills on every
+    /// path before reading it).
+    /// </summary>
     private Local ClaimLocal(string name, TypeSymbol type, string? initial)
     {
-        var local = new Local(Place: $"%{name}_{_slots.Count}", Type: type);
-        _slots.Add(item: local);
-        _blocks[index: 0]
-           .Lines.Insert(index: _slots.Count - 1, item: $"claim {local.Place} : @{TypeText(type: type)}");
-        if (initial != null)
-        {
-            Emit(line: $"{local.Place}.store({initial})");
-        }
-
+        var local = new Local(Place: $"%{name}_{_slotCount++}", Type: type);
+        Emit(line: $"claim {local.Place} : @{TypeText(type: type)} <- {initial ?? "uninit"}");
+        _visible.Add(item: local);
         return local;
     }
 
-    /// <summary>Claims a slot for every local the body declares, so later blocks can take them all.</summary>
-    private void ClaimDeclaredLocals()
-    {
-        AstWalker.Walk(root: _body,
-            visit: node =>
-            {
-                if (node is DeclarationStatement { Declaration: VariableDeclaration v })
-                {
-                    TypeSymbol type = v.Type?.ResolvedType ?? v.Initializer?.ResolvedType ??
-                                      throw Unsupported(what: $"the untyped local '{v.Name}'");
-                    _declarationSlots[key: v] = ClaimLocal(name: v.Name, type: type, initial: null);
-                }
-            });
-    }
-
-    private string SlotParameters => string.Join(separator: ", ",
-        values: _slots.Select(selector: s => $"{s.Place}: @{TypeText(type: s.Type)}"));
-
-    private string SlotArguments => string.Join(separator: ", ", values: _slots.Select(selector: s => s.Place));
-
+    /// <summary>A label for a block made at this point: it takes the slots visible here.</summary>
     private string NewLabel(string kind)
     {
-        return $"{kind}_{_labels++}";
+        string label = $"{kind}_{_labels++}";
+        _labelSlots[key: label] = [.. _visible];
+        return label;
     }
 
-    /// <summary>A jump target: the block name with the slot arguments.</summary>
+    /// <summary>A jump target: the block name with the slots it takes.</summary>
     private string Target(string label)
     {
-        return $"{label}({SlotArguments})";
+        return $"{label}({string.Join(separator: ", ", values: _labelSlots[key: label].Select(selector: s => s.Place))})";
     }
 
-    /// <summary>Starts writing into a new block named <paramref name="label"/>.</summary>
+    /// <summary>Starts writing into a new block named <paramref name="label"/>, which sees the slots it takes.</summary>
     private void StartBlock(string label)
     {
-        var block = new Block(header: $"{label}({SlotParameters})");
+        List<Local> slots = _labelSlots[key: label];
+        var block = new Block(header: $"{label}({string.Join(separator: ", ", values: slots.Select(selector: s => $"{s.Place}: @{TypeText(type: s.Type)}"))})");
         _blocks.Add(item: block);
         _current = block;
+        _visible = [.. slots];
     }
 
     private void Emit(string line)
@@ -244,14 +228,23 @@ internal sealed class TesseraRoutineWriter
         switch (statement)
         {
             case BlockStatement block:
+            {
+                // A scope's locals stop being visible (and stop being passed to blocks) where the scope ends.
                 _scopes.Add(item: new Dictionary<string, Local>(comparer: StringComparer.Ordinal));
+                int visibleBefore = _visible.Count;
                 foreach (Statement s in block.Statements)
                 {
                     WriteStatement(statement: s);
                 }
 
                 _scopes.RemoveAt(index: _scopes.Count - 1);
+                if (_visible.Count > visibleBefore)
+                {
+                    _visible.RemoveRange(index: visibleBefore, count: _visible.Count - visibleBefore);
+                }
+
                 break;
+            }
             case DeclarationStatement { Declaration: VariableDeclaration v }:
                 WriteDeclaration(declaration: v);
                 break;
@@ -302,13 +295,12 @@ internal sealed class TesseraRoutineWriter
 
     private void WriteDeclaration(VariableDeclaration declaration)
     {
-        Local local = _declarationSlots[key: declaration];
-        _scopes[^1][key: declaration.Name] = local;
-        if (declaration.Initializer is { } initializer)
-        {
-            string value = Value(operand: Evaluate(expression: initializer));
-            Emit(line: $"{local.Place}.store({value})");
-        }
+        TypeSymbol type = declaration.Type?.ResolvedType ?? declaration.Initializer?.ResolvedType ??
+                          throw Unsupported(what: $"the untyped local '{declaration.Name}'");
+        string? value = declaration.Initializer is { } initializer
+            ? Value(operand: Evaluate(expression: initializer))
+            : null;
+        _scopes[^1][key: declaration.Name] = ClaimLocal(name: declaration.Name, type: type, initial: value);
     }
 
     /// <summary>Evaluates an expression for its effect: a call is written as a statement.</summary>
@@ -487,8 +479,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"%spill{_temps++}";
-        Emit(line: $"claim {slot} : @{TypeText(type: operand.Type)}");
-        Emit(line: $"{slot}.store({operand.Text})");
+        Emit(line: $"claim {slot} : @{TypeText(type: operand.Type)} <- {operand.Text}");
         return slot;
     }
 
@@ -512,7 +503,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"%zero{_temps++}";
-        Emit(line: $"claim {slot} : @{text}");
+        Emit(line: $"claim {slot} : @{text} <- uninit");
         Emit(line: $"{slot}.zeroinit(1)");
         return $"{slot}.load()";
     }
@@ -978,7 +969,7 @@ internal sealed class TesseraRoutineWriter
                                  m.Value.ResolvedType))
                             .ToList();
         string slot = $"%carrier{_temps++}";
-        Emit(line: $"claim {slot} : @{TypeText(type: carrier)}");
+        Emit(line: $"claim {slot} : @{TypeText(type: carrier)} <- uninit");
         Emit(line: $"{slot}.zeroinit(1)");
         for (int i = 0; i < values.Count && i < carrier.MemberVariables.Count; i++)
         {
