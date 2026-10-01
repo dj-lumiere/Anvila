@@ -888,7 +888,8 @@ internal sealed class TesseraRoutineWriter
             var items = creator.MemberVariables
                                .Select(selector: m => Value(operand: Evaluate(expression: m.Value)))
                                .ToList();
-            return new Operand(Text: Temp(type: tuple, expression: $"({string.Join(separator: ", ", values: items)})"),
+            // A tuple literal is written like a record's, `{ a, b }`; its type comes from the binding.
+            return new Operand(Text: Temp(type: tuple, expression: $"{{ {string.Join(separator: ", ", values: items)} }}"),
                 Type: tuple, IsPlace: false);
         }
 

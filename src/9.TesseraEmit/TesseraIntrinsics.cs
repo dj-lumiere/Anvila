@@ -260,8 +260,9 @@ internal sealed class TesseraIntrinsics
     private string Checked(string operation, string overflows)
     {
         string type = Type(index: 0);
-        return $"({operation}<{type}>({Argument(index: 0)}, {Argument(index: 1)}), " +
-               $"{overflows}<{type}>({Argument(index: 0)}, {Argument(index: 1)}))";
+        // A tuple literal is written like a record's, `{ a, b }`; its type comes from the binding it goes to.
+        return $"{{ {operation}<{type}>({Argument(index: 0)}, {Argument(index: 1)}), " +
+               $"{overflows}<{type}>({Argument(index: 0)}, {Argument(index: 1)}) }}";
     }
 
     /// <summary>
