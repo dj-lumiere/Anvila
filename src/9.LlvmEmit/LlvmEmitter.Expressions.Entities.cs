@@ -607,47 +607,6 @@ public partial class LlvmEmitter
     {
         string memberName = expr.MemberName;
 
-        // Choice / Flags case-member access (e.g. FileMode.WRITE) reaches codegen unfolded
-        // when it appears in a parameter default value: ExpressionLoweringPass only walks
-        // routine bodies, not `ParamInfo.DefaultValue` (init-only, registry-owned), and
-        // SA never analyzes default values so `ResolvedType` is null on those AST nodes.
-        // Fold to the case's constant value here, looking the type up by identifier name.
-        TypeSymbol? choiceFlagsLookup = expr.Object.ResolvedType ??
-                                      (expr.Object is IdentifierExpression objId
-                                          ? _registry.LookupType(name: objId.Name)
-                                          : null);
-        if (choiceFlagsLookup is ChoiceTypeSymbol choiceType)
-        {
-            ChoiceCaseInfo? caseInfo =
-                choiceType.Cases.FirstOrDefault(predicate: c => c.Name == memberName);
-            if (caseInfo != null)
-            {
-                return caseInfo.ComputedValue.ToString();
-            }
-        }
-
-        if (choiceFlagsLookup is FlagsTypeSymbol flagsType)
-        {
-            FlagsMemberInfo? memberInfo =
-                flagsType.Members.FirstOrDefault(predicate: m => m.Name == memberName);
-            if (memberInfo != null)
-            {
-                return (1UL << memberInfo.BitPosition).ToString();
-            }
-        }
-
-        // A record field behind a pointer wrapper is read in place at the record's storage address.
-        if (expr.Object is WrapperProjectionExpression
-            {
-                Kind: WrapperProjectionKind.RecordAddress, ResolvedType: RecordTypeSymbol projectedRecord
-            })
-        {
-            return EmitRecordFieldReadAtAddress(sb: sb,
-                recordAddress: EmitLvalueAddress(sb: sb, expr: expr.Object),
-                record: projectedRecord,
-                memberName: memberName);
-        }
-
         // Evaluate the target expression
         string target = EmitExpression(sb: sb, expr: expr.Object);
 

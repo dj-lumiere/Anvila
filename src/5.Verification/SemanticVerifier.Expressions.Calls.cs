@@ -1726,13 +1726,14 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // Collect all resolved arg types for better overload disambiguation
+        // Collect all resolved arg types for better overload disambiguation, in the bound routine's parameter
+        // order: a named argument stands at its parameter's position.
         var resolvedArgTypes = new List<TypeSymbol>();
-        for (int i = 0; i < call.Arguments.Count; i++)
+        foreach (Expression arg in OrderByParameters(arguments: call.Arguments, routine: routine))
         {
-            Expression actualArg = call.Arguments[index: i] is NamedArgumentExpression nai
+            Expression actualArg = arg is NamedArgumentExpression nai
                 ? nai.Value
-                : call.Arguments[index: i];
+                : arg;
             TypeSymbol argType = AnalyzeExpression(expression: actualArg);
             if (argType != ErrorTypeSymbol.Instance)
             {
@@ -1831,6 +1832,28 @@ public sealed partial class SemanticVerifier
     /// Used to determine whether overload re-resolution is necessary.
     /// </summary>
     /// <summary>
+    /// The call's arguments in <paramref name="routine"/>'s parameter order: positional ones keep their
+    /// place, a named one moves to its parameter's position (an unknown name stays where it is written).
+    /// </summary>
+    private static List<Expression> OrderByParameters(List<Expression> arguments, RoutineInfo routine)
+    {
+        if (!arguments.Any(predicate: a => a is NamedArgumentExpression))
+        {
+            return arguments;
+        }
+
+        return arguments
+              .Select(selector: (a, i) => (Argument: a,
+                   Position: a is NamedArgumentExpression named &&
+                             routine.Parameters.FindIndex(match: p => p.Name == named.Name) is var slot and >= 0
+                       ? slot
+                       : i))
+              .OrderBy(keySelector: x => x.Position)
+              .Select(selector: x => x.Argument)
+              .ToList();
+    }
+
+    /// <summary>
     /// The free overload of <paramref name="callName"/> for <paramref name="argTypes"/> a call may rebind to:
     /// the bound routine's own overload set first (its module-qualified base name), then any overload by the
     /// bare name — but only one visible here (this module, Core, or an imported module). A routine of the same
@@ -1867,7 +1890,16 @@ public sealed partial class SemanticVerifier
             Expression argExpr = call.Arguments[index: i] is NamedArgumentExpression nax
                 ? nax.Value
                 : call.Arguments[index: i];
-            TypeSymbol pt = routine.Parameters[index: i].Type;
+            // A named argument binds the parameter of its name, wherever it is written.
+            ParamInfo? bound = call.Arguments[index: i] is NamedArgumentExpression named
+                ? routine.Parameters.FirstOrDefault(predicate: p => p.Name == named.Name)
+                : routine.Parameters[index: i];
+            if (bound == null)
+            {
+                return true;
+            }
+
+            TypeSymbol pt = bound.Type;
             // Pass the parameter type as the expected type so a context-dependent arg
             // (`none`, a bare literal) resolves here instead of prematurely erroring —
             // AnalyzeCallArguments re-checks with the correct per-binding type afterwards.
@@ -1918,8 +1950,9 @@ public sealed partial class SemanticVerifier
     private void RebindFreeOverloadByArity(CallExpression call, string callName,
         ref RoutineInfo? routine)
     {
+        // A routine that takes this many arguments (parameter defaults fill the rest) keeps the call.
         if (routine is not { IsGenericDefinition: false, IsVariadic: false } ||
-            call.Arguments.Count == routine.Parameters.Count)
+            RoutineCanAcceptArgCount(routine: routine, argCount: call.Arguments.Count))
         {
             return;
         }
@@ -1935,9 +1968,9 @@ public sealed partial class SemanticVerifier
             }
         }
 
-        RoutineInfo? arityMatch =
-            _registry.LookupRoutineOverload(baseName: callName, argTypes: arityArgTypes) ??
-            _registry.LookupRoutineOverload(baseName: routine.BaseName, argTypes: arityArgTypes);
+        RoutineInfo? arityMatch = LookupVisibleFreeOverload(callName: callName,
+            routine: routine,
+            argTypes: arityArgTypes);
         if (arityMatch != null && arityMatch != routine)
         {
             routine = arityMatch;
@@ -1964,7 +1997,7 @@ public sealed partial class SemanticVerifier
     {
         RoutineInfo? generic = _registry.LookupGenericOverload(name: callName,
             preferredArity: call.Arguments.Count);
-        if (generic == null)
+        if (generic == null || !IsFreeRoutineVisible(routine: generic))
         {
             return;
         }
@@ -1999,7 +2032,7 @@ public sealed partial class SemanticVerifier
                      name: generic.Name,
                      arity: call.Arguments.Count))
         {
-            if (sibling == generic)
+            if (sibling == generic || !IsFreeRoutineVisible(routine: sibling))
             {
                 continue;
             }

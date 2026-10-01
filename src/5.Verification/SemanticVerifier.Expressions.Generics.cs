@@ -82,10 +82,7 @@ public sealed partial class SemanticVerifier
                 ? _registry.LookupRoutine(fullName: $"{funcId.Realm}::{funcId.Name}") ??
                   _registry.LookupGenericOverload(name: funcId.Name,
                       preferredArity: generic.Arguments.Count, includeForeign: true)
-                : _registry.LookupRoutine(fullName: funcId.Name) ??
-                  _registry.LookupRoutineByName(name: funcId.Name) ??
-                  _registry.LookupGenericOverload(name: funcId.Name,
-                      preferredArity: generic.Arguments.Count);
+                : LookupRoutineWithModulePrefix(name: funcId.Name, preferredArity: generic.Arguments.Count);
             if (routine != null)
             {
                 return AnalyzeStandaloneGenericRoutineCall(generic: generic,

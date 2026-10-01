@@ -621,10 +621,16 @@ public sealed partial class TypeRegistry
     /// <param name="preferredArity">Expected argument count; -1 means any arity is acceptable.</param>
     /// <param name="includeForeign">When true, also bind foreign (C/LLVM) generic routines; those are
     /// only reachable via a realm-qualified call site.</param>
+    /// <param name="module">When set, only a generic routine declared in this module.</param>
     public RoutineInfo? LookupGenericOverload(string name, int preferredArity = -1,
-        bool includeForeign = false)
+        bool includeForeign = false, string? module = null)
     {
         List<RoutineInfo> candidates = GenericFreeFunctions(name: name);
+        if (module != null)
+        {
+            candidates = candidates.Where(predicate: c => c.Module == module).ToList();
+        }
+
         // A foreign (C/LLVM) generic routine is only reachable via its realm qualifier — an unqualified
         // lookup must NOT bind it, or a bare call to a name shared with an intrinsic (the free
         // `atan2(y, x)` vs the `LLVM::atan2[T]` intrinsic) would fall through to the intrinsic and emit

@@ -201,18 +201,11 @@ public partial class LlvmEmitter
                     argTypes: argTypes,
                     argTypeInfos: argTypeInfos);
             }
-            else if (param.HasDefaultValue)
-            {
-                string value = EmitParameterDefault(sb: sb, param: param);
-                argValues.Add(item: value);
-                argTypeInfos.Add(item: param.Type);
-                argTypes.Add(item: GetParameterLlvmType(type: param.Type));
-            }
             else
             {
-                // No argument and no default: SA should have rejected this call. Stop rather
-                // than fabricate a value and emit a malformed call.
-                break;
+                // Semantic analysis writes every left-out default into the call (AppendDefaultArguments).
+                throw new InvalidOperationException(
+                    message: $"Call to '{functionName}' reached codegen without argument '{param.Name}'.");
             }
         }
     }
@@ -583,22 +576,11 @@ public partial class LlvmEmitter
         // below (memberRoutine == null branch) resolves it by (name, arg types). No premature name-only lookup.
         RoutineInfo? memberRoutine = resolvedRoutine;
 
-        // Member-conversion call (`x.U64()`, `"42".S32!()`): SA classified it as a
-        // TypeConstructor and stamped the resolved `create`/`create!` (see #78 in
-        // SemanticVerifier.Expressions.Calls — LoweringKind=TypeConstructor is set only when a
-        // creator was found, so `memberRoutine` is guaranteed non-null here). The receiver is the
-        // conversion SOURCE: it becomes the `from:` argument, NOT an implicit `me`. Emit the
-        // resolved creator call directly — no re-resolution, no inline scalar-cast heuristic. The
-        // numeric `create` bodies do the real cast (e.g. U64.create(from: U8) = zero_extend),
-        // which is also why B128 is correct here: its i128 backend is an IEEE bit carrier, so a
-        // scalar cast would reinterpret integer bits as float bits (the old s128→B128 NaN bug).
-        if (EmitMemberConversionCall(sb: sb,
-                loweringKind: loweringKind,
-                receiver: receiver,
-                receiverType: receiverType,
-                memberRoutine: memberRoutine) is { } resultEmitMemberConversionCall)
+        // A member conversion (`x.U64()`) arrives as the construction `U64(from: x)` (ExpressionLoweringPass).
+        if (loweringKind == CallLoweringKind.TypeConstructor && memberRoutine != null)
         {
-            return resultEmitMemberConversionCall;
+            throw new InvalidOperationException(
+                message: $"Member conversion '.{member.MemberName}()' reached codegen unlowered.");
         }
 
         // A forwarded entity routine on a Consulting/Amending token already has the entity as its
@@ -1248,17 +1230,9 @@ public partial class LlvmEmitter
                 continue;
             }
 
-            if (!param.HasDefaultValue)
-            {
-                // No argument and no default: SA should have rejected this. Stop rather than
-                // fabricate a value and emit a malformed call.
-                break;
-            }
-
-            string value = EmitParameterDefault(sb: sb, param: param);
-            reorderedValues.Add(item: value);
-            reorderedTypeInfos.Add(item: param.Type);
-            reorderedTypes.Add(item: GetParameterLlvmType(type: param.Type));
+            // Semantic analysis writes every left-out default into the call (AppendDefaultArguments).
+            throw new InvalidOperationException(
+                message: $"Member routine call '{member.MemberName}' reached codegen without argument '{param.Name}'.");
         }
 
         return (reorderedValues, reorderedTypes, reorderedTypeInfos);
@@ -1290,99 +1264,6 @@ public partial class LlvmEmitter
             argValues.Add(item: value);
             argTypes.Add(item: GetLlvmType(type: argType));
         }
-    }
-
-    /// <summary>
-    /// Materializes a parameter's default value as an LLVM value at a call site, returning the value
-    /// name. Parameter defaults are raw declaration-site AST that never pass through the lowering
-    /// passes (PresetInliningPass / LiteralLoweringPass / ExpressionLoweringPass only rewrite routine
-    /// BODIES), so this applies the same normalizations a body expression would have received from
-    /// the pipeline: construct empty collection literals inline, inline preset-named defaults, stamp
-    /// the parameter type onto bare literals, and normalize Undecided* literal tokens to the concrete
-    /// form (EmitLiteral deliberately refuses Undecided* tokens). Guarded by the free-routine and
-    /// member-call default fill.
-    /// </summary>
-    private string EmitParameterDefault(StringBuilder sb, ParamInfo param)
-    {
-        Expression defaultExpr = param.DefaultValue!;
-
-        // Empty collection-literal default on an owned collection param: construct inline
-        // (see TryEmitEmptyCollectionDefault) — these never pass through ExpressionLoweringPass.
-        if (TryEmitEmptyCollectionDefault(sb: sb,
-                paramType: param.Type,
-                defaultValue: defaultExpr,
-                value: out string collDefaultValue))
-        {
-            return collDefaultValue;
-        }
-
-        if (defaultExpr is IdentifierExpression presetId &&
-            _registry.LookupVariable(name: presetId.Name) is
-                { IsPreset: true, PresetValue: not null } presetVar)
-        {
-            defaultExpr = presetVar.PresetValue is LiteralExpression presetLit
-                ? presetLit with
-                {
-                    ResolvedType = presetId.ResolvedType ??
-                                   presetVar.PresetValue.ResolvedType ?? param.Type
-                }
-                : presetVar.PresetValue;
-        }
-
-        if (defaultExpr is LiteralExpression { ResolvedType: null } bareLit)
-        {
-            defaultExpr = bareLit with { ResolvedType = param.Type };
-        }
-
-        defaultExpr = defaultExpr switch
-        {
-            LiteralExpression { LiteralType: TokenType.UndecidedInteger } undInt => undInt with
-            {
-                LiteralType = TokenType.IntegerLiteral
-            },
-            LiteralExpression { LiteralType: TokenType.UndecidedDecimal } undDec => undDec with
-            {
-                LiteralType = param.Type.Name switch
-                {
-                    "D32" => TokenType.D32Literal,
-                    "D64" => TokenType.D64Literal,
-                    "D128" => TokenType.D128Literal,
-                    _ => TokenType.DecimalLiteral
-                }
-            },
-            // A letter default (`fill: Character = ' '`) never passes LiteralLoweringPass, so its value is
-            // still the source text: emit the code point (Character is i32, Byte is i8).
-            LiteralExpression { LiteralType: TokenType.CharacterLiteral, Value: string ch } charLit => charLit with
-            {
-                Value = (ch.Length > 0 ? char.ConvertToUtf32(s: ch, index: 0) : 0).ToString(),
-                LiteralType = TokenType.U32Literal
-            },
-            LiteralExpression { LiteralType: TokenType.ByteLetterLiteral, Value: string b } byteLit => byteLit with
-            {
-                Value = (b.Length > 0 ? b[index: 0] & 0xFF : 0).ToString(),
-                LiteralType = TokenType.U8Literal
-            },
-            _ => defaultExpr
-        };
-
-        // A choice/flags case-member default (e.g. `mode: FileMode = FileMode.READ`) is raw
-        // declaration-site AST: its `FileMode` target identifier has no ResolvedType, and a bare-name
-        // LookupType fails for a module-qualified stdlib choice referenced from another module (the
-        // cross-module short-name scan was removed), so EmitMemberVariableAccess's constant-fold can't
-        // find the type and falls through to emit `FileMode` as an unknown identifier. The parameter's
-        // DECLARED type IS the choice/flags type, so stamp it onto the access target here — the fold
-        // then resolves the case via ResolvedType without any name lookup.
-        if (defaultExpr is MemberExpression memberDefault
-            && memberDefault.Object is IdentifierExpression { ResolvedType: null } targetId
-            && param.Type is ChoiceTypeSymbol or FlagsTypeSymbol)
-        {
-            defaultExpr = memberDefault with
-            {
-                Object = targetId with { ResolvedType = param.Type }
-            };
-        }
-
-        return EmitExpression(sb: sb, expr: defaultExpr);
     }
 
     /// <summary>
@@ -2245,34 +2126,6 @@ public partial class LlvmEmitter
                 $"loweringKind={loweringKind}, resolvedRoutine={resolvedRoutine?.RegistryKey ?? "<null>"}. " +
                 $"Routine: {_currentEmittingRoutine?.Name ?? "<unknown>"} (owner: {_currentEmittingRoutine?.OwnerType?.Name ?? "none"}).");
         }
-    }
-
-    private string? EmitMemberConversionCall(StringBuilder sb, CallLoweringKind loweringKind,
-        string receiver, TypeSymbol receiverType, RoutineInfo? memberRoutine)
-    {
-        if (loweringKind == CallLoweringKind.TypeConstructor && memberRoutine != null)
-        {
-            string convMangled = MangleRoutineName(routine: memberRoutine);
-            GenerateRoutineDeclaration(routine: memberRoutine);
-            string convRetTy = memberRoutine.ReturnType != null
-                ? GetLlvmType(type: memberRoutine.ReturnType)
-                : "ptr";
-            string convSrcLlvm = GetLlvmType(type: receiverType);
-            string convSrcVal = receiver;
-            if (ReceiverPassedByRef(receiverType: receiverType))
-            {
-                convSrcVal = NextTemp();
-                EmitLine(sb: sb, line: $"  {convSrcVal} = load {convSrcLlvm}, ptr {receiver}");
-            }
-
-            string convResult = NextTemp();
-            EmitLine(sb: sb,
-                line:
-                $"  {convResult} = call {convRetTy} @{convMangled}({convSrcLlvm} {convSrcVal})");
-            return convResult;
-        }
-
-        return null;
     }
 
     private TypeSymbol NormalizeMemberReceiverType(MemberExpression member, TypeSymbol? receiverType)

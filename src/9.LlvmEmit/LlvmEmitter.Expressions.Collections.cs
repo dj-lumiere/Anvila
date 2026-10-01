@@ -109,39 +109,6 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a parameter default value that is an EMPTY collection literal (<c>{:}</c> / <c>[]</c> /
-    /// <c>{}</c>) on a plainly-owned collection parameter, returning the created collection register.
-    /// Collection literals are normally lowered by ExpressionLoweringPass, but default values are
-    /// never lowered — so we construct an empty collection inline here (create, no adds). Because the
-    /// parameter is owned, the callee frees it via its own destroy, so there is no caller-side
-    /// teardown gap. Returns false (caller falls back to EmitExpression) for non-empty literals or
-    /// non-owned params. Non-empty collection defaults remain unsupported (the element expressions are
-    /// never SA-analyzed, so they lack a ResolvedType for inline emission).
-    /// </summary>
-    private bool TryEmitEmptyCollectionDefault(StringBuilder sb, TypeSymbol? paramType,
-        Expression? defaultValue, out string value)
-    {
-        value = "";
-        bool isEmptyLiteral = defaultValue is ListLiteralExpression { Elements.Count: 0 }
-            or SetLiteralExpression { Elements.Count: 0 } or DictLiteralExpression
-            {
-                Pairs.Count: 0
-            };
-        if (!isEmptyLiteral)
-        {
-            return false;
-        }
-
-        if (!TryGetOwnedCollectionType(paramType: paramType, collType: out TypeSymbol collType))
-        {
-            return false;
-        }
-
-        value = EmitCollectionCreate(sb: sb, resolvedType: collType);
-        return true;
-    }
-
-    /// <summary>
     /// Emits a collection literal constructor: Array[T,N] (insertvalue), BitArray[N] (bit packing),
     /// or entity collection (create + add calls).
     /// Called from EmitListLiteral (Array/BitArray only) and from the CollectionConstruction

@@ -23,6 +23,11 @@ public sealed partial class SemanticVerifier
     /// <returns>The resolved type of the expression.</returns>
     private TypeSymbol AnalyzeExpression(Expression expression, TypeSymbol? expectedType = null)
     {
+        if (expression is { IsPreAnalyzed: true, ResolvedType: { } preAnalyzed })
+        {
+            return preAnalyzed;
+        }
+
         TypeSymbol resultType = expression switch
         {
             LiteralExpression literal => AnalyzeLiteralExpression(literal: literal,
@@ -77,6 +82,9 @@ public sealed partial class SemanticVerifier
                 insertedText: insertedText),
             _ => HandleUnknownExpression(expression: expression)
         };
+
+        // A call bound to its routine gets the defaults of the parameters it leaves out.
+        AppendDefaultArguments(call: expression);
 
         // Compiler-generated bodies are re-analyzed in a synthetic scope where some calls
         // cannot be re-resolved (generic-def owners, memberRoutine-generic locals, wired routines,
@@ -379,20 +387,33 @@ public sealed partial class SemanticVerifier
     /// Looks up a routine by bare name, then by module-qualified name. Falls back to the generic-
     /// overload table because generic free routines are not indexed under a plain name key.
     /// </summary>
-    private RoutineInfo? LookupRoutineWithModulePrefix(string name)
+    private RoutineInfo? LookupRoutineWithModulePrefix(string name, int preferredArity = -1)
     {
         // Identifier names are bare — the failable `!` is a structured flag, never in the name. A routine
         // of the current module comes first: another module's routine of the same bare name must not
         // shadow it.
-        RoutineInfo? routine = _currentModuleName != null && !name.Contains(value: '.')
-            ? _registry.LookupRoutine(fullName: $"{_currentModuleName}.{name}")
+        bool bare = !name.Contains(value: '.');
+        RoutineInfo? routine = _currentModuleName != null && bare
+            ? _registry.LookupRoutine(fullName: $"{_currentModuleName}.{name}") ??
+              _registry.LookupGenericOverload(name: name, preferredArity: preferredArity, module: _currentModuleName)
             : null;
-        routine ??= _registry.LookupRoutine(fullName: name);
 
         // Generic free routines are indexed only in the generic-overload table, not under a plain
         // name key, so LookupRoutine misses them. A bare reference — e.g. the receiver identifier of
-        // an explicit `gen_id[T](...)` call — must consult it too.
-        routine ??= _registry.LookupGenericOverload(name: name);
+        // an explicit `gen_id[T](...)` call — must consult it too. A routine of the same bare name in a
+        // module this file does not import is not visible here.
+        if (routine == null && _registry.LookupRoutine(fullName: name) is { } plain &&
+            (!bare || IsFreeRoutineVisible(routine: plain)))
+        {
+            routine = plain;
+        }
+
+        if (routine == null && _registry.LookupGenericOverload(name: name, preferredArity: preferredArity) is { } generic &&
+            (!bare || IsFreeRoutineVisible(routine: generic)))
+        {
+            routine = generic;
+        }
+
         return routine;
     }
 

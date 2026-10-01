@@ -35,6 +35,13 @@ public abstract record Expression(SourceLocation Location) : SyntaxTreeNode(Loca
     public virtual TypeSymbol? ResolvedType { get; set; }
 
     /// <summary>
+    /// True for an expression the builder analyzed elsewhere and wrote into the tree (a parameter default
+    /// written into a call, analyzed in its routine's declaration context). Analyzing it again keeps its
+    /// type: the caller's context, or a re-analysis without the parameter's expected type, could not type it.
+    /// </summary>
+    public bool IsPreAnalyzed { get; init; }
+
+    /// <summary>
     /// For a collection literal (`[..]`/`{..}`) whose resolved type `obeys ListLiteral/SetLiteral/
     /// DictLiteral`, the monomorphized `Type.from_literal[K]` static builder the literal lowers to.
     /// SA resolves it; reachability seeds it; ExpressionLoweringPass emits the call. Null for the inline
@@ -518,6 +525,12 @@ public record CallExpression(
 public record NamedArgumentExpression(string Name, Expression Value, SourceLocation Location)
     : Expression(Location: Location)
 {
+    /// <summary>
+    /// True for an argument the builder wrote from the parameter's default (the call left it out). It is not
+    /// part of how the call was written, so the positional/named style checks ignore it.
+    /// </summary>
+    public bool IsDefaultArgument { get; init; }
+
     private TypeSymbol? _ownType;
 
     /// <summary>A named argument is only a label on its value, so its type is the value's type unless

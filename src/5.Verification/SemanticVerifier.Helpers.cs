@@ -238,7 +238,7 @@ public sealed partial class SemanticVerifier
         }
 
         // S512: a call must be all-named OR all-positional — mixing is always an error.
-        bool hasNamedArg = arguments.Any(predicate: a => a is NamedArgumentExpression);
+        bool hasNamedArg = arguments.Any(predicate: a => a is NamedArgumentExpression { IsDefaultArgument: false });
         bool hasPositionalArg = arguments.Any(predicate: a => a is not NamedArgumentExpression);
         bool isMixed = hasNamedArg && hasPositionalArg;
         if (isMixed)

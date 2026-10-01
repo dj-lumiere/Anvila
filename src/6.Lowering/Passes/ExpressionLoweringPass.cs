@@ -755,6 +755,35 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     private (List<Statement> Hoisted, Expression Expr) LowerCallExpr(CallExpression call,
         Expression expr)
     {
+        // A member conversion `x.Type()` is the construction `Type(<first parameter>: x)` its creator
+        // describes: rewrite it to that call, so it is emitted (ABI, defaults) like any construction.
+        if (call is
+            {
+                LoweringKind: CallLoweringKind.TypeConstructor, Callee: MemberExpression conversion,
+                ResolvedRoutine: { Parameters.Count: > 0 } creator
+            })
+        {
+            ParamInfo source = creator.Parameters.First(predicate: p => p.Name != "me");
+            var construction = new CallExpression(
+                Callee: new IdentifierExpression(Name: creator.OwnerType?.Name ?? creator.Name,
+                    Location: conversion.Location) { ResolvedRoutine = creator },
+                Arguments:
+                [
+                    new NamedArgumentExpression(Name: source.Name, Value: conversion.Object,
+                        Location: conversion.Object.Location),
+                    ..call.Arguments
+                ],
+                Location: call.Location)
+            {
+                ResolvedRoutine = creator,
+                ResolvedType = call.ResolvedType,
+                LoweringKind = call.LoweringKind,
+                ConstructedType = call.ConstructedType,
+                IsInFlight = call.IsInFlight
+            };
+            return LowerCallExpr(call: construction, expr: construction);
+        }
+
         var hoisted = new List<Statement>();
         (List<Statement> calleeH, Expression loweredCallee) = LowerExpr(expr: call.Callee);
         hoisted.AddRange(collection: calleeH);

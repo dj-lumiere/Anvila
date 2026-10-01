@@ -159,7 +159,7 @@ internal static class AsyncRecipeSynthesisPass
             Location: loc));
 
         return new RoutineDeclaration(Name: SpawnPrefix + routine.Name,
-            Parameters: routine.Parameters.Select(selector: p => p with { DefaultValue = null }).ToList(),
+            Parameters: routine.Parameters.ToList(),
             ReturnType: new TypeExpression(Name: "Agent", GenericArguments: [resultType], Location: loc),
             Body: new BlockStatement(
                 Statements: [new DangerStatement(Body: new BlockStatement(Statements: statements, Location: loc),
