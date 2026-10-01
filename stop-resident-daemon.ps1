@@ -5,7 +5,7 @@
 # used by another process"). The daemon is stale after any C# change anyway — it would be shut down as
 # stale on the next client ping — so killing it here is free; the next run cold-spawns a fresh warm daemon.
 #
-# Invoked from RazorForge.csproj's StopResidentDaemonBeforeBuild target. Always exits 0 (best-effort).
+# Invoked from Anvila.csproj's StopResidentDaemonBeforeBuild target. Always exits 0 (best-effort).
 
 $ErrorActionPreference = 'SilentlyContinue'
 # Match ONLY the daemon invocation: the `daemon` verb as the token right after RazorForge.exe /

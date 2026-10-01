@@ -198,9 +198,9 @@ public partial class SemanticVerifier
         }
 
         var sa = new SemanticVerifier(language: language);
-        List<Token> tokens = new Builder.Tokenizer.Tokenizer(source: source.ToString(),
+        List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: source.ToString(),
             fileName: "__snapshot__",
-            language: language).Tokenize();
+            language: language);
         var parser = new Builder.Parser.Parser(tokens: tokens,
             language: language,
             fileName: "__snapshot__");

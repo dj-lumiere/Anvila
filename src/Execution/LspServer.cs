@@ -2820,8 +2820,7 @@ public static class LspServer
 
         try
         {
-            var tokenizer = new Builder.Tokenizer.Tokenizer(source: text, fileName: fileName, language: lang);
-            List<Token> tokens = tokenizer.Tokenize();
+            List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: text, fileName: fileName, language: lang);
 
             var parser = new Builder.Parser.Parser(tokens: tokens, language: lang, fileName: fileName);
             SyntaxTree.Program program = parser.Parse();

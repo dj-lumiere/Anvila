@@ -22,6 +22,10 @@ internal static class NativeToolchain
     // The native runtime's source/build subdirectory name (development checkout layout).
     private const string NativeDirName = "native";
 
+    /// <summary>Where a development checkout keeps the native runtime: Ingrid's <c>native</c> folder at the
+    /// repository root.</summary>
+    private static readonly string CheckoutNativeDir = Path.Combine(path1: "Ingrid", path2: "native");
+
     /// <summary>
     /// The native-runtime C sources compiled to LLVM bitcode and llvm-linked into the RF module
     /// before <c>opt</c> (dev-loop LTO). Deliberately narrow — only self-contained, hot functions
@@ -90,7 +94,7 @@ internal static class NativeToolchain
         string? current = exeDir;
         for (int i = 0; i < 6 && current != null; i++)
         {
-            string candidate = Path.Combine(path1: current, path2: NativeDirName, path3: "build");
+            string candidate = Path.Combine(path1: current, path2: CheckoutNativeDir, path3: "build");
             if (File.Exists(path: Path.Combine(path1: candidate, path2: "build.ninja")) ||
                 File.Exists(path: Path.Combine(path1: candidate, path2: "Makefile")))
             {
@@ -670,7 +674,7 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// Locates the native runtime C-source directory (<c>native/runtime</c>) by walking up from the
+    /// Locates the native runtime C-source directory (<c>Ingrid/native/runtime</c>) by walking up from the
     /// executable directory — development checkouts only. Returns false in installed/published
     /// layouts (which ship no C sources), where the caller falls back to a prebuilt bitcode file or
     /// skips LTO entirely.
@@ -680,7 +684,7 @@ internal static class NativeToolchain
         string? current = exeDir;
         for (int i = 0; i < 6 && current != null; i++)
         {
-            string candidate = Path.Combine(path1: current, path2: NativeDirName, path3: "runtime");
+            string candidate = Path.Combine(path1: current, path2: CheckoutNativeDir, path3: "runtime");
             if (File.Exists(path: Path.Combine(path1: candidate, path2: "memory.c")))
             {
                 runtimeDir = candidate;

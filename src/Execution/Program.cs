@@ -27,41 +27,21 @@ internal partial class Program
     /// <see cref="Builder.Declaration.BuildInfo"/>). Bump it in the csproj, NOT here.</summary>
     private static string SuflaeVersion => BuildInfo.SuflaeVersion;
 
-    /// <summary>True when the binary was invoked under a Suflae alias (<c>suflae</c>/<c>sf</c>)
-    /// rather than <c>razorforge</c>/<c>rf</c>. Selects Suflae branding (version/usage) and makes
-    /// Suflae the DEFAULT language when a source's extension does not decide it. The <c>.rf</c>/
-    /// <c>.sf</c> extension always wins over this default. The package ships <c>suflae</c>/<c>sf</c>
-    /// as copies of the apphost so the invoked name survives in <see cref="Environment.ProcessPath"/>.</summary>
-    private static readonly bool InvokedAsSuflae = DetectSuflaeInvocation();
-
-    /// <summary>Detects a Suflae-alias invocation from the executing binary's file name.</summary>
-    private static bool DetectSuflaeInvocation()
-    {
-        try
-        {
-            string? proc = Environment.ProcessPath;
-            if (proc is null)
-            {
-                return false;
-            }
-
-            string name = Path.GetFileNameWithoutExtension(path: proc)
-                              .ToLowerInvariant();
-            return name is "suflae" or "sf";
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    /// <summary>True when running as the <c>suflae</c> command rather than <c>razorforge</c>. Selects Suflae
+    /// branding (version/usage) and makes Suflae the DEFAULT language when a source's extension does not
+    /// decide it. The <c>.rf</c>/<c>.sf</c> extension always wins over this default. Set by
+    /// <see cref="Run"/> from the command line that called it.</summary>
+    private static bool InvokedAsSuflae;
 
     /// <summary>
-    /// Entry point for the RazorForge builder CLI.
+    /// Runs a command line: the shared entry of the <c>razorforge</c> and <c>suflae</c> commands, which
+    /// register their lexers first and pass their own language as <paramref name="cliLanguage"/>.
     /// Dispatches to the appropriate command handler based on the first argument.
     /// Returns 0 on success or 1 on error.
     /// </summary>
-    public static int Main(string[] args)
+    public static int Run(string[] args, Language cliLanguage)
     {
+        InvokedAsSuflae = cliLanguage == Language.Suflae;
         RuntimeShadowLoader.Install();
 
         // Make the build driver byte-faithful for UTF-8. RF child processes write UTF-8 and
@@ -973,8 +953,7 @@ internal partial class Program
             Language language = isSuflae
                 ? Language.Suflae
                 : Language.RazorForge;
-            var tokenizer = new Builder.Tokenizer.Tokenizer(source: code, fileName: sourceFile, language: language);
-            List<Token> tokens = tokenizer.Tokenize();
+            List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: sourceFile, language: language);
 
             Console.WriteLine(value: $"Generated {tokens.Count} tokens:");
             Console.WriteLine();
@@ -1025,8 +1004,7 @@ internal partial class Program
 
             // Tokenize
             Console.WriteLine(value: "=== TOKENIZATION ===");
-            var tokenizer = new Builder.Tokenizer.Tokenizer(source: code, fileName: sourceFile, language: language);
-            List<Token> tokens = tokenizer.Tokenize();
+            List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: sourceFile, language: language);
             Console.WriteLine(value: $"Generated {tokens.Count} tokens");
 
             // Parse
@@ -2082,7 +2060,7 @@ internal partial class Program
         {
             Console.WriteLine(
                 value:
-                $"Failed to resolve the RazorForge native runtime: expected either a development 'native/build' tree near the executable, or '{NativeToolchain.RuntimeLinkLibraryFileName}' next to it (installed layout).");
+                $"Failed to resolve the RazorForge native runtime: expected either a development 'Ingrid/native/build' tree near the executable, or '{NativeToolchain.RuntimeLinkLibraryFileName}' next to it (installed layout).");
             return 1;
         }
 

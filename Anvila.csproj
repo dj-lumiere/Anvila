@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Anvila: the builder core shared by the RazorForge and Suflae front ends (syntax tree, type model,
+       declaration/verification/lowering/instantiation/collection passes, the LLVM emitter, the build
+       driver, daemon, JIT and language server). Each language's lexer and command line live in its own
+       project (..\RazorForge, ..\Suflae), which registers its lexer here at startup. -->
+  <PropertyGroup>
+    <SonarQubeTestProject>false</SonarQubeTestProject>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>0.4.0</Version>
+    <RazorForgeVersion>0.4.0</RazorForgeVersion>
+    <SuflaeVersion>0.1.0</SuflaeVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>Anvila, the builder core shared by RazorForge and Suflae.</Description>
+  </PropertyGroup>
+
+  <!-- The native runtime is Ingrid's (..\Ingrid\native). -->
+  <PropertyGroup>
+    <IngridNativeDir>$(MSBuildProjectDirectory)\..\Ingrid\native</IngridNativeDir>
+    <NativeLibraryPath>$(IngridNativeDir)\build</NativeLibraryPath>
+  </PropertyGroup>
+
+  <!-- The front ends and the tests use the builder's internal members. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="RazorForge"/>
+    <InternalsVisibleTo Include="Suflae"/>
+    <InternalsVisibleTo Include="RazorForge.Tests"/>
+  </ItemGroup>
+
+  <!-- Kill any lingering resident daemon BEFORE the build. A daemon (spawned by a non-jit build/buildandrun)
+       runs the OLD builder and holds an open handle to it, so a subsequent `dotnet build` cannot overwrite
+       it (MSB3021 "being used by another process"). The daemon is stale after any C# change anyway (it
+       would be shut down as stale on the next ping), so killing it here is free — the next run cold-spawns
+       a fresh warm daemon. Best-effort (ContinueOnError): no daemon → no-op. -->
+  <Target Name="StopResidentDaemonBeforeBuild" BeforeTargets="BeforeBuild" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\stop-resident-daemon.ps1&quot;"
+          ContinueOnError="true"/>
+  </Target>
+
+  <!-- Build Ingrid's native libraries before the builder. -->
+  <Target Name="BuildNativeLibraries" BeforeTargets="BeforeBuild" Condition="'$(SkipNative)' != 'true'">
+    <Exec Command="&quot;$(IngridNativeDir)\build.bat&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' == 'Windows_NT'"/>
+    <Exec Command="bash &quot;$(IngridNativeDir)/build.sh&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' != 'Windows_NT'"/>
+  </Target>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="RazorForgeVersion" Value="$(RazorForgeVersion)"/>
+    <AssemblyMetadata Include="SuflaeVersion" Value="$(SuflaeVersion)"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DebugUtils.CSharp" Version="1.8.0"/>
+    <PackageReference Include="dotnet-framework-sonarscanner" Version="9.2.0"/>
+    <PackageReference Include="LLVMSharp" Version="20.1.2"/>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+    <PackageReference Include="Tomlyn" Version="0.17.0"/>
+  </ItemGroup>
+</Project>

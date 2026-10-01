@@ -318,8 +318,8 @@ internal partial class Program
                 // uncommon instances fall to the per-run DELTA (base∪delta coverage stays complete).
                 var baseSa = new SemanticVerifier(language: language);
                 System.Collections.Generic.List<Builder.Tokenizer.Token> toks =
-                    new Builder.Tokenizer.Tokenizer(source: BaseObjectCache.SeedProgramSource,
-                        fileName: "base.rf", language: language).Tokenize();
+                    Builder.Tokenizer.Lexers.Tokenize(source: BaseObjectCache.SeedProgramSource,
+                        fileName: "base.rf", language: language);
                 Builder.Verification.Results.AnalysisResult baseR = baseSa.Analyze(
                     program: new Builder.Parser.Parser(tokens: toks, language: language,
                         fileName: "base.rf").Parse());
