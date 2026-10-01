@@ -143,9 +143,9 @@ public abstract class AstRewriter
     }
 
     /// <summary>
-    /// Rewrites a <see cref="WhenStatement"/> by visiting the subject expression and each clause's body.
-    /// Clause patterns are not rewritten (only statement/expression children are in scope).
-    /// Returns the original node when neither the subject nor any clause body changed.
+    /// Rewrites a <see cref="WhenStatement"/> by visiting the subject expression, the expressions inside each
+    /// clause's pattern (see <see cref="VisitPattern"/>), and each clause's body.
+    /// Returns the original node when neither the subject nor any clause changed.
     /// </summary>
     /// <param name="s">The when statement to rewrite.</param>
     /// <returns>The rewritten when statement, or the original reference if nothing changed.</returns>
@@ -155,15 +155,55 @@ public abstract class AstRewriter
         List<WhenClause> clauses = RewriteList(items: s.Clauses,
             rewrite: c =>
             {
+                Pattern pattern = VisitPattern(p: c.Pattern);
                 Statement body = VisitStatement(stmt: c.Body);
-                return ReferenceEquals(objA: body, objB: c.Body)
+                return ReferenceEquals(objA: pattern, objB: c.Pattern) && ReferenceEquals(objA: body, objB: c.Body)
                     ? c
-                    : c with { Body = body };
+                    : c with { Pattern = pattern, Body = body };
             });
         return ReferenceEquals(objA: subject, objB: s.Expression) &&
                ReferenceEquals(objA: clauses, objB: s.Clauses)
             ? s
             : s with { Expression = subject, Clauses = clauses };
+    }
+
+    /// <summary>
+    /// Rewrites the expressions a pattern carries: the value of a comparison pattern (<c>&gt;= 100</c>), the
+    /// condition of an expression pattern, and a guard (with its inner pattern). They are ordinary expressions
+    /// that become the lowered <c>if</c> conditions, so every expression pass must reach them. Other patterns
+    /// hold no expression and are returned unchanged.
+    /// </summary>
+    /// <param name="p">The pattern to rewrite.</param>
+    /// <returns>The rewritten pattern, or the original reference if nothing changed.</returns>
+    protected virtual Pattern VisitPattern(Pattern p)
+    {
+        switch (p)
+        {
+            case ComparisonPattern c:
+            {
+                Expression value = VisitExpression(expr: c.Value);
+                return ReferenceEquals(objA: value, objB: c.Value)
+                    ? c
+                    : c with { Value = value };
+            }
+            case ExpressionPattern ep:
+            {
+                Expression condition = VisitExpression(expr: ep.Expression);
+                return ReferenceEquals(objA: condition, objB: ep.Expression)
+                    ? ep
+                    : ep with { Expression = condition };
+            }
+            case GuardPattern g:
+            {
+                Pattern inner = VisitPattern(p: g.InnerPattern);
+                Expression guard = VisitExpression(expr: g.Guard);
+                return ReferenceEquals(objA: inner, objB: g.InnerPattern) && ReferenceEquals(objA: guard, objB: g.Guard)
+                    ? g
+                    : g with { InnerPattern = inner, Guard = guard };
+            }
+            default:
+                return p;
+        }
     }
 
     /// <summary>

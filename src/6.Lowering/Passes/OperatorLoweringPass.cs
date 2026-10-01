@@ -50,41 +50,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     //  Statement lowering
 
     /// <summary>
-    /// Lowers a <see cref="WhenStatement"/>. Unlike the base hook, this also lowers any
-    /// <see cref="ExpressionPattern"/> guard (e.g. a <see cref="ChainedComparisonExpression"/>)
-    /// in each clause — the base only recurses into the subject and clause bodies.
-    /// </summary>
-    protected override Statement VisitWhen(WhenStatement s)
-    {
-        Expression subj = VisitExpression(expr: s.Expression);
-        var clauses = new List<WhenClause>(capacity: s.Clauses.Count);
-        bool clauseChanged = false;
-        foreach (WhenClause c in s.Clauses)
-        {
-            Statement lBody = VisitStatement(stmt: c.Body);
-            // Also lower expression patterns (ChainedComparisonExpression guards, etc.)
-            Pattern lPattern = c.Pattern is ExpressionPattern ep
-                ? ep with { Expression = VisitExpression(expr: ep.Expression) }
-                : c.Pattern;
-            bool patternChanged = !ReferenceEquals(objA: lPattern, objB: c.Pattern);
-            if (!ReferenceEquals(objA: lBody, objB: c.Body) || patternChanged)
-            {
-                clauses.Add(item: c with { Body = lBody, Pattern = lPattern });
-                clauseChanged = true;
-            }
-            else
-            {
-                clauses.Add(item: c);
-            }
-        }
-
-        bool changed = !ReferenceEquals(objA: subj, objB: s.Expression) || clauseChanged;
-        return changed
-            ? s with { Expression = subj, Clauses = clauses }
-            : s;
-    }
-
-    /// <summary>
     /// Lowers an <see cref="AssignmentStatement"/>: an indexed target becomes a <c>setitem</c> call
     /// (see <see cref="LowerIndexAssignment"/>). Otherwise only the value is lowered, since lowering a
     /// target as an expression would turn it into a read.
