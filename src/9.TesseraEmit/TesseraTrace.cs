@@ -69,13 +69,6 @@ internal static class TesseraTrace
 
         """;
 
-    /// <summary>The name a frame shows for a routine: <c>name!(Param.Type, ...)</c>, as the LLVM emitter writes it.</summary>
-    public static string FrameName(RoutineInfo routine)
-    {
-        string parameters = string.Join(separator: ", ", values: routine.Parameters.Select(selector: p => p.Type.FullName));
-        return $"{routine.BaseName}{(routine.IsFailable ? "!" : "")}({parameters})";
-    }
-
     /// <summary>A Tessera string literal for a C string: printable ASCII as is, every other byte (of the UTF-8
     /// encoding) as a <c>\xXX</c> escape.</summary>
     public static string CString(string text)

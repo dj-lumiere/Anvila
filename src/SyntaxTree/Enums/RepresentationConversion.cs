@@ -43,5 +43,8 @@ public enum RepresentationConversion
     SignedToFloat,
 
     /// <summary>An unsigned integer to a float.</summary>
-    UnsignedToFloat
+    UnsignedToFloat,
+
+    /// <summary>A value with no pointer form (a struct, a float, an array) to the address of a copy of it.</summary>
+    SpillToAddress
 }

@@ -43,8 +43,10 @@ public partial class LlvmEmitter
                 GenericMemberRoutineCallExpression gmc => EmitGmceFallback(sb: sb, gmc: gmc),
                 // Array[T,N] and BitArray[N] are inline IR constructs (insertvalue); all other
                 // collection literals must be lowered to CreatorExpression + add calls before codegen.
-                ListLiteralExpression list when IsArrayOrBitArrayLiteral(type: list.ResolvedType)
-                    => EmitListLiteral(sb: sb, list: list),
+                ListLiteralExpression list => EmitListLiteral(sb: sb, list: list),
+                BitPackExpression pack => EmitBitArrayRuntime(sb: sb,
+                    resolvedType: UnwrapCollectionStorageType(type: pack.ResolvedType!),
+                    arguments: pack.Bits),
                 // CarrierPayloadExpression is the RESULT of PatternLoweringPass (Maybe/Result payload
                 // projection) — codegen consumes it, it is not a surface node.
                 CarrierPayloadExpression payload => EmitCarrierPayloadExpression(sb: sb,
@@ -58,6 +60,11 @@ public partial class LlvmEmitter
                 TaggedCreatorExpression tagged => EmitTaggedCreator(sb: sb, tagged: tagged),
                 ConstantDataExpression data => EmitConstantData(data: data),
                 ZeroValueExpression { ResolvedType: { } zeroType } => GetZeroValue(type: zeroType),
+                NativeRoutineExpression { Routine: IdentifierExpression { ResolvedRoutine: { } nativeRoutine } } =>
+                    EmitNativeRoutineAddress(routine: nativeRoutine),
+                NativeCallbackExpression callback => EmitForeignRoutineValueArg(sb: sb, valueExpr: callback.Value),
+                TagOfExpression { Value: { ResolvedType: VariantTypeSymbol tagged } value } =>
+                    EmitVariantTagAccess(sb: sb, variantValue: EmitExpression(sb: sb, expr: value), variant: tagged),
                 EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity } =>
                     EmitEntityAllocation(sb: sb, entity: entity),
                 ClosureValueExpression closure => EmitClosureValueExpression(sb: sb, closure: closure),
@@ -207,23 +214,23 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Materializes a value for an identifier whose routine was pre-resolved by a lowering pass.
-    /// Cycle-collector roam hooks (`roam_trace` / `roam_free`) emit a bare captureless
-    /// `@sym` (they are invoked natively through a CPtr slot, not as a fat Routine value); every
-    /// other routine value flows through the closure-materialization path (lambda vs plain routine).
+    /// Materializes a value for an identifier whose routine was pre-resolved by a lowering pass: the
+    /// closure-materialization path (lambda vs plain routine).
     /// </summary>
     private string EmitPreResolvedRoutineValue(StringBuilder sb, RoutineInfo preResolved)
     {
-        if (preResolved.Name is "roam_trace" or "roam_free")
-        {
-            // Declare it like a call target: in a resident-JIT delta the body lives in the base dylib, so
-            // without the declare the bare `@sym` reference is an undefined value at IR parse.
-            GenerateRoutineDeclaration(routine: preResolved);
-            return $"@{MangleRoutineName(routine: preResolved)}";
-        }
-
         // A captureless lambda or plain routine: `{ @fn, null }` (a capturing lambda is a ClosureValueExpression).
         return EmitRoutineValueClosure(sb: sb, routine: preResolved);
+    }
+
+    /// <summary>
+    /// A <see cref="NativeRoutineExpression"/>: the routine's bare `@sym`. Declared like a call target: in a
+    /// resident-JIT delta the body lives in the base dylib, so without the declare the reference is undefined.
+    /// </summary>
+    private string EmitNativeRoutineAddress(RoutineInfo routine)
+    {
+        GenerateRoutineDeclaration(routine: routine);
+        return $"@{MangleRoutineName(routine: routine)}";
     }
 
     /// <summary>
@@ -311,6 +318,14 @@ public partial class LlvmEmitter
 
         string source = GetLlvmType(type: GetExpressionType(expr: cast.Value) ??
                                           throw new InvalidOperationException(message: "A converting cast has an untyped value."));
+        if (cast.Conversion == RepresentationConversion.SpillToAddress)
+        {
+            string slot = NextTemp();
+            EmitLine(sb: sb, line: $"  {slot} = alloca {source}");
+            EmitLine(sb: sb, line: $"  store {source} {value}, ptr {slot}");
+            return slot;
+        }
+
         string target = GetLlvmType(type: cast.ResolvedType ??
                                           throw new InvalidOperationException(message: "A backend cast has no target type."));
         string instruction = cast.Conversion switch
@@ -484,40 +499,6 @@ public partial class LlvmEmitter
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Resolves generic type parameters in a member's type using the owner's type arguments.
-    /// Builds a substitution map from the owner and delegates to SubstituteTypeParams.
-    /// </summary>
-    private TypeSymbol ResolveGenericMemberType(TypeSymbol memberType, TypeSymbol ownerType)
-    {
-        TypeSymbol? ownerGenericDef = ownerType switch
-        {
-            RecordTypeSymbol r => r.GenericDefinition,
-            EntityTypeSymbol e => e.GenericDefinition,
-            _ => null
-        };
-        if (ownerGenericDef?.GenericParameters == null || ownerType.TypeArguments == null)
-        {
-            return memberType;
-        }
-
-        var subs = new Dictionary<string, TypeSymbol>();
-        for (int i = 0;
-             i < ownerGenericDef.GenericParameters.Count && i < ownerType.TypeArguments.Count;
-             i++)
-        {
-            subs[key: ownerGenericDef.GenericParameters[index: i]] =
-                ownerType.TypeArguments[index: i];
-        }
-
-        if (subs.Count == 0)
-        {
-            return memberType;
-        }
-
-        return SubstituteTypeParams(type: memberType, substitutions: subs);
-    }
-
-    /// <summary>
     /// Emits code for a <see cref="CarrierPayloadExpression"/>: loads the inline payload
     /// (field 1 — a [P x i8] buffer where P = max(sizeof(T), 8)) from a Result/Lookup carrier
     /// as the concrete type.
@@ -609,42 +590,20 @@ public partial class LlvmEmitter
         string entity = NextTemp();
         EmitLine(sb: sb, line: $"  {entity} = load ptr, ptr {payloadPtr}");
 
-        // Enumerate the crashables that get a dispatch arm. Only a crashable whose dispatched member is LIVE
-        // (demand-reached) gets one: a crashable is thrown before it can land in a carrier, so the reached set
-        // covers every type_id the carrier can actually hold. This makes the arm set DETERMINISTIC across a
-        // cold compile (registry holds only reached crashables) and a warm/daemon compile (registry holds the
-        // whole stdlib) — enumerating ALL registered crashables diverged the two (warm emitted arms + member
-        // definitions for never-thrown stdlib errors like IOError; cold did not). The collector seeds exactly
-        // these members live per reached crashable, so codegen and the collector agree on the same set.
+        // The arms this build dispatches to (CrashableDispatchArms).
         var arms = new List<(long id, RoutineInfo routine, string mangled, string label)>();
         string? retLlvm = null;
-        foreach (TypeSymbol t in _registry.GetTypesByCategory(category: TypeCategory.Crashable))
+        foreach ((ulong armTypeId, RoutineInfo routine) in Builder.Collection.CrashableDispatchArms.For(
+                     memberName: dispatch.MemberName,
+                     registry: _registry,
+                     liveRoutineKeys: _liveRoutineKeys))
         {
-            if (t is not CrashableTypeSymbol crashable)
-            {
-                continue;
-            }
-
-            RoutineInfo? routine = _registry.LookupMemberRoutine(type: crashable,
-                memberRoutineName: dispatch.MemberName,
-                isFailable: false);
-            if (routine is null or { IsGenericDefinition: true })
-            {
-                continue;
-            }
-
-            if (!_liveRoutineKeys.Contains(item: routine.RegistryKey))
-            {
-                continue;
-            }
-
             GenerateRoutineDeclaration(routine: routine);
-            string mangled = MangleRoutineName(routine: routine);
             retLlvm ??= routine.ReturnType != null
                 ? GetLlvmType(type: routine.ReturnType)
                 : "ptr";
-            long id = unchecked((long)TypeIdHelper.ComputeTypeId(fullName: crashable.FullName));
-            arms.Add(item: (id, routine, mangled, NextLabel(prefix: "crd.case")));
+            arms.Add(item: (unchecked((long)armTypeId), routine, MangleRoutineName(routine: routine),
+                NextLabel(prefix: "crd.case")));
         }
 
         retLlvm ??= "ptr";

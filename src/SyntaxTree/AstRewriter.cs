@@ -471,6 +471,10 @@ public abstract class AstRewriter
             BackendCastExpression e => VisitBackendCast(e: e),
             AddressOfExpression e => VisitAddressOf(e: e),
             TaggedCreatorExpression e => VisitTaggedCreator(e: e),
+            NativeRoutineExpression e => VisitNativeRoutine(e: e),
+            NativeCallbackExpression e => VisitNativeCallback(e: e),
+            TagOfExpression e => VisitTagOf(e: e),
+            BitPackExpression e => VisitBitPack(e: e),
             ClosureValueExpression e => VisitClosureValue(e: e),
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
@@ -590,6 +594,58 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: w, objB: e.Wrapper)
             ? e
             : e with { Wrapper = w };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="NativeRoutineExpression"/> by visiting its routine. Returns the original node when unchanged.
+    /// </summary>
+    /// <param name="e">The node to rewrite.</param>
+    /// <returns>The rewritten expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitNativeRoutine(NativeRoutineExpression e)
+    {
+        Expression inner = VisitExpression(expr: e.Routine);
+        return ReferenceEquals(objA: inner, objB: e.Routine)
+            ? e
+            : e with { Routine = inner };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="NativeCallbackExpression"/> by visiting its value. Returns the original node when unchanged.
+    /// </summary>
+    /// <param name="e">The node to rewrite.</param>
+    /// <returns>The rewritten expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitNativeCallback(NativeCallbackExpression e)
+    {
+        Expression inner = VisitExpression(expr: e.Value);
+        return ReferenceEquals(objA: inner, objB: e.Value)
+            ? e
+            : e with { Value = inner };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="TagOfExpression"/> by visiting its value. Returns the original node when unchanged.
+    /// </summary>
+    /// <param name="e">The node to rewrite.</param>
+    /// <returns>The rewritten expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitTagOf(TagOfExpression e)
+    {
+        Expression inner = VisitExpression(expr: e.Value);
+        return ReferenceEquals(objA: inner, objB: e.Value)
+            ? e
+            : e with { Value = inner };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="BitPackExpression"/> by visiting its bools. Returns the original node when unchanged.
+    /// </summary>
+    /// <param name="e">The node to rewrite.</param>
+    /// <returns>The rewritten expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitBitPack(BitPackExpression e)
+    {
+        List<Expression> bits = RewriteList(items: e.Bits, rewrite: VisitExpression);
+        return ReferenceEquals(objA: bits, objB: e.Bits)
+            ? e
+            : e with { Bits = bits };
     }
 
     /// <summary>

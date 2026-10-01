@@ -218,7 +218,9 @@ public partial class LlvmEmitter
         // The binding attached at registration is authoritative — it is the exact RoutineInfo this
         // declaration was registered as, so it needs no name re-parsing or module-blind owner lookup.
         RoutineInfo? routineInfo = preResolvedInfo ?? routine.ResolvedInfo ??
-            ResolveRoutineInfoForDefinition(routine: routine, moduleContext: moduleContext);
+                                   throw new InvalidOperationException(
+                                       message: $"The routine declaration '{routine.Name}' at {routine.Location} " +
+                                                "reached the LLVM emitter without its registered routine.");
 
         if (ShouldSkipRoutineDefinition(routineInfo: routineInfo))
         {
@@ -296,84 +298,6 @@ public partial class LlvmEmitter
         EmitLine(sb: _functionDefinitions, line: "");
         _currentReturnViaSret = prevReturnViaSret;
         _currentReturnCoerceType = prevReturnCoerce;
-    }
-
-    /// <summary>
-    /// Resolves the <see cref="RoutineInfo"/> for a routine definition from the registry when the
-    /// declaration carries no authoritative binding. Prefers module-scoped owner resolution so two
-    /// modules that each declare a same-named type/routine each bind to their own symbol.
-    /// </summary>
-    private RoutineInfo? ResolveRoutineInfoForDefinition(RoutineDeclaration routine,
-        string? moduleContext)
-    {
-        // Signature-only: a routine is looked up by (name, arg-type set) ONLY — never a name-only
-        // first-wins lookup. The declaration's STRUCTURED owner/member/name fields + its parameter
-        // types uniquely identify it. A bare generic param (`value: T`) resolves to a
-        // GenericParameterTypeSymbol (see ResolveAstParameterTypes) so the arg-type list stays
-        // arity-complete and the overload matcher's Tier-1 name match binds the generic-def routine.
-        List<TypeSymbol> astParamTypes = ResolveAstParameterTypes(routine: routine);
-
-        // Member declaration (`Owner.member`) — resolve owner-scoped by (owner, member, argTypes),
-        // module-qualified owner first so a same-named type in another module is not mis-bound.
-        if (routine.OwnerName is { } ownerPart && routine.MemberRoutineName is { } shortName)
-        {
-            TypeSymbol? ownerType = (!string.IsNullOrEmpty(value: moduleContext)
-                ? _registry.LookupType(name: $"{moduleContext}.{ownerPart}")
-                : null) ?? _registry.LookupType(name: ownerPart);
-            return ownerType == null
-                ? null
-                : _registry.LookupMemberRoutineOverload(type: ownerType,
-                    memberRoutineName: shortName,
-                    argTypes: astParamTypes);
-        }
-
-        // Free routine — resolve by (name, argTypes), module-qualified key first so two modules'
-        // same-named routines each bind to their own overload.
-        string freeBase = routine.QualifiedName;
-        RoutineInfo? info = null;
-        if (!string.IsNullOrEmpty(value: moduleContext))
-        {
-            info = _registry.LookupRoutineOverload(baseName: $"{moduleContext}.{freeBase}",
-                argTypes: astParamTypes);
-        }
-
-        return info ??
-               _registry.LookupRoutineOverload(baseName: freeBase, argTypes: astParamTypes);
-    }
-
-    /// <summary>
-    /// Resolves each AST parameter's declared type to a registered <see cref="TypeSymbol"/>.
-    /// </summary>
-    private List<TypeSymbol> ResolveAstParameterTypes(RoutineDeclaration routine)
-    {
-        return routine.Parameters
-                      .Where(predicate: param => param.Type != null)
-                      .Select(selector: param => ResolveAstParameterType(param: param))
-                      .OfType<TypeSymbol>()
-                      .ToList();
-    }
-
-    /// <summary>
-    /// Resolves a single AST parameter's declared type annotation to a registered <see cref="TypeSymbol"/>.
-    /// Returns null for parameters whose type cannot be resolved and is not a recognizable generic parameter name.
-    /// </summary>
-    private TypeSymbol? ResolveAstParameterType(Parameter param)
-    {
-        string typeName = param.Type!.Name;
-        if (param.Type.GenericArguments is { Count: > 0 } genArgs)
-        {
-            typeName =
-                $"{typeName}[{string.Join(separator: ", ", values: genArgs.Select(selector: a => a.Name))}]";
-        }
-
-        TypeSymbol? t = _registry.LookupType(name: typeName);
-        // A bare unresolvable name is a generic PARAMETER (e.g. value: T in List[T].add_last).
-        // Keep it as a GenericParameterTypeSymbol so the arg-type list stays arity-complete and the
-        // overload matcher's Tier-1 name match (param.Name == arg.Name) can bind the generic-def routine.
-        return t ?? (param.Type.GenericArguments is not { Count: > 0 } &&
-                     !typeName.Contains(value: '.')
-            ? new GenericParameterTypeSymbol(name: typeName)
-            : null);
     }
 
     /// <summary>
@@ -710,17 +634,8 @@ public partial class LlvmEmitter
     /// <summary>Binds <c>me</c> for a memberRoutine receiver (by-ref, void, or value-copy forms).</summary>
     private void BindMemberRoutineMeReceiver(StringBuilder sb, RoutineInfo routine)
     {
-        // A Suflae entity member routine receives `me` as the `Roamed[E]` handle (SF slice 2 sets
-        // MeType), so bind the local to that handle type — otherwise `me.field` codegen sees the
-        // bare entity and reads the RC controller's refcount instead of dereferencing the handle.
-        // Gated to a Roamed MeType so the specialized-receiver MeType path (List[Agent[V]]) is
-        // untouched. The LLVM param type is a `ptr` for both, so only the tracked type changes.
-        TypeSymbol meLocalType = routine.MeType is RecordTypeSymbol
-        {
-            GenericDefinition.Name: Declaration.RuntimeContract.Roamed
-        }
-            ? routine.MeType
-            : routine.OwnerType!;
+        // The type the local `me` holds (ReceiverFacts). The LLVM param type is a `ptr` either way.
+        TypeSymbol meLocalType = Declaration.ReceiverFacts.MeLocalType(routine: routine);
 
         // Struct-record `me` passed by reference: %me.addr IS the function parameter (the caller's
         // storage pointer). No alloca/store — mutations and address-taking reach it directly.
@@ -791,22 +706,14 @@ public partial class LlvmEmitter
     /// </summary>
     private void EmitTracePush(StringBuilder sb, RoutineInfo routine)
     {
-        bool isInline = routine.Annotations.Contains(value: "inline");
-        // `@untraced`: the routine's own frame is noise in a crash trace (Core's crash_report, which prints it).
-        bool isUntraced = routine.Annotations.Contains(value: "untraced");
-        _traceCurrentRoutine = ShouldEmitTrace && !routine.IsSynthesized && !isInline && !isUntraced &&
-                               _crashReachability?.CanCrash(routine: routine) != false;
+        _traceCurrentRoutine = ShouldEmitTrace &&
+                               Builder.Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability);
         if (!_traceCurrentRoutine)
         {
             return;
         }
 
-        string paramTypes = string.Join(separator: ", ",
-            values: routine.Parameters.Select(selector: p => p.Type.FullName));
-        string failable = routine.IsFailable
-            ? "!"
-            : "";
-        string routineName = $"{routine.BaseName}{failable}({paramTypes})";
+        string routineName = Builder.Collection.TraceFrames.Name(routine: routine);
         string fileName = routine.Location?.FileName ?? "";
         int line = routine.Location?.Line ?? 0;
         int col = routine.Location?.Column ?? 0;
@@ -818,51 +725,12 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits the implicit terminator when the body falls off the end: the trace pop and a zero-value
-    /// return in the routine's ABI return form (void / sret / coerced / value).
+    /// Every body ends with a return (FallOffReturnLoweringPass), so control never falls off the end.
     /// </summary>
     private void EmitFallthroughReturn(StringBuilder sb, RoutineInfo routine)
     {
-        if (_traceCurrentRoutine)
-        {
-            EmitLine(sb: sb, line: "  call void @_rf_trace_pop()");
-        }
-
-        string retType = routine.ReturnType != null
-            ? GetLlvmType(type: routine.ReturnType)
-            : "void";
-        if (retType == "void")
-        {
-            EmitVoidFallthroughReturn(sb: sb);
-            return;
-        }
-
-        if (_currentReturnViaSret)
-        {
-            // Indirect (sret) return: the header is void, so store the zero struct through the
-            // hidden %sret pointer and return void.
-            string zeroValue = GetZeroValue(type: routine.ReturnType!);
-            EmitLine(sb: sb, line: $"  store {retType} {zeroValue}, ptr %sret");
-            EmitLine(sb: sb, line: "  ret void");
-            return;
-        }
-
-        if (_currentReturnCoerceType != null)
-        {
-            // Coerced (Phase 2) return: the header returns the ABI integer type; zero fills it.
-            EmitLine(sb: sb, line: $"  ret {_currentReturnCoerceType} zeroinitializer");
-            return;
-        }
-
-        EmitLine(sb: sb, line: $"  ret {retType} {GetZeroValue(type: routine.ReturnType!)}");
-    }
-
-    /// <summary>
-    /// Emits the fallthrough return for a void return type.
-    /// </summary>
-    private void EmitVoidFallthroughReturn(StringBuilder sb)
-    {
-        EmitLine(sb: sb, line: "  ret void");
+        throw new InvalidOperationException(
+            message: $"The body of '{routine.RegistryKey}' reached its end without a return in the LLVM emitter.");
     }
 
     /// <summary>
@@ -1213,38 +1081,23 @@ public partial class LlvmEmitter
 
     private static string GetImplicitMeParameterAttributes(RoutineInfo routine)
     {
-        // Exclusive me-params get `noalias`. Two cases qualify:
-        //   - bare entity (bound T can't be duplicated, so the me pointer is exclusive
-        //     at the call boundary by the entity-ownership rule),
-        //   - `Modifying[T]` (scope-bound exclusive borrow — its definition).
-        bool isExclusive = routine.OwnerType is EntityTypeSymbol ||
-                           WrapperShape.Is(type: routine.OwnerType, name: Declaration.RuntimeContract.Modifying);
-        if (isExclusive)
+        // An exclusive `me` is `noalias` (also `readonly` when the routine only reads); a wrapper `me` a
+        // @readonly routine only reads is `readonly` (ReceiverFacts).
+        if (Declaration.ReceiverFacts.MeIsExclusive(routine: routine))
         {
             return routine.MutationCategory == MutationCategory.Readonly
                 ? "noalias readonly"
                 : "noalias";
         }
 
-        if (routine.MutationCategory != MutationCategory.Readonly)
-        {
-            return string.Empty;
-        }
-
-        // A @readonly method on a wrapper has a pointer `me` it does not write — mark it `readonly`.
-        // A wrapper owner is the record matched by its base name in RuntimeContract.WrapperTypes.
-        bool isWrapperOwner = routine.OwnerType != null &&
-            GetGenericBaseNameStatic(type: routine.OwnerType) is { } ownerBase &&
-            Declaration.RuntimeContract.WrapperTypes.Contains(item: ownerBase);
-        return isWrapperOwner
+        return Declaration.ReceiverFacts.MeIsReadOnlyPointer(routine: routine)
             ? "readonly"
             : string.Empty;
     }
 
     private static string GetExplicitParameterAttributes(TypeSymbol? type)
     {
-        return type is EntityTypeSymbol ||
-               WrapperShape.Is(type: type, name: Declaration.RuntimeContract.Modifying)
+        return Declaration.ReceiverFacts.IsExclusive(type: type)
             ? "noalias"
             : string.Empty;
     }
@@ -1280,39 +1133,10 @@ public partial class LlvmEmitter
             : size > 16;
     }
 
-    /// <summary>
-    /// Whether a record's <c>me</c> is passed by reference (a <c>ptr</c> to the caller's storage)
-    /// rather than by value. This is a purely type-level decision — no per-memberRoutine special cases:
-    /// <list type="bullet">
-    /// <item><b>By reference</b> — every <i>storage-backed</i> record: a struct record (no
-    /// <c>@llvm</c> backend) or an <c>@llvm</c> record whose backend is an <i>aggregate</i>
-    /// (<c>[N x T]</c>, i.e. <c>Array[T,N]</c> / <c>BitArray[N]</c>). By-ref lets any memberRoutine mutate
-    /// in place and take stable addresses (hijack/get_address, atomics, C FFI), and avoids copying
-    /// the aggregate on every call.</item>
-    /// <item><b>By value</b> — only <i>scalar</i> <c>@llvm</c> records (<c>iN</c>, <c>fN</c>,
-    /// <c>ptr</c>: numerics, <c>Bool</c>, <c>Hijacked</c>, …). The value <i>is</i> the machine
-    /// register their operators feed to LLVM intrinsics (<c>add i64 %me, %you</c>), so a pointer
-    /// would be wrong. These are pure values and never mutate <c>me</c> in place, so "needs by-value"
-    /// and "mutates in place" never overlap.</item>
-    /// </list>
-    /// Entities are already by-ref via their pointer ABI. This replaces the old <c>setitem</c>
-    /// name-check: <c>Array.setitem</c> is by-ref because Array is aggregate-backed, like every
-    /// other Array memberRoutine — not because of its name.
-    /// </summary>
+    /// <summary>Whether a routine of <paramref name="ownerType"/> takes <c>me</c> by reference (ReceiverFacts).</summary>
     internal static bool IsByRefMeRecord(TypeSymbol? ownerType)
     {
-        return ownerType switch
-        {
-            // Struct record: no @llvm backend -> storage-backed -> by-ref.
-            RecordTypeSymbol { BackendType: null } => true,
-            // @llvm record: by-ref iff the backend is an aggregate — an array `[N x T]` or a SIMD
-            // vector `<N x E>`. Both are always accessed through a load/store (never fed to an
-            // intrinsic as a bare SSA value like a scalar `i64`), and both need in-place `setitem!`
-            // to reach the caller's storage. Scalar backends (`i64`, `i1`, `ptr`, ...) stay by-value.
-            RecordTypeSymbol { BackendType: not null, BackendType: { } bt } =>
-                bt.StartsWith(value: '[') || bt.StartsWith(value: '<'),
-            _ => false
-        };
+        return Declaration.ReceiverFacts.MeByReference(ownerType: ownerType);
     }
 
     private static bool IsByRefMeReceiver(RoutineInfo routine)

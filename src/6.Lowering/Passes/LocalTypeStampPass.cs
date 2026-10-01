@@ -24,10 +24,14 @@ internal static class LocalTypeStampPass
             {
                 switch (node)
                 {
-                    case DeclarationStatement { Declaration: VariableDeclaration v }
-                        when StorageType(declaration: v) is { } localType:
-                        v.LocalType = localType;
-                        declared[key: v.Name] = localType;
+                    case DeclarationStatement { Declaration: VariableDeclaration v }:
+                        // Always restamped: a copy of a template body carries the template's stamp.
+                        v.LocalType = StorageType(declaration: v);
+                        if (v.LocalType is { } localType)
+                        {
+                            declared[key: v.Name] = localType;
+                        }
+
                         break;
                     case IdentifierExpression { ResolvedType: null or ErrorTypeSymbol } id
                         when declared.TryGetValue(key: id.Name, value: out TypeSymbol? type):

@@ -117,8 +117,9 @@ public partial class LlvmEmitter
         if (type is RecordTypeSymbol
             {
                 IsGenericResolution: true,
+                BackendType: ['[', ..],
                 TypeArguments: [RecordTypeSymbol or VariantTypeSymbol, ConstGenericValueTypeSymbol]
-            } arrayType && GetGenericBaseName(type: arrayType) == "Array")
+            } arrayType)
         {
             TypeSymbol elem = arrayType.TypeArguments![index: 0];
             long count = ((ConstGenericValueTypeSymbol)arrayType.TypeArguments[index: 1]).Value;
@@ -143,23 +144,9 @@ public partial class LlvmEmitter
                     $"[inRoutine={_currentEmittingRoutine?.FullName}] — it must be monomorphized to a concrete " +
                     "instance before codegen. codegen is a never-fail translator; this leak is an upstream bug."),
 
-            // Records with no fields -> look up the registered definition (may have @llvm annotation)
-            RecordTypeSymbol { MemberVariables.Count: 0 } record when _registry.LookupType(
-                name: record.Name) is RecordTypeSymbol
-            {
-                BackendType: not null
-            } llvmRecord => llvmRecord.LlvmType,
-
             // Variants -> struct { tag, payload }. Variant is a RecordTypeSymbol subclass, so this
             // MUST precede the RecordTypeSymbol arms below or a variant would be treated as a record.
             VariantTypeSymbol variant => GetVariantTypeName(variant: variant),
-
-            // Records with no fields and generic base type has @llvm annotation
-            RecordTypeSymbol
-            {
-                MemberVariables.Count: 0,
-                GenericDefinition: { BackendType: not null } baseRecord
-            } => baseRecord.LlvmType,
 
             // Multi-member-variable records -> LLVM struct type.
             // Also ensure the struct declaration is emitted -> carrier types like Result[Result[T]]
@@ -169,19 +156,17 @@ public partial class LlvmEmitter
             // Entities (and Crashable, an entity subclass) -> pointer to LLVM struct
             EntityTypeSymbol => "ptr",
 
-            // A marker borrow protocol (Accessing[X]/Controlling[X]) is representation-transparent to its
-            // inner X (an entity → ptr, a value → the value's own layout). Monomorphization collapses most
-            // markers to X before codegen, but the residual (non-monomorphized paths) still arrives here, so
-            // fold it to the inner's backend form rather than emitting a wrong `ptr` for a value inner.
+            // A marker borrow protocol (Accessing[X]/Controlling[X]) is laid out as its inner X (an entity → ptr, a
+            // value → the value's own layout).
             ProtocolTypeSymbol { TypeArguments: [{ } markerInner] } markerProto when
                 Declaration.RuntimeContract.IsMarkerProtocol(
                     baseName: (markerProto.GenericDefinition ?? markerProto).BareName) =>
                 GetLlvmType(type: markerInner),
 
-            // Any OTHER protocol -> HARD ERROR. A non-marker protocol reaching the backend (an iterator's
+            // Any other protocol -> HARD ERROR. A protocol reaching the backend (an iterator's
             // `Emittable[T]` return, a generic-def body, an unsubstituted protocol-typed slot) is an upstream
             // monomorphization gap. codegen never fails silently: surface it loudly so the leak is fixed
-            // upstream, not masked by a type-erased `ptr`. (Marker protocols are unwrapped in the arm above.)
+            // upstream, not masked by a type-erased `ptr`.
             ProtocolTypeSymbol proto => throw new InvalidOperationException(
                 message:
                 $"Protocol type '{proto.Name}' reached GetLlvmType [inRoutine={_currentEmittingRoutine?.FullName}] — " +
@@ -202,7 +187,8 @@ public partial class LlvmEmitter
                 ResolveConstGenericUnderlyingType(constVal: constGen) is { } underlying &&
                 underlying is not ConstGenericValueTypeSymbol
                     ? GetLlvmType(type: underlying)
-                    : "i64",
+                    : throw new InvalidOperationException(
+                        message: $"The type of the constant '{constGen.Name}' is not registered."),
 
             // Unresolved generic parameter -> illegal in codegen. All type parameters must be
             // substituted by GenericMonomorphizationPass before the backend is entered.
@@ -537,126 +523,6 @@ public partial class LlvmEmitter
     }
 
     // -----------------------------------------------------------------------------
-
-    /// <summary>Bundles a memberRoutine lookup result with fully-resolved context for codegen emission.</summary>
-    private sealed record ResolvedMemberRoutine(
-        RoutineInfo Routine,
-        TypeSymbol OwnerType,
-        bool IsFailable,
-        List<string>? ModulePath,
-        string MangledName,
-        bool IsMonomorphized,
-        Dictionary<string, TypeSymbol>? memberRoutineTypeArgs);
-
-    /// <summary>
-    /// Looks up a memberRoutine on a type and returns a fully-resolved bundle for codegen.
-    /// Generic instantiation must already be complete before this runs.
-    /// </summary>
-    private ResolvedMemberRoutine? ResolveMemberRoutine(TypeSymbol receiverType,
-        string memberRoutineName, List<TypeSymbol>? memberRoutineTypeArgs = null,
-        List<TypeSymbol>? argTypes = null)
-    {
-        receiverType = ApplyTypeSubstitutions(type: receiverType);
-        var resolvedArgTypes = argTypes?.Select(selector: ApplyTypeSubstitutions)
-                                        .ToList();
-
-        // Signature-only: resolve by (name, argTypes) always — empty argTypes matches the 0-param overload.
-        // Failability is structural (same name); the overload's own IsFailable flag carries it.
-        RoutineInfo? memberRoutine = _registry.LookupMemberRoutineOverload(type: receiverType,
-            memberRoutineName: memberRoutineName,
-            argTypes: resolvedArgTypes ?? new List<TypeSymbol>());
-
-        if (memberRoutine == null)
-        {
-            return null;
-        }
-
-        if (memberRoutineTypeArgs is { Count: > 0 } || resolvedArgTypes is { Count: > 0 } &&
-            memberRoutine.IsGenericDefinition)
-        {
-            throw new InvalidOperationException(
-                message:
-                $"member routine-level generic instantiation for '{receiverType.FullName}.{memberRoutineName}' reached LLVM codegen. " +
-                "Instantiate it before codegen.");
-        }
-
-        if (memberRoutine.IsGenericDefinition ||
-            memberRoutine.OwnerType is GenericParameterTypeSymbol)
-        {
-            // Synthesized wrapper forwarder: the raw generic-def-anchored version was returned
-            // instead of the concrete instance. The concrete body will be emitted by Phase C;
-            // return null so the caller falls back to a placeholder mangled name and the
-            // define-vs-declare conflict is resolved at the final IR assembly step.
-            if (memberRoutine is
-                { IsSynthesized: true, WrapperForwarderInnerMemberRoutine: not null })
-            {
-                return null;
-            }
-
-            throw new InvalidOperationException(
-                message:
-                $"Unresolved generic member routine '{receiverType.FullName}.{memberRoutineName}' reached LLVM codegen.");
-        }
-
-        string mangledName = MangleRoutineName(routine: memberRoutine);
-
-        return new ResolvedMemberRoutine(Routine: memberRoutine,
-            OwnerType: receiverType,
-            IsFailable: memberRoutine.IsFailable,
-            ModulePath: memberRoutine.ModulePath,
-            MangledName: mangledName,
-            IsMonomorphized: false,
-            memberRoutineTypeArgs: null);
-    }
-
-    /// <summary>
-    /// Substitutes a generic parameter name with a concrete type in a type expression.
-    /// Handles both direct substitution (T -> Point) and nested resolution (Viewing[T] -> Viewing[Point]).
-    /// </summary>
-    private TypeSymbol SubstituteGenericParamInType(TypeSymbol type, string paramName,
-        TypeSymbol concreteType)
-    {
-        if (type.Name == paramName || type is GenericParameterTypeSymbol gp && gp.Name == paramName)
-        {
-            return concreteType;
-        }
-
-        if (type is not { IsGenericResolution: true, TypeArguments: not null })
-        {
-            return type;
-        }
-
-        bool anyChanged = false;
-        var substitutedArgs = new List<TypeSymbol>();
-        foreach (TypeSymbol arg in type.TypeArguments)
-        {
-            TypeSymbol substituted = SubstituteGenericParamInType(type: arg,
-                paramName: paramName,
-                concreteType: concreteType);
-            substitutedArgs.Add(item: substituted);
-            anyChanged |= !ReferenceEquals(objA: substituted, objB: arg);
-        }
-
-        return anyChanged
-            ? RebuildResolutionWithArgs(type: type, substitutedArgs: substitutedArgs) ?? type
-            : type;
-    }
-
-    /// <summary>
-    /// Rebuilds a generic-resolution (or wrapper) type with substituted type arguments, resolving
-    /// its generic base (or the wrapper's generic-definition record). Returns null if no base found.
-    /// </summary>
-    private TypeSymbol? RebuildResolutionWithArgs(TypeSymbol type, List<TypeSymbol> substitutedArgs)
-    {
-        TypeSymbol? genericBase = GetGenericBase(type: type);
-        if (genericBase != null)
-        {
-            return _registry.GetOrCreateResolution(genericDef: genericBase,
-                typeArguments: substitutedArgs);
-        }
-
-        return null;
-    }
 
     /// <summary>
     /// Rebinds a semantically-resolved routine to the concrete owner/return type seen by codegen

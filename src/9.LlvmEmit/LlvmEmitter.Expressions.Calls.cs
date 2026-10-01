@@ -156,36 +156,13 @@ public partial class LlvmEmitter
         Expression argInner = bound is NamedArgumentExpression nb
             ? nb.Value
             : bound;
-        bool paramTakesCFnPtr = param.Type?.Name == "CPtr" ||
-                                routine.IsForeign && param.Type is RoutineTypeSymbol;
-
         // By-reference parameter: pass the argument's address, so the routine works on that storage.
-        if (param.IsByReference)
+        // A routine handed to native code is its native address (CallBindingPass). Both are a bare pointer.
+        if (param.IsByReference || argInner is NativeRoutineExpression or NativeCallbackExpression)
         {
-            argValues.Add(item: EmitLvalueAddress(sb: sb, expr: argInner));
-            argTypeInfos.Add(item: param.Type);
-            argTypes.Add(item: "ptr");
-            return;
-        }
-
-        // FFI routine argument: a routine name (resolved by semantic analysis) at a CPtr/Routine param
-        // → pass the C-ABI symbol.
-        if (paramTakesCFnPtr && argInner is IdentifierExpression { ResolvedRoutine: { } refRoutine } &&
-            param.Type is not null)
-        {
-            GenerateRoutineDeclaration(routine: refRoutine);
-            argValues.Add(item: $"@{MangleRoutineName(routine: refRoutine)}");
-            argTypeInfos.Add(item: param.Type);
-            argTypes.Add(item: "ptr");
-            return;
-        }
-
-        // FFI Routine VALUE argument: guard capturing-ness at runtime.
-        if (paramTakesCFnPtr && GetExpressionType(expr: argInner) is RoutineTypeSymbol &&
-            param.Type is not null)
-        {
-            string fnArg = EmitForeignRoutineValueArg(sb: sb, valueExpr: argInner);
-            argValues.Add(item: fnArg);
+            argValues.Add(item: param.IsByReference
+                ? EmitLvalueAddress(sb: sb, expr: argInner)
+                : EmitExpression(sb: sb, expr: argInner));
             argTypeInfos.Add(item: param.Type);
             argTypes.Add(item: "ptr");
             return;
@@ -219,11 +196,12 @@ public partial class LlvmEmitter
         List<TypeExpression>? typeArguments = null,
         CallLoweringKind loweringKind = CallLoweringKind.Unknown)
     {
-        // Synthesized bodies (e.g. hash, eq, cmp) are built programmatically and never
-        // pass through SemanticVerifier, so they arrive with Unknown. Treat as DirectMemberRoutine.
+        // Every member call carries its lowering kind (CallBindingPass).
         if (loweringKind == CallLoweringKind.Unknown)
         {
-            loweringKind = CallLoweringKind.DirectMemberRoutine;
+            throw new InvalidOperationException(
+                message: $"The member call .{member.MemberName} at {member.Location} reached the LLVM emitter without " +
+                         $"a lowering kind in [{_currentRoutineDiagName}].");
         }
 
         // Dynamic call through a callable FIELD on the receiver (e.g. `me.predicate(item)` in
@@ -252,16 +230,6 @@ public partial class LlvmEmitter
             ResolveMemberRoutineCallReceiver(sb: sb, member: member);
 
         receiverType = NormalizeMemberReceiverType(member: member, receiverType: receiverType);
-
-        // Transparent protocol (e.g., Accessing[Text] with no declared memberRoutines): dispatch through
-        // the first concrete type argument T. Both representations are ptr in LLVM, so no cast needed.
-        if (receiverType is ProtocolTypeSymbol
-            {
-                MemberRoutines.Count: 0, TypeArguments.Count: > 0
-            } transparentProto)
-        {
-            receiverType = transparentProto.TypeArguments![index: 0];
-        }
 
         string memberRoutineName = member.MemberName;
 
@@ -574,7 +542,6 @@ public partial class LlvmEmitter
             argTypeInfos.Add(item: argType);
         }
 
-        int receiverSkip = memberRoutineTakesReceiver ? 1 : 0;
         if (memberRoutine == null)
         {
             // The analyzer or the lowering pass that built this call resolves it; the emitter does not.
@@ -584,9 +551,8 @@ public partial class LlvmEmitter
                 $"in [{_currentRoutineDiagName}]. The pass that built it must stamp ResolvedRoutine.");
         }
 
-        return NormalizeResolvedRoutineReference(routine: memberRoutine,
-            receiverType: receiverType,
-            argTypes: argTypeInfos.Skip(count: receiverSkip).ToList());
+        // The routine is the receiver's own (CallBindingPass).
+        return memberRoutine;
     }
 
     /// <summary>
@@ -632,19 +598,6 @@ public partial class LlvmEmitter
         }
 
         TypeSymbol? resolvedReturnType = memberRoutine?.ReturnType;
-        if (resolvedReturnType != null)
-        {
-            if (memberRoutine?.OwnerType is GenericParameterTypeSymbol universalOwnerParam)
-            {
-                resolvedReturnType = SubstituteGenericParamInType(type: resolvedReturnType,
-                    paramName: universalOwnerParam.Name,
-                    concreteType: receiverType);
-            }
-            else
-            {
-                resolvedReturnType = ApplyTypeSubstitutions(type: resolvedReturnType);
-            }
-        }
 
         if (!_generatedRoutines.Contains(item: mangledName))
         {
@@ -654,12 +607,8 @@ public partial class LlvmEmitter
             }
             else
             {
-                string retType = resolvedReturnType != null
-                    ? GetLlvmType(type: resolvedReturnType)
-                    : "void";
-                _rfRoutineDeclarations[key: mangledName] =
-                    $"declare {retType} @{mangledName}({string.Join(separator: ", ", values: argTypes)})";
-                _generatedRoutines.Add(item: mangledName);
+                throw new InvalidOperationException(
+                    message: $"The call symbol '{mangledName}' has no routine in [{_currentRoutineDiagName}].");
             }
         }
 
@@ -1103,23 +1052,10 @@ public partial class LlvmEmitter
             return (argValue, expectedLlvm);
         }
 
-        if (actualType is RecordTypeSymbol
-            {
-                BackendType: null,
-                MemberVariables.Count: 1
-            } record)
-        {
-            TypeSymbol fieldType = record.MemberVariables[index: 0].Type;
-            string fieldLlvm = GetParameterLlvmType(type: fieldType);
-            if (fieldLlvm == expectedLlvm)
-            {
-                string extracted = NextTemp();
-                EmitLine(sb: sb, line: $"  {extracted} = extractvalue {actualLlvm} {argValue}, 0");
-                return (extracted, expectedLlvm);
-            }
-        }
-
-        return (argValue, expectedLlvm);
+        throw new InvalidOperationException(
+            message: $"An argument of type '{actualType.FullName}' ({actualLlvm}) reached a parameter of type " +
+                     $"'{parameterType.FullName}' ({expectedLlvm}) in a call to '{callee.RegistryKey}' in " +
+                     $"[{_currentRoutineDiagName}]; the representation change must be a cast upstream.");
     }
 
     /// <summary>
@@ -1142,24 +1078,6 @@ public partial class LlvmEmitter
         RoutineInfo? resolvedRoutine, List<Expression> arguments,
         List<TypeExpression>? typeArguments, TypeSymbol? resolvedReturnType)
     {
-        // `hollow[T]()` — the entity-footprint alloc primitive (@innate, bodyless). Heap-allocate the
-        // concrete entity's STRUCT footprint zeroed, exactly like a `create` prologue with no args, so a
-        // SoA entity (SplitList) starts with null columns + zero counts. Only entity return types are
-        // valid; a non-entity `hollow` is a stdlib authoring error.
-        // `hollow` is a bare global @innate primitive — an equality check against the name constant,
-        // NOT a suffix-parse of a qualified name string.
-        if (functionName == "hollow")
-        {
-            if (resolvedReturnType is not EntityTypeSymbol hollowEntity)
-            {
-                throw new InvalidOperationException(
-                    message:
-                    $"hollow[T]() requires an entity type argument, got '{resolvedReturnType?.FullName ?? "<null>"}'.");
-            }
-
-            return EmitEntityAllocation(sb: sb, entity: hollowEntity);
-        }
-
         if (resolvedRoutine?.LlvmIrTemplate != null)
         {
             return EmitLlvmIntrinsicCall(sb: sb,
@@ -1210,54 +1128,11 @@ public partial class LlvmEmitter
     private (string Receiver, TypeSymbol? ReceiverType) ResolveMemberRoutineCallReceiver(
         StringBuilder sb, MemberExpression member)
     {
-        // Const-generic value receiver: `N.represent()` where N is bound to a literal (e.g. 4
-        // for `Array[S64, 4]`). Without this check, the typewise-receiver branch below treats N
-        // as a type identifier and synthesizes a zero receiver — `Array.diagnose` then prints
-        // `count: 0` instead of the actual N. Substitute the const value before falling through.
-        if (member.Object is IdentifierExpression constId &&
-            !_localVariables.ContainsKey(key: constId.Name) &&
-            constId.ResolvedType is ConstGenericValueTypeSymbol constVal)
+        // A call on a type name has the type as its receiver (CallBindingPass): the routine reads no `me`, so the
+        // receiver is the type's zero value.
+        if (member.Object is TypeExpression { ResolvedType: { } typeAsReceiver })
         {
-            return (constVal.Value.ToString(),
-                ResolveConstGenericUnderlyingType(constVal: constVal));
-        }
-
-        // A Suflae module `global` receiver (`counter.add(...)`) is a VALUE, not a type name — it is
-        // excluded here so it falls through to the value path below, where EmitExpression loads it from
-        // its `@global` symbol (otherwise this typewise branch would synthesize a zero receiver).
-        if (member.Object is IdentifierExpression typeId &&
-            !_localVariables.ContainsKey(key: typeId.Name) &&
-            !_moduleGlobals.ContainsKey(key: typeId.Name) &&
-            ResolveAggregatePreset(name: typeId.Name) == null)
-        {
-            // Aggregate-preset receivers are NOT typewise/static receivers — they are by-ref values
-            // whose storage is the `@preset.*` global. Fall through so EmitLvalueAddress returns it.
-            // `common`/static calls on a bare TYPE name (e.g. `Real.zero()`, `Real(value: 2)` lowered
-            // to `Real.create(...)`) carry no value expression, so GetExpressionType is null on some
-            // stdlib paths where SA didn't stamp the receiver's type. Resolve the type by name
-            // (module-aware) before giving up — the synthesized zero receiver below is correct for a
-            // static memberRoutine (it has no `me` to read).
-            TypeSymbol? typeAsReceiver = GetExpressionType(expr: member.Object) ??
-                                       LookupTypeInCurrentModule(name: typeId.Name);
-            if (typeAsReceiver == null)
-            {
-                throw new InvalidOperationException(
-                    message:
-                    $"Typewise/common member routine receiver '{typeId.Name}' reached LLVM codegen without a semantic receiver type.");
-            }
-
-            string llvmType = GetLlvmType(type: typeAsReceiver);
-            string receiver = "0";
-            if (llvmType.StartsWith(value: '%') || llvmType.StartsWith(value: '{'))
-            {
-                receiver = "zeroinitializer";
-            }
-            else if (llvmType == "ptr")
-            {
-                receiver = "null";
-            }
-
-            return (receiver, typeAsReceiver);
+            return (GetZeroValue(type: typeAsReceiver), typeAsReceiver);
         }
 
         TypeSymbol? receiverType = GetExpressionType(expr: member.Object);
@@ -1574,15 +1449,11 @@ public partial class LlvmEmitter
             }
             else
             {
-                // Owner is still generic -> re-derive concrete memberRoutine from receiverType.
-                ResolvedMemberRoutine? resolved = ResolveMemberRoutine(receiverType: receiverType,
-                    memberRoutineName: memberRoutine.Name);
-                mangledName = resolved?.MangledName ??
-                              Q(name: DecorateRoutineSymbolName(
-                                  baseName:
-                                  $"{receiverType.FullName}.{SanitizeLlvmName(name: member.MemberName)}",
-                                  isFailable: memberRoutine.IsFailable));
+                throw new InvalidOperationException(
+                    message: $"The member routine '{memberRoutine.RegistryKey}' called on '{receiverType.FullName}' " +
+                             $"reached the LLVM emitter still generic in [{_currentRoutineDiagName}].");
             }
+
         }
         else
         {

@@ -863,6 +863,30 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
 
     /// <inheritdoc/>
+    public string VisitNativeRoutineExpression(NativeRoutineExpression node)
+    {
+        return $"#NativeRoutineExpression({node.Routine.Accept(visitor: this)})";
+    }
+
+    /// <inheritdoc/>
+    public string VisitNativeCallbackExpression(NativeCallbackExpression node)
+    {
+        return $"#NativeCallbackExpression({node.Value.Accept(visitor: this)})";
+    }
+
+    /// <inheritdoc/>
+    public string VisitBitPackExpression(BitPackExpression node)
+    {
+        return $"#bit_pack({string.Join(separator: ", ", values: node.Bits.Select(selector: b => b.Accept(visitor: this)))})";
+    }
+
+    /// <inheritdoc/>
+    public string VisitTagOfExpression(TagOfExpression node)
+    {
+        return $"#TagOfExpression({node.Value.Accept(visitor: this)})";
+    }
+
+    /// <inheritdoc/>
     public string VisitZeroValueExpression(ZeroValueExpression node)
     {
         return $"#zero({node.ResolvedType?.Name})";

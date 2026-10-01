@@ -283,6 +283,26 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the zero value</returns>
     T VisitZeroValueExpression(ZeroValueExpression node);
 
+    /// <summary>Visits a NativeRoutineExpression node</summary>
+    /// <param name="node">The node to visit</param>
+    /// <returns>Result of visiting the node</returns>
+    T VisitNativeRoutineExpression(NativeRoutineExpression node);
+
+    /// <summary>Visits a NativeCallbackExpression node</summary>
+    /// <param name="node">The node to visit</param>
+    /// <returns>Result of visiting the node</returns>
+    T VisitNativeCallbackExpression(NativeCallbackExpression node);
+
+    /// <summary>Visits a TagOfExpression node</summary>
+    /// <param name="node">The node to visit</param>
+    /// <returns>Result of visiting the node</returns>
+    T VisitTagOfExpression(TagOfExpression node);
+
+    /// <summary>Visits a bit-pack node (a BitArray built from run-time bools)</summary>
+    /// <param name="node">The node to visit</param>
+    /// <returns>Result of visiting the node</returns>
+    T VisitBitPackExpression(BitPackExpression node);
+
     /// <summary>Visits a crashable-dispatch expression node (runtime type_id dispatch of a Crashable member)</summary>
     /// <param name="node">The crashable-dispatch expression to visit</param>
     /// <returns>Result of visiting the crashable-dispatch expression</returns>

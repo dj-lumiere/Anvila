@@ -102,7 +102,10 @@ internal sealed class CrashLoweringPass : AstRewriter
             Callee: new MemberExpression(Object: error, MemberName: RuntimeContract.CrashMessage,
                 Location: error.Location) { ResolvedType = crashMessage.ReturnType },
             Arguments: [],
-            Location: error.Location) { ResolvedRoutine = crashMessage, ResolvedType = _text };
+            Location: error.Location)
+        {
+            ResolvedRoutine = crashMessage, ResolvedType = _text, LoweringKind = CallLoweringKind.DirectMemberRoutine
+        };
     }
 
     private CrashStatement Crash(string typeName, Expression message, SourceLocation location)

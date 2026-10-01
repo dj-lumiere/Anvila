@@ -1,4 +1,5 @@
 using SyntaxTree;
+using TypeModel.Types;
 
 namespace Builder.Declaration;
 
@@ -25,6 +26,15 @@ namespace Builder.Declaration;
 public static class VariadicParamDesugar
 {
     private const string VarargGenericPrefix = "__Vararg";
+
+    /// <summary>
+    /// True for a variadic arity parameter that no call has bound yet (<c>__VarargN</c> in a not-yet-instantiated
+    /// <c>Array[T, __VarargN]</c>): such a signature is a template, not something a backend can emit.
+    /// </summary>
+    internal static bool IsUnboundArity(TypeSymbol type)
+    {
+        return type.Name.Contains(value: VarargGenericPrefix, comparisonType: StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// Applies the variadic → const-generic-Array rewrite to every variadic parameter of the routine.

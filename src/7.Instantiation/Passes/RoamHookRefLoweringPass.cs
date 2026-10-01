@@ -7,17 +7,15 @@ namespace Builder.Instantiation.Passes;
 
 /// <summary>
 /// Lowers the cycle-collector hook intrinsics <c>&lt;entity&gt;.roam_trace_ref()</c> /
-/// <c>.roam_free_ref()</c> into an explicit routine-VALUE reference. Runs post-monomorphization
+/// <c>.roam_free_ref()</c> into the routine's native code address. Runs post-monomorphization
 /// (inside <see cref="GenericClosurePass"/>), where the receiver's concrete entity type is known —
 /// the source call lives in the generic <c>RoamController[T]</c> body, so the receiver is a plain
 /// generic parameter until GMP substitutes it.
 ///
-/// <para>The call <c>data.as_entity().roam_trace_ref()</c> is replaced by an
-/// <see cref="IdentifierExpression"/> whose <see cref="IdentifierExpression.ResolvedRoutine"/> is the
-/// concrete <c>roam_trace</c> / <c>roam_free</c> on the concrete entity. Codegen then takes
-/// the routine as a value through its existing pre-resolved-routine path
-/// (<c>EmitRoutineValueClosure</c>) with NO <c>LookupMemberRoutine</c> of its own — the pass, not codegen,
-/// picks the routine.</para>
+/// <para>The call <c>data.as_entity().roam_trace_ref()</c> is replaced by a
+/// <see cref="NativeRoutineExpression"/> over the concrete <c>roam_trace</c> / <c>roam_free</c> of the concrete
+/// entity: the collector calls the hook natively through a CPtr slot, so a backend writes the routine's bare
+/// address, and the pass, not a backend, picks the routine.</para>
 ///
 /// <para>The <c>as_entity()</c> receiver is a pure reinterpret whose only purpose was to name the
 /// entity type; it is dropped, matching the codegen behaviour it replaces. Liveness of the resolved
@@ -245,7 +243,7 @@ internal sealed class RoamHookRefLoweringPass
     /// If <paramref name="expr"/> is <c>&lt;recv&gt;.roam_trace_ref()</c> / <c>.roam_free_ref()</c>
     /// on a concrete entity receiver, returns the routine-value reference that replaces it; else null.
     /// </summary>
-    private IdentifierExpression? TryLowerHookCall(Expression expr)
+    private NativeRoutineExpression? TryLowerHookCall(Expression expr)
     {
         if (expr is not CallExpression
             {
@@ -283,9 +281,11 @@ internal sealed class RoamHookRefLoweringPass
                .ToList(),
             returnType: impl.ReturnType,
             isFailable: impl.IsFailable);
-        return new IdentifierExpression(Name: impl.Name, Location: call.Location)
-        {
-            ResolvedRoutine = impl, ResolvedType = routineType
-        };
+        return new NativeRoutineExpression(
+            Routine: new IdentifierExpression(Name: impl.Name, Location: call.Location)
+            {
+                ResolvedRoutine = impl, ResolvedType = routineType
+            },
+            Location: call.Location) { ResolvedType = call.ResolvedType };
     }
 }

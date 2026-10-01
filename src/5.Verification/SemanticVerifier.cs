@@ -1195,7 +1195,10 @@ public sealed partial class SemanticVerifier
         AstWalker.Walk(root: program,
             visit: node =>
             {
-                if (node is RoutineDeclaration { Body: { } body } routine)
+                // A generic template is never emitted: each instantiation's concrete copy is annotated itself, and
+                // a template annotated here would hand its stamps (types still holding its parameters) to every copy.
+                if (node is RoutineDeclaration { Body: { } body } routine &&
+                    routine.ResolvedInfo is not ({ IsGenericDefinition: true } or { OwnerType.IsGenericDefinition: true }))
                 {
                     AnnotateBodyForBackend(body: body,
                         everStolen: routine.EverStolenVariableNames,
@@ -1208,6 +1211,7 @@ public sealed partial class SemanticVerifier
     {
         LiteralTypeStampPass.Run(body: body, registry: _registry);
         CreateMeLoweringPass.Run(body: body, routine: routine);
+        FallOffReturnLoweringPass.Run(body: body, routine: routine);
         LocalTypeStampPass.Run(body: body);
         LocalStorageLoweringPass.Run(body: body);
         ConstructionLoweringPass.Run(body: body, registry: _registry);
@@ -1217,7 +1221,9 @@ public sealed partial class SemanticVerifier
         MaybeReturnLoweringPass.Run(body: body, routine: routine, registry: _registry);
         WrapperProjectionLoweringPass.Run(body: body, registry: _registry);
         AddressLoweringPass.Run(body: body, registry: _registry);
+        CallBindingPass.Run(body: body, routine: routine, registry: _registry);
         TextLiteralLoweringPass.Run(body: body, registry: _registry);
+        BitArrayLiteralLoweringPass.Run(body: body, registry: _registry);
         RepresentationCastPass.Run(body: body);
     }
 

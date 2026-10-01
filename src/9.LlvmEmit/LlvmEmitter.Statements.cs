@@ -233,8 +233,10 @@ public partial class LlvmEmitter
             }
         }
 
-        string initializerText = varDecl.Initializer?.GetType()
-                                        .Name ?? "<null>";
+        string initializerText = varDecl.Initializer is null
+            ? "<null>"
+            : $"{varDecl.Initializer.GetType().Name} typed {varDecl.Initializer.ResolvedType?.GetType().Name} " +
+              $"'{varDecl.Initializer.ResolvedType?.FullName ?? "<none>"}'";
         return new InvalidOperationException(
             message:
             $"Cannot determine type for variable '{varDecl.Name}' (declared type: {typeText}, initializer: {initializerText})");
@@ -259,7 +261,7 @@ public partial class LlvmEmitter
     private TypeSymbol? ResolveVariableDeclType(VariableDeclaration varDecl)
     {
         return varDecl.LocalType is { } local
-            ? ApplyTypeSubstitutions(type: local)
+            ? local
             : null;
     }
 
@@ -471,7 +473,6 @@ public partial class LlvmEmitter
         string value, TypeSymbol? valueType = null)
     {
         TypeSymbol? targetType = GetExpressionType(expr: member.Object);
-        targetType = MarkerProtocolInner(type: targetType) ?? targetType;
 
         // Struct-record field write (no @llvm backend type): address-based. EmitLvalueAddress
         // computes the record's storage address and recurses through arbitrary lvalue chains

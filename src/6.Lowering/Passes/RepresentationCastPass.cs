@@ -10,6 +10,7 @@ namespace Builder.Lowering.Passes;
 /// <item>A declaration written with a scalar type whose initializer has another scalar representation
 /// (<c>var e: U32 = wide</c>) gets its conversion as an explicit <see cref="BackendCastExpression"/> around
 /// the initializer.</item>
+/// <item>A call of <c>LLVM::reinterpret_bits</c> becomes a bit-reinterpreting <see cref="BackendCastExpression"/>.</item>
 /// <item>Every <see cref="BackendCastExpression"/> gets what it does to the bits stamped on it
 /// (<see cref="BackendCastExpression.Conversion"/>).</item>
 /// </list>
@@ -47,9 +48,27 @@ internal sealed class RepresentationCastPass : AstRewriter
             {
                 if (expression is BackendCastExpression cast)
                 {
-                    cast.Conversion = Decide(source: cast.Value.ResolvedType, target: cast.ResolvedType);
+                    cast.Conversion = Decide(source: cast.Value.ResolvedType,
+                        target: cast.ResolvedType,
+                        reinterpret: cast.ReinterpretsBits);
                 }
             });
+    }
+
+    /// <inheritdoc/>
+    protected override Expression VisitCall(CallExpression e)
+    {
+        Expression visited = base.VisitCall(e: e);
+        return visited is CallExpression
+        {
+            ResolvedRoutine: { Name: Declaration.RuntimeContract.ReinterpretBits, LlvmIrTemplate: not null },
+            Arguments: [var argument]
+        } call
+            ? new BackendCastExpression(Value: argument is NamedArgumentExpression named
+                    ? named.Value
+                    : argument,
+                Location: call.Location) { ResolvedType = call.ResolvedType, ReinterpretsBits = true }
+            : visited;
     }
 
     /// <inheritdoc/>
@@ -75,7 +94,7 @@ internal sealed class RepresentationCastPass : AstRewriter
         return statement with { Declaration = declaration with { Initializer = cast } };
     }
 
-    private static RepresentationConversion Decide(TypeSymbol? source, TypeSymbol? target)
+    private static RepresentationConversion Decide(TypeSymbol? source, TypeSymbol? target, bool reinterpret)
     {
         // An untyped value (a bare literal) is written in the target's own representation. A generic template
         // body is never emitted: each instantiation's concrete body is annotated (and its casts decided) itself.
@@ -89,6 +108,20 @@ internal sealed class RepresentationCastPass : AstRewriter
         if (from.Spelling == to.Spelling)
         {
             return RepresentationConversion.Same;
+        }
+
+        // Reading the bits as another type: pointers and integers convert, a value with no pointer form becomes the
+        // address of a copy, everything else keeps its bits.
+        if (reinterpret)
+        {
+            return (from.Kind, to.Kind) switch
+            {
+                ('p', 'p') => RepresentationConversion.Same,
+                ('i', 'p') => RepresentationConversion.IntToPointer,
+                ('p', 'i') => RepresentationConversion.PointerToInt,
+                (_, 'p') => RepresentationConversion.SpillToAddress,
+                _ => RepresentationConversion.Bitcast
+            };
         }
 
         return (from.Kind, to.Kind) switch

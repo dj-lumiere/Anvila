@@ -66,7 +66,7 @@ internal sealed class TesseraRoutineWriter
     private bool HasMe => _routine is { OwnerType: not null, IsCreator: false, IsCommon: false } &&
                           !TesseraWriter.IsVoid(type: _routine.OwnerType);
 
-    private bool MeByReference => LlvmEmitter.IsByRefMeRecord(ownerType: _routine.OwnerType);
+    private bool MeByReference => Declaration.ReceiverFacts.MeByReference(ownerType: _routine.OwnerType);
 
     /// <summary>Writes the routine.</summary>
     public string Write()
@@ -115,7 +115,7 @@ internal sealed class TesseraRoutineWriter
         _traced = _module.TracesRoutine(routine: _routine);
         if (_traced)
         {
-            Emit(line: $"{TesseraTrace.Push}({TesseraTrace.CString(text: TesseraTrace.FrameName(routine: _routine))}, " +
+            Emit(line: $"{TesseraTrace.Push}({TesseraTrace.CString(text: Collection.TraceFrames.Name(routine: _routine))}, " +
                        $"{TesseraTrace.CString(text: _routine.Location?.FileName ?? "")}, " +
                        $"{_routine.Location?.Line ?? 0}, {_routine.Location?.Column ?? 0})");
         }
@@ -431,13 +431,22 @@ internal sealed class TesseraRoutineWriter
         TypeSymbol? target = cast.ResolvedType;
         string from = TypeText(type: inner.Type);
         string to = TypeText(type: target);
+        if (cast.Conversion == RepresentationConversion.SpillToAddress)
+        {
+            return new Operand(Text: Place(operand: inner), Type: target, IsPlace: false);
+        }
+
         if (cast.Conversion == RepresentationConversion.Same)
         {
             // Pointers share a representation, but a typed pointer @T is reached from another pointer by casting it.
-            return to is ['@', .. var pointee] && from != to
-                ? new Operand(Text: Temp(type: target, expression: $"{Value(operand: inner)}.cast<{pointee}>()"),
-                    Type: target, IsPlace: false)
-                : inner with { Type = target };
+            // An integer of one width trades its bits between signed and unsigned (Tessera keeps them apart).
+            return from == to
+                ? inner with { Type = target }
+                : to is ['@', .. var pointee]
+                    ? new Operand(Text: Temp(type: target, expression: $"{Value(operand: inner)}.cast<{pointee}>()"),
+                        Type: target, IsPlace: false)
+                    : new Operand(Text: Temp(type: target, expression: $"bitcast<{from}, {to}>({Value(operand: inner)})"),
+                        Type: target, IsPlace: false);
         }
 
         string operation = cast.Conversion switch
@@ -768,8 +777,12 @@ internal sealed class TesseraRoutineWriter
                 throw Unsupported(what: $"a member call without a receiver ({DescribeCall(call: call)})");
             }
 
-            Operand receiver = Evaluate(expression: receiverExpression);
-            arguments.Add(item: LlvmEmitter.IsByRefMeRecord(ownerType: routine.OwnerType)
+            // A call on a type name has the type as its receiver (CallBindingPass): the routine reads no `me`.
+            Operand receiver = receiverExpression is TypeExpression { ResolvedType: { } receiverType }
+                ? new Operand(Text: Temp(type: receiverType, expression: ZeroValue(type: receiverType)), Type: receiverType,
+                    IsPlace: false)
+                : Evaluate(expression: receiverExpression);
+            arguments.Add(item: Declaration.ReceiverFacts.MeByReference(ownerType: routine.OwnerType)
                 ? Place(operand: receiver)
                 : Value(operand: receiver));
         }

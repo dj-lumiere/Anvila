@@ -303,6 +303,19 @@ public static class AstWalker
             {
                 e.Wrapper
             },
+            NativeRoutineExpression e => new object[]
+            {
+                e.Routine
+            },
+            NativeCallbackExpression e => new object[]
+            {
+                e.Value
+            },
+            TagOfExpression e => new object[]
+            {
+                e.Value
+            },
+            BitPackExpression e => e.Bits,
             TaggedCreatorExpression { Payload: null } e => new object[]
             {
                 e.Tag

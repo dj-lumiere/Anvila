@@ -323,7 +323,7 @@ public partial class LlvmEmitter
     #region Helpers
 
     /// <summary>Whether to emit rf_trace_push/rf_trace_pop calls for stack trace diagnostics.</summary>
-    private bool ShouldEmitTrace => _buildMode is RfBuildMode.Debug or RfBuildMode.Release;
+    private bool ShouldEmitTrace => Builder.Collection.TraceFrames.Enabled(mode: _buildMode);
 
     /// <summary>
     /// Whether to emit trace push/pop for the currently-compiled routine.
@@ -335,35 +335,6 @@ public partial class LlvmEmitter
 
     /// <summary>Which emitted routines can crash; set before routine definitions are generated.</summary>
     private Builder.Collection.CrashReachability? _crashReachability;
-
-    /// <summary>
-    /// Looks up a type by name, trying the current routine's module-qualified name first,
-    /// then falling back to the bare name. Mirrors SemanticVerifier.LookupTypeInCurrentModule.
-    /// </summary>
-    private TypeSymbol? LookupTypeInCurrentModule(string name)
-    {
-        string? moduleName = _currentEmittingRoutine?.OwnerType?.Module ??
-                             _currentEmittingRoutine?.Module;
-        if (moduleName != null && !name.Contains(value: '.'))
-        {
-            TypeSymbol? qualified = _registry.LookupType(name: $"{moduleName}.{name}");
-            if (qualified != null)
-            {
-                return qualified;
-            }
-        }
-
-        return _registry.LookupType(name: name);
-    }
-
-    /// <summary>
-    /// Gets the generic definition for a resolved generic type, regardless of concrete subtype.
-    /// Returns null for non-generic or non-resolved types.
-    /// </summary>
-    private static TypeSymbol? GetGenericBase(TypeSymbol type)
-    {
-        return GetGenericBaseStatic(type: type);
-    }
 
     /// <summary>
     /// Gets the generic definition for a resolved generic type.
@@ -651,13 +622,9 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// A signature type is unresolved (⇒ a template, not emittable) if it contains a generic parameter OR
-    /// mentions the internal variadic const-generic marker <c>__Vararg</c>. The latter is checked BY NAME
-    /// because a not-yet-arity-monomorphized <c>Array[T, __VarargN]</c> carries <c>__VarargN</c> as a plain
-    /// unresolved <see cref="TypeSymbol"/> (not a <see cref="GenericParameterTypeSymbol"/>), so
-    /// <see cref="ContainsGenericParameter"/> misses it. A properly instantiated variadic (arity bound to a
-    /// concrete number, e.g. <c>Array[Character, 3]</c>) does NOT mention <c>__Vararg</c>, so a concrete
-    /// routine is never wrongly skipped. See VariadicParamDesugar (<c>__Vararg</c> prefix).
+    /// A signature type is unresolved (⇒ a template, not emittable) if it contains a generic parameter or an
+    /// unbound variadic arity (VariadicParamDesugar.IsUnboundArity), which a not-yet-instantiated
+    /// <c>Array[T, __VarargN]</c> carries as a plain type rather than a <see cref="GenericParameterTypeSymbol"/>.
     /// </summary>
     private static bool SignatureTypeIsUnresolved(TypeSymbol t)
     {
@@ -666,7 +633,7 @@ public partial class LlvmEmitter
             return true;
         }
 
-        if (t.Name.Contains(value: "__Vararg", comparisonType: StringComparison.Ordinal))
+        if (Declaration.VariadicParamDesugar.IsUnboundArity(type: t))
         {
             return true;
         }
@@ -1248,26 +1215,17 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Resolves the program-entry <c>start</c> symbol: the entry module's own start (matched by the
-    /// module-qualified suffix regardless of attribute prefix), falling back to a lone start symbol
-    /// only when no entry module is set. `_generatedRoutineDefs` is unordered, so selecting by name
-    /// alone would non-deterministically pick the wrong module's start when several define one.
+    /// The program-entry <c>start</c> symbol among the routines this module defines (EntryPoint), or null.
     /// </summary>
     private string? ResolveEntryStartSymbol()
     {
-        static bool IsStartSymbol(string f)
-        {
-            return f.EndsWith(value: ".start()\"") || f.EndsWith(value: " start()\"");
-        }
-
-        string? startFunc = null;
-        if (!string.IsNullOrEmpty(value: EntryModule))
-        {
-            startFunc = _generatedRoutineDefs.FirstOrDefault(predicate: f =>
-                f.EndsWith(value: $"{EntryModule}.start()\""));
-        }
-
-        return startFunc ?? _generatedRoutineDefs.SingleOrDefault(predicate: IsStartSymbol);
+        RoutineInfo? start = Builder.Collection.EntryPoint.StartOf(
+            defined: _registry.GetAllRoutines(requireLive: false)
+                              .Where(predicate: r => _generatedRoutineDefs.Contains(item: MangleRoutineName(routine: r))),
+            entryModule: EntryModule);
+        return start is null
+            ? null
+            : MangleRoutineName(routine: start);
     }
 
     #endregion

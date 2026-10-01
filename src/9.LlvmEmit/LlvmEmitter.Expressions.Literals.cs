@@ -59,11 +59,8 @@ public partial class LlvmEmitter
         string arrLlvm = GetLlvmType(type: preset.Type); // "[1000 x i16]" / "[8 x i8]"
         string symbol = $"@\"preset.{key}\"";
 
-        // BitArray[N] packs its `N` bool elements into `[(N+7)/8 x i8]`; Array[T,N] stores one
-        // element per slot. Both reduce to a constant `[M x T]` initializer.
-        string initializer = GetGenericBaseName(type: preset.Type) == "BitArray"
-            ? BuildBitArrayPresetInitializer(key: key, list: list)
-            : BuildArrayPresetInitializer(key: key, list: list, arrLlvm: arrLlvm);
+        // One element per slot (a BitArray table is registered as its packed bytes).
+        string initializer = BuildArrayPresetInitializer(key: key, list: list, arrLlvm: arrLlvm);
 
         EmitLine(sb: _globalDeclarations,
             line: $"{symbol} = private unnamed_addr constant {arrLlvm} {initializer}");
@@ -103,69 +100,6 @@ public partial class LlvmEmitter
             parts.Add(item: $"{elemLlvm} {EmitLiteral(sb: scratch, literal: lit)}");
         }
 
-        return $"[{string.Join(separator: ", ", values: parts)}]";
-    }
-
-    /// <summary>
-    /// Packs a flat list of bool-literal elements into <c>(N+7)/8</c> bytes, LSB-first (bit 0 = element
-    /// 0 of each group of 8). Guarded by both BitArray[N] emission sites — the buildtime preset
-    /// initializer (<see cref="BuildBitArrayPresetInitializer"/>) and the inline literal fast path in
-    /// <c>EmitCollectionLiteralConstructor</c>.
-    /// <para><paramref name="allLiteral"/> is set false as soon as a non-<c>true</c>/<c>false</c>-literal
-    /// element is seen; the inline site uses that to fall back to a runtime bit-pack, while the preset
-    /// site (which requires constant elements) treats it via <paramref name="onNonLiteral"/>.</para>
-    /// </summary>
-    private static int[] PackBitArrayLiteralBytes(List<Expression> elements, out bool allLiteral,
-        Action<Expression>? onNonLiteral = null)
-    {
-        allLiteral = true;
-        int bitCount = elements.Count;
-        int byteCount = (bitCount + 7) / 8;
-        int[] bytes = new int[byteCount];
-        for (int byteIdx = 0; byteIdx < byteCount; byteIdx++)
-        {
-            int byteVal = 0;
-            for (int bitIdx = 0; bitIdx < 8 && byteIdx * 8 + bitIdx < bitCount; bitIdx++)
-            {
-                Expression bit = elements[index: byteIdx * 8 + bitIdx];
-                if (bit is LiteralExpression { Value: bool b })
-                {
-                    if (b)
-                    {
-                        byteVal |= 1 << bitIdx;
-                    }
-                }
-                else
-                {
-                    allLiteral = false;
-                    onNonLiteral?.Invoke(obj: bit);
-                }
-            }
-
-            bytes[byteIdx] = byteVal;
-        }
-
-        return bytes;
-    }
-
-    /// <summary>
-    /// Builds the <c>[(N+7)/8 x i8] [...]</c> constant initializer for a <c>BitArray[N]</c> preset by
-    /// packing 8 bool literals per byte (bit 0 = LSB) via the shared <see cref="PackBitArrayLiteralBytes"/>.
-    /// </summary>
-    private static string BuildBitArrayPresetInitializer(string key, ListLiteralExpression list)
-    {
-        if (list.Elements.Count == 0)
-        {
-            return "zeroinitializer";
-        }
-
-        int[] bytes = PackBitArrayLiteralBytes(elements: list.Elements,
-            allLiteral: out _,
-            onNonLiteral: bit => throw new NotImplementedException(
-                message:
-                $"BitArray preset '{key}' element must be a bool literal; got {bit.GetType().Name}."));
-
-        IEnumerable<string> parts = bytes.Select(selector: b => $"i8 {b}");
         return $"[{string.Join(separator: ", ", values: parts)}]";
     }
 

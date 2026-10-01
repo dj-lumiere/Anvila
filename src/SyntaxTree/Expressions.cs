@@ -1262,6 +1262,69 @@ public record ZeroValueExpression(SourceLocation Location) : Expression(Location
 }
 
 /// <summary>
+/// A routine's native code address (a C function pointer), not a <c>Routine</c> value: what native code calls back
+/// (a <c>CPtr</c> argument, the cycle collector's trace and free hooks). Produced by lowering (never parsed). Its
+/// resolved type is the pointer the native side takes.
+/// </summary>
+/// <param name="Routine">The reference to the routine: an identifier carrying its <c>ResolvedRoutine</c>.</param>
+/// <param name="Location">Source location of the reference.</param>
+public record NativeRoutineExpression(Expression Routine, SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitNativeRoutineExpression(node: this);
+    }
+}
+
+/// <summary>
+/// A <c>Routine</c> value handed to native code: its function pointer, after checking that it captures nothing
+/// (native code cannot pass the captures back). Produced by lowering (never parsed). Its resolved type is the
+/// pointer the native side takes.
+/// </summary>
+/// <param name="Value">The routine value.</param>
+/// <param name="Location">Source location of the value.</param>
+public record NativeCallbackExpression(Expression Value, SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitNativeCallbackExpression(node: this);
+    }
+}
+
+/// <summary>
+/// The tag of a variant value: the <c>type_id</c> of the arm it holds (0 for an empty arm). Produced by lowering
+/// (never parsed) from pattern lowering's <c>v.type_id</c>. Its resolved type is <c>U64</c>.
+/// </summary>
+/// <param name="Value">The variant value.</param>
+/// <param name="Location">Source location of the read.</param>
+public record TagOfExpression(Expression Value, SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitTagOfExpression(node: this);
+    }
+}
+
+/// <summary>
+/// A <c>BitArray[N]</c> built from bools computed at run time, packed in its stored order (eight to a byte, the
+/// first of each eight in the lowest bit). Produced by lowering (never parsed); literal bools are packed at build
+/// time instead. Its resolved type is the BitArray.
+/// </summary>
+/// <param name="Bits">The bools, in order.</param>
+/// <param name="Location">Source location of the literal.</param>
+public record BitPackExpression(List<Expression> Bits, SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitBitPackExpression(node: this);
+    }
+}
+
+/// <summary>
 /// Runtime dispatch of a zero-arg <c>Crashable</c> protocol member (<c>represent</c>/<c>diagnose</c>/
 /// <c>crash_message</c>/<c>crash_title</c>, all <c>-&gt; Text</c>) on a type-erased error stored in a
 /// <c>Result[T]</c>/<c>Lookup[T]</c> carrier. Replaces the build-time <c>is Crashable</c> fan-out: instead
@@ -1351,6 +1414,12 @@ public record BackendCastExpression(Expression Value, SourceLocation Location) :
 {
     /// <summary>What the cast does to the bits, stamped by <c>RepresentationCastPass</c> before the backend.</summary>
     public RepresentationConversion Conversion { get; set; }
+
+    /// <summary>
+    /// True for <c>LLVM::reinterpret_bits</c>: the same bits read as the other type (a float and an integer of one
+    /// width trade bits, not values), rather than a value carried into the other representation.
+    /// </summary>
+    public bool ReinterpretsBits { get; init; }
 
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)

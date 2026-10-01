@@ -393,15 +393,26 @@ public sealed partial class SemanticVerifier
         }
 
         SeedPresetValueMetadata(value: preset.Value, presetType: presetType);
+        Expression presetValue = preset.Value;
         if (preset.Value is ListLiteralExpression list && presetType is not ErrorTypeSymbol)
         {
             ConformPresetListElements(preset: preset, list: list, presetType: presetType);
+
+            // A BitArray table is kept in its stored form, the packed bytes, so every backend lays it down as is.
+            if (presetType.BareName == "BitArray" && LookupTypeWithImports(name: "U8") is { } byteType)
+            {
+                presetValue = BitArrayPacking.Pack(bits: list.Elements,
+                                  bitArrayType: presetType,
+                                  byteType: byteType,
+                                  location: list.Location) ??
+                              presetValue;
+            }
         }
 
         _registry.DeclareVariable(name: preset.Name,
             type: presetType,
             isPreset: true,
-            presetValue: preset.Value);
+            presetValue: presetValue);
 
         // Also register as a module-level preset for cross-file access
         string? module = GetCurrentModuleName();
@@ -410,7 +421,7 @@ public sealed partial class SemanticVerifier
             _registry.RegisterPreset(name: preset.Name,
                 type: presetType,
                 module: module,
-                value: preset.Value,
+                value: presetValue,
                 isSecret: preset.IsSecret,
                 location: preset.Location);
         }

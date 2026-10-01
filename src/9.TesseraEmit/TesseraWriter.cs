@@ -48,14 +48,13 @@ internal sealed class TesseraWriter
     }
 
     /// <summary>Whether the build keeps a crash trace: the debug and release modes, as in the LLVM emitter.</summary>
-    public bool Traces => _input.BuildMode is Targeting.RfBuildMode.Debug or Targeting.RfBuildMode.Release;
+    public bool Traces => Collection.TraceFrames.Enabled(mode: _input.BuildMode);
 
     /// <summary>Whether <paramref name="routine"/> pushes a trace frame: a routine of the program (not one the
     /// builder wrote), not <c>@inline</c> or <c>@untraced</c>, that can crash.</summary>
     public bool TracesRoutine(RoutineInfo routine)
     {
-        return Traces && !routine.IsSynthesized && !routine.Annotations.Contains(value: "inline") &&
-               !routine.Annotations.Contains(value: "untraced") && _crashReachability.CanCrash(routine: routine);
+        return Traces && Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability);
     }
 
     /// <summary>The Tessera names of the routines the module defines.</summary>
@@ -327,33 +326,13 @@ internal sealed class TesseraWriter
         _presets[key: preset.QualifiedName] = global;
         var elements = ((ListLiteralExpression)preset.PresetValue!).Elements;
         string type = TypeText(type: preset.Type);
-        IEnumerable<string> values = preset.Type is RecordTypeSymbol { BareName: "BitArray" } ||
-                                     preset.Type.Name.StartsWith(value: "BitArray", comparisonType: StringComparison.Ordinal)
-            ? PackBits(elements: elements)
-            : elements.Select(selector: e => e is LiteralExpression literal
-                ? TesseraRoutineWriter.ConstantText(literal: literal)
-                : throw new NotSupportedException(
-                    message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
+        // One element per slot (a BitArray table is registered as its packed bytes).
+        IEnumerable<string> values = elements.Select(selector: e => e is LiteralExpression literal
+            ? TesseraRoutineWriter.ConstantText(literal: literal)
+            : throw new NotSupportedException(
+                message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
         _globals.Append(value: $"global {global}: @{type} <- {type} {{ {string.Join(separator: ", ", values: values)} }}\n\n");
         return (global, preset.Type);
-    }
-
-    /// <summary>Bool literals packed eight to a byte, lowest bit first, as a <c>BitArray</c> lays them out.</summary>
-    private static IEnumerable<string> PackBits(List<Expression> elements)
-    {
-        for (int start = 0; start < elements.Count; start += 8)
-        {
-            int value = 0;
-            for (int bit = 0; bit < 8 && start + bit < elements.Count; bit++)
-            {
-                if (elements[index: start + bit] is LiteralExpression { Value: true })
-                {
-                    value |= 1 << bit;
-                }
-            }
-
-            yield return value.ToString(provider: System.Globalization.CultureInfo.InvariantCulture);
-        }
     }
 
     /// <summary>The Tessera record laid out like an entity's heap block (its fields in order, no header), declared
@@ -562,21 +541,10 @@ internal sealed class TesseraWriter
     private string WriteMain(List<(RoutineInfo Info, Statement Body)> routines)
     {
         string? entry = _input.EntryModule;
-        RoutineInfo start = routines.Select(selector: r => r.Info)
-                                    .FirstOrDefault(predicate: r =>
-                                         r.OwnerType == null &&
-                                         LlvmEmitter.MangleRoutineName(routine: r)
-                                                    .Trim(trimChar: '"')
-                                                    .EndsWith(value: entry is { Length: > 0 }
-                                                         ? $"{entry}.start()"
-                                                         : ".start()",
-                                                     comparisonType: StringComparison.Ordinal)) ??
+        RoutineInfo start = Collection.EntryPoint.StartOf(defined: routines.Select(selector: r => r.Info),
+                                entryModule: entry) ??
                             throw new NotSupportedException(
-                                message: $"The Tessera backend found no start() routine in the entry module '{entry}' " +
-                                         "among: " + string.Join(separator: ", ",
-                                             values: routines.Where(predicate: r => r.Info.OwnerType == null)
-                                                             .Select(selector: r =>
-                                                                  LlvmEmitter.MangleRoutineName(routine: r.Info))));
+                                message: $"The Tessera backend found no start() routine in the entry module '{entry}'.");
 
         return "#[external(\"c\"), symbol(\"rf_runtime_init\")]\n" +
                "routine rf_runtime_init() -> Void\n\n" +

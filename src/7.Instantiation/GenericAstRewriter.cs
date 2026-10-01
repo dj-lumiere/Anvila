@@ -1512,6 +1512,18 @@ internal static class GenericAstRewriter
             {
                 Wrapper = RewriteExpression(expr: wpe.Wrapper, ctx: ctx)
             },
+            NativeRoutineExpression node => node with
+            {
+                Routine = RewriteExpression(expr: node.Routine, ctx: ctx)
+            },
+            NativeCallbackExpression node => node with
+            {
+                Value = RewriteExpression(expr: node.Value, ctx: ctx)
+            },
+            TagOfExpression node => node with
+            {
+                Value = RewriteExpression(expr: node.Value, ctx: ctx)
+            },
             TaggedCreatorExpression tagged => tagged with
             {
                 Tag = RewriteExpression(expr: tagged.Tag, ctx: ctx),
@@ -1551,6 +1563,13 @@ internal static class GenericAstRewriter
             // parameter (e.g. `none : Maybe[Hijacked[BTreeListNode[T]]]`). Clone so the ResolvedType
             // substitution block below runs (it is gated on a fresh reference).
             LiteralExpression literal => literal with { },
+            ZeroValueExpression zero => zero with { },
+            EntityAllocationExpression allocation => allocation with { },
+            ConstantDataExpression data => data with { },
+            BitPackExpression pack => pack with
+            {
+                Bits = pack.Bits.Select(selector: b => RewriteExpression(expr: b, ctx: ctx)).ToList()
+            },
 
             _ => null
         };

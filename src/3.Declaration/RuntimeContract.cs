@@ -155,6 +155,15 @@ public static class RuntimeContract
     /// RoutineReachabilityPass (seed). Body is aggregate field-walk or scalar box.</remarks>
     public const string Serialize = "serialize";
 
+    /// <summary>The entity-footprint allocation primitive <c>hollow[T]()</c> (Core, bodyless).</summary>
+    public const string Hollow = "hollow";
+
+    /// <summary>The intrinsic that reads a value's bits as another type (<c>LLVM::reinterpret_bits[From, To]</c>).</summary>
+    public const string ReinterpretBits = "reinterpret_bits";
+
+    /// <summary>The native pointer record a routine is handed to native code as.</summary>
+    public const string CPtr = "CPtr";
+
     /// <summary>Carrier record field names on <c>Maybe[T]</c>/<c>Result[T]</c>.</summary>
     /// <remarks>Sites: ExpressionLoweringPass (tuple synthesis), PatternLoweringPass, ErrorHandlingVariantPass,
     /// LlvmEmitter.Statements (field lookup).</remarks>
