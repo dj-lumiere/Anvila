@@ -1,0 +1,17 @@
+name: Build and Test
+
+# The shared workspace build (Anvila's workspace.yaml): Anvila is tested at this commit against master of
+# the other workspace repositories.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  workspace:
+    uses: ./.github/workflows/workspace.yaml
+    with:
+      sonar-project: anvila
+    secrets: inherit
