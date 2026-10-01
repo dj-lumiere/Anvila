@@ -605,9 +605,9 @@ internal sealed class IteratorInlineLoweringPass
                     Visibility: VisibilityModifier.Secret,
                     Location: loc),
                 Location: loc);
-            return new BlockStatement(Statements:
-                [bindStmt, CloneUserBody(userBody: ctx.LoweredUserBody)],
-                Location: loc);
+            Statement userBody = CloneUserBody(userBody: ctx.LoweredUserBody);
+            Lowering.Passes.PatternLoweringPass.TypeBindingReferences(binding: bindStmt, body: userBody);
+            return new BlockStatement(Statements: [bindStmt, userBody], Location: loc);
         }
 
         // Discard: still evaluate `value` for side-effects (it's the advance), then the user body.

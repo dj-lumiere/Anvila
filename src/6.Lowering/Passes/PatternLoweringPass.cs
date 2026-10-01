@@ -366,6 +366,8 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             return body;
         }
 
+        TypeBindingReferences(binding: binding, body: body);
+
         if (binding is BlockStatement multiBindBlock)
         {
             var stmts = new List<Statement>(capacity: multiBindBlock.Statements.Count + 1);
@@ -1259,6 +1261,42 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             return member != null &&
                    IsLowerablePattern(pattern: b.NestedPattern, subjectType: member.Type);
         });
+    }
+
+    /// <summary>
+    /// Gives each reference to a binding declared in <paramref name="binding"/> that has no type in
+    /// <paramref name="body"/> the bound value's type. A generic template analyzed before its subject was
+    /// concrete (an <c>each</c> over a protocol-typed <c>me</c>) leaves those references untyped, and the
+    /// bound value is concrete once the body is monomorphized. Also used for the loop variable an inlined
+    /// iterator step binds (IteratorInlineLoweringPass).
+    /// </summary>
+    internal static void TypeBindingReferences(Statement binding, Statement body)
+    {
+        var bound = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal);
+        AstWalker.Walk(root: binding,
+            visit: node =>
+            {
+                if (node is VariableDeclaration { Initializer.ResolvedType: { } type } declaration &&
+                    type is not (ErrorTypeSymbol or GenericParameterTypeSymbol) &&
+                    !TypeContainsGenericParameter(type: type))
+                {
+                    bound[key: declaration.Name] = type;
+                }
+            });
+        if (bound.Count == 0)
+        {
+            return;
+        }
+
+        AstWalker.Walk(root: body,
+            visit: node =>
+            {
+                if (node is IdentifierExpression { ResolvedType: null or ErrorTypeSymbol } reference &&
+                    bound.TryGetValue(key: reference.Name, value: out TypeSymbol? type))
+                {
+                    reference.ResolvedType = type;
+                }
+            });
     }
 
     // -----------------------------------------------------------------------------

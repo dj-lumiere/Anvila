@@ -2483,6 +2483,14 @@ public sealed partial class SemanticVerifier
 
         RestoreImportScopeForCompilerGeneratedBody(routineInfo: routineInfo);
 
+        // The body is analyzed in its routine's own language: a stdlib routine is RazorForge even in a Suflae
+        // build, so its builder-written variants keep their `danger` blocks and dangerous calls.
+        Language previousLanguage = _registry.Language;
+        if (routineInfo.Location?.FileName is { } routineFile && IsStdlibFile(filePath: routineFile))
+        {
+            _registry.Language = Language.RazorForge;
+        }
+
         // BuilderQuery per-type entity-list routines (member_variable_info / protocol_info / routine_info)
         // synthesize bodies that construct FieldInfo/ProtocolInfo/RoutineInfo/Visibility values — all in
         // the BuilderQuery module. Their owner is a user/stdlib type, so the import scope restored above
@@ -2553,6 +2561,7 @@ public sealed partial class SemanticVerifier
         _compilerGeneratedTypeParamBindings = prevTypeParamBindings;
 
         _registry.ExitScope();
+        _registry.Language = previousLanguage;
         _currentRoutine = prevRoutine;
         _currentType = prevType;
         _currentFilePath = previousFilePath;

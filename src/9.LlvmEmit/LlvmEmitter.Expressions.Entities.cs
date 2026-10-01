@@ -463,31 +463,6 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Reads a field of a record through its storage address (GEP + load).
-    /// </summary>
-    private string EmitRecordFieldReadAtAddress(StringBuilder sb, string recordAddress,
-        RecordTypeSymbol record, string memberName)
-    {
-        int fieldIndex = IndexOfMemberVariable(memberVariables: record.MemberVariables, name: memberName);
-        if (fieldIndex < 0)
-        {
-            throw new InvalidOperationException(
-                message: $"Member variable '{memberName}' not found on record '{record.Name}'");
-        }
-
-        string recordTypeName = EnsureRecordTypeDeclared(record: record);
-        string fieldPtr = NextTemp();
-        EmitLine(sb: sb,
-            line:
-            $"  {fieldPtr} = getelementptr {recordTypeName}, ptr {recordAddress}, i32 0, i32 {fieldIndex}");
-        string loaded = NextTemp();
-        EmitLine(sb: sb,
-            line:
-            $"  {loaded} = load {GetLlvmType(type: record.MemberVariables[index: fieldIndex].Type)}, ptr {fieldPtr}");
-        return loaded;
-    }
-
-    /// <summary>
     /// Emits a <see cref="WrapperProjectionExpression"/>: the entity pointer behind a wrapper, read from the
     /// controller's <c>data</c> field, taken as the wrapper pointer itself, or extracted from the struct
     /// wrapper's <c>Hijacked[T]</c> field, or the record value loaded from a record wrapper's pointer, as the

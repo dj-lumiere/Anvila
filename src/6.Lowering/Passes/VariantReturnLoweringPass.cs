@@ -158,14 +158,10 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             });
     }
 
-    private static ReturnStatement LowerTryBoolVariant(VariantReturnStatement vr)
+    private ReturnStatement LowerTryBoolVariant(VariantReturnStatement vr)
     {
-        bool present = vr.SiteKind == VariantSiteKind.FromReturn;
-        return new ReturnStatement(Value: new LiteralExpression(Value: present,
-                LiteralType: present
-                    ? TokenType.True
-                    : TokenType.False,
-                Location: vr.Location),
+        return new ReturnStatement(Value: BoolLiteral(value: vr.SiteKind == VariantSiteKind.FromReturn,
+                loc: vr.Location),
             Location: vr.Location);
     }
 

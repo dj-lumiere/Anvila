@@ -1688,22 +1688,6 @@ public partial class LlvmEmitter
     }
 
 
-    private static void FindFreeArgumentParameterType(RoutineInfo? routine, int argIdx,
-        Expression arg, out TypeSymbol? paramTy)
-    {
-        if (arg is NamedArgumentExpression na)
-        {
-            paramTy = routine?.Parameters.FirstOrDefault(predicate: p => p.Name == na.Name)
-                             ?.Type;
-        }
-        else
-        {
-            paramTy = routine != null && argIdx < routine.Parameters.Count
-                ? routine.Parameters[index: argIdx].Type
-                : null;
-        }
-    }
-
     private void ResolveMemberCallSymbol(MemberExpression member, RoutineInfo? resolvedRoutine,
         List<TypeExpression>? typeArguments, CallLoweringKind loweringKind, TypeSymbol receiverType,
         ref RoutineInfo? memberRoutine, out string mangledName)

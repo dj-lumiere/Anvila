@@ -177,6 +177,12 @@ internal static class GenericAstRewriter
         public Dictionary<string, TypeSymbol> LocalReinferredTypes { get; } = new();
 
         /// <summary>
+        /// The concrete type of each local declared so far in the rewritten body: its written type, else
+        /// its initializer's type. A reference the template left untyped takes it.
+        /// </summary>
+        public Dictionary<string, TypeSymbol> LocalTypes { get; } = new();
+
+        /// <summary>
         /// Resolves a <see cref="TypeSymbol"/> through the substitution map. Returns null
         /// when the registry is not available or the type has no substitution.
         /// </summary>
@@ -1638,8 +1644,54 @@ internal static class GenericAstRewriter
             resolvedType = concreteLocal;
         }
 
+        // A reference the template left untyped takes its binding's declared type: a parameter's from the
+        // routine's parameter table, a local's from its declaration.
+        if (resolvedType is null or ErrorTypeSymbol && result is IdentifierExpression declaredRef)
+        {
+            if (ctx.ParamTypes.TryGetValue(key: declaredRef.Name, value: out TypeSymbol? parameterType))
+            {
+                resolvedType = ctx.ResolveType(original: parameterType) ?? parameterType;
+            }
+            else if (ctx.LocalTypes.TryGetValue(key: declaredRef.Name, value: out TypeSymbol? localType))
+            {
+                resolvedType = localType;
+            }
+        }
+
+        // A member variable read the template left untyped takes the member variable's declared type on the
+        // object's concrete type.
+        if (resolvedType is null or ErrorTypeSymbol && result is MemberExpression
+            {
+                Object.ResolvedType: { } objectType
+            } memberRead &&
+            DeclaredMemberVariableType(owner: objectType, name: memberRead.MemberName) is { } memberType)
+        {
+            resolvedType = ctx.ResolveType(original: memberType) ?? memberType;
+        }
+
         return RefineSoAAndTypewiseType(resolvedType: resolvedType, result: result, expr: expr,
             ctx: ctx);
+    }
+
+    /// <summary>The declared type of member variable <paramref name="name"/> of a concrete record or
+    /// entity, or null.</summary>
+    private static TypeSymbol? DeclaredMemberVariableType(TypeSymbol owner, string name)
+    {
+        List<MemberVariableInfo>? members = owner switch
+        {
+            EntityTypeSymbol { IsGenericDefinition: false } e => e.MemberVariables,
+            RecordTypeSymbol { IsGenericDefinition: false } r => r.MemberVariables,
+            _ => null
+        };
+        return members?.FirstOrDefault(predicate: m => m.Name == name)?.Type;
+    }
+
+    /// <summary>True for a type with no generic parameter, protocol or error left in it.</summary>
+    private static bool IsConcrete(TypeSymbol type)
+    {
+        return type is not (ErrorTypeSymbol or GenericParameterTypeSymbol or ProtocolTypeSymbol) &&
+               !type.IsGenericDefinition &&
+               (type.TypeArguments?.All(predicate: IsConcrete) ?? true);
     }
 
     /// <summary>
@@ -3317,11 +3369,17 @@ internal static class GenericAstRewriter
                     ctx.LocalReinferredTypes[key: vd.Name] = reinferred;
                 }
 
+                TypeExpression? newType = vd.Type != null
+                    ? RewriteType(type: vd.Type, ctx: ctx)
+                    : null;
+                if ((newType?.ResolvedType ?? newInit?.ResolvedType) is { } localType && IsConcrete(type: localType))
+                {
+                    ctx.LocalTypes[key: vd.Name] = localType;
+                }
+
                 return vd with
                 {
-                    Type = vd.Type != null
-                        ? RewriteType(type: vd.Type, ctx: ctx)
-                        : null,
+                    Type = newType,
                     Initializer = newInit
                 };
             }
