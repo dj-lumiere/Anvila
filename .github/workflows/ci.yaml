@@ -13,5 +13,5 @@ jobs:
   workspace:
     uses: ./.github/workflows/workspace.yaml
     with:
-      sonar-project: anvila
+      sonar-project: Anvila
     secrets: inherit
