@@ -29,6 +29,7 @@
     <InternalsVisibleTo Include="RazorForge"/>
     <InternalsVisibleTo Include="Suflae"/>
     <InternalsVisibleTo Include="RazorForge.Tests"/>
+    <InternalsVisibleTo Include="Suflae.Tests"/>
   </ItemGroup>
 
   <!-- Kill any lingering resident daemon BEFORE the build. A daemon (spawned by a non-jit build/buildandrun)

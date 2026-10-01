@@ -159,7 +159,7 @@ public sealed partial class SemanticVerifier
     private readonly HashSet<string> _synthesizedVariantBases = new();
 
     /// <summary>
-    /// <see cref="TypeRegistry.EnsureRecoveryVariants"/>: generates and registers the recovery variants of
+    /// <c>TypeRegistry.EnsureRecoveryVariants</c>: generates and registers the recovery variants of
     /// <paramref name="baseRoutine"/> the first time one of them is needed. A failable routine of a protocol
     /// has no body: it gets a body-less <c>try</c> variant, which monomorphization replaces with the
     /// implementer's own. The iterator <c>emit</c> is left to its eager pipeline.
