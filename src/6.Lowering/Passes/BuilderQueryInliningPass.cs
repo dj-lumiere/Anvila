@@ -270,7 +270,6 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         rewritten.ResolvedRoutine = e.ResolvedRoutine;
         rewritten.LoweringKind = e.LoweringKind;
         rewritten.ConstructedType = e.ConstructedType;
-        rewritten.IsCollectionLiteral = e.IsCollectionLiteral;
         rewritten.TypeArguments = e.TypeArguments;
         rewritten.ResolvedType = e.ResolvedType;
         return rewritten;

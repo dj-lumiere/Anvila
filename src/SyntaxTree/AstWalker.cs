@@ -303,6 +303,10 @@ public static class AstWalker
             {
                 e.Wrapper
             },
+            BackendCastExpression e => new object[]
+            {
+                e.Value
+            },
             ClosureValueExpression e => new object[]
             {
                 e.Function,

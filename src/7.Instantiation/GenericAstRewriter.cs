@@ -1241,7 +1241,7 @@ internal static class GenericAstRewriter
 
     /// <summary>
     /// Carries the mutable resolution props (<see cref="GenericMemberRoutineCallExpression.ConstructedType"/>,
-    /// <c>ResolvedRoutine</c>, <c>LoweringKind</c>, <c>IsCollectionLiteral</c>, <c>ResolvedType</c>) from
+    /// <c>ResolvedRoutine</c>, <c>LoweringKind</c>, <c>ResolvedType</c>) from
     /// <paramref name="original"/> onto <paramref name="clone"/>. These are <c>{get;set;}</c> properties, so the
     /// <c>with</c>-clone that rewrites Object/TypeArguments/Arguments DROPS them (resets to default). Without this
     /// carry-over a cloned type-construction GMC (<c>WhereIterable[T, Me](...)</c>) loses its ConstructedType, and
@@ -1254,7 +1254,6 @@ internal static class GenericAstRewriter
         clone.ResolvedRoutine = original.ResolvedRoutine;
         clone.LoweringKind = original.LoweringKind;
         clone.ConstructedType = original.ConstructedType;
-        clone.IsCollectionLiteral = original.IsCollectionLiteral;
         clone.ResolvedType = original.ResolvedType;
         return clone;
     }
@@ -1527,6 +1526,11 @@ internal static class GenericAstRewriter
             WrapperProjectionExpression wpe => wpe with
             {
                 Wrapper = RewriteExpression(expr: wpe.Wrapper, ctx: ctx)
+            },
+
+            BackendCastExpression bce => bce with
+            {
+                Value = RewriteExpression(expr: bce.Value, ctx: ctx)
             },
 
             ClosureValueExpression cve => cve with
@@ -1922,7 +1926,6 @@ internal static class GenericAstRewriter
         rewritten.ResolvedRoutine = call.ResolvedRoutine;
         rewritten.LoweringKind = call.LoweringKind;
         rewritten.ConstructedType = call.ConstructedType;
-        rewritten.IsCollectionLiteral = call.IsCollectionLiteral;
         rewritten.ResolvedType = call.ResolvedType;
         return rewritten;
     }

@@ -12,33 +12,6 @@ namespace Builder.LlvmEmit;
 /// </summary>
 public partial class LlvmEmitter
 {
-    /// <summary>
-    /// Resolves which call argument initializes the field <paramref name="fieldName"/> declared at
-    /// position <paramref name="positionalIndex"/>. Named arguments are matched by name (so a
-    /// constructor or record literal written out of field-declaration order binds each value to the
-    /// correct field); otherwise the positional argument at the field's index is used. Returns null
-    /// when neither is available (the field keeps its zero value).
-    /// </summary>
-    private static Expression? FindConstructorArgForMemberVariable(List<Expression> arguments,
-        string fieldName, int positionalIndex)
-    {
-        foreach (Expression a in arguments)
-        {
-            if (a is NamedArgumentExpression na && na.Name == fieldName)
-            {
-                return a;
-            }
-        }
-
-        if (positionalIndex < arguments.Count &&
-            arguments[index: positionalIndex] is not NamedArgumentExpression)
-        {
-            return arguments[index: positionalIndex];
-        }
-
-        return null;
-    }
-
     private string EmitEntityAllocation(StringBuilder sb, EntityTypeSymbol entity,
         List<string>? memberVariableValues = null)
     {
@@ -105,24 +78,12 @@ public partial class LlvmEmitter
                 message: $"Unknown type in constructor: {expr.TypeName}");
         }
 
-        // SA resolved this creator to a `create(named:)` overload — dispatch through it
-        // instead of inline field-init.
-        if (expr.ResolvedCreatorRoutine is { } creatorRoutine)
+        // A creator naming a `create` overload is that overload's call (ConstructionLoweringPass).
+        if (expr.ResolvedCreatorRoutine != null)
         {
-            var callArgs = expr.MemberVariables
-                               .Select(selector: mv => (Expression)new NamedArgumentExpression(
-                                    Name: mv.Name,
-                                    Value: mv.Value,
-                                    Location: expr.Location))
-                               .ToList();
-            return EmitRoutineCall(sb: sb,
-                req: new RoutineCallRequest(FunctionName: creatorRoutine.FullName,
-                    Arguments: callArgs,
-                    ResolvedRoutine: creatorRoutine,
-                    ResolvedReturnType: creatorRoutine.ReturnType ?? type,
-                    TypeArguments: null,
-                    LoweringKind: CallLoweringKind.DirectRoutine,
-                    ConstructedType: type));
+            throw new InvalidOperationException(
+                message: $"A creator of '{type.Name}' naming a create overload reached the LLVM emitter in " +
+                         $"[{_currentRoutineDiagName}].");
         }
 
         // Ordered most-derived-first: Variant/Crashable must precede their bases (Record/Entity),
@@ -135,12 +96,7 @@ public partial class LlvmEmitter
             // Crashable types are entity-like (heap-allocated, ptr semantics).
             CrashableTypeSymbol crashable => EmitCrashableConstruction(sb: sb,
                 crashable: crashable,
-                arguments: expr.MemberVariables
-                               .Select(selector: mv => (Expression)new NamedArgumentExpression(
-                                    Name: mv.Name,
-                                    Value: mv.Value,
-                                    Location: expr.Location))
-                               .ToList()),
+                expr: expr),
             EntityTypeSymbol entity => EmitEntityConstruction(sb: sb, entity: entity, expr: expr),
             RecordTypeSymbol record => EmitRecordConstruction(sb: sb, record: record, expr: expr),
             _ => throw new InvalidOperationException(
@@ -229,13 +185,13 @@ public partial class LlvmEmitter
     private string EmitEntityConstruction(StringBuilder sb, EntityTypeSymbol entity,
         CreatorExpression expr)
     {
-        // Empty creator (e.g. `Set[T]()` from collection-literal lowering) must route through
-        // the type's no-arg `create()` overload — entities like Set/Dict allocate heap buffers
-        // (ctrl/slot arrays) inside create that a raw rf_allocate_dynamic + zero-init would skip,
-        // leaving the entity in an invalid state that crashes on the first memberRoutine call.
-        if (expr.MemberVariables.Count == 0)
+        // An entity with member variables is built from one value per member variable: an empty creator
+        // would skip the allocations its `create` makes.
+        if (expr.MemberVariables.Count == 0 && entity.MemberVariables.Count > 0)
         {
-            return EmitCollectionCreate(sb: sb, resolvedType: entity);
+            throw new InvalidOperationException(
+                message: $"An empty creator of entity '{entity.Name}' reached the LLVM emitter in " +
+                         $"[{_currentRoutineDiagName}]; it is built by its create routine.");
         }
 
         // Evaluate all member variable value expressions first
@@ -264,69 +220,20 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits entity construction: heap-allocate and initialize fields.
-    /// </summary>
-    private string EmitEntityConstruction(StringBuilder sb, EntityTypeSymbol entity,
-        List<Expression> arguments)
-    {
-        string typeName = GetEntityTypeName(entity: entity);
-        // Allocate entity on heap
-        string sizeTemp = NextTemp();
-        EmitLine(sb: sb, line: $"  {sizeTemp} = getelementptr {typeName}, ptr null, i32 1");
-        string size = NextTemp();
-        EmitLine(sb: sb, line: $"  {size} = ptrtoint ptr {sizeTemp} to i64");
-        string entityPtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {entityPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
-
-        // Initialize fields. Named arguments may be written in any order; bind each field to the
-        // argument whose name matches it (falling back to positional for unnamed args). Every field —
-        // including a Roamed[T] one — MOVES its argument's reference into the field (no retain). In
-        // Suflae, RetainConstructionArg has already made the arg an OWNED rvalue (a `.roam()` copy of a
-        // borrow, or a fresh promote), so the field takes ownership of that single reference; retaining
-        // again would double-count and defeat cycle collection (see EmitEntityAllocation).
-        var argsToConsume = new List<Expression>();
-        for (int i = 0; i < entity.MemberVariables.Count; i++)
-        {
-            MemberVariableInfo field = entity.MemberVariables[index: i];
-            Expression? fieldArg = FindConstructorArgForMemberVariable(arguments: arguments,
-                fieldName: field.Name,
-                positionalIndex: i);
-            if (fieldArg == null)
-            {
-                continue;
-            }
-
-            Expression arg = fieldArg is NamedArgumentExpression named
-                ? named.Value
-                : fieldArg;
-            string value = EmitExpression(sb: sb, expr: arg);
-            string fieldType = GetLlvmType(type: field.Type);
-            string fieldPtr = NextTemp();
-            EmitLine(sb: sb,
-                line: $"  {fieldPtr} = getelementptr {typeName}, ptr {entityPtr}, i32 0, i32 {i}");
-            EmitLine(sb: sb, line: $"  store {fieldType} {value}, ptr {fieldPtr}");
-            argsToConsume.Add(item: fieldArg);
-        }
-
-        // Field initializers with `steal` transfer ownership from local entity vars into
-        // the new entity. Drop the source locals from the cleanup set so the function-exit
-        // rf_invalidate pass doesn't free the same allocation now held by the field. (Roamed fields
-        // are excluded — they were retained above, and their arg keeps its own reference.)
-        ConsumeTransferredCallOwnership(sb: sb, arguments: argsToConsume);
-
-        return entityPtr;
-    }
-
-    /// <summary>
     /// Generates code to construct a record (value type).
     /// </summary>
     private string EmitRecordConstruction(StringBuilder sb, RecordTypeSymbol record,
         CreatorExpression expr)
     {
-        // Backend-annotated or single-member-variable wrapper: just return the inner value.
-        if (record.BackendType != null && expr.MemberVariables.Count <= 1)
+        // A backend-represented record built from nothing is its zero value. Built from one value it is a
+        // BackendCastExpression (ConstructionLoweringPass).
+        if (record.BackendType != null)
         {
-            return EmitWrapperRecordConstruction(sb: sb, record: record, expr: expr);
+            return expr.MemberVariables.Count == 0
+                ? GetZeroValue(type: record)
+                : throw new InvalidOperationException(
+                    message: $"A creator of backend-represented '{record.Name}' with values reached the LLVM " +
+                             $"emitter in [{_currentRoutineDiagName}].");
         }
 
         // Result[T] / Lookup[T]: the payload is an inline byte buffer sized to max(sizeof(T), 8), and
@@ -352,58 +259,6 @@ public partial class LlvmEmitter
                 }
 
                 return EmitExpression(sb: sb, expr: expr.MemberVariables[index: i].Value);
-            });
-    }
-
-    /// <summary>
-    /// Constructs a record from a list of positional arguments (for TypeName(args...) calls).
-    /// </summary>
-    private string EmitRecordConstruction(StringBuilder sb, RecordTypeSymbol record,
-        List<Expression> arguments)
-    {
-        // Backend-annotated or single-member-variable wrapper: just return the inner value
-        if (record.BackendType != null && arguments.Count <= 1)
-        {
-            string argValue = EmitExpression(sb: sb, expr: arguments[index: 0]);
-            if (record.BackendType != null)
-            {
-                string targetLlvm = GetLlvmType(type: record);
-                TypeSymbol? argType = GetExpressionType(expr: arguments[index: 0]);
-                string argLlvm = argType != null
-                    ? GetLlvmType(type: argType)
-                    : targetLlvm;
-                if (argLlvm != targetLlvm)
-                {
-                    return EmitBackendScalarCast(sb: sb,
-                        value: argValue,
-                        sourceType: argType,
-                        targetType: record);
-                }
-            }
-
-            return argValue;
-        }
-
-        // Multi-member-variable record: build the struct value through the shared memberwise builder.
-        // Named arguments may be written in any order; bind each field to the argument whose name
-        // matches it (falling back to positional for unnamed args) so a record literal/constructor
-        // written out of field-declaration order stores each value into the correct field.
-        return EmitMemberwiseRecordStruct(sb: sb,
-            record: record,
-            valueForField: (i, field) =>
-            {
-                Expression? fieldArg = FindConstructorArgForMemberVariable(arguments: arguments,
-                    fieldName: field.Name,
-                    positionalIndex: i);
-                if (fieldArg == null)
-                {
-                    return null;
-                }
-
-                Expression arg = fieldArg is NamedArgumentExpression named
-                    ? named.Value
-                    : fieldArg;
-                return EmitExpression(sb: sb, expr: arg);
             });
     }
 
@@ -509,57 +364,12 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits construction of a backend-annotated / single-member wrapper record: a zero value for an
-    /// empty construction, a real <c>create(from:)</c> conversion call for an entity-arg wrapper, or
-    /// an inner-value passthrough (with a scalar cast when the arg's LLVM type differs).
-    /// </summary>
-    private string EmitWrapperRecordConstruction(StringBuilder sb, RecordTypeSymbol record,
-        CreatorExpression expr)
-    {
-        if (expr.MemberVariables.Count == 0)
-        {
-            return GetZeroValue(type: record);
-        }
-
-        Expression argExpr = expr.MemberVariables[index: 0].Value;
-        TypeSymbol? argType = GetExpressionType(expr: argExpr);
-
-        // An entity-arg wrapper with a `pass` body (0 declared fields) is a real conversion, not a
-        // passthrough. Example: `CStr(from: text)` must call `CStr.create(from: Accessing[Text])` to
-        // UTF-8-encode — otherwise `rf_console_show` dumps raw entity-struct bytes.
-        if (argType is EntityTypeSymbol && record.MemberVariables.Count == 0 &&
-            argType.FullName != record.FullName &&
-            _registry.LookupRoutineOverload(baseName: $"{record.FullName}.create",
-                argTypes: [argType]) is { OwnerType: not null } createOverload)
-        {
-            string argVal = EmitExpression(sb: sb, expr: argExpr);
-            string paramLlvm = GetLlvmType(type: createOverload.Parameters[index: 0].Type);
-            string retLlvm = GetLlvmType(type: record);
-            string mangled = MangleRoutineName(routine: createOverload);
-            string tmp = NextTemp();
-            EmitLine(sb: sb, line: $"  {tmp} = call {retLlvm} @{mangled}({paramLlvm} {argVal})");
-            return tmp;
-        }
-
-        string argValue = EmitExpression(sb: sb, expr: argExpr);
-        string targetLlvm = GetLlvmType(type: record);
-        string argLlvm = argType != null
-            ? GetLlvmType(type: argType)
-            : targetLlvm;
-        return argLlvm != targetLlvm
-            ? EmitBackendScalarCast(sb: sb,
-                value: argValue,
-                sourceType: argType,
-                targetType: record)
-            : argValue;
-    }
-
-    /// <summary>
-    /// Emits crashable type construction: heap-allocate and initialize fields.
-    /// Mirrors entity construction — crashable types have entity (ptr) semantics.
+    /// Emits crashable type construction: heap-allocate and initialize fields. Mirrors entity construction —
+    /// crashable types have entity (ptr) semantics. The creator carries one value per member variable in
+    /// declaration order.
     /// </summary>
     private string EmitCrashableConstruction(StringBuilder sb, CrashableTypeSymbol crashable,
-        List<Expression> arguments)
+        CreatorExpression expr)
     {
         string typeName = GetCrashableTypeName(crashable: crashable);
         string sizeTemp = NextTemp();
@@ -569,21 +379,9 @@ public partial class LlvmEmitter
         string crashablePtr = NextTemp();
         EmitLine(sb: sb, line: $"  {crashablePtr} = call ptr @rf_allocate_dynamic(i64 {size})");
 
-        for (int i = 0; i < crashable.MemberVariables.Count; i++)
+        for (int i = 0; i < expr.MemberVariables.Count && i < crashable.MemberVariables.Count; i++)
         {
-            // Named arguments may be written in any order; bind each field by matching name.
-            Expression? fieldArg = FindConstructorArgForMemberVariable(arguments: arguments,
-                fieldName: crashable.MemberVariables[index: i].Name,
-                positionalIndex: i);
-            if (fieldArg == null)
-            {
-                continue;
-            }
-
-            Expression arg = fieldArg is NamedArgumentExpression named
-                ? named.Value
-                : fieldArg;
-            string value = EmitExpression(sb: sb, expr: arg);
+            string value = EmitExpression(sb: sb, expr: expr.MemberVariables[index: i].Value);
             string fieldType = GetLlvmType(type: crashable.MemberVariables[index: i].Type);
             string fieldPtr = NextTemp();
             EmitLine(sb: sb,

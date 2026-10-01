@@ -256,8 +256,7 @@ public sealed partial class SemanticVerifier
         RoutineInfo? zeroCreate = _registry.LookupCreatorOverload(type: zeroArgType,
             argTypes: new List<TypeSymbol>());
         call.ConstructedType = zeroArgType;
-        call.LoweringKind = ClassifyConstruction(type: zeroArgType,
-            isCollectionLiteral: call.IsCollectionLiteral);
+        call.LoweringKind = ClassifyConstruction(type: zeroArgType);
         // A user-declared (non-synthesized) `create` has a real body/side-effects — route the
         // call through it (this ALSO seeds it for reachability). A synthesized memberwise creator
         // is left to inline construction.
@@ -1108,13 +1107,8 @@ public sealed partial class SemanticVerifier
         return CallLoweringKind.DirectMemberRoutine;
     }
 
-    private static CallLoweringKind ClassifyConstruction(TypeSymbol type, bool isCollectionLiteral)
+    private static CallLoweringKind ClassifyConstruction(TypeSymbol type)
     {
-        if (isCollectionLiteral)
-        {
-            return CallLoweringKind.CollectionConstruction;
-        }
-
         return type is WrapperTypeSymbol
             ? CallLoweringKind.WrapperConstruction
             : CallLoweringKind.TypeConstructor;
@@ -1279,8 +1273,7 @@ public sealed partial class SemanticVerifier
         call.ConstructedType = callableType;
         call.LoweringKind = isVariantArmExtractor
             ? ClassifyMemberRoutineCall(memberRoutine: creator)
-            : ClassifyConstruction(type: callableType,
-                isCollectionLiteral: call.IsCollectionLiteral);
+            : ClassifyConstruction(type: callableType);
 
         // `Type(...)` written *inside* Type's own `create` only needs the
         // inline base case when it resolves back to the SAME `create` we are
@@ -2630,14 +2623,6 @@ public sealed partial class SemanticVerifier
                     location: call.Location);
             }
         }
-
-        // #104/#23: Channel send() makes source variable a deadref
-        if (member is { MemberName: "send", Object: IdentifierExpression sendSource } &&
-            objectType.BareName == "Channel")
-        {
-            _deadrefVariables.Add(item: sendSource.Name);
-            _everStolenVariables.Add(item: sendSource.Name);
-        }
     }
 
     /// <summary>
@@ -3394,8 +3379,7 @@ public sealed partial class SemanticVerifier
         }
 
         call.ConstructedType = type;
-        call.LoweringKind = ClassifyConstruction(type: type,
-            isCollectionLiteral: call.IsCollectionLiteral);
+        call.LoweringKind = ClassifyConstruction(type: type);
 
         List<TypeSymbol> argTypes = AnalyzeNamedTypeConstructionArgs(call: call, type: type);
 
@@ -3410,8 +3394,7 @@ public sealed partial class SemanticVerifier
                 !creator.Parameters.Any(predicate: p => p.IsVariadicParam))
             {
                 call.ResolvedRoutine = creator;
-                call.LoweringKind = ClassifyConstruction(type: type,
-                    isCollectionLiteral: call.IsCollectionLiteral);
+                call.LoweringKind = ClassifyConstruction(type: type);
                 call.IsInFlight = creator.IsInFlightReturn;
                 return creator.ReturnType ?? type;
             }

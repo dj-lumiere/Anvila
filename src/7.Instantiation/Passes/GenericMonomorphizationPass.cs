@@ -500,12 +500,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             argTypes: [text, text, text, s32, s32]);
     }
 
-    /// <summary>Whether a statement becomes a <c>crash_report</c> call at Phase 9 (a throw, an absent, or a
-    /// returned crashable; the absent and the return only in a failable routine, which over-approximates
-    /// here).</summary>
+    /// <summary>Whether a node leads to a <c>crash_report</c> call at Phase 9: a throw, an absent, or a
+    /// returned crashable (the absent and the return only in a failable routine, which over-approximates
+    /// here), or a <c>steal</c>, whose moved-out binding gets use-after-steal guards.</summary>
     internal static bool MayBecomeCrash(object? node)
     {
-        return node is ThrowStatement or AbsentStatement ||
+        return node is ThrowStatement or AbsentStatement or StealExpression ||
                node is ReturnStatement { Value.ResolvedType: CrashableTypeSymbol };
     }
 

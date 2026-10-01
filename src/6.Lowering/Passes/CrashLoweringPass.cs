@@ -52,15 +52,7 @@ internal sealed class CrashLoweringPass : AstRewriter
                 message: $"The body of '{routine?.RegistryKey}' must be a block, got {body.GetType().Name}.");
         }
 
-        TypeSymbol text = registry.LookupType(name: "Text") ??
-                          throw new InvalidOperationException(message: "Core.Text is not registered.");
-        TypeSymbol s32 = registry.LookupType(name: "S32") ??
-                         throw new InvalidOperationException(message: "Core.S32 is not registered.");
-        RoutineInfo crashReport = registry.LookupRoutineOverload(
-                                      baseName: $"Core.{RuntimeContract.CrashReport}",
-                                      argTypes: [text, text, text, s32, s32]) ??
-                                  throw new InvalidOperationException(
-                                      message: $"Core.{RuntimeContract.CrashReport} is not registered.");
+        (TypeSymbol text, TypeSymbol s32, RoutineInfo crashReport) = CrashReportParts(registry: registry);
         var pass = new CrashLoweringPass(registry: registry,
             routine: routine,
             crashReport: crashReport,
@@ -115,21 +107,56 @@ internal sealed class CrashLoweringPass : AstRewriter
 
     private CrashStatement Crash(string typeName, Expression message, SourceLocation location)
     {
-        var report = new CallExpression(
+        return new CrashStatement(
+            Report: Report(crashReport: _crashReport, text: _text, s32: _s32, typeName: typeName, message: message,
+                location: location),
+            Location: location);
+    }
+
+    /// <summary>
+    /// <c>crash_report(type_name: "&lt;typeName&gt;", message: "&lt;message&gt;", file: .., line: .., column: ..)</c>
+    /// for a crash at <paramref name="location"/> with a fixed message. Other passes that write a crash
+    /// (StealGuardLoweringPass) build it here, so every crash goes through the same call.
+    /// </summary>
+    internal static CallExpression Report(TypeRegistry registry, string typeName, string message,
+        SourceLocation location)
+    {
+        (TypeSymbol text, TypeSymbol s32, RoutineInfo crashReport) = CrashReportParts(registry: registry);
+        return Report(crashReport: crashReport, text: text, s32: s32, typeName: typeName,
+            message: Text(value: message, text: text, location: location), location: location);
+    }
+
+    private static CallExpression Report(RoutineInfo crashReport, TypeSymbol text, TypeSymbol s32, string typeName,
+        Expression message, SourceLocation location)
+    {
+        return new CallExpression(
             Callee: new IdentifierExpression(Name: RuntimeContract.CrashReport, Location: location)
             {
-                ResolvedRoutine = _crashReport
+                ResolvedRoutine = crashReport
             },
             Arguments:
             [
-                Named(name: "type_name", value: Text(value: typeName, location: location)),
+                Named(name: "type_name", value: Text(value: typeName, text: text, location: location)),
                 Named(name: "message", value: message),
-                Named(name: "file", value: Text(value: location.FileName, location: location)),
-                Named(name: "line", value: S32(value: location.Line, location: location)),
-                Named(name: "column", value: S32(value: location.Column, location: location))
+                Named(name: "file", value: Text(value: location.FileName, text: text, location: location)),
+                Named(name: "line", value: S32(value: location.Line, s32: s32, location: location)),
+                Named(name: "column", value: S32(value: location.Column, s32: s32, location: location))
             ],
-            Location: location) { ResolvedRoutine = _crashReport };
-        return new CrashStatement(Report: report, Location: location);
+            Location: location) { ResolvedRoutine = crashReport };
+    }
+
+    private static (TypeSymbol Text, TypeSymbol S32, RoutineInfo CrashReport) CrashReportParts(TypeRegistry registry)
+    {
+        TypeSymbol text = registry.LookupType(name: "Text") ??
+                          throw new InvalidOperationException(message: "Core.Text is not registered.");
+        TypeSymbol s32 = registry.LookupType(name: "S32") ??
+                         throw new InvalidOperationException(message: "Core.S32 is not registered.");
+        RoutineInfo crashReport = registry.LookupRoutineOverload(
+                                      baseName: $"Core.{RuntimeContract.CrashReport}",
+                                      argTypes: [text, text, text, s32, s32]) ??
+                                  throw new InvalidOperationException(
+                                      message: $"Core.{RuntimeContract.CrashReport} is not registered.");
+        return (text, s32, crashReport);
     }
 
     private static NamedArgumentExpression Named(string name, Expression value)
@@ -142,14 +169,19 @@ internal sealed class CrashLoweringPass : AstRewriter
 
     private LiteralExpression Text(string value, SourceLocation location)
     {
-        return new LiteralExpression(Value: value, LiteralType: Builder.Tokenizer.TokenType.TextLiteral,
-            Location: location) { ResolvedType = _text };
+        return Text(value: value, text: _text, location: location);
     }
 
-    private LiteralExpression S32(int value, SourceLocation location)
+    private static LiteralExpression Text(string value, TypeSymbol text, SourceLocation location)
+    {
+        return new LiteralExpression(Value: value, LiteralType: Builder.Tokenizer.TokenType.TextLiteral,
+            Location: location) { ResolvedType = text };
+    }
+
+    private static LiteralExpression S32(int value, TypeSymbol s32, SourceLocation location)
     {
         return new LiteralExpression(Value: value.ToString(provider: System.Globalization.CultureInfo.InvariantCulture),
             LiteralType: Builder.Tokenizer.TokenType.S32Literal,
-            Location: location) { ResolvedType = _s32 };
+            Location: location) { ResolvedType = s32 };
     }
 }

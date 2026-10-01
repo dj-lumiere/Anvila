@@ -273,6 +273,11 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the wrapper-projection expression</returns>
     T VisitWrapperProjectionExpression(WrapperProjectionExpression node);
 
+    /// <summary>Visits a backend cast expression node (a value converted to a backend-represented record)</summary>
+    /// <param name="node">The backend cast expression to visit</param>
+    /// <returns>Result of visiting the backend cast expression</returns>
+    T VisitBackendCastExpression(BackendCastExpression node);
+
     /// <summary>Visits a closure value expression node (a capturing lambda's lifted routine + bound payload)</summary>
     /// <param name="node">The closure value expression to visit</param>
     /// <returns>Result of visiting the closure value expression</returns>

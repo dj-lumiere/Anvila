@@ -223,7 +223,7 @@ public record ThrowStatement(Expression Error, SourceLocation Location, bool IsF
     /// When true this is a `pierce` (fatal, uncatchable crash): it does NOT make the routine failable,
     /// is NOT rewritten into a recoverable return in try_/check_/lookup_ variants, and pierces through
     /// every handler to abort. When false this is a recoverable `throw`. Codegen is identical (both
-    /// lower to rf_crash) — the difference is purely in the error-handling/variant machinery.
+    /// lower to a crash_report call) — the difference is purely in the error-handling/variant machinery.
     /// </summary>
     public bool IsFatal { get; init; } = IsFatal;
 

@@ -6,12 +6,10 @@ using TypeModel.Types;
 namespace Builder.LlvmEmit;
 
 /// <summary>
-/// Expression code generation for collection literals and variadic argument packing.
+/// Expression code generation for collection literals.
 /// Array[T,N] and BitArray[N] are emitted as inline insertvalue sequences here.
-/// All other collection literals from [] / {} / {} syntax must be lowered by
-/// ExpressionLoweringPass to CreatorExpression + add calls before reaching codegen.
-/// The CollectionConstruction lowering kind (from explicit List(...) calls) still routes
-/// through EmitCollectionLiteralConstructor for non-literal construction.
+/// All other collection literals from [] / {} / {} syntax are lowered by
+/// ExpressionLoweringPass to their create and add calls before reaching the emitter.
 /// </summary>
 public partial class LlvmEmitter
 {
@@ -55,64 +53,9 @@ public partial class LlvmEmitter
             arguments: list.Elements);
     }
 
-    private static readonly string[] OwnedCollectionBaseNames =
-    {
-        "List",
-        "Dict",
-        "Set",
-        "CircularList",
-        "SortedDict",
-        "SortedSet",
-        "SortedList",
-        "SecureDict",
-        "SecureSet",
-        "BitList",
-        "PriorityQueue"
-    };
-
     /// <summary>
-    /// Resolves an owned collection parameter type to its concrete collection type for emitting a
-    /// collection-literal default. Unwraps the transparent <c>Owned</c> wrapper; a borrow or
-    /// reference-counting wrapper (Accessing/Viewing/Modifying/Controlling/Retained/Tracked) is NOT
-    /// plainly owned and returns false — for those we do not inline-construct a default (the callee
-    /// would not free it, so a temporary would leak). Returns true with <paramref name="collType"/>
-    /// set for a plainly-owned collection.
-    /// </summary>
-    private static bool TryGetOwnedCollectionType(TypeSymbol? paramType, out TypeSymbol collType)
-    {
-        collType = null!;
-        if (paramType == null)
-        {
-            return false;
-        }
-
-        TypeSymbol t = paramType;
-        while (t is WrapperTypeSymbol wrapper)
-        {
-            if (wrapper.Name == Declaration.RuntimeContract.Owned)
-            {
-                t = wrapper.InnerType;
-                continue;
-            }
-
-            return false;
-        }
-
-        string baseName = GetGenericBaseName(type: t) ?? t.Name;
-        if (Array.IndexOf(array: OwnedCollectionBaseNames, value: baseName) >= 0)
-        {
-            collType = t;
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Emits a collection literal constructor: Array[T,N] (insertvalue), BitArray[N] (bit packing),
-    /// or entity collection (create + add calls).
-    /// Called from EmitListLiteral (Array/BitArray only) and from the CollectionConstruction
-    /// lowering kind path in EmitRoutineCall / EmitMemberRoutineCall.
+    /// Emits an Array[T,N] (insertvalue) or BitArray[N] (bit packing) literal. Every other collection
+    /// literal is lowered to its create and add calls (ExpressionLoweringPass).
     /// </summary>
     private string EmitCollectionLiteralConstructor(StringBuilder sb, TypeSymbol resolvedType,
         List<Expression> arguments)
@@ -142,45 +85,8 @@ public partial class LlvmEmitter
                     arguments: arguments);
         }
 
-        // Entity collections (List, Set, Dict, etc.): create() + add/add_last calls.
-        // Reached only via CollectionConstruction lowering kind, not from ListLiteralExpression
-        // (which is lowered by ExpressionLoweringPass for entity collection types).
-        string collectionPtr = EmitCollectionCreate(sb: sb, resolvedType: resolvedType);
-
-        string addMemberRoutineName;
-        bool isMapType = baseName is "Dict" or "SortedDict" or "SecureDict";
-        bool isSequenceType = baseName is "List" or "CircularList" or "BitList";
-        addMemberRoutineName = isSequenceType
-            ? Declaration.RuntimeContract.Collection.AddLast
-            : Declaration.RuntimeContract.Collection.Add;
-
-        ResolvedMemberRoutine? resolvedAdd = ResolveMemberRoutine(receiverType: resolvedType,
-            memberRoutineName: addMemberRoutineName);
-        if (resolvedAdd == null)
-        {
-            return collectionPtr;
-        }
-
-        string mangledAdd = resolvedAdd.MangledName;
-
-        if (isMapType)
-        {
-            EmitMapCollectionAdds(sb: sb,
-                arguments: arguments,
-                collectionPtr: collectionPtr,
-                mangledAdd: mangledAdd);
-        }
-        else
-        {
-            EmitSequenceCollectionAdds(sb: sb,
-                arguments: arguments,
-                baseName: baseName,
-                collectionPtr: collectionPtr,
-                mangledAdd: mangledAdd,
-                resolvedAdd: resolvedAdd);
-        }
-
-        return collectionPtr;
+        throw new InvalidOperationException(
+            message: $"A '{typeName}' literal reached the LLVM emitter; only Array and BitArray literals do.");
     }
 
     /// <summary>
@@ -236,85 +142,6 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits the key/value add calls for a map collection literal (Dict / SortedDict / SecureDict).
-    /// </summary>
-    private void EmitMapCollectionAdds(StringBuilder sb, List<Expression> arguments,
-        string collectionPtr, string mangledAdd)
-    {
-        foreach (Expression arg in arguments)
-        {
-            if (arg is not DictEntryLiteralExpression entry)
-            {
-                continue;
-            }
-
-            string keyVal = EmitExpression(sb: sb, expr: entry.Key);
-            string valVal = EmitExpression(sb: sb, expr: entry.Value);
-            TypeSymbol? keyType = GetExpressionType(expr: entry.Key);
-            TypeSymbol? valueType = GetExpressionType(expr: entry.Value);
-            string keyLlvm = keyType != null
-                ? GetLlvmType(type: keyType)
-                : "i64";
-            string valLlvm = valueType != null
-                ? GetLlvmType(type: valueType)
-                : "i64";
-
-            if (!_generatedRoutines.Contains(item: mangledAdd))
-            {
-                _rfRoutineDeclarations[key: mangledAdd] =
-                    $"declare i1 @{mangledAdd}(ptr, {keyLlvm}, {valLlvm})";
-                _generatedRoutines.Add(item: mangledAdd);
-            }
-
-            EmitLine(sb: sb,
-                line:
-                $"  call i1 @{mangledAdd}(ptr {collectionPtr}, {keyLlvm} {keyVal}, {valLlvm} {valVal})");
-        }
-    }
-
-    /// <summary>
-    /// Emits the element add calls for a sequence/set collection literal (List/CircularList/BitList/Set/...).
-    /// </summary>
-    private void EmitSequenceCollectionAdds(StringBuilder sb, List<Expression> arguments,
-        string baseName, string collectionPtr, string mangledAdd,
-        ResolvedMemberRoutine resolvedAdd)
-    {
-        foreach (Expression arg in arguments)
-        {
-            string elemVal = EmitExpression(sb: sb, expr: arg);
-            TypeSymbol? elemType = GetExpressionType(expr: arg);
-            string elemLlvm = elemType != null
-                ? GetLlvmType(type: elemType)
-                : "i64";
-
-            if (!_generatedRoutines.Contains(item: mangledAdd))
-            {
-                string retType = baseName is "Set" or "SortedSet" or "SecureSet"
-                    ? "i1"
-                    : "void";
-                _rfRoutineDeclarations[key: mangledAdd] =
-                    $"declare {retType} @{mangledAdd}(ptr, {elemLlvm})";
-                _generatedRoutines.Add(item: mangledAdd);
-            }
-
-            bool returnsVoid = resolvedAdd.Routine.ReturnType == null ||
-                               resolvedAdd.Routine.ReturnType.Name == "None";
-            if (returnsVoid)
-            {
-                EmitLine(sb: sb,
-                    line: $"  call void @{mangledAdd}(ptr {collectionPtr}, {elemLlvm} {elemVal})");
-            }
-            else
-            {
-                string discarded = NextTemp();
-                EmitLine(sb: sb,
-                    line:
-                    $"  {discarded} = call i1 @{mangledAdd}(ptr {collectionPtr}, {elemLlvm} {elemVal})");
-            }
-        }
-    }
-
-    /// <summary>
     /// Runtime fallback for BitArray construction when arguments are non-literal booleans.
     /// </summary>
     private string EmitBitArrayRuntime(StringBuilder sb, TypeSymbol resolvedType,
@@ -353,108 +180,5 @@ public partial class LlvmEmitter
         }
 
         return current;
-    }
-
-    /// <summary>
-    /// Emits a zero-arg create() call for a collection type, handling monomorphization.
-    /// </summary>
-    private string EmitCollectionCreate(StringBuilder sb, TypeSymbol? resolvedType)
-    {
-        if (resolvedType == null)
-        {
-            return "null";
-        }
-
-        ResolvedMemberRoutine? resolved = resolvedType.IsGenericResolution
-            ? null
-            : ResolveMemberRoutine(receiverType: resolvedType,
-                memberRoutineName: RoutineInfo.CreatorName);
-
-        if (resolved is { Routine.Parameters.Count: > 0 })
-        {
-            resolved = null;
-        }
-
-        if (resolved == null)
-        {
-            RoutineInfo? creator = LookupCollectionZeroArgCreator(resolvedType: resolvedType);
-
-            if (creator != null)
-            {
-                // Mangle through MangleRoutineName so the call symbol matches the decorated define
-                // ([member] Module.Type.create(...)). For a generic resolution the looked-up
-                // `creator` is keyed on the generic-def owner (List[T]); substitute the concrete owner
-                // (List[S64]) first so the symbol is the concrete one the GMP define emits.
-                RoutineInfo mangleCreator = resolvedType.IsGenericResolution
-                    ? _registry.SubstituteMemberRoutineForOwner(memberRoutine: creator,
-                        resolvedOwner: resolvedType) ?? creator
-                    : creator;
-                string funcName = MangleRoutineName(routine: mangleCreator);
-
-                if (!_generatedRoutines.Contains(item: funcName))
-                {
-                    GenerateRoutineDeclaration(routine: creator, nameOverride: funcName);
-                }
-
-                string result = NextTemp();
-                EmitLine(sb: sb, line: $"  {result} = call ptr @{funcName}()");
-                return result;
-            }
-        }
-        else
-        {
-            string funcName = resolved.MangledName;
-            if (!_generatedRoutines.Contains(item: funcName))
-            {
-                GenerateRoutineDeclaration(routine: resolved.Routine, nameOverride: funcName);
-            }
-
-            string result = NextTemp();
-            EmitLine(sb: sb, line: $"  {result} = call ptr @{funcName}()");
-            return result;
-        }
-
-        throw new InvalidOperationException(
-            message: $"No 'create' routine found for collection type '{resolvedType.Name}'. " +
-                     "All collection types must have a registered 'create' body in the stdlib.");
-    }
-
-    /// <summary>
-    /// Looks up the zero-arg <c>create</c> routine for a collection type: the concrete owner's
-    /// overload first, then the generic-definition owner's. Returns null when no zero-arg creator
-    /// exists (a creator with parameters is rejected).
-    /// </summary>
-    private RoutineInfo? LookupCollectionZeroArgCreator(TypeSymbol resolvedType)
-    {
-        string createName = $"{resolvedType.FullName}.create";
-        RoutineInfo? creator =
-            _registry.LookupRoutineOverload(baseName: createName, argTypes: new List<TypeSymbol>());
-        if (creator is { Parameters.Count: > 0 })
-        {
-            creator = null;
-        }
-
-        if (creator == null)
-        {
-            TypeSymbol? genericDef = resolvedType switch
-            {
-                EntityTypeSymbol { GenericDefinition: not null } e => e.GenericDefinition,
-                RecordTypeSymbol { GenericDefinition: not null } r => r.GenericDefinition,
-                _ => null
-            };
-            if (genericDef != null)
-            {
-                string genCreateName = $"{RoutineInfo.GetTypeIdentity(type: genericDef)}.create";
-                // Signature-only: the 0-arg creator matches the empty-argTypes overload; no name-only fallback.
-                creator = _registry.LookupRoutineOverload(baseName: genCreateName,
-                    argTypes: new List<TypeSymbol>());
-                if (creator is { Parameters.Count: > 0 })
-                {
-                    creator = null;
-                }
-            }
-        }
-
-        return creator;
     }
 }

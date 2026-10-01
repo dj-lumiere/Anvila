@@ -24,9 +24,6 @@ public enum CallLoweringKind
     /// <summary>Explicit source-level value conversion.</summary>
     ValueConversion,
 
-    /// <summary>Collection construction using literal-style lowering semantics.</summary>
-    CollectionConstruction,
-
     /// <summary>BuilderQuery/compiler metadata intrinsic.</summary>
     BuilderIntrinsic,
 

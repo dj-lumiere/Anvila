@@ -12,8 +12,9 @@ namespace Builder.Lowering.Passes;
 /// uses after a move dead, but a loop, an alias or an indirect path can still reach the moved-out
 /// binding. For each such local holding a movable handle (an entity or an RC wrapper), this pass sets:</para>
 /// <list type="bullet">
-/// <item><see cref="IdentifierExpression.StealGuarded"/> on every read, so the load is null-checked and
-/// a null slot crashes loudly with <c>UseAfterStealError</c> instead of using a stale pointer.</item>
+/// <item><see cref="IdentifierExpression.StealGuardCrash"/> on every read: a <c>crash_report</c> call with
+/// <c>UseAfterStealError</c> that the emitter makes when the loaded handle is null, so a moved-out slot
+/// crashes loudly instead of handing out a stale pointer.</item>
 /// <item><see cref="IdentifierExpression.NullStampAfterMove"/> on a read in a consuming position (a call
 /// or creator argument, a variable initializer, or the value of a member-variable write), so the slot is
 /// set to null once the value has been handed over.</item>
@@ -24,8 +25,11 @@ namespace Builder.Lowering.Passes;
 /// </summary>
 internal static class StealGuardLoweringPass
 {
+    /// <summary>The error type a use of a moved-out binding reports.</summary>
+    private const string UseAfterStealError = "UseAfterStealError";
+
     /// <summary>Marks the use-after-steal guards and null-stamps in one routine body.</summary>
-    public static void Run(Statement body, HashSet<string>? everStolen)
+    public static void Run(Statement body, HashSet<string>? everStolen, TypeRegistry registry)
     {
         if (everStolen is not { Count: > 0 })
         {
@@ -38,7 +42,10 @@ internal static class StealGuardLoweringPass
                 switch (node)
                 {
                     case IdentifierExpression id when IsGuarded(id: id, everStolen: everStolen):
-                        id.StealGuarded = true;
+                        id.StealGuardCrash = CrashLoweringPass.Report(registry: registry,
+                            typeName: UseAfterStealError,
+                            message: $"'{id.Name}' was used after it was moved out with steal.",
+                            location: id.Location);
                         break;
                     case CallExpression call:
                         MarkConsumed(operands: call.Arguments, everStolen: everStolen);

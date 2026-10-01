@@ -740,7 +740,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// variant. The tail-position <paramref name="rewriter"/> only handles <c>return F!(x)</c>; a
     /// failable call used in statement position — e.g. <c>var item = src.emit!()</c> — would
     /// otherwise be left calling the raw <c>!</c> routine, which HARD-CRASHES on absence (the raw
-    /// form lowers <c>absent</c> to <c>rf_crash</c>). Inside a <c>try_</c> variant that inner
+    /// form lowers <c>absent</c> to a <c>crash_report</c> call). Inside a <c>try_</c> variant that inner
     /// absence must instead become this variant's own <c>None</c> return.
     ///
     /// For each such statement the remainder of the block is folded into the success branch of a

@@ -393,7 +393,6 @@ public partial class SemanticVerifier
         rw.ResolvedRoutine = call.ResolvedRoutine;
         rw.LoweringKind = call.LoweringKind;
         rw.ConstructedType = call.ConstructedType;
-        rw.IsCollectionLiteral = call.IsCollectionLiteral;
         rw.TypeArguments = call.TypeArguments;
         rw.ResolvedType = call.ResolvedType;
         return rw;

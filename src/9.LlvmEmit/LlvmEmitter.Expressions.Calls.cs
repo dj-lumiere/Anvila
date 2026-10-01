@@ -12,44 +12,12 @@ namespace Builder.LlvmEmit;
 public partial class LlvmEmitter
 {
     /// <summary>
-    /// True when <paramref name="creator"/> is the auto-synthesized ALL-FIELDS memberwise constructor of
-    /// <paramref name="owner"/> — its parameters are exactly the owner's member variables (by name). Such a
-    /// creator has NO emitted body (construction is inlined), so codegen must never emit a call to it.
-    /// Body-bearing synthesized creators (numeric conversions, variant arm extractors) take non-field
-    /// parameters (<c>from:</c> a foreign type) and fail this test, so they still route to a real call.
-    /// </summary>
-    private static bool MemberwiseCreatorMatchesFields(RoutineInfo creator, TypeSymbol owner)
-    {
-        List<MemberVariableInfo>? fields = owner switch
-        {
-            CrashableTypeSymbol c => c.MemberVariables,
-            EntityTypeSymbol e => e.MemberVariables,
-            RecordTypeSymbol r => r.MemberVariables,
-            _ => null
-        };
-        if (fields == null || creator.Parameters.Count != fields.Count)
-        {
-            return false;
-        }
-
-        var fieldNames = new HashSet<string>(collection: fields.Select(selector: f => f.Name));
-        return creator.Parameters.All(predicate: p => fieldNames.Contains(item: p.Name));
-    }
-
-    /// <summary>
     /// Emit routine call as part of this compiler phase.
     /// </summary>
     private string EmitRoutineCall(StringBuilder sb, RoutineCallRequest req)
     {
         (string functionName, List<Expression> arguments, RoutineInfo? resolvedRoutine,
-            TypeSymbol? resolvedReturnType, List<TypeExpression>? typeArguments,
-            CallLoweringKind loweringKind, TypeSymbol? constructedType) = req;
-        // Synthesized bodies (e.g. hash, eq, cmp) are built programmatically and never
-        // pass through SemanticVerifier, so they arrive with Unknown. Treat as DirectRoutine.
-        if (loweringKind == CallLoweringKind.Unknown)
-        {
-            loweringKind = CallLoweringKind.DirectRoutine;
-        }
+            TypeSymbol? resolvedReturnType, List<TypeExpression>? typeArguments) = req;
 
         // The failable `!` is a structured flag on the request; the FunctionName is bare.
         bool isFailableCallSyntax = req.IsFailable;
@@ -83,81 +51,27 @@ public partial class LlvmEmitter
                 arguments: arguments);
         }
 
-        // When SA resolved this entity construction to a user-declared `create` (non-synthesized),
-        // the inline memberwise cases below must NOT intercept it — fall through to the routine-call
-        // path so the user `create` body actually runs. The synthesized memberwise creator and the
-        // base-case construction inside `create` carry a null/synth resolvedRoutine and still inline.
-        bool routesToUserCreate = resolvedRoutine is
-        {
-            IsSynthesized: false, IsCreator: true
-        } && constructedType is EntityTypeSymbol;
+        // The routine the analyzer or monomorphization stamped. A construction that binds none was written
+        // as a field-by-field creator expression or a cast (ConstructionLoweringPass).
+        RoutineInfo routine = ResolveInitialFreeCallRoutine(resolvedRoutine: resolvedRoutine,
+                                  typeArguments: typeArguments) ??
+                              throw new InvalidOperationException(
+                                  message: $"Call to '{functionName}' reached the LLVM emitter without a resolved " +
+                                           $"routine in [{_currentRoutineDiagName}].");
 
-        if (TryEmitAnnotatedConstruction(sb: sb,
-                arguments: arguments,
-                resolvedRoutine: resolvedRoutine,
-                constructedType: constructedType,
-                loweringKind: loweringKind,
-                routesToUserCreate: routesToUserCreate) is { } construction)
-        {
-            return construction;
-        }
-
-        ValidateAnnotatedConstructorOrConversion(functionName: functionName,
-            arguments: arguments,
-            loweringKind: loweringKind,
-            constructedType: constructedType);
-
-        // The routine the analyzer or monomorphization stamped; none means a construction or a value.
-        RoutineInfo? routine = ResolveInitialFreeCallRoutine(resolvedRoutine: resolvedRoutine,
-            typeArguments: typeArguments);
-
-        // If not found as a routine, check if the name resolves to a type and attempt construction.
-        if (routine == null)
-        {
-            string? directResult = TryEmitNamedTypeConstruction(sb: sb,
-                functionName: functionName,
-                arguments: arguments,
-                typeArguments: typeArguments,
-                routesToUserCreate: routesToUserCreate,
-                routine: ref routine);
-            if (directResult != null)
-            {
-                return directResult;
-            }
-        }
-
-        // Evaluate arguments and bind them to parameters. RazorForge evaluates arguments in
-        // PARAMETER-DECLARATION order regardless of the call-site writing order; named arguments
-        // may be reordered and may skip middle parameters that have defaults. So: pre-collect the
-        // written-order argument types for overload normalization (no emission yet), bind each
-        // written argument to its declared slot (by name, else positionally), then emit slot-by-
-        // slot in declaration order — supplying defaults for unprovided slots. Emitting in
-        // declaration order also makes argument side effects run in declaration order, not writing
-        // order. (Previously args were emitted positionally by writing order, which silently
-        // miscompiled reordered named calls and misaligned middle-omitted named defaults.)
+        // RazorForge evaluates arguments in PARAMETER-DECLARATION order regardless of the call-site writing
+        // order: each written argument binds to its declared slot (by name, else positionally) and the slots
+        // are emitted in declaration order.
         var argValues = new List<string>();
         var argTypes = new List<string>();
         var argTypeInfos = new List<TypeSymbol>();
-
-        if (routine != null)
-        {
-            EmitFreeCallArgumentsInDeclarationOrder(sb: sb,
-                routine: routine,
-                functionName: functionName,
-                arguments: arguments,
-                argValues: argValues,
-                argTypes: argTypes,
-                argTypeInfos: argTypeInfos);
-        }
-        else
-        {
-            EmitUnresolvedFreeCallArguments(sb: sb,
-                functionName: functionName,
-                arguments: arguments,
-                argValues: argValues,
-                argTypes: argTypes,
-                argTypeInfos: argTypeInfos);
-        }
+        EmitFreeCallArgumentsInDeclarationOrder(sb: sb,
+            routine: routine,
+            functionName: functionName,
+            arguments: arguments,
+            argValues: argValues,
+            argTypes: argTypes,
+            argTypeInfos: argTypeInfos);
 
         return EmitFreeCallInstruction(sb: sb,
             arguments: arguments,
@@ -314,191 +228,6 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a free call's arguments in WRITING order for an unresolved/dynamic callee (no parameter
-    /// info to bind against), filling <paramref name="argValues"/> / <paramref name="argTypes"/> /
-    /// <paramref name="argTypeInfos"/>.
-    /// </summary>
-    private void EmitUnresolvedFreeCallArguments(StringBuilder sb, string functionName,
-        List<Expression> arguments, List<string> argValues, List<string> argTypes,
-        List<TypeSymbol> argTypeInfos)
-    {
-        // Unresolved/dynamic callee: no parameter info to bind against — emit in writing order.
-        for (int argIdx = 0; argIdx < arguments.Count; argIdx++)
-        {
-            Expression arg = arguments[index: argIdx];
-            string value = EmitExpression(sb: sb, expr: arg);
-            argValues.Add(item: value);
-
-            TypeSymbol? argType = GetExpressionType(expr: arg);
-            if (argType == null)
-            {
-                throw new InvalidOperationException(
-                    message:
-                    $"Cannot determine type for argument in function call to '{functionName}'");
-            }
-
-            argTypeInfos.Add(item: argType);
-            argTypes.Add(item: GetLlvmType(type: argType));
-        }
-    }
-
-    /// <summary>
-    /// When routine resolution returned null, checks whether <paramref name="functionName"/> is a
-    /// type name and, if so, either emits construction directly (returning the result string) or
-    /// resolves a creator overload into <paramref name="routine"/> (returning null so the caller
-    /// continues to the standard call path). Returns null when the type is not found.
-    /// </summary>
-    private string? TryEmitNamedTypeConstruction(StringBuilder sb, string functionName,
-        List<Expression> arguments, List<TypeExpression>? typeArguments, bool routesToUserCreate,
-        ref RoutineInfo? routine)
-    {
-        TypeSymbol? calledType = LookupTypeInCurrentModule(name: functionName);
-        if (calledType == null)
-        {
-            return null;
-        }
-
-        // Direct named-field construction: when all arg names match field names exactly,
-        // emit struct construction directly (avoids create infinite recursion).
-        if (calledType is RecordTypeSymbol { MemberVariables.Count: > 0 } record &&
-            ArgumentsMatchFields(arguments: arguments, fields: record.MemberVariables))
-        {
-            return EmitRecordConstruction(sb: sb, record: record, arguments: arguments);
-        }
-
-        // Zero-field record construction: materialize the empty struct value directly.
-        if (calledType is RecordTypeSymbol { MemberVariables.Count: 0 } emptyRecord &&
-            arguments.Count == 0)
-        {
-            return EmitRecordConstruction(sb: sb, record: emptyRecord, arguments: arguments);
-        }
-
-        if (!routesToUserCreate &&
-            calledType is EntityTypeSymbol { MemberVariables.Count: > 0 } entity &&
-            ArgumentsMatchFields(arguments: arguments, fields: entity.MemberVariables))
-        {
-            return EmitEntityConstruction(sb: sb, entity: entity, arguments: arguments);
-        }
-
-        if (calledType is CrashableTypeSymbol crashable &&
-            ArgumentsMatchFields(arguments: arguments, fields: crashable.MemberVariables))
-        {
-            return EmitCrashableConstruction(sb: sb, crashable: crashable, arguments: arguments);
-        }
-
-        // Zero-arg entity construction: validate that a zero-arg creator exists.
-        if (calledType is EntityTypeSymbol && arguments.Count == 0)
-        {
-            RoutineInfo? creator = _registry.LookupCreatorOverload(type: calledType,
-                argTypes: new List<TypeSymbol>());
-            if (!(creator is { Parameters.Count: 0 }))
-            {
-                throw new InvalidOperationException(
-                    message:
-                    $"No zero-arg constructor found for entity type '{calledType.Name}'. " +
-                    "Entity types require a constructor for zero-argument construction.");
-            }
-        }
-
-        // Try to find a creator overload (covers conversion constructors).
-        var semanticArgTypes = arguments.Select(selector: arg => GetExpressionType(expr: arg))
-                                        .Where(predicate: t => t != null)
-                                        .Cast<TypeSymbol>()
-                                        .ToList();
-
-        TypeSymbol creatorOwnerType =
-            ResolveCreatorOwnerType(calledType: calledType, typeArguments: typeArguments);
-
-        routine =
-            _registry.LookupCreatorOverload(type: creatorOwnerType, argTypes: semanticArgTypes) ??
-            _registry.LookupCreatorOverload(type: calledType, argTypes: semanticArgTypes);
-
-        if (routine == null &&
-            calledType is RecordTypeSymbol { MemberVariables.Count: 1 } singleRecord &&
-            arguments is [NamedArgumentExpression])
-        {
-            return EmitRecordConstruction(sb: sb, record: singleRecord, arguments: arguments);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// When explicit type arguments are provided and the called type is a generic definition,
-    /// resolves to the concrete monomorphized instance so the creator lookup finds the right overload.
-    /// </summary>
-    private TypeSymbol ResolveCreatorOwnerType(TypeSymbol calledType,
-        List<TypeExpression>? typeArguments)
-    {
-        if (!calledType.IsGenericDefinition || typeArguments is not { Count: > 0 })
-        {
-            return calledType;
-        }
-
-        var resolvedArgs = typeArguments
-                          .Select(selector: ta => ResolveTypeExpression(typeExpr: ta))
-                          .Where(predicate: t => t != null)
-                          .Cast<TypeSymbol>()
-                          .ToList();
-        return resolvedArgs.Count == typeArguments.Count
-            ? _registry.GetOrCreateResolution(genericDef: calledType, typeArguments: resolvedArgs)
-            : calledType;
-    }
-
-    /// <summary>
-    /// Decides whether a 1-arg construction of a `@llvm("...")` record should be inlined as
-    /// a scalar cast / reinterpret instead of dispatching to its `create` routine.
-    /// Inline when no create was resolved, OR when the resolved routine's parameter LLVM
-    /// type differs from the wrapper's backend type (a scalar primitive cast like U64(s8)).
-    /// Otherwise call the routine — same LLVM type with a resolved create indicates a real
-    /// conversion (e.g. CStr.create(from: Accessing[Text])), which a reinterpret would skip.
-    /// </summary>
-    private bool ShouldInlineDirectBackendConstruction(RecordTypeSymbol record, Expression arg,
-        RoutineInfo? resolvedRoutine)
-    {
-        // No creator resolved -> memberwise / synthesized construction; inline the backend value.
-        if (resolvedRoutine == null)
-        {
-            return true;
-        }
-
-        TypeSymbol? argType = GetExpressionType(expr: arg);
-        if (argType == null)
-        {
-            return false;
-        }
-
-        // When SA resolved a real single-parameter creator routine, that routine IS the conversion.
-        // Its body handles every backend shape correctly — scalar casts for @llvm primitives, and
-        // BID/IEEE encoding for carrier records (B128/F256/D32/D64/D128/Decimal). Honor it —
-        // never inline a scalar cast that would bypass the encoding and corrupt carrier values.
-        // The backend must not re-decide a conversion the resolver already settled.
-        if (resolvedRoutine is { IsSynthesized: false, IsCreator: true, Parameters.Count: >= 1 } &&
-            resolvedRoutine.Parameters.Skip(count: 1).All(predicate: p => p.HasDefaultValue))
-        {
-            TypeSymbol? paramType = resolvedRoutine.Parameters[index: 0].Type;
-            if (paramType != null && (paramType.FullName == argType.FullName ||
-                                      paramType.TypeArguments is { Count: 1 } pta &&
-                                      pta[index: 0].FullName == argType.FullName))
-            {
-                return false;
-            }
-        }
-
-        // Otherwise the resolved routine is synthesized or a mismatched overload (e.g. SA's
-        // synthesized U64(Address) landing on U64.create(S8)). A direct backend reinterpret /
-        // scalar cast is the right lowering when the LLVM shapes coincide (no-op reinterpret) or
-        // when the source is itself @llvm-primitive; a non-primitive source must go through its
-        // routine.
-        if (GetLlvmType(type: record) == GetLlvmType(type: argType))
-        {
-            return true;
-        }
-
-        return argType is RecordTypeSymbol { BackendType: not null };
-    }
-
-    /// <summary>
     /// Generates code for a memberRoutine call on an object.
     /// The object becomes the implicit 'me' parameter.
     /// </summary>
@@ -512,18 +241,6 @@ public partial class LlvmEmitter
         if (loweringKind == CallLoweringKind.Unknown)
         {
             loweringKind = CallLoweringKind.DirectMemberRoutine;
-        }
-
-        // Method-form conversion `x.Type()` whose reader is a bare reinterpret with no callable creator
-        // (SA left ResolvedRoutine null — e.g. a choice receiver's `S32(from: T) needs ChoiceType T`, a
-        // no-op reinterpret). Emit it EXACTLY as free-form `Type(x)` does — the backend-record construction
-        // that inlines the reinterpret — with the receiver as the sole arg. Done before the receiver is
-        // emitted below so it is evaluated once. Numeric/text conversions keep a resolved creator and skip this.
-        if (loweringKind == CallLoweringKind.TypeConstructor && resolvedRoutine == null &&
-            _registry.LookupType(name: member.MemberName) is RecordTypeSymbol { BackendType: not null }
-                convTarget)
-        {
-            return EmitRecordConstruction(sb: sb, record: convTarget, arguments: [member.Object]);
         }
 
         // Dynamic call through a callable FIELD on the receiver (e.g. `me.predicate(item)` in
@@ -1566,29 +1283,6 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Validate annotated constructor or conversion as part of this compiler phase.
-    /// </summary>
-    private void ValidateAnnotatedConstructorOrConversion(string functionName,
-        List<Expression> arguments, CallLoweringKind loweringKind, TypeSymbol? constructedType)
-    {
-        if (loweringKind != CallLoweringKind.Unknown || constructedType != null ||
-            arguments.Count != 1)
-        {
-            return;
-        }
-
-        TypeSymbol? calledType = LookupTypeInCurrentModule(name: functionName);
-        if (calledType is RecordTypeSymbol { BackendType: not null })
-        {
-            throw new InvalidOperationException(
-                message:
-                $"Direct-backend conversion/constructor '{functionName}' reached LLVM codegen without lowering metadata. " +
-                "Classify it during semantic analysis.");
-        }
-
-    }
-
-    /// <summary>
     /// The free call's routine as the analyzer or monomorphization stamped it. A call left without one is
     /// a construction (<c>ConstructedType</c>) or a routine value, which the caller handles; the emitter
     /// never looks a routine up by name.
@@ -1904,77 +1598,6 @@ public partial class LlvmEmitter
         return -1;
     }
 
-    private static bool ArgumentsMatchFields(List<Expression> arguments,
-        List<MemberVariableInfo> fields)
-    {
-        return arguments.Count == fields.Count && arguments.All(predicate: argument =>
-            argument is NamedArgumentExpression named &&
-            fields.Any(predicate: field => field.Name == named.Name));
-    }
-
-    private string? TryEmitAnnotatedConstruction(StringBuilder sb, List<Expression> arguments,
-        RoutineInfo? resolvedRoutine, TypeSymbol? constructedType, CallLoweringKind loweringKind,
-        bool routesToUserCreate)
-    {
-        // A synthesized ALL-FIELDS memberwise creator has NO body — it exists only so SA can resolve
-        // `Type(...)` construction (e.g. `throw VerificationFailedError()`, classified as a DirectRoutine
-        // call with a null ConstructedType). Codegen MUST inline the field-init; emitting a call would
-        // reference an undefined symbol. Body-bearing synthesized creators (numeric conversions, variant
-        // extractors) take NON-field params, so the params-match-fields test below excludes them.
-        if (resolvedRoutine is { IsSynthesized: true, IsCreator: true, OwnerType: { } mwOwner } &&
-            MemberwiseCreatorMatchesFields(creator: resolvedRoutine, owner: mwOwner))
-        {
-            switch (mwOwner)
-            {
-                case CrashableTypeSymbol mwCrashable:
-                    return EmitCrashableConstruction(sb: sb,
-                        crashable: mwCrashable,
-                        arguments: arguments);
-                case EntityTypeSymbol mwEntity:
-                    return EmitEntityConstruction(sb: sb, entity: mwEntity, arguments: arguments);
-                case RecordTypeSymbol mwRecord:
-                    return EmitRecordConstruction(sb: sb, record: mwRecord, arguments: arguments);
-            }
-        }
-
-        return loweringKind switch
-        {
-            // ValueConversion (`x.D128()`-style casts) is NOT inlined here: it falls through to the
-            // routine-call path, which resolves `Target.create(from: source)` and calls it. The
-            // creator's body is the conversion (scalar cast for primitives, BID/IEEE encode for
-            // carrier records) — the backend must not re-decide it with a scalar cast.
-            CallLoweringKind.CollectionConstruction when constructedType != null =>
-                EmitCollectionLiteralConstructor(sb: sb,
-                    resolvedType: constructedType,
-                    arguments: arguments),
-            CallLoweringKind.TypeConstructor or CallLoweringKind.WrapperConstruction when
-                constructedType is RecordTypeSymbol { BackendType: not null } directRecord &&
-                arguments.Count == 1 &&
-                ShouldInlineDirectBackendConstruction(record: directRecord,
-                    arg: arguments[index: 0],
-                    resolvedRoutine: resolvedRoutine) => EmitRecordConstruction(sb: sb,
-                    record: directRecord,
-                    arguments: arguments),
-            CallLoweringKind.TypeConstructor or CallLoweringKind.WrapperConstruction when
-                constructedType is RecordTypeSymbol { MemberVariables.Count: > 0 } ctorRecord &&
-                ArgumentsMatchFields(arguments: arguments, fields: ctorRecord.MemberVariables) =>
-                EmitRecordConstruction(sb: sb, record: ctorRecord, arguments: arguments),
-            CallLoweringKind.TypeConstructor or CallLoweringKind.WrapperConstruction when
-                !routesToUserCreate &&
-                constructedType is EntityTypeSymbol { MemberVariables.Count: > 0 } ctorEntity &&
-                ArgumentsMatchFields(arguments: arguments, fields: ctorEntity.MemberVariables) =>
-                EmitEntityConstruction(sb: sb, entity: ctorEntity, arguments: arguments),
-            CallLoweringKind.TypeConstructor or CallLoweringKind.WrapperConstruction when
-                constructedType is CrashableTypeSymbol ctorCrashable &&
-                ArgumentsMatchFields(arguments: arguments, fields: ctorCrashable.MemberVariables)
-                => EmitCrashableConstruction(sb: sb,
-                    crashable: ctorCrashable,
-                    arguments: arguments),
-            _ => null
-        };
-
-    }
-
     private string EmitFreeCallInstruction(StringBuilder sb, List<Expression> arguments,
         RoutineInfo? routine, string functionName, bool isFailableCallSyntax,
         List<string> argValues, List<string> argTypes)
@@ -2187,9 +1810,7 @@ internal sealed record RoutineCallRequest(
     List<Expression> Arguments,
     RoutineInfo? ResolvedRoutine,
     TypeSymbol? ResolvedReturnType,
-    List<TypeExpression>? TypeArguments,
-    CallLoweringKind LoweringKind,
-    TypeSymbol? ConstructedType)
+    List<TypeExpression>? TypeArguments)
 {
     /// <summary>
     /// True when the call site used the failable `!` marker. The <see cref="FunctionName"/> is BARE

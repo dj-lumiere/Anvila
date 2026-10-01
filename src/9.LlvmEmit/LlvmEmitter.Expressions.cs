@@ -53,6 +53,11 @@ public partial class LlvmEmitter
                     dispatch: dispatch),
                 WrapperProjectionExpression projection => EmitWrapperProjection(sb: sb,
                     projection: projection),
+                BackendCastExpression cast => EmitBackendScalarCast(sb: sb,
+                    value: EmitExpression(sb: sb, expr: cast.Value),
+                    sourceType: GetExpressionType(expr: cast.Value),
+                    targetType: cast.ResolvedType ??
+                                throw new InvalidOperationException(message: "A backend cast has no target type.")),
                 ClosureValueExpression closure => EmitClosureValueExpression(sb: sb, closure: closure),
                 // Named arguments appear inside synthesized AST bodies (e.g., me.eq(you: you)).
                 // The name is irrelevant to codegen -> just emit the inner value positionally.
@@ -286,74 +291,22 @@ public partial class LlvmEmitter
         string tmp = NextTemp();
         EmitLine(sb: sb, line: $"  {tmp} = load {llvmType}, ptr %{llvmName}.addr");
 
-        // Runtime use-after-steal net, marked by StealGuardLoweringPass: a moved-out slot holds null,
-        // so a guarded load crashes loudly instead of dereferencing a stale pointer.
-        if (identifier.StealGuarded)
+        // Runtime use-after-steal net, written by StealGuardLoweringPass: a moved-out slot holds null, and
+        // a null load makes the guard's crash_report call instead of handing out a stale pointer.
+        if (identifier.StealGuardCrash is { } crash)
         {
-            EmitUseAfterStealGuard(sb: sb, loadedPtr: tmp, loc: identifier.Location);
+            string isNull = NextTemp();
+            EmitLine(sb: sb, line: $"  {isNull} = icmp eq ptr {tmp}, null");
+            string crashLabel = NextLabel(prefix: "uas.crash");
+            string okLabel = NextLabel(prefix: "uas.ok");
+            EmitLine(sb: sb, line: $"  br i1 {isNull}, label %{crashLabel}, label %{okLabel}");
+            EmitLine(sb: sb, line: $"{crashLabel}:");
+            EmitExpression(sb: sb, expr: crash);
+            EmitLine(sb: sb, line: "  unreachable");
+            EmitLine(sb: sb, line: $"{okLabel}:");
         }
 
         return tmp;
-    }
-
-    /// <summary>
-    /// Emits the use-after-steal null-guard for an already-loaded entity pointer: if <paramref name="loadedPtr"/>
-    /// is null (the slot was null-stamped by a prior <c>steal</c>), branch to a crash block that calls
-    /// <c>@rf_crash</c> with a <c>UseAfterStealError</c> and a fixed message, then <c>unreachable</c>;
-    /// otherwise fall through to the ok block and continue. The loaded value dominates the ok block
-    /// (defined before the branch), so callers can keep using it unchanged. Mirrors the crash marshalling
-    /// of the failable-absent path (type/file as cstr i64 pointers, message as a Text codepoint buffer).
-    /// </summary>
-    private void EmitUseAfterStealGuard(StringBuilder sb, string loadedPtr, SourceLocation loc)
-    {
-        string isNull = NextTemp();
-        EmitLine(sb: sb, line: $"  {isNull} = icmp eq ptr {loadedPtr}, null");
-        string crashLabel = NextLabel(prefix: "uas.crash");
-        string okLabel = NextLabel(prefix: "uas.ok");
-        EmitLine(sb: sb, line: $"  br i1 {isNull}, label %{crashLabel}, label %{okLabel}");
-        EmitLine(sb: sb, line: $"{crashLabel}:");
-        EmitUseAfterStealCrash(sb: sb, loc: loc);
-        EmitLine(sb: sb, line: "  unreachable");
-        EmitLine(sb: sb, line: $"{okLabel}:");
-    }
-
-    /// <summary>
-    /// Emits the <c>@rf_crash</c> call for a use-after-steal violation. Type name / filename go through
-    /// as cstr byte pointers (i64), the message as a UTF-32 Text codepoint buffer (data ptr + count),
-    /// exactly as the failable-absent crash path marshals it. <c>@rf_crash</c> is a Core stdlib C-extern;
-    /// its forward declaration is registered here defensively so the guard is self-contained even in a
-    /// routine that references no other crash site.
-    /// </summary>
-    private void EmitUseAfterStealCrash(StringBuilder sb, SourceLocation loc)
-    {
-        _rfRoutineDeclarations[key: "rf_crash"] =
-            "declare void @rf_crash(i64, i64, i64, i64, i32, i32, i64, i64)";
-
-        const string typeName = "UseAfterStealError";
-        const string message = "used an entity after it was moved out with steal";
-
-        string typeCStr = EmitCStringConstant(value: typeName);
-        string fileCStr = EmitCStringConstant(value: loc.FileName);
-        string msgTextPtr = EmitStringLiteralGlobal(value: message);
-
-        string typeNameAsInt = NextTemp();
-        EmitLine(sb: sb, line: $"  {typeNameAsInt} = ptrtoint ptr {typeCStr} to i64");
-        string fileAsInt = NextTemp();
-        EmitLine(sb: sb, line: $"  {fileAsInt} = ptrtoint ptr {fileCStr} to i64");
-        // Message: extract the codepoint buffer ptr (field 0) + count (field 1) from the Text-shaped global.
-        string msgDataPtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {msgDataPtr} = load ptr, ptr {msgTextPtr}");
-        string msgCountField = NextTemp();
-        EmitLine(sb: sb,
-            line: $"  {msgCountField} = getelementptr {{ptr, i64}}, ptr {msgTextPtr}, i32 0, i32 1");
-        string msgCount = NextTemp();
-        EmitLine(sb: sb, line: $"  {msgCount} = load i64, ptr {msgCountField}");
-        string msgAsInt = NextTemp();
-        EmitLine(sb: sb, line: $"  {msgAsInt} = ptrtoint ptr {msgDataPtr} to i64");
-
-        EmitLine(sb: sb,
-            line:
-            $"  call void @rf_crash(i64 {typeNameAsInt}, i64 {typeName.Length}, i64 {fileAsInt}, i64 {loc.FileName.Length}, i32 {loc.Line}, i32 {loc.Column}, i64 {msgAsInt}, i64 {msgCount})");
     }
 
     /// <summary>
@@ -443,9 +396,7 @@ public partial class LlvmEmitter
                     Arguments: call.Arguments,
                     ResolvedRoutine: moduleRoutine,
                     ResolvedReturnType: call.ResolvedType,
-                    TypeArguments: call.TypeArguments,
-                    LoweringKind: call.LoweringKind,
-                    ConstructedType: call.ConstructedType) { IsFailable = call.IsFailable });
+                    TypeArguments: call.TypeArguments) { IsFailable = call.IsFailable });
         }
 
         return call.Callee switch
@@ -462,9 +413,7 @@ public partial class LlvmEmitter
                     Arguments: call.Arguments,
                     ResolvedRoutine: call.ResolvedRoutine,
                     ResolvedReturnType: call.ResolvedType,
-                    TypeArguments: call.TypeArguments,
-                    LoweringKind: call.LoweringKind,
-                    ConstructedType: call.ConstructedType) { IsFailable = call.IsFailable }),
+                    TypeArguments: call.TypeArguments) { IsFailable = call.IsFailable }),
             _ => throw new NotImplementedException(
                 message: $"Cannot emit call for callee type: {call.Callee.GetType().Name}")
         };

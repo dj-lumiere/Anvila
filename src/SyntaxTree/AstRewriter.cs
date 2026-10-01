@@ -428,6 +428,7 @@ public abstract class AstRewriter
             GenericMemberRoutineCallExpression e => VisitGenericMemberRoutineCall(e: e),
             GenericMemberExpression e => VisitGenericMember(e: e),
             WrapperProjectionExpression e => VisitWrapperProjection(e: e),
+            BackendCastExpression e => VisitBackendCast(e: e),
             ClosureValueExpression e => VisitClosureValue(e: e),
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
@@ -547,6 +548,20 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: w, objB: e.Wrapper)
             ? e
             : e with { Wrapper = w };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="BackendCastExpression"/> by visiting the converted value.
+    /// Returns the original node when the value is unchanged.
+    /// </summary>
+    /// <param name="e">The backend cast to rewrite.</param>
+    /// <returns>The rewritten cast, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitBackendCast(BackendCastExpression e)
+    {
+        Expression v = VisitExpression(expr: e.Value);
+        return ReferenceEquals(objA: v, objB: e.Value)
+            ? e
+            : e with { Value = v };
     }
 
     /// <summary>

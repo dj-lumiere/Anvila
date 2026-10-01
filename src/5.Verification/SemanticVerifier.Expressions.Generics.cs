@@ -30,11 +30,6 @@ public sealed partial class SemanticVerifier
             typeArgs.Add(item: ResolveType(typeExpr: typeArg));
         }
 
-        if (generic.IsCollectionLiteral)
-        {
-            generic.LoweringKind = CallLoweringKind.CollectionConstruction;
-        }
-
         // Check if this is a generic type constructor call (e.g., Hijacked[U8](addr))
         // The parser creates GenericMemberRoutineCallExpression for both Type[Args](args) and obj.MemberRoutine[Args](args).
         // A FAILABLE construction `Type![Args](args)` parses with a BARE memberRoutineName equal to the
@@ -530,14 +525,10 @@ public sealed partial class SemanticVerifier
         TypeSymbol resolvedType = _registry.GetOrCreateResolution(genericDef: typeSymbol,
             typeArguments: typeArgs.ToList());
         generic.ConstructedType = resolvedType;
-        generic.LoweringKind = ClassifyConstruction(type: resolvedType,
-            isCollectionLiteral: generic.IsCollectionLiteral);
-        if (!generic.IsCollectionLiteral)
-        {
-            ValidateZeroFilledArray(constructed: resolvedType,
-                argumentCount: generic.Arguments.Count,
-                location: generic.Location);
-        }
+        generic.LoweringKind = ClassifyConstruction(type: resolvedType);
+        ValidateZeroFilledArray(constructed: resolvedType,
+            argumentCount: generic.Arguments.Count,
+            location: generic.Location);
 
         // For field-init style (named args matching field names), pre-compute a field-name →
         // field-type map so literals see the field's declared type as their contextual expected type.

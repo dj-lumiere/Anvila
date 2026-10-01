@@ -21,8 +21,6 @@ namespace Builder.Desugaring.Passes;
 ///
 /// <para>Kept as <see cref="GenericMemberRoutineCallExpression"/> (not lowered):</para>
 /// <list type="bullet">
-/// <item>Collection literals -> <c>IsCollectionLiteral == true</c>;
-/// codegen emits <c>create + add_last</c> loops.</item>
 /// <item>Unresolved calls -> <c>ResolvedRoutine == null</c> and no safe lowering target
 /// has been determined yet.</item>
 /// </list>
@@ -221,7 +219,6 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         rewritten.ResolvedRoutine = e.ResolvedRoutine;
         rewritten.LoweringKind = e.LoweringKind;
         rewritten.ConstructedType = e.ConstructedType;
-        rewritten.IsCollectionLiteral = e.IsCollectionLiteral;
         rewritten.TypeArguments = e.TypeArguments;
         rewritten.ResolvedType = e.ResolvedType;
         return rewritten;
@@ -361,12 +358,6 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     /// </summary>
     private Expression? TryLowerGenericCall(GenericMemberRoutineCallExpression gmc)
     {
-        // Collection literals need special codegen (create + add_last loop).
-        if (gmc.IsCollectionLiteral)
-        {
-            return null;
-        }
-
         // `Array[N](a, b, ...)`: an array built from its elements, with the element type left to the
         // elements. It is the array literal `[a, b, ...]` of length N (analysis infers `Array[T, N]`).
         if (gmc is { Object: IdentifierExpression { Name: "Array" }, MemberRoutineName: "Array",
@@ -532,8 +523,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         bool isTypeConstruction = gmc.ConstructedType != null ||
                                   gmc.LoweringKind is CallLoweringKind.TypeConstructor
                                       or CallLoweringKind.WrapperConstruction
-                                      or CallLoweringKind.ValueConversion
-                                      or CallLoweringKind.CollectionConstruction;
+                                      or CallLoweringKind.ValueConversion;
         return new CallExpression(
             // Callee is the type name (without the failable `!`); codegen constructs via
             // ConstructedType/ResolvedRoutine, so the name only identifies the type.

@@ -306,10 +306,10 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
 
     /// <summary>
     /// Set by <see cref="Builder.Lowering.Passes.StealGuardLoweringPass"/> on a read of a local the
-    /// routine moves out with <c>steal</c> somewhere: the emitter null-checks the loaded handle and
-    /// crashes with <c>UseAfterStealError</c> when the slot was already emptied.
+    /// routine moves out with <c>steal</c> somewhere: the <c>crash_report</c> call the emitter makes when
+    /// the loaded handle is null (the slot was already emptied by the move).
     /// </summary>
-    public bool StealGuarded { get; set; }
+    public Expression? StealGuardCrash { get; set; }
 
     /// <summary>
     /// Set by <see cref="Builder.Lowering.Passes.StealGuardLoweringPass"/> on such a read in a consuming
@@ -476,12 +476,6 @@ public record CallExpression(
     /// construction rather than a plain routine/memberRoutine invocation.
     /// </summary>
     public TypeSymbol? ConstructedType { get; set; }
-
-    /// <summary>
-    /// When true, this call is a collection literal constructor (e.g., List(1, 2, 3), Set(1, 2, 3)).
-    /// Codegen should emit create() + repeated add/add_last calls instead of a normal function call.
-    /// </summary>
-    public bool IsCollectionLiteral { get; set; }
 
     /// <summary>
     /// memberRoutine-level type arguments, set by <c>GenericCallLoweringPass</c> when lowering a
@@ -1083,12 +1077,6 @@ public record GenericMemberRoutineCallExpression(
     }
 
     /// <summary>
-    /// When true, this call is a collection literal constructor (e.g., List[S64](1, 2, 3)).
-    /// Codegen should emit create() + repeated add/add_last calls instead of a normal type constructor.
-    /// </summary>
-    public bool IsCollectionLiteral { get; set; }
-
-    /// <summary>
     /// The fully resolved RoutineInfo from semantic analysis (with owner-level and memberRoutine-level
     /// generic substitution applied). Set for generic memberRoutine calls on objects (e.g., obj.MemberRoutine[U](args)).
     /// </summary>
@@ -1273,6 +1261,25 @@ public record WrapperProjectionExpression(
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
         return visitor.VisitWrapperProjectionExpression(node: this);
+    }
+}
+
+/// <summary>
+/// A value converted to a backend-represented record (one declared with <c>@llvm("...")</c>), produced by
+/// lowering (never parsed): <c>ConstructionLoweringPass</c> writes a construction that only changes the
+/// value's representation (<c>U32(character)</c>, <c>S32(choice)</c>, <c>ByteSize(count)</c>) as this node
+/// instead of a creator call. Its resolved type is the target record. The emitter passes the value through
+/// when both representations are the same and otherwise converts it between them (widen, narrow, int and
+/// float, pointer and int).
+/// </summary>
+/// <param name="Value">The value to convert.</param>
+/// <param name="Location">Source location of the construction.</param>
+public record BackendCastExpression(Expression Value, SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitBackendCastExpression(node: this);
     }
 }
 

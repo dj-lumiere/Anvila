@@ -882,6 +882,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
     /// <inheritdoc/>
+    public string VisitBackendCastExpression(BackendCastExpression node)
+    {
+        return $"#backend_cast({node.Value.Accept(visitor: this)}, {node.ResolvedType?.Name})";
+    }
+
+    /// <inheritdoc/>
     public string VisitClosureValueExpression(ClosureValueExpression node)
     {
         return $"#closure({node.Function.Accept(visitor: this)}, {node.Bound.Accept(visitor: this)})";
