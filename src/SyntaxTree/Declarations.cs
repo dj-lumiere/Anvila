@@ -137,6 +137,13 @@ public record VariableDeclaration(
     /// </summary>
     public TypeSymbol? LocalType { get; set; }
 
+    /// <summary>
+    /// True when the local's storage must hold zero before its declaration runs, stamped at Phase 9 by
+    /// <c>LocalStorageLoweringPass</c>: it holds an owned handle that teardown may reach on a path that leaves
+    /// before the declaration.
+    /// </summary>
+    public bool StartsZeroed { get; set; }
+
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

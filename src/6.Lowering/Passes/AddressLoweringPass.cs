@@ -59,28 +59,30 @@ internal sealed class AddressLoweringPass(TypeRegistry registry) : AstRewriter
                     Location: call.Location) { ResolvedType = call.ResolvedType };
 
             case RuntimeContract.RawPointer.Hijack
-                when receiver is RecordTypeSymbol { BackendType: null or not "ptr" }:
-                return new AddressOfExpression(Target: member.Object, Location: call.Location)
-                {
-                    ResolvedType = call.ResolvedType
-                };
+                when receiver is RecordTypeSymbol { BackendType: null or not "ptr" } record:
+                return AddressOf(storage: member.Object, type: record, location: call.Location);
 
-            case "get_address" when receiver is RecordTypeSymbol { BackendType: null }:
-            {
-                var address = new AddressOfExpression(Target: member.Object, Location: call.Location)
-                {
-                    ResolvedType = registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked,
-                        innerType: receiver,
-                        isReadOnly: false)
-                };
-                return new BackendCastExpression(Value: address, Location: call.Location)
+            case "get_address" when receiver is RecordTypeSymbol { BackendType: null } record:
+                return new BackendCastExpression(
+                    Value: AddressOf(storage: member.Object, type: record, location: call.Location),
+                    Location: call.Location)
                 {
                     ResolvedType = call.ResolvedType
                 };
-            }
 
             default:
                 return visited;
         }
+    }
+
+    /// <summary>The address of <paramref name="storage"/>, typed <c>Hijacked[T]</c> of its type.</summary>
+    private AddressOfExpression AddressOf(Expression storage, RecordTypeSymbol type, SourceLocation location)
+    {
+        return new AddressOfExpression(Target: storage, Location: location)
+        {
+            ResolvedType = registry.GetOrCreateWrapperType(wrapperName: RuntimeContract.Hijacked,
+                innerType: type,
+                isReadOnly: false)
+        };
     }
 }

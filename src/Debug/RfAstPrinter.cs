@@ -863,6 +863,31 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
 
     /// <inheritdoc/>
+    public string VisitZeroValueExpression(ZeroValueExpression node)
+    {
+        return $"#zero({node.ResolvedType?.Name})";
+    }
+
+    /// <inheritdoc/>
+    public string VisitEntityAllocationExpression(EntityAllocationExpression node)
+    {
+        return $"#allocate({node.ResolvedType?.Name})";
+    }
+
+    /// <inheritdoc/>
+    public string VisitConstantDataExpression(ConstantDataExpression node)
+    {
+        return $"#constant_data[{string.Join(separator: ", ", values: node.Elements)}]";
+    }
+
+    /// <inheritdoc/>
+    public string VisitTaggedCreatorExpression(TaggedCreatorExpression node)
+    {
+        string payload = node.Payload?.Accept(visitor: this) ?? "";
+        return $"#tagged({node.Tag.Accept(visitor: this)}, {payload})";
+    }
+
+    /// <inheritdoc/>
     public string VisitCarrierPayloadExpression(CarrierPayloadExpression node)
     {
         return

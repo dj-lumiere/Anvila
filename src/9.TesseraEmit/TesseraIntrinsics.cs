@@ -182,7 +182,10 @@ internal sealed class TesseraIntrinsics
         string to = _typeText(arg: _resultType);
         return (Kind(text: from), Kind(text: to)) switch
         {
-            ('p', 'p') => Argument(index: 0),
+            // A typed pointer @T is reached from another pointer by casting it, an untyped Addr takes any pointer.
+            ('p', 'p') => to is ['@', .. var pointee] && from != to
+                ? $"{Argument(index: 0)}.cast<{pointee}>()"
+                : Argument(index: 0),
             ('p', 'i') => $"ptrtoint<{from}, {to}>({Argument(index: 0)})",
             ('i', 'p') => $"inttoptr<{from}, {to}>({Argument(index: 0)})",
             ('a', 'p') => _spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type),

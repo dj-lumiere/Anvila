@@ -2804,33 +2804,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             variantStatus = FailableVariant.TryBool;
         }
 
-        // When there is a carrier, the RoutineInfo.ReturnType is the inner type T,
-        // not the carrier.
+        // The variant returns its carrier (Check[T], Lookup[T], Bool), as a non-generic variant does: its
+        // RoutineInfo already says so, and the backends read the return type from it.
         RoutineInfo emitInfo = concreteInfo;
-        if (variantStatus != null && variantInnerType != null)
-        {
-            emitInfo = new RoutineInfo(name: concreteInfo.Name)
-            {
-                Kind = concreteInfo.Kind,
-                OwnerType = concreteInfo.OwnerType,
-                Parameters = concreteInfo.Parameters,
-                ReturnType = variantInnerType,
-                IsFailable = concreteInfo.IsFailable,
-                DeclaredMutation = concreteInfo.DeclaredMutation,
-                MutationCategory = concreteInfo.MutationCategory,
-                Visibility = concreteInfo.Visibility,
-                Location = concreteInfo.Location,
-                Module = concreteInfo.Module,
-                Annotations = concreteInfo.Annotations,
-                CallingConvention = concreteInfo.CallingConvention,
-                IsVariadic = concreteInfo.IsVariadic,
-                IsDangerous = concreteInfo.IsDangerous,
-                AsyncStatus = concreteInfo.AsyncStatus,
-                FailableVariant = variantStatus.Value,
-                RecoveryOf = concreteInfo.RecoveryOf,
-                Recovery = concreteInfo.Recovery
-            };
-        }
 
         // Pre-built variant body from ErrorHandlingVariantPass (keyed by generic memberRoutine RegistryKey)
         if (ctx.VariantBodies.TryGetValue(key: genMemberRoutine.RegistryKey,

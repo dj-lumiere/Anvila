@@ -179,16 +179,15 @@ public partial class LlvmEmitter
         _localVariables[key: varDecl.Name] = varType;
         _localVarLlvmNames[key: varDecl.Name] = uniqueName;
 
-        ZeroInitOwnedLocalSlot(varDecl: varDecl, varType: varType, varPtr: varPtr);
+        // A local holding an owned handle starts zero at entry (LocalStorageLoweringPass).
+        if (varDecl.StartsZeroed)
+        {
+            EmitLine(sb: _currentRoutineEntryAllocas, line: $"  store {llvmType} {GetZeroValue(type: varType)}, ptr {varPtr}");
+        }
 
-        // Store initial value if present
+        // A declaration without a value leaves the slot alone (a lateinit one has its placeholder value).
         if (varDecl.Initializer == null)
         {
-            EmitLateInitPlaceholder(sb: sb,
-                varDecl: varDecl,
-                varType: varType,
-                llvmType: llvmType,
-                varPtr: varPtr);
             return;
         }
 
@@ -252,58 +251,6 @@ public partial class LlvmEmitter
 
         _varNameCounts[key: name] = 1;
         return name;
-    }
-
-    /// <summary>
-    /// Zero-initializes the entry slot of an owned local: a bare entity built by a constructor (or a
-    /// lateinit placeholder) and an RC-wrapper local. A declaration inside a not-taken branch still has
-    /// its slot, and the use-after-steal null guard and teardown both read it, so it must start null.
-    /// </summary>
-    private void ZeroInitOwnedLocalSlot(VariableDeclaration varDecl, TypeSymbol varType, string varPtr)
-    {
-        if (varType is EntityTypeSymbol && (IsEntityConstructorCall(expr: varDecl.Initializer) ||
-                                            varDecl.IsLateInit && varDecl.Initializer == null))
-        {
-            EmitLine(sb: _currentRoutineEntryAllocas, line: $"  store ptr null, ptr {varPtr}");
-            return;
-        }
-
-        if (varType is RecordTypeSymbol rcWrapRecord &&
-            GetGenericBaseName(type: rcWrapRecord) is { } rcWrapBase &&
-            RcWrapperBaseNames.Contains(item: rcWrapBase))
-        {
-            EmitLine(sb: _currentRoutineEntryAllocas,
-                line: $"  store {GetLlvmType(type: rcWrapRecord)} zeroinitializer, ptr {varPtr}");
-        }
-    }
-
-    /// <summary>
-    /// Emits the eager allocation for a <c>lateinit var</c> with no initializer: a real heap block
-    /// for entities (so the binding is immediately valid/borrowable and teardown frees a real
-    /// allocation), or a zeroed value slot otherwise. No-op for a non-lateinit uninitialized decl.
-    /// </summary>
-    private void EmitLateInitPlaceholder(StringBuilder sb, VariableDeclaration varDecl,
-        TypeSymbol varType, string llvmType, string varPtr)
-    {
-        if (!varDecl.IsLateInit)
-        {
-            return;
-        }
-
-        // The block must be calloc-backed (rf_allocate_dynamic, NOT _uninit): destroy runs on the
-        // placeholder and walks its fields — zeroed fields are null-safe to free, garbage fields are
-        // wild pointers. Zeroed contents are teardown armor, not a language guarantee.
-        if (varType is EntityTypeSymbol lateInitEntity)
-        {
-            int blockSize = lateInitEntity.HeapBlockSize(pointerSize: _pointerSizeBytes);
-            string placeholder = NextTemp();
-            EmitLine(sb: sb,
-                line: $"  {placeholder} = call ptr @rf_allocate_dynamic(i64 {blockSize})");
-            EmitLine(sb: sb, line: $"  store ptr {placeholder}, ptr {varPtr}");
-            return;
-        }
-
-        EmitLine(sb: sb, line: $"  store {llvmType} {GetZeroValue(type: varType)}, ptr {varPtr}");
     }
 
     /// <summary>
@@ -663,11 +610,6 @@ public partial class LlvmEmitter
     }
 
     #endregion
-
-    /// <summary>RC wrapper base names, whose local slots start zeroed. Single source of truth is
-    /// <see cref="Declaration.RuntimeContract.RcWrapperBaseNames"/>.</summary>
-    private static readonly IReadOnlySet<string> RcWrapperBaseNames =
-        Declaration.RuntimeContract.RcWrapperBaseNames;
 
     // -----------------------------------------------------------------------------
 

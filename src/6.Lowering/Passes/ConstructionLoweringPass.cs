@@ -1,4 +1,7 @@
+using Builder.Declaration;
+using Builder.Tokenizer;
 using SyntaxTree;
+using TypeModel.Enums;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
@@ -20,18 +23,20 @@ namespace Builder.Lowering.Passes;
 /// (a number, a choice, flags) or a pointer turning into a pointer record.</item>
 /// <item>The call itself otherwise: it binds a creator with a body, which builds the value.</item>
 /// </list>
-/// <para>A creator expression that names a <c>create</c> overload becomes the call of that overload, and a
+/// <para>A creator expression that names a <c>create</c> overload becomes the call of that overload, a
 /// creator expression that gives a backend-represented record its one value becomes a
-/// <see cref="BackendCastExpression"/>.</para>
+/// <see cref="BackendCastExpression"/>, and a creator of a variant (one arm and its value) or of a
+/// <c>Check</c>/<c>Lookup</c> carrier (its <c>type_id</c> and payload) becomes a
+/// <see cref="TaggedCreatorExpression"/>.</para>
 ///
 /// <para>Runs at Phase 9 over each body that reaches the emitter, after monomorphization, so every
 /// constructed type is concrete. It runs first there, so the use-after-steal marks see the final
 /// argument positions. The rewrite is idempotent.</para>
 /// </summary>
-internal sealed class ConstructionLoweringPass : AstRewriter
+internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
 {
     /// <summary>Lowers the constructions of one routine body in place.</summary>
-    public static void Run(Statement body)
+    public static void Run(Statement body, TypeRegistry registry)
     {
         // A routine body is a block: its statement list is rewritten in place (the body itself is
         // referenced from several places and cannot be replaced).
@@ -41,7 +46,9 @@ internal sealed class ConstructionLoweringPass : AstRewriter
                 message: $"A routine body must be a block, got {body.GetType().Name}.");
         }
 
-        var pass = new ConstructionLoweringPass();
+        var pass = new ConstructionLoweringPass(u64: registry.LookupType(name: "U64") ??
+                                                     throw new InvalidOperationException(
+                                                         message: "The U64 type is not registered."));
         for (int i = 0; i < block.Statements.Count; i++)
         {
             block.Statements[index: i] = pass.VisitStatement(stmt: block.Statements[index: i]);
@@ -79,7 +86,7 @@ internal sealed class ConstructionLoweringPass : AstRewriter
 
     /// <summary>The call of the <c>create</c> overload a creator expression names, the cast of a
     /// backend-represented record's one value, or the creator expression itself.</summary>
-    private static Expression LowerCreator(CreatorExpression creator)
+    private Expression LowerCreator(CreatorExpression creator)
     {
         if (creator.ResolvedCreatorRoutine is { } routine)
         {
@@ -110,11 +117,93 @@ internal sealed class ConstructionLoweringPass : AstRewriter
                 : creator.ResolvedType
             : creator.ConstructedType;
 
-        return creator is { MemberVariables: [(_, var value)] } &&
-               creator.ConstructedType is RecordTypeSymbol { BackendType: not null } target and
-                   not VariantTypeSymbol
-            ? Cast(value: value, target: target, location: creator.Location)
-            : creator;
+        return creator.ConstructedType switch
+        {
+            VariantTypeSymbol variant => VariantCreator(creator: creator, variant: variant),
+            RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup } carrier =>
+                CarrierCreator(creator: creator, carrier: carrier),
+            RecordTypeSymbol { BackendType: not null } target when creator is { MemberVariables: [(_, var value)] } =>
+                Cast(value: value, target: target, location: creator.Location),
+            RecordTypeSymbol { BackendType: null } or EntityTypeSymbol => WithEveryField(creator: creator),
+            _ => creator
+        };
+    }
+
+    /// <summary>The creator with a value for every field: a field it leaves out (the trailing fields, as the
+    /// values come in field order) gets the zero value of its type.</summary>
+    internal static CreatorExpression WithEveryField(CreatorExpression creator)
+    {
+        List<MemberVariableInfo>? fields = MemberVariablesOf(type: creator.ConstructedType!);
+        if (fields is null || creator.MemberVariables.Count >= fields.Count ||
+            creator.MemberVariables.Count == 0 && creator.ConstructedType is EntityTypeSymbol)
+        {
+            return creator;
+        }
+
+        var values = new List<(string Name, Expression Value)>(collection: creator.MemberVariables);
+        for (int i = values.Count; i < fields.Count; i++)
+        {
+            values.Add(item: (fields[index: i].Name, new ZeroValueExpression(Location: creator.Location)
+            {
+                ResolvedType = fields[index: i].Type
+            }));
+        }
+
+        return creator with { MemberVariables = values };
+    }
+
+    /// <summary>A variant built from one arm and its value: the arm type's <c>type_id</c> and the value. An
+    /// arm without a value (<c>None</c>) has tag 0 and no payload.</summary>
+    private TaggedCreatorExpression VariantCreator(CreatorExpression creator, VariantTypeSymbol variant)
+    {
+        if (creator.MemberVariables is not [(string armName, Expression value)])
+        {
+            throw new InvalidOperationException(
+                message: $"A creator of variant '{variant.Name}' at {creator.Location} gives " +
+                         $"{creator.MemberVariables.Count} values, not one arm.");
+        }
+
+        VariantMemberInfo arm = variant.Members.FirstOrDefault(predicate: m => m.Name == armName) ??
+                                throw new InvalidOperationException(
+                                    message: $"Variant '{variant.Name}' has no arm '{armName}'.");
+        bool empty = arm.Type is null or { IsNone: true };
+        return new TaggedCreatorExpression(
+            Tag: Tag(value: empty
+                    ? 0UL
+                    : TypeIdHelper.ComputeTypeId(fullName: arm.Type!.FullName),
+                location: creator.Location),
+            Payload: empty
+                ? null
+                : value,
+            Location: creator.Location) { ResolvedType = variant };
+    }
+
+    /// <summary>A <c>Check</c>/<c>Lookup</c> carrier built from its fields, given in field order: the
+    /// <c>type_id</c> and, when present, the payload.</summary>
+    private static TaggedCreatorExpression CarrierCreator(CreatorExpression creator, RecordTypeSymbol carrier)
+    {
+        Expression? FieldValue(string name)
+        {
+            int index = carrier.MemberVariables.FindIndex(match: f => f.Name == name);
+            return index >= 0 && index < creator.MemberVariables.Count
+                ? creator.MemberVariables[index: index].Value
+                : null;
+        }
+
+        return new TaggedCreatorExpression(
+            Tag: FieldValue(name: RuntimeContract.Carrier.TypeIdField) ??
+                 throw new InvalidOperationException(
+                     message: $"A creator of '{carrier.FullName}' at {creator.Location} has no type_id."),
+            Payload: FieldValue(name: RuntimeContract.Carrier.PayloadField),
+            Location: creator.Location) { ResolvedType = carrier };
+    }
+
+    private LiteralExpression Tag(ulong value, SourceLocation location)
+    {
+        return new LiteralExpression(Value: value, LiteralType: TokenType.U64Literal, Location: location)
+        {
+            ResolvedType = u64
+        };
     }
 
     /// <summary>The field-by-field construction or the cast a construction call stands for, or null when it

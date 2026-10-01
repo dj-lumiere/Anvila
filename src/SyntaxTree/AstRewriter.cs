@@ -470,6 +470,7 @@ public abstract class AstRewriter
             WrapperProjectionExpression e => VisitWrapperProjection(e: e),
             BackendCastExpression e => VisitBackendCast(e: e),
             AddressOfExpression e => VisitAddressOf(e: e),
+            TaggedCreatorExpression e => VisitTaggedCreator(e: e),
             ClosureValueExpression e => VisitClosureValue(e: e),
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
@@ -589,6 +590,23 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: w, objB: e.Wrapper)
             ? e
             : e with { Wrapper = w };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="TaggedCreatorExpression"/> by visiting its tag and payload.
+    /// Returns the original node when neither changed.
+    /// </summary>
+    /// <param name="e">The tagged creator to rewrite.</param>
+    /// <returns>The rewritten expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitTaggedCreator(TaggedCreatorExpression e)
+    {
+        Expression tag = VisitExpression(expr: e.Tag);
+        Expression? payload = e.Payload is null
+            ? null
+            : VisitExpression(expr: e.Payload);
+        return ReferenceEquals(objA: tag, objB: e.Tag) && ReferenceEquals(objA: payload, objB: e.Payload)
+            ? e
+            : e with { Tag = tag, Payload = payload };
     }
 
     /// <summary>

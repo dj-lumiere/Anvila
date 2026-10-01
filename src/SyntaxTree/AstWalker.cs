@@ -303,6 +303,15 @@ public static class AstWalker
             {
                 e.Wrapper
             },
+            TaggedCreatorExpression { Payload: null } e => new object[]
+            {
+                e.Tag
+            },
+            TaggedCreatorExpression e => new object[]
+            {
+                e.Tag,
+                e.Payload
+            },
             AddressOfExpression e => new object[]
             {
                 e.Target

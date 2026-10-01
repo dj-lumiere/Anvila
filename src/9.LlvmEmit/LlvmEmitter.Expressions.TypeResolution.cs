@@ -11,8 +11,8 @@ namespace Builder.LlvmEmit;
 public partial class LlvmEmitter
 {
     /// <summary>
-    /// The type of an expression, as semantic analysis and the later passes stamped it. A literal without
-    /// one is typed by its token, and a named argument or a <c>steal</c> by the value it wraps. Any other
+    /// The type of an expression, as semantic analysis and the later passes stamped it (every literal is typed by
+    /// <c>LiteralTypeStampPass</c>). A named argument or a <c>steal</c> has the type of the value it wraps. Any other
     /// expression without a concrete type is an upstream gap and fails loudly.
     /// </summary>
     private TypeSymbol? GetExpressionType(Expression expr)
@@ -21,7 +21,6 @@ public partial class LlvmEmitter
         {
             null or ErrorTypeSymbol => expr switch
             {
-                LiteralExpression literal => GetLiteralType(literal: literal),
                 NamedArgumentExpression named => GetExpressionType(expr: named.Value),
                 StealExpression steal => GetExpressionType(expr: steal.Operand),
                 _ => throw new InvalidOperationException(
@@ -47,54 +46,6 @@ public partial class LlvmEmitter
             : throw new InvalidOperationException(
                 message: $"The creator of '{creator.TypeName}' at {creator.Location} reached the LLVM emitter " +
                          $"without a constructed type in [{_currentRoutineDiagName}].");
-    }
-
-    /// <summary>
-    /// Gets the type of a literal expression from its token type.
-    /// </summary>
-    // NOTE: this fallback token-type-to-type mapping remains only because stdlib bodies bypass SA, so a
-    // bare literal reaches the emitter with no SA-resolved type. It is intended to be retired once every
-    // literal carries a resolved type before codegen, but that is not yet the case.
-    private TypeSymbol? GetLiteralType(LiteralExpression literal)
-    {
-        string? typeName = literal.LiteralType switch
-        {
-            // Bare unsuffixed literals default to S64/B64 in RazorForge (same as SA rule).
-            // Stdlib bodies bypass SA so we must handle these token types here.
-            TokenType.IntegerLiteral => "S64",
-            // Explicit `dn` Decimal literal -> the @llvm("i128") BID Decimal (baked as an i128
-            // constant by EmitDecimalFloatLiteral). Bare unsuffixed decimals are UndecidedDecimal.
-            TokenType.DecimalLiteral => "Decimal",
-            TokenType.S8Literal => "S8",
-            TokenType.S16Literal => "S16",
-            TokenType.S32Literal => "S32",
-            TokenType.S64Literal => "S64",
-            TokenType.S128Literal => "S128",
-            TokenType.S256Literal => "S256",
-            TokenType.U8Literal => "U8",
-            TokenType.U16Literal => "U16",
-            TokenType.U32Literal => "U32",
-            TokenType.U64Literal => "U64",
-            TokenType.U128Literal => "U128",
-            TokenType.U256Literal => "U256",
-            TokenType.B16Literal => "B16",
-            TokenType.B32Literal => "B32",
-            TokenType.B64Literal => "B64",
-            TokenType.B128Literal => "B128",
-            TokenType.D32Literal => "D32",
-            TokenType.D64Literal => "D64",
-            TokenType.D128Literal => "D128",
-            TokenType.AddressLiteral => "Address",
-            TokenType.True or TokenType.False => "Bool",
-            TokenType.TextLiteral or TokenType.RawText => "Text",
-            TokenType.CharacterLiteral => "Character",
-            TokenType.ByteLetterLiteral => "Byte",
-            _ => null
-        };
-
-        return typeName != null
-            ? _registry.LookupType(name: typeName)
-            : null;
     }
 
     /// <summary>

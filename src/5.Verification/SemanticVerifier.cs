@@ -1206,14 +1206,18 @@ public sealed partial class SemanticVerifier
 
     private void AnnotateBodyForBackend(Statement body, HashSet<string>? everStolen, RoutineInfo? routine)
     {
+        LiteralTypeStampPass.Run(body: body, registry: _registry);
+        CreateMeLoweringPass.Run(body: body, routine: routine);
         LocalTypeStampPass.Run(body: body);
-        ConstructionLoweringPass.Run(body: body);
+        LocalStorageLoweringPass.Run(body: body);
+        ConstructionLoweringPass.Run(body: body, registry: _registry);
         CallArgumentOrderPass.Run(body: body);
         StealGuardLoweringPass.Run(body: body, everStolen: everStolen, registry: _registry);
         CrashLoweringPass.Run(body: body, routine: routine, registry: _registry);
         MaybeReturnLoweringPass.Run(body: body, routine: routine, registry: _registry);
         WrapperProjectionLoweringPass.Run(body: body, registry: _registry);
         AddressLoweringPass.Run(body: body, registry: _registry);
+        TextLiteralLoweringPass.Run(body: body, registry: _registry);
         RepresentationCastPass.Run(body: body);
     }
 

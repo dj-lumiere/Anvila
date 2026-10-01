@@ -795,7 +795,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // Variant construction via the call form: `Inner(7_s32)` / `Inner(none)`. SA leaves
         // these as CallExpressions with ConstructedType=<variant> but no create routine, so
         // codegen would emit a bogus `call @Inner`. Rewrite to the variant CreatorExpression
-        // that EmitVariantConstruction handles (the same shape the assignment auto-wrap uses).
+        // that ConstructionLoweringPass turns into a tagged creator (the same shape the assignment auto-wrap uses).
         if (TryRewriteVariantCallConstruction(call: call, args: args) is { } variantCreator)
         {
             return (hoisted, variantCreator);
@@ -1199,7 +1199,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // Fire when SA left this construction routine-less OR bound it to the SYNTHESIZED, bodiless variant
         // arm-boxing creator (`SerialValue.create(from: S32)`, registered by RegisterVariantArmConstructors
         // with IsSynthesized and NO body). Both must lower to the arm-shaped CreatorExpression that
-        // EmitVariantConstruction inlines — emitting a CALL to the bodiless creator links undefined. A
+        // the tagged creator builds inline — emitting a CALL to the bodiless creator links undefined. A
         // user-written variant creator (IsSynthesized:false) has a real body and keeps the call.
         // SA stamps ConstructedType on a construction it analyzed; a call resolved by the AST rewriter inside
         // a monomorphized body (`T(from: payload)` in `variant_from_serial[Shape]`) carries only the resolved
@@ -1773,7 +1773,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         }
 
         // Variant auto-wrap: `var x: Number = 42_s64` where Number has an S64 arm
-        // becomes a CreatorExpression that codegen routes through EmitVariantConstruction.
+        // becomes a CreatorExpression that ConstructionLoweringPass turns into a tagged creator.
         if (TryWrapVariantArm(targetType: targetType, init: init) is { } wrapped)
         {
             return wrapped;

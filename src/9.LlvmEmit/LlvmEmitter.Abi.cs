@@ -342,8 +342,7 @@ public partial class LlvmEmitter
             return false;
         }
 
-        if (routine.FailableVariant is FailableVariant.Lookup or FailableVariant.Check
-            or FailableVariant.TryBool or FailableVariant.Try)
+        if (routine.FailableVariant is FailableVariant.TryBool or FailableVariant.Try)
         {
             return false;
         }
@@ -370,8 +369,7 @@ public partial class LlvmEmitter
             return null;
         }
 
-        if (routine.FailableVariant is FailableVariant.Lookup or FailableVariant.Check
-            or FailableVariant.TryBool or FailableVariant.Try)
+        if (routine.FailableVariant is FailableVariant.TryBool or FailableVariant.Try)
         {
             return null;
         }

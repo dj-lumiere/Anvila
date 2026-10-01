@@ -165,6 +165,12 @@ public static class RuntimeContract
 
         /// <summary>Wrapped-value field.</summary>
         public const string ValueField = "value";
+
+        /// <summary>Tag field of a <c>Check[T]</c>/<c>Lookup[T]</c> carrier: the payload type's <c>type_id</c>.</summary>
+        public const string TypeIdField = "type_id";
+
+        /// <summary>Payload byte-buffer field of a <c>Check[T]</c>/<c>Lookup[T]</c> carrier.</summary>
+        public const string PayloadField = "payload";
     }
 
     /// <summary>Collection-shape routines resolved by literal during lowering / reachability.</summary>

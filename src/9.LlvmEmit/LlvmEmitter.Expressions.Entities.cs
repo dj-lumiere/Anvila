@@ -85,9 +85,10 @@ public partial class LlvmEmitter
         // since a base arm would otherwise capture them.
         return type switch
         {
-            VariantTypeSymbol variant => EmitVariantConstruction(sb: sb,
-                variant: variant,
-                expr: expr),
+            // A variant or Check/Lookup carrier is a TaggedCreatorExpression (ConstructionLoweringPass).
+            VariantTypeSymbol or RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup } =>
+                throw new InvalidOperationException(
+                    message: $"A creator of '{type.FullName}' reached the LLVM emitter in [{_currentRoutineDiagName}]."),
             // Crashable types are entity-like (heap-allocated, ptr semantics).
             CrashableTypeSymbol crashable => EmitCrashableConstruction(sb: sb,
                 crashable: crashable,
@@ -100,77 +101,49 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits construction of a variant value from the implicit auto-wrap rewrite
-    /// (e.g. <c>var a: Number = 42_s64</c> becomes <c>Number(S64: 42_s64)</c> at AST level).
-    /// The CreatorExpression carries one MemberVariable whose Name matches a variant member's
-    /// type name (or "None"/"None" for the zero-tag). Emits:
+    /// Emits a <see cref="TaggedCreatorExpression"/>: a variant or Check/Lookup carrier, built through memory so
+    /// the payload is stored at its own width into the <c>[N x i8]</c> buffer (field 1). The whole value is
+    /// zeroed first: a payload narrower than the buffer would otherwise leave undefined bytes, which become
+    /// poison once the value is copied and let the optimizer fold every later tag comparison away.
     /// <code>
-    ///   %tmp = alloca %Variant.X
-    ///   %tag_ptr = getelementptr %Variant.X, ptr %tmp, i32 0, i32 0
-    ///   store i64 &lt;FNV-1a(member.FullName)&gt;, ptr %tag_ptr
-    ///   %pay_ptr = getelementptr %Variant.X, ptr %tmp, i32 0, i32 1
-    ///   store &lt;val_ty&gt; %val, ptr %pay_ptr     ; skipped for the None/None arm
-    ///   %result = load %Variant.X, ptr %tmp
+    ///   %tmp = alloca %T
+    ///   store %T zeroinitializer, ptr %tmp
+    ///   store i64 %tag, ptr (field 0)
+    ///   store &lt;payload type&gt; %payload, ptr (field 1)   ; when there is a payload
+    ///   %result = load %T, ptr %tmp
     /// </code>
+    /// Mirror of the reader in <see cref="EmitCarrierPayloadExpression"/>.
     /// </summary>
-    private string EmitVariantConstruction(StringBuilder sb, VariantTypeSymbol variant,
-        CreatorExpression expr)
+    private string EmitTaggedCreator(StringBuilder sb, TaggedCreatorExpression tagged)
     {
-        if (expr.MemberVariables.Count != 1)
-        {
-            throw new InvalidOperationException(
-                message:
-                $"Variant '{variant.Name}' construction expects exactly one tagged value, got {expr.MemberVariables.Count}.");
-        }
-
-        (string memberName, Expression valueExpr) = expr.MemberVariables[index: 0];
-        VariantMemberInfo? member =
-            variant.Members.FirstOrDefault(predicate: m => m.Name == memberName);
-        if (member == null)
-        {
-            throw new InvalidOperationException(
-                message: $"Variant '{variant.Name}' has no member '{memberName}'.");
-        }
-
-        string variantLlvm = GetLlvmType(type: variant);
+        TypeSymbol type = tagged.ResolvedType ??
+                          throw new InvalidOperationException(
+                              message: $"A tagged creator at {tagged.Location} has no type.");
+        string llvmType = type is RecordTypeSymbol and not VariantTypeSymbol
+            ? EnsureRecordTypeDeclared(record: (RecordTypeSymbol)type)
+            : GetLlvmType(type: type);
         string slot = NextTemp();
-        EmitLine(sb: sb, line: $"  {slot} = alloca {variantLlvm}");
-        // Zero the WHOLE variant before writing the tag + arm value. An arm whose payload is narrower than
-        // the union's `[N x i8]` (e.g. an `S32` arm in `{ i64, [24 x i8] }`) would otherwise leave the trailing
-        // payload bytes uninitialized. Those undef bytes become `poison` once the variant is loaded by value and
-        // copied (into a Dict slot, passed to `represent`), and the optimizer then treats every `tag == <const>`
-        // arm-dispatch comparison downstream as UB and folds the arm branches away — so `represent` silently
-        // drops the arm's value (a fieldless `SerialValue()` instead of `SerialValue(5)`). A defined zero payload
-        // keeps the value well-defined end-to-end.
-        EmitLine(sb: sb, line: $"  store {variantLlvm} zeroinitializer, ptr {slot}");
+        EmitLine(sb: sb, line: $"  {slot} = alloca {llvmType}");
+        EmitLine(sb: sb, line: $"  store {llvmType} zeroinitializer, ptr {slot}");
 
-        // type_id = FNV-1a(member.Type.FullName); 0 for None/None.
-        ulong typeId = member.IsNone
-            ? 0UL
-            : TypeIdHelper.ComputeTypeId(fullName: member.Type!.FullName);
+        string tag = EmitExpression(sb: sb, expr: tagged.Tag);
         string tagPtr = NextTemp();
-        EmitLine(sb: sb,
-            line: $"  {tagPtr} = getelementptr {variantLlvm}, ptr {slot}, i32 0, i32 0");
-        EmitLine(sb: sb, line: $"  store i64 {typeId}, ptr {tagPtr}");
+        EmitLine(sb: sb, line: $"  {tagPtr} = getelementptr {llvmType}, ptr {slot}, i32 0, i32 0");
+        EmitLine(sb: sb, line: $"  store i64 {tag}, ptr {tagPtr}");
 
-        // None arm (or any zero-sized payload type) carries no Assignable value — only the
-        // tag matters. Skip both value emission and the payload store. The user-level form
-        // `None()` parses as a CreatorExpression but has nothing to construct; treating it
-        // as a pure marker mirrors how the None type behaves elsewhere.
-        bool isNoneArm = member.IsNone || member.Type is not null && (member.Type.Name == "None" ||
-            member.Type.FullName.EndsWith(value: ".None"));
-        if (!isNoneArm)
+        if (tagged.Payload is { } payload)
         {
-            string val = EmitExpression(sb: sb, expr: valueExpr);
-            string valLlvm = GetLlvmType(type: valueExpr.ResolvedType ?? member.Type!);
-            string payPtr = NextTemp();
-            EmitLine(sb: sb,
-                line: $"  {payPtr} = getelementptr {variantLlvm}, ptr {slot}, i32 0, i32 1");
-            EmitLine(sb: sb, line: $"  store {valLlvm} {val}, ptr {payPtr}");
+            string value = EmitExpression(sb: sb, expr: payload);
+            TypeSymbol payloadType = GetExpressionType(expr: payload) ??
+                                     throw new InvalidOperationException(
+                                         message: $"The payload of a tagged creator at {tagged.Location} has no type.");
+            string payloadPtr = NextTemp();
+            EmitLine(sb: sb, line: $"  {payloadPtr} = getelementptr {llvmType}, ptr {slot}, i32 0, i32 1");
+            EmitLine(sb: sb, line: $"  store {GetLlvmType(type: payloadType)} {value}, ptr {payloadPtr}");
         }
 
         string result = NextTemp();
-        EmitLine(sb: sb, line: $"  {result} = load {variantLlvm}, ptr {slot}");
+        EmitLine(sb: sb, line: $"  {result} = load {llvmType}, ptr {slot}");
         return result;
     }
 
@@ -231,16 +204,6 @@ public partial class LlvmEmitter
                              $"emitter in [{_currentRoutineDiagName}].");
         }
 
-        // Result[T] / Lookup[T]: the payload is an inline byte buffer sized to max(sizeof(T), 8), and
-        // the success `T` is stored inline at its FULL width. `insertvalue` cannot put a typed T into a
-        // `[N x i8]` field, so build the carrier through memory: alloca, zero, then a typed store of the
-        // payload into the buffer (writes sizeof(T) bytes — no truncation; an error is stored as its
-        // 8-byte entity pointer). Maybe[T] keeps its `{present, T}` layout and the memberwise path.
-        if (record.CarrierKind is CarrierKind.Result or CarrierKind.Lookup)
-        {
-            return EmitInlineCarrierConstruction(sb: sb, record: record, expr: expr);
-        }
-
         // Multi-member-variable record: build the struct value. The CreatorExpression carries member
         // values POSITIONALLY (already field-ordered by the SA/lowering that produced it), so field i
         // takes MemberVariables[i] when present.
@@ -255,64 +218,6 @@ public partial class LlvmEmitter
 
                 return EmitExpression(sb: sb, expr: expr.MemberVariables[index: i].Value);
             });
-    }
-
-    /// <summary>
-    /// Builds a Result[T]/Lookup[T] carrier through an alloca so the success payload can be stored at
-    /// its full width into the inline <c>[N x i8]</c> buffer (field 1). Zero-inits, stores the
-    /// <c>type_id</c> (field 0, i64), and — when a payload member is present — typed-stores it into the
-    /// buffer (an entity/crashable error stores its <c>ptr</c>; a value type stores its own LLVM type).
-    /// Mirror of the reader in <see cref="EmitCarrierPayloadExpression"/>.
-    /// </summary>
-    private string EmitInlineCarrierConstruction(StringBuilder sb, RecordTypeSymbol record,
-        CreatorExpression expr)
-    {
-        string carrier = EnsureRecordTypeDeclared(record: record);
-        string slot = NextTemp();
-        EmitLine(sb: sb, line: $"  {slot} = alloca {carrier}");
-        EmitLine(sb: sb, line: $"  store {carrier} zeroinitializer, ptr {slot}");
-
-        for (int i = 0; i < expr.MemberVariables.Count && i < record.MemberVariables.Count; i++)
-        {
-            MemberVariableInfo field = record.MemberVariables[index: i];
-            Expression valueExpr = expr.MemberVariables[index: i].Value;
-            string value = EmitExpression(sb: sb, expr: valueExpr);
-
-            string fieldPtr = NextTemp();
-            EmitLine(sb: sb,
-                line: $"  {fieldPtr} = getelementptr {carrier}, ptr {slot}, i32 0, i32 {i}");
-
-            // The payload field is the byte buffer: store the value at its OWN width (full T, or an
-            // 8-byte entity pointer for an error). type_id and any other field use their storage type.
-            string storeType;
-            if (field.Name == "payload")
-            {
-                TypeSymbol? payloadType = GetExpressionType(expr: valueExpr);
-                if (payloadType is EntityTypeSymbol or CrashableTypeSymbol)
-                {
-                    storeType = "ptr";
-                }
-                else if (payloadType != null)
-                {
-                    storeType = GetLlvmType(type: payloadType);
-                }
-                else
-                {
-                    storeType = "i64";
-                }
-            }
-            else
-            {
-                value = CoerceBoolToStorage(sb: sb, value: value, fieldType: field.Type);
-                storeType = GetFieldStorageLlvmType(type: field.Type);
-            }
-
-            EmitLine(sb: sb, line: $"  store {storeType} {value}, ptr {fieldPtr}");
-        }
-
-        string loaded = NextTemp();
-        EmitLine(sb: sb, line: $"  {loaded} = load {carrier}, ptr {slot}");
-        return loaded;
     }
 
     /// <summary>

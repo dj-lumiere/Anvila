@@ -8,12 +8,6 @@ using TypeModel.Types;
 
 namespace Builder.LlvmEmit;
 
-// D2 (DEFERRED): Text/Bytes literals still emit their backing arrays + carrier struct as constant
-// globals here rather than lowering to a `CreatorExpression` against the real stdlib Text/Bytes
-// `create`. Doing that fully requires D1's memberwise-create synthesis plus a buildtime
-// constant-aggregate argument path (the current stdlib `create` takes runtime args). As a partial
-// step, the carrier struct LAYOUT is now derived from the registered TypeSymbol (BuildLiteralCarrierLayout)
-// instead of a hardcoded `{ ptr, i64, ptr }`.
 /// <summary>
 /// Expression code generation for literals and scalar literal helpers.
 /// </summary>
@@ -215,11 +209,10 @@ public partial class LlvmEmitter
             case string s when IsDecimalFloatLiteralType(type: literal.LiteralType):
                 return EmitDecimalFloatLiteral(numericValue: StripNumericSuffix(text: s),
                     literalType: literal.LiteralType);
-            case string s when literal.LiteralType == TokenType.BytesLiteral:
-                return EmitBytesLiteral(sb: sb, value: s);
-            // Actual string literal
-            case string s:
-                return EmitStringLiteral(sb: sb, value: s);
+            // A text or bytes literal is a creator over constant data (TextLiteralLoweringPass).
+            case string:
+                throw new InvalidOperationException(
+                    message: $"A {literal.LiteralType} literal ({literal.Value}) at {literal.Location} reached the LLVM emitter in [{_currentRoutineDiagName}].");
         }
 
         // `none` value literal -> emit zeroinitializer (carriers are zero-tagged in the absent arm).
@@ -273,126 +266,6 @@ public partial class LlvmEmitter
     {
         return type is TokenType.D32Literal or TokenType.D64Literal or TokenType.D128Literal
             or TokenType.DecimalLiteral;
-    }
-
-    /// <summary>
-    /// D2 (partial): derives the LLVM field-type layout of a literal-backed carrier record
-    /// (<c>Text</c> / <c>Bytes</c>) from its registered <see cref="RecordTypeSymbol"/> rather than
-    /// hardcoding <c>{ ptr, i64, ptr }</c>. Returns the joined field-type string (e.g.
-    /// <c>"ptr, i64, ptr"</c>) and the named struct type via <paramref name="structTypeName"/>.
-    /// <para>DEFERRED: the values themselves (data ptr / count / null ctrl) are still positionally
-    /// hand-built here and the backing arrays are emitted as constant globals — fully routing string/
-    /// bytes literals through the real stdlib <c>Text.create</c>/<c>Bytes.create</c> needs D1's
-    /// memberwise-create synthesis plus a buildtime constant-aggregate argument path, which the
-    /// current stdlib <c>create</c> (runtime-arg) does not accept. See the task report.</para>
-    /// </summary>
-    private string BuildLiteralCarrierLayout(string carrierName, int expectedMemberVariables,
-        out string structTypeName)
-    {
-        TypeSymbol? carrier = _registry.LookupType(name: carrierName) ??
-                            _registry.LookupType(name: $"Core.{carrierName}");
-        if (carrier is RecordTypeSymbol record &&
-            record.MemberVariables.Count == expectedMemberVariables)
-        {
-            structTypeName = EnsureRecordTypeDeclared(record: record);
-            IEnumerable<string> fieldTypes =
-                record.MemberVariables.Select(selector: mv =>
-                    GetFieldStorageLlvmType(type: mv.Type));
-            return string.Join(separator: ", ", values: fieldTypes);
-        }
-
-        // Fallback to the known physical layout when the type isn't registered yet (e.g. a bare
-        // literal-only compilation without the stdlib carrier loaded).
-        structTypeName = $"%Record.Core.{carrierName}";
-        return expectedMemberVariables == 3
-            ? "ptr, i64, ptr"
-            : "ptr, i64";
-    }
-
-    /// <summary>
-    /// Builds the constant initializer for a Bytes/Text literal, mapping the buffer pointer and element
-    /// count onto the carrier's fields BY NAME (<c>data</c> → buffer, <c>count</c> → element count,
-    /// any other field — the <c>ctrl</c> refcount controller — zero/null). Keying on field name keeps
-    /// codegen independent of the physical field order; a reorder of the record moves the values with it.
-    /// </summary>
-    private string BuildLiteralCarrierValue(string carrierName, string dataName, long count)
-    {
-        TypeSymbol? carrier = _registry.LookupType(name: carrierName) ??
-                            _registry.LookupType(name: $"Core.{carrierName}");
-        if (carrier is RecordTypeSymbol record && record.MemberVariables.Count > 0)
-        {
-            IEnumerable<string> parts = record.MemberVariables.Select(selector: mv =>
-            {
-                string ft = GetFieldStorageLlvmType(type: mv.Type);
-                return mv.Name switch
-                {
-                    "data" => $"ptr {dataName}",
-                    "count" => $"{ft} {count}",
-                    _ => ft == "ptr"
-                        ? "ptr null"
-                        : $"{ft} 0"
-                };
-            });
-            return string.Join(separator: ", ", values: parts);
-        }
-
-        // Fallback matching the physical { ptr data, i64 count, ptr ctrl } layout.
-        return $"ptr {dataName}, i64 {count}, ptr null";
-    }
-
-    /// <summary>
-    /// Emits a Bytes literal (b"...") as a constant Bytes record.
-    /// Bytes layout is derived from its registered fields (physically <c>{ ptr, i64, ptr }</c>:
-    /// data, count, ctrl). Returns the loaded record value.
-    /// </summary>
-    private string EmitBytesLiteral(StringBuilder sb, string value)
-    {
-        int idx = _stringCounter++;
-        string constName = $"@.bytes.{idx}";
-
-        // Collect ASCII byte values
-        var bytes = new List<int>();
-        foreach (char c in value)
-        {
-            bytes.Add(item: c & 0xFF);
-        }
-
-        int count = bytes.Count;
-
-        // Raw byte data array [N x i8]
-        string dataName = $"@.bytes.data.{idx}";
-        string byteValues =
-            string.Join(separator: ", ", values: bytes.Select(selector: b => $"i8 {b}"));
-        if (count > 0)
-        {
-            EmitLine(sb: _globalDeclarations,
-                line: $"{dataName} = private unnamed_addr constant [{count} x i8] [{byteValues}]");
-        }
-        else
-        {
-            EmitLine(sb: _globalDeclarations,
-                line: $"{dataName} = private unnamed_addr constant [0 x i8] zeroinitializer");
-        }
-
-        // Bytes record literal — layout derived from the registered Bytes fields
-        // (physically `{ ptr data, i64 count, ptr ctrl }`). The `ctrl` slot is null for static
-        // literals; `store`/`destroy` treat null ctrl as a no-op so the literal
-        // is never freed and refcount ops are skipped.
-        string bytesLayout = BuildLiteralCarrierLayout(carrierName: "Bytes",
-            expectedMemberVariables: 3,
-            structTypeName: out string bytesStructType);
-        string bytesValue =
-            BuildLiteralCarrierValue(carrierName: "Bytes", dataName: dataName, count: count);
-        EmitLine(sb: _globalDeclarations,
-            line:
-            $"{constName} = private unnamed_addr constant {{ {bytesLayout} }} {{ {bytesValue} }}");
-
-        // Load the record value from the global. Bytes is a value-typed record, so call
-        // sites expect the record by value, not a pointer. Use the named struct type so
-        // the SSA value matches the call signature.
-        string loaded = NextTemp();
-        EmitLine(sb: sb, line: $"{loaded} = load {bytesStructType}, ptr {constName}");
-        return loaded;
     }
 
     /// <summary>
@@ -746,79 +619,26 @@ public partial class LlvmEmitter
         }
     }
 
-    /// <summary>
-    /// Generates code for a string literal.
-    /// Emits a Text string literal as a UTF-32 constant.
-    /// Text is entity { characters: List[Character] } where List is entity { data: ptr, count: U64, capacity: U64 }
-    /// and Character is a U32 codepoint. Returns a pointer to the Text struct.
-    /// </summary>
-    private string EmitStringLiteral(StringBuilder sb, string value)
-    {
-        string constName = EmitStringLiteralGlobal(value: value);
-        // Load the record value from the global. Text is a value-typed record, so call
-        // sites expect the record by value, not a pointer. Use the named struct type
-        // (derived from the registered Text fields) so the SSA value matches the call
-        // signature. The optimizer collapses redundant loads of the same global.
-        _ = BuildLiteralCarrierLayout(carrierName: "Text",
-            expectedMemberVariables: 3,
-            structTypeName: out string textStructType);
-        string loaded = NextTemp();
-        EmitLine(sb: sb, line: $"{loaded} = load {textStructType}, ptr {constName}");
-        return loaded;
-    }
 
     /// <summary>
-    /// Returns the name of the global constant that backs a string literal.
-    /// Use this when you need the literal's address (e.g. to ptrtoint or to GEP
-    /// directly into the data/count fields) rather than its value.
+    /// Emits a <see cref="ConstantDataExpression"/>: a private constant array of the pointer's element type, laid
+    /// down once per distinct content, whose address is the value.
     /// </summary>
-    private string EmitStringLiteralGlobal(string value)
+    private string EmitConstantData(ConstantDataExpression data)
     {
-        if (_stringConstants.TryGetValue(key: value, value: out string? existingName))
+        string elementLlvm = GetLlvmType(type: data.ElementType);
+        string body = data.Elements.Count == 0
+            ? "zeroinitializer"
+            : $"[{string.Join(separator: ", ", values: data.Elements.Select(selector: e => $"{elementLlvm} {e}"))}]";
+        string key = $"[{data.Elements.Count} x {elementLlvm}] {body}";
+        if (_stringConstants.TryGetValue(key: key, value: out string? existing))
         {
-            return existingName;
+            return existing;
         }
 
-        int idx = _stringCounter++;
-        string constName = $"@.str.{idx}";
-        _stringConstants[key: value] = constName;
-
-        // Collect Unicode codepoints (UTF-32)
-        var codepoints = new List<int>();
-        foreach (Rune rune in value.EnumerateRunes())
-        {
-            codepoints.Add(item: rune.Value);
-        }
-
-        int count = codepoints.Count;
-
-        // Layer 1: raw codepoint data array [N x i32]
-        string dataName = $"@.str.data.{idx}";
-        string cpValues = string.Join(separator: ", ",
-            values: codepoints.Select(selector: cp => $"i32 {cp}"));
-        if (count > 0)
-        {
-            EmitLine(sb: _globalDeclarations,
-                line: $"{dataName} = private unnamed_addr constant [{count} x i32] [{cpValues}]");
-        }
-        else
-        {
-            EmitLine(sb: _globalDeclarations,
-                line: $"{dataName} = private unnamed_addr constant [0 x i32] zeroinitializer");
-        }
-
-        // Layer 2: Text record payload — layout derived from the registered Text fields
-        // (physically `{ ptr data, i64 count, ptr ctrl }`). `ctrl` is null for static literals —
-        // store/destroy short-circuit on null and never free the literal or touch the refcount.
-        string textLayout = BuildLiteralCarrierLayout(carrierName: "Text",
-            expectedMemberVariables: 3,
-            structTypeName: out _);
-        string textValue =
-            BuildLiteralCarrierValue(carrierName: "Text", dataName: dataName, count: count);
-        EmitLine(sb: _globalDeclarations,
-            line:
-            $"{constName} = private unnamed_addr constant {{ {textLayout} }} {{ {textValue} }}");
-
-        return constName;
+        string name = $"@.data.{_stringCounter++}";
+        _stringConstants[key: key] = name;
+        EmitLine(sb: _globalDeclarations, line: $"{name} = private unnamed_addr constant {key}");
+        return name;
     }
 }

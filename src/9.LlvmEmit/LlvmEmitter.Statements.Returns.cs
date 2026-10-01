@@ -122,7 +122,6 @@ public partial class LlvmEmitter
         }
     }
 
-    // For grab/try variant wrappers with None (void) return, emit success carrier.
     private void EmitNoneExpressionReturn(StringBuilder sb)
     {
         if (_traceCurrentRoutine)
@@ -130,34 +129,7 @@ public partial class LlvmEmitter
             EmitLine(sb: sb, line: TracePop);
         }
 
-        if (_currentEmittingRoutine?.FailableVariant == FailableVariant.Check &&
-            _currentRoutineReturnType != null)
-        {
-            string carrier = GetResultCarrierLlvmType(valueType: _currentRoutineReturnType);
-            EmitLine(sb: sb, line: $"  ret {carrier} zeroinitializer");
-        }
-        else if (_currentEmittingRoutine?.FailableVariant == FailableVariant.TryBool)
-        {
-            EmitLine(sb: sb, line: "  ret i1 false");
-        }
-        else
-        {
-            EmitLine(sb: sb, line: RetVoid);
-        }
-    }
-
-    private bool IsEntityConstructorCall(Expression? expr)
-    {
-        return expr switch
-        {
-            CreatorExpression { ConstructedType: EntityTypeSymbol } or ListLiteralExpression
-                or SetLiteralExpression or DictLiteralExpression => true,
-            CreatorExpression => true,
-            CallExpression { ConstructedType: EntityTypeSymbol } => true,
-            CallExpression { Callee: IdentifierExpression id } =>
-                _registry.LookupType(name: id.Name) is EntityTypeSymbol,
-            _ => false
-        };
+        EmitLine(sb: sb, line: RetVoid);
     }
 
     #endregion

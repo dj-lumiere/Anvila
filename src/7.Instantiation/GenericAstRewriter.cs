@@ -1512,6 +1512,13 @@ internal static class GenericAstRewriter
             {
                 Wrapper = RewriteExpression(expr: wpe.Wrapper, ctx: ctx)
             },
+            TaggedCreatorExpression tagged => tagged with
+            {
+                Tag = RewriteExpression(expr: tagged.Tag, ctx: ctx),
+                Payload = tagged.Payload is null
+                    ? null
+                    : RewriteExpression(expr: tagged.Payload, ctx: ctx)
+            },
             AddressOfExpression address => address with
             {
                 Target = RewriteExpression(expr: address.Target, ctx: ctx)

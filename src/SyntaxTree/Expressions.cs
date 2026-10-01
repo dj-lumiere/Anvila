@@ -1194,6 +1194,74 @@ public record CarrierPayloadExpression(
 }
 
 /// <summary>
+/// Builds a tagged value: a variant, or a <c>Check</c>/<c>Lookup</c> carrier. Produced by lowering (never parsed):
+/// <c>ConstructionLoweringPass</c> writes a creator of such a type as this, so a backend only zeroes the storage,
+/// stores the tag in field 0 and stores the payload, at the payload's own type, into the bytes of field 1. The
+/// reader is <see cref="CarrierPayloadExpression"/>. Its resolved type is the variant or carrier.
+/// </summary>
+/// <param name="Tag">The <c>U64</c> tag: the payload type's <c>type_id</c>, 0 for an empty arm.</param>
+/// <param name="Payload">The value stored in the payload bytes, or null when the value carries none.</param>
+/// <param name="Location">Source location of the creator it replaces.</param>
+public record TaggedCreatorExpression(Expression Tag, Expression? Payload, SourceLocation Location)
+    : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitTaggedCreatorExpression(node: this);
+    }
+}
+
+/// <summary>
+/// The address of a constant array laid down once as module data, produced by lowering (never parsed):
+/// <c>TextLiteralLoweringPass</c> writes the characters of a text literal and the bytes of a bytes literal as
+/// this. Its resolved type is the pointer to the elements (<c>Hijacked[Character]</c>, <c>Hijacked[Byte]</c>), and
+/// each element is given as the integer value of that element type.
+/// </summary>
+/// <param name="Elements">The element values, in order.</param>
+/// <param name="ElementType">The type of each element (<c>Character</c>, <c>Byte</c>).</param>
+/// <param name="Location">Source location of the literal it comes from.</param>
+public record ConstantDataExpression(IReadOnlyList<long> Elements, TypeSymbol ElementType, SourceLocation Location)
+    : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitConstantDataExpression(node: this);
+    }
+}
+
+/// <summary>
+/// A fresh heap block for an entity with every field zero, produced by lowering (never parsed):
+/// <c>CreateMeLoweringPass</c> starts an entity <c>create</c> that works on <c>me</c> with
+/// <c>var me = #allocate(E)</c>. Its resolved type is the entity.
+/// </summary>
+/// <param name="Location">Source location of the routine body it starts.</param>
+public record EntityAllocationExpression(SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitEntityAllocationExpression(node: this);
+    }
+}
+
+/// <summary>
+/// The zero value of its resolved type (every bit zero: 0, false, a null handle, an empty optional), produced by
+/// lowering (never parsed): the value a <c>lateinit</c> local starts with, and the value of a field a creator
+/// leaves out.
+/// </summary>
+/// <param name="Location">Source location of the construct it fills in for.</param>
+public record ZeroValueExpression(SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitZeroValueExpression(node: this);
+    }
+}
+
+/// <summary>
 /// Runtime dispatch of a zero-arg <c>Crashable</c> protocol member (<c>represent</c>/<c>diagnose</c>/
 /// <c>crash_message</c>/<c>crash_title</c>, all <c>-&gt; Text</c>) on a type-erased error stored in a
 /// <c>Result[T]</c>/<c>Lookup[T]</c> carrier. Replaces the build-time <c>is Crashable</c> fan-out: instead

@@ -287,6 +287,32 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
             message:
             "BracketAccessExpression must be lowered by BracketReclassifyPass before analysis.");
     }
+    public bool VisitZeroValueExpression(ZeroValueExpression node)
+    {
+        return false;
+    }
+
+    public bool VisitEntityAllocationExpression(EntityAllocationExpression node)
+    {
+        return false;
+    }
+
+    public bool VisitConstantDataExpression(ConstantDataExpression node)
+    {
+        return false;
+    }
+
+    public bool VisitTaggedCreatorExpression(TaggedCreatorExpression node)
+    {
+        Visit(e: node.Tag);
+        if (node.Payload != null)
+        {
+            Visit(e: node.Payload);
+        }
+
+        return false;
+    }
+
     public bool VisitCarrierPayloadExpression(CarrierPayloadExpression node)
     {
         Visit(e: node.Carrier);

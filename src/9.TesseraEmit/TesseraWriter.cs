@@ -1,5 +1,6 @@
 using System.Text;
 using Builder.Backends;
+using Builder.Declaration;
 using Builder.Instantiation;
 using Builder.LlvmEmit;
 using SyntaxTree;
@@ -271,28 +272,29 @@ internal sealed class TesseraWriter
     }
 
     /// <summary>
-    /// The global holding a text literal's characters, UTF-32 code points as the builder lays out every
-    /// <c>Text</c>, declared once per distinct literal. Null for the empty text, which has no buffer.
+    /// The global holding <paramref name="data"/>'s elements, laid down once per distinct content; its name is the
+    /// address. Empty data is the null address.
     /// </summary>
-    public string? TextData(string value)
+    public string ConstantData(ConstantDataExpression data)
     {
-        if (value.Length == 0)
+        if (data.Elements.Count == 0)
         {
-            return null;
+            return "null";
         }
 
-        if (_texts.TryGetValue(key: value, value: out string? name))
+        string type = $"Array<{TypeText(type: data.ElementType)}, {data.Elements.Count}>";
+        string initial = $"{type} {{ {string.Join(separator: ", ", values: data.Elements)} }}";
+        if (_texts.TryGetValue(key: initial, value: out string? name))
         {
             return name;
         }
 
-        name = UniqueName(wanted: $"RF_TEXT_{_texts.Count}");
-        _texts[key: value] = name;
-        List<int> codePoints = value.EnumerateRunes()
-                                    .Select(selector: rune => rune.Value)
-                                    .ToList();
-        string type = $"Array<U32, {codePoints.Count}>";
-        _globals.Append(value: $"global {name}: @{type} <- {type} {{ {string.Join(separator: ", ", values: codePoints)} }}\n\n");
+        name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
+        _texts[key: initial] = name;
+        _globals.Append(value: $"global {name}: @{type} <- {initial}\n\n");
+        // The value is a pointer to the first element.
+        name = $"{name}.cast<{TypeText(type: data.ElementType)}>()";
+        _texts[key: initial] = name;
         return name;
     }
 
@@ -493,9 +495,15 @@ internal sealed class TesseraWriter
             return byName;
         }
 
+        // Hijacked[T] is a pointer to a T: Tessera's @T (an entity's points at its heap block). Any other pointer
+        // record is an untyped address.
         if (backend == "ptr")
         {
-            return "Addr";
+            return record is { GenericDefinition.Name: RuntimeContract.Hijacked, TypeArguments: [var target] }
+                ? target is EntityTypeSymbol entity
+                    ? $"@{EntityRecord(entity: entity)}"
+                    : $"@{TypeText(type: target)}"
+                : "Addr";
         }
 
         // Array[T, N]: a fixed array of N values of T.

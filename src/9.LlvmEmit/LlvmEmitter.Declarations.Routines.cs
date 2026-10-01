@@ -504,20 +504,14 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Computes the LLVM return type for a routine definition, applying the failable-variant carrier
-    /// (Lookup / Check / TryBool) forms.
+    /// Computes the LLVM return type for a routine definition. A recovery variant's return type is its carrier
+    /// (<c>Check[T]</c>, <c>Lookup[T]</c>, <c>Maybe[T]</c>, <c>Bool</c>).
     /// </summary>
     private string ComputeDefinitionReturnType(RoutineInfo info)
     {
-        return info.FailableVariant switch
-        {
-            FailableVariant.Lookup => GetLookupCarrierLlvmType(valueType: info.ReturnType!),
-            FailableVariant.Check => GetResultCarrierLlvmType(valueType: info.ReturnType!),
-            FailableVariant.TryBool => "i1",
-            _ => info.ReturnType != null
-                ? GetLlvmType(type: info.ReturnType)
-                : "void"
-        };
+        return info.ReturnType != null
+            ? GetLlvmType(type: info.ReturnType)
+            : "void";
     }
 
     /// <summary>
@@ -668,7 +662,7 @@ public partial class LlvmEmitter
     private void EmitRoutineBodyInner(StringBuilder sb, Statement body, RoutineInfo routine)
     {
         ResetPerRoutineState(routine: routine);
-        BindImplicitMeReceiver(sb: sb, body: body, routine: routine);
+        BindImplicitMeReceiver(sb: sb, routine: routine);
         RegisterParametersAsLocals(sb: sb, routine: routine);
         EmitTracePush(sb: sb, routine: routine);
 
@@ -701,28 +695,15 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Binds the implicit <c>me</c> local for a memberRoutine, or — for an entity <c>create</c> that
-    /// references <c>me</c> — allocates the entity at entry and binds <c>me</c> to the fresh pointer.
+    /// Binds the implicit <c>me</c> local for a memberRoutine.
     /// </summary>
-    private void BindImplicitMeReceiver(StringBuilder sb, Statement body, RoutineInfo routine)
+    private void BindImplicitMeReceiver(StringBuilder sb, RoutineInfo routine)
     {
-        // Register implicit 'me' for memberRoutines (skip create static factories and common routines).
+        // Register implicit 'me' for memberRoutines (skip create static factories and common routines). An
+        // entity create that works on `me` declares it itself (CreateMeLoweringPass).
         if (routine.OwnerType != null && !IsCreatorRoutine(routine: routine) && !routine.IsCommon)
         {
             BindMemberRoutineMeReceiver(sb: sb, routine: routine);
-            return;
-        }
-
-        // Entity create that references `me`: allocate the entity at routine entry, bind `me` to the
-        // fresh pointer, and let the body mutate via `me.field = …` / `return me`. Canonical
-        // `return Type(field: …)` creates that never touch `me` skip this.
-        if (routine.OwnerType is EntityTypeSymbol creatorEntity &&
-            IsCreatorRoutine(routine: routine) && MeReferenceScanner.Scan(body: body))
-        {
-            string mePtr = EmitEntityAllocation(sb: sb, entity: creatorEntity);
-            EmitEntryAlloca(llvmName: "%me.addr", llvmType: "ptr");
-            EmitLine(sb: sb, line: $"  store ptr {mePtr}, ptr %me.addr");
-            _localVariables[key: "me"] = routine.OwnerType;
         }
     }
 
@@ -852,7 +833,7 @@ public partial class LlvmEmitter
             : "void";
         if (retType == "void")
         {
-            EmitVoidFallthroughReturn(sb: sb, routine: routine);
+            EmitVoidFallthroughReturn(sb: sb);
             return;
         }
 
@@ -877,24 +858,11 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits the fallthrough return for a void return type — the failable-variant carrier form for
-    /// grab/try wrappers, or plain <c>ret void</c>.
+    /// Emits the fallthrough return for a void return type.
     /// </summary>
-    private void EmitVoidFallthroughReturn(StringBuilder sb, RoutineInfo routine)
+    private void EmitVoidFallthroughReturn(StringBuilder sb)
     {
-        switch (routine.FailableVariant)
-        {
-            case FailableVariant.Check:
-                string carrier = GetResultCarrierLlvmType(valueType: routine.ReturnType!);
-                EmitLine(sb: sb, line: $"  ret {carrier} zeroinitializer");
-                break;
-            case FailableVariant.TryBool:
-                EmitLine(sb: sb, line: "  ret i1 false");
-                break;
-            default:
-                EmitLine(sb: sb, line: "  ret void");
-                break;
-        }
+        EmitLine(sb: sb, line: "  ret void");
     }
 
     /// <summary>

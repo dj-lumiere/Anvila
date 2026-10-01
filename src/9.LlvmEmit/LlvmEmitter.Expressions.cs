@@ -55,6 +55,11 @@ public partial class LlvmEmitter
                     projection: projection),
                 BackendCastExpression cast => EmitBackendCast(sb: sb, cast: cast),
                 AddressOfExpression address => EmitLvalueAddress(sb: sb, expr: address.Target),
+                TaggedCreatorExpression tagged => EmitTaggedCreator(sb: sb, tagged: tagged),
+                ConstantDataExpression data => EmitConstantData(data: data),
+                ZeroValueExpression { ResolvedType: { } zeroType } => GetZeroValue(type: zeroType),
+                EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity } =>
+                    EmitEntityAllocation(sb: sb, entity: entity),
                 ClosureValueExpression closure => EmitClosureValueExpression(sb: sb, closure: closure),
                 // Named arguments appear inside synthesized AST bodies (e.g., me.eq(you: you)).
                 // The name is irrelevant to codegen -> just emit the inner value positionally.

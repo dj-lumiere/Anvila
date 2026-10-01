@@ -263,6 +263,26 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the carrier-payload expression</returns>
     T VisitCarrierPayloadExpression(CarrierPayloadExpression node);
 
+    /// <summary>Visits a tagged creator node (a variant or carrier built from its tag and payload)</summary>
+    /// <param name="node">The tagged creator to visit</param>
+    /// <returns>Result of visiting the tagged creator</returns>
+    T VisitTaggedCreatorExpression(TaggedCreatorExpression node);
+
+    /// <summary>Visits a constant-data node (the address of a constant array in module data)</summary>
+    /// <param name="node">The constant data to visit</param>
+    /// <returns>Result of visiting the constant data</returns>
+    T VisitConstantDataExpression(ConstantDataExpression node);
+
+    /// <summary>Visits an entity allocation node (a fresh zero-filled entity)</summary>
+    /// <param name="node">The allocation to visit</param>
+    /// <returns>Result of visiting the allocation</returns>
+    T VisitEntityAllocationExpression(EntityAllocationExpression node);
+
+    /// <summary>Visits a zero-value node (the zero value of its type)</summary>
+    /// <param name="node">The zero value to visit</param>
+    /// <returns>Result of visiting the zero value</returns>
+    T VisitZeroValueExpression(ZeroValueExpression node);
+
     /// <summary>Visits a crashable-dispatch expression node (runtime type_id dispatch of a Crashable member)</summary>
     /// <param name="node">The crashable-dispatch expression to visit</param>
     /// <returns>Result of visiting the crashable-dispatch expression</returns>

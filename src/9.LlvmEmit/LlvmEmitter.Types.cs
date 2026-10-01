@@ -351,46 +351,6 @@ public partial class LlvmEmitter
         return GetLlvmType(type: type);
     }
 
-    /// <summary>
-    /// Returns the named LLVM type for a Lookup[T] carrier given the inner value type T.
-    /// </summary>
-    private string GetLookupCarrierLlvmType(TypeSymbol valueType)
-    {
-        TypeSymbol? def = _registry.LookupType(name: "Lookup");
-        if (def != null)
-        {
-            TypeSymbol? resolved =
-                _registry.TryGetResolution(genericDef: def, typeArguments: [valueType]);
-            if (resolved != null)
-            {
-                return GetLlvmType(type: resolved);
-            }
-        }
-
-        // Carriers live in `module Core`; match the module-qualified canonical name (GetRecordTypeName).
-        return $"%{Q(name: $"Record.Core.Lookup[{valueType.FullName}]")}";
-    }
-
-    /// <summary>
-    /// Returns the named LLVM type for a Result[T] carrier given the inner value type T.
-    /// </summary>
-    private string GetResultCarrierLlvmType(TypeSymbol valueType)
-    {
-        TypeSymbol? def = _registry.LookupType(name: "Check");
-        if (def != null)
-        {
-            TypeSymbol? resolved =
-                _registry.TryGetResolution(genericDef: def, typeArguments: [valueType]);
-            if (resolved != null)
-            {
-                return GetLlvmType(type: resolved);
-            }
-        }
-
-        // Carriers live in `module Core`; match the module-qualified canonical name (GetRecordTypeName).
-        return $"%{Q(name: $"Record.Core.Check[{valueType.FullName}]")}";
-    }
-
     /// <summary>Returns true if <paramref name="type"/> is a Maybe[T], Result[T], or Lookup[T] carrier.</summary>
     private static bool IsCarrierType(TypeSymbol type)
     {
