@@ -815,6 +815,7 @@ internal partial class Program
         DiagnosticFlags.PruneStats = manifest.Debug.PruneStats;
         DiagnosticFlags.JitTrace = manifest.Debug.JitTrace;
         DiagnosticFlags.DumpIr = manifest.Debug.DumpIr;
+        DiagnosticFlags.DumpTessera = manifest.Debug.DumpTessera;
         DiagnosticFlags.ReachabilityDump = manifest.Debug.ReachabilityDump;
         DiagnosticFlags.MaySuspendDump = manifest.Debug.MaySuspendDump;
     }
@@ -1574,7 +1575,10 @@ internal partial class Program
             // Resident-JIT base/delta: when the daemon supplies the base's defined-symbol set, this
             // emission is the DELTA — it skips defining resident symbols and extern-declares them instead.
             ResidentSymbols = p3.ResidentSymbols,
-            Timing = saTiming
+            Timing = saTiming,
+            SourceDumpPath = DiagnosticFlags.DumpTessera
+                ? Path.ChangeExtension(path: entryFile, extension: ".tess")
+                : null
         };
 
         // dump-ast dumps the EXACT AST the backend consumes — captured immediately BEFORE emission,

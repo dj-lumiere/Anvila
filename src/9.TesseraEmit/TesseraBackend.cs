@@ -27,7 +27,10 @@ public sealed class TesseraBackend : IBuilderBackend
     {
         var writer = new TesseraWriter(input: input);
         string source = writer.Write();
-        DumpSourceIfRequested(source: source);
+        if (input.SourceDumpPath is { } dumpPath)
+        {
+            File.WriteAllText(path: dumpPath, contents: source);
+        }
 
         var decls = new List<Tessera.Decl>();
         decls.AddRange(collection: Parse(file: ModuleFileName, source: source, isLibrary: false));
@@ -52,7 +55,8 @@ public sealed class TesseraBackend : IBuilderBackend
         {
             throw new InvalidOperationException(
                 message: $"The Tessera compiler rejected the generated module: {ex.Message}" +
-                         " (set RF_DUMP_TESSERA to a file path to read the module).", innerException: ex);
+                         " (set [debug] dump-tessera = true in config.toml to keep the module as <entry>.tess).",
+                innerException: ex);
         }
 
         return new BackendOutput(LlvmIr: ir, DefinedRoutineSymbols: writer.DefinedRoutineNames);
@@ -75,15 +79,6 @@ public sealed class TesseraBackend : IBuilderBackend
         List<Tessera.Token> tokens = new Tessera.Lexer(file: file, src: source).Lex();
         return new Tessera.Parser(tokens: tokens, file: file, isLibrary: isLibrary).ParseModule()
                                                                                    .Decls;
-    }
-
-    /// <summary>With <c>RF_DUMP_TESSERA</c> set to a path, writes the generated Tessera module there.</summary>
-    private static void DumpSourceIfRequested(string source)
-    {
-        if (Environment.GetEnvironmentVariable(variable: "RF_DUMP_TESSERA") is { Length: > 0 } path)
-        {
-            File.WriteAllText(path: path, contents: source);
-        }
     }
 
     /// <summary>

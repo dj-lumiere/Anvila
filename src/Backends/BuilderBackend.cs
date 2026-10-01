@@ -48,6 +48,10 @@ public sealed record BackendInput
 
     /// <summary>Whether to print the backend's phase timings.</summary>
     public bool Timing { get; init; }
+
+    /// <summary>Where a backend that writes source of its own (Tessera) keeps a copy of it, or null
+    /// (<c>[debug] dump-tessera</c>).</summary>
+    public string? SourceDumpPath { get; init; }
 }
 
 /// <summary>What a backend produced: the module as LLVM IR text and the routine symbols it defines.</summary>

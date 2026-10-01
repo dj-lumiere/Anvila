@@ -27,6 +27,10 @@ public static class DiagnosticFlags
     /// never write a <c>.ll</c>) and the <c>.ll</c> is NOT cleaned up — so the IR is inspectable after a run.</summary>
     public static bool DumpIr { get; set; }
 
+    /// <summary>Keep the Tessera source the Tessera backend writes as <c>&lt;entry&gt;.tess</c> next to the
+    /// source (<c>dump-tessera</c>).</summary>
+    public static bool DumpTessera { get; set; }
+
     /// <summary>Path to dump the routine-reachability set, or null. Was <c>RF_REACHABILITY_DUMP</c>.</summary>
     public static string? ReachabilityDump { get; set; }
 
@@ -41,6 +45,7 @@ public static class DiagnosticFlags
         PruneStats = false;
         JitTrace = false;
         DumpIr = false;
+        DumpTessera = false;
         ReachabilityDump = null;
         MaySuspendDump = null;
     }

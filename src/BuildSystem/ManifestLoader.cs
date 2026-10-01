@@ -176,6 +176,11 @@ public static class ManifestLoader
             d.DumpIr = di is true;
         }
 
+        if (debugTable.TryGetValue(key: "dump-tessera", value: out object? dt))
+        {
+            d.DumpTessera = dt is true;
+        }
+
         if (debugTable.TryGetValue(key: "reachability-dump", value: out object? rd) &&
             !string.IsNullOrWhiteSpace(value: rd?.ToString()))
         {
