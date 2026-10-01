@@ -824,7 +824,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return args;
     }
 
-    // Lowers a single named argument, wrapping the value for variant arm parameters if needed.
+    // Lowers a single named argument, wrapping the value for a variant arm or Maybe parameter if needed.
     private NamedArgumentExpression LowerNamedCallArg(NamedArgumentExpression namedArg,
         RoutineInfo? callRoutine, List<Statement> hoisted)
     {
@@ -834,13 +834,15 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                                           .FirstOrDefault(predicate: p => p.Name == namedArg.Name)
                                          ?.Type;
         Expression wrappedValue = TryWrapVariantArm(targetType: paramType, init: loweredValue) ??
+                                  TryWrapMaybe(targetType: paramType, value: loweredValue) ??
                                   loweredValue;
+        // The named argument carries its value's type: a wrapped value changes it.
         return ReferenceEquals(objA: wrappedValue, objB: namedArg.Value)
             ? namedArg
-            : namedArg with { Value = wrappedValue };
+            : namedArg with { Value = wrappedValue, ResolvedType = wrappedValue.ResolvedType };
     }
 
-    // Lowers a single positional argument, wrapping the value for variant arm parameters if needed.
+    // Lowers a single positional argument, wrapping the value for a variant arm or Maybe parameter if needed.
     private Expression LowerPositionalCallArg(Expression arg, RoutineInfo? callRoutine,
         int posArgIdx, List<Statement> hoisted)
     {
@@ -849,7 +851,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         TypeSymbol? paramType = callRoutine != null && posArgIdx < callRoutine.Parameters.Count
             ? callRoutine.Parameters[index: posArgIdx].Type
             : null;
-        return TryWrapVariantArm(targetType: paramType, init: lowered) ?? lowered;
+        return TryWrapVariantArm(targetType: paramType, init: lowered) ??
+               TryWrapMaybe(targetType: paramType, value: lowered) ??
+               lowered;
     }
 
     // Lowers a member expression, folding choice/flags member access to a literal where applicable.
@@ -1798,12 +1802,19 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// </summary>
     private CreatorExpression? TryWrapMemberMaybe(Expression target, Expression value)
     {
-        if (target is not MemberExpression member)
-        {
-            return null;
-        }
+        return target is MemberExpression member
+            ? TryWrapMaybe(targetType: member.ResolvedType, value: value)
+            : null;
+    }
 
-        TypeSymbol? fieldType = member.ResolvedType;
+    /// <summary>
+    /// Maybe auto-wrap into a slot of type <paramref name="targetType"/> (a member store, a call argument):
+    /// when the slot is <c>Maybe[T]</c> and the value is a bare <c>T</c> (not already a Maybe, not the
+    /// <c>none</c> literal), box it into <c>Maybe[T](present: true, value: value)</c>. Returns null otherwise.
+    /// </summary>
+    private CreatorExpression? TryWrapMaybe(TypeSymbol? targetType, Expression value)
+    {
+        TypeSymbol? fieldType = targetType;
         if (fieldType is null || CarrierBaseName(type: fieldType) != MaybeTypeName)
         {
             return null;

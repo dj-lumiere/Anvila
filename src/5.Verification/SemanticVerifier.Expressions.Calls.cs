@@ -502,18 +502,14 @@ public sealed partial class SemanticVerifier
             RewriteDisplayRoutineWrapperArgs(callName: callName, arguments: call.Arguments);
         }
 
-        RoutineInfo? routine = _registry.LookupRoutine(fullName: callName,
-            isFailable: isFailableCall);
-        // Try current module prefix (e.g., "infinite_loop" -> "HelloWorld.infinite_loop"). A foreign
-        // (C/LLVM) routine found by the bare lookup does not count: it is reachable only through its
-        // realm qualifier, so it must not hide the module's own routine of the same name (the bare
-        // lookup falls back to `Core.add`, which the `LLVM::add[T]` intrinsic owns).
-        if (routine is null or { IsForeign: true } && _currentModuleName != null &&
-            !callName.Contains(value: '.'))
-        {
-            routine = _registry.LookupRoutine(fullName: $"{_currentModuleName}.{callName}",
-                isFailable: isFailableCall) ?? routine;
-        }
+        // The current module's routine comes first (e.g., "infinite_loop" -> "HelloWorld.infinite_loop"):
+        // another module's routine of the same bare name must not shadow it, and neither may a foreign
+        // (C/LLVM) routine, reachable only through its realm qualifier (the bare lookup falls back to
+        // `Core.add`, which the `LLVM::add[T]` intrinsic owns).
+        RoutineInfo? routine = _currentModuleName != null && !callName.Contains(value: '.')
+            ? _registry.LookupRoutine(fullName: $"{_currentModuleName}.{callName}", isFailable: isFailableCall)
+            : null;
+        routine ??= _registry.LookupRoutine(fullName: callName, isFailable: isFailableCall);
 
         // Same rule for a routine of that name in an imported module. A foreign routine stays only
         // when nothing else of that name is visible, so the realm gate can say "call it as LLVM::…".
@@ -1747,11 +1743,9 @@ public sealed partial class SemanticVerifier
         // Bare callName misses module-qualified overloads (the routines register
         // under `Module.name#params`). Fall back to the resolved routine's qualified
         // BaseName so overload resolution finds sibling overloads in the same module.
-        RoutineInfo? better =
-            _registry.LookupRoutineOverload(baseName: callName,
-                argTypes: resolvedArgTypes) ??
-            _registry.LookupRoutineOverload(baseName: routine.BaseName,
-                argTypes: resolvedArgTypes);
+        RoutineInfo? better = LookupVisibleFreeOverload(callName: callName,
+            routine: routine,
+            argTypes: resolvedArgTypes);
         // Only accept a CONCRETE overload here. A generic definition can leak out of the
         // by-argType lookup when an argument is itself a bare generic parameter whose NAME
         // collides with the overload's own parameter name (e.g. arg `value: T` at a call
@@ -1818,9 +1812,9 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
-        RoutineInfo? byDefaults =
-            _registry.LookupRoutineOverload(baseName: callName, argTypes: defaultArgTypes) ??
-            _registry.LookupRoutineOverload(baseName: routine.BaseName, argTypes: defaultArgTypes);
+        RoutineInfo? byDefaults = LookupVisibleFreeOverload(callName: callName,
+            routine: routine,
+            argTypes: defaultArgTypes);
         if (byDefaults is not { IsGenericDefinition: false })
         {
             return false;
@@ -1836,6 +1830,36 @@ public sealed partial class SemanticVerifier
     /// parameter type of <paramref name="routine"/> (by full name or assignability).
     /// Used to determine whether overload re-resolution is necessary.
     /// </summary>
+    /// <summary>
+    /// The free overload of <paramref name="callName"/> for <paramref name="argTypes"/> a call may rebind to:
+    /// the bound routine's own overload set first (its module-qualified base name), then any overload by the
+    /// bare name — but only one visible here (this module, Core, or an imported module). A routine of the same
+    /// name in a module this file does not import must not take the call.
+    /// </summary>
+    private RoutineInfo? LookupVisibleFreeOverload(string callName, RoutineInfo routine, List<TypeSymbol> argTypes)
+    {
+        // The registry's lookup falls back to the bare name across modules even for a qualified base name,
+        // so both results are filtered.
+        if (_registry.LookupRoutineOverload(baseName: routine.BaseName, argTypes: argTypes) is { } sameSet &&
+            IsFreeRoutineVisible(routine: sameSet))
+        {
+            return sameSet;
+        }
+
+        return _registry.LookupRoutineOverload(baseName: callName, argTypes: argTypes) is { } byName &&
+               IsFreeRoutineVisible(routine: byName)
+            ? byName
+            : null;
+    }
+
+    /// <summary>Whether a free routine is visible in the file being analyzed: declared in this module, in
+    /// Core, or in an imported module.</summary>
+    private bool IsFreeRoutineVisible(RoutineInfo routine)
+    {
+        return string.IsNullOrEmpty(value: routine.Module) || routine.Module == "Core" ||
+               routine.Module == _currentModuleName || _importedModules.Contains(item: routine.Module);
+    }
+
     private bool HasArgumentTypeMismatch(CallExpression call, RoutineInfo routine)
     {
         for (int i = 0; i < call.Arguments.Count; i++)
