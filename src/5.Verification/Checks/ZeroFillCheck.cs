@@ -5,7 +5,7 @@ using TypeModel.Types;
 
 namespace Builder.Verification;
 
-public sealed partial class SemanticVerifier
+internal static class ZeroFillCheck
 {
     /// <summary>
     /// RF-S641. <c>Array[T, N]()</c> fills every slot with zero bits. That is a valid value for numbers,
@@ -13,7 +13,8 @@ public sealed partial class SemanticVerifier
     /// not for an entity or a reference-counted handle: a zero slot there is a null handle that crashes
     /// when it is read or torn down at scope exit. Such arrays must be built from their elements.
     /// </summary>
-    private void ValidateZeroFilledArray(TypeSymbol constructed, int argumentCount, SourceLocation location)
+    internal static void Check(TypeSymbol constructed, int argumentCount, SourceLocation location,
+        DiagnosticReporter report)
     {
         if (argumentCount != 0 ||
             constructed is not RecordTypeSymbol { GenericDefinition.Name: "Array", TypeArguments: [var element, ..] } ||
@@ -22,7 +23,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        ReportError(code: SemanticDiagnosticCode.ArrayElementHasNoZeroValue,
+        report(code: SemanticDiagnosticCode.ArrayElementHasNoZeroValue,
             message:
             $"'{constructed.Name}()' fills every slot with zero, but '{element.Name}' has no zero value " +
             $"({blocker}), so each slot would be a null handle that crashes when it is read or torn down. " +

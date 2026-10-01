@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
@@ -7,10 +8,30 @@ namespace Builder.Verification;
 /// "Did you mean …?" suggestion support for name-resolution diagnostics
 /// (unknown identifier / unknown type / member not found). Typos are the most common
 /// cause of these errors; a close-match suggestion turns a search through scope into
-/// a one-glance fix.
+/// a one-glance fix. The candidates are read from <paramref name="registry"/>: the names in scope, the
+/// routines and the types it holds.
 /// </summary>
-public sealed partial class SemanticVerifier
+internal sealed class NameSuggestions(TypeRegistry registry)
 {
+    /// <summary>The suggestion suffix for an unknown identifier.</summary>
+    internal string ForIdentifier(string name)
+    {
+        return DidYouMean(target: name, candidates: IdentifierSuggestionCandidates());
+    }
+
+    /// <summary>The suggestion suffix for an unknown type name.</summary>
+    internal string ForType(string typeName)
+    {
+        return DidYouMean(target: typeName, candidates: TypeSuggestionCandidates());
+    }
+
+    /// <summary>The suggestion suffix for a member <paramref name="name"/> that <paramref name="type"/>
+    /// does not have.</summary>
+    internal string ForMember(TypeSymbol type, string name)
+    {
+        return DidYouMean(target: name, candidates: MemberSuggestionCandidates(type: type));
+    }
+
     /// <summary>
     /// Returns <c> Did you mean 'best'?</c> (leading space included) when a close-enough
     /// candidate exists, or an empty string otherwise — append directly to a message.
@@ -149,13 +170,13 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private IEnumerable<string> IdentifierSuggestionCandidates()
     {
-        foreach (string name in _registry.GetAllVariablesInScope()
+        foreach (string name in registry.GetAllVariablesInScope()
                                          .Keys)
         {
             yield return name;
         }
 
-        foreach (RoutineInfo routine in _registry.GetAllRoutines())
+        foreach (RoutineInfo routine in registry.GetAllRoutines())
         {
             string name = routine.Name;
             if (routine.OwnerType == null && name.Length > 0 && !name.Contains(value: '.') &&
@@ -176,7 +197,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private IEnumerable<string> TypeSuggestionCandidates()
     {
-        foreach (TypeSymbol type in _registry.GetAllTypes())
+        foreach (TypeSymbol type in registry.GetAllTypes())
         {
             string name = type.Name;
             if (string.IsNullOrEmpty(value: name) || type.IsGenericResolution ||
@@ -188,12 +209,6 @@ public sealed partial class SemanticVerifier
 
             yield return name;
         }
-    }
-
-    /// <summary>Suggestion suffix for an unknown type name (also used by TypeResolver's S100 sites).</summary>
-    internal string UnknownTypeSuggestion(string typeName)
-    {
-        return DidYouMean(target: typeName, candidates: TypeSuggestionCandidates());
     }
 
     /// <summary>
@@ -263,7 +278,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private IEnumerable<string> YieldMemberRoutineNames(TypeSymbol type, HashSet<string> seen)
     {
-        foreach (RoutineInfo memberRoutine in _registry.GetMemberRoutinesForType(type: type))
+        foreach (RoutineInfo memberRoutine in registry.GetMemberRoutinesForType(type: type))
         {
             if (memberRoutine.IsWiredMemberRoutine)
             {
@@ -285,7 +300,7 @@ public sealed partial class SemanticVerifier
     private IEnumerable<string> YieldOwnerMatchedRoutineNames(TypeSymbol type,
         TypeSymbol? genericDef, string baseName, HashSet<string> seen)
     {
-        foreach (RoutineInfo routine in _registry.GetAllRoutines())
+        foreach (RoutineInfo routine in registry.GetAllRoutines())
         {
             TypeSymbol? owner = routine.OwnerType;
             if (owner == null)

@@ -466,9 +466,9 @@ public sealed partial class SemanticVerifier
             Expression argExpr = binding.Value;
             TypeSymbol argType = AnalyzeExpression(expression: argExpr, expectedType: paramType);
 
-            if (IsEntityRefType(type: paramType) && IsNullableEntityRead(expr: argExpr))
+            if (SharedEntities.IsEntityRef(type: paramType) && SharedEntities.IsNullableRead(expr: argExpr))
             {
-                ReportNullableIntoNonNull(target: $"parameter '{param.Name}' of '{routine.Name}'",
+                SharedEntities.ReportIntoNonNull(target: $"parameter '{param.Name}' of '{routine.Name}'",
                     value: argExpr,
                     optionalHint: $"{param.Name}: <Type>?");
             }
@@ -587,17 +587,17 @@ public sealed partial class SemanticVerifier
             IsMarkerBoundParam(paramType: param.Type, routine: routine);
         if (_registry.Rules.ChecksOwnership &&
             argValue is IdentifierExpression or MemberExpression &&
-            !IsTriviallyAssignable(type: argType) && !paramIsBorrow)
+            !Wrappers.IsTriviallyAssignable(type: argType) && !paramIsBorrow)
         {
-            (string Wrapper, string Path)? hint = FindNonTriviallyAssignableWrapper(type: argType);
+            (string Wrapper, string Path)? hint = Wrappers.FindNonTriviallyAssignableWrapper(type: argType);
             if (hint != null)
             {
-                string verb = NonTriviallyAssignableWrappers[key: hint.Value.Wrapper];
+                string verb = Wrappers.NonTriviallyAssignableWrappers[key: hint.Value.Wrapper];
                 // A scoped access token (Viewing/Modifying/Consulting/Amending) has NO copy verb —
                 // it is a can't-escape borrow. Passing one as a call argument is always a by-reference
                 // borrow (into a marker-bound / token param), never an implicit copy, so there is
                 // nothing to force. Emitting RF-S420 here would ask the user to "spell out (none)".
-                if (verb == ScopedNoEscapeHint)
+                if (verb == Wrappers.ScopedNoEscapeHint)
                 {
                     return;
                 }
@@ -791,14 +791,14 @@ public sealed partial class SemanticVerifier
             }
 
             // Rewrite for args that don't match the bare-Text/Bytes overloads:
-            //   - copy-restricted wrappers (Owned, Retained, Tracked, …) — `IsTriviallyAssignable`
+            //   - copy-restricted wrappers (Owned, Retained, Tracked, …) — `Wrappers.IsTriviallyAssignable`
             //     returns false; we need the rewrite to avoid S420.
-            //   - raw entities (List[T], Set[T], Dict[K,V]) — `IsTriviallyAssignable` returns
+            //   - raw entities (List[T], Set[T], Dict[K,V]) — `Wrappers.IsTriviallyAssignable` returns
             //     true (fallback), but the generic `alert[T]` / `show[T]` monomorphization
             //     copies the entity ptr by value, which corrupts. Rewriting to `arg.diagnose()`
             //     extracts a Text and uses the cleaner `Accessing[Text]` overload instead.
             bool isEntity = argType is EntityTypeSymbol;
-            if (!isEntity && IsTriviallyAssignable(type: argType))
+            if (!isEntity && Wrappers.IsTriviallyAssignable(type: argType))
             {
                 continue;
             }
@@ -1378,7 +1378,7 @@ public sealed partial class SemanticVerifier
 
         // Phase D: transparent wrappers (T, etc.) forward operator wired memberRoutines
         // to the inner T's implementation. Synthesize the forwarder lazily.
-        if (IsWrapperType(type: type) && TrySynthesizeWrapperForwarder(wrapperType: type,
+        if (Wrappers.IsWrapperType(type: type) && TrySynthesizeWrapperForwarder(wrapperType: type,
                 memberRoutineName: memberRoutineName,
                 isFailable: false) != null)
         {

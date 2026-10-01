@@ -309,7 +309,7 @@ public sealed partial class SemanticVerifier
                 Object: SpliceMemberExpression, MemberName: var buildtimeOp
             })
         {
-            EnforceBuildtimeMemberGate(wiredName: buildtimeOp, location: call.Location);
+            ExpandMemberGate.Check(registry: _registry, routine: _currentRoutine, wiredName: buildtimeOp, location: call.Location, report: ReportError);
         }
 
         if (TryAnalyzeMetadataIntrinsicCall(call: call) is { } intrinsicResult)
@@ -870,7 +870,7 @@ public sealed partial class SemanticVerifier
         // Phase D: Transparent wrapper forwarding — if the memberRoutine isn't found directly on
         // the wrapper, synthesize a forwarder that delegates to the inner type's memberRoutine
         // via `Hijacked[T](me).extract().MemberRoutine(...)`.
-        if (memberRoutine == null && IsWrapperType(type: dispatchType))
+        if (memberRoutine == null && Wrappers.IsWrapperType(type: dispatchType))
         {
             memberRoutine = TrySynthesizeWrapperForwarder(wrapperType: dispatchType,
                 memberRoutineName: callLookupName,
@@ -1379,9 +1379,9 @@ public sealed partial class SemanticVerifier
                         {
                             GenericDefinition.Name: Declaration.RuntimeContract.Roamed
                         }
-                    } && IsNullableEntityRead(expr: argVal))
+                    } && SharedEntities.IsNullableRead(expr: argVal))
                 {
-                    ReportNullableIntoNonNull(target: $"field '{field.Name}'",
+                    SharedEntities.ReportIntoNonNull(target: $"field '{field.Name}'",
                         value: argVal,
                         optionalHint: $"{field.Name}: <Type>?");
                 }
@@ -2697,7 +2697,7 @@ public sealed partial class SemanticVerifier
         // #98: .hijack() on Guarded/Witnessed requires danger block
         if (member.MemberName == Declaration.RuntimeContract.RawPointer.Hijack &&
             !InDangerBlock &&
-            (IsSharedType(type: objectType) || IsWatchedType(type: objectType)))
+            (Wrappers.IsSharedType(type: objectType) || Wrappers.IsWatchedType(type: objectType)))
         {
             ReportError(code: SemanticDiagnosticCode.SnatchRequiresDanger,
                 message:
@@ -2775,7 +2775,7 @@ public sealed partial class SemanticVerifier
         }
 
         // #92: Re-grasping prohibition — cannot grasp an already-grasped token
-        if (member.MemberName == ModifyMemberRoutineName && IsModifyingType(type: objectType))
+        if (member.MemberName == ModifyMemberRoutineName && Wrappers.IsModifyingType(type: objectType))
         {
             ReportError(code: SemanticDiagnosticCode.ReHijackingProhibited,
                 message: $"Cannot re-modify an already-modified token '{objectType.Name}'. " +
@@ -2784,8 +2784,8 @@ public sealed partial class SemanticVerifier
         }
 
         // #170: Downgrade prohibition — cannot call .view() on Modifying/Amending
-        if (member.MemberName == "view" && (IsModifyingType(type: objectType) ||
-                                            IsAmendingType(type: objectType)))
+        if (member.MemberName == "view" && (Wrappers.IsModifyingType(type: objectType) ||
+                                            Wrappers.IsAmendingType(type: objectType)))
         {
             ReportError(code: SemanticDiagnosticCode.TokenDowngradeProhibited,
                 message: $"Cannot downgrade '{objectType.Name}' with '.view()'. " +
@@ -2950,7 +2950,7 @@ public sealed partial class SemanticVerifier
         // can have a failable and a plain overload with different parameters (List's `getitem!(index:)` and
         // slice `getitem(range:)`): `view.getitem(index: i)` got the slice forwarder. Synthesize the other
         // one and take it when it is the one whose parameters the call names.
-        if (betterMemberRoutine == null && IsWrapperType(type: dispatchType) &&
+        if (betterMemberRoutine == null && Wrappers.IsWrapperType(type: dispatchType) &&
             !ArgumentNamesFit(routine: memberRoutine, arguments: call.Arguments))
         {
             foreach (bool failable in (bool[])[true, false])

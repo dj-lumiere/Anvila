@@ -526,9 +526,7 @@ public sealed partial class SemanticVerifier
             typeArguments: typeArgs.ToList());
         generic.ConstructedType = resolvedType;
         generic.LoweringKind = ClassifyConstruction(type: resolvedType);
-        ValidateZeroFilledArray(constructed: resolvedType,
-            argumentCount: generic.Arguments.Count,
-            location: generic.Location);
+        ZeroFillCheck.Check(constructed: resolvedType, argumentCount: generic.Arguments.Count, location: generic.Location, report: ReportError);
 
         // For field-init style (named args matching field names), pre-compute a field-name →
         // field-type map so literals see the field's declared type as their contextual expected type.

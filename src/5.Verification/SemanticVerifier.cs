@@ -591,6 +591,35 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>True while analyzing the body of a buildtime <c>expand</c> statement. Expansion is
+    /// single-level, so a nested <c>expand</c> is rejected (RF-S635).</summary>
+    private bool _inExpandBody;
+
+    private SharedEntities? _sharedEntities;
+
+    /// <summary>Nullability of shared entity references (see <see cref="Verification.SharedEntities"/>).</summary>
+    private SharedEntities SharedEntities => _sharedEntities ??=
+        new SharedEntities(registry: _registry, report: ReportError,
+            analyze: expression => AnalyzeExpression(expression: expression));
+
+    private NameSuggestions? _suggestions;
+
+    /// <summary>"Did you mean …?" suffixes for name-resolution diagnostics.</summary>
+    internal NameSuggestions Suggestions => _suggestions ??= new NameSuggestions(registry: _registry);
+
+    /// <summary>The build's shape checker (see <see cref="ShapeEffectChecker"/>), made on first use.</summary>
+    private ShapeEffectChecker? _shapeEffects;
+
+    /// <summary>Runs the build-time shape checks over the user programs, where the language checks ownership
+    /// (a language without them checks shapes at run time instead).</summary>
+    private void CheckShapeEffects(IEnumerable<Program> programs)
+    {
+        if (_registry.Rules.ChecksOwnership)
+        {
+            (_shapeEffects ??= new ShapeEffectChecker(report: ReportError)).Check(programs: programs);
+        }
+    }
+
     /// <summary>
     /// Phase 5: Type-annotate and verify all routine bodies.
     /// Runs after Phase 6/7 stub pre-passes because body analysis needs stubs in scope;

@@ -767,7 +767,7 @@ public sealed partial class SemanticVerifier
                 message: $"'with' expression requires a record type, got '{baseType.Name}'.",
                 location: with.Location);
         }
-        else if (!IsTriviallyAssignable(type: baseType))
+        else if (!Wrappers.IsTriviallyAssignable(type: baseType))
         {
             // `with` lowers to `tmp = base.assign(); tmp.field = v` — so the base must obey
             // Assignable. Records with ownership-bearing fields that don't opt in are rejected

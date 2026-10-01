@@ -196,7 +196,7 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.UnknownIdentifier,
             message:
-            $"Unknown identifier '{id.Name}'.{DidYouMean(target: id.Name, candidates: IdentifierSuggestionCandidates())}",
+            $"Unknown identifier '{id.Name}'.{Suggestions.ForIdentifier(name: id.Name)}",
             location: id.Location);
         return ErrorTypeSymbol.Instance;
     }
@@ -984,10 +984,10 @@ public sealed partial class SemanticVerifier
 
     private void EnforceBinaryBuildtimeMemberGate(BinaryExpression binary)
     {
-        if (WiredNameForOperator(op: binary.Operator) is { } opWired &&
+        if (ExpandMemberGate.WiredNameForOperator(op: binary.Operator) is { } opWired &&
             (binary.Left is SpliceMemberExpression || binary.Right is SpliceMemberExpression))
         {
-            EnforceBuildtimeMemberGate(wiredName: opWired, location: binary.Location);
+            ExpandMemberGate.Check(registry: _registry, routine: _currentRoutine, wiredName: opWired, location: binary.Location, report: ReportError);
         }
     }
 
@@ -1313,12 +1313,12 @@ public sealed partial class SemanticVerifier
 
         // Suflae flow typing: reassigning an entity reference re-derives its nullability.
         if (!_registry.Rules.EntitiesAreShared || varInfo == null ||
-            !IsEntityRefType(type: varInfo.Type))
+            !SharedEntities.IsEntityRef(type: varInfo.Type))
         {
             return;
         }
 
-        bool valueNullable = IsNullableEntityRead(expr: value);
+        bool valueNullable = SharedEntities.IsNullableRead(expr: value);
         if (varInfo.IsNullable)
         {
             // A nullable local: a possibly-none RHS re-nullifies it (shadowing any prior
@@ -1335,7 +1335,7 @@ public sealed partial class SemanticVerifier
         else if (valueNullable)
         {
             // A non-null local cannot take a possibly-none value.
-            ReportNullableIntoNonNull(target: $"variable '{id.Name}'",
+            SharedEntities.ReportIntoNonNull(target: $"variable '{id.Name}'",
                 value: value,
                 optionalHint: $"{id.Name}: <Type>?");
         }
@@ -1351,7 +1351,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
         // Read-only wrapper types (Viewing, Consulting) cannot be written through.
-        if (IsReadOnlyWrapper(type: objectType))
+        if (Wrappers.IsReadOnlyWrapper(type: objectType))
         {
             ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
                 message:
@@ -1372,9 +1372,9 @@ public sealed partial class SemanticVerifier
             {
                 IsNullable: false,
                 Type: RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed }
-            } writeField && IsNullableEntityRead(expr: value))
+            } writeField && SharedEntities.IsNullableRead(expr: value))
         {
-            ReportNullableIntoNonNull(target: $"field '{writeField.Name}'",
+            SharedEntities.ReportIntoNonNull(target: $"field '{writeField.Name}'",
                 value: value,
                 optionalHint: $"{writeField.Name}: <Type>?");
         }
@@ -1463,13 +1463,13 @@ public sealed partial class SemanticVerifier
         // See AnalyzeVariableDeclaration for the same rule applied to var initializers.
         if (_registry.Rules.ChecksOwnership &&
             value is IdentifierExpression or MemberExpression &&
-            !IsTriviallyAssignable(type: valueType))
+            !Wrappers.IsTriviallyAssignable(type: valueType))
         {
             (string Wrapper, string Path)? hint =
-                FindNonTriviallyAssignableWrapper(type: valueType);
+                Wrappers.FindNonTriviallyAssignableWrapper(type: valueType);
             if (hint != null)
             {
-                string verb = NonTriviallyAssignableWrappers[key: hint.Value.Wrapper];
+                string verb = Wrappers.NonTriviallyAssignableWrappers[key: hint.Value.Wrapper];
                 string fieldNote = hint.Value.Path == "<value>"
                     ? $"value of type '{valueType.Name}' is a '{hint.Value.Wrapper}[…]' wrapper"
                     : $"field '{hint.Value.Path}' of type '{hint.Value.Wrapper}[…]'";

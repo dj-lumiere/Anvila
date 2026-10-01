@@ -354,7 +354,10 @@ public sealed partial class SemanticVerifier
         // null is a transient "not yet inferred" state — after body analysis it must be resolved.
         routineInfo.ReturnType ??= _registry.LookupType(name: "None");
 
-        CheckControllerRewraps(routine: routine);
+        if (_registry.Rules.ChecksOwnership)
+        {
+            ControllerRewrapCheck.Check(routine: routine, report: ReportError);
+        }
 
         // Validate that all routines terminate explicitly on every path (#144).
         // None-returning routines still require an explicit `return` — implicit fall-off
@@ -798,7 +801,7 @@ public sealed partial class SemanticVerifier
             varType = ResolveType(typeExpr: varDecl.Type);
 
             (TypeSymbol resolved, bool isNullable, bool isEntitySlot) =
-                ResolveSharedEntityAnnotation(annotated: varType, typeExpr: varDecl.Type);
+                SharedEntities.ResolveAnnotation(annotated: varType, typeExpr: varDecl.Type);
             varType = resolved;
             annotatedNullable = isNullable;
             annotatedNonNullEntity = isEntitySlot && !isNullable;
@@ -852,14 +855,14 @@ public sealed partial class SemanticVerifier
         // access on it is gated until a null-check.
         bool varIsNullable = annotatedNullable ||
                              varDecl is { Type: null, Initializer: not null } &&
-                             IsNullableEntityRead(expr: varDecl.Initializer);
+                             SharedEntities.IsNullableRead(expr: varDecl.Initializer);
 
         // Suflae: assigning a possibly-none value into a NON-NULL entity variable (`var x: E = <nullable>`
         // or `var x: E = none`) is rejected — declare the variable optional (`x: E?`) to allow none.
         if (annotatedNonNullEntity && varDecl.Initializer != null &&
-            IsNullableEntityRead(expr: varDecl.Initializer))
+            SharedEntities.IsNullableRead(expr: varDecl.Initializer))
         {
-            ReportNullableIntoNonNull(target: $"variable '{varDecl.Name}'",
+            SharedEntities.ReportIntoNonNull(target: $"variable '{varDecl.Name}'",
                 value: varDecl.Initializer,
                 optionalHint: $"{varDecl.Name}: <Type>?");
         }
@@ -1018,7 +1021,7 @@ public sealed partial class SemanticVerifier
         }
 
         // #96: Amending[T] cannot be copied or aliased — exclusive lock token
-        if (varDecl.Initializer is IdentifierExpression && IsAmendingType(type: varType))
+        if (varDecl.Initializer is IdentifierExpression && Wrappers.IsAmendingType(type: varType))
         {
             ReportError(code: SemanticDiagnosticCode.AmendingCopyNotAllowed,
                 message: $"Cannot copy or alias 'Amending[T]' variable to '{varDecl.Name}'. " +
@@ -1072,15 +1075,15 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        if (IsTriviallyAssignable(type: varType))
+        if (Wrappers.IsTriviallyAssignable(type: varType))
         {
             return;
         }
 
-        (string Wrapper, string Path)? hint = FindNonTriviallyAssignableWrapper(type: varType);
+        (string Wrapper, string Path)? hint = Wrappers.FindNonTriviallyAssignableWrapper(type: varType);
         if (hint != null)
         {
-            string verb = NonTriviallyAssignableWrappers[key: hint.Value.Wrapper];
+            string verb = Wrappers.NonTriviallyAssignableWrappers[key: hint.Value.Wrapper];
             string fieldNote = hint.Value.Path == "<value>"
                 ? $"type '{varType.Name}' is a '{hint.Value.Wrapper}[…]' wrapper"
                 : $"field '{hint.Value.Path}' of type '{hint.Value.Wrapper}[…]'";
@@ -1260,7 +1263,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
         // Read-only wrapper types (Viewing, Consulting) cannot be written through
-        if (IsReadOnlyWrapper(type: objectType))
+        if (Wrappers.IsReadOnlyWrapper(type: objectType))
         {
             ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
                 message:

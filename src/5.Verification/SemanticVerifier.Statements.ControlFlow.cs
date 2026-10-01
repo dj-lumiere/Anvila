@@ -434,7 +434,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckWhenSharedEntityRef(WhenStatement whenStmt, TypeSymbol matchedType)
     {
-        if (_registry.Rules.EntitiesAreShared && IsEntityRefType(type: matchedType))
+        if (_registry.Rules.EntitiesAreShared && SharedEntities.IsEntityRef(type: matchedType))
         {
             ReportError(code: SemanticDiagnosticCode.NullableEntityDeref,
                 message:

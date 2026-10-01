@@ -12,7 +12,7 @@ public sealed partial class SemanticVerifier
     private static bool IsInlineOnlyTokenType(TypeSymbol type)
     {
         string baseName = type.BareName;
-        return InlineOnlyTokenTypes.Contains(value: baseName);
+        return Wrappers.InlineOnlyTokenTypes.Contains(value: baseName);
     }
 
     /// <summary>
@@ -105,7 +105,7 @@ public sealed partial class SemanticVerifier
             // Convert AST TypeSymbol back to get the type name
             string baseName = arg.ResolvedType.BareName;
 
-            if (!ExclusiveTokenTypes.Contains(value: baseName))
+            if (!Wrappers.ExclusiveTokenTypes.Contains(value: baseName))
             {
                 continue;
             }
@@ -177,7 +177,7 @@ public sealed partial class SemanticVerifier
         string boundaryKind, SourceLocation location)
     {
         TypeSymbol type = param.Type;
-        if (type is ErrorTypeSymbol || IsThreadShareable(type: type))
+        if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type))
         {
             return;
         }
@@ -211,7 +211,7 @@ public sealed partial class SemanticVerifier
 
         (string Wrapper, string Path)? offender = isEntity
             ? null
-            : FindThreadUnsafeWrapper(type: type);
+            : Wrappers.FindThreadUnsafeWrapper(type: type);
         if (!isEntity && offender == null)
         {
             return;
@@ -662,12 +662,6 @@ public sealed partial class SemanticVerifier
             }
         }
 
-    }
-
-    private static bool IsPathPrefixOrEqual(string prefix, string path)
-    {
-        return path == prefix || path.StartsWith(value: prefix + ".") ||
-               path.StartsWith(value: prefix + "[");
     }
 
     /// <summary>Every expression inside <paramref name="expr"/>, itself included.</summary>

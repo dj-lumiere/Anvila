@@ -22,8 +22,10 @@ namespace Builder.Verification;
 /// <c>Tracked</c>) of the same kind of container, which may be the same container.</para>
 /// <para>Runs once after all user bodies are analyzed, so every call is resolved. Suflae keeps the runtime
 /// check instead (its containers are shared <c>Roamed</c> handles the build cannot track).</para>
+/// <para>One checker serves a whole build: the user routines it has seen accumulate across
+/// <see cref="Check"/> calls, so a routine analyzed in an earlier file still lends its effect.</para>
 /// </summary>
-public sealed partial class SemanticVerifier
+internal sealed class ShapeEffectChecker(DiagnosticReporter report)
 {
     private const string MeSlot = "me";
 
@@ -59,14 +61,9 @@ public sealed partial class SemanticVerifier
         return path.Replace(oldValue: "[]", newValue: "[...]", comparisonType: StringComparison.Ordinal);
     }
 
-    /// <summary>Runs the shape checks over the user programs (where the language checks ownership).</summary>
-    private void CheckShapeEffects(IEnumerable<Program> programs)
+    /// <summary>Runs the shape checks over the user programs.</summary>
+    internal void Check(IEnumerable<Program> programs)
     {
-        if (!_registry.Rules.ChecksOwnership)
-        {
-            return;
-        }
-
         List<Program> userPrograms = programs.ToList();
         foreach (RoutineDeclaration routine in userPrograms.SelectMany(selector: EnumerateRoutines))
         {
@@ -441,7 +438,7 @@ public sealed partial class SemanticVerifier
                         case StealExpression steal when ShapePath(expr: steal.Operand) is { } stolen:
                             foreach (ShapeGuard g in active.Where(predicate: g => !g.IsLoop))
                             {
-                                if (IsPathPrefixOrEqual(prefix: stolen, path: g.Path))
+                                if (AccessPaths.IsPrefixOrEqual(prefix: stolen, path: g.Path))
                                 {
                                     ReportShapeChange(guard: g,
                                         attempt: $"steal '{stolen}'",
@@ -488,7 +485,7 @@ public sealed partial class SemanticVerifier
                     continue;
                 }
 
-                if (path != null && IsPathPrefixOrEqual(prefix: path, path: g.Path))
+                if (path != null && AccessPaths.IsPrefixOrEqual(prefix: path, path: g.Path))
                 {
                     string attempt = callee.Length == 0
                         ? $"pass '{shown}' to a routine value"
@@ -535,7 +532,7 @@ public sealed partial class SemanticVerifier
     {
         if (guard.IsLoop)
         {
-            ReportError(code: SemanticDiagnosticCode.ReshapingDuringIteration,
+            report(code: SemanticDiagnosticCode.ReshapingDuringIteration,
                 message:
                 $"You are trying to {attempt} while an `each` loop is going through '{guard.Shown}': {why}. " +
                 "After such a change the loop could no longer trust that its next element is really the " +
@@ -544,7 +541,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        ReportError(code: SemanticDiagnosticCode.TokenSourceReplaced,
+        report(code: SemanticDiagnosticCode.TokenSourceReplaced,
             message:
             $"You are trying to {attempt} while this statement works on an element of '{guard.Shown}' in " +
             $"place: {why}. That could move or free the element under it. Do it in a separate statement " +

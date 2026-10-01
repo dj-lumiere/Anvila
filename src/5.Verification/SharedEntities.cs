@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Enums;
@@ -5,7 +6,15 @@ using TypeModel.Types;
 
 namespace Builder.Verification;
 
-public sealed partial class SemanticVerifier
+/// <summary>
+/// Nullability of shared entity references, for a language whose entities are shared handles
+/// (<see cref="Frontends.LanguageRules.EntitiesAreShared"/>, Suflae): an entity slot is a <c>Roamed[E]</c>
+/// handle, <c>E?</c> may be none, and a possibly-none value must be checked before it reaches a non-null
+/// slot. Reads the registry's scope for flow facts and asks <paramref name="analyze"/> for the type of a
+/// subexpression it meets unanalyzed.
+/// </summary>
+internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter report,
+    Func<Expression, TypeSymbol> analyze)
 {
     /// <summary>
     /// Suflae flow typing: determines whether the VALUE produced by reading <paramref name="expr"/> is a
@@ -18,9 +27,9 @@ public sealed partial class SemanticVerifier
     /// Constructions (<c>E(...)</c>), non-null field reads, and routine returns of entity type are non-none.
     /// Only meaningful for Suflae; always false for RazorForge.
     /// </summary>
-    private bool IsNullableEntityRead(Expression expr)
+    internal bool IsNullableRead(Expression expr)
     {
-        if (!_registry.Rules.EntitiesAreShared)
+        if (!registry.Rules.EntitiesAreShared)
         {
             return false;
         }
@@ -33,8 +42,8 @@ public sealed partial class SemanticVerifier
 
             // A nullable local, unless flow analysis has already proven it non-none here.
             case IdentifierExpression id:
-                return _registry.LookupVariable(name: id.Name) is { IsNullable: true } &&
-                       !_registry.IsVariableProvenNonNull(name: id.Name);
+                return registry.LookupVariable(name: id.Name) is { IsNullable: true } &&
+                       !registry.IsVariableProvenNonNull(name: id.Name);
 
             // A read of an optional entity field (`obj.optField`). The field's IsNullable is set in
             // TypeBodyResolver. At SA time the object type is the bare EntityTypeSymbol (Roamed lowering
@@ -42,7 +51,7 @@ public sealed partial class SemanticVerifier
             case MemberExpression m:
             {
                 TypeSymbol objType =
-                    m.Object.ResolvedType ?? AnalyzeExpression(expression: m.Object);
+                    m.Object.ResolvedType ?? analyze(arg: m.Object);
                 return objType is EntityTypeSymbol entity &&
                        entity.LookupMemberVariable(memberVariableName: m.MemberName) is
                            { IsNullable: true };
@@ -57,9 +66,9 @@ public sealed partial class SemanticVerifier
     /// Suflae: true if the type is an entity reference (a bare <c>EntityTypeSymbol</c> or a
     /// <c>Roamed[E]</c> handle) — i.e. something that participates in nullability flow analysis.
     /// </summary>
-    private bool IsEntityRefType(TypeSymbol type)
+    internal bool IsEntityRef(TypeSymbol type)
     {
-        return _registry.Rules.EntitiesAreShared && (type is EntityTypeSymbol ||
+        return registry.Rules.EntitiesAreShared && (type is EntityTypeSymbol ||
                                                          type is RecordTypeSymbol
                                                          {
                                                              GenericDefinition.Name:
@@ -74,7 +83,7 @@ public sealed partial class SemanticVerifier
     /// Uses <see cref="Builder.Diagnostics.SemanticDiagnosticCode.AssignmentTypeMismatch"/> (RF-S252),
     /// consistent with the construction/assignment none-checks.
     /// </summary>
-    private void ReportNullableIntoNonNull(string target, Expression value, string optionalHint)
+    internal void ReportIntoNonNull(string target, Expression value, string optionalHint)
     {
         bool isLiteralNone = value is LiteralExpression { LiteralType: TokenType.NoneValue };
         string message = isLiteralNone
@@ -82,7 +91,7 @@ public sealed partial class SemanticVerifier
               $"Declare it optional ('{optionalHint}') to allow none."
             : $"Cannot assign a possibly-none value to non-nullable entity {target}. " +
               $"Null-check it first (e.g. 'if v isnot None') or declare it optional ('{optionalHint}').";
-        ReportError(code: Diagnostics.SemanticDiagnosticCode.AssignmentTypeMismatch,
+        report(code: Diagnostics.SemanticDiagnosticCode.AssignmentTypeMismatch,
             message: message,
             location: value.Location);
     }
@@ -97,7 +106,7 @@ public sealed partial class SemanticVerifier
     /// (resolved storage type, isNullable, isEntitySlot). For non-Suflae or non-entity annotations the
     /// type is returned unchanged with both flags false.
     /// </returns>
-    private (TypeSymbol Type, bool IsNullable, bool IsEntitySlot) ResolveSharedEntityAnnotation(
+    internal (TypeSymbol Type, bool IsNullable, bool IsEntitySlot) ResolveAnnotation(
         TypeSymbol annotated, TypeExpression? typeExpr = null)
     {
         // An `RF::`-qualified annotation opts OUT of the entity->Roamed lowering: ResolveType already
@@ -110,8 +119,8 @@ public sealed partial class SemanticVerifier
             return (annotated, false, false);
         }
 
-        if (!_registry.Rules.EntitiesAreShared ||
-            _registry.LookupType(name: Declaration.RuntimeContract.Roamed) is not { } roamedDef)
+        if (!registry.Rules.EntitiesAreShared ||
+            registry.LookupType(name: Declaration.RuntimeContract.Roamed) is not { } roamedDef)
         {
             return (annotated, false, false);
         }
@@ -120,14 +129,14 @@ public sealed partial class SemanticVerifier
         {
             // bare `E` -> non-null Roamed[E]
             EntityTypeSymbol entity => (
-                _registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [entity]),
+                registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [entity]),
                 false, true),
             // `E?` (= Maybe[E]) -> nullable Roamed[E]
             RecordTypeSymbol
             {
                 GenericDefinition.Name: "Maybe", TypeArguments: [EntityTypeSymbol inner]
             } => (
-                _registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [inner]),
+                registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [inner]),
                 true, true),
             // Already a Roamed[E] (e.g. an annotation that spelled the wrapper directly) — non-null slot.
             RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed } => (

@@ -260,7 +260,7 @@ public sealed partial class SemanticVerifier
         // (`x.field` on an unchecked `x: E?`) and a nullable field-chain (`a.b.c` where `b: E?`) — a
         // field read is never flow-narrowed (Kotlin doesn't smart-cast mutable fields either), so it
         // must always be bound to a local and checked there.
-        if (_registry.Rules.EntitiesAreShared && IsNullableEntityRead(expr: member.Object))
+        if (_registry.Rules.EntitiesAreShared && SharedEntities.IsNullableRead(expr: member.Object))
         {
             ReportNullableEntityDeref(member: member);
         }
@@ -335,7 +335,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.MemberNotFound,
                 message:
-                $"Type '{objectType.Name}' does not have a member '{member.MemberName}'.{DidYouMean(target: member.MemberName, candidates: MemberSuggestionCandidates(type: lookupType))}",
+                $"Type '{objectType.Name}' does not have a member '{member.MemberName}'.{Suggestions.ForMember(type: lookupType, name: member.MemberName)}",
                 location: member.Location);
         }
 
@@ -362,7 +362,7 @@ public sealed partial class SemanticVerifier
                 return memberVariable.Type;
             }
 
-            if (IsWrapperType(type: lookupType) &&
+            if (Wrappers.IsWrapperType(type: lookupType) &&
                 TryForwardWrapperMemberAccess(lookupType: lookupType, member: member) is { } fwd)
             {
                 return fwd;
@@ -397,7 +397,7 @@ public sealed partial class SemanticVerifier
                 return memberVariable.Type;
             }
         }
-        else if (IsWrapperType(type: lookupType) &&
+        else if (Wrappers.IsWrapperType(type: lookupType) &&
                  TryForwardWrapperMemberAccess(lookupType: lookupType, member: member) is
                      { } forwarded)
         {
@@ -418,7 +418,7 @@ public sealed partial class SemanticVerifier
     {
         // Try to forward member variable access to the inner type
         MemberVariableInfo? innerMemberVariable =
-            LookupMemberVariableOnWrapperInnerType(wrapperType: lookupType,
+            Wrappers.LookupMemberVariableOnWrapperInnerType(wrapperType: lookupType,
                 memberVariableName: member.MemberName);
         if (innerMemberVariable != null)
         {
@@ -617,7 +617,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Phase D: synthesize a wrapper forwarder if still not found
-        if (getItem == null && IsWrapperType(type: lookupType))
+        if (getItem == null && Wrappers.IsWrapperType(type: lookupType))
         {
             getItem = TrySynthesizeWrapperForwarder(wrapperType: lookupType,
                 memberRoutineName: GetItemMemberRoutineName,
@@ -1012,7 +1012,7 @@ public sealed partial class SemanticVerifier
     {
         // Raw entities are entity types that are not wrapped
         return type.Category == TypeCategory.Entity && !IsMemoryToken(type: type) &&
-               !IsWrapperType(type: type) && !IsHijacked(type: type);
+               !Wrappers.IsWrapperType(type: type) && !IsHijacked(type: type);
     }
 
     /// <summary>
@@ -1343,7 +1343,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.UnknownType,
                 message:
-                $"Unknown type '{creator.TypeName}'. Check the spelling, and make sure the module that defines it is imported.{DidYouMean(target: creator.TypeName, candidates: TypeSuggestionCandidates())}",
+                $"Unknown type '{creator.TypeName}'. Check the spelling, and make sure the module that defines it is imported.{Suggestions.ForType(typeName: creator.TypeName)}",
                 location: creator.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -1377,9 +1377,7 @@ public sealed partial class SemanticVerifier
         }
 
         creator.ConstructedType = type;
-        ValidateZeroFilledArray(constructed: type,
-            argumentCount: creator.MemberVariables.Count,
-            location: creator.Location);
+        ZeroFillCheck.Check(constructed: type, argumentCount: creator.MemberVariables.Count, location: creator.Location, report: ReportError);
         creator.LoweringKind = ClassifyConstruction(type: type);
 
         // Propagate the in-flight bit from the resolved type's implicit constructor.

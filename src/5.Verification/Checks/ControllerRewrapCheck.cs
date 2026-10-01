@@ -5,7 +5,7 @@ using TypeModel.Types;
 
 namespace Builder.Verification;
 
-public sealed partial class SemanticVerifier
+internal static class ControllerRewrapCheck
 {
     /// <summary>
     /// RF-S640. A shared-buffer value (Text, Bytes, Integer, Real, and user types in the same shape) keeps
@@ -16,13 +16,8 @@ public sealed partial class SemanticVerifier
     /// the hold both values release the same count and the buffer is freed twice. A fresh controller
     /// (<c>fresh_frozen_controller()</c>, a local that holds one) is not a field read and is never flagged.
     /// </summary>
-    private void CheckControllerRewraps(RoutineDeclaration routine)
+    internal static void Check(RoutineDeclaration routine, DiagnosticReporter report)
     {
-        if (!_registry.Rules.ChecksOwnership)
-        {
-            return;
-        }
-
         var held = new HashSet<string>(comparer: StringComparer.Ordinal);
         var rewraps = new List<MemberExpression>();
         AstWalker.Walk(root: routine.Body,
@@ -79,7 +74,7 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            ReportError(code: SemanticDiagnosticCode.ControllerRewrapWithoutHold,
+            report(code: SemanticDiagnosticCode.ControllerRewrapWithoutHold,
                 message:
                 $"You are putting '{path}', the refcount of a buffer that '{PathText(expr: read.Object)}' " +
                 "still owns, into a new value without holding it, so both values release the same count " +
