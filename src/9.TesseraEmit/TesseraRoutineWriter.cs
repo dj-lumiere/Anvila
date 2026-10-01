@@ -244,7 +244,7 @@ internal sealed class TesseraRoutineWriter
                 WriteEffect(expression: d.Expression);
                 break;
             case AssignmentStatement a:
-                WriteAssignment(assignment: a);
+                WriteAssignment(target: a.Target, value: a.Value);
                 break;
             case ReturnStatement r:
                 WriteReturn(statement: r);
@@ -296,16 +296,18 @@ internal sealed class TesseraRoutineWriter
         _ = Evaluate(expression: expression);
     }
 
-    private void WriteAssignment(AssignmentStatement assignment)
+    /// <summary>Stores a value into a local or a field. The value is computed first, then the place.</summary>
+    private string WriteAssignment(Expression target, Expression value)
     {
-        string value = Value(operand: Evaluate(expression: assignment.Value));
-        Operand target = Evaluate(expression: assignment.Target);
-        if (!target.IsPlace)
+        string computed = Value(operand: Evaluate(expression: value));
+        Operand place = Evaluate(expression: target);
+        if (!place.IsPlace)
         {
-            throw Unsupported(what: $"an assignment to {assignment.Target.GetType().Name}");
+            throw Unsupported(what: $"an assignment to {target.GetType().Name}");
         }
 
-        Emit(line: $"{target.Text}.store({value})");
+        Emit(line: $"{place.Text}.store({computed})");
+        return computed;
     }
 
     private void WriteReturn(ReturnStatement statement)
@@ -449,6 +451,9 @@ internal sealed class TesseraRoutineWriter
                 return Evaluate(expression: named.Value);
             case CreatorExpression creator:
                 return EvaluateCreator(creator: creator);
+            case BinaryExpression { Operator: BinaryOperator.Assign } assign:
+                return new Operand(Text: WriteAssignment(target: assign.Left, value: assign.Right),
+                    Type: assign.Right.ResolvedType, IsPlace: false);
             case BackendCastExpression cast:
             {
                 Operand inner = Evaluate(expression: cast.Value);
