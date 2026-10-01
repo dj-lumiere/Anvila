@@ -366,6 +366,46 @@ public record AtomicRmwStatement(
     }
 }
 
+/// <summary>
+/// Registers an owned local of a routine that may suspend with the coroutine's cancellation shadow stack,
+/// right after the local is constructed: if the coroutine is abandoned while parked, the runtime tears the
+/// value down with <paramref name="Destroy"/>. Inserted by CancellationInstrumentationPass, which decided
+/// everything here, and translated as is by the emitter (a node slot for the local plus one
+/// <c>rf_coro_cf_push</c> call).
+/// </summary>
+/// <param name="Local">The local's name, as declared in the routine body.</param>
+/// <param name="Destroy">The routine the local's own inline teardown calls.</param>
+/// <param name="PassesAddress">True when <c>destroy</c> receives the local's storage address (a value
+/// type), false when it receives the value the local holds (an entity reference).</param>
+/// <param name="Location">Source location of the local's declaration.</param>
+public record CancellationPushStatement(
+    string Local,
+    TypeModel.Symbols.RoutineInfo Destroy,
+    bool PassesAddress,
+    SourceLocation Location) : Statement(Location: Location)
+{
+    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitCancellationPushStatement(node: this);
+    }
+}
+
+/// <summary>
+/// Unlinks a local registered by a <see cref="CancellationPushStatement"/> right before its inline
+/// <c>destroy</c>, so an abandoned coroutine never tears it down a second time.
+/// </summary>
+/// <param name="Local">The local's name.</param>
+/// <param name="Location">Source location of the teardown.</param>
+public record CancellationPopStatement(string Local, SourceLocation Location) : Statement(Location: Location)
+{
+    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitCancellationPopStatement(node: this);
+    }
+}
+
 #endregion
 
 #region Control Flow Statements

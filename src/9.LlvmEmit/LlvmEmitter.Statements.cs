@@ -78,6 +78,14 @@ public partial class LlvmEmitter
                     EmitAtomicRmw(sb: sb, atomic: atomic);
                     return false;
 
+                case CancellationPushStatement push:
+                    EmitCancellationPush(sb: sb, push: push);
+                    return false;
+
+                case CancellationPopStatement pop:
+                    EmitCancellationPop(sb: sb, pop: pop);
+                    return false;
+
                 case DiscardStatement discard:
                     // Note: creator expressions could skip evaluation entirely (creators have no observable
                     // side effects and their result is being discarded, so the allocation is wasted) — not yet implemented.
@@ -496,6 +504,40 @@ public partial class LlvmEmitter
             ? unique
             : id.Name;
         EmitLine(sb: sb, line: $"  store ptr null, ptr %{llvmName}.addr");
+    }
+
+    /// <summary>
+    /// Emits a <see cref="CancellationPushStatement"/>: a node slot for the local and one
+    /// <c>rf_coro_cf_push(node, value, destroy)</c>, where the value is the local's storage address or the
+    /// reference it holds, as the statement says.
+    /// </summary>
+    private void EmitCancellationPush(StringBuilder sb, CancellationPushStatement push)
+    {
+        string unique = _localVarLlvmNames[key: push.Local];
+        GenerateRoutineDeclaration(routine: push.Destroy);
+        string destroy = MangleRoutineName(routine: push.Destroy);
+        string value = $"%{unique}.addr";
+        if (!push.PassesAddress)
+        {
+            value = NextTemp();
+            EmitLine(sb: sb, line: $"  {value} = load ptr, ptr %{unique}.addr");
+        }
+
+        string node = $"%{unique}.cfnode";
+        EmitEntryAlloca(llvmName: node, llvmType: "{ ptr, ptr, ptr }");
+        _rfRoutineDeclarations[key: Declaration.RuntimeContract.Runtime.CoroCfPush] =
+            $"declare void @{Declaration.RuntimeContract.Runtime.CoroCfPush}(ptr, ptr, ptr)";
+        EmitLine(sb: sb,
+            line: $"  call void @{Declaration.RuntimeContract.Runtime.CoroCfPush}(ptr {node}, ptr {value}, ptr @{destroy})");
+    }
+
+    /// <summary>Emits a <see cref="CancellationPopStatement"/>: <c>rf_coro_cf_pop</c> of the local's node.</summary>
+    private void EmitCancellationPop(StringBuilder sb, CancellationPopStatement pop)
+    {
+        string unique = _localVarLlvmNames[key: pop.Local];
+        _rfRoutineDeclarations[key: Declaration.RuntimeContract.Runtime.CoroCfPop] =
+            $"declare void @{Declaration.RuntimeContract.Runtime.CoroCfPop}(ptr)";
+        EmitLine(sb: sb, line: $"  call void @{Declaration.RuntimeContract.Runtime.CoroCfPop}(ptr %{unique}.cfnode)");
     }
 
     /// <summary>

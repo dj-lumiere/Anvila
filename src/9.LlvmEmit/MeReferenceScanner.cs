@@ -314,6 +314,16 @@ internal sealed class MeReferenceScanner : ISyntaxTreeVisitor<bool>
         return node.Expression.Accept(visitor: this);
     }
 
+    public bool VisitCancellationPushStatement(CancellationPushStatement node)
+    {
+        return false;
+    }
+
+    public bool VisitCancellationPopStatement(CancellationPopStatement node)
+    {
+        return false;
+    }
+
     public bool VisitAtomicRmwStatement(AtomicRmwStatement node)
     {
         return node.Field.Accept(visitor: this) || node.Delta.Accept(visitor: this);

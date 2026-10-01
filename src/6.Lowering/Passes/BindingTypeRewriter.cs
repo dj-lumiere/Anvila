@@ -495,6 +495,16 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         return false;
     }
 
+    public bool VisitCancellationPushStatement(CancellationPushStatement node)
+    {
+        return false;
+    }
+
+    public bool VisitCancellationPopStatement(CancellationPopStatement node)
+    {
+        return false;
+    }
+
     public bool VisitAtomicRmwStatement(AtomicRmwStatement node)
     {
         Visit(e: node.Field);

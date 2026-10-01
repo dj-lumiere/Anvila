@@ -670,7 +670,6 @@ public partial class LlvmEmitter
         _localVariables.Clear();
         _localVarLlvmNames.Clear();
         _varNameCounts.Clear();
-        _cfNodes.Clear();
         _currentRoutineEntryAllocas.Clear();
         _emittedAllocaNames.Clear();
 

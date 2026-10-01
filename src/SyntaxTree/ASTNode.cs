@@ -373,6 +373,12 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the atomic read-modify-write statement</returns>
     T VisitAtomicRmwStatement(AtomicRmwStatement node);
 
+    /// <summary>Visits a cancellation shadow-stack push of an owned local</summary>
+    T VisitCancellationPushStatement(CancellationPushStatement node);
+
+    /// <summary>Visits a cancellation shadow-stack pop of an owned local</summary>
+    T VisitCancellationPopStatement(CancellationPopStatement node);
+
     /// <summary>Visits a throw statement node (error throw, triggers Result&lt;T&gt; or Lookup&lt;T&gt;)</summary>
     /// <param name="node">The throw statement to visit</param>
     /// <returns>Result of visiting the throw statement</returns>

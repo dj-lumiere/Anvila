@@ -1338,6 +1338,18 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
     /// <inheritdoc/>
+    public string VisitCancellationPushStatement(CancellationPushStatement node)
+    {
+        return $"cancellation push {node.Local} ({node.Destroy.Name}{(node.PassesAddress ? ", by address" : "")})";
+    }
+
+    /// <inheritdoc/>
+    public string VisitCancellationPopStatement(CancellationPopStatement node)
+    {
+        return $"cancellation pop {node.Local}";
+    }
+
+    /// <inheritdoc/>
     public string VisitAtomicRmwStatement(AtomicRmwStatement node)
     {
         string op = node.Operation == AtomicRmwOperation.Add

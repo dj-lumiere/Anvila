@@ -11,10 +11,11 @@ namespace Builder.Lowering.Passes;
 /// bodies of may-suspend routines, so a coroutine abandoned while parked tears down exactly the
 /// owned values it had constructed (the design's cancellation shadow stack).
 ///
-/// <para>The markers are sentinel <see cref="CallExpression"/>s (<c>__rf_cf_push(local)</c> /
-/// <c>__rf_cf_pop(local)</c>) — no new AST node and no visitor surface. This pass runs LAST (after
-/// all analysis/lowering, just before codegen), so nothing else observes the markers; codegen
-/// recognises them and emits the <c>rf_coro_cf_push</c>/<c>rf_coro_cf_pop</c> runtime calls.</para>
+/// <para>The markers are <see cref="CancellationPushStatement"/> / <see cref="CancellationPopStatement"/>,
+/// carrying every decision: which locals (those declared in the body that its inline teardown destroys),
+/// the <c>destroy</c> routine (the one that teardown calls), and whether it takes the local's address. This
+/// pass runs LAST (after all analysis/lowering, just before the emitter), so nothing else observes the
+/// markers; the emitter translates them to the <c>rf_coro_cf_push</c>/<c>rf_coro_cf_pop</c> runtime calls.</para>
 ///
 /// <para>Consistency-by-construction: the set of instrumented locals is DERIVED from the inline
 /// <c>local.destroy()</c> calls <c>ScopeTeardownLoweringPass</c> already inserted. A push goes
@@ -29,12 +30,6 @@ namespace Builder.Lowering.Passes;
 /// </summary>
 public sealed class CancellationInstrumentationPass
 {
-    /// <summary>Sentinel callee name for a cancellation-node PUSH; codegen lowers it to rf_coro_cf_push.</summary>
-    public const string PushMarker = "__rf_cf_push";
-
-    /// <summary>Sentinel callee name for a cancellation-node POP; codegen lowers it to rf_coro_cf_pop.</summary>
-    public const string PopMarker = "__rf_cf_pop";
-
     private readonly HashSet<string> _maySuspend;
 
     private CancellationInstrumentationPass(HashSet<string> maySuspend)
@@ -207,21 +202,36 @@ public sealed class CancellationInstrumentationPass
             return;
         }
 
-        var locals = new HashSet<string>(comparer: StringComparer.Ordinal);
+        // A local's own inline teardown names its destroy routine and its type; only locals declared in
+        // the body are registered (a parameter is torn down by the same teardown but never pushed).
+        var declared = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var locals = new Dictionary<string, (RoutineInfo Destroy, bool PassesAddress)>(comparer: StringComparer.Ordinal);
         AstWalker.Walk(root: block,
             visit: n =>
             {
-                if (n is CallExpression
+                switch (n)
+                {
+                    case DeclarationStatement { Declaration: VariableDeclaration v }:
+                        declared.Add(item: v.Name);
+                        break;
+                    case CallExpression
                     {
                         Callee: MemberExpression
                         {
                             MemberName: "destroy", Object: IdentifierExpression destroyed
-                        }
-                    })
-                {
-                    locals.Add(item: destroyed.Name);
+                        },
+                        ResolvedRoutine: { } destroy
+                    }:
+                        locals.TryAdd(key: destroyed.Name,
+                            value: (destroy, destroyed.ResolvedType is not EntityTypeSymbol));
+                        break;
                 }
             });
+        foreach (string name in locals.Keys.Where(predicate: name => !declared.Contains(item: name)).ToList())
+        {
+            locals.Remove(key: name);
+        }
+
         if (locals.Count == 0)
         {
             return;
@@ -235,7 +245,7 @@ public sealed class CancellationInstrumentationPass
     /// instrumented local's construction, a pop marker before each of its inline <c>destroy</c>,
     /// recursing into nested blocks first.
     /// </summary>
-    private void InstrumentBlock(BlockStatement block, HashSet<string> locals)
+    private void InstrumentBlock(BlockStatement block, Dictionary<string, (RoutineInfo Destroy, bool PassesAddress)> locals)
     {
         var rewritten = new List<Statement>(capacity: block.Statements.Count);
 
@@ -244,16 +254,19 @@ public sealed class CancellationInstrumentationPass
             RecurseInto(stmt: stmt, locals: locals);
 
             if (IsDestroyCall(stmt: stmt, local: out string? destroyed) &&
-                locals.Contains(item: destroyed!))
+                locals.ContainsKey(key: destroyed!))
             {
-                rewritten.Add(item: Marker(fn: PopMarker, local: destroyed!, loc: stmt.Location));
+                rewritten.Add(item: new CancellationPopStatement(Local: destroyed!, Location: stmt.Location));
                 rewritten.Add(item: stmt);
             }
             else if (stmt is DeclarationStatement { Declaration: VariableDeclaration v } &&
-                     locals.Contains(item: v.Name))
+                     locals.TryGetValue(key: v.Name, value: out (RoutineInfo Destroy, bool PassesAddress) teardown))
             {
                 rewritten.Add(item: stmt);
-                rewritten.Add(item: Marker(fn: PushMarker, local: v.Name, loc: stmt.Location));
+                rewritten.Add(item: new CancellationPushStatement(Local: v.Name,
+                    Destroy: teardown.Destroy,
+                    PassesAddress: teardown.PassesAddress,
+                    Location: stmt.Location));
             }
             else
             {
@@ -266,7 +279,7 @@ public sealed class CancellationInstrumentationPass
     }
 
     /// <summary>Descends into a statement's nested blocks so they are instrumented too.</summary>
-    private void RecurseInto(Statement stmt, HashSet<string> locals)
+    private void RecurseInto(Statement stmt, Dictionary<string, (RoutineInfo Destroy, bool PassesAddress)> locals)
     {
         switch (stmt)
         {
@@ -321,7 +334,7 @@ public sealed class CancellationInstrumentationPass
         }
     }
 
-    private void RecurseStmt(Statement stmt, HashSet<string> locals)
+    private void RecurseStmt(Statement stmt, Dictionary<string, (RoutineInfo Destroy, bool PassesAddress)> locals)
     {
         if (stmt is BlockStatement b)
         {
@@ -352,14 +365,5 @@ public sealed class CancellationInstrumentationPass
 
         local = null;
         return false;
-    }
-
-    private static ExpressionStatement Marker(string fn, string local, SourceLocation loc)
-    {
-        return new ExpressionStatement(Expression: new CallExpression(
-                Callee: new IdentifierExpression(Name: fn, Location: loc),
-                Arguments: [new IdentifierExpression(Name: local, Location: loc)],
-                Location: loc),
-            Location: loc);
     }
 }
