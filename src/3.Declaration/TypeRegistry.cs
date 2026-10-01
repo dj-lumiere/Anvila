@@ -35,9 +35,47 @@ public sealed partial class TypeRegistry
         _ambient = registry;
     }
 
-    /// <summary>The language being built. Settable so the stdlib (always RazorForge source) can be
-    /// analyzed in RazorForge mode during a Suflae compile — see SemanticVerifier.AnalyzeStdlibBodies.</summary>
-    public Language Language { get; set; }
+    /// <summary>The language being built: the user's target, fixed for the registry's life.</summary>
+    public Language Language { get; }
+
+    /// <summary>How many stdlib-source scopes are open (see <see cref="AnalyzingStdlibSource"/>).</summary>
+    private int _stdlibSourceScopes;
+
+    /// <summary>
+    /// The language of the code being analyzed or lowered now: RazorForge while a stdlib-source scope is
+    /// open (the standard library is RazorForge source, even in a Suflae build), else <see cref="Language"/>.
+    /// </summary>
+    public Language AnalysisLanguage => _stdlibSourceScopes > 0
+        ? Language.RazorForge
+        : Language;
+
+    /// <summary>
+    /// Opens a scope in which the code being analyzed is standard library source, so
+    /// <see cref="AnalysisLanguage"/> is RazorForge until the scope is disposed. Scopes nest.
+    /// </summary>
+    public StdlibSourceScope AnalyzingStdlibSource()
+    {
+        _stdlibSourceScopes++;
+        return new StdlibSourceScope(registry: this);
+    }
+
+    /// <summary>An open stdlib-source scope (see <see cref="AnalyzingStdlibSource"/>); dispose to close it.</summary>
+    public sealed class StdlibSourceScope(TypeRegistry registry) : IDisposable
+    {
+        private bool _closed;
+
+        /// <summary>Closes the scope (once).</summary>
+        public void Dispose()
+        {
+            if (_closed)
+            {
+                return;
+            }
+
+            _closed = true;
+            registry._stdlibSourceScopes--;
+        }
+    }
 
     /// <summary>
     /// The AMBIENT realm of the compilation — the world-line a bare (unqualified) type name resolves to:
@@ -50,20 +88,11 @@ public sealed partial class TypeRegistry
     /// </summary>
     public string AmbientRealm { get; set; } = "RF";
 
-    /// <summary>
-    /// The user's TARGET compile language — unlike <see cref="Language"/>, this is NOT toggled to
-    /// RazorForge while stdlib bodies are analyzed (see SemanticVerifier.AnalyzeStdlibBodies), so it
-    /// reliably answers "is this ultimately a Suflae build?" even mid-stdlib-analysis. Used to gate
-    /// RazorForge-ONLY surface diagnostics (@readonly / @reshaping enforcement) OFF for a Suflae build:
-    /// Suflae hides those concepts, and the borrowed RF stdlib's RF-internal checks are RF's own concern.
-    /// </summary>
-    public Language CompilationLanguage { get; set; } = Language.RazorForge;
+    /// <summary>The rules of <see cref="AnalysisLanguage"/>, the language of the code being analyzed now.</summary>
+    public Frontends.LanguageRules Rules => Frontends.Languages.For(language: AnalysisLanguage);
 
-    /// <summary>The rules of <see cref="Language"/>, the language of the code being analyzed now.</summary>
-    public Frontends.LanguageRules Rules => Frontends.Languages.For(language: Language);
-
-    /// <summary>The rules of <see cref="CompilationLanguage"/>, the language the user's build targets.</summary>
-    public Frontends.LanguageRules CompilationRules => Frontends.Languages.For(language: CompilationLanguage);
+    /// <summary>The rules of <see cref="Language"/>, the language the user's build targets.</summary>
+    public Frontends.LanguageRules CompilationRules => Frontends.Languages.For(language: Language);
 
     /// <summary>
     /// The realm whose types a bare (unqualified) name should PREFER during the CURRENT file's analysis —
@@ -447,7 +476,6 @@ public sealed partial class TypeRegistry
     public TypeRegistry(Language language, string? stdlibPath = null)
     {
         Language = language;
-        CompilationLanguage = language;
         RegisterAsAmbient(registry: this);
         GlobalScope = new Scope(kind: ScopeKind.Global);
         _currentScope = GlobalScope;

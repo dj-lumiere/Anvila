@@ -1386,12 +1386,7 @@ public sealed partial class SemanticVerifier
         // its bodies in RazorForge mode so language-sensitive SA — unsuffixed-literal defaults, the
         // danger/extern gates, generic-call resolution — matches how the stdlib was authored. Under
         // Suflae mode the RF stdlib's generic calls fail to resolve and survive lowering (RF-S954).
-        Language savedLanguage = _registry.Language;
-        // Capture the user's TARGET language before toggling to RF for stdlib body analysis, so
-        // RazorForge-only diagnostics (@readonly/@reshaping) can be gated OFF for a Suflae build even
-        // while analyzing the borrowed RF stdlib in RF mode.
-        _registry.CompilationLanguage = savedLanguage;
-        _registry.Language = Language.RazorForge;
+        TypeRegistry.StdlibSourceScope stdlibSource = _registry.AnalyzingStdlibSource();
         _registry.BeginStdlibAnalysis();
         try
         {
@@ -1427,7 +1422,7 @@ public sealed partial class SemanticVerifier
         {
             _registry.EndStdlibAnalysis();
             _registry.ResolutionRealm = _registry.AmbientRealm;
-            _registry.Language = savedLanguage;
+            stdlibSource.Dispose();
         }
 
         _eagerStdlibAnalyzed = true;
@@ -1537,7 +1532,6 @@ public sealed partial class SemanticVerifier
     /// </summary>
     public void EagerlyRepairStdlibSignatures()
     {
-        Language savedLanguage = _registry.Language;
         string previousFilePath = _currentFilePath;
         string? previousModuleName = _currentModuleName;
         var previousImports = new HashSet<string>(collection: _importedModules,
@@ -1545,8 +1539,7 @@ public sealed partial class SemanticVerifier
         bool prevReduced = _isReducedStdlibValidation;
         int errorsBefore = _errors.Count;
         int warningsBefore = _warnings.Count;
-        _registry.CompilationLanguage = savedLanguage;
-        _registry.Language = Language.RazorForge;
+        TypeRegistry.StdlibSourceScope stdlibSource = _registry.AnalyzingStdlibSource();
         _registry.BeginStdlibAnalysis();
         _isReducedStdlibValidation = true;
         try
@@ -1574,7 +1567,7 @@ public sealed partial class SemanticVerifier
 
             _registry.EndStdlibAnalysis();
             _registry.ResolutionRealm = _registry.AmbientRealm;
-            _registry.Language = savedLanguage;
+            stdlibSource.Dispose();
             _isReducedStdlibValidation = prevReduced;
             _currentFilePath = previousFilePath;
             _currentModuleName = previousModuleName;
@@ -1672,13 +1665,11 @@ public sealed partial class SemanticVerifier
             return ReplayCachedFileAnalysis(program: entry.Program, filePath: entry.FilePath);
         }
 
-        Language savedLanguage = _registry.Language;
         string previousFilePath = _currentFilePath;
         string? previousModuleName = _currentModuleName;
         var previousImports = new HashSet<string>(collection: _importedModules,
             comparer: StringComparer.OrdinalIgnoreCase);
-        _registry.CompilationLanguage = savedLanguage;
-        _registry.Language = Language.RazorForge;
+        TypeRegistry.StdlibSourceScope stdlibSource = _registry.AnalyzingStdlibSource();
         _registry.BeginStdlibAnalysis();
         // Suppress the operator-protocol conformance gate for stdlib bodies: a demand-analyzed file's
         // cross-file operators (e.g. ByteSize's wrapping-multiply used in List.rf) resolve against derived
@@ -1790,7 +1781,7 @@ public sealed partial class SemanticVerifier
 
             _registry.EndStdlibAnalysis();
             _registry.ResolutionRealm = _registry.AmbientRealm;
-            _registry.Language = savedLanguage;
+            stdlibSource.Dispose();
             _isReducedStdlibValidation = prevReduced;
             _currentFilePath = previousFilePath;
             _currentModuleName = previousModuleName;
@@ -2481,11 +2472,10 @@ public sealed partial class SemanticVerifier
 
         // The body is analyzed in its routine's own language: a stdlib routine is RazorForge even in a Suflae
         // build, so its builder-written variants keep their `danger` blocks and dangerous calls.
-        Language previousLanguage = _registry.Language;
-        if (routineInfo.Location?.FileName is { } routineFile && IsStdlibFile(filePath: routineFile))
-        {
-            _registry.Language = Language.RazorForge;
-        }
+        TypeRegistry.StdlibSourceScope? stdlibSource =
+            routineInfo.Location?.FileName is { } routineFile && IsStdlibFile(filePath: routineFile)
+                ? _registry.AnalyzingStdlibSource()
+                : null;
 
         // BuilderQuery per-type entity-list routines (member_variable_info / protocol_info / routine_info)
         // synthesize bodies that construct FieldInfo/ProtocolInfo/RoutineInfo/Visibility values — all in
@@ -2557,7 +2547,7 @@ public sealed partial class SemanticVerifier
         _compilerGeneratedTypeParamBindings = prevTypeParamBindings;
 
         _registry.ExitScope();
-        _registry.Language = previousLanguage;
+        stdlibSource?.Dispose();
         _currentRoutine = prevRoutine;
         _currentType = prevType;
         _currentFilePath = previousFilePath;

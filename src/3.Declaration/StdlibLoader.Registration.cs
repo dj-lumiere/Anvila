@@ -47,30 +47,18 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// The realm ("RF"/"SF") stamped onto type-definition shells built during the current registration
-    /// pass — set per-program from its source file extension (see <see cref="RealmOf"/>) before each
-    /// shell-building pass loop, read by every <c>new …TypeSymbol { … Realm = _registeringRealm }</c> below.
-    /// A thread-static field avoids threading a realm parameter through the whole static registration API;
-    /// resolved generic instances inherit it from their definition via CreateInstance propagation.
+    /// The realm a registration runs under when no stdlib pass names one (a user program's conformance
+    /// re-resolution, a single stdlib file loaded on its own): the RazorForge realm. Every registration
+    /// helper takes its realm as a parameter, stamped onto the type-definition shells it builds and used to
+    /// scope its lookups, so an RF program's lookups never reach a coexisting SF wrapper's shell.
     /// </summary>
-    [ThreadStatic]
-    private static string? _registeringRealm;
+    internal const string UnstampedRealm = "RF";
 
     /// <summary>The realm a stdlib file belongs to: the short name of the language it is written in
     /// (<c>"SF"</c> for a Suflae source, <c>"RF"</c> for a RazorForge one).</summary>
     internal static string RealmOf(string filePath)
     {
         return Builder.Frontends.Languages.RealmOf(fileName: filePath);
-    }
-
-    /// <summary>
-    /// Sets the thread-static <see cref="_registeringRealm"/> from a static context, so instance-method
-    /// callers do not directly write a static field (avoids instance-writes-static-field lint). Every
-    /// realm stamp in the multi-pass registration loops routes through here.
-    /// </summary>
-    private static void StampRealm(string? realm)
-    {
-        _registeringRealm = realm;
     }
 
     /// <summary>
@@ -81,38 +69,38 @@ public sealed partial class StdlibLoader
     /// <param name="program">The parsed program AST.</param>
     /// <param name="moduleName">The module for the types (from declaration or directory-derived).</param>
     private static void RegisterProgramTypes(TypeRegistry registry, Program program,
-        string moduleName)
+        string moduleName, string realm)
     {
         foreach (ISyntaxTreeNode node in program.Declarations)
         {
             switch (node)
             {
                 case RecordDeclaration record:
-                    RegisterRecordType(registry: registry, record: record, moduleName: moduleName);
+                    RegisterRecordType(registry: registry, record: record, moduleName: moduleName, realm: realm);
                     break;
                 case EntityDeclaration entity:
-                    RegisterEntityType(registry: registry, entity: entity, moduleName: moduleName);
+                    RegisterEntityType(registry: registry, entity: entity, moduleName: moduleName, realm: realm);
                     break;
                 case ChoiceDeclaration choice:
-                    RegisterChoiceType(registry: registry, choice: choice, moduleName: moduleName);
+                    RegisterChoiceType(registry: registry, choice: choice, moduleName: moduleName, realm: realm);
                     break;
                 case FlagsDeclaration flags:
-                    RegisterFlagsType(registry: registry, flags: flags, moduleName: moduleName);
+                    RegisterFlagsType(registry: registry, flags: flags, moduleName: moduleName, realm: realm);
                     break;
                 case VariantDeclaration variant:
                     RegisterVariantType(registry: registry,
                         variant: variant,
-                        moduleName: moduleName);
+                        moduleName: moduleName, realm: realm);
                     break;
                 case ProtocolDeclaration protocol:
                     RegisterProtocolType(registry: registry,
                         protocol: protocol,
-                        moduleName: moduleName);
+                        moduleName: moduleName, realm: realm);
                     break;
                 case CrashableDeclaration crashable:
                     RegisterCrashableType(registry: registry,
                         crashable: crashable,
-                        moduleName: moduleName);
+                        moduleName: moduleName, realm: realm);
                     break;
             }
         }
@@ -260,16 +248,16 @@ public sealed partial class StdlibLoader
     /// where S64 wasn't registered during initial entity registration).
     /// Called after all type shells are registered.
     /// </summary>
-    internal static void ResolveProgramProtocolConformances(TypeRegistry registry, Program program)
+    internal static void ResolveProgramProtocolConformances(TypeRegistry registry, Program program,
+        string realm = UnstampedRealm)
     {
         // Resolve type lookups MODULE-QUALIFIED. `LookupType(bareName)` resolves via the first-wins
         // short-name index, so with two modules each declaring `record Point` it would attach one
         // module's `obeys` to the OTHER module's type (cross-module protocol contamination →
         // spurious RF-S702). The program's own module scopes the lookup to its own declaration.
-        // Scope the lookup to the CURRENTLY-REGISTERING realm (`_registeringRealm`, stamped per program by
-        // the caller): with an RF `.rf` type and its SF `.sf` wrapper both bearing the same module-qualified
-        // name, a realm-blind lookup would attach this program's `obeys` to the OTHER realm's shell.
-        string realm = _registeringRealm ?? "RF";
+        // Scope the lookup to the program's realm (`realm`, passed by the caller): with an RF `.rf` type and
+        // its SF `.sf` wrapper both bearing the same module-qualified name, a realm-blind lookup would attach
+        // this program's `obeys` to the OTHER realm's shell.
         string? module = program.Declarations
                                 .OfType<ModuleDeclaration>()
                                 .FirstOrDefault()
@@ -438,7 +426,7 @@ public sealed partial class StdlibLoader
     }
 
     private static void RegisterProgramRoutines(TypeRegistry registry, Program program,
-        string moduleName)
+        string moduleName, string realm)
     {
         foreach (ISyntaxTreeNode node in program.Declarations)
         {
@@ -450,24 +438,24 @@ public sealed partial class StdlibLoader
                     {
                         RegisterRoutine(registry: registry,
                             routine: routine,
-                            moduleName: moduleName);
+                            moduleName: moduleName, realm: realm);
                     }
 
                     break;
                 case ExternalDeclaration external:
                     RegisterExternalDeclaration(registry: registry,
                         external: external,
-                        moduleName: moduleName);
+                        moduleName: moduleName, realm: realm);
                     break;
                 case ExternalBlockDeclaration block:
                     RegisterExternalBlockDeclarations(registry: registry,
                         block: block,
-                        moduleName: moduleName);
+                        moduleName: moduleName, realm: realm);
                     break;
                 case CrashableDeclaration crashable:
                     RegisterCrashableRoutineMembers(registry: registry,
                         crashable: crashable,
-                        moduleName: moduleName);
+                        moduleName: moduleName, realm: realm);
                     break;
             }
         }
@@ -477,7 +465,7 @@ public sealed partial class StdlibLoader
     /// Registers every <c>external("C")</c> declaration contained in an external block.
     /// </summary>
     private static void RegisterExternalBlockDeclarations(TypeRegistry registry,
-        ExternalBlockDeclaration block, string moduleName)
+        ExternalBlockDeclaration block, string moduleName, string realm)
     {
         foreach (SyntaxTree.Declaration decl in block.Declarations)
         {
@@ -485,7 +473,7 @@ public sealed partial class StdlibLoader
             {
                 RegisterExternalDeclaration(registry: registry,
                     external: ext,
-                    moduleName: moduleName);
+                    moduleName: moduleName, realm: realm);
             }
         }
     }
@@ -496,7 +484,7 @@ public sealed partial class StdlibLoader
     /// member routine (e.g., "DivisionByZeroError.crash_message").
     /// </summary>
     private static void RegisterCrashableRoutineMembers(TypeRegistry registry,
-        CrashableDeclaration crashable, string moduleName)
+        CrashableDeclaration crashable, string moduleName, string realm)
     {
         foreach (SyntaxTree.Declaration member in crashable.Members)
         {
@@ -508,7 +496,7 @@ public sealed partial class StdlibLoader
                 {
                     Name = $"{crashable.Name}.{memberRoutine.Name}"
                 };
-                RegisterRoutine(registry: registry, routine: prefixed, moduleName: moduleName);
+                RegisterRoutine(registry: registry, routine: prefixed, moduleName: moduleName, realm: realm);
             }
         }
     }
@@ -517,7 +505,7 @@ public sealed partial class StdlibLoader
     /// Registers an external("C") declaration from stdlib (e.g., NativeDeclarations.rf).
     /// </summary>
     private static void RegisterExternalDeclaration(TypeRegistry registry,
-        ExternalDeclaration external, string moduleName)
+        ExternalDeclaration external, string moduleName, string realm)
     {
         // Build generic context for type resolution (e.g., T, To, From)
         List<string>? genericCtx = external.GenericParameters is { Count: > 0 }
@@ -705,7 +693,7 @@ public sealed partial class StdlibLoader
     /// </summary>
     private static TypeSymbol? ResolveRoutineOwner(TypeRegistry registry, RoutineDeclaration routine,
         string routineName, string moduleName, ref string memberRoutineName,
-        out string? meTypeName)
+        out string? meTypeName, string realm)
     {
         meTypeName = null;
 
@@ -719,10 +707,10 @@ public sealed partial class StdlibLoader
                     bracketIndex: bracketIndex,
                     moduleName: moduleName,
                     memberRoutineName: memberRoutineName,
-                    meTypeName: out meTypeName)
+                    meTypeName: out meTypeName, realm: realm)
                 : ResolveBareReceiverOwner(registry: registry,
                     typeName: typeName,
-                    moduleName: moduleName);
+                    moduleName: moduleName, realm: realm);
         }
 
         // No dot: a top-level free function, OR a CONSTRUCTOR `routine T(...)` /
@@ -741,7 +729,7 @@ public sealed partial class StdlibLoader
         // creators share one RegistryKey and trip the divergent-duplicate-constructor check (RF-S406).
         TypeSymbol? ctorOwner =
             registry.LookupType(name: $"{moduleName}.{bareName}",
-                realm: _registeringRealm ?? "RF") ??
+                realm: realm) ??
             registry.LookupType(name: $"{moduleName}.{bareName}") ??
             registry.LookupType(name: bareName);
         if (ctorOwner != null)
@@ -762,7 +750,7 @@ public sealed partial class StdlibLoader
     /// </summary>
     private static TypeSymbol? ResolveBracketedReceiverOwner(TypeRegistry registry,
         RoutineDeclaration routine, string typeName, int bracketIndex,
-        string moduleName, string memberRoutineName, out string? meTypeName)
+        string moduleName, string memberRoutineName, out string? meTypeName, string realm)
     {
         meTypeName = null;
 
@@ -779,7 +767,7 @@ public sealed partial class StdlibLoader
         // owns the SF-realm List, not the RazorForge-realm one that shares the bare key.
         TypeSymbol? baseDef =
             registry.LookupType(name: $"{moduleName}.{baseName}",
-                realm: _registeringRealm ?? "RF") ??
+                realm: realm) ??
             registry.LookupType(name: $"{moduleName}.{baseName}") ??
             registry.LookupType(name: baseName);
 
@@ -830,7 +818,7 @@ public sealed partial class StdlibLoader
     /// generic type parameter.
     /// </summary>
     private static TypeSymbol ResolveBareReceiverOwner(TypeRegistry registry, string typeName,
-        string moduleName)
+        string moduleName, string realm)
     {
         // Own-module FIRST (mirrors the constructor path + LookupTypeWithImports): a member
         // `routine List[T].add_last` in `module Suflae` owns `Suflae.List`, not the earlier-
@@ -840,7 +828,7 @@ public sealed partial class StdlibLoader
         // RazorForge-realm `Core.List` that shares the bare key (both are `module Core`).
         TypeSymbol? ownerType =
             registry.LookupType(name: $"{moduleName}.{typeName}",
-                realm: _registeringRealm ?? "RF") ??
+                realm: realm) ??
             registry.LookupType(name: $"{moduleName}.{typeName}") ??
             registry.LookupType(name: typeName);
 
@@ -852,7 +840,7 @@ public sealed partial class StdlibLoader
     /// Registers a routine from stdlib (including type memberRoutines like S32.add).
     /// </summary>
     private static void RegisterRoutine(TypeRegistry registry, RoutineDeclaration routine,
-        string moduleName)
+        string moduleName, string realm)
     {
         // Desugar homogeneous variadic params (`nums...: T`) into a const-generic `Array[T, __VarargN]`
         // before generic-context collection reads routine.GenericParameters. Idempotent — safe to also
@@ -871,7 +859,7 @@ public sealed partial class StdlibLoader
             routineName: routineName,
             moduleName: moduleName,
             memberRoutineName: ref memberRoutineName,
-            meTypeName: out string? meTypeName);
+            meTypeName: out string? meTypeName, realm: realm);
 
         // `needs T is TypeName` declares T as a generic type parameter (equivalent to `[T]`, just a
         // different surface form), handled in the SA/registration layer — NOT a parser rewrite. Fold the
@@ -1372,7 +1360,7 @@ public sealed partial class StdlibLoader
     /// Registers a record type from stdlib.
     /// </summary>
     private static void RegisterRecordType(TypeRegistry registry, RecordDeclaration record,
-        string moduleName)
+        string moduleName, string realm)
     {
         bool isEntitySpecialization = IsEntityTypeSpecialization(record: record);
 
@@ -1385,7 +1373,7 @@ public sealed partial class StdlibLoader
             ? record.Name
             : $"{moduleName}.{record.Name}";
         if (!isEntitySpecialization &&
-            registry.LookupType(name: qualifiedRecordName, realm: _registeringRealm ?? "RF") !=
+            registry.LookupType(name: qualifiedRecordName, realm: realm) !=
             null)
         {
             return;
@@ -1428,7 +1416,7 @@ public sealed partial class StdlibLoader
         var typeInfo = new RecordTypeSymbol(name: record.Name)
         {
             Module = moduleName,
-            Realm = _registeringRealm ?? "RF",
+            Realm = realm,
             Visibility = record.Visibility,
             ImplementedProtocols = protocols,
             ConditionalObeys = BuildConditionalObeys(protoExprs: record.Protocols),
@@ -1487,13 +1475,13 @@ public sealed partial class StdlibLoader
     /// Crashable types are heap-allocated error types that implement the Crashable protocol.
     /// </summary>
     private static void RegisterCrashableType(TypeRegistry registry,
-        CrashableDeclaration crashable, string moduleName)
+        CrashableDeclaration crashable, string moduleName, string realm)
     {
         // Skip if already registered (module-QUALIFIED — see RegisterRecordType).
         string qualifiedCrashableName = string.IsNullOrEmpty(value: moduleName)
             ? crashable.Name
             : $"{moduleName}.{crashable.Name}";
-        if (registry.LookupType(name: qualifiedCrashableName, realm: _registeringRealm ?? "RF") !=
+        if (registry.LookupType(name: qualifiedCrashableName, realm: realm) !=
             null)
         {
             return;
@@ -1525,7 +1513,7 @@ public sealed partial class StdlibLoader
         var typeInfo = new CrashableTypeSymbol(name: crashable.Name)
         {
             Module = moduleName,
-            Realm = _registeringRealm ?? "RF",
+            Realm = realm,
             Visibility = crashable.Visibility,
             Location = crashable.Location
         };
@@ -1557,7 +1545,7 @@ public sealed partial class StdlibLoader
     /// Registers an entity type from stdlib.
     /// </summary>
     private static void RegisterEntityType(TypeRegistry registry, EntityDeclaration entity,
-        string moduleName)
+        string moduleName, string realm)
     {
         // Skip if THIS module's type is already registered (idempotency). The check must be
         // module-qualified: a bare-name check would skip a Suflae-realm overlay `entity List` merely
@@ -1567,7 +1555,7 @@ public sealed partial class StdlibLoader
         string qualifiedName = string.IsNullOrEmpty(value: moduleName)
             ? entity.Name
             : $"{moduleName}.{entity.Name}";
-        if (registry.LookupType(name: qualifiedName, realm: _registeringRealm ?? "RF") != null)
+        if (registry.LookupType(name: qualifiedName, realm: realm) != null)
         {
             return;
         }
@@ -1599,7 +1587,7 @@ public sealed partial class StdlibLoader
         var typeInfo = new EntityTypeSymbol(name: entity.Name)
         {
             Module = moduleName,
-            Realm = _registeringRealm ?? "RF",
+            Realm = realm,
             Visibility = entity.Visibility,
             ImplementedProtocols = protocols,
             ConditionalObeys = BuildConditionalObeys(protoExprs: entity.Protocols),
@@ -1756,13 +1744,13 @@ public sealed partial class StdlibLoader
     /// Registers a choice type from stdlib.
     /// </summary>
     private static void RegisterChoiceType(TypeRegistry registry, ChoiceDeclaration choice,
-        string moduleName)
+        string moduleName, string realm)
     {
         // Skip if already registered (module-QUALIFIED — see RegisterRecordType).
         string qualifiedChoiceName = string.IsNullOrEmpty(value: moduleName)
             ? choice.Name
             : $"{moduleName}.{choice.Name}";
-        if (registry.LookupType(name: qualifiedChoiceName, realm: _registeringRealm ?? "RF") !=
+        if (registry.LookupType(name: qualifiedChoiceName, realm: realm) !=
             null)
         {
             return;
@@ -1811,7 +1799,7 @@ public sealed partial class StdlibLoader
         var typeInfo = new ChoiceTypeSymbol(name: choice.Name)
         {
             Module = moduleName,
-            Realm = _registeringRealm ?? "RF",
+            Realm = realm,
             Visibility = choice.Visibility,
             Cases = cases
         };
@@ -1823,13 +1811,13 @@ public sealed partial class StdlibLoader
     /// Registers a flags type from stdlib.
     /// </summary>
     private static void RegisterFlagsType(TypeRegistry registry, FlagsDeclaration flags,
-        string moduleName)
+        string moduleName, string realm)
     {
         // Skip if already registered (module-QUALIFIED — see RegisterRecordType).
         string qualifiedFlagsName = string.IsNullOrEmpty(value: moduleName)
             ? flags.Name
             : $"{moduleName}.{flags.Name}";
-        if (registry.LookupType(name: qualifiedFlagsName, realm: _registeringRealm ?? "RF") !=
+        if (registry.LookupType(name: qualifiedFlagsName, realm: realm) !=
             null)
         {
             return;
@@ -1844,7 +1832,7 @@ public sealed partial class StdlibLoader
         var typeInfo = new FlagsTypeSymbol(name: flags.Name)
         {
             Module = moduleName,
-            Realm = _registeringRealm ?? "RF",
+            Realm = realm,
             Visibility = flags.Visibility,
             Members = members
         };
@@ -1856,13 +1844,13 @@ public sealed partial class StdlibLoader
     /// Registers a variant type (type-based tagged union) from stdlib.
     /// </summary>
     private static void RegisterVariantType(TypeRegistry registry, VariantDeclaration variant,
-        string moduleName)
+        string moduleName, string realm)
     {
         // Skip if already registered (module-QUALIFIED — see RegisterRecordType).
         string qualifiedVariantName = string.IsNullOrEmpty(value: moduleName)
             ? variant.Name
             : $"{moduleName}.{variant.Name}";
-        if (registry.LookupType(name: qualifiedVariantName, realm: _registeringRealm ?? "RF") !=
+        if (registry.LookupType(name: qualifiedVariantName, realm: realm) !=
             null)
         {
             return;
@@ -1875,7 +1863,7 @@ public sealed partial class StdlibLoader
         var typeInfo = new VariantTypeSymbol(name: variant.Name)
         {
             Module = moduleName,
-            Realm = _registeringRealm ?? "RF",
+            Realm = realm,
             Members = members,
             GenericParameters = variant.GenericParameters,
             GenericConstraints = variant.GenericConstraints
@@ -1923,9 +1911,9 @@ public sealed partial class StdlibLoader
     /// Used by RegisterProgramTypes (pass 1b) for protocols encountered outside the two-pass path.
     /// </summary>
     private static void RegisterProtocolType(TypeRegistry registry, ProtocolDeclaration protocol,
-        string moduleName)
+        string moduleName, string realm)
     {
-        RegisterProtocolTypeShell(registry: registry, protocol: protocol, moduleName: moduleName);
+        RegisterProtocolTypeShell(registry: registry, protocol: protocol, moduleName: moduleName, realm: realm);
         FillProtocolMemberRoutines(registry: registry, protocol: protocol);
     }
 
@@ -1935,13 +1923,13 @@ public sealed partial class StdlibLoader
     /// before memberRoutine signatures are resolved (which may reference other protocols).
     /// </summary>
     private static void RegisterProtocolTypeShell(TypeRegistry registry,
-        ProtocolDeclaration protocol, string moduleName)
+        ProtocolDeclaration protocol, string moduleName, string realm)
     {
         // Skip if already registered (module-QUALIFIED — see RegisterRecordType).
         string qualifiedProtocolName = string.IsNullOrEmpty(value: moduleName)
             ? protocol.Name
             : $"{moduleName}.{protocol.Name}";
-        if (registry.LookupType(name: qualifiedProtocolName, realm: _registeringRealm ?? "RF") !=
+        if (registry.LookupType(name: qualifiedProtocolName, realm: realm) !=
             null)
         {
             return;
@@ -1950,7 +1938,7 @@ public sealed partial class StdlibLoader
         var typeInfo = new ProtocolTypeSymbol(name: protocol.Name)
         {
             Module = moduleName,
-            Realm = _registeringRealm ?? "RF",
+            Realm = realm,
             Visibility = protocol.Visibility,
             MemberRoutines = [], // Filled in by FillProtocolMemberRoutines
             GenericParameters = protocol.GenericParameters,

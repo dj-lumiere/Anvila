@@ -131,8 +131,8 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// Runs the realm-stamped protocol + type-shell registration passes (1a through 1a.2, 1b) over
-    /// the Core programs. Extracted from <see cref="LoadCoreModule"/> so all StampRealm writes happen
-    /// in a static context.
+    /// the Core programs. Extracted from <see cref="LoadCoreModule"/> so the passes stay in
+    /// a static context.
     /// </summary>
     private static void RunCoreRegistrationPasses(TypeRegistry registry,
         List<(Program Program, string FilePath, string Module)> corePrograms)
@@ -153,15 +153,14 @@ public sealed partial class StdlibLoader
         // Pass 1b: Register all type shells (record, entity, choice, variant)
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
-            RegisterProgramTypes(registry: registry, program: program, moduleName: ns);
+            RegisterProgramTypes(registry: registry, program: program, moduleName: ns, realm: RealmOf(filePath: filePath));
         }
     }
 
     /// <summary>
     /// Runs the realm-stamped deferred resolution + routine registration passes (1c through 3) over
-    /// the Core programs. Extracted from <see cref="LoadCoreModule"/> so all StampRealm writes happen
-    /// in a static context.
+    /// the Core programs. Extracted from <see cref="LoadCoreModule"/> so the passes stay in
+    /// a static context.
     /// </summary>
     private static void RunCoreDeferredResolutionPasses(TypeRegistry registry,
         List<(Program Program, string FilePath, string Module)> corePrograms)
@@ -169,12 +168,8 @@ public sealed partial class StdlibLoader
         // Pass 1c: Re-resolve member variables now that all types are registered.
         // The initial registration may have empty member lists due to forward references
         // (e.g., Bytes needs List which needs U64, but files are processed alphabetically).
-        // Each deferred pass RE-STAMPS `_registeringRealm` per program — the shell-registration loop left it
-        // at the last program's realm, which mis-scopes an RF program's deferred lookups to a coexisting SF
-        // wrapper's shell (see the LoadModule siblings + the BitList not-iterable bug).
         foreach ((Program program, string filePath, string _) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
             ResolveProgramMemberVariables(registry: registry, program: program);
         }
 
@@ -183,8 +178,7 @@ public sealed partial class StdlibLoader
         // (e.g., EnumerateIterator[T] obeys Iterable[Tuple[S64, T]] needs S64).
         foreach ((Program program, string filePath, string _) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
-            ResolveProgramProtocolConformances(registry: registry, program: program);
+            ResolveProgramProtocolConformances(registry: registry, program: program, realm: RealmOf(filePath: filePath));
         }
 
         // Pass 1e: Re-resolve protocol memberRoutine return types that failed in pass 1a.1 due to
@@ -192,7 +186,6 @@ public sealed partial class StdlibLoader
         // registered when protocols were first processed in pass 1a.1).
         foreach ((Program program, string filePath, string _) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
             ResolveProtocolMemberRoutineReturnTypes(registry: registry, program: program);
             ResolveAssociatedTypeBindings(registry: registry, program: program);
         }
@@ -200,27 +193,22 @@ public sealed partial class StdlibLoader
         // Pass 2: Register all routines (now all types are available for return type resolution)
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
-            RegisterProgramRoutines(registry: registry, program: program, moduleName: ns);
+            RegisterProgramRoutines(registry: registry, program: program, moduleName: ns, realm: RealmOf(filePath: filePath));
         }
 
         // Pass 2.1: Refresh any routine signatures that were still partially unresolved during
         // initial registration and later collapsed to None via semantic finalization.
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
             ResolveRoutineSignatures(registry: registry, program: program, moduleName: ns);
         }
 
         // Pass 3: Register all presets (module-level constants accessible across files)
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
             RegisterProgramPresets(registry: registry, program: program, moduleName: ns);
         }
 
-        // Clear the thread-static realm so it never leaks into a later (on-demand) load pass on this thread.
-        StampRealm(realm: null);
     }
 
     /// <summary>
@@ -232,14 +220,13 @@ public sealed partial class StdlibLoader
     {
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
-            StampRealm(realm: RealmOf(filePath: filePath));
             foreach (ISyntaxTreeNode node in program.Declarations)
             {
                 if (node is ProtocolDeclaration protocol)
                 {
                     RegisterProtocolTypeShell(registry: registry,
                         protocol: protocol,
-                        moduleName: ns);
+                        moduleName: ns, realm: RealmOf(filePath: filePath));
                 }
             }
         }
@@ -573,9 +560,9 @@ public sealed partial class StdlibLoader
             registry.ActiveRegistrationImports = ImportScopeOf(program: ast);
             try
             {
-                RegisterProgramTypes(registry: registry, program: ast, moduleName: effectiveModule);
+                RegisterProgramTypes(registry: registry, program: ast, moduleName: effectiveModule, realm: UnstampedRealm);
                 ResolveProgramMemberVariables(registry: registry, program: ast);
-                RegisterProgramRoutines(registry: registry, program: ast, moduleName: effectiveModule);
+                RegisterProgramRoutines(registry: registry, program: ast, moduleName: effectiveModule, realm: UnstampedRealm);
                 ResolveRoutineSignatures(registry: registry, program: ast, moduleName: effectiveModule);
             }
             finally
@@ -597,7 +584,7 @@ public sealed partial class StdlibLoader
     /// <summary>
     /// Runs the full three-pass registration sequence (protocol shells → types → routines → presets)
     /// for a single on-demand module. Extracted from <see cref="LoadModule(TypeRegistry, string)"/> so
-    /// all StampRealm writes happen in a static context.
+    /// the passes stay in a static context.
     /// </summary>
     private static void RunModuleRegistrationPasses(TypeRegistry registry,
         List<(Program Program, string FilePath, string Module)> programs)
@@ -616,69 +603,62 @@ public sealed partial class StdlibLoader
 
         foreach ((Program program, string filePath, string ns) in programs)
         {
-            StampProgram(registry: registry, program: program, filePath: filePath);
-            RegisterProgramTypes(registry: registry, program: program, moduleName: ns);
+            InstallProgramImports(registry: registry, program: program);
+            RegisterProgramTypes(registry: registry, program: program, moduleName: ns, realm: RealmOf(filePath: filePath));
         }
 
         // Re-resolve member variables now that all type shells in this module are registered.
         // Initial registration may have empty member lists due to forward references
         // (e.g., Set needs SortedSet which may not be registered yet during alphabetical processing).
-        // Each deferred pass must RE-STAMP the registering realm per program (the registration loop above
-        // left it at the LAST program's realm — and with an RF + SF wrapper for the same type both loaded,
-        // that trailing realm is SF, so an RF program's deferred lookups would hit the SF shell and
-        // mis-apply its protocols/members to the wrong realm — the BitList not-iterable bug).
         foreach ((Program program, string filePath, string _) in programs)
         {
-            StampProgram(registry: registry, program: program, filePath: filePath);
+            InstallProgramImports(registry: registry, program: program);
             ResolveProgramMemberVariables(registry: registry, program: program);
         }
 
         foreach ((Program program, string filePath, string _) in programs)
         {
-            StampProgram(registry: registry, program: program, filePath: filePath);
-            ResolveProgramProtocolConformances(registry: registry, program: program);
+            InstallProgramImports(registry: registry, program: program);
+            ResolveProgramProtocolConformances(registry: registry, program: program, realm: RealmOf(filePath: filePath));
         }
 
         // Re-resolve protocol memberRoutine return types that failed due to forward references
         foreach ((Program program, string filePath, string _) in programs)
         {
-            StampProgram(registry: registry, program: program, filePath: filePath);
+            InstallProgramImports(registry: registry, program: program);
             ResolveProtocolMemberRoutineReturnTypes(registry: registry, program: program);
             ResolveAssociatedTypeBindings(registry: registry, program: program);
         }
 
         foreach ((Program program, string filePath, string ns) in programs)
         {
-            StampProgram(registry: registry, program: program, filePath: filePath);
-            RegisterProgramRoutines(registry: registry, program: program, moduleName: ns);
+            InstallProgramImports(registry: registry, program: program);
+            RegisterProgramRoutines(registry: registry, program: program, moduleName: ns, realm: RealmOf(filePath: filePath));
         }
 
         foreach ((Program program, string filePath, string ns) in programs)
         {
-            StampProgram(registry: registry, program: program, filePath: filePath);
+            InstallProgramImports(registry: registry, program: program);
             ResolveRoutineSignatures(registry: registry, program: program, moduleName: ns);
         }
 
         // Register presets for the module
         foreach ((Program program, string filePath, string ns) in programs)
         {
-            StampProgram(registry: registry, program: program, filePath: filePath);
+            InstallProgramImports(registry: registry, program: program);
             RegisterProgramPresets(registry: registry, program: program, moduleName: ns);
         }
 
         registry.ActiveRegistrationImports = savedImports;
-        // Clear the thread-static realm so it never leaks into a later load pass on this thread.
-        StampRealm(realm: null);
     }
 
     /// <summary>
-    /// Stamps the realm of the program about to be registered and installs its imports on
+    /// Installs the imports of the program about to be registered on
     /// <see cref="TypeRegistry.ActiveRegistrationImports"/>, so a field or signature naming a type from an
     /// imported module (Math3D's <c>Vector[B32, 4]</c> from Simd) resolves while the module registers.
     /// </summary>
-    private static void StampProgram(TypeRegistry registry, Program program, string filePath)
+    private static void InstallProgramImports(TypeRegistry registry, Program program)
     {
-        StampRealm(realm: RealmOf(filePath: filePath));
         registry.ActiveRegistrationImports = ImportScopeOf(program: program);
     }
 

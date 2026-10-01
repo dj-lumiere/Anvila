@@ -79,9 +79,6 @@ public abstract class LanguageRules
     /// <summary>The <c>data_size</c> builder query.</summary>
     public abstract bool HasDataSizeQuery { get; }
 
-    /// <summary>The memory wrapper types (<c>Retained</c>, <c>Tracked</c>, …) are available.</summary>
-    public abstract bool HasMemoryWrappers { get; }
-
     // ═══════════════════════════════════════════════════════════════════════════
     // OWNERSHIP AND ENTITIES
     // ═══════════════════════════════════════════════════════════════════════════
