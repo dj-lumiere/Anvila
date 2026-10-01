@@ -46,7 +46,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build pkg-config autoconf automake libtool \
-            python3 curl wget ca-certificates lsb-release software-properties-common gnupg
+            python3 curl wget ca-certificates lsb-release software-properties-common gnupg gdb
 
       - name: Install LLVM 22 toolchain
         run: |
@@ -119,6 +119,15 @@ jobs:
         run: |
           dotnet build "$RF_TESTS" --configuration Release --no-restore
           dotnet build "$SF_TESTS" --configuration Release --no-restore
+
+      # A test that gives up on a hung child takes its thread stacks first (HangDiagnostics in the test
+      # projects): dotnet-stack for the builder, gdb for a native child, which needs ptrace to reach a
+      # process that is not its own child.
+      - name: Install hang diagnostics
+        run: |
+          dotnet tool install --global dotnet-stack
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+          sudo sysctl -w kernel.yama.ptrace_scope=0
 
       - name: Test
         if: matrix.leg == 'test'
@@ -193,6 +202,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build $env:SF_TESTS --configuration Release
 
+      - name: Install hang diagnostics
+        shell: pwsh
+        run: |
+          dotnet tool install --global dotnet-stack
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
+
       - name: Test
         shell: pwsh
         run: |
@@ -236,6 +251,11 @@ jobs:
         run: |
           dotnet build "$RF_TESTS" --configuration Release
           dotnet build "$SF_TESTS" --configuration Release
+
+      - name: Install hang diagnostics
+        run: |
+          dotnet tool install --global dotnet-stack
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
       - name: Test
         run: |
