@@ -57,7 +57,7 @@
   <!-- The Tessera backend (src/9.TesseraEmit) builds through the Tessera builder and ships its standard
        library next to the builder, where TesseraBackend looks for it (tessera-stdlib/). -->
   <ItemGroup>
-    <ProjectReference Include="..\Tessera\src\Tessera.csproj"/>
+    <ProjectReference Include="..\Tessera\Tessera.csproj"/>
     <Content Include="..\Tessera\stdlib\**\*.tess" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 </Project>
