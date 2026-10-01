@@ -67,7 +67,7 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "parse" or "tokenize" or "codegen" or BuildCommand
-            or "buildandrun" or "check" or "validate-stdlib" or "emit-pbrf" or "help";
+            or "buildandrun" or "check" or "validate-stdlib" or "emit-pbrf" or "emit-ingrid" or "help";
 
         if (!isCommand && !TryRewriteBareRunArgs(args: ref args, command: ref command))
         {
@@ -191,6 +191,9 @@ internal partial class Program
 
             case "emit-pbrf":
                 return EmitPbrf(args: args);
+
+            case "emit-ingrid":
+                return EmitIngrid();
 
             case "help":
                 PrintUsage();
@@ -332,6 +335,26 @@ internal partial class Program
     /// one failing does not fail the others (or the build — the caller uses ContinueOnError).
     /// Usage: <c>emit-pbrf [outDir] [--all|--sf]</c>. Default outDir = the resolved stdlib root's <c>.pbrf</c>.
     /// </summary>
+    /// <summary>
+    /// Writes Ingrid's Tessera library as LLVM IR next to the executable (<see cref="IngridTessera.IrFileName"/>), where
+    /// every build links it from. A packaging step: an installed layout has no sources to compile it from, so the
+    /// package ships this file. Usage: <c>emit-ingrid</c>, run from inside the workspace that holds <c>Ingrid/tessera</c>.
+    /// </summary>
+    private static int EmitIngrid()
+    {
+        try
+        {
+            string path = IngridTessera.IrPath(exeDir: AppContext.BaseDirectory);
+            Console.WriteLine(value: $"[emit-ingrid] {path}");
+            return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine(value: $"[emit-ingrid] {ex.Message}");
+            return 1;
+        }
+    }
+
     private static int EmitPbrf(string[] args)
     {
         string? outDir = args.Length > 1 && !args[1]
