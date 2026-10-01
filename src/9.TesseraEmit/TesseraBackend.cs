@@ -26,7 +26,18 @@ public sealed class TesseraBackend : IBuilderBackend
     public BackendOutput Emit(BackendInput input)
     {
         var writer = new TesseraWriter(input: input);
-        string source = writer.Write();
+        string source;
+        try
+        {
+            source = writer.Write();
+        }
+        catch (NotSupportedException ex) when (input.SourceDumpPath is { } partialPath)
+        {
+            // Keep what was translated, so the stopping point can be read in context.
+            File.WriteAllText(path: partialPath, contents: writer.PartialModule(stoppedBecause: ex.Message));
+            throw;
+        }
+
         if (input.SourceDumpPath is { } dumpPath)
         {
             File.WriteAllText(path: dumpPath, contents: source);
