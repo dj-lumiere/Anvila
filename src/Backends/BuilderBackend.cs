@@ -74,8 +74,8 @@ public interface IBuilderBackend
 }
 
 /// <summary>
-/// The backends this builder can use, by name. The LLVM emitter registers itself, and other backends register
-/// when their project starts, the way front ends register their language rules.
+/// The backends this builder can use, by name: the LLVM emitter and Tessera are built in, and another backend
+/// registers when its project starts, the way front ends register their language rules.
 /// </summary>
 public static class BuilderBackends
 {
@@ -127,11 +127,11 @@ public static class BuilderBackends
                          $"{string.Join(separator: ", ", values: Names)}.");
     }
 
+    /// <summary>Registers the backends built into the builder (the LLVM emitter and Tessera) unless a
+    /// registration under their name already replaced them.</summary>
     private static void EnsureDefault()
     {
-        if (!Registered.ContainsKey(key: DefaultName))
-        {
-            Registered[key: DefaultName] = new LlvmEmit.LlvmBackend();
-        }
+        Registered.TryAdd(key: DefaultName, value: new LlvmEmit.LlvmBackend());
+        Registered.TryAdd(key: TesseraEmit.TesseraBackend.BackendName, value: new TesseraEmit.TesseraBackend());
     }
 }

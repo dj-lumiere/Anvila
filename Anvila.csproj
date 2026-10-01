@@ -53,4 +53,11 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
     <PackageReference Include="Tomlyn" Version="0.17.0"/>
   </ItemGroup>
+
+  <!-- The Tessera backend (src/9.TesseraEmit) builds through the Tessera compiler and ships its standard
+       library next to the builder, where TesseraBackend looks for it (tessera-stdlib/). -->
+  <ItemGroup>
+    <ProjectReference Include="..\Tessera\src\Tessera.csproj"/>
+    <Content Include="..\Tessera\stdlib\**\*.tess" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
+  </ItemGroup>
 </Project>

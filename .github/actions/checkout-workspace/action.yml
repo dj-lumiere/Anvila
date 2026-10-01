@@ -1,7 +1,8 @@
 name: Checkout the LumiFoundry workspace
 description: >
-  Checks out Anvila, Ingrid, RazorForge and Suflae side by side under the workspace root, the layout their
-  project references (..\Anvila, ..\Ingrid) expect, and fetches the native library sources Ingrid builds.
+  Checks out Anvila, Ingrid, RazorForge, Suflae and Tessera side by side under the workspace root, the layout
+  their project references (..\Anvila, ..\Ingrid, ..\Tessera) expect, and fetches the native library sources
+  Ingrid builds.
   The repository that triggered the run is checked out at its own commit, every other one at master.
 
 runs:
@@ -38,6 +39,14 @@ runs:
         path: Suflae
         ref: ${{ github.repository == 'dj-lumiere/Suflae' && github.sha || 'master' }}
         fetch-depth: ${{ github.repository == 'dj-lumiere/Suflae' && '0' || '1' }}
+
+    - name: Checkout Tessera
+      uses: actions/checkout@v4
+      with:
+        repository: dj-lumiere/Tessera
+        path: Tessera
+        ref: ${{ github.repository == 'dj-lumiere/Tessera' && github.sha || 'master' }}
+        fetch-depth: ${{ github.repository == 'dj-lumiere/Tessera' && '0' || '1' }}
 
     - name: Fetch native library sources (libuv, libco)
       shell: bash

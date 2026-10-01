@@ -248,7 +248,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Checks if a token type represents an integer literal.
     /// </summary>
-    private static bool IsIntegerLiteralType(TokenType type)
+    internal static bool IsIntegerLiteralType(TokenType type)
     {
         return type is TokenType.IntegerLiteral or TokenType.S8Literal or TokenType.S16Literal
             or TokenType.S32Literal or TokenType.S64Literal or TokenType.S128Literal
@@ -507,7 +507,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Performs the strip numeric suffix step for this compiler phase.
     /// </summary>
-    private static string StripNumericSuffix(string text)
+    internal static string StripNumericSuffix(string text)
     {
         return ConvertPrefixedToDecimal(value: text[..NumericBodyLength(text: text)]
            .Replace(oldValue: "_", newValue: ""));
