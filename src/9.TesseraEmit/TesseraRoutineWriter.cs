@@ -258,6 +258,15 @@ internal sealed class TesseraRoutineWriter
             case LoopStatement l:
                 WriteWhile(condition: null, body: l.Body);
                 break;
+            case DangerStatement danger:
+                // `danger` only lifts the build's safety checks: its body runs like any block.
+                WriteStatement(statement: danger.Body);
+                break;
+            case CrashStatement crash:
+                // The report never returns: it prints the crash and ends the program.
+                WriteCall(call: crash.Report, asStatement: true);
+                Terminate(line: "unreachable");
+                break;
             case BreakStatement:
                 Terminate(line: $"jump {Target(label: CurrentLoop.Break)}");
                 break;
@@ -424,6 +433,31 @@ internal sealed class TesseraRoutineWriter
         return slot;
     }
 
+    /// <summary>The all-zero value of a type: a literal for a number, Bool or address, else a zeroed slot.</summary>
+    private string ZeroValue(TypeSymbol? type)
+    {
+        string text = TypeText(type: type);
+        if (text.Length > 1 && text[0] is 'S' or 'U' && char.IsAsciiDigit(c: text[1]))
+        {
+            return "0";
+        }
+
+        switch (text)
+        {
+            case "Bool":
+                return "false";
+            case "F16" or "BF16" or "F32" or "F64":
+                return "0.0";
+            case "Addr":
+                return "null";
+        }
+
+        string slot = $"%zero{_temps++}";
+        Emit(line: $"claim {slot} : @{text}");
+        Emit(line: $"{slot}.zeroinit(1)");
+        return $"{slot}.load()";
+    }
+
     /// <summary>A value usable as a method receiver: a bare literal is bound to a typed temporary first.</summary>
     private string Receiver(Operand operand)
     {
@@ -437,6 +471,8 @@ internal sealed class TesseraRoutineWriter
     {
         switch (expression)
         {
+            case LiteralExpression { Value: string text, LiteralType: TokenType.TextLiteral } literal:
+                return TextLiteral(text: text, type: literal.ResolvedType);
             case LiteralExpression literal:
                 return new Operand(Text: LiteralText(literal: literal), Type: literal.ResolvedType, IsPlace: false);
             case IdentifierExpression identifier:
@@ -451,6 +487,8 @@ internal sealed class TesseraRoutineWriter
                 return Evaluate(expression: named.Value);
             case CreatorExpression creator:
                 return EvaluateCreator(creator: creator);
+            case CarrierPayloadExpression payload:
+                return EvaluatePayload(payload: payload);
             case BinaryExpression { Operator: BinaryOperator.Assign } assign:
                 return new Operand(Text: WriteAssignment(target: assign.Left, value: assign.Right),
                     Type: assign.Right.ResolvedType, IsPlace: false);
@@ -485,6 +523,13 @@ internal sealed class TesseraRoutineWriter
     private Operand EvaluateField(MemberExpression member)
     {
         Operand owner = Evaluate(expression: member.Object);
+        if (owner.Type is EntityTypeSymbol entity)
+        {
+            string block = Receiver(operand: owner);
+            return new Operand(Text: $"{block}.cast<{_module.EntityRecord(entity: entity)}>().{member.MemberName}",
+                Type: member.ResolvedType, IsPlace: true);
+        }
+
         if (owner.Type is not RecordTypeSymbol { BackendType: null })
         {
             throw Unsupported(what: $"the member '{member.MemberName}' of {owner.Type?.FullName ?? "an untyped value"}");
@@ -550,7 +595,9 @@ internal sealed class TesseraRoutineWriter
                                : Evaluate(expression: a))
                           .Select(selector: o => (Receiver(operand: o), o.Type))
                           .ToList(),
-                resultType: call.ResolvedType);
+                resultType: call.ResolvedType,
+                typeText: TypeText,
+                zero: ZeroValue);
             return new Operand(Text: Temp(type: call.ResolvedType, expression: operation), Type: call.ResolvedType,
                 IsPlace: false);
         }
@@ -646,26 +693,125 @@ internal sealed class TesseraRoutineWriter
         TypeSymbol? type = creator.ConstructedType is not (null or ErrorTypeSymbol)
             ? creator.ConstructedType
             : creator.ResolvedType;
-        if (type is not RecordTypeSymbol { BackendType: null, CarrierKind: CarrierKind.None } record ||
-            type is VariantTypeSymbol)
+        if (type is EntityTypeSymbol entity)
+        {
+            return EvaluateEntityCreator(creator: creator, entity: entity);
+        }
+
+        if (type is RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup } carrier)
+        {
+            return EvaluateInlineCarrierCreator(creator: creator, carrier: carrier);
+        }
+
+        if (type is not RecordTypeSymbol
+            {
+                BackendType: null, CarrierKind: CarrierKind.None or CarrierKind.Maybe
+            } record || type is VariantTypeSymbol)
         {
             throw Unsupported(what: $"a construction of {type?.FullName ?? creator.TypeName}");
         }
 
-        if (creator.MemberVariables.Count != record.MemberVariables.Count)
+        if (creator.MemberVariables.Count > record.MemberVariables.Count)
         {
-            throw Unsupported(what: $"a construction of {record.FullName} that leaves fields unset");
+            throw Unsupported(what: $"a construction of {record.FullName} with more values than fields");
         }
 
+        // Values come in field order; a field left without one is zero, as in the LLVM emitter (an absent
+        // Maybe is built from its `present` flag alone).
         var fields = new List<string>();
         for (int i = 0; i < record.MemberVariables.Count; i++)
         {
-            fields.Add(item: $"{record.MemberVariables[index: i].Name}: " +
-                             $"{Value(operand: Evaluate(expression: creator.MemberVariables[index: i].Value))}");
+            MemberVariableInfo field = record.MemberVariables[index: i];
+            string value = i < creator.MemberVariables.Count
+                ? Value(operand: Evaluate(expression: creator.MemberVariables[index: i].Value))
+                : ZeroValue(type: field.Type);
+            fields.Add(item: $"{field.Name}: {value}");
         }
 
         string literal = $"{TypeText(type: record)} {{ {string.Join(separator: ", ", values: fields)} }}";
         return new Operand(Text: Temp(type: record, expression: literal), Type: record, IsPlace: false);
+    }
+
+    /// <summary>
+    /// An entity built from its field values: a heap block from the runtime, its fields stored in order (one
+    /// left out is zero, as the runtime hands out zeroed blocks). The value is the block's address.
+    /// </summary>
+    private Operand EvaluateEntityCreator(CreatorExpression creator, EntityTypeSymbol entity)
+    {
+        if (creator.MemberVariables.Count == 0 && entity.MemberVariables.Count > 0)
+        {
+            throw Unsupported(what: $"an empty creator of the entity {entity.FullName}");
+        }
+
+        var values = creator.MemberVariables
+                            .Select(selector: m => Value(operand: Evaluate(expression: m.Value)))
+                            .ToList();
+        string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "%size: U64",
+            returnType: "Addr");
+        string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
+        for (int i = 0; i < values.Count; i++)
+        {
+            Emit(line: $"{block}.cast<{_module.EntityRecord(entity: entity)}>()." +
+                       $"{entity.MemberVariables[index: i].Name}.store({values[index: i]})");
+        }
+
+        return new Operand(Text: block, Type: entity, IsPlace: false);
+    }
+
+    /// <summary>
+    /// A Check or Lookup carrier: its payload field is a byte buffer that holds the success value or the error at
+    /// the value's own width, so the carrier is built in a zeroed slot and each value stored at its own type.
+    /// </summary>
+    private Operand EvaluateInlineCarrierCreator(CreatorExpression creator, RecordTypeSymbol carrier)
+    {
+        var values = creator.MemberVariables
+                            .Select(selector: m => (Value: Value(operand: Evaluate(expression: m.Value)),
+                                 m.Value.ResolvedType))
+                            .ToList();
+        string slot = $"%carrier{_temps++}";
+        Emit(line: $"claim {slot} : @{TypeText(type: carrier)}");
+        Emit(line: $"{slot}.zeroinit(1)");
+        for (int i = 0; i < values.Count && i < carrier.MemberVariables.Count; i++)
+        {
+            MemberVariableInfo field = carrier.MemberVariables[index: i];
+            Emit(line: field.Name == "payload"
+                ? $"{slot}.{field.Name}.cast<{TypeText(type: values[index: i].ResolvedType)}>().store({values[index: i].Value})"
+                : $"{slot}.{field.Name}.store({values[index: i].Value})");
+        }
+
+        return new Operand(Text: slot, Type: carrier, IsPlace: true);
+    }
+
+    /// <summary>The value a carrier (or variant) holds in its payload, read at the type the arm matched.</summary>
+    private Operand EvaluatePayload(CarrierPayloadExpression payload)
+    {
+        Operand carrier = Evaluate(expression: payload.Carrier);
+        if (carrier.Type is not RecordTypeSymbol { MemberVariables.Count: >= 2 } record ||
+            carrier.Type is VariantTypeSymbol)
+        {
+            throw Unsupported(what: $"a payload read from {carrier.Type?.FullName ?? "an untyped value"}");
+        }
+
+        TypeSymbol valueType = payload.ResolvedType ?? payload.ConcreteType.ResolvedType ??
+                               throw Unsupported(what: "a payload read of an unresolved type");
+        return new Operand(Text: $"{Place(operand: carrier)}.{record.MemberVariables[index: 1].Name}" +
+                                 $".cast<{TypeText(type: valueType)}>()",
+            Type: valueType, IsPlace: true);
+    }
+
+    /// <summary>A text literal: a <c>Text</c> record over the literal's static characters, with no controller
+    /// (a static literal is never freed or counted).</summary>
+    private Operand TextLiteral(string text, TypeSymbol? type)
+    {
+        if (type is not RecordTypeSymbol { MemberVariables: [var data, var count, var controller] } textRecord)
+        {
+            throw Unsupported(what: $"a text literal of type {type?.FullName ?? "none"}");
+        }
+
+        string characters = _module.TextData(value: text) ?? "null";
+        string literal = $"{TypeText(type: textRecord)} {{ {data.Name}: {characters}, " +
+                         $"{count.Name}: {text.EnumerateRunes().Count()}, {controller.Name}: null }}";
+        return new Operand(Text: Temp(type: textRecord, expression: literal), Type: textRecord, IsPlace: false);
     }
 
     private static string DescribeCall(CallExpression call)
