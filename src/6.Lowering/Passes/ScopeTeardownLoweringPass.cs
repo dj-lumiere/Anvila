@@ -121,7 +121,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // unification (SignatureResolver.MaybeRoamSuflaeEntity) an SF entity param resolves to `Roamed[E]`
         // (a RecordTypeSymbol) which is a record → borrow by the rule above anyway; a bare `EntityTypeSymbol`
         // param in SF is skipped here (it would otherwise be consuming per the RF rule).
-        bool isSuflae = ctx.Registry.Language == TypeModel.Enums.Language.Suflae;
+        bool entitiesAreShared = ctx.Registry.Rules.EntitiesAreShared;
         var paramLive = new List<Owned>();
         foreach (Parameter p in r.Parameters)
         {
@@ -143,7 +143,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 continue;
             }
 
-            if (isSuflae)
+            if (entitiesAreShared)
             {
                 continue;
             }

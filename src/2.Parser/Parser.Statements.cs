@@ -1278,7 +1278,7 @@ public partial class Parser
 
     /// <summary>
     /// Parses a danger statement (unsafe memory operations block).
-    /// RF-only construct guarded by <c>_language == Language.RazorForge</c>.
+    /// Parsed only where the language allows unsafe code (<c>LanguageRules.AllowsUnsafeCode</c>).
     /// Syntax: <c>danger</c> followed by indented body.
     /// </summary>
     /// <returns>A <see cref="DangerStatement"/> AST node.</returns>

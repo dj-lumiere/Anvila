@@ -811,12 +811,12 @@ public sealed partial class SemanticVerifier
     /// build-time invariant <c>AssertNoBareEntityInSignature</c> still guards the OTHER bare-entity case
     /// (an SF entity that slipped roaming — a compiler bug, no <c>RF::</c> tag).
     /// </summary>
-    private void CheckSuflaeSignatureHasNoBareRfEntity(RoutineDeclaration routine,
+    private void CheckSignatureHasNoForeignBareEntity(RoutineDeclaration routine,
         RoutineKind kind)
     {
         string? file = routine.Location.FileName;
-        if (_registry.Language != Language.Suflae || file == null ||
-            !file.EndsWith(value: ".sf", comparisonType: StringComparison.OrdinalIgnoreCase) ||
+        if (!_registry.Rules.EntitiesAreShared || file == null ||
+            Builder.Frontends.Languages.OfFile(fileName: file) != _registry.Language ||
             IsStdlibFile(filePath: file))
         {
             return;
@@ -859,7 +859,7 @@ public sealed partial class SemanticVerifier
         (RoutineKind kind, TypeSymbol? ownerType, string routineName) =
             DetermineRoutineKind(routine: routine);
 
-        CheckSuflaeSignatureHasNoBareRfEntity(routine: routine, kind: kind);
+        CheckSignatureHasNoForeignBareEntity(routine: routine, kind: kind);
 
         // Validate declaration-level constraints (operator/kind restrictions, wired names, annotations,
         // mutation-category conflicts, varargs placement) before deferring registration.

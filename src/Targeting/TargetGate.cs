@@ -29,13 +29,15 @@ public static class TargetGate
     private static readonly TargetConfig HostTarget = TargetConfig.ForCurrentHost();
 
     /// <summary>
-    /// Returns false only when <paramref name="filePath"/> is a <c>.rf</c> file whose leading
-    /// <c>#@target(...)</c> directive does not match <paramref name="target"/> (defaults to the host).
-    /// Non-<c>.rf</c> files and files with no directive always compile.
+    /// Returns false only when <paramref name="filePath"/> is in a language with target directives and
+    /// its leading <c>#@target(...)</c> directive does not match <paramref name="target"/> (defaults to the
+    /// host). Files of other languages and files with no directive always compile.
     /// </summary>
     public static bool ShouldCompile(string filePath, TargetConfig? target = null)
     {
-        if (!filePath.EndsWith(value: ".rf", comparisonType: StringComparison.OrdinalIgnoreCase))
+        TypeModel.Enums.Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
+        if (!Builder.Frontends.Languages.HasSourceExtension(fileName: filePath) ||
+            !Builder.Frontends.Languages.For(language: language).HasTargetDirectives)
         {
             return true;
         }

@@ -18,7 +18,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckControllerRewraps(RoutineDeclaration routine)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksOwnership)
         {
             return;
         }

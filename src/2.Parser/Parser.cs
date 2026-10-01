@@ -73,6 +73,9 @@ public partial class Parser
     /// </summary>
     private readonly Language _language;
 
+    /// <summary>The rules of the language being parsed.</summary>
+    private Builder.Frontends.LanguageRules Rules => Builder.Frontends.Languages.For(language: _language);
+
     #endregion
 
     #region Indentation Fields
@@ -447,8 +450,7 @@ public partial class Parser
         }
 
         // Check for dangerous modifier: dangerous routine foo(), dangerous external("C") routine bar()
-        // (RazorForge only)
-        bool isDangerous = _language == Language.RazorForge &&
+        bool isDangerous = Rules.AllowsUnsafeCode &&
                            CheckAndAdvance(type: TokenType.Dangerous);
 
         ISyntaxTreeNode? varOrField = TryParseTypeBodyOrVariableDeclaration(
@@ -587,8 +589,8 @@ public partial class Parser
                 isLateInit: declLateInit);
         }
 
-        // Pass statement/declaration (empty placeholder, RazorForge only).
-        if (_language == Language.RazorForge && CheckAndAdvance(type: TokenType.Pass))
+        // Pass statement/declaration (empty placeholder).
+        if (Rules.HasPassStatement && CheckAndAdvance(type: TokenType.Pass))
         {
             ConsumeStatementTerminator();
             return _parsingTypeBody
@@ -745,10 +747,10 @@ public partial class Parser
     private VariableDeclaration ParseGlobalInDeclarationPosition(VisibilityModifier visibility,
         List<string> annotations)
     {
-        if (_language == Language.RazorForge)
+        if (!Rules.HasModuleGlobals)
         {
             throw new GrammarException(code: GrammarDiagnosticCode.InvalidDeclarationInBody,
-                message: "'global' is Suflae-only: RazorForge has no module-level mutable state " +
+                message: $"{Rules.Name} has no 'global': there is no module-level mutable state " +
                          "(thread state through parameters or a heap entity; use 'preset' for constants)",
                 fileName: FileName,
                 line: CurrentToken.Line,
@@ -777,8 +779,8 @@ public partial class Parser
     /// </summary>
     private AsyncStatus ParseAsyncStatusModifier()
     {
-        // Concurrency modifier: threaded routine foo() (RazorForge only, v0.1)
-        if (_language == Language.RazorForge && CheckAndAdvance(type: TokenType.Threaded))
+        // Concurrency modifier: threaded routine foo()
+        if (Rules.HasThreadedRoutines && CheckAndAdvance(type: TokenType.Threaded))
         {
             return AsyncStatus.Threaded;
         }
@@ -937,8 +939,8 @@ public partial class Parser
         // RF-ONLY: MEMORY/SCOPE BLOCKS
         // ═══════════════════════════════════════════════════════════════════════════
 
-        // Danger block (unsafe operations) - RazorForge only
-        if (_language == Language.RazorForge && CheckAndAdvance(type: TokenType.Danger))
+        // Danger block (unsafe operations)
+        if (Rules.AllowsUnsafeCode && CheckAndAdvance(type: TokenType.Danger))
         {
             return ParseDangerStatement();
         }

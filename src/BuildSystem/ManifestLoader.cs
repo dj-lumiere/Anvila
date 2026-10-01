@@ -458,8 +458,7 @@ public static class ManifestLoader
     /// than a module — file-based single-file execution is the standard entry form.</summary>
     private static bool LooksLikeSourceFile(string name)
     {
-        return name.EndsWith(value: ".rf", comparisonType: StringComparison.OrdinalIgnoreCase) ||
-               name.EndsWith(value: ".sf", comparisonType: StringComparison.OrdinalIgnoreCase);
+        return Builder.Frontends.Languages.HasSourceExtension(fileName: name);
     }
 
     private static string ReadRequiredString(TomlTable table, string key, string context)
@@ -501,12 +500,7 @@ public static class ManifestLoader
             return index;
         }
 
-        string[] extensions =
-        [
-            "*.rf",
-            "*.sf"
-        ];
-        foreach (string pattern in extensions)
+        foreach (string pattern in Builder.Frontends.Languages.SourceGlobs)
         {
             foreach (string filePath in Directory.GetFiles(path: projectDir,
                          searchPattern: pattern,

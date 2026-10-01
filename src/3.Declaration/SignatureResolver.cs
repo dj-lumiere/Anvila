@@ -114,7 +114,7 @@ internal sealed class SignatureResolver
         // `Roamed[E]` — the same rule TypeBodyResolver applies to entity FIELDS. Gated to non-stdlib:
         // the borrowed RF stdlib is RazorForge source (bare single-owner entities), and its concrete
         // entity signatures must NOT be rewritten even though it's loaded under an SF compile.
-        bool sfUserEntity = _sa._registry.Language == Language.Suflae &&
+        bool sfUserEntity = _sa._registry.Rules.EntitiesAreShared &&
                             !_sa.IsStdlibFile(filePath: pending.FilePath);
 
         // Desugar homogeneous variadic params (`nums...: T`) into a const-generic `Array[T, __VarargN]`
@@ -244,7 +244,7 @@ internal sealed class SignatureResolver
         TypeSymbol? meType = ResolveSpecializedReceiverMeType(pending: pending,
             refreshedOwnerType: refreshedOwnerType,
             routine: routine,
-            filteredGenericParams: filteredGenericParams) ?? ResolveSuflaeEntityMeType(
+            filteredGenericParams: filteredGenericParams) ?? ResolveSharedEntityMeType(
             sfUserEntity: sfUserEntity,
             pending: pending,
             refreshedOwnerType: refreshedOwnerType);
@@ -471,7 +471,7 @@ internal sealed class SignatureResolver
             positionDescription: $"parameter '{param.Name}'",
             allowTopLevelRvalue: true);
         // Suflae entity params resolve to `Roamed[E]` at the single ResolveType choke point
-        // (TypeResolver.RoamSuflaeEntitySlot) — no per-site substitution here. The callee receives
+        // (TypeResolver.RoamSharedEntitySlot) — no per-site substitution here. The callee receives
         // the caller's Roamed handle directly (a BORROW; ScopeTeardownLoweringPass skips SF Roamed
         // params). `me` has no type expression (inferred from OwnerType) so it is set via MeType below.
         TypeSymbol paramType = _typeResolver.ResolveType(typeExpr: param.Type);
@@ -579,7 +579,7 @@ internal sealed class SignatureResolver
     /// failable ones) keep bare <c>me</c> — they build the raw entity before any controller exists.
     /// Returns <c>null</c> when the conditions do not apply.
     /// </summary>
-    private TypeSymbol? ResolveSuflaeEntityMeType(bool sfUserEntity,
+    private TypeSymbol? ResolveSharedEntityMeType(bool sfUserEntity,
         SemanticVerifier.PendingRoutine pending, TypeSymbol? refreshedOwnerType)
     {
         if (sfUserEntity && pending.Kind == RoutineKind.MemberRoutine &&

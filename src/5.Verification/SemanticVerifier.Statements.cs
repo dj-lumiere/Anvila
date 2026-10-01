@@ -71,12 +71,13 @@ public sealed partial class SemanticVerifier
 
             case VariableDeclaration varDecl:
                 // A bare `var` at module level. `var` is a routine-local binding; there is no module-level
-                // `var`. Suflae uses `global` for module-level mutable state; RazorForge has none.
+                // `var`. A language with module globals spells module-level mutable state `global`.
                 ReportError(code: SemanticDiagnosticCode.ModuleLevelVarNotAllowed,
                     message:
                     $"'var {varDecl.Name}' is not allowed at module level. 'var' declares a routine-local " +
-                    "binding — move it inside a routine. For module-level mutable state use a Suflae " +
-                    "'global' (RazorForge has no module-level mutable state).",
+                    "binding — move it inside a routine. " + (_registry.Rules.HasModuleGlobals
+                        ? $"For module-level mutable state use 'global {varDecl.Name}: <Type> = ...'."
+                        : $"{_registry.Rules.Name} has no module-level mutable state."),
                     location: varDecl.Location);
                 break;
         }
@@ -253,7 +254,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void InjectReshapingGuard(RoutineDeclaration routine, RoutineInfo routineInfo)
     {
-        if (_registry.CompilationLanguage != Language.Suflae ||
+        if (!_registry.CompilationRules.ChecksShapeAtRunTime ||
             !routine.Annotations.Contains(item: "reshaping") ||
             routineInfo.OwnerType is not { } owner || routine.Body is not BlockStatement body ||
             _registry.LookupMemberRoutine(type: owner,
@@ -797,7 +798,7 @@ public sealed partial class SemanticVerifier
             varType = ResolveType(typeExpr: varDecl.Type);
 
             (TypeSymbol resolved, bool isNullable, bool isEntitySlot) =
-                ResolveSuflaeEntityAnnotation(annotated: varType, typeExpr: varDecl.Type);
+                ResolveSharedEntityAnnotation(annotated: varType, typeExpr: varDecl.Type);
             varType = resolved;
             annotatedNullable = isNullable;
             annotatedNonNullEntity = isEntitySlot && !isNullable;
@@ -829,7 +830,7 @@ public sealed partial class SemanticVerifier
 
         // #16: Plain `var x: T` without an initializer is disallowed.
         // Use `lateinit var x: T` (eager allocation, late initialization).
-        if (_registry.Language == Language.RazorForge && varDecl is
+        if (_registry.Rules.RequiresLateinitForDeferredInit && varDecl is
                 { Type: not null, Initializer: null, IsLateInit: false })
         {
             ReportError(code: SemanticDiagnosticCode.VariableNeedsTypeOrInitializer,
@@ -948,7 +949,7 @@ public sealed partial class SemanticVerifier
         // RF-S630: track the controller identity of a Guarded/Witnessed handle so the
         // readers-XOR-writer check keys on the shared DATA, not the variable name — a clone
         // (`var s2 = s.share()`) inherits `s`'s identity and so conflicts with it.
-        if (_registry.Language == Language.RazorForge &&
+        if (_registry.Rules.ChecksOwnership &&
             varType.BareName is Declaration.RuntimeContract.Guarded
                 or Declaration.RuntimeContract.Witnessed)
         {
@@ -991,7 +992,7 @@ public sealed partial class SemanticVerifier
         // A tuple element access (`_t.item0`) is how `var (a, b) = expr` destructuring lowers: the tuple
         // is a CONSUMED temporary, so each element MOVES out — not a view of a persisting owner. Exclude it
         // (Object is a TupleTypeSymbol) so channel/pair destructuring of entity elements stays a legal move.
-        if (_registry.Language == Language.RazorForge && varDecl.Initializer != null &&
+        if (_registry.Rules.ChecksOwnership && varDecl.Initializer != null &&
             ReadsKeptEntity(value: varDecl.Initializer, includeVariables: true) &&
             _registry.IsEntityKind(type: varType))
         {
@@ -1040,7 +1041,7 @@ public sealed partial class SemanticVerifier
         // Scoped access tokens (Viewing / Modifying / Consulting / Amending) cannot bind to a
         // var at all — they only exist inline within their producing expression. Use the
         // value inline (`a.view().x`) or open a scope (`using a.view() as v`).
-        if (_registry.Language == Language.RazorForge && IsInlineOnlyTokenType(type: varType))
+        if (_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType))
         {
             string wrapperName = varType.BareName;
             ReportError(code: SemanticDiagnosticCode.ImplicitWrapperCopy,
@@ -1061,7 +1062,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckImplicitWrapperCopyOnInit(VariableDeclaration varDecl, TypeSymbol varType)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksOwnership)
         {
             return;
         }
@@ -1287,7 +1288,7 @@ public sealed partial class SemanticVerifier
 
         // Check if we're in a @readonly memberRoutine trying to mutate 'me' (RazorForge-only; Suflae
         // hides @readonly/@reshaping).
-        if (_registry.CompilationLanguage != Language.Suflae &&
+        if (_registry.CompilationRules.ChecksReadonly &&
             _currentRoutine is { IsReadOnly: true } &&
             member.Object is IdentifierExpression { Name: "me" })
         {

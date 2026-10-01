@@ -14,7 +14,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol result = AnalyzeGenericMemberRoutineCallExpressionCore(generic: generic);
         // A generic call (`hollow[Integer]()`, `obj.method[T](..)`) resolves through a path distinct from
         // the plain-call analyzer, so the Suflae unsafe-call gate is applied here too on its resolved routine.
-        EnforceSuflaeUnsafeCall(resolved: generic.ResolvedRoutine, location: generic.Location);
+        EnforceUnsafeCallAllowed(resolved: generic.ResolvedRoutine, location: generic.Location);
         return result;
     }
 

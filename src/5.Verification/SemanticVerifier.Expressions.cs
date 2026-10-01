@@ -225,10 +225,7 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        string fix = _registry.Language == Language.Suflae
-            ? $"Pass it in as an argument, or declare it as 'global {id.Name}: <Type> = ...' to share it " +
-              "across routines."
-            : "Pass it in as an argument. RazorForge has no module-level mutable state.";
+        string fix = _registry.Rules.ScriptVariableAdvice(name: id.Name);
         ReportError(code: SemanticDiagnosticCode.ScriptVariableNotVisibleInRoutine,
             message:
             $"'{id.Name}' is a top-level variable of this script, and those live only in the script's " +
@@ -1315,7 +1312,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Suflae flow typing: reassigning an entity reference re-derives its nullability.
-        if (_registry.Language != Language.Suflae || varInfo == null ||
+        if (!_registry.Rules.EntitiesAreShared || varInfo == null ||
             !IsEntityRefType(type: varInfo.Type))
         {
             return;
@@ -1370,7 +1367,7 @@ public sealed partial class SemanticVerifier
         // Suflae: a NON-NULLABLE entity field (`x: E`) rejects `o.x = <possibly-none>` — literal
         // `none` or an unchecked `E?` read. Only an optional field (`x: E?`) may hold a null Roamed
         // handle. Mirrors the construction check; the field's IsNullable is set in TypeBodyResolver.
-        if (_registry.Language == Language.Suflae && objectType is EntityTypeSymbol writeEntity &&
+        if (_registry.Rules.EntitiesAreShared && objectType is EntityTypeSymbol writeEntity &&
             writeEntity.LookupMemberVariable(memberVariableName: member.MemberName) is
             {
                 IsNullable: false,
@@ -1383,7 +1380,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Check if we're in a @readonly member routine trying to modify 'me'.
-        if (_registry.CompilationLanguage != Language.Suflae &&
+        if (_registry.CompilationRules.ChecksReadonly &&
             _currentRoutine is { IsReadOnly: true } &&
             member.Object is IdentifierExpression { Name: "me" })
         {
@@ -1453,7 +1450,7 @@ public sealed partial class SemanticVerifier
         // `b = a` where `a` is a bare identifier of entity-KIND type (a bare entity, or a record/tuple that
         // transitively owns one) is a build error — copying it would make two owners of the single-owner
         // entity inside. Move it (`steal`) or hold a shareable handle.
-        if (_registry.Language == Language.RazorForge &&
+        if (_registry.Rules.ChecksOwnership &&
             ReadsKeptEntity(value: value, includeVariables: true) &&
             _registry.IsEntityKind(type: valueType))
         {
@@ -1464,7 +1461,7 @@ public sealed partial class SemanticVerifier
 
         // Phase 1: warn when the RHS is a non-trivially-copyable wrapper reference.
         // See AnalyzeVariableDeclaration for the same rule applied to var initializers.
-        if (_registry.Language == Language.RazorForge &&
+        if (_registry.Rules.ChecksOwnership &&
             value is IdentifierExpression or MemberExpression &&
             !IsTriviallyAssignable(type: valueType))
         {
@@ -1740,7 +1737,7 @@ public sealed partial class SemanticVerifier
                     memberVariableName: member.MemberName,
                     location: compound.Location);
 
-                if (_registry.CompilationLanguage != Language.Suflae &&
+                if (_registry.CompilationRules.ChecksReadonly &&
                     _currentRoutine is { IsReadOnly: true } &&
                     member.Object is IdentifierExpression { Name: "me" })
                 {

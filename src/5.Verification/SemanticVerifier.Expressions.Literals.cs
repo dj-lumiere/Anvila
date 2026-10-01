@@ -151,7 +151,7 @@ public sealed partial class SemanticVerifier
         // Suflae: `none` against a `Roamed[E]` slot (an OPTIONAL entity reference `x: E?`) is a null
         // Roamed handle (roamed_none). Entity references carry their own none via a null pointer, so
         // no Maybe carrier is needed.
-        if (_registry.Language == Language.Suflae && expectedType is RecordTypeSymbol
+        if (_registry.Rules.EntitiesAreShared && expectedType is RecordTypeSymbol
             {
                 GenericDefinition.Name: Declaration.RuntimeContract.Roamed
             })
@@ -211,11 +211,11 @@ public sealed partial class SemanticVerifier
             // into a scalar op → `store %Record.Numerics.Integer` / `icmp i256, %Record` type errors. Key on
             // the LITERAL's own file (its Location), NOT `_currentFilePath` (stale = the user entry under
             // cross-module body analysis).
-            TokenType.UndecidedInteger => UsesSuflaeNumericDefaults(literal: literal)
+            TokenType.UndecidedInteger => DefaultsToArbitraryPrecision(literal: literal)
                 ? IntegerTypeName
                 : "S64",
             // A hex float (0x1.8p3) is binary-only, so it defaults to B64 in Suflae too.
-            TokenType.UndecidedDecimal => UsesSuflaeNumericDefaults(literal: literal) &&
+            TokenType.UndecidedDecimal => DefaultsToArbitraryPrecision(literal: literal) &&
                                           !(literal.Value is string raw &&
                                             NumericLiteralParser.IsHexFloatText(text: raw))
                 ? "Decimal"
@@ -278,14 +278,15 @@ public sealed partial class SemanticVerifier
     /// Location) — <c>_currentFilePath</c> is the user entry when a cross-module stdlib body is
     /// (re-)analyzed during monomorphization, so it is unreliable here.
     /// </summary>
-    private bool UsesSuflaeNumericDefaults(LiteralExpression literal)
+    private bool DefaultsToArbitraryPrecision(LiteralExpression literal)
     {
         string? litFile = literal.Location.FileName;
         string probeFile = string.IsNullOrEmpty(value: litFile)
             ? _currentFilePath ?? ""
             : litFile;
-        return probeFile.EndsWith(value: ".sf",
-            comparisonType: StringComparison.OrdinalIgnoreCase);
+        Language language = Builder.Frontends.Languages.OfFile(fileName: probeFile);
+        return Builder.Frontends.Languages.IsRegistered(language: language) &&
+               Builder.Frontends.Languages.For(language: language).DefaultsToArbitraryPrecision;
     }
 
     /// <summary>

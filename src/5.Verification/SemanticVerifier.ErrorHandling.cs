@@ -813,10 +813,7 @@ public sealed partial class SemanticVerifier
         // `Standard/Suflae/…` file owns the SF-realm `Core.List`, not the RazorForge-realm one that
         // shares the bare key. The decl's source-file extension (.sf → SF) gives its realm; a realm-
         // blind lookup would type `me` as the RF list (which lacks the SF wrapper's `inner`) → RF-S450.
-        string declRealm = decl.Location?.FileName is { } df && df.EndsWith(value: ".sf",
-            comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? "SF"
-            : "RF";
+        string declRealm = Builder.Frontends.Languages.RealmOf(fileName: decl.Location?.FileName);
         TypeSymbol? bareOwner = LookupBareOwner(moduleName: moduleName,
             bareLookupName: bareLookupName,
             declRealm: declRealm);

@@ -131,7 +131,7 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
-        EnforceSuflaeUnsafeCall(resolved: call.ResolvedRoutine, location: call.Location);
+        EnforceUnsafeCallAllowed(resolved: call.ResolvedRoutine, location: call.Location);
         return result;
     }
 
@@ -145,15 +145,15 @@ public sealed partial class SemanticVerifier
     /// are exempt (a forwarder may still chain a builder-internal). Suflae has no <c>danger</c> block, so
     /// there is no in-Suflae opt-in — the surface is simply unavailable.
     /// </summary>
-    private void EnforceSuflaeUnsafeCall(RoutineInfo? resolved, SourceLocation location)
+    private void EnforceUnsafeCallAllowed(RoutineInfo? resolved, SourceLocation location)
     {
-        if (_registry.Language == Language.Suflae && !IsStdlibFile(filePath: _currentFilePath) &&
+        if (!_registry.Rules.AllowsUnsafeCode && !IsStdlibFile(filePath: _currentFilePath) &&
             !InDangerBlock && resolved is { IsDangerous: true } dangerousRoutine)
         {
             ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
                 message:
                 $"'{dangerousRoutine.Name}' is unsafe (dangerous) surface and is not available in " +
-                "Suflae — Suflae hides memory-unsafe operations.",
+                $"{_registry.Rules.Name} — {_registry.Rules.Name} hides memory-unsafe operations.",
                 location: location);
         }
     }
@@ -521,7 +521,7 @@ public sealed partial class SemanticVerifier
         // / `alert(value: Accessing[Text])` overload instead of the generic-T variant
         // that would either trigger S420 (implicit copy of the wrapper) or — worse —
         // bind to the wrong overload and emit a garbage call at runtime.
-        if (_registry.Language == Language.RazorForge)
+        if (_registry.Rules.RewritesDisplayWrapperArguments)
         {
             RewriteDisplayRoutineWrapperArgs(callName: callName, arguments: call.Arguments);
         }
@@ -1640,7 +1640,7 @@ public sealed partial class SemanticVerifier
         // caller still owns `raw` → double-free once the param type's `destroy` is
         // materialized. Verb-wrapped args (`steal x`, `x.copy()`) are Steal/Call nodes, not
         // Identifier/Member, so they are excluded automatically.
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksOwnership)
         {
             return;
         }
@@ -2565,7 +2565,7 @@ public sealed partial class SemanticVerifier
         // @readonly enforcement: cannot call mutating memberRoutines on 'me'. RazorForge-only —
         // Suflae hides @readonly/@reshaping, so a Suflae build never enforces it (even on the
         // borrowed RF stdlib, whose readonly discipline is RazorForge's own concern).
-        if (_registry.CompilationLanguage != Language.Suflae &&
+        if (_registry.CompilationRules.ChecksReadonly &&
             _currentRoutine is { IsReadOnly: true } &&
             member.Object is IdentifierExpression { Name: "me" } && !memberRoutine.IsReadOnly)
         {

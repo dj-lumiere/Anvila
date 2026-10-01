@@ -232,7 +232,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             } => e,
             _ => null
         };
-        return inner?.BareName == Builder.Desugaring.Passes.ModuleGlobalsSynthesisPass.ModuleGlobalsEntityName
+        return inner?.BareName == RuntimeContract.ModuleGlobals.EntityName
             ? inner
             : null;
     }

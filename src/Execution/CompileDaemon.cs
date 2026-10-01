@@ -412,9 +412,7 @@ internal partial class Program
             // Pre-warm the primary language so the first real build is already warm.
             try
             {
-                _ = GetWarm(language: InvokedAsSuflae
-                    ? Language.Suflae
-                    : Language.RazorForge);
+                _ = GetWarm(language: CliLanguage);
                 PrepareForNextBuild();
             }
             catch (Exception ex)
@@ -632,9 +630,7 @@ internal partial class Program
                 ResidentLayer? layer = null;
                 if (req.BaseDelta)
                 {
-                    Language lang = InvokedAsSuflae
-                        ? Language.Suflae
-                        : Language.RazorForge;
+                    Language lang = CliLanguage;
                     (string ObjPath, IReadOnlyCollection<string> Syms,
                         IReadOnlySet<string> InstanceKeys)? baseArtifact =
                             EnsureBaseArtifact(language: lang, buildMode: (RfBuildMode)req.BuildMode);
@@ -875,9 +871,7 @@ internal partial class Program
         private static bool TryClientJitRunIncremental(ResolvedEntry resolved, out int exitCode)
         {
             exitCode = 0;
-            Language lang = InvokedAsSuflae
-                ? Language.Suflae
-                : Language.RazorForge;
+            Language lang = CliLanguage;
             string entryFull = Path.GetFullPath(path: resolved.EntryFile!);
 
             // Resident-JIT (A) split-at-IR: prefer the WARM DAEMON. It holds the analyzed stdlib snapshot in
@@ -1245,8 +1239,10 @@ internal partial class Program
                 string stdlibRoot = Builder.Declaration.StdlibLoader.GetDefaultStdlibPath();
                 if (Directory.Exists(path: stdlibRoot))
                 {
-                    ticks = NewestMtimeTicks(root: stdlibRoot, pattern: "*.rf", floor: ticks);
-                    ticks = NewestMtimeTicks(root: stdlibRoot, pattern: "*.sf", floor: ticks);
+                    foreach (string glob in Builder.Frontends.Languages.SourceGlobs)
+                    {
+                        ticks = NewestMtimeTicks(root: stdlibRoot, pattern: glob, floor: ticks);
+                    }
                 }
             }
             catch

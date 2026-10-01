@@ -36,9 +36,9 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void ValidateNotTokenReturnType(TypeSymbol type, SourceLocation location)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksAccessTokens)
         {
-            return; // Token validation only applies to RazorForge
+            return;
         }
 
         // Exempt the canonical token constructors, which legitimately return a token (e.g.
@@ -66,9 +66,9 @@ public sealed partial class SemanticVerifier
     private void ValidateNotTokenMemberVariableType(TypeSymbol type, string memberVariableName,
         SourceLocation location)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksAccessTokens)
         {
-            return; // Token validation only applies to RazorForge
+            return;
         }
 
         if (IsInlineOnlyTokenType(type: type))
@@ -86,9 +86,9 @@ public sealed partial class SemanticVerifier
     private void ValidateExclusiveTokenUniqueness(List<Expression> arguments,
         SourceLocation location)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksAccessTokens)
         {
-            return; // Token validation only applies to RazorForge
+            return;
         }
 
         // Track which exclusive token expressions we've seen
@@ -151,7 +151,7 @@ public sealed partial class SemanticVerifier
     private void ValidateAsyncRoutineArguments(RoutineInfo routine,
         IReadOnlyList<Expression> arguments, string boundaryKind, SourceLocation location)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksOwnership)
         {
             return;
         }
@@ -287,9 +287,9 @@ public sealed partial class SemanticVerifier
     internal void ValidateNotTokenVariantPayload(TypeSymbol type, string caseName,
         SourceLocation location)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksAccessTokens)
         {
-            return; // Token validation only applies to RazorForge
+            return;
         }
 
         if (IsInlineOnlyTokenType(type: type))
@@ -610,7 +610,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeCallWithInlineTokens(CallExpression call, TypeSymbol? expectedType)
     {
         TypeSymbol result = AnalyzeCallExpression(call: call, expectedType: expectedType);
-        if (_registry.Language == Language.RazorForge)
+        if (_registry.Rules.ChecksAccessTokens)
         {
             CheckInlineTokenSourceSteals(call: call);
         }

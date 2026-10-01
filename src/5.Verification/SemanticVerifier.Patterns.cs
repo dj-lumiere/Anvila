@@ -219,7 +219,7 @@ public sealed partial class SemanticVerifier
                           matchedType is RecordTypeSymbol { TypeArguments: [{ Name: "None" }, ..] }
                           // Suflae: a nullable entity reference (`E?`) is a Roamed[E] handle that may be a
                           // null/none handle, so `is None` / `isnot None` is a legal none-check on it.
-                          || _registry.Language == Language.Suflae && matchedType is RecordTypeSymbol
+                          || _registry.Rules.EntitiesAreShared && matchedType is RecordTypeSymbol
                           {
                               GenericDefinition.Name: Declaration.RuntimeContract.Roamed
                           };

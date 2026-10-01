@@ -59,6 +59,12 @@ public sealed partial class TypeRegistry
     /// </summary>
     public Language CompilationLanguage { get; set; } = Language.RazorForge;
 
+    /// <summary>The rules of <see cref="Language"/>, the language of the code being analyzed now.</summary>
+    public Frontends.LanguageRules Rules => Frontends.Languages.For(language: Language);
+
+    /// <summary>The rules of <see cref="CompilationLanguage"/>, the language the user's build targets.</summary>
+    public Frontends.LanguageRules CompilationRules => Frontends.Languages.For(language: CompilationLanguage);
+
     /// <summary>
     /// The realm whose types a bare (unqualified) name should PREFER during the CURRENT file's analysis —
     /// set per-file (a <c>.sf</c> file ⇒ <c>"SF"</c>, a <c>.rf</c> file ⇒ <c>"RF"</c>). When it differs
@@ -441,6 +447,7 @@ public sealed partial class TypeRegistry
     public TypeRegistry(Language language, string? stdlibPath = null)
     {
         Language = language;
+        CompilationLanguage = language;
         RegisterAsAmbient(registry: this);
         GlobalScope = new Scope(kind: ScopeKind.Global);
         _currentScope = GlobalScope;

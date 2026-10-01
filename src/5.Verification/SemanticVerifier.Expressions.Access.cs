@@ -260,7 +260,7 @@ public sealed partial class SemanticVerifier
         // (`x.field` on an unchecked `x: E?`) and a nullable field-chain (`a.b.c` where `b: E?`) — a
         // field read is never flow-narrowed (Kotlin doesn't smart-cast mutable fields either), so it
         // must always be bound to a local and checked there.
-        if (_registry.Language == Language.Suflae && IsNullableEntityRead(expr: member.Object))
+        if (_registry.Rules.EntitiesAreShared && IsNullableEntityRead(expr: member.Object))
         {
             ReportNullableEntityDeref(member: member);
         }
@@ -849,7 +849,7 @@ public sealed partial class SemanticVerifier
                 // body is never emitted, and blows up at the linker). Suflae is left as-is: its
                 // open-world `Unknown` top + runtime dispatch will default un-inferable params to Unknown
                 // (gated on that machinery being real — see [[cabi-callback-ffi]]/[[object-top-type]]).
-                if (_registry.Language == Language.RazorForge)
+                if (_registry.Rules.RequiresInferableLambdaParameters)
                 {
                     ReportError(code: SemanticDiagnosticCode.LambdaParameterTypeNotInferable,
                         message:
@@ -949,8 +949,8 @@ public sealed partial class SemanticVerifier
         // Validate that the captured type is allowed
         ValidateCapturedType(varName: id.Name, varType: varInfo.Type, location: id.Location);
 
-        // Check 'given' clause enforcement for local captures (RazorForge only)
-        if (_registry.Language == Language.RazorForge &&
+        // Check 'given' clause enforcement for local captures
+        if (_registry.Rules.ChecksOwnership &&
             localScopeVariables.ContainsKey(key: id.Name) && !varInfo.IsPreset)
         {
             if (givenNames == null)

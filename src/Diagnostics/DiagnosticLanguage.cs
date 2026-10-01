@@ -1,3 +1,4 @@
+using Builder.Frontends;
 using TypeModel.Enums;
 
 namespace Builder.Diagnostics;
@@ -9,23 +10,18 @@ namespace Builder.Diagnostics;
 /// </summary>
 public static class DiagnosticLanguage
 {
-    /// <summary>The code prefix for a language: <c>RF</c> or <c>SF</c>.</summary>
+    /// <summary>The code prefix for a language (its short name, <c>RF</c>). A language whose front end is
+    /// not registered falls back to <c>RF</c>.</summary>
     public static string Prefix(Language language)
     {
-        return language == Language.Suflae
-            ? "SF"
+        return Languages.IsRegistered(language: language)
+            ? Languages.For(language: language).ShortName
             : "RF";
     }
 
-    /// <summary>
-    /// The language of a source file, by extension: a <c>.sf</c> file is Suflae, anything else
-    /// (including a missing file name) is RazorForge.
-    /// </summary>
+    /// <summary>The language of a source file, by extension (see <see cref="Languages.OfFile"/>).</summary>
     public static Language OfFile(string? fileName)
     {
-        return fileName != null &&
-               fileName.EndsWith(value: ".sf", comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? Language.Suflae
-            : Language.RazorForge;
+        return Languages.OfFile(fileName: fileName);
     }
 }

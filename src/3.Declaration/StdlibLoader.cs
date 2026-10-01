@@ -101,14 +101,7 @@ public sealed partial class StdlibLoader
         // Standard/Suflae/*.sf, the SF-realm Core surface (types there declare `module Core` too; they are
         // stamped Realm="SF" at registration, so they key distinctly from the RF-realm `Core.*`). Each file's
         // realm is derived from its extension (`.sf`→SF, `.rf`→RF) — see StdlibLoader.Registration.RealmOf.
-        _scanRoots =
-        [
-            (Path.Combine(path1: stdlibRoot, path2: "RazorForge"), "*.rf")
-        ];
-        if (language == Language.Suflae)
-        {
-            _scanRoots.Add(item: (Path.Combine(path1: stdlibRoot, path2: "Suflae"), "*.sf"));
-        }
+        _scanRoots = Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: stdlibRoot, language: language);
     }
 
     /// <summary>
@@ -124,7 +117,8 @@ public sealed partial class StdlibLoader
         // Suflae wrapper stdlib: append transparent inner-forwarders to each SF `entity X { inner: RF::Y }`
         // so the wrapper presents Y's COMPLETE surface. Must run before registration so the synthesized
         // forwarders flow through the ordinary register/analyze/monomorph/codegen path as authored source.
-        SynthesizeSuflaeForwarders();
+        Builder.Frontends.Languages.For(language: _language).SynthesizeStandardLibrary(
+            programs: _corePrograms.Concat(second: _modulePrograms.Values.SelectMany(selector: v => v)).ToList());
 
         RunCoreRegistrationPasses(registry: registry, corePrograms: _corePrograms);
 
@@ -394,11 +388,7 @@ public sealed partial class StdlibLoader
     /// <returns>The parsed program AST.</returns>
     private static Program ParseFileByExtension(string code, string filePath)
     {
-        bool isSuflaeFile = filePath.EndsWith(value: ".sf",
-            comparisonType: StringComparison.OrdinalIgnoreCase);
-        Language language = isSuflaeFile
-            ? Language.Suflae
-            : Language.RazorForge;
+        Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
         List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
         var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
         Program program = parser.Parse();

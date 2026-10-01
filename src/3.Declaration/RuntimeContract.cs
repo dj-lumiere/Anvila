@@ -88,6 +88,21 @@ public static class RuntimeContract
         public const string RequireFree = "require_shape_free";
     }
 
+    /// <summary>The hidden storage of module-level <c>global</c>s: every global is a field of one
+    /// synthesized entity held behind one <c>Roamed</c> singleton, so the per-statement access-lock
+    /// brackets serialize concurrent changes and atomic-width fields get a lock-free fast path.</summary>
+    /// <remarks>Sites: Suflae's ModuleGlobalsSynthesisPass (builds both) and GlobalEntityRewritePass
+    /// (rewrites global reads and writes onto the singleton), RoamedLockBracketLoweringPass (the atomic
+    /// fast path keys on the entity).</remarks>
+    public static class ModuleGlobals
+    {
+        /// <summary>The synthesized entity holding every global as a field.</summary>
+        public const string EntityName = "__ModuleGlobals";
+
+        /// <summary>The hidden singleton holding the one <see cref="EntityName"/> instance.</summary>
+        public const string SingletonName = "__globals__";
+    }
+
     /// <summary><c>Roamed[T]</c> memberRoutines that codegen inserts implicitly (no surface AST call),
     /// so RoutineReachabilityPass must anticipate them via the ImplicitCallContract.</summary>
     /// <remarks>Sites: LlvmEmitter (promote at spawn boundary, lock_enter/lock_exit around

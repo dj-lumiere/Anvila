@@ -163,8 +163,8 @@ public static class BuilderInfoProvider
                 registry: registry);
         }
 
-        // data_size is RazorForge-only and should keep its declared ByteSize surface.
-        if (registry.Language == Language.RazorForge && types.ByteSizeType != null)
+        // data_size keeps its declared ByteSize surface where the language has it.
+        if (registry.Rules.HasDataSizeQuery && types.ByteSizeType != null)
         {
             MaybeRegister(owner: type,
                 name: RuntimeContract.DataSize,

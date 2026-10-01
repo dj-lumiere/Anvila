@@ -20,7 +20,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private bool IsNullableEntityRead(Expression expr)
     {
-        if (_registry.Language != Language.Suflae)
+        if (!_registry.Rules.EntitiesAreShared)
         {
             return false;
         }
@@ -59,7 +59,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private bool IsEntityRefType(TypeSymbol type)
     {
-        return _registry.Language == Language.Suflae && (type is EntityTypeSymbol ||
+        return _registry.Rules.EntitiesAreShared && (type is EntityTypeSymbol ||
                                                          type is RecordTypeSymbol
                                                          {
                                                              GenericDefinition.Name:
@@ -97,7 +97,7 @@ public sealed partial class SemanticVerifier
     /// (resolved storage type, isNullable, isEntitySlot). For non-Suflae or non-entity annotations the
     /// type is returned unchanged with both flags false.
     /// </returns>
-    private (TypeSymbol Type, bool IsNullable, bool IsEntitySlot) ResolveSuflaeEntityAnnotation(
+    private (TypeSymbol Type, bool IsNullable, bool IsEntitySlot) ResolveSharedEntityAnnotation(
         TypeSymbol annotated, TypeExpression? typeExpr = null)
     {
         // An `RF::`-qualified annotation opts OUT of the entity->Roamed lowering: ResolveType already
@@ -110,7 +110,7 @@ public sealed partial class SemanticVerifier
             return (annotated, false, false);
         }
 
-        if (_registry.Language != Language.Suflae ||
+        if (!_registry.Rules.EntitiesAreShared ||
             _registry.LookupType(name: Declaration.RuntimeContract.Roamed) is not { } roamedDef)
         {
             return (annotated, false, false);

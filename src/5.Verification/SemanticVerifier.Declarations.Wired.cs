@@ -136,12 +136,12 @@ public sealed partial class SemanticVerifier
 
     private void CollectExternalDeclaration(ExternalDeclaration external)
     {
-        // #123: Suflae cannot use C interop directly
-        if (_registry.Language == Language.Suflae)
+        // #123: a language without unsafe code cannot use C interop directly
+        if (!_registry.Rules.AllowsUnsafeCode)
         {
             ReportError(code: SemanticDiagnosticCode.SuflaeNoCInterop,
                 message:
-                $"Suflae does not support C interop. External declaration '{external.Name}' is not allowed. " +
+                $"{_registry.Rules.Name} does not support C interop. External declaration '{external.Name}' is not allowed. " +
                 "Use RazorForge for native interop.",
                 location: external.Location);
         }

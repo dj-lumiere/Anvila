@@ -208,12 +208,12 @@ public sealed class ModuleResolver
 
             // Sort by ordinal path for OS-independent registration order (see BuildDriver/StdlibLoader).
             var files = new List<string>();
-            files.AddRange(collection: Directory.GetFiles(path: dir,
-                searchPattern: "*.rf",
-                searchOption: SearchOption.TopDirectoryOnly));
-            files.AddRange(collection: Directory.GetFiles(path: dir,
-                searchPattern: "*.sf",
-                searchOption: SearchOption.TopDirectoryOnly));
+            foreach (string glob in Builder.Frontends.Languages.SourceGlobs)
+            {
+                files.AddRange(collection: Directory.GetFiles(path: dir,
+                    searchPattern: glob,
+                    searchOption: SearchOption.TopDirectoryOnly));
+            }
             // File-granularity conditional compilation: drop `.rf` files whose leading
             // `#@target(...)` directive doesn't match the build target (RazorForge-only).
             files.RemoveAll(match: f => !Targeting.TargetGate.ShouldCompile(filePath: f));
@@ -252,13 +252,14 @@ public sealed class ModuleResolver
         string relPath = modulePart.Replace(oldChar: '/', newChar: Path.DirectorySeparatorChar);
 
         // Search roots in priority order: project, then external library dependencies
-        // (manifest [target] library entries), then stdlib RazorForge, then stdlib Suflae.
+        // (manifest [target] library entries), then each registered language's standard library,
+        // RazorForge first.
         string[] roots =
         [
             _projectRoot,
             .. _libraryRoots,
-            Path.Combine(path1: _stdlibRoot, path2: "RazorForge"),
-            Path.Combine(path1: _stdlibRoot, path2: "Suflae")
+            .. Builder.Frontends.Languages.All.Select(selector: rules =>
+                Path.Combine(path1: _stdlibRoot, path2: rules.Name))
         ];
 
         foreach (string root in roots)
@@ -300,12 +301,9 @@ public sealed class ModuleResolver
                 continue;
             }
 
-            IEnumerable<string> files = Directory
-                                       .EnumerateFiles(path: root,
-                                            searchPattern: "*.rf",
-                                            searchOption: SearchOption.AllDirectories)
-                                       .Concat(second: Directory.EnumerateFiles(path: root,
-                                            searchPattern: "*.sf",
+            IEnumerable<string> files = Builder.Frontends.Languages.SourceGlobs
+                                       .SelectMany(selector: glob => Directory.EnumerateFiles(path: root,
+                                            searchPattern: glob,
                                             searchOption: SearchOption.AllDirectories))
                                        .Where(predicate: f =>
                                             Targeting.TargetGate.ShouldCompile(filePath: f) &&
@@ -330,56 +328,48 @@ public sealed class ModuleResolver
     /// </summary>
     private static string? TryFilesystemRoot(string root, string relPath, string? symbolPart)
     {
-        // Try: root/module.rf  or  .sf
-        string modRf = Path.Combine(path1: root, path2: relPath + ".rf");
-        if (File.Exists(path: modRf))
+        // Each convention is tried in every registered language, RazorForge first.
+        // root/module.rf
+        foreach (string ext in Builder.Frontends.Languages.FileExtensions)
         {
-            return modRf;
+            string module = Path.Combine(path1: root, path2: relPath + ext);
+            if (File.Exists(path: module))
+            {
+                return module;
+            }
         }
 
-        string modSf = Path.Combine(path1: root, path2: relPath + ".sf");
-        if (File.Exists(path: modSf))
-        {
-            return modSf;
-        }
-
-        // Try: root/module/symbol.rf  (type-per-file convention)
+        // root/module/symbol.rf (type-per-file convention)
         if (symbolPart is not null)
         {
-            string symRf = Path.Combine(path1: root, path2: relPath, path3: symbolPart + ".rf");
-            if (File.Exists(path: symRf))
+            foreach (string ext in Builder.Frontends.Languages.FileExtensions)
             {
-                return symRf;
-            }
-
-            string symSf = Path.Combine(path1: root, path2: relPath, path3: symbolPart + ".sf");
-            if (File.Exists(path: symSf))
-            {
-                return symSf;
+                string symbol = Path.Combine(path1: root, path2: relPath, path3: symbolPart + ext);
+                if (File.Exists(path: symbol))
+                {
+                    return symbol;
+                }
             }
         }
 
-        // Try: root/module/index.rf
+        // root/module/index.rf
         string idxRf = Path.Combine(path1: root, path2: relPath, path3: "index.rf");
         if (File.Exists(path: idxRf))
         {
             return idxRf;
         }
 
-        // Try: root/module/module.rf (same-name-as-directory convention, e.g., BuilderQuery/BuilderQuery.rf)
+        // root/module/module.rf (same-name-as-directory convention, e.g., BuilderQuery/BuilderQuery.rf)
         string dirName = Path.GetFileName(path: relPath);
         if (!string.IsNullOrEmpty(value: dirName))
         {
-            string sameNameRf = Path.Combine(path1: root, path2: relPath, path3: dirName + ".rf");
-            if (File.Exists(path: sameNameRf))
+            foreach (string ext in Builder.Frontends.Languages.FileExtensions)
             {
-                return sameNameRf;
-            }
-
-            string sameNameSf = Path.Combine(path1: root, path2: relPath, path3: dirName + ".sf");
-            if (File.Exists(path: sameNameSf))
-            {
-                return sameNameSf;
+                string sameName = Path.Combine(path1: root, path2: relPath, path3: dirName + ext);
+                if (File.Exists(path: sameName))
+                {
+                    return sameName;
+                }
             }
         }
 

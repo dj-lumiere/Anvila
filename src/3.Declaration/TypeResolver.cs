@@ -188,7 +188,7 @@ internal sealed class TypeResolver
         // other realm (null = ambient) gets the normal Suflae lowering.
         if (typeExpr.Realm != "RF")
         {
-            resolved = RoamSuflaeEntitySlot(resolved: resolved);
+            resolved = RoamSharedEntitySlot(resolved: resolved);
         }
 
         typeExpr.ResolvedType = resolved;
@@ -206,9 +206,9 @@ internal sealed class TypeResolver
     /// bare <c>Roamed[E]</c> — an entity reference carries its own none via a null handle, so it needs no
     /// <c>Maybe</c> wrapper (value types still use <c>Maybe[T]</c> for <c>T?</c>).</para>
     /// </summary>
-    private TypeSymbol RoamSuflaeEntitySlot(TypeSymbol resolved)
+    private TypeSymbol RoamSharedEntitySlot(TypeSymbol resolved)
     {
-        if (_sa._registry.Language != Language.Suflae)
+        if (!_sa._registry.Rules.EntitiesAreShared)
         {
             return resolved;
         }
@@ -218,13 +218,14 @@ internal sealed class TypeResolver
             return resolved;
         }
 
-        // An entity DEFINED in a user RazorForge module (imported `.rf`, not stdlib) is a genuine RF-realm
-        // entity — it keeps RF ownership semantics (bare, deterministic teardown), exactly like an
-        // `RF::`-qualified reference. SF must NOT auto-roam it (that silently wraps an RF entity in a
-        // RoamController whose ABI the RF constructor/methods don't expect → crash). SF holds it as a bare
-        // local, or wraps it in an SF entity for persistence (the RF:: wrapper pattern).
+        // An entity DEFINED in a user module of another language (an imported RazorForge `.rf`, not
+        // stdlib) keeps that language's ownership semantics (bare, deterministic teardown), exactly like an
+        // `RF::`-qualified reference. It must NOT be auto-roamed (that silently wraps an RF entity in a
+        // RoamController whose ABI the RF constructor/methods don't expect → crash). It is held as a bare
+        // local, or wrapped in an entity of this language for persistence (the RF:: wrapper pattern).
         if (resolved is TypeSymbol { Location.FileName: { } defFile } &&
-            defFile.EndsWith(value: ".rf", comparisonType: StringComparison.OrdinalIgnoreCase) &&
+            Builder.Frontends.Languages.HasSourceExtension(fileName: defFile) &&
+            Builder.Frontends.Languages.OfFile(fileName: defFile) != _sa._registry.Language &&
             !_sa.IsStdlibFile(filePath: defFile))
         {
             return resolved;

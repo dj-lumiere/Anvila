@@ -585,7 +585,7 @@ public sealed partial class SemanticVerifier
             paramType.Category == TypeCategory.Protocol &&
             Declaration.RuntimeContract.IsMarkerProtocol(baseName: paramBase) ||
             IsMarkerBoundParam(paramType: param.Type, routine: routine);
-        if (_registry.Language == Language.RazorForge &&
+        if (_registry.Rules.ChecksOwnership &&
             argValue is IdentifierExpression or MemberExpression &&
             !IsTriviallyAssignable(type: argType) && !paramIsBorrow)
         {
@@ -642,7 +642,7 @@ public sealed partial class SemanticVerifier
         // excludes all borrow forms with no name list. Verb-wrapped arguments (steal/copy/share)
         // are Steal/Call expressions, not Identifier/Member, so they are excluded automatically.
         // Safety comes from move tracking; this check makes the destructive transfer visible in source.
-        if (_registry.Language == Language.RazorForge &&
+        if (_registry.Rules.ChecksOwnership &&
             ReadsKeptEntity(value: argValue, includeVariables: true) && argType is EntityTypeSymbol &&
             paramType is EntityTypeSymbol)
         {
@@ -873,9 +873,10 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        // Suflae: bare entity E and Roamed[E] are mutually assignable (the lowering pass inserts roam).
-        if (_registry.Language == Language.Suflae &&
-            IsSuflaeEntityRoamedAssignable(source: source, target: target))
+        // Shared entities: bare entity E and Roamed[E] are mutually assignable (the lowering pass
+        // inserts roam).
+        if (_registry.Rules.EntitiesAreShared &&
+            IsEntityRoamedAssignable(source: source, target: target))
         {
             return true;
         }
@@ -953,7 +954,7 @@ public sealed partial class SemanticVerifier
     /// Returns true when the Suflae entity↔Roamed assignability rule applies: a bare entity and its
     /// <c>Roamed[E]</c> wrapper are mutually assignable in SF (the lowering pass inserts the roam call).
     /// </summary>
-    private static bool IsSuflaeEntityRoamedAssignable(TypeSymbol source, TypeSymbol target)
+    private static bool IsEntityRoamedAssignable(TypeSymbol source, TypeSymbol target)
     {
         if (source is EntityTypeSymbol se && IsRoamedOfEntity(type: target, entity: se))
         {

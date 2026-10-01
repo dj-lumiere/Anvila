@@ -13,10 +13,10 @@ public partial class Parser
     private ExternalDeclaration ParseExternalDeclaration(string? callingConvention = null,
         List<string>? annotations = null, bool isDangerous = false)
     {
-        if (_language == Language.Suflae)
+        if (!Rules.AllowsUnsafeCode)
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.RfOnlyConstruct,
-                message: "External declarations are only available in RazorForge.");
+                message: $"External declarations are not available in {Rules.Name}.");
         }
 
         // -2 because we consumed 'external' and 'routine'

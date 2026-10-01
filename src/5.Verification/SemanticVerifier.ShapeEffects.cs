@@ -59,10 +59,10 @@ public sealed partial class SemanticVerifier
         return path.Replace(oldValue: "[]", newValue: "[...]", comparisonType: StringComparison.Ordinal);
     }
 
-    /// <summary>Runs the shape checks over the user programs (RazorForge only).</summary>
+    /// <summary>Runs the shape checks over the user programs (where the language checks ownership).</summary>
     private void CheckShapeEffects(IEnumerable<Program> programs)
     {
-        if (_registry.Language != Language.RazorForge)
+        if (!_registry.Rules.ChecksOwnership)
         {
             return;
         }

@@ -250,14 +250,8 @@ public static class StdlibSnapshotCache
     /// order. Same scan roots as StdlibLoader: RazorForge/*.rf always; Suflae/*.sf under an SF build.</summary>
     private static void AppendSourceFileMetadata(StringBuilder sb, string root, Language language)
     {
-        var roots = new List<(string Dir, string Glob)>
-        {
-            (Path.Combine(path1: root, path2: "RazorForge"), "*.rf")
-        };
-        if (language == Language.Suflae)
-        {
-            roots.Add(item: (Path.Combine(path1: root, path2: "Suflae"), "*.sf"));
-        }
+        List<(string Dir, string Glob)> roots =
+            Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: root, language: language);
 
         foreach ((string dir, string glob) in roots)
         {

@@ -25,7 +25,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // Route Suflae module-level `global`s through the hidden __ModuleGlobals entity FIRST, so every
         // subsequent pass (f-string, operator, Roamed projection/lock-bracket) sees the field accesses
         // and the globals inherit the entity's thread-safe access-lock brackets.
-        new GlobalEntityRewritePass(ctx: ctx).Run(program: program);
+        ctx.Registry.CompilationRules.LowerFirst(ctx: ctx, program: program);
         new VariantReturnLoweringPass(ctx: ctx).Run(program: program);
         new LiteralLoweringPass(ctx: ctx).Run(program: program);
         new BuilderQueryInliningPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies).Run(
@@ -68,11 +68,9 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // Opens a shape use of a container around an `each` loop over it and around a statement that reaches
         // one of its entity elements through a token, so a change that could move the elements crashes
         // (require_shape_free at every @reshaping routine). After OperatorLoweringPass, which builds the tokens.
-        // Suflae only: RazorForge rejects those changes at build time (SemanticVerifier.CheckShapeEffects).
-        if (ctx.Registry.Language == Language.Suflae)
-        {
-            new ShapeUseLoweringPass(ctx: ctx).Run(program: program);
-        }
+        // Only where the language checks shapes at run time: RazorForge rejects those changes at build
+        // time (SemanticVerifier.CheckShapeEffects).
+        ctx.Registry.Rules.LowerShapeUse(ctx: ctx, program: program);
         new RecordCopyLoweringPass(ctx: ctx).Run(program: program);
         // NOTE: RcRetainLoweringPass (the RC-simulation pass that injected a per-RC-field retain bump
         // at every record-copy site) is DELETED. The RC increment on a value copy already lives in the
@@ -97,7 +95,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
     /// </summary>
     public void RunGlobal()
     {
-        new GlobalEntityRewritePass(ctx: ctx).RunOnVariantBodies();
+        ctx.Registry.CompilationRules.LowerFirstInVariantBodies(ctx: ctx);
         new VariantReturnLoweringPass(ctx: ctx).RunOnVariantBodies();
         new LiteralLoweringPass(ctx: ctx).RunOnVariantBodies();
         new BuilderQueryInliningPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies)

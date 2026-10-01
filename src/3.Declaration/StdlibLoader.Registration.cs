@@ -56,12 +56,11 @@ public sealed partial class StdlibLoader
     [ThreadStatic]
     private static string? _registeringRealm;
 
-    /// <summary>The realm a stdlib file belongs to: <c>"SF"</c> for a <c>.sf</c> source, else <c>"RF"</c>.</summary>
-    private static string RealmOf(string filePath)
+    /// <summary>The realm a stdlib file belongs to: the short name of the language it is written in
+    /// (<c>"SF"</c> for a Suflae source, <c>"RF"</c> for a RazorForge one).</summary>
+    internal static string RealmOf(string filePath)
     {
-        return filePath.EndsWith(value: ".sf", comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? "SF"
-            : "RF";
+        return Builder.Frontends.Languages.RealmOf(fileName: filePath);
     }
 
     /// <summary>

@@ -20,28 +20,24 @@ internal partial class Program
 {
     private const string BuildCommand = "build";
     private const string BuildAndRunCommand = "buildandrun";
-    private const string SuflaeLanguageName = "Suflae";
-    private const string RazorForgeLanguageName = "RazorForge";
+    /// <summary>The language of the command that is running (<c>razorforge</c> or <c>suflae</c>). Selects
+    /// the branding (version/usage) and is the DEFAULT language when a source's extension does not decide
+    /// it; a registered extension always wins over this default. Set by <see cref="Run"/> from the command
+    /// line that called it.</summary>
+    private static Language CliLanguage = Language.RazorForge;
 
-    /// <summary>Suflae's own version line — the <c>&lt;SuflaeVersion&gt;</c> PropertyGroup entry (via
-    /// <see cref="Builder.Declaration.BuildInfo"/>). Bump it in the csproj, NOT here.</summary>
-    private static string SuflaeVersion => BuildInfo.SuflaeVersion;
-
-    /// <summary>True when running as the <c>suflae</c> command rather than <c>razorforge</c>. Selects Suflae
-    /// branding (version/usage) and makes Suflae the DEFAULT language when a source's extension does not
-    /// decide it. The <c>.rf</c>/<c>.sf</c> extension always wins over this default. Set by
-    /// <see cref="Run"/> from the command line that called it.</summary>
-    private static bool InvokedAsSuflae;
+    /// <summary>The rules of <see cref="CliLanguage"/>.</summary>
+    private static Builder.Frontends.LanguageRules CliRules => Builder.Frontends.Languages.For(language: CliLanguage);
 
     /// <summary>
     /// Runs a command line: the shared entry of the <c>razorforge</c> and <c>suflae</c> commands, which
-    /// register their lexers first and pass their own language as <paramref name="cliLanguage"/>.
+    /// register their language rules first and pass their own language as <paramref name="cliLanguage"/>.
     /// Dispatches to the appropriate command handler based on the first argument.
     /// Returns 0 on success or 1 on error.
     /// </summary>
     public static int Run(string[] args, Language cliLanguage)
     {
-        InvokedAsSuflae = cliLanguage == Language.Suflae;
+        CliLanguage = cliLanguage;
         RuntimeShadowLoader.Install();
 
         // Make the build driver byte-faithful for UTF-8. RF child processes write UTF-8 and
@@ -72,9 +68,9 @@ internal partial class Program
         bool isCommand = command is "parse" or "tokenize" or "codegen" or BuildCommand
             or "buildandrun" or "check" or "validate-stdlib" or "emit-pbrf" or "help";
 
-        if (!isCommand && !TryRewriteBareSuflaeArgs(args: ref args, command: ref command))
+        if (!isCommand && !TryRewriteBareRunArgs(args: ref args, command: ref command))
         {
-            // Default behavior for a bare .rf file: parse and show AST summary
+            // Default behavior for a bare source file: parse and show AST summary
             return ParseFile(sourceFile: args[0]);
         }
 
@@ -118,17 +114,18 @@ internal partial class Program
     }
 
     /// <summary>
-    /// When the first arg is a bare Suflae file (not a known command), rewrites <paramref name="args"/>
-    /// to prepend the <c>buildandrun</c> command so the script runs directly.
-    /// Returns false when the file is not Suflae (caller falls back to the parse default).
+    /// When the first arg is a bare source file (not a known command) of a language whose bare sources
+    /// run, rewrites <paramref name="args"/> to prepend the <c>buildandrun</c> command so the script runs
+    /// directly. Returns false otherwise (caller falls back to the parse default).
     /// </summary>
-    private static bool TryRewriteBareSuflaeArgs(ref string[] args, ref string command)
+    private static bool TryRewriteBareRunArgs(ref string[] args, ref string command)
     {
-        // A bare source file RUNS (build + execute) when it is a Suflae script — either the `.sf`
-        // extension or invocation under the `suflae`/`sf` alias — so `suflae hello.sf` behaves like
-        // `python hello.py`. A bare `.rf` under `razorforge` keeps the dev default of parse-and-dump
-        // (use the explicit `parse`/`tokenize`/`codegen` verbs to inspect an .sf without running it).
-        if (!InvokedAsSuflae && !IsSuflaeFile(path: args[0]))
+        // A bare source file RUNS (build + execute) when its language (or the running command's) says so,
+        // so `suflae hello.sf` behaves like `python hello.py`. A bare `.rf` under `razorforge` keeps the
+        // dev default of parse-and-dump (the explicit `parse`/`tokenize`/`codegen` verbs inspect a file
+        // without running it).
+        if (!CliRules.BareSourceRuns &&
+            !Builder.Frontends.Languages.For(language: SourceLanguage(path: args[0])).BareSourceRuns)
         {
             return false;
         }
@@ -241,16 +238,17 @@ internal partial class Program
     /// <summary>Runs the <c>validate-stdlib</c> command: validates stdlib routine bodies for the given language.</summary>
     private static int RunValidateStdlibCommand(string[] args)
     {
-        string defaultLang = InvokedAsSuflae
-            ? "sf"
-            : "rf";
-        string lang = args.Length >= 2
-            ? args[1]
-               .ToLowerInvariant()
-            : defaultLang;
-        Language stdlibLang = lang is "sf" or "suflae"
-            ? Language.Suflae
-            : Language.RazorForge;
+        Language stdlibLang = CliLanguage;
+        if (args.Length >= 2)
+        {
+            string lang = args[1];
+            stdlibLang = Builder.Frontends.Languages.All
+                                .FirstOrDefault(predicate: rules =>
+                                     string.Equals(a: rules.ShortName, b: lang, comparisonType: StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(a: rules.Name, b: lang, comparisonType: StringComparison.OrdinalIgnoreCase))
+                               ?.Language ?? CliLanguage;
+        }
+
         return ValidateStdlib(language: stdlibLang);
     }
 
@@ -340,10 +338,18 @@ internal partial class Program
             ? args[1]
             : Path.Combine(path1: StdlibLoader.GetDefaultStdlibPath(), path2: ".pbrf");
 
+        // RazorForge's library is shared by every build, so it is always emitted, then the running
+        // command's language (or every registered language under --all).
         var langs = new List<Language> { Language.RazorForge };
-        if (args.Contains(value: "--all") || args.Contains(value: "--sf"))
+        IEnumerable<Language> more = args.Contains(value: "--all")
+            ? Builder.Frontends.Languages.All.Select(selector: rules => rules.Language)
+            : [CliLanguage];
+        foreach (Language lang in more)
         {
-            langs.Add(item: Language.Suflae);
+            if (!langs.Contains(item: lang))
+            {
+                langs.Add(item: lang);
+            }
         }
 
         foreach (Language lang in langs)
@@ -809,21 +815,17 @@ internal partial class Program
     /// </summary>
     private static void PrintUsage()
     {
-        // The command name the user typed (the shipped `suflae`/`sf` aliases are copies of the
-        // apphost), so examples echo how the tool was actually invoked.
-        string tool = InvokedAsSuflae
-            ? "suflae"
-            : "razorforge";
-        string header = InvokedAsSuflae
-            ? $"{SuflaeLanguageName} v{SuflaeVersion}"
-            : $"{RazorForgeLanguageName} Builder {GetVersionString()}";
+        // The command name the user typed (the shipped short aliases are copies of the apphost), so
+        // examples echo how the tool was actually invoked.
+        string tool = CliRules.ToolName;
+        string header = $"{CliRules.Name} v{CliRules.Version}";
 
         Console.WriteLine(value: header);
         Console.WriteLine();
         Console.WriteLine(value: "Usage:");
-        Console.WriteLine(value: InvokedAsSuflae
+        Console.WriteLine(value: CliRules.BareSourceRuns
             ? $"  {tool} <source-file>                        - Build and run the script"
-            : $"  {tool} <source-file>                        - Parse file and show AST summary (a bare .sf runs)");
+            : $"  {tool} <source-file>                        - Parse file and show AST summary");
         Console.WriteLine(
             value:
             $"  {tool} parse <source-file>                  - Parse file and show AST summary");
@@ -843,20 +845,17 @@ internal partial class Program
             $"  {tool} check [entry-file]                   - Type-check only (no codegen)");
         Console.WriteLine(
             value:
-            $"  {tool} validate-stdlib [rf|sf]              - Validate stdlib routine bodies");
+            $"  {tool} validate-stdlib [language]           - Validate stdlib routine bodies");
         Console.WriteLine(
             value: $"  {tool} help                                 - Show this help");
         Console.WriteLine(
             value: $"  {tool} version                              - Show compiler version");
         Console.WriteLine();
+        string kinds = string.Join(separator: ", ",
+            values: Builder.Frontends.Languages.All.Select(selector: rules => $"{rules.FileExtension} for {rules.Name}"));
+        Console.WriteLine(value: $"  <source-file>: {kinds}");
         Console.WriteLine(
-            value: "  <source-file>: .rf file for RazorForge or .sf file for Suflae");
-        if (InvokedAsSuflae)
-        {
-            Console.WriteLine(
-                value:
-                "  Invoked as suflae: a source with no .rf/.sf extension defaults to Suflae.");
-        }
+            value: $"  A source with no known extension is read as {CliRules.Name}.");
 
         Console.WriteLine(
             value: "  If no entry file is given, searches for config.toml in the current");
@@ -868,64 +867,17 @@ internal partial class Program
             value: "  [target] section (executable, library, mode, show-build-stages, ...).");
     }
 
-    /// <summary>Prints the compiler version to standard output. Under a Suflae invocation this
-    /// reports Suflae's own version line; otherwise the RazorForge assembly version.</summary>
+    /// <summary>Prints the running command's language and version to standard output.</summary>
     private static void PrintVersion()
     {
-        if (InvokedAsSuflae)
-        {
-            Console.WriteLine(value: $"{SuflaeLanguageName} v{SuflaeVersion}");
-            return;
-        }
-
-        Console.WriteLine(value: $"{RazorForgeLanguageName} {GetVersionString()}");
+        Console.WriteLine(value: $"{CliRules.Name} v{CliRules.Version}");
     }
 
-    /// <summary>
-    /// Returns the RazorForge compiler version string, preferring the <c>&lt;RazorForgeVersion&gt;</c>
-    /// PropertyGroup value (via <see cref="Builder.Declaration.BuildInfo"/>), then the assembly
-    /// informational version (e.g. "0.0.1-alpha"), stripping any "+commit" suffix and prefixing <c>v</c>.
-    /// </summary>
-    private static string GetVersionString()
+    /// <summary>The language a source file is compiled as. A registered extension decides; a file with
+    /// none (an extension-less entry) is the running command's language.</summary>
+    private static Language SourceLanguage(string path)
     {
-        var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-        string version = BuildInfo.AssemblyMetadata(key: "RazorForgeVersion") ?? assembly
-           .GetCustomAttributes(
-                attributeType: typeof(System.Reflection.AssemblyInformationalVersionAttribute),
-                inherit: false)
-           .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
-           .FirstOrDefault()
-          ?.InformationalVersion ?? assembly.GetName()
-                                            .Version
-                                           ?.ToString() ?? "unknown";
-        int plusIndex = version.IndexOf(value: '+');
-        return plusIndex > 0
-            ? $"v{version[..plusIndex]}"
-            : $"v{version}";
-    }
-
-    /// <summary>Returns true if the given file path has a <c>.sf</c> extension (Suflae source file).</summary>
-    private static bool IsSuflaeFile(string path)
-    {
-        return path.EndsWith(value: ".sf", comparisonType: StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Decides whether a source file should be compiled as Suflae. The <c>.sf</c>/<c>.rf</c>
-    /// extension is authoritative; only when neither decides (extension-less entry) does the
-    /// invocation default (<see cref="InvokedAsSuflae"/>) break the tie.</summary>
-    private static bool IsSuflaeSource(string path)
-    {
-        if (IsSuflaeFile(path: path))
-        {
-            return true;
-        }
-
-        if (path.EndsWith(value: ".rf", comparisonType: StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return InvokedAsSuflae;
+        return Builder.Frontends.Languages.OfFile(fileName: path, fallback: CliLanguage);
     }
 
     /// <summary>
@@ -941,18 +893,15 @@ internal partial class Program
         }
 
         string code = File.ReadAllText(path: sourceFile);
-        bool isSuflae = IsSuflaeSource(path: sourceFile);
+        Language language = SourceLanguage(path: sourceFile);
 
         Console.WriteLine(
             value:
-            $"Tokenizing {sourceFile} as {(isSuflae ? SuflaeLanguageName : RazorForgeLanguageName)}...");
+            $"Tokenizing {sourceFile} as {Builder.Frontends.Languages.For(language: language).Name}...");
         Console.WriteLine();
 
         try
         {
-            Language language = isSuflae
-                ? Language.Suflae
-                : Language.RazorForge;
             List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: sourceFile, language: language);
 
             Console.WriteLine(value: $"Generated {tokens.Count} tokens:");
@@ -989,18 +938,15 @@ internal partial class Program
         }
 
         string code = File.ReadAllText(path: sourceFile);
-        bool isSuflae = IsSuflaeSource(path: sourceFile);
+        Language language = SourceLanguage(path: sourceFile);
 
         Console.WriteLine(
             value:
-            $"Parsing {sourceFile} as {(isSuflae ? SuflaeLanguageName : RazorForgeLanguageName)}...");
+            $"Parsing {sourceFile} as {Builder.Frontends.Languages.For(language: language).Name}...");
         Console.WriteLine();
 
         try
         {
-            Language language = isSuflae
-                ? Language.Suflae
-                : Language.RazorForge;
 
             // Tokenize
             Console.WriteLine(value: "=== TOKENIZATION ===");
@@ -1061,9 +1007,7 @@ internal partial class Program
     {
         try
         {
-            string langName = language == Language.Suflae
-                ? SuflaeLanguageName
-                : RazorForgeLanguageName;
+            string langName = Builder.Frontends.Languages.For(language: language).Name;
             Console.WriteLine(value: $"Validating {langName} stdlib routine bodies...");
             Console.WriteLine();
 
@@ -1230,16 +1174,13 @@ internal partial class Program
             return 1;
         }
 
-        bool isSuflae = IsSuflaeSource(path: entryFile);
-        Language language = isSuflae
-            ? Language.Suflae
-            : Language.RazorForge;
+        Language language = SourceLanguage(path: entryFile);
 
         if (showBuildStages)
         {
             Console.WriteLine(
                 value:
-                $"Building {entryFile} as {(isSuflae ? SuflaeLanguageName : RazorForgeLanguageName)} (multi-file)...");
+                $"Building {entryFile} as {Builder.Frontends.Languages.For(language: language).Name} (multi-file)...");
             Console.WriteLine();
         }
 
@@ -1722,14 +1663,11 @@ internal partial class Program
             return 1;
         }
 
-        bool isSuflae = IsSuflaeSource(path: entryFile);
-        Language language = isSuflae
-            ? Language.Suflae
-            : Language.RazorForge;
+        Language language = SourceLanguage(path: entryFile);
 
         Console.WriteLine(
             value:
-            $"Checking {entryFile} as {(isSuflae ? SuflaeLanguageName : RazorForgeLanguageName)} (multi-file)...");
+            $"Checking {entryFile} as {Builder.Frontends.Languages.For(language: language).Name} (multi-file)...");
         Console.WriteLine();
 
         try

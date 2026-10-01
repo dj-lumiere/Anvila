@@ -51,12 +51,15 @@ public static class LspServer
     private const string NodeRoutineDeclaration = "RoutineDeclaration";
 
     // One pre-analyzed stdlib snapshot per language, captured on first use.
-    private static readonly Lazy<TypeRegistry.StdlibSnapshot> RfSnapshot =
-        new(valueFactory: () =>
-            SemanticVerifier.CaptureStdlibSnapshot(language: Language.RazorForge));
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Language,
+        Lazy<TypeRegistry.StdlibSnapshot>> Snapshots = new();
 
-    private static readonly Lazy<TypeRegistry.StdlibSnapshot> SfSnapshot =
-        new(valueFactory: () => SemanticVerifier.CaptureStdlibSnapshot(language: Language.Suflae));
+    private static TypeRegistry.StdlibSnapshot SnapshotFor(Language language)
+    {
+        return Snapshots.GetOrAdd(key: language,
+            valueFactory: lang => new Lazy<TypeRegistry.StdlibSnapshot>(valueFactory: () =>
+                SemanticVerifier.CaptureStdlibSnapshot(language: lang))).Value;
+    }
 
     /// <summary>The last analyzed state of an open document, kept so hover/definition/completion reuse it.</summary>
     private sealed record DocState(
@@ -2811,11 +2814,7 @@ public static class LspServer
     private static List<Dictionary<string, object?>> Analyze(string uri, string text)
     {
         var diagnostics = new List<Dictionary<string, object?>>();
-        bool isSuflae =
-            uri.EndsWith(value: ".sf", comparisonType: StringComparison.OrdinalIgnoreCase);
-        Language lang = isSuflae
-            ? Language.Suflae
-            : Language.RazorForge;
+        Language lang = Builder.Frontends.Languages.OfFile(fileName: uri);
         string fileName = UriToFileName(uri: uri);
 
         try
@@ -2842,9 +2841,7 @@ public static class LspServer
                     length: SpanLen(line: pe.Line, col: pe.Column)));
             }
 
-            TypeRegistry.StdlibSnapshot snapshot = isSuflae
-                ? SfSnapshot.Value
-                : RfSnapshot.Value;
+            TypeRegistry.StdlibSnapshot snapshot = SnapshotFor(language: lang);
             var verifier =
                 new SemanticVerifier(language: lang, snapshot: snapshot) { SaOnly = true };
             AnalysisResult result = verifier.Analyze(program: program);

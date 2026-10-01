@@ -487,12 +487,12 @@ public sealed class BuildDriver
         }
 
         var candidates = new List<string>();
-        candidates.AddRange(collection: Directory.GetFiles(path: directory,
-            searchPattern: "*.rf",
-            searchOption: SearchOption.TopDirectoryOnly));
-        candidates.AddRange(collection: Directory.GetFiles(path: directory,
-            searchPattern: "*.sf",
-            searchOption: SearchOption.TopDirectoryOnly));
+        foreach (string glob in Builder.Frontends.Languages.SourceGlobs)
+        {
+            candidates.AddRange(collection: Directory.GetFiles(path: directory,
+                searchPattern: glob,
+                searchOption: SearchOption.TopDirectoryOnly));
+        }
 
         foreach (string candidate in candidates)
         {
@@ -539,14 +539,14 @@ public sealed class BuildDriver
         try
         {
             string code = File.ReadAllText(path: filePath);
-            bool isSuflae = filePath.EndsWith(value: ".sf",
-                comparisonType: StringComparison.OrdinalIgnoreCase);
+            Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
 
-            // Validate language consistency
-            if (isSuflae && _language == Language.RazorForge)
+            // Validate language consistency: a build reads its own language and RazorForge (the
+            // standard library every build shares), never another front end's sources.
+            if (language != _language && language != Language.RazorForge)
             {
                 _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.LanguageMismatch,
-                    Message: $"Cannot import Suflae file '{filePath}' from RazorForge project.",
+                    Message: $"Cannot import {language} file '{filePath}' from a {_language} project.",
                     Location: new SourceLocation(FileName: filePath,
                         Line: 1,
                         Column: 1,
@@ -564,9 +564,6 @@ public sealed class BuildDriver
                                          comparisonType: StringComparison.OrdinalIgnoreCase);
 
             // Tokenize
-            Language language = isSuflae
-                ? Language.Suflae
-                : Language.RazorForge;
             List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
 
             // Parse
@@ -579,10 +576,11 @@ public sealed class BuildDriver
                 filePath: filePath,
                 imports: out List<ImportDeclaration> imports);
 
-            // Suflae prelude: inject the always-available SF modules (no explicit `import` needed).
-            if (isSuflae && !isStdlibFile)
+            // The language's prelude: the always-available modules (no explicit `import` needed).
+            if (!isStdlibFile)
             {
-                InjectSuflaePrelude(ast: ast, filePath: filePath, imports: imports);
+                InjectPrelude(ast: ast, filePath: filePath, imports: imports,
+                    rules: Builder.Frontends.Languages.For(language: language));
             }
 
             return new FileBuildUnit(FilePath: filePath,
@@ -662,35 +660,14 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Injects the Suflae prelude: modules an SF USER file gets for free (no explicit <c>import</c>).
-    /// These are injected into BOTH the extracted imports (so their files load) and the AST right after
-    /// the module declaration (so SA adds them to _importedModules AND the top-of-file import order
-    /// holds), each only if not already present. Stdlib `.rf` files are excluded — they're RF source.
-    /// Members:
-    ///   - `Numerics` — SF's unsuffixed integer literals default to `Integer` (RF defaults to S64),
-    ///     and Integer/Real/Complex live in `Numerics` (NOT Core), so a bare `6` fails to resolve
-    ///     (RF-S002) without it. (Real/Complex riding along relaxes #1's "import-only" for now;
-    ///     Note: narrowing this to Integer only is future work.)
-    ///   - `IO/Console`, `IO/File` — always-available I/O in SF, so `show(...)` / file access need
-    ///     no ceremony import.
-    /// (Historical: a `Suflae` overlay module was prelude-injected here so a bare `List` shadowed
-    /// `Core.List` with a hand-written roam-boundary wrapper. Removed 2026-08-14 — the world-line
-    /// model makes SF's bare `List` resolve to the REAL `Core.List` (full API), which an SF `entity`
-    /// slot roams directly, so the wrapper is obsolete. See [[realm-scoped-core]] pivot.)
+    /// Injects the language's prelude imports (<see cref="Builder.Frontends.LanguageRules.PreludeImports"/>)
+    /// into a user file right after its module header, each only if the file does not import it already.
     /// </summary>
-    private static void InjectSuflaePrelude(Program ast, string filePath,
-        List<ImportDeclaration> imports)
+    private static void InjectPrelude(Program ast, string filePath, List<ImportDeclaration> imports,
+        Builder.Frontends.LanguageRules rules)
     {
-        // (module, specificSymbols|null). `Numerics` is brought in as the SPECIFIC symbol `Integer`
-        // ONLY — Suflae's bare numeric vocabulary is Integer/Decimal (Decimal is in Core), so bare
-        // `6` defaults to Integer and bare `Integer` resolves. The fixed-width scalar/complex zoo
-        // (S/U/B/D/C, Q) lives in the Core auto-prelude and is directly usable in SF (the old SF
-        // import-gate on these was removed). Only the arbitrary-precision `Real`/`Complex` still need
-        // an explicit whole-module `import Numerics`. I/O stays whole-module for `show(...)`.
-        (string Module, string[]? Symbols)[] preludeModules =
-            [("Numerics", ["Integer"]), ("IO/Console", null), ("IO/File", null)];
         int insertAt = 1; // Module declaration is guaranteed at index 0 by now.
-        foreach ((string preludeModule, string[]? symbols) in preludeModules)
+        foreach ((string preludeModule, IReadOnlyList<string>? symbols) in rules.PreludeImports)
         {
             if (imports.Any(predicate: i => i.ModulePath == preludeModule))
             {
@@ -770,8 +747,10 @@ public sealed class BuildDriver
     /// </summary>
     private void PreRegisterStdlib()
     {
-        RegisterStdlibDirectory(subdirectory: "RazorForge", extension: "*.rf");
-        RegisterStdlibDirectory(subdirectory: "Suflae", extension: "*.sf");
+        foreach (Builder.Frontends.LanguageRules rules in Builder.Frontends.Languages.All)
+        {
+            RegisterStdlibDirectory(subdirectory: rules.Name, extension: "*" + rules.FileExtension);
+        }
     }
 
     private void RegisterStdlibDirectory(string subdirectory, string extension)
@@ -845,7 +824,7 @@ public sealed class BuildDriver
     /// </summary>
     private void PreRegisterLibraryRoot(string libraryRoot)
     {
-        foreach (string pattern in (string[])["*.rf", "*.sf"])
+        foreach (string pattern in Builder.Frontends.Languages.SourceGlobs)
         {
             foreach (string filePath in Directory.GetFiles(path: libraryRoot,
                                                       searchPattern: pattern,
@@ -895,11 +874,7 @@ public sealed class BuildDriver
         try
         {
             string code = File.ReadAllText(path: filePath);
-            bool isSuflae = filePath.EndsWith(value: ".sf",
-                comparisonType: StringComparison.OrdinalIgnoreCase);
-            Language language = isSuflae
-                ? Language.Suflae
-                : Language.RazorForge;
+            Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
             List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
             var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
             return parser.Parse();

@@ -444,7 +444,7 @@ public sealed partial class SemanticVerifier
         // `grab`/`lookup` keyword and the variant-body rewriter mint a base's recovery variant on demand
         // from the deferred base index, rather than eagerly registering every failable's variants.
         _registry.EnsureRecoveryVariants = EnsureRecoveryVariantsForBase;
-        if (!ModuleGlobalsSynthesisPass.Run(orderedFiles: [(program, _currentFilePath)],
+        if (!_registry.Rules.SynthesizeBeforeAnalysis(files: [(program, _currentFilePath)],
                 report: ReportError))
         {
             return AbortedResult();
@@ -762,12 +762,11 @@ public sealed partial class SemanticVerifier
     /// Lowers Suflae <c>entity E</c> local bindings to <c>Roamed[E]</c> biased-RC wrappers
     /// over all user programs. No-op for RazorForge programs.
     /// </summary>
-    private void LowerSuflaeEntityBindings()
+    private void LowerLanguageEntityBindings()
     {
-        var suflaeEntityPass = new SuflaeEntityLoweringPass(registry: _registry);
         foreach ((Program program, _, _) in _registry.UserPrograms)
         {
-            suflaeEntityPass.Run(program: program);
+            _registry.Rules.LowerEntities(program: program, registry: _registry);
         }
     }
 
@@ -888,7 +887,7 @@ public sealed partial class SemanticVerifier
         // chain) for entity locals instead of a bare-entity `destroy` (which double-frees an alias
         // and never reaches the RC/cc machinery). Also before reachability, so the roam/promote/lock/
         // cc hooks seed off the live `Roamed` wrapper type. No-op for RazorForge.
-        LowerSuflaeEntityBindings();
+        LowerLanguageEntityBindings();
 
         // Insert scope-exit `destroy()` calls BEFORE reachability (so the calls drive liveness —
         // no manual seeding needed) and BEFORE the marker pass (so Accessing[T]/Controlling[T]
@@ -1459,10 +1458,7 @@ public sealed partial class SemanticVerifier
         // Prefer this file's own realm when resolving its bare type names: an SF-realm (`.sf`) stdlib
         // file's bare `List` resolves to the SF-realm `Core.List` (bridged) it declares, while an RF file
         // keeps the ambient RF resolution. Zero effect on RF (resolution realm == ambient there).
-        _registry.ResolutionRealm = filePath.EndsWith(value: ".sf",
-            comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? "SF"
-            : "RF";
+        _registry.ResolutionRealm = Builder.Frontends.Languages.RealmOf(fileName: filePath);
         _importedModules.Clear();
         _importedSymbolNames.Clear();
         _importedForeignAliases.Clear();
@@ -2043,7 +2039,7 @@ public sealed partial class SemanticVerifier
 
         // Suflae `global`s move onto the shared __ModuleGlobals singleton before any declaration is
         // collected, so the synthesized entity and singleton register like user declarations.
-        if (!ModuleGlobalsSynthesisPass.Run(orderedFiles: files, report: ReportError))
+        if (!_registry.Rules.SynthesizeBeforeAnalysis(files: files, report: ReportError))
         {
             return AbortedResult();
         }
@@ -2672,9 +2668,8 @@ public sealed partial class SemanticVerifier
         // `List` resolves to the SF-realm (bridged) `Core.List` — the approachable SF wrapper — while an
         // `.rf` file keeps ambient RF resolution. Mirrors the stdlib-body loop; zero effect on RF
         // (resolution realm == ambient there). Restored to AmbientRealm by the caller after the phase.
-        _registry.ResolutionRealm = filePath.EndsWith(value: ".sf",
-            comparisonType: StringComparison.OrdinalIgnoreCase)
-            ? "SF"
+        _registry.ResolutionRealm = Builder.Frontends.Languages.OfFile(fileName: filePath) != Language.RazorForge
+            ? Builder.Frontends.Languages.RealmOf(fileName: filePath)
             : _registry.AmbientRealm;
 
         if (importSnapshots.TryGetValue(key: filePath, value: out HashSet<string>? imports))

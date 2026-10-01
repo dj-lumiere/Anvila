@@ -387,7 +387,7 @@ public sealed partial class SemanticVerifier
 
         CheckWhenPatternOrder(whenStmt: whenStmt);
         CheckWhenDuplicatePatterns(whenStmt: whenStmt);
-        CheckWhenSuflaeEntityRef(whenStmt: whenStmt, matchedType: matchedType);
+        CheckWhenSharedEntityRef(whenStmt: whenStmt, matchedType: matchedType);
 
         string? whenVarName = (whenStmt.Expression as IdentifierExpression)?.Name;
         VariantTypeSymbol? whenVariant =
@@ -432,9 +432,9 @@ public sealed partial class SemanticVerifier
     /// In Suflae, rejects a <c>when</c> whose subject is an entity reference — entity refs have
     /// only two flow states (none / present) and should use <c>if x is None</c> instead.
     /// </summary>
-    private void CheckWhenSuflaeEntityRef(WhenStatement whenStmt, TypeSymbol matchedType)
+    private void CheckWhenSharedEntityRef(WhenStatement whenStmt, TypeSymbol matchedType)
     {
-        if (_registry.Language == Language.Suflae && IsEntityRefType(type: matchedType))
+        if (_registry.Rules.EntitiesAreShared && IsEntityRefType(type: matchedType))
         {
             ReportError(code: SemanticDiagnosticCode.NullableEntityDeref,
                 message:
@@ -760,7 +760,7 @@ public sealed partial class SemanticVerifier
 
             // RF-S413: returning a field or a container element hands the caller an entity its owner
             // still keeps. A returned local is a move, so a bare variable is not flagged here.
-            if (_registry.Language == Language.RazorForge &&
+            if (_registry.Rules.ChecksOwnership &&
                 ReadsKeptEntity(value: ret.Value, includeVariables: false) &&
                 _registry.IsEntityKind(type: returnType))
             {
@@ -925,10 +925,10 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeDangerStatement(DangerStatement danger)
     {
-        if (_registry.Language == Language.Suflae && !danger.IsBuilderWritten)
+        if (!_registry.Rules.AllowsUnsafeCode && !danger.IsBuilderWritten)
         {
             ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
-                message: "Danger blocks are not available in Suflae.",
+                message: $"Danger blocks are not available in {_registry.Rules.Name}.",
                 location: danger.Location);
             return;
         }
@@ -993,7 +993,7 @@ public sealed partial class SemanticVerifier
         // A `using` target must obey `Enterable` — the protocol that declares the `enter`/`exit`
         // scope-management contract. Conformance (not just the presence of `enter`/`exit` by name)
         // is the gate, so being `using`-able is an explicit, checked capability.
-        if (_registry.Language == Language.RazorForge)
+        if (_registry.Rules.RequiresEnterableForUsing)
         {
             ValidateEnterableResource(usingStmt: usingStmt,
                 resourceType: resourceType,

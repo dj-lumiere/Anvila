@@ -370,13 +370,13 @@ internal sealed class TypeBodyResolver
             : ErrorTypeSymbol.Instance;
 
         // Suflae: an entity-typed field is a `Roamed[E]` biased-RC handle. The substitution now
-        // happens at the single ResolveType choke point (TypeResolver.RoamSuflaeEntitySlot), so
+        // happens at the single ResolveType choke point (TypeResolver.RoamSharedEntitySlot), so
         // memberVariableType is ALREADY `Roamed[E]` here (bare `x: E`) or a nullable `Roamed[E]`
         // (`x: E?` — the choke point collapses `Maybe[E]` to a bare nullable Roamed, since an
         // entity reference carries its own none via a null handle). We only still record
         // NULLABILITY as a flow fact: it is no longer visible in the resolved type, so detect it
         // from the AST — the field was written `E?`, which desugars to a `Maybe[...]` type expr.
-        bool fieldNullable = _sa._registry.Language == Language.Suflae &&
+        bool fieldNullable = _sa._registry.Rules.EntitiesAreShared &&
                              memberVariable.Type is { Name: "Maybe" } &&
                              memberVariableType is RecordTypeSymbol
                              {

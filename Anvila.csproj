@@ -2,7 +2,7 @@
   <!-- Anvila: the builder core shared by the RazorForge and Suflae front ends (syntax tree, type model,
        declaration/verification/lowering/instantiation/collection passes, the LLVM emitter, the build
        driver, daemon, JIT and language server). Each language's lexer and command line live in its own
-       project (..\RazorForge, ..\Suflae), which registers its lexer here at startup. -->
+       project (..\RazorForge, ..\Suflae), which registers its language rules here at startup. -->
   <PropertyGroup>
     <SonarQubeTestProject>false</SonarQubeTestProject>
     <OutputType>Library</OutputType>
@@ -11,8 +11,6 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.4.0</Version>
-    <RazorForgeVersion>0.4.0</RazorForgeVersion>
-    <SuflaeVersion>0.1.0</SuflaeVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Description>Anvila, the builder core shared by RazorForge and Suflae.</Description>
@@ -47,11 +45,6 @@
     <Exec Command="&quot;$(IngridNativeDir)\build.bat&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' == 'Windows_NT'"/>
     <Exec Command="bash &quot;$(IngridNativeDir)/build.sh&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' != 'Windows_NT'"/>
   </Target>
-
-  <ItemGroup>
-    <AssemblyMetadata Include="RazorForgeVersion" Value="$(RazorForgeVersion)"/>
-    <AssemblyMetadata Include="SuflaeVersion" Value="$(SuflaeVersion)"/>
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="DebugUtils.CSharp" Version="1.8.0"/>
