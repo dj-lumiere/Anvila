@@ -1127,7 +1127,7 @@ public static class LspServer
 
         // Methods whose SPECIALIZED receiver doesn't accept this instantiation (e.g.
         // `List[Agent[V]].gather` on a `List[FaceDraw]`). The compiler-generated failable variants
-        // (`try_`/`check_`/`lookup_gather`) carry no MeType, so key the rejection on the BASE name
+        // (the try/grab/lookup variants of `gather`) carry no MeType, so key the rejection on the BASE name
         // and let a variant inherit its base's (in)applicability.
         var rejected = new HashSet<string>(collection: ownMethods
                                                       .Where(predicate: mr =>
@@ -1150,20 +1150,10 @@ public static class LspServer
         }
     }
 
-    /// <summary>Returns true when the method name is in the rejected set directly, or is a compiler-generated
-    /// failable variant (<c>try_</c>/<c>check_</c>/<c>lookup_</c>) whose base name is rejected.</summary>
-    private static readonly string[] MethodLookupPrefixes = ["try_", "check_", "lookup_"];
-
+    /// <summary>Returns true when the method name is in the rejected set.</summary>
     private static bool IsMethodRejected(string name, HashSet<string> rejected)
     {
-        if (rejected.Contains(item: name))
-        {
-            return true;
-        }
-
-        return MethodLookupPrefixes.Any(predicate: pfx =>
-            name.StartsWith(value: pfx, comparisonType: StringComparison.Ordinal) &&
-            rejected.Contains(item: name[pfx.Length..]));
+        return rejected.Contains(item: name);
     }
 
     /// <summary>Global (non-member) completions: keywords, visible free routines, and this file's

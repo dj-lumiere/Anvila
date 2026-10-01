@@ -212,7 +212,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
             // The subject was hoisted to a temp. Any CrashableDispatchExpression in a (now lowered) clause
             // body captured the ORIGINAL subject expression at CrashableExpansionPass time; redirect it to
-            // the temp so a side-effecting subject (e.g. `when check_foo() is Crashable => e.crash_message()`)
+            // the temp so a side-effecting subject (e.g. `when grab foo() is Crashable => e.crash_message()`)
             // is not evaluated a second time by the dispatch.
             var redirect = new CrashableDispatchCarrierRewriter(newCarrier: subject);
             for (int i = 0; i < loweredClauses.Count; i++)
@@ -564,7 +564,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 // Lookup/Check carrier: absent is `type_id == 0` (mirrors the TypePattern("None")
                 // path in GetResultLookupTypePatternCondition). A grab/lookup composition's
                 // BuildCarrierPropagationWhen emits a raw NonePattern (not TypePattern) for an
-                // inner call whose best-available variant is lookup_, so this arm must lower too.
+                // inner call whose best-available variant is lookup, so this arm must lower too.
                 return (MakeTypeIdIsZero(subject: subject,
                     loc: loc,
                     boolType: boolType,

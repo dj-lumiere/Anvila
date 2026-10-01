@@ -370,7 +370,7 @@ public sealed partial class SemanticVerifier
         // this, the call used to annotate ResolvedType=T — harmless for direct emission
         // (intrinsics emit from the explicit TypeArguments) but fatal for any consumer
         // that needs the value's type, e.g. the Maybe-carrier construction inside
-        // generated try_/check_ variant bodies.
+        // generated try/grab variant bodies.
         Dictionary<string, TypeSymbol>? typeSubs = null;
         List<ParamInfo> declParams = routine.Parameters;
         // Tracks whether the routine is fully monomorphized below. When true, its ReturnType is

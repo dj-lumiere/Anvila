@@ -14,7 +14,7 @@ namespace Builder.Verification.Results;
 /// <param name="ParsedLiterals">Parsed literal values for code generation (b128, d32, d64, d128, Integer, Decimal).</param>
 /// <param name="SynthesizedBodies">AST bodies for compiler-generated routines (derived operators + variant bodies),
 /// keyed by RoutineInfo.RegistryKey. Includes both ne/lt/etc. operators and pre-transformed
-/// try_/check_/lookup_ variant bodies produced by <see cref="ErrorHandlingVariantPass"/>.</param>
+/// try/grab/lookup variant bodies produced by <see cref="ErrorHandlingVariantPass"/>.</param>
 /// <param name="InstantiatedGenericBodies">Concrete generic memberRoutine bodies produced by
 /// <see cref="GenericMonomorphizationPass"/>, keyed by the concrete
 /// RoutineInfo.RegistryKey. Codegen uses these to skip AST search and re-rewriting

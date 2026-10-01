@@ -8,19 +8,64 @@ using TypeModel.Types;
 namespace Builder.Instantiation;
 
 /// <summary>
-/// Generates try_/check_/lookup_ routine variants for all failable routines.
+/// Generates the recovery variants (the routines `try`, `grab` and `lookup` bind to) of failable routines.
+/// A variant has its failable routine's name and parameters and is reached through it
+/// (<see cref="TypeRegistry.LookupRecoveryVariant"/>), never by a name.
 /// Runs once globally after Phase 4 body analysis.
 ///
 /// Generation rules (based on throw/absent found in body):
-/// - Only absent:       try_
-/// - Only throw:        try_ + check_
-/// - Both:              try_ + lookup_
+/// - Only absent:       try
+/// - Only throw:        try + grab
+/// - Both:              try + lookup
 /// </summary>
 internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 {
-    private const string PrefixTry = "try";
-    private const string PrefixCheck = "check";
-    private const string PrefixLookup = "lookup";
+    /// <summary>The recovery keyword a variant kind serves.</summary>
+    private static RecoveryKind ToRecovery(ErrorHandlingVariantKind kind)
+    {
+        return kind switch
+        {
+            ErrorHandlingVariantKind.Check => RecoveryKind.Grab,
+            ErrorHandlingVariantKind.Lookup => RecoveryKind.Lookup,
+            _ => RecoveryKind.Try
+        };
+    }
+
+    /// <summary>
+    /// <paramref name="call"/> bound to <paramref name="variant"/>, the recovery variant of the failable
+    /// routine it called. The variant has that routine's name and parameters, so the call keeps its shape;
+    /// it takes the variant's carrier type and is marked analyzed, since a re-analysis by name would bind
+    /// the failable routine again.
+    /// </summary>
+    private static CallExpression BindToVariant(CallExpression call, RoutineInfo variant)
+    {
+        CallExpression bound = call with
+        {
+            ResolvedRoutine = variant, ResolvedType = variant.ReturnType, IsFailable = false, IsPreAnalyzed = true
+        };
+        return bound.Callee is MemberExpression member
+            ? bound with { Callee = member with { IsFailable = false } }
+            : bound;
+    }
+
+    /// <summary>The call of a failable creator's recovery variant that a creator expression stands for.</summary>
+    private static CallExpression BindCreatorToVariant(CreatorExpression creator, RoutineInfo variant)
+    {
+        var typeId = new IdentifierExpression(Name: creator.TypeName, Location: creator.Location);
+        var member = new MemberExpression(Object: typeId,
+            MemberName: variant.Name,
+            Location: creator.Location);
+        var args = creator.MemberVariables
+                          .Select(selector: mv => (Expression)new NamedArgumentExpression(
+                               Name: mv.Name,
+                               Value: mv.Value,
+                               Location: creator.Location) { ResolvedType = mv.Value.ResolvedType })
+                          .ToList();
+        return new CallExpression(Callee: member, Arguments: args, Location: creator.Location)
+        {
+            ResolvedRoutine = variant, ResolvedType = variant.ReturnType, IsPreAnalyzed = true
+        };
+    }
 
     /// <summary>
     /// Per-file stub: variant generation is global only (see <see cref="RunGlobal"/>).
@@ -88,7 +133,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// without running SA, so propagated-failability routines (e.g. stdlib
     /// `common routine S64.from_digit_bytes!` returning `S64.from_digit_bytes_at!`) have
     /// empty FailableCallees and no direct throw/absent. Detect them and mark pessimistic
-    /// so variant generation produces try_ + lookup_ — matching what the pre-register
+    /// so variant generation produces try + lookup — matching what the pre-register
     /// pass registered as stubs.
     /// </summary>
     private void MarkPessimisticStdlibFailability(List<RoutineInfo> routines)
@@ -169,7 +214,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         // DEMAND-DRIVEN: only the iterator `emit` variants are generated eagerly here (their generic-def
         // bodies must exist before Phase-8 monomorphization of composed emitters). EVERY OTHER failable's
-        // try_/check_/lookup_ variant — body and registration — is produced ON DEMAND the first time a call
+        // try/grab/lookup variant — body and registration — is produced ON DEMAND the first time a call
         // site reaches it (SemanticVerifier's TrySynthesizeVariantOnDemand → GenerateVariantBody, drained
         // before AnalyzeVariantBodies). This is what stops ~3600 stdlib variant bodies from being built +
         // analyzed every run when a program uses only a handful.
@@ -266,7 +311,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// Maps a <see cref="GeneratedVariant"/> to its <see cref="ErrorHandlingVariantKind"/>,
-    /// including distinguishing the TryBool case (None-returning try_ variant).
+    /// including distinguishing the TryBool case (None-returning try variant).
     /// </summary>
     internal static ErrorHandlingVariantKind DetermineVariantKind(GeneratedVariant variant)
     {
@@ -282,7 +327,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <summary>
     /// Builds ONE variant's body on demand (the same transform Phase D applies eagerly), for the
     /// SemanticVerifier's on-demand synthesizer. Uses the broad (path-1, <c>nextOnly:false</c>) propagation
-    /// so inner failable calls are rewritten to THEIR try_/check_/lookup_ variants — those inner lookups go
+    /// so inner failable calls are rewritten to THEIR try/grab/lookup variants — those inner lookups go
     /// through <see cref="TypeRegistry.LookupMemberRoutine"/>, whose on-demand hook synthesizes the inner
     /// variant transitively.
     /// </summary>
@@ -309,139 +354,34 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// </summary>
     public static VariantCallRewriter MakeOnDemandVariantRewriter(TypeRegistry registry)
     {
-        // Find-or-SYNTHESIZE the matching variant of the SPECIFIC failable base overload via the verifier's
-        // per-overload hook (matches by parameter types, so an overloaded base like S64.create(from_text:)
-        // yields the right variant). Falls back to a plain name lookup when the hook isn't installed.
-        // Demand-owned variants: synthesize the EXACT overload's variant via the per-overload hook.
-        // Eager-owned (emit) or wired variants: the hook returns null, falling back to FindVariant — an
-        // EXACT scan-match (name + OriginalName + owner + param types), never a lossy by-name lookup.
-        RoutineInfo? FindOrSynth(RoutineInfo original, string prefix)
-        {
-            return registry.OnDemandVariantForBase?.Invoke(arg1: original, arg2: prefix) ??
-                   FindVariant(registry: registry, original: original, prefix: prefix);
-        }
-
         return (Expression? value, ErrorHandlingVariantKind kind, out Expression? rewritten) =>
         {
             rewritten = null;
-            string? prefix = kind switch
-            {
-                ErrorHandlingVariantKind.Try => PrefixTry,
-                ErrorHandlingVariantKind.Check => PrefixCheck,
-                ErrorHandlingVariantKind.Lookup => PrefixLookup,
-                _ => null
-            };
-            if (prefix == null)
+            if (kind == ErrorHandlingVariantKind.TryBool)
             {
                 return false;
             }
 
-            if (TryRewriteCallToVariant(value: value,
-                    prefix: prefix,
-                    findOrSynth: FindOrSynth,
-                    rewritten: out rewritten))
+            RecoveryKind recovery = ToRecovery(kind: kind);
+            switch (value)
             {
-                return true;
+                case CallExpression { ResolvedRoutine: { IsFailable: true } callee } call
+                    when registry.LookupRecoveryVariant(recovered: callee, kind: recovery) is { } variant:
+                    rewritten = BindToVariant(call: call, variant: variant);
+                    return true;
+                case CreatorExpression { ResolvedCreatorRoutine: { IsFailable: true } creatorRoutine } creator
+                    when registry.LookupRecoveryVariant(recovered: creatorRoutine, kind: recovery) is { } variant:
+                    rewritten = BindCreatorToVariant(creator: creator, variant: variant);
+                    return true;
+                default:
+                    return false;
             }
-
-            if (TryRewriteCreatorToVariant(value: value,
-                    prefix: prefix,
-                    findOrSynth: FindOrSynth,
-                    rewritten: out rewritten))
-            {
-                return true;
-            }
-
-            return false;
         };
-    }
-
-    /// <summary>
-    /// Rewrites a tail <see cref="CallExpression"/> whose resolved routine is failable into an
-    /// equivalent call targeting the try_/check_/lookup_ variant. Returns false when the expression
-    /// is not a failable call or the variant cannot be found.
-    /// </summary>
-    private static bool TryRewriteCallToVariant(Expression? value, string prefix,
-        Func<RoutineInfo, string, RoutineInfo?> findOrSynth, out Expression? rewritten)
-    {
-        rewritten = null;
-        if (value is not CallExpression { ResolvedRoutine: { IsFailable: true } callee } call)
-        {
-            return false;
-        }
-
-        RoutineInfo? variant = findOrSynth(arg1: callee, arg2: prefix);
-        if (variant == null)
-        {
-            return false;
-        }
-
-        CallExpression newCall = call with
-        {
-            ResolvedRoutine = variant, ResolvedType = variant.ReturnType
-        };
-        newCall = newCall.Callee switch
-        {
-            MemberExpression m => newCall with
-            {
-                Callee = m with
-                {
-                    MemberName = VariantSurfaceMember(surfaceMember: m.MemberName,
-                        original: callee,
-                        variant: variant),
-                    IsFailable = false
-                }
-            },
-            IdentifierExpression idc => newCall with { Callee = idc with { Name = variant.Name } },
-            _ => newCall
-        };
-        rewritten = newCall;
-        return true;
-    }
-
-    /// <summary>
-    /// Rewrites a tail failable constructor expression (e.g. T(from_text: t)) into a call to the
-    /// corresponding try_/check_/lookup_ creator variant. Returns false when the expression is not a
-    /// failable creator or the variant cannot be found.
-    /// </summary>
-    private static bool TryRewriteCreatorToVariant(Expression? value, string prefix,
-        Func<RoutineInfo, string, RoutineInfo?> findOrSynth, out Expression? rewritten)
-    {
-        rewritten = null;
-        if (value is not CreatorExpression
-            {
-                ResolvedCreatorRoutine: { IsFailable: true } cCallee
-            } creator)
-        {
-            return false;
-        }
-
-        RoutineInfo? variant = findOrSynth(arg1: cCallee, arg2: prefix);
-        if (variant == null)
-        {
-            return false;
-        }
-
-        var typeId = new IdentifierExpression(Name: creator.TypeName, Location: creator.Location);
-        var member = new MemberExpression(Object: typeId,
-            MemberName: variant.Name,
-            Location: creator.Location);
-        var args = creator.MemberVariables
-                          .Select(selector: mv => (Expression)new NamedArgumentExpression(
-                               Name: mv.Name,
-                               Value: mv.Value,
-                               Location: creator.Location))
-                          .ToList();
-        rewritten = new CallExpression(Callee: member, Arguments: args, Location: creator.Location)
-        {
-            ResolvedRoutine = variant, ResolvedType = variant.ReturnType
-        };
-        return true;
     }
 
     /// <summary>
     /// Signature for an optional rewriter that may convert a tail-return value into a passthrough
-    /// call against the corresponding try_/check_/lookup_ variant of an inner failable callee.
+    /// call against the corresponding try/grab/lookup variant of an inner failable callee.
     /// </summary>
     public delegate bool VariantCallRewriter(Expression? value, ErrorHandlingVariantKind kind,
         out Expression? rewritten);
@@ -457,16 +397,16 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <param name="body">The routine body statement to transform.</param>
     /// <param name="kind">Which error-handling variant shape to produce (try/check/lookup/try-bool).</param>
     /// <param name="rewriter">Optional tail-return rewriter; when it succeeds the return is emitted as a passthrough.</param>
-    /// <param name="registry">Optional type registry used for try_-variant synthesis when <paramref name="kind"/> is <c>Try</c>.</param>
+    /// <param name="registry">Optional type registry used for try-variant synthesis when <paramref name="kind"/> is <c>Try</c>.</param>
     /// <param name="nextOnlyPropagation">
     /// When true, non-tail failable-call propagation is restricted to inner <c>emit</c> calls
     /// (iterator chaining). Used by the MONOMORPHIZED (path-2) caller, which runs AFTER reachability:
     /// any other <c>try_X</c> it introduces wouldn't be marked live and would LINKERR (e.g. a guarded
-    /// <c>getitem!</c>), whereas <c>try_emit</c> is always emitted for live iterators. When false
+    /// <c>getitem!</c>), whereas the <c>try</c> variant of <c>emit</c> is always emitted for live iterators. When false
     /// (the global path-1 caller, which runs BEFORE reachability), ALL non-tail failable calls are
     /// propagated — reachability then sees the introduced <c>try_X</c> calls and emits them. Path-1
-    /// MUST propagate broadly so a try_ variant whose failability is purely propagated through a
-    /// non-tail call (e.g. <c>try_from_digit_bytes</c> → <c>from_digit_bytes_at!</c>) actually catches
+    /// MUST propagate broadly so a try variant whose failability is purely propagated through a
+    /// non-tail call (e.g. the try variant of <c>from_digit_bytes</c> → <c>from_digit_bytes_at!</c>) actually catches
     /// the inner throw/absent instead of letting it escape uncaught.
     /// </param>
     internal static Statement TransformBody(Statement body, ErrorHandlingVariantKind kind,
@@ -515,7 +455,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         return body switch
         {
-            // `pierce` stays a crash even inside a try_/check_ variant — it pierces through the
+            // `pierce` stays a crash even inside a try/grab variant — it pierces through the
             // recovery surface, so it is NOT rewritten into a recoverable return.
             ThrowStatement { IsFatal: true } => body,
 
@@ -693,60 +633,17 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     private static int _propTemp;
 
     /// <summary>
-    /// Resolves the <paramref name="prefix"/> (try/check/lookup) variant of the SPECIFIC base overload
-    /// <paramref name="original"/> on <paramref name="owner"/>. Routes through the per-overload on-demand
-    /// synthesizer FIRST (<see cref="TypeRegistry.OnDemandVariantForBase"/>): it returns — synthesizing on
-    /// demand when needed — the variant OF THIS overload, whose parameter types match <paramref name="original"/>
-    /// by construction. A bare name lookup is wrong for a heavily-overloaded base (e.g. <c>U32.create!</c>
-    /// from S8/S16/S32/S64/…): it returns an arbitrary <c>try_create</c> (the first-registered S8) whose
-    /// parameter type mismatches the call's argument, producing invalid IR (a <c>try_create(from: S8)</c>
-    /// fed an i64). Falls back to an overload-typed lookup, then a name-only lookup, when the hook is
-    /// absent or a parameter type isn't a concrete <see cref="TypeSymbol"/>.
-    /// </summary>
-    private static RoutineInfo? LookupVariantForOverload(TypeRegistry registry, TypeSymbol owner,
-        string prefix, RoutineInfo original)
-    {
-        RoutineInfo? synth = registry.OnDemandVariantForBase?.Invoke(arg1: original, arg2: prefix);
-        if (synth != null)
-        {
-            return synth;
-        }
-
-        string variantName = $"{prefix}_{original.OriginalName ?? original.Name}";
-        var argTypes = new List<TypeSymbol>();
-        foreach (ParamInfo p in original.Parameters)
-        {
-            if (p.Type is TypeSymbol ti)
-            {
-                argTypes.Add(item: ti);
-            }
-            else
-            {
-                return registry.LookupMemberRoutine(type: owner,
-                    memberRoutineName: variantName,
-                    isFailable: false);
-            }
-        }
-
-        return registry.LookupMemberRoutineOverload(type: owner,
-            memberRoutineName: variantName,
-            argTypes: argTypes) ?? registry.LookupMemberRoutine(type: owner,
-            memberRoutineName: variantName,
-            isFailable: false);
-    }
-
-    /// <summary>
     /// Transforms a block's statements, propagating NON-tail failable calls through their safe
     /// variant. The tail-position <paramref name="rewriter"/> only handles <c>return F!(x)</c>; a
     /// failable call used in statement position — e.g. <c>var item = src.emit!()</c> — would
     /// otherwise be left calling the raw <c>!</c> routine, which HARD-CRASHES on absence (the raw
-    /// form lowers <c>absent</c> to a <c>crash_report</c> call). Inside a <c>try_</c> variant that inner
+    /// form lowers <c>absent</c> to a <c>crash_report</c> call). Inside a <c>try</c> variant that inner
     /// absence must instead become this variant's own <c>None</c> return.
     ///
     /// For each such statement the remainder of the block is folded into the success branch of a
     /// plain <c>if</c> over the inner safe variant's Maybe carrier:
     /// <code>
-    /// var __rf_prop_N = src.try_emit()      # Maybe[T]
+    /// var __rf_prop_N = src.emit() (under try)      # Maybe[T]
     /// if __rf_prop_N.present
     ///   var item = __rf_prop_N.value
     ///   &lt;rest of block&gt;
@@ -912,7 +809,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 return false;
             }
 
-            return !nextOnly || (rr.OriginalName ?? rr.Name) == "emit";
+            return !nextOnly || rr.Name == "emit";
         }
 
         (Expression? root, bool keepRootCall) = stmt switch
@@ -1114,7 +1011,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// If <paramref name="stmt"/> uses a failable call in non-tail position (a <c>var x = F!(...)</c>
-    /// declaration or a bare <c>F!(...)</c> expression statement) and the callee has a <c>try_</c>
+    /// declaration or a bare <c>F!(...)</c> expression statement) and the callee has a <c>try</c>
     /// variant returning a <c>Maybe</c>, produces the spliced pieces:
     /// <list type="bullet">
     /// <item><paramref name="tempDecl"/>: <c>var __rf_prop_N = recv.try_X(...)</c></item>
@@ -1122,7 +1019,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <item><paramref name="bindStmt"/>: <c>var x = __rf_prop_N.value</c> (null when the result was discarded)</item>
     /// </list>
     /// Returns false — leaving the original crash-on-absence statement untouched — when no matching
-    /// Maybe-returning <c>try_</c> variant resolves.
+    /// Maybe-returning <c>try</c> variant resolves.
     /// </summary>
     private static bool TryBuildTryPropagation(Statement stmt, TypeRegistry registry,
         bool nextOnly, out Statement? tempDecl, out Expression? presentCondition,
@@ -1153,10 +1050,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         RoutineInfo failRoutine = failCall.ResolvedRoutine;
-        string baseName = failRoutine.OriginalName ?? failRoutine.Name;
+        string baseName = failRoutine.Name;
 
         // In the monomorphized (path-2) caller — which runs AFTER reachability — restrict propagation
-        // to inner `emit!` calls: `try_emit` is systematically emitted for live iterator instances, so
+        // to inner `emit!` calls: `emit`'s try variant is systematically emitted for live iterator instances, so
         // the propagated chain always links, whereas an arbitrary `try_X` introduced here wouldn't be
         // marked live and would LINKERR (e.g. a bounds-guarded `getitem!` in SortedSetIterator, which
         // also can't actually fail). The global (path-1) caller runs BEFORE reachability, so it
@@ -1166,19 +1063,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             return false;
         }
 
-        // Resolve the try_ variant of THIS overload. The per-overload synth hook handles BOTH free and
-        // member bases (a whole-expression `try` composition body — SemanticVerifier.Recovery — hoists FREE
-        // failable calls, which have no OwnerType); fall back to the member-scoped lookup when the hook is
-        // absent (and only then require an owner).
-        RoutineInfo? variant =
-            registry.OnDemandVariantForBase?.Invoke(arg1: failRoutine, arg2: PrefixTry);
-        if (variant == null && failRoutine.OwnerType is { } owner)
-        {
-            variant = LookupVariantForOverload(registry: registry,
-                owner: owner,
-                prefix: PrefixTry,
-                original: failRoutine);
-        }
+        // The try variant of THIS overload (free or member: a whole-expression `try` composition body —
+        // SemanticVerifier.Recovery — hoists FREE failable calls, which have no OwnerType).
+        RoutineInfo? variant = registry.LookupRecoveryVariant(recovered: failRoutine, kind: RecoveryKind.Try);
 
         // Need a Maybe carrier (flat {present,value}) to unwrap with field access. The TryBool
         // variant returns Bool (no type args) and is rejected here.
@@ -1190,27 +1077,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         SourceLocation loc = stmt.Location;
         string tempName = $"__rf_prop_{Interlocked.Increment(location: ref _propTemp)}";
 
-        // Retarget the failable call to its try_ variant and re-type it as the carrier.
-        CallExpression safeCall =
-            failCall with { ResolvedRoutine = variant, ResolvedType = carrier };
-        safeCall = safeCall.Callee switch
-        {
-            MemberExpression m => safeCall with
-            {
-                Callee = m with
-                {
-                    MemberName = VariantSurfaceMember(surfaceMember: m.MemberName,
-                        original: failCall.ResolvedRoutine,
-                        variant: variant),
-                    IsFailable = false
-                }
-            },
-            IdentifierExpression idc => safeCall with
-            {
-                Callee = idc with { Name = variant.Name }
-            },
-            _ => safeCall
-        };
+        // Retarget the failable call to its try variant, typed as the carrier.
+        CallExpression safeCall = BindToVariant(call: failCall, variant: variant);
 
         tempDecl = new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
                 Type: null,
@@ -1274,8 +1142,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Like <see cref="TryBuildTryPropagation"/> but for Check/Lookup variants: retargets a non-tail
     /// failable call to the BEST available inner safe variant and reports what that carrier can fail
     /// with. The inner routine may not have the outer's exact kind — variant generation produces
-    /// try_ only (absent-only), try_+check_ (throw-only), or try_+lookup_ (both). So fall back:
-    /// prefer the outer's kind, then lookup_ &gt; check_ &gt; try_ (try_ always exists). The chosen
+    /// try only (absent-only), try+grab (throw-only), or try+lookup (both). So fall back:
+    /// prefer the outer's kind, then lookup &gt; grab &gt; try (try always exists). The chosen
     /// carrier's capabilities (<paramref name="innerCanNone"/>/<paramref name="innerCanError"/>)
     /// drive which arms <see cref="BuildCarrierPropagationWhen"/> emits. Returns false when no failure
     /// arm would apply (e.g. a Check outer over an absent-only inner — an inconsistent combination),
@@ -1311,23 +1179,22 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         RoutineInfo failRoutine = failCall.ResolvedRoutine;
 
-        // Prefer the outer kind's variant, then fall back to the most-informative available. The
-        // per-overload synth hook resolves BOTH free and member bases (a whole-expression `grab`/`lookup`
-        // composition body — SemanticVerifier.Recovery — hoists FREE failable calls, which have no
-        // OwnerType); fall back to the member-scoped lookup when the hook is absent and the base has an owner.
-        string[] order = kind == ErrorHandlingVariantKind.Check
-            ? [PrefixCheck, PrefixLookup, PrefixTry]
-            : [PrefixLookup, PrefixCheck, PrefixTry];
-        (RoutineInfo? variant, string chosen) =
+        // Prefer the outer kind's variant, then fall back to the most-informative available (free or member
+        // bases: a whole-expression `grab`/`lookup` composition body — SemanticVerifier.Recovery — hoists FREE
+        // failable calls, which have no OwnerType).
+        RecoveryKind[] order = kind == ErrorHandlingVariantKind.Check
+            ? [RecoveryKind.Grab, RecoveryKind.Lookup, RecoveryKind.Try]
+            : [RecoveryKind.Lookup, RecoveryKind.Grab, RecoveryKind.Try];
+        (RoutineInfo? variant, RecoveryKind chosen) =
             ChooseInnerVariant(registry: registry, failRoutine: failRoutine, order: order);
 
-        if (variant?.ReturnType is not { } carrier)
+        if (variant?.ReturnType is null)
         {
             return false;
         }
 
-        innerCanNone = chosen is PrefixTry or PrefixLookup;
-        innerCanError = chosen is PrefixCheck or PrefixLookup;
+        innerCanNone = chosen is RecoveryKind.Try or RecoveryKind.Lookup;
+        innerCanError = chosen is RecoveryKind.Grab or RecoveryKind.Lookup;
 
         // A Lookup outer represents None natively; a Check outer has no None state but ABSORBS a caught
         // absent by promoting it to AbsentValueError (a Crashable) — grab collapses "not found" into the
@@ -1339,57 +1206,28 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             return false;
         }
 
-        CallExpression retargeted =
-            failCall with { ResolvedRoutine = variant, ResolvedType = carrier };
-        retargeted = retargeted.Callee switch
-        {
-            MemberExpression m => retargeted with
-            {
-                Callee = m with
-                {
-                    MemberName = VariantSurfaceMember(surfaceMember: m.MemberName,
-                        original: failCall.ResolvedRoutine,
-                        variant: variant),
-                    IsFailable = false
-                }
-            },
-            IdentifierExpression idc => retargeted with
-            {
-                Callee = idc with { Name = variant.Name }
-            },
-            _ => retargeted
-        };
-        safeCall = retargeted;
+        safeCall = BindToVariant(call: failCall, variant: variant);
         return true;
     }
 
     /// <summary>
-    /// Walks the preferred variant prefixes in order and returns the first synthesized safe variant whose
-    /// carrier return type carries payload type arguments, together with the prefix that selected it. Each
-    /// prefix is resolved via the on-demand synth hook first, then via the member-scoped overload lookup
-    /// when the failable base has an owner type. Returns <c>(null, "")</c> when none apply.
+    /// Walks the preferred recovery kinds in order and returns the first variant of
+    /// <paramref name="failRoutine"/> whose carrier return type carries payload type arguments, together
+    /// with the kind that selected it. Returns <c>(null, Try)</c> when none apply.
     /// </summary>
-    private static (RoutineInfo? variant, string chosen) ChooseInnerVariant(TypeRegistry registry,
-        RoutineInfo failRoutine, string[] order)
+    private static (RoutineInfo? variant, RecoveryKind chosen) ChooseInnerVariant(TypeRegistry registry,
+        RoutineInfo failRoutine, RecoveryKind[] order)
     {
-        foreach (string p in order)
+        foreach (RecoveryKind kind in order)
         {
-            RoutineInfo? v = registry.OnDemandVariantForBase?.Invoke(arg1: failRoutine, arg2: p);
-            if (v == null && failRoutine.OwnerType is { } owner)
+            if (registry.LookupRecoveryVariant(recovered: failRoutine, kind: kind) is
+                { ReturnType.TypeArguments.Count: > 0 } variant)
             {
-                v = LookupVariantForOverload(registry: registry,
-                    owner: owner,
-                    prefix: p,
-                    original: failRoutine);
-            }
-
-            if (v?.ReturnType is { TypeArguments.Count: > 0 })
-            {
-                return (v, p);
+                return (variant, kind);
             }
         }
 
-        return (null, "");
+        return (null, RecoveryKind.Try);
     }
 
     /// <summary>
@@ -1491,9 +1329,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Builds a registry-based <see cref="VariantCallRewriter"/> for the monomorphized fallback path
     /// (<see cref="Builder.Instantiation.Passes.GenericMonomorphizationPass"/>), which has no
     /// per-pass rewriter instance. It rewrites a TAIL-position <c>return src.emit!()</c> into a
-    /// passthrough call to the matching <c>try_/check_/lookup_emit</c> variant (resolved via
+    /// passthrough call to the matching <c>try/grab/lookupemit</c> variant (resolved via
     /// <see cref="TypeRegistry.LookupMemberRoutine"/> on the concrete callee owner). Restricted to
-    /// <c>emit</c> for the same reason as <see cref="TryBuildTryPropagation"/>: <c>try_emit</c> is
+    /// <c>emit</c> for the same reason as <see cref="TryBuildTryPropagation"/>: the <c>try</c> variant of <c>emit</c> is
     /// systematically emitted for live iterator instances, so the rewritten chain always links.
     /// </summary>
     public static VariantCallRewriter MakeNextVariantRewriter(TypeRegistry registry)
@@ -1501,65 +1339,14 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         return (Expression? value, ErrorHandlingVariantKind kind, out Expression? rewritten) =>
         {
             rewritten = null;
-            string? prefix = kind switch
-            {
-                ErrorHandlingVariantKind.Try => PrefixTry,
-                ErrorHandlingVariantKind.Check => PrefixCheck,
-                ErrorHandlingVariantKind.Lookup => PrefixLookup,
-                _ => null
-            };
-            if (prefix == null)
+            if (kind == ErrorHandlingVariantKind.TryBool ||
+                value is not CallExpression { ResolvedRoutine: { IsFailable: true, Name: "emit", OwnerType: not null } callee } call ||
+                registry.LookupRecoveryVariant(recovered: callee, kind: ToRecovery(kind: kind)) is not { } variant)
             {
                 return false;
             }
 
-            if (value is not CallExpression { ResolvedRoutine: { IsFailable: true } callee } call)
-            {
-                return false;
-            }
-
-            string baseName = callee.OriginalName ?? callee.Name;
-            if (baseName != "emit")
-            {
-                return false;
-            }
-
-            if (callee.OwnerType is not { } owner)
-            {
-                return false;
-            }
-
-            RoutineInfo? variant = registry.LookupMemberRoutine(type: owner,
-                memberRoutineName: $"{prefix}_{baseName}",
-                isFailable: false);
-            if (variant == null)
-            {
-                return false;
-            }
-
-            CallExpression newCall = call with
-            {
-                ResolvedRoutine = variant, ResolvedType = variant.ReturnType
-            };
-            newCall = newCall.Callee switch
-            {
-                MemberExpression m => newCall with
-                {
-                    Callee = m with
-                    {
-                        MemberName = VariantSurfaceMember(surfaceMember: m.MemberName,
-                            original: callee,
-                            variant: variant),
-                        IsFailable = false
-                    }
-                },
-                IdentifierExpression idc => newCall with
-                {
-                    Callee = idc with { Name = variant.Name }
-                },
-                _ => newCall
-            };
-            rewritten = newCall;
+            rewritten = BindToVariant(call: call, variant: variant);
             return true;
         };
     }
@@ -1573,182 +1360,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     private bool TryRewriteToVariantCall(Expression? value, ErrorHandlingVariantKind kind,
         out Expression? rewritten)
     {
-        rewritten = null;
-        if (value == null)
-        {
-            return false;
-        }
-
-        string? prefix = kind switch
-        {
-            ErrorHandlingVariantKind.Try => PrefixTry,
-            ErrorHandlingVariantKind.Check => PrefixCheck,
-            ErrorHandlingVariantKind.Lookup => PrefixLookup,
-            _ => null
-        };
-        if (prefix == null)
-        {
-            return false;
-        }
-
-        if (value is CallExpression { ResolvedRoutine: { IsFailable: true } callee } call)
-        {
-            RoutineInfo? variant =
-                FindVariant(registry: ctx.Registry, original: callee, prefix: prefix);
-            if (variant == null)
-            {
-                return false;
-            }
-
-            // The passthrough value IS the variant's carrier (e.g. Maybe[S64]); record that type so
-            // downstream (teardown return-spill, codegen) sizes slots from the carrier, not the
-            // original unwrapped payload (S64) — a mismatch otherwise yields `store i64 %maybeVal`.
-            CallExpression newCall = call with
-            {
-                ResolvedRoutine = variant, ResolvedType = variant.ReturnType
-            };
-            newCall = newCall.Callee switch
-            {
-                IdentifierExpression idCallee => newCall with
-                {
-                    Callee = idCallee with { Name = variant.Name }
-                },
-                MemberExpression memCallee => newCall with
-                {
-                    Callee = memCallee with
-                    {
-                        MemberName =
-                        VariantSurfaceMember(surfaceMember: memCallee.MemberName,
-                            original: callee,
-                            variant: variant),
-                        IsFailable = false
-                    }
-                },
-                _ => newCall
-            };
-            rewritten = newCall;
-            return true;
-        }
-
-        if (value is CreatorExpression
-            {
-                ResolvedCreatorRoutine: { IsFailable: true } cCallee
-            } creator)
-        {
-            RoutineInfo? variant =
-                FindVariant(registry: ctx.Registry, original: cCallee, prefix: prefix);
-            if (variant == null)
-            {
-                return false;
-            }
-
-            var typeId =
-                new IdentifierExpression(Name: creator.TypeName, Location: creator.Location);
-            var member = new MemberExpression(Object: typeId,
-                MemberName: variant.Name,
-                Location: creator.Location);
-            var args = creator.MemberVariables
-                              .Select(selector: mv => (Expression)new NamedArgumentExpression(
-                                   Name: mv.Name,
-                                   Value: mv.Value,
-                                   Location: creator.Location))
-                              .ToList();
-            var newCall =
-                new CallExpression(Callee: member, Arguments: args, Location: creator.Location)
-                {
-                    ResolvedRoutine = variant, ResolvedType = variant.ReturnType
-                };
-            rewritten = newCall;
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Finds the variant routine for <paramref name="original"/> with the given prefix
-    /// (try/check/lookup). Matches by <see cref="RoutineInfo.OriginalName"/> + owner identity.
-    /// </summary>
-    /// <summary>
-    /// The SURFACE member name a variant-retargeted call must carry so re-analysis re-resolves it to the
-    /// SAME routine. For a normal call the surface member equals the routine's base name, so this is just
-    /// <c>variant.Name</c> (<c>getitem</c> → <c>try_getitem</c>). For a CONVERSION chain the surface member
-    /// is a TYPE name that differs from the routine name (<c>.S64!()</c>: surface <c>S64</c>, routine
-    /// <c>create</c>) — there the variant surface must be <c>{prefix}_{surfaceMember}</c> (<c>try_S64</c>),
-    /// NOT <c>variant.Name</c> (<c>try_create</c>): SA's conversion resolution maps <c>.try_S64()</c> →
-    /// <c>S64.try_create</c> (the TARGET), whereas bare <c>try_create</c> re-resolves against the RECEIVER
-    /// type (<c>B64.try_create</c>) and corrupts the binding. Prefix is recovered from <c>variant.Name</c>.
-    /// </summary>
-    private static string VariantSurfaceMember(string surfaceMember, RoutineInfo original,
-        RoutineInfo variant)
-    {
-        string baseName = original.OriginalName ?? original.Name;
-        if (surfaceMember == baseName)
-        {
-            return variant.Name;
-        }
-
-        if (variant.Name.EndsWith(value: "_" + baseName, comparisonType: StringComparison.Ordinal))
-        {
-            return $"{variant.Name[..^(baseName.Length + 1)]}_{surfaceMember}";
-        }
-
-        return variant.Name;
-    }
-
-    internal static RoutineInfo? FindVariant(TypeRegistry registry, RoutineInfo original,
-        string prefix)
-    {
-        string baseName = original.Name;
-        string variantName = $"{prefix}_{baseName}";
-        foreach (RoutineInfo r in registry.GetAllRoutines())
-        {
-            if (r.Name != variantName)
-            {
-                continue;
-            }
-
-            if (r.OriginalName != original.Name)
-            {
-                continue;
-            }
-
-            if (!ReferenceEquals(objA: r.OwnerType, objB: original.OwnerType))
-            {
-                continue;
-            }
-
-            if (!ParametersMatch(candidate: r, original: original))
-            {
-                continue;
-            }
-
-            return r;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Returns true when <paramref name="candidate"/> has the same parameter count as
-    /// <paramref name="original"/> and every parameter's <c>FullName</c> matches positionally.
-    /// </summary>
-    private static bool ParametersMatch(RoutineInfo candidate, RoutineInfo original)
-    {
-        if (candidate.Parameters.Count != original.Parameters.Count)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < candidate.Parameters.Count; i++)
-        {
-            if (candidate.Parameters[index: i].Type.FullName !=
-                original.Parameters[index: i].Type.FullName)
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return MakeOnDemandVariantRewriter(registry: ctx.Registry)(value: value, kind: kind, rewritten: out rewritten);
     }
 }

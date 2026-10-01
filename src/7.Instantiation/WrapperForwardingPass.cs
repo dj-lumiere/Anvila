@@ -780,7 +780,7 @@ internal sealed class WrapperForwardingPass
     /// Wraps the RC-forwarder body of a <c>Roamed</c> wrapper in a mode-checked lock, released
     /// EXPLICITLY (synthesized forwarder bodies are not run through ScopeTeardownLoweringPass, so an
     /// owned-guard destroy would never be inserted). Failable calls route through the throw-based
-    /// <c>check_</c> variant and a <c>when</c> that re-propagates AFTER releasing the lock in each arm.
+    /// <c>grab</c> variant and a <c>when</c> that re-propagates AFTER releasing the lock in each arm.
     /// </summary>
     private List<Statement> BuildRoamedLockedForwarderStatements(TypeSymbol wrapperType,
         Statement rawDecl, Statement ctrlDecl, CallExpression innerRevealCall,
@@ -808,7 +808,7 @@ internal sealed class WrapperForwardingPass
 
         if (ctx.IsFailable)
         {
-            // Failable: call the throw-based `check_` variant (non-propagating carrier), then a
+            // Failable: call the routine's `grab` recovery variant (non-propagating carrier), then a
             // `when` re-propagates AFTER releasing the lock in each arm — mirrors
             // ErrorHandlingVariantPass.BuildCarrierPropagationWhen, but with lock_exit inserted
             // so the lock is freed on BOTH the failure (throw) and success paths.
@@ -818,16 +818,17 @@ internal sealed class WrapperForwardingPass
                 RecordTypeSymbol { GenericDefinition: { } rd } => rd,
                 _ => ctx.InnerType
             };
-            string checkName = "check_" + ctx.CallPropertyName;
             RoutineInfo? checkM = _registry.LookupMemberRoutine(type: innerDef,
-                memberRoutineName: checkName,
-                isFailable: false);
+                memberRoutineName: ctx.CallPropertyName,
+                isFailable: true) is { } failable
+                ? _registry.LookupRecoveryVariant(recovered: failable, kind: RecoveryKind.Grab)
+                : null;
             var checkSubject = new CallExpression(
                 Callee: new MemberExpression(Object: innerRevealCall,
-                    MemberName: checkName,
+                    MemberName: ctx.CallPropertyName,
                     Location: _synthLoc),
                 Arguments: ctx.ForwardedArgs,
-                Location: _synthLoc) { ResolvedType = checkM?.ReturnType };
+                Location: _synthLoc) { ResolvedRoutine = checkM, ResolvedType = checkM?.ReturnType };
             var whenStmt = new WhenStatement(Expression: checkSubject,
                 Clauses:
                 [

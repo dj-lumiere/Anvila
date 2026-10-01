@@ -487,7 +487,7 @@ public record CallExpression(
 
     /// <summary>
     /// True when this call was synthesized by a compiler lowering pass (e.g.
-    /// <c>ControlFlowLoweringPass</c> emitting <c>iter.iter()</c> / <c>iter.try_emit()</c>
+    /// <c>ControlFlowLoweringPass</c> emitting <c>iter.iter()</c> / <c>iter.emit() (under try)</c>
     /// for a for-loop). SA uses this to skip checks meant to gate user code from invoking
     /// dunder-private memberRoutines directly.
     /// </summary>
@@ -1359,7 +1359,7 @@ public enum RecoveryKind
 /// <summary>
 /// A <c>try</c>/<c>grab</c>/<c>lookup</c> recovery prefix wrapping a failable-call expression. Lowered to
 /// the matching generated recovery variant(s): a single failable call becomes a call to its
-/// <c>try_</c>/<c>check_</c>/<c>lookup_</c> variant; a composition of failable calls short-circuits to the
+/// <c>try</c>/<c>grab</c>/<c>lookup</c> variant; a composition of failable calls short-circuits to the
 /// carrier on the first failure. The carrier is <c>Maybe[T]</c>/<c>Check[T]</c>/<c>Lookup[T]</c> where
 /// <c>T</c> is <see cref="Inner"/>'s type (with the None-collapse: <c>Maybe[None]≡Bool</c>).
 /// </summary>
@@ -1374,7 +1374,7 @@ public record RecoveryExpression(RecoveryKind Kind, Expression Inner, SourceLoca
 
     /// <summary>
     /// The analyzed lowering SA computed for this recovery (single-call: a call to the resolved
-    /// <c>try_</c>/<c>check_</c>/<c>lookup_</c> variant carrying the same arguments). Phase-6 replaces the
+    /// <c>try</c>/<c>grab</c>/<c>lookup</c> variant carrying the same arguments). Phase-6 replaces the
     /// node with this. Null until analyzed.
     /// </summary>
     public Expression? LoweredCall { get; set; }

@@ -9,15 +9,15 @@ namespace Builder.Instantiation.Passes;
 /// STEP 1 iterator-advance inlining. Rewrites the loop that
 /// <see cref="Builder.Desugaring.Passes.ControlFlowLoweringPass"/> emits for a <c>for x in coll</c>
 /// so that the concrete emitter's monomorphized <c>emit!</c> body is spliced directly into the loop
-/// in place of a call to the compiler-generated <c>try_emit</c> variant — but ONLY for "simple"
+/// in place of the `try it.emit()` step (a call of the generated try variant of <c>emit</c>) — but ONLY for "simple"
 /// iterators (see <see cref="IsSimpleNextBody"/>). Composed / filtering iterators (nested loop or a
-/// nested <c>emit!</c> call in the <c>emit!</c> body) FALL BACK to the existing <c>try_emit</c>-based
+/// nested <c>emit!</c> call in the <c>emit!</c> body) FALL BACK to the existing `try it.emit()`-based
 /// <c>when</c> loop untouched.
 ///
 /// <para>Lowered for-loop shape produced by CFLP (the discriminator):</para>
 /// <code>
 /// loop /*IsIteratorEachLoop*/ {
-///   when _lf_iter_N.try_emit() {
+///   when try _lf_iter_N.emit() {
 ///     is None -> break                              # plain for
 ///        (or:  { _lf_exhausted_N = true; break }    # for-else)
 ///     else v -> &lt;bindings + user body&gt;
@@ -37,7 +37,7 @@ namespace Builder.Instantiation.Passes;
 /// </code>
 ///
 /// <para>The spliced body's callees are already live: <c>RoutineReachabilityPass</c> walked
-/// the loop's <c>try_emit</c> call, and <c>try_emit</c> is a transformed copy of <c>emit!</c> with
+/// the loop's `try it.emit()` call, and that try variant is a transformed copy of <c>emit!</c> with
 /// the identical callee set — so no separate liveness seed is needed for inlined loops.</para>
 /// </summary>
 internal sealed class IteratorInlineLoweringPass
@@ -161,7 +161,7 @@ internal sealed class IteratorInlineLoweringPass
             return inlined;
         }
 
-        // Fallback: leave the try_emit loop untouched, but still recurse into its body
+        // Fallback: leave the `try it.emit()` loop untouched, but still recurse into its body
         // (the user body may itself contain further for-loops).
         Statement fb = Rewrite(stmt: loop.Body);
         return ReferenceEquals(objA: fb, objB: loop.Body)
@@ -246,12 +246,12 @@ internal sealed class IteratorInlineLoweringPass
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Inline one flagged loop, or return null to keep the existing try_emit lowering.
+    // Inline one flagged loop, or return null to keep the existing `try it.emit()` lowering.
     // ---------------------------------------------------------------------------------------------
     private LoopStatement? TryInline(LoopStatement loop)
     {
         // CheckAndAdvance the CFLP shape: loop body is a block whose single statement is a `when` over a
-        // try_emit() call with a NonePattern clause + an ElsePattern clause.
+        // `try it.emit()` call with a NonePattern clause + an ElsePattern clause.
         if (loop.Body is not BlockStatement { Statements: [WhenStatement when] })
         {
             return null;
@@ -262,9 +262,11 @@ internal sealed class IteratorInlineLoweringPass
             return null;
         }
 
-        if (tryNextCall.Callee is not MemberExpression
+        // The step is `try it.emit()`: a call bound to the try variant of the iterator's `emit`.
+        if (tryNextCall is not
             {
-                MemberName: RuntimeContract.TryEmit, Object: { } recvExpr
+                ResolvedRoutine: { Recovery: RecoveryKind.Try, Name: "emit" },
+                Callee: MemberExpression { Object: { } recvExpr }
             })
         {
             return null;
@@ -476,17 +478,14 @@ internal sealed class IteratorInlineLoweringPass
     }
 
     /// <summary>
-    /// Detects a call to another iterator's failable <c>emit!</c> — either via its resolved routine
-    /// (OriginalName/Name == <c>emit</c> and failable) or, before resolution, via the callee's
-    /// member name being <c>emit</c>.
+    /// Detects a call to another iterator's <c>emit!</c> (or its recovery variant) — either via its
+    /// resolved routine (failable <c>emit</c>) or via the callee's member name being <c>emit</c>.
     /// </summary>
     private static bool IsNextCall(Expression e)
     {
         if (e is CallExpression call)
         {
-            // Name/OriginalName are bare (the wired `$` is a structured attribute, not in the name).
-            if (call.ResolvedRoutine is { IsFailable: true } r &&
-                (r.OriginalName ?? r.Name) == "emit")
+            if (call.ResolvedRoutine is { IsFailable: true, Name: "emit" })
             {
                 return true;
             }

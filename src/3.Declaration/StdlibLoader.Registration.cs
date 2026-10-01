@@ -2340,17 +2340,6 @@ public sealed partial class StdlibLoader
             ReturnType = resolvedReturnType,
             IsFailable = isFailable
         });
-
-        if (isFailable)
-        {
-            AppendTryVariant(registry: registry,
-                memberRoutineName: memberRoutineName,
-                isInstance: isInstance,
-                parameterTypes: parameterTypes,
-                parameterNames: parameterNames,
-                resolvedReturnType: resolvedReturnType,
-                memberRoutines: memberRoutines);
-        }
     }
 
     /// <summary>
@@ -2385,39 +2374,4 @@ public sealed partial class StdlibLoader
         }
     }
 
-    /// <summary>
-    /// Appends the auto-derived <c>try_X</c> non-failable variant for a failable protocol routine.
-    /// Returns Maybe[T] (or Bool when T is None), mirroring ErrorHandlingGenerator.GenerateTryVariant.
-    /// Exposes the variant so call sites typed against the bare protocol (e.g. for-loop desugaring's
-    /// <c>iter.try_emit()</c> where <c>iter: Iterator[T]</c>) can resolve.
-    /// </summary>
-    private static void AppendTryVariant(TypeRegistry registry, string memberRoutineName,
-        bool isInstance, List<TypeSymbol> parameterTypes, List<string> parameterNames,
-        TypeSymbol? resolvedReturnType, List<ProtocolMemberRoutineInfo> memberRoutines)
-    {
-        string tryName = "try_" + memberRoutineName;
-        TypeSymbol? tryReturnType;
-        if (resolvedReturnType == null || resolvedReturnType.Name == "None")
-        {
-            tryReturnType = registry.LookupType(name: "Bool");
-        }
-        else
-        {
-            TypeSymbol? maybeDef = registry.LookupType(name: "Maybe");
-            tryReturnType = maybeDef != null
-                ? registry.GetOrCreateResolution(genericDef: maybeDef,
-                    typeArguments: [resolvedReturnType])
-                : null;
-        }
-
-        memberRoutines.Add(item: new ProtocolMemberRoutineInfo(name: tryName)
-        {
-            IsInstanceMemberRoutine = isInstance,
-            ParameterTypes = parameterTypes,
-            ParameterNames = parameterNames,
-            ReturnType = tryReturnType,
-            IsFailable = false,
-            IsAutoDerivedVariant = true
-        });
-    }
 }

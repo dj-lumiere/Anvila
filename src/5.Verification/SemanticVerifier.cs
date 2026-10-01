@@ -27,7 +27,7 @@ namespace Builder.Verification;
 /// Performs type checking, scope analysis, and inference for:
 /// - memberRoutine modification (readonly/writable/reshaping)
 /// - Reshaping modification tracking (buffer relocation detection)
-/// - Error handling variant generation (try_/check_/lookup_)
+/// - Error handling variant generation (try/grab/lookup)
 /// </summary>
 public sealed partial class SemanticVerifier
 {
@@ -156,7 +156,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>Per-file <see cref="_importedForeignAliases"/> snapshots (realm-qualified bare imports),
     /// so a bare-aliased foreign call inside a re-analyzed compiler-generated body (e.g. a failable
-    /// user routine's `try_` variant) keeps passing the realm gate.</summary>
+    /// user routine's `try` variant) keeps passing the realm gate.</summary>
     private readonly Dictionary<string, HashSet<string>> _foreignAliasSnapshots =
         new(comparer: StringComparer.OrdinalIgnoreCase);
 
@@ -245,7 +245,7 @@ public sealed partial class SemanticVerifier
     internal ProtocolConformanceAnalyzer _conformanceAnalyzer;
 
     /// <summary>
-    /// Pre-transformed bodies for error-handling variant routines (try_/check_/lookup_), produced
+    /// Pre-transformed bodies for error-handling variant routines (try/grab/lookup), produced
     /// by <see cref="ErrorHandlingVariantPass"/> during Phase 6 global desugaring.
     /// Merged into <c>SynthesizedBodies</c> when building the <see cref="AnalysisResult"/>.
     /// </summary>
@@ -443,7 +443,7 @@ public sealed partial class SemanticVerifier
         // Install the on-demand failable-variant synthesizer hook (by RESOLVED base reference): the `try`/
         // `grab`/`lookup` keyword and the variant-body rewriter mint a base's recovery variant on demand
         // from the deferred base index, rather than eagerly registering every failable's variants.
-        _registry.OnDemandVariantForBase = SynthesizeVariantForBase;
+        _registry.EnsureRecoveryVariants = EnsureRecoveryVariantsForBase;
         if (!ModuleGlobalsSynthesisPass.Run(orderedFiles: [(program, _currentFilePath)],
                 report: ReportError))
         {
@@ -676,7 +676,7 @@ public sealed partial class SemanticVerifier
         // Build the bodies of all on-demand-synthesized variants (Phase-5 demand + transitive) BEFORE the
         // desugaring pipeline, so they flow through the same variant-body lowering (PresetInlining,
         // control-flow, operator, etc.) the eager `emit` bodies get — otherwise a body's preset identifiers
-        // (e.g. S64_MIN in try_floordiv) survive to codegen (RF-S958).
+        // (e.g. S64_MIN in try variant of floordiv) survive to codegen (RF-S958).
         DrainVariantBodyGenQueue();
 
         var ctx = new DesugaringContext(registry: _registry,
@@ -1003,7 +1003,7 @@ public sealed partial class SemanticVerifier
         ComputeMaySuspend(ctx: ctx);
 
         // Classify call expressions (set LoweringKind) in rewritten instantiated generic bodies.
-        // GenericAstRewriter preserves source-AST structure but doesn't re-classify try_emit
+        // GenericAstRewriter preserves source-AST structure but doesn't re-classify emit's try variant
         // and other wired calls — they stay Unknown and cause codegen exceptions if not fixed here.
         var classCtx = new PostprocessingContext(registry: _registry,
             variantBodies: _variantBodies,
@@ -1135,13 +1135,13 @@ public sealed partial class SemanticVerifier
             buildMode: _buildMode,
             monomorphizedBodies: _instantiatedGenericBodies);
         // Now that Phase 7 has produced the concrete instances, lower any carrier-return sites inside
-        // them (a monomorphized try_/check_/lookup_ variant) to real record construction.
+        // them (a monomorphized try/grab/lookup variant) to real record construction.
         new VariantReturnLoweringPass(ctx: ctx).RunOnMonomorphizedBodies();
         // Inline simple iterator `emit!` bodies into their for-loops before the rest of Phase 8
-        // lowering, replacing the `try_emit` call with the spliced advance. By Phase 8 the concrete
+        // lowering, replacing the `emit`'s try variant call with the spliced advance. By Phase 8 the concrete
         // `emit!` bodies are already monomorphized (Phase 7 ran), so the lookup succeeds; the
         // spliced body then flows through the normal Phase 8 lowering below. Composed/filtering
-        // iterators fall back to the existing `try_emit` loop.
+        // iterators fall back to the existing `emit`'s try variant loop.
         new IteratorInlineLoweringPass(registry: _registry, monoBodies: _instantiatedGenericBodies)
            .Run(program: program);
         new PostprocessingPipeline(ctx: ctx).Run(program: program);
@@ -1341,7 +1341,7 @@ public sealed partial class SemanticVerifier
         // the variant-body rewriter) mints a base's variant during analysis. AST-level detection — no full
         // body analysis required.
         PreRegisterStdlibVariants();
-        _registry.OnDemandVariantForBase = SynthesizeVariantForBase;
+        _registry.EnsureRecoveryVariants = EnsureRecoveryVariantsForBase;
 
         AnalyzeStdlibBodies();
 
@@ -1751,8 +1751,8 @@ public sealed partial class SemanticVerifier
                 monomorphizedBodies: _instantiatedGenericBodies);
             new PostprocessingPipeline(ctx: pctx).Run(program: entry.Program);
 
-            // A failable `try_`/`check_`/`lookup_` variant synthesized DURING this file's on-demand
-            // analysis (e.g. `proc_result_of` calls `try_term_signal_value`) enqueues its raw body onto
+            // A failable `try`/`grab`/`lookup` variant synthesized DURING this file's on-demand
+            // analysis (e.g. `proc_result_of` calls `try term_signal_value(...)`) enqueues its raw body onto
             // _variantBodyGenQueue but is NEVER finalized: the eager DrainVariantBodyGenQueue /
             // AnalyzeVariantBodies / RunGlobal variant-body sweep already ran (before demand collection),
             // and the per-file .Run(program) overloads above process only this program's own decls, not
@@ -2013,7 +2013,7 @@ public sealed partial class SemanticVerifier
     {
         // On-demand failable-variant synthesis (see Analyze): install the by-RESOLVED-base hook here too —
         // the multi-file / stdlib build path does not go through Analyze.
-        _registry.OnDemandVariantForBase = SynthesizeVariantForBase;
+        _registry.EnsureRecoveryVariants = EnsureRecoveryVariantsForBase;
         _importSnapshots.Clear();
         _symbolNameSnapshots.Clear();
         _moduleNameSnapshots.Clear();
@@ -2208,9 +2208,9 @@ public sealed partial class SemanticVerifier
 
         Mark(label: $"Phase 3 pre-file -> {nameof(PreRegisterUserVariants)}");
 
-        // Phase 3 global (pre-pass): pre-register stdlib failable memberRoutine variants (try_emit, try_recover, etc.)
+        // Phase 3 global (pre-pass): pre-register stdlib failable memberRoutine variants (emit's and recover's try variants, etc.)
         // Must run before Phase 5 body analysis and before Phase 4 syntax prepass
-        // (ControlFlowLoweringPass generates try_emit calls that Phase 5 must resolve).
+        // (ControlFlowLoweringPass generates emit's try variant calls that Phase 5 must resolve).
         // Memo content: the memo's restored stdlib bodies imply the stdlib variants are already registered
         // in the restored registry (parity with the single-file Analyze gate) — re-registering them is pure
         // warm-compile overhead (~240 ms). A cold compile has no restored bodies ⇒ it does the work.
@@ -2504,7 +2504,7 @@ public sealed partial class SemanticVerifier
 
         // Analyze the compiler-generated body in its OWNER's module, not whatever module happens to be
         // current when the body is first made live. A synthesized failable variant of a Core routine
-        // (e.g. `Decimal.try_logb`) references Core module-private `secret` types; resolved
+        // (e.g. the try variant of `Decimal.logb`) references Core module-private `secret` types; resolved
         // under a user module those fail the secret-visibility check and silently become ErrorType,
         // which surfaces later as codegen "Error type found in codegen" for the variant — an
         // order/liveness-dependent (CI-flaky) failure. Pin the module to the routine's owner so

@@ -18,7 +18,7 @@ namespace Builder.Declaration;
 /// migrating them to reference these constants (and adding the resolution check) is the follow-up.
 /// The <c>$</c>-wired routine names are intentionally NOT here — they already have a single source of
 /// truth in <see cref="WiredRoutineCatalog"/>. The two marker-protocol verbs <c>refer</c>/<c>control</c>
-/// and the iteration <c>try_emit</c> are compiler-generated and appear as literals at lowering sites,
+/// and the iteration the <c>try</c> variant of <c>emit</c> are compiler-generated and appear as literals at lowering sites,
 /// so they are cross-referenced here for completeness (their catalog entry, where one exists, stays
 /// canonical).</para>
 /// </summary>
@@ -193,11 +193,6 @@ public static class RuntimeContract
     /// <remarks>Sites: CrashableExpansionPass (dispatchable-member set), ImplicitCallContract (reachability seed).</remarks>
     public const string CrashTitle = "crash_title";
 
-    /// <summary>Non-failable iterator step generated for <c>for</c>-lowering (the <c>try_</c> variant of
-    /// failable <c>emit!</c>). Also carried by <see cref="WiredRoutineCatalog"/> (reachability seed);
-    /// listed here because ControlFlowLoweringPass / IteratorInlineLoweringPass match it by literal.</summary>
-    public const string TryEmit = "try_emit";
-
     // =====================================================================================
     // Marker-protocol verbs — compiler-generated $-names that are NOT in WiredRoutineCatalog
     // but are matched by literal at teardown/lowering sites (grouped with the view-verb sets).
@@ -212,7 +207,7 @@ public static class RuntimeContract
     /// <summary>The routine-name contracts that MUST resolve to a real, declared stdlib routine —
     /// the rename-sensitive set that <c>validate-stdlib</c>'s <see cref="RuntimeContractCheck"/>
     /// asserts. Deliberately EXCLUDES compiler-generated / intrinsic names that have no stdlib
-    /// routine body: <see cref="TryEmit"/> (generated from <c>emit</c>), the marker verbs
+    /// routine body: the marker verbs
     /// <see cref="Access"/>/<see cref="Control"/>, <see cref="DataSize"/> + the BuilderQuery sets
     /// (folded intrinsics), and the native <see cref="Runtime"/> externs (link-checked C-ABI). The
     /// carrier FIELDS (<see cref="Carrier"/>) are member variables, not routines — checked separately.</summary>

@@ -1084,7 +1084,7 @@ public partial class Parser
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
         // throw/pierce both require an error expression (a crashable-kind type). `pierce` (isFatal)
-        // marks a fatal, uncatchable crash — no `!`, no try_/check_ variants; `throw` is a recoverable
+        // marks a fatal, uncatchable crash — no `!`, no try/grab variants; `throw` is a recoverable
         // failure that propagates.
         Expression error = ParseExpression();
 

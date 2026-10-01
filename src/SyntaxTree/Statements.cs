@@ -214,14 +214,14 @@ public record BecomesStatement(Expression Value, SourceLocation Location)
 ///     throw DivisionError(message: "Division by zero")
 ///   return a // b
 /// </code>
-/// Builder generates safe variants: try_divide() -> s32?, check_divide() -> Result[s32]
+/// Builder generates safe variants for `try divide()` -> s32? and `grab divide()` -> Result[s32]
 /// </remarks>
 public record ThrowStatement(Expression Error, SourceLocation Location, bool IsFatal = false)
     : Statement(Location: Location)
 {
     /// <summary>
     /// When true this is a `pierce` (fatal, uncatchable crash): it does NOT make the routine failable,
-    /// is NOT rewritten into a recoverable return in try_/check_/lookup_ variants, and pierces through
+    /// is NOT rewritten into a recoverable return in try/grab/lookup variants, and pierces through
     /// every handler to abort. When false this is a recoverable `throw`. Codegen is identical (both
     /// lower to a crash_report call) — the difference is purely in the error-handling/variant machinery.
     /// </summary>
@@ -266,7 +266,7 @@ public record CrashStatement(CallExpression Report, SourceLocation Location) : S
 ///     absent  # Value not found
 ///   return database.get(id)
 /// </code>
-/// Builder generates: try_get_user() -> User?, lookup_get_user() -> Lookup[User]
+/// Builder generates variants for `try get_user()` -> User? and `lookup get_user()` -> Lookup[User]
 /// Pattern matching: is Crashable e / is None / else user
 /// </remarks>
 public record AbsentStatement(SourceLocation Location) : Statement(Location: Location)
@@ -460,7 +460,7 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// <summary>
     /// True when <see cref="Builder.Desugaring.Passes.ControlFlowLoweringPass"/> synthesized this
     /// loop as the body of a lowered <c>for x in coll</c> — i.e. its body is a
-    /// <see cref="WhenStatement"/> over an <c>iter.try_emit()</c> call. Marks the loop so the
+    /// <see cref="WhenStatement"/> over an <c>iter.emit() (under try)</c> call. Marks the loop so the
     /// <c>IteratorInlineLoweringPass</c> can find the iterator-advance loops to rewrite, instead of
     /// brittle shape-matching against every <c>loop</c>.
     /// </summary>

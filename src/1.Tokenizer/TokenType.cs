@@ -423,7 +423,7 @@ public enum TokenType
     /// <summary>Return statement keyword</summary>
     Return,
 
-    /// <summary>Throw statement keyword - recoverable failure (generates try_/check_/lookup_ variants)</summary>
+    /// <summary>Throw statement keyword - recoverable failure (generates try/grab/lookup variants)</summary>
     Throw,
 
     /// <summary>Pierce statement keyword - fatal, uncatchable crash (no variants, no `!`); pierces

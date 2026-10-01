@@ -321,7 +321,7 @@ public partial class SemanticVerifier
         _variantBodies = new Dictionary<string, Statement>(dictionary: warm.VariantBodies);
 
         // Replay the variant/synthesized bodies each cached file's on-demand analysis produced. A file's
-        // Phase-5 analysis drains its own failables' try_/check_/lookup_ variants into _variantBodies and
+        // Phase-5 analysis drains its own failables' try/grab/lookup variants into _variantBodies and
         // synthesizes their represent/diagnose/derives into _synthesizedBodies; the snapshot (no reachability
         // at capture) never generated them, so a build that REUSES the cached file (skipping its analysis)
         // must have these replayed or the variant call site link-fails ("declared+called but never defined").
@@ -341,7 +341,7 @@ public partial class SemanticVerifier
         }
         // Skip restoring EMPTY synthesized sentinels that have NO matching variant body. The stdlib
         // snapshot captures a placeholder body for a resolved routine whose owner was not live in the
-        // stdlib-only snapshot program (e.g. `DictEmittable[Text,SerialValue].try_emit` — no stdlib code
+        // stdlib-only snapshot program (e.g. the try variant of `DictEmittable[Text,SerialValue].emit` — no stdlib code
         // iterates a `Dict[Text,SerialValue]`, so its emit variant was never materialized, only a
         // `new BlockStatement([])` stub). Restoring such a stub is HARMFUL: its key enters
         // `_restoredInstantiationKeys`, so GMP treats it as already-built and skips re-monomorphization

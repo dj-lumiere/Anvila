@@ -105,6 +105,31 @@ public sealed partial class SemanticVerifier
 
     private TypeSymbol AnalyzeCallExpression(CallExpression call, TypeSymbol? expectedType = null)
     {
+        // A call the builder bound to a recovery variant names the failable routine it recovers (the
+        // variant has its name and parameters): keep the binding and analyze only the arguments, since
+        // resolving the name again would bind the failable routine.
+        if (call.ResolvedRoutine is { IsRecoveryVariant: true, ReturnType: { } carrier })
+        {
+            if (call.Callee is MemberExpression { Object: var receiver })
+            {
+                AnalyzeExpression(expression: receiver);
+            }
+
+            foreach (Expression argument in call.Arguments)
+            {
+                AnalyzeExpression(expression: argument is NamedArgumentExpression named
+                    ? named.Value
+                    : argument);
+                if (argument is NamedArgumentExpression namedArgument)
+                {
+                    namedArgument.ResolvedType = namedArgument.Value.ResolvedType;
+                }
+            }
+
+            call.ResolvedType = carrier;
+            return carrier;
+        }
+
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
         EnforceSuflaeUnsafeCall(resolved: call.ResolvedRoutine, location: call.Location);
         return result;
@@ -1263,7 +1288,7 @@ public sealed partial class SemanticVerifier
 
         // The extractor is synthesized bodiless — its real pattern-matching body is minted HERE, keyed
         // off the EXACT overload SA just resolved (no name-scan): `when from { is Arm v => return
-        // v.duplicate(), else => absent }`. AnalyzeVariantBodies annotates it later like a try_/check_
+        // v.duplicate(), else => absent }`. AnalyzeVariantBodies annotates it later like a try/grab
         // body; without this the bare `Dict!(from: sv)` call link-fails as "declared+called never defined".
         if (isVariantArmExtractor)
         {

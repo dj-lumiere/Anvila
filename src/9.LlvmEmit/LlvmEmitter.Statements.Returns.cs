@@ -120,7 +120,7 @@ public partial class LlvmEmitter
         }
     }
 
-    // For check_/try_ variant wrappers with None (void) return, emit success carrier.
+    // For grab/try variant wrappers with None (void) return, emit success carrier.
     private void EmitNoneExpressionReturn(StringBuilder sb)
     {
         if (_traceCurrentRoutine)

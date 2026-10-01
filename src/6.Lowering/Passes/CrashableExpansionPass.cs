@@ -82,8 +82,8 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
     /// <summary>
     /// Expands <see cref="CrashablePattern"/> clauses in error-handling variant bodies
     /// (<see cref="PostprocessingContext.VariantBodies"/>). Needed because non-tail failable-call
-    /// propagation in <c>check_</c>/<c>lookup_</c> variants synthesizes
-    /// <c>when inner.check_x() { is Crashable e =&gt; ...; else v =&gt; ... }</c>, whose
+    /// propagation in <c>grab</c>/<c>lookup</c> variants synthesizes
+    /// <c>when grab inner.x() { is Crashable e =&gt; ...; else v =&gt; ... }</c>, whose
     /// <c>is Crashable</c> arm must be expanded to per-type <see cref="TypePattern"/>s before
     /// <see cref="PatternLoweringPass.RunOnVariantBodies"/> can lower it.
     /// </summary>

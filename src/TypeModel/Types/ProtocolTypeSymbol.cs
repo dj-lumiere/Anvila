@@ -90,8 +90,6 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
                                                                GenerationKind = m.GenerationKind,
                                                                HasDefaultImplementation =
                                                                    m.HasDefaultImplementation,
-                                                               IsAutoDerivedVariant =
-                                                                   m.IsAutoDerivedVariant,
                                                                Location = m.Location
                                                            })
                                                       .ToList();

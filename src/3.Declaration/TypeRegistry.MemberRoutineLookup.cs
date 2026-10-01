@@ -112,6 +112,14 @@ public sealed partial class TypeRegistry
             keyExisted: keyExisted,
             existingByKey: existingByKey);
 
+        // A recovery variant shares its failable routine's name, so it is reached only through that
+        // routine (LookupRecoveryVariant), never by a name lookup.
+        if (routine.IsRecoveryVariant)
+        {
+            IndexRecoveryVariant(variant: routine);
+            return;
+        }
+
         // Also register under base name (first overload wins for unqualified lookup). A foreign
         // (C/LLVM) routine is only legitimately reachable via its realm qualifier (`LLVM::name`) or an
         // explicit import alias, so it must NEVER shadow an ambient same-named routine at an
@@ -720,7 +728,9 @@ public sealed partial class TypeRegistry
             IsVariadic = routine.IsVariadic,
             IsDangerous = routine.IsDangerous,
             AsyncStatus = routine.AsyncStatus,
-            FailableVariant = routine.FailableVariant
+            FailableVariant = routine.FailableVariant,
+            RecoveryOf = routine.RecoveryOf,
+            Recovery = routine.Recovery
         };
 
         // Replace base name entry
@@ -1429,13 +1439,104 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Verifier-installed hook that synthesizes the variant of a SPECIFIC base overload (a
-    /// <see cref="RoutineInfo"/>, not a name) — used by the <c>try</c>/<c>grab</c>/<c>lookup</c> keyword and
-    /// the variant-body rewriter, which hold the exact failable routine being recovered and must get THAT
-    /// overload's variant (a name-only lookup can't disambiguate <c>S64.create(from_text:)</c> from
-    /// <c>S64.create(from_int:)</c>). Signature is <c>(baseOverload, "try"|"check"|"lookup") → variant RoutineInfo?</c>.
+    /// Verifier-installed hook that generates and registers the recovery variants of a failable routine
+    /// (its <c>try</c>/<c>grab</c>/<c>lookup</c> forms) the first time one is needed. Returns false when
+    /// the routine has none (it is not failable, or is <c>@crash_only</c>).
     /// </summary>
-    public Func<RoutineInfo, string, RoutineInfo?>? OnDemandVariantForBase { get; set; }
+    public Func<RoutineInfo, bool>? EnsureRecoveryVariants { get; set; }
+
+    /// <summary>Recovery variants by the registry key of the failable routine they recover and their
+    /// kind. Rebuilt from <see cref="_routines"/> when a snapshot is restored.</summary>
+    private readonly Dictionary<(string Recovered, RecoveryKind Kind), RoutineInfo> _recoveryVariants = new();
+
+    private void IndexRecoveryVariant(RoutineInfo variant)
+    {
+        if (variant is { RecoveryOf: { } recovered, Recovery: { } kind })
+        {
+            _recoveryVariants[key: (RealmRoutineKey(routine: recovered), kind)] = variant;
+        }
+    }
+
+    /// <summary>
+    /// The recovery variant of <paramref name="recovered"/> for <paramref name="kind"/>: the routine a
+    /// <c>try</c>, <c>grab</c> or <c>lookup</c> call of it binds to. A routine of a concrete owner or a
+    /// concrete instance of a generic routine gets its definition's variant substituted the same way.
+    /// The variant is generated on first use (<see cref="EnsureRecoveryVariants"/>). Null when the
+    /// routine has no such variant.
+    /// </summary>
+    public RoutineInfo? LookupRecoveryVariant(RoutineInfo recovered, RecoveryKind kind)
+    {
+        // The routine's own variant first (generated from its own body when it has one: a protocol
+        // default re-homed onto an implementer has a concrete body of its own), then its definition's,
+        // substituted.
+        string recoveredKey = RealmRoutineKey(routine: recovered);
+        if (_recoveryVariants.TryGetValue(key: (recoveredKey, kind), value: out RoutineInfo? own) ||
+            EnsureRecoveryVariants?.Invoke(arg: recovered) == true &&
+            _recoveryVariants.TryGetValue(key: (recoveredKey, kind), value: out own))
+        {
+            return own;
+        }
+
+        if (FindRecoveryVariant(recovered: recovered, kind: kind) is { } found)
+        {
+            return found;
+        }
+
+        return recovered.GenericDefinition is { } definition && !ReferenceEquals(objA: definition, objB: recovered) &&
+               EnsureRecoveryVariants?.Invoke(arg: definition) == true
+            ? FindRecoveryVariant(recovered: recovered, kind: kind)
+            : null;
+    }
+
+    /// <summary>
+    /// The recovery variant of <paramref name="recovered"/> for <paramref name="kind"/> when it has already
+    /// been generated (substituted for a concrete owner or instance as in <see cref="LookupRecoveryVariant"/>),
+    /// without generating it.
+    /// </summary>
+    private static bool ContainsGenericParameter(TypeSymbol? type)
+    {
+        return type is GenericParameterTypeSymbol ||
+               (type?.TypeArguments?.Any(predicate: ContainsGenericParameter) ?? false);
+    }
+
+    public RoutineInfo? FindRecoveryVariant(RoutineInfo recovered, RecoveryKind kind)
+    {
+        string recoveredKey = RealmRoutineKey(routine: recovered);
+        if (_recoveryVariants.TryGetValue(key: (recoveredKey, kind), value: out RoutineInfo? variant))
+        {
+            return variant;
+        }
+
+        // A routine of a concrete owner, or a concrete instance of a generic routine: substitute the
+        // definition's variant the same way and remember it.
+        if (recovered.GenericDefinition is not { } definition || ReferenceEquals(objA: definition, objB: recovered) ||
+            FindRecoveryVariant(recovered: definition, kind: kind) is not { } definitionVariant)
+        {
+            return null;
+        }
+
+        RoutineInfo? substituted = recovered.OwnerType is { } owner &&
+                                   !ReferenceEquals(objA: owner, objB: definitionVariant.OwnerType)
+            ? SubstituteMemberRoutineForOwner(memberRoutine: definitionVariant, resolvedOwner: owner)
+            : recovered.TypeArguments is { Count: > 0 } typeArguments && definitionVariant.IsGenericDefinition
+                ? GetOrCreateRoutineResolution(genericDef: definitionVariant, typeArguments: typeArguments)
+                : null;
+        // A definition whose parameters do not follow the owner's (a protocol's default routine re-homed
+        // onto an implementer: the protocol's `V` is not the owner's) cannot be substituted this way.
+        if (substituted != null && (ContainsGenericParameter(type: substituted.ReturnType) ||
+                                    substituted.Parameters.Any(predicate: p => ContainsGenericParameter(type: p.Type))) &&
+            !recovered.IsGenericDefinition && recovered.OwnerType is not { IsGenericDefinition: true })
+        {
+            return null;
+        }
+
+        if (substituted != null)
+        {
+            _recoveryVariants[key: (recoveredKey, kind)] = substituted;
+        }
+
+        return substituted;
+    }
 
     /// <summary>
     /// Resolves a memberRoutine through <paramref name="type"/>'s implemented protocols' default
@@ -2000,7 +2101,8 @@ public sealed partial class TypeRegistry
             WrapperForwarderInnerGenericDef = memberRoutine.WrapperForwarderInnerGenericDef,
             AsyncStatus = memberRoutine.AsyncStatus,
             FailableVariant = memberRoutine.FailableVariant,
-            OriginalName = memberRoutine.OriginalName
+            RecoveryOf = memberRoutine.RecoveryOf,
+            Recovery = memberRoutine.Recovery
         };
 
         return CacheResolvedOwnerMemberRoutine(
@@ -2052,7 +2154,8 @@ public sealed partial class TypeRegistry
                 WrapperForwarderInnerGenericDef = memberRoutine.WrapperForwarderInnerGenericDef,
                 AsyncStatus = memberRoutine.AsyncStatus,
                 FailableVariant = memberRoutine.FailableVariant,
-                OriginalName = memberRoutine.OriginalName,
+                RecoveryOf = memberRoutine.RecoveryOf,
+            Recovery = memberRoutine.Recovery,
                 // Propagate memberRoutine-level generic parameters from the concrete inner memberRoutine so
                 // OperatorLoweringPass can monomorphize (e.g. Text.getitem![I] -> [U64]).
                 GenericParameters =
@@ -2219,7 +2322,8 @@ public sealed partial class TypeRegistry
             WrapperForwarderInnerGenericDef = memberRoutine.WrapperForwarderInnerGenericDef,
             AsyncStatus = memberRoutine.AsyncStatus,
             FailableVariant = memberRoutine.FailableVariant,
-            OriginalName = memberRoutine.OriginalName
+            RecoveryOf = memberRoutine.RecoveryOf,
+            Recovery = memberRoutine.Recovery
         };
         return CacheResolvedOwnerMemberRoutine(resolvedMemberRoutine: resolvedOwnerMemberRoutine);
     }

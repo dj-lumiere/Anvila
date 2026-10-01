@@ -29,7 +29,7 @@ namespace Builder.Collection.Passes;
 /// ISOLATED COPY of the body/liveness state, then REPORTS how many extra routines it materialized on top
 /// of the push pipeline — i.e. exactly the symbols the push pipeline over-prunes. Zero behavior change
 /// (flag-gated, builds into the copy, never the real <see cref="InstantiationContext"/>). Once the
-/// collector is shown to build the over-pruned symbols (brc <c>List[Byte]</c>, warm <c>try_emit</c>)
+/// collector is shown to build the over-pruned symbols (brc <c>List[Byte]</c>, warm the <c>try</c> variant of <c>emit</c>)
 /// AND converge (no runaway), codegen flips to consume it and reachability/closure retire.</para>
 /// </summary>
 internal sealed class RoutineCollectionPass(InstantiationContext ctx)
@@ -156,8 +156,8 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             variantBodies: ctx.VariantBodies,
             target: ctx.Target,
             buildMode: ctx.BuildMode);
-        // Resolve BOTH the monomorphized bodies AND the variant bodies (failable originals + try_/check_/
-        // lookup_ variants). A monomorphized variant like `List[S64].try_pick` lives in VariantBodies; its
+        // Resolve BOTH the monomorphized bodies AND the variant bodies (failable originals + try/grab/
+        // lookup variants). A monomorphized variant like the try variant of `List[S64].pick` lives in VariantBodies; its
         // member calls (`n == 0` → `n.eq(...)`) are lowered with LoweringKind set but ResolvedRoutine null and
         // reach codegen unresolved unless classified here. Idempotent — fully-classified calls are skipped.
         var resolver = new Declaration.CallOverloadResolutionPass(ctx: classCtx);
@@ -244,7 +244,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             // LowerFreshBodies REASSIGNS entries (`dict[key] = body with { … }`, MonomorphizedBody is a
             // record) on the `freshBodies` COPY, not the shared adapter map — so the lowered results
             // (FString/Operator/VariantReturn/…) live only in the copy. Merge them back or codegen reads
-            // the UN-lowered originals (a composed iterator's try_emit reaching codegen with raw
+            // the UN-lowered originals (a composed iterator's emit's try variant reaching codegen with raw
             // VariantReturnStatement). Mirrors GenericClosurePass.RunClosure's merge-back.
             foreach ((string key, MonomorphizedBody body) in freshBodies)
             {
@@ -320,12 +320,12 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     }
 
     /// <summary>
-    /// Materializes every REACHED variant body (<c>try_</c>/<c>check_</c>/<c>lookup_</c>/<c>try_emit</c>) that
+    /// Materializes every REACHED variant body (<c>try</c>/<c>grab</c>/<c>lookup</c>/the <c>try</c> variant of <c>emit</c>) that
     /// nothing else placed into <c>InstantiatedGenericBodies</c> — the FREE, NON-generic variant case.
     /// A generic or member-of-generic variant is materialized during the demand walk by
     /// <c>GenericMonomorphizationPass.TryBuildAndStoreVariantBody</c> (it has a <c>GenericDefinition</c>), so it
     /// already holds a key here. But a free non-generic failable routine's variant (e.g.
-    /// <c>Subprocess.try_term_signal_value</c>, the variant of <c>term_signal_value!(raw: S32)</c>) has NO
+    /// the try variant of <c>Subprocess.term_signal_value</c>, the variant of <c>term_signal_value!(raw: S32)</c>) has NO
     /// GenericDefinition and is never materialized by that path — its body lives ONLY in <c>VariantBodies</c>.
     /// Codegen's <c>GenerateRoutineDefinitions</c> emits definitions solely from user decls +
     /// <c>InstantiatedGenericBodies</c> (it does not iterate VariantBodies), so such a live variant would only
@@ -432,7 +432,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     }
 
     /// <summary>
-    /// Materializes, for each SYNTHESIZED generic-def body (represent/diagnose/hash/eq/try_emit/derived
+    /// Materializes, for each SYNTHESIZED generic-def body (represent/diagnose/hash/eq/emit's try variant/derived
     /// operators — keyed by the generic-def routine key) and each REACHED concrete owner instantiation, the
     /// per-owner rewritten concrete body into <c>InstantiatedGenericBodies</c>. This is the pull-architecture
     /// move of codegen's Phase-C <c>EmitSynthesizedBodyPerConcreteOwner</c> upstream: the concrete synthesized

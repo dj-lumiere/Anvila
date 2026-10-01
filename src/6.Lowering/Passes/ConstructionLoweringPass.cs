@@ -117,6 +117,13 @@ internal sealed class ConstructionLoweringPass : AstRewriter
         RoutineInfo? routine = call.ResolvedRoutine;
         TypeSymbol? constructed = call.ConstructedType;
 
+        // A recovered construction (`try U64(x)`) calls the creator's recovery variant, which returns the
+        // carrier: it stays a call.
+        if (routine is { IsRecoveryVariant: true })
+        {
+            return null;
+        }
+
         // The synthesized memberwise creator has no body: the construction is the field initialization.
         if (routine is { IsSynthesized: true, IsCreator: true, OwnerType: { } owner } &&
             MemberwiseCreatorMatchesFields(creator: routine, owner: owner))

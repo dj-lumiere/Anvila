@@ -145,7 +145,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Names a bare identifier could plausibly have meant: variables in scope,
-    /// free routines (including generated try_/check_/lookup_ variants), and type names.
+    /// free routines (including generated try/grab/lookup variants), and type names.
     /// </summary>
     private IEnumerable<string> IdentifierSuggestionCandidates()
     {

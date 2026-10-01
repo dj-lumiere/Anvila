@@ -41,6 +41,12 @@ public sealed class DesugaringPipeline(DesugaringContext ctx)
 
         foreach (string key in ctx.VariantBodies.Keys.ToList())
         {
+            // A recovery variant shares its failable routine's name: pruning by name is for the routine.
+            if (ctx.Registry.GetRoutineByExactKey(registryKey: key) is { IsRecoveryVariant: true })
+            {
+                continue;
+            }
+
             string baseName = key.Contains(value: '#')
                 ? key[..key.IndexOf(value: '#')]
                 : key;

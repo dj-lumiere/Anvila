@@ -22,7 +22,7 @@ namespace Builder.Instantiation.Passes;
 /// <list type="bullet">
 ///   <item><see cref="DesugaringContext.VariantBodies"/> -> WiredRoutinePass-generated
 ///         bodies (<c>represent</c>, <c>diagnose</c>) and ErrorHandlingVariantPass
-///         bodies (<c>try_emit</c>, etc.).</item>
+///         bodies (the <c>try</c> variant of <c>emit</c>, etc.).</item>
 ///   <item><c>Registry.StdlibPrograms</c> and <c>Registry.UserPrograms</c> AST declarations -> source bodies.</item>
 /// </list>
 /// Pure-synthesized memberRoutines (<see cref="RoutineInfo.IsSynthesized"/> = true with no
@@ -1103,7 +1103,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                             Discover(r: gr); break;
                         // A constructor (`SelectEmittable(...)`) — reach its create routine AND mark the
                         // constructed type a live owner (an Emittable is often ONLY constructed, so its owner
-                        // liveness — needed for Phase-C try_emit emission — comes from here, not a method call).
+                        // liveness — needed for Phase-C emit's try variant emission — comes from here, not a method call).
                         case CreatorExpression ce:
                             Discover(r: ce.ResolvedCreatorRoutine);
                             MarkOwner(t: ce.ConstructedType);
@@ -1174,9 +1174,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         // Mark a reached concrete owner type LIVE + materialized. Codegen's Phase-C synthesized-body emitters
-        // (e.g. iterator-adapter `try_emit` per concrete owner) loop AllConcreteGenericInstancesUnfiltered
+        // (e.g. iterator-adapter `emit`'s try variant per concrete owner) loop AllConcreteGenericInstancesUnfiltered
         // (which excludes lazy instances) and gate on the owner being a live owner type — a reached-but-
-        // unmarked Emittable owner leaves its synthesized `try_emit` undefined at link (the
+        // unmarked Emittable owner leaves its synthesized `emit`'s try variant undefined at link (the
         // warm-restore-overprune Category-B symptom). Called for a routine's owner AND for a
         // CreatorExpression's ConstructedType (an Emittable is often only CONSTRUCTED, never method-called).
         private void MarkOwner(TypeSymbol? t)
@@ -1589,7 +1589,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         // Crash path per LIVE routine: codegen's EmitThrow calls `<E>.crash_message()` (→ `<E>.represent()`)
         // for every crashable E this routine DIRECTLY throws (RoutineInfo.ThrowableTypes — populated post Phase-4,
-        // covering the routine and its check_/lookup_ variant). Seeding off ThrowableTypes matches codegen's
+        // covering the routine and its grab/lookup variant). Seeding off ThrowableTypes matches codegen's
         // reference set EXACTLY — demand-scoped to live routines, so no over-materialization of unthrown errors.
         // ThrowableTypes is populated on the GENERIC DEF (Phase-4 body analysis), not copied onto each
         // monomorphized instance — so a generic throw needs the def's list too.
@@ -1684,8 +1684,15 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     continue;
                 }
 
-                Discover(r: _ctx.Registry.LookupMemberRoutine(type: type,
-                    memberRoutineName: wiredName));
+                RoutineInfo? seeded = _ctx.Registry.LookupMemberRoutine(type: type,
+                    memberRoutineName: wiredName);
+                Discover(r: seeded);
+
+                // An `each` loop steps with `try it.emit()`: the iterator step's try variant.
+                if (seeded is { IsFailable: true, Name: "emit" })
+                {
+                    Discover(r: _ctx.Registry.LookupRecoveryVariant(recovered: seeded, kind: RecoveryKind.Try));
+                }
             }
         }
 
@@ -2002,7 +2009,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     {
         // Strategy-B reachability gate at the type level: skip concrete instances that no
         // reachable routine ever owned. This prevents unreachable types like Array[BuildMode, 63]
-        // or BTreeListNode[Text] from emitting try_emit/getitem!/etc. via the wired-routine bypass
+        // or BTreeListNode[Text] from emitting emit's try variant/getitem!/etc. via the wired-routine bypass
         // on the per-routine gate.
         //
         // The "reachability ran" signal is LiveRoutineKeys (NOT LiveOwnerTypeNames): reachability
@@ -2109,7 +2116,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // may legitimately carry an abstract-forwarding call that is dead and never emitted.
         bool genuinelyLive =
             ctx.LiveRoutineKeys.Count == 0 || ctx.LiveRoutineKeys.Contains(item: key);
-        if (!genuinelyLive && !IsWiredRoutineName(name: genMemberRoutine.Name))
+        if (!genuinelyLive && !IsAlwaysBuilt(routine: genMemberRoutine))
         {
             return;
         }
@@ -2141,7 +2148,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             // Keep codegen's Phase-B live gate in sync with GMP's wired-routine bypass.
             // LlvmEmitter emits an instantiated body only when its key is in the live set,
             // with NO wired bypass — so a wired routine emitted here for a live owner that
-            // post-dates RoutineReachabilityPass (e.g. try_emit on a chained iterator emitter
+            // post-dates RoutineReachabilityPass (e.g. emit's try variant on a chained iterator emitter
             // like SelectEmitter[S64, S64, ListEmitter[S64]]) was never seeded and would be
             // silently dropped at codegen. Marking the key live closes that gap; non-wired
             // emissions already have a live key, so this is a no-op for them.
@@ -2179,20 +2186,18 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// (1) the unified-teardown lifecycle routines (<c>destroy</c>/<c>store</c>, from
     /// <see cref="Builder.Declaration.WiredRoutineCatalog.AlwaysLiveNames"/>) — scope-exit teardown
     /// inserts <c>destroy</c> calls that must always have a concrete body, and the matching
-    /// retaining <c>store</c> likewise; (2) <c>try_emit</c>, reachable only through synthesized
-    /// for-loop iteration bodies whose owner type (ListEmitter[Byte], etc.) is created post-pass
-    /// during GMP body rewriting, so ReachabilityPass cannot trace it. Kept narrow otherwise —
-    /// broader sets cascade into derived-op chains (ne->eq) where the missing companion is the
-    /// actual culprit.
+    /// retaining <c>store</c> likewise; (2) the <c>try</c> variant of the iterator step <c>emit</c>,
+    /// reachable only through synthesized `each` iteration bodies whose owner type (ListEmitter[Byte],
+    /// etc.) is created post-pass during GMP body rewriting, so ReachabilityPass cannot trace it. Kept
+    /// narrow otherwise — broader sets cascade into derived-op chains (ne->eq) where the missing companion
+    /// is the actual culprit.
     private static readonly HashSet<string> _gateBypassNames =
-        new(collection: WiredRoutineCatalog.AlwaysLiveNames, comparer: StringComparer.Ordinal)
-        {
-            RuntimeContract.TryEmit
-        };
+        new(collection: WiredRoutineCatalog.AlwaysLiveNames, comparer: StringComparer.Ordinal);
 
-    private static bool IsWiredRoutineName(string name)
+    private static bool IsAlwaysBuilt(RoutineInfo routine)
     {
-        return _gateBypassNames.Contains(item: name);
+        return routine is { Recovery: RecoveryKind.Try, Name: "emit" } ||
+               routine is { IsRecoveryVariant: false } && _gateBypassNames.Contains(item: routine.Name);
     }
 
     /// <summary>
@@ -2295,7 +2300,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return;
         }
 
-        // Variant routines (iterator `try_emit`; and try_/check_/lookup_ of any failable) have NO source AST
+        // Variant routines (iterator `emit`'s try variant; and try/grab/lookup of any failable) have NO source AST
         // under their own name — their real body is built from the ORIGINAL failable routine's AST via the
         // path-2 transform (BuildVariantBody → FindInStdlib(emit!) + ErrorHandlingVariantPass.TransformBody).
         if (TryBuildAndStoreVariantBody(resolvedRoutine: resolvedRoutine, typeSubs: typeSubs))
@@ -2324,7 +2329,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // type-checked during analysis but never reached from program entry points.
         if (ctx.LiveRoutineKeys.Count > 0 &&
             !ctx.LiveRoutineKeys.Contains(item: resolvedRoutine.RegistryKey) &&
-            !IsWiredRoutineName(name: resolvedRoutine.Name))
+            !IsAlwaysBuilt(routine: resolvedRoutine))
         {
             return false;
         }
@@ -2339,13 +2344,13 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Attempts to build and store the monomorphized body for a variant routine (try_/check_/lookup_/try_emit).
+    /// Attempts to build and store the monomorphized body for a variant routine (try/grab/lookup variant).
     /// Returns true if the variant body was found and stored.
     /// </summary>
     private bool TryBuildAndStoreVariantBody(RoutineInfo resolvedRoutine,
         Dictionary<string, TypeSymbol> typeSubs)
     {
-        if (resolvedRoutine.GenericDefinition?.OriginalName == null ||
+        if (resolvedRoutine.GenericDefinition is not { IsRecoveryVariant: true } ||
             resolvedRoutine.GenericDefinition.OwnerType is not { } variantGenDefOwner)
         {
             return false;
@@ -2678,10 +2683,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         TypeSymbol genDef, Dictionary<string, TypeSymbol> typeSubs,
         Dictionary<string, string> stringSubs)
     {
-        // Variant memberRoutines (try_/check_/lookup_)
-        // These have OriginalName pointing back to the failable source routine.
-        // Look for the body of that source routine (not the variant name).
-        if (genMemberRoutine.OriginalName != null)
+        // Recovery variants: their body is built from the failable routine they recover
+        // (RoutineInfo.RecoveryOf), which has the same name and parameters.
+        if (genMemberRoutine.IsRecoveryVariant)
         {
             return BuildVariantBody(genMemberRoutine: genMemberRoutine,
                 concreteInfo: concreteInfo,
@@ -2858,7 +2862,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 IsDangerous = concreteInfo.IsDangerous,
                 AsyncStatus = concreteInfo.AsyncStatus,
                 FailableVariant = variantStatus.Value,
-                OriginalName = concreteInfo.OriginalName
+                RecoveryOf = concreteInfo.RecoveryOf,
+                Recovery = concreteInfo.Recovery
             };
         }
 
@@ -2882,7 +2887,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         // Fallback: search for the original failable routine's AST and compile it as a variant
         string fallbackAstName =
-            BuildAstName(genDef: genDef, routineName: genMemberRoutine.OriginalName!);
+            BuildAstName(genDef: genDef, routineName: genMemberRoutine.Name);
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: fallbackAstName,
             expectedParamCount: genMemberRoutine.Parameters.Count);
 
@@ -2900,11 +2905,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // The fallback body is the original failable AST (ReturnStatement nodes, not
         // VariantReturnStatement). Transform it so codegen emits carrier construction.
         //
-        // Check/Lookup/TryBool are driven by variantStatus. The try_ (Maybe) variant leaves
+        // Check/Lookup/TryBool are driven by variantStatus. The try (Maybe) variant leaves
         // variantStatus null — codegen natively wraps top-level `return`->Some and `absent`->None
         // — but a Maybe variant whose source uses a failable call in NON-tail position (e.g.
         // `var item = src.emit!()` in EnumerateEmitter) needs that inner call routed through its
-        // own try_ variant; otherwise the raw `!` call hard-crashes at exhaustion. Run the
+        // own try variant; otherwise the raw `!` call hard-crashes at exhaustion. Run the
         // Try-kind transform for Maybe returns so TransformBlockStatements can splice in that
         // propagation. (ListEmitter etc. have no such inner call, so the transform is a no-op for
         // them beyond the equivalent VariantReturn rewrite codegen already understands.)
@@ -2990,7 +2995,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                         genMemberRoutine.WrapperForwarderInnerGenericDef,
                     AsyncStatus = genMemberRoutine.AsyncStatus,
                     FailableVariant = genMemberRoutine.FailableVariant,
-                    OriginalName = genMemberRoutine.OriginalName
+                    RecoveryOf = genMemberRoutine.RecoveryOf,
+                    Recovery = genMemberRoutine.Recovery
                 };
             }
 
@@ -3045,7 +3051,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             IsDangerous = genMemberRoutine.IsDangerous,
             AsyncStatus = genMemberRoutine.AsyncStatus,
             FailableVariant = genMemberRoutine.FailableVariant,
-            OriginalName = genMemberRoutine.OriginalName,
+            RecoveryOf = genMemberRoutine.RecoveryOf,
+            Recovery = genMemberRoutine.Recovery,
             // Carry the receiver-handle type through monomorphization: a Suflae entity's `me` is the
             // Roamed[E] handle (MeType), and its owner param must be substituted (Roamed[Box[T]] →
             // Roamed[Box[S64]]) so codegen binds `me` to the handle and deref's through the controller

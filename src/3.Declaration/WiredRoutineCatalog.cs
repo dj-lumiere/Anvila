@@ -329,7 +329,6 @@ public static class WiredRoutineCatalog
                 Protocols = ["Emittable"],
                 Failable = true
             },
-            new WiredEntry { Name = "try_emit", Kind = WiredKind.Iteration, Views = Seed },
             new WiredEntry
             {
                 Name = "getitem",

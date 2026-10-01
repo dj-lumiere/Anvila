@@ -969,10 +969,6 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // Reserved-prefix collisions (try_/check_/lookup_ shadowing a compiler-generated
-        // failable variant) are validated in CheckReservedVariantCollision, which runs after
-        // all routines are registered — the failable base may be declared later in the file,
-        // so it isn't reliably visible here at collection time.
         // Member segment from the parser-captured structured field, never a re-split of Name.
         string baseName = routine.MemberRoutineName ?? routineName;
 
@@ -1275,17 +1271,6 @@ public sealed partial class SemanticVerifier
     {
         // Skip member routines with default implementations
         if (requiredMemberRoutine.HasDefaultImplementation)
-        {
-            return;
-        }
-
-        // Skip auto-derived failable variants. These `try_X` / `check_X` / `lookup_X`
-        // entries are synthesized by FillProtocolMemberRoutines from the failable original
-        // (`X!`) so call sites typed against the bare protocol can resolve them. The
-        // implementer only owes the failable original — ErrorHandlingVariantPass
-        // generates the variants on user types at synthesis time. A protocol-declared
-        // `try_X` written by hand (no auto-derivation flag) still produces an obligation.
-        if (requiredMemberRoutine.IsAutoDerivedVariant)
         {
             return;
         }

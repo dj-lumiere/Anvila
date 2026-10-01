@@ -16,9 +16,9 @@ namespace Builder.Verification;
 /// - absent statement: signals "not found" without error
 ///
 /// Variant generation rules:
-/// - Only absent: try_ (returns T? -> None on absent)
-/// - Only throw: try_ (returns T? -> None on throw) + check_ (returns Result&lt;T&gt;)
-/// - Both throw and absent: try_ + lookup_ (returns Lookup&lt;T&gt;)
+/// - Only absent: try (returns T? -> None on absent)
+/// - Only throw: try (returns T? -> None on throw) + grab (returns Result&lt;T&gt;)
+/// - Both throw and absent: try + lookup (returns Lookup&lt;T&gt;)
 ///
 /// The actual variant generation is delegated to <see cref="ErrorHandlingVariantPass"/>
 /// which runs in Phase 6 (global desugaring) after body analysis populates <c>_routineBodies</c>.
@@ -47,7 +47,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Phase 6 pre-pass: Pre-register error handling variant stubs for user-defined failable routines.
-    /// Called before Phase 5 body analysis so that try_/check_/lookup_ variants are in scope
+    /// Called before Phase 5 body analysis so that try/grab/lookup variants are in scope
     /// when user code calls them from within the same module.
     /// Uses AST-level throw/absent detection -> no full semantic analysis required.
     /// </summary>
@@ -74,83 +74,14 @@ public sealed partial class SemanticVerifier
                 decl: routineDecl,
                 module: currentModule);
         }
-
-        ScanReservedPrefixCollisions(program: program, module: currentModule);
     }
 
     /// <summary>
-    /// EAGER reserved-prefix collision detection (RF-S409), independent of on-demand variant generation:
-    /// a hand-written routine named <c>try_X</c>/<c>check_X</c>/<c>lookup_X</c> whose stripped base <c>X</c>
-    /// is a failable routine occupies a slot reserved for the compiler's generated variant. Under the
-    /// on-demand model the variant is only synthesized when called, so this collision must be found by
-    /// scanning the hand-written routines directly rather than as a side effect of generation.
-    /// </summary>
-    private void ScanReservedPrefixCollisions(Program program, string? module)
-    {
-        foreach (ISyntaxTreeNode node in program.Declarations)
-        {
-            if (node is not RoutineDeclaration decl)
-            {
-                continue;
-            }
-
-            if (!TrySplitVariantName(variantName: decl.Name, baseName: out string baseName))
-            {
-                continue;
-            }
-
-            RoutineInfo? handWritten =
-                ResolveRoutineInfoForDeclaration(decl: decl, moduleName: module);
-            if (handWritten is null or { IsSynthesized: true })
-            {
-                continue;
-            }
-
-            RoutineInfo? baseRoutine = FindBaseRoutineForVariantName(handWritten: handWritten,
-                baseName: baseName,
-                module: module);
-            if (baseRoutine is { IsFailable: true })
-            {
-                CheckReservedVariantCollision(baseRoutine: baseRoutine, variant: handWritten);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Looks up the failable base routine for a hand-written <c>try_</c>/<c>check_</c>/<c>lookup_</c>
-    /// routine: checks the member-routine table when the hand-written routine has an owner type, otherwise
-    /// searches free routines (bare name first, then module-qualified if module is known and the name is unqualified).
-    /// </summary>
-    private RoutineInfo? FindBaseRoutineForVariantName(RoutineInfo handWritten, string baseName,
-        string? module)
-    {
-        if (handWritten.OwnerType != null)
-        {
-            return _registry.LookupMemberRoutine(type: handWritten.OwnerType,
-                memberRoutineName: baseName,
-                isFailable: true);
-        }
-
-        RoutineInfo? found = _registry.LookupRoutine(fullName: baseName, isFailable: true);
-        if (found != null)
-        {
-            return found;
-        }
-
-        if (module != null && !baseName.Contains(value: '.'))
-        {
-            return _registry.LookupRoutine(fullName: $"{module}.{baseName}", isFailable: true);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves a failable routine declaration and registers its <c>try_</c>/<c>check_</c>/<c>lookup_</c>
+    /// Resolves a failable routine declaration and registers its <c>try</c>/<c>grab</c>/<c>lookup</c>
     /// variant stubs (checking each for a reserved-prefix collision). Shared by
     /// <see cref="PreRegisterUserVariants"/> and <see cref="PreRegisterStdlibVariants"/>. A routine with
     /// direct <c>throw</c>/<c>absent</c> gets precise variants; a propagated-failability routine gets
-    /// pessimistic try_+lookup_ stubs so call sites resolve during SA. Skips non-failable or
+    /// pessimistic try+lookup stubs so call sites resolve during SA. Skips non-failable or
     /// <c>crash_only</c> routines and generation errors.
     /// </summary>
     private void PreRegisterVariantsForDeclaration(ErrorHandlingGenerator generator,
@@ -158,7 +89,7 @@ public sealed partial class SemanticVerifier
     {
         // AST scan: routines with direct throw/absent get precise variants.
         // Routines without any (propagated-failability via called `!` routines) get
-        // pessimistic try_+lookup_ stubs so callsites can resolve them during SA.
+        // pessimistic try+lookup stubs so callsites can resolve them during SA.
         bool hasDirect = ErrorHandlingGenerator.BodyHasThrowOrAbsent(body: decl.Body);
 
         RoutineInfo? routineInfo =
@@ -186,21 +117,19 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // Record the base routine's body for ON-DEMAND variant synthesis: a call to
-        // try_X/check_X/lookup_X that misses registry lookup during Phase 5 resolves by synthesizing
-        // this base's variants here (TrySynthesizeVariantOnDemand). Keyed by the base RegistryKey.
-        // Non-emit variants are LAZY: only the base is indexed; the try_/check_/lookup_ variant is
-        // synthesized the first time a call site looks it up (TrySynthesizeVariantOnDemand).
+        // Record the base routine's body for ON-DEMAND variant synthesis: the first `try`/`grab`/`lookup`
+        // of it (TypeRegistry.LookupRecoveryVariant) generates its variants from this body
+        // (EnsureRecoveryVariantsForBase). Keyed by the base RegistryKey.
         _registry.DeferredVariantBases[key: routineInfo.RegistryKey] =
             (routineInfo, decl.Body, !hasDirect);
 
-        // ITERATOR `emit` stays EAGER and is owned END-TO-END by the existing pipeline (for-loop desugar
-        // synthesizes `iter.try_emit()`; Phase-8 monomorphization path-2 generates each composed emitter's
-        // try_emit BODY). The on-demand hook deliberately SKIPS `emit` (see TrySplitVariantName): a stub-only
-        // on-demand `try_emit` would have no body and be pruned (over-prune), and on the warm path — where
-        // PreRegisterStdlibVariants is skipped — the generic-def emit variants are RESTORED from the snapshot,
-        // so resolution + path-2 monomorphization proceed without the hook. `emit` is a bounded set; the
-        // COMBINATORIAL failable surface (every `foo!` → try_/check_/lookup_) is what stays lazy.
+        // ITERATOR `emit` stays EAGER and is owned END-TO-END by the existing pipeline (an `each` loop steps
+        // with `try it.emit()`; Phase-8 monomorphization path-2 generates each composed emitter's try-variant
+        // BODY). The on-demand hook deliberately SKIPS `emit`: a stub-only on-demand variant would have no body
+        // and be pruned (over-prune), and on the warm path — where PreRegisterStdlibVariants is skipped — the
+        // generic-def emit variants are RESTORED from the snapshot, so resolution + path-2 monomorphization
+        // proceed without the hook. `emit` is a bounded set; the COMBINATORIAL failable surface (every `foo!`
+        // → its try/grab/lookup variants) is what stays lazy.
         if (routineInfo.Name != "emit")
         {
             return;
@@ -216,7 +145,6 @@ public sealed partial class SemanticVerifier
 
         foreach (GeneratedVariant variant in result.Variants)
         {
-            CheckReservedVariantCollision(baseRoutine: routineInfo, variant: variant.Routine);
             _registry.RegisterRoutine(routine: variant.Routine);
         }
     }
@@ -230,76 +158,32 @@ public sealed partial class SemanticVerifier
     /// Per-run state (not captured): a fresh verifier re-derives it as calls arrive.</summary>
     private readonly HashSet<string> _synthesizedVariantBases = new();
 
-    private static readonly string[] VariantPrefixes =
-    {
-        "try_",
-        "check_",
-        "lookup_"
-    };
-
-
     /// <summary>
-    /// On-demand synthesis for a SPECIFIC base overload (the variant-body rewriter's hook): synthesizes
-    /// <paramref name="baseOverload"/>'s variants and returns the one for <paramref name="prefix"/>, matched
-    /// by the base's PARAMETER TYPES so an overloaded base (<c>S64.create(from_text:)</c> vs
-    /// <c>create(from_int:)</c>) yields the correct overload's variant — a name-only lookup cannot.
+    /// <see cref="TypeRegistry.EnsureRecoveryVariants"/>: generates and registers the recovery variants of
+    /// <paramref name="baseRoutine"/> the first time one of them is needed. A failable routine of a protocol
+    /// has no body: it gets a body-less <c>try</c> variant, which monomorphization replaces with the
+    /// implementer's own. The iterator <c>emit</c> is left to its eager pipeline.
     /// </summary>
-    internal RoutineInfo? SynthesizeVariantForBase(RoutineInfo baseOverload, string prefix)
+    internal bool EnsureRecoveryVariantsForBase(RoutineInfo baseRoutine)
     {
-        if (baseOverload.Name == "emit")
+        if (baseRoutine is { OwnerType: ProtocolTypeSymbol, IsFailable: true })
         {
-            return null; // owned by the eager/monomorphization pipeline
-        }
-
-        if (!EnsureVariantsSynthesizedForBase(baseRoutine: baseOverload))
-        {
-            return null;
-        }
-
-        // Return the EXACT variant generated for THIS overload (not a by-argType re-lookup).
-        if (!_synthesizedVariantsByBase.TryGetValue(key: baseOverload.RegistryKey,
-                value: out List<GeneratedVariant>? variants) &&
-            !(baseOverload.GenericDefinition is { } gd &&
-              _synthesizedVariantsByBase.TryGetValue(key: gd.RegistryKey, value: out variants)))
-        {
-            return null;
-        }
-
-        foreach (GeneratedVariant v in variants)
-        {
-            string vprefix = v.Kind switch
+            if (_synthesizedVariantBases.Add(item: baseRoutine.RegistryKey))
             {
-                ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool => "try",
-                ErrorHandlingVariantKind.Check => "check",
-                ErrorHandlingVariantKind.Lookup => "lookup",
-                _ => ""
-            };
-            if (vprefix == prefix)
-            {
-                return v.Routine;
+                _registry.RegisterRoutine(
+                    routine: new ErrorHandlingGenerator(registry: _registry).GenerateTryVariantStub(
+                        original: baseRoutine));
             }
+
+            return true;
         }
 
-        return null;
+        return baseRoutine.Name != EmitRoutineName &&
+               EnsureVariantsSynthesizedForBase(baseRoutine: baseRoutine);
     }
 
-    /// <summary>Splits a <c>try_</c>/<c>check_</c>/<c>lookup_</c> name into its base name; false if the
-    /// name carries no reserved variant prefix, the base is empty, or the base is the iterator <c>emit</c>
-    /// (which the on-demand hook must NOT own — the for-loop desugar + Phase-8 monomorphization pipeline
-    /// generates the composed emitters' try_emit bodies; a stub-only on-demand emit variant would be
-    /// body-less and over-pruned, and would interfere with that pipeline on the warm path).</summary>
-    private static bool TrySplitVariantName(string variantName, out string baseName)
-    {
-        baseName = "";
-        string? prefix = VariantPrefixes.FirstOrDefault(predicate: variantName.StartsWith);
-        if (prefix == null)
-        {
-            return false;
-        }
-
-        baseName = variantName[prefix.Length..];
-        return baseName.Length > 0 && baseName != "emit";
-    }
+    /// <summary>The iterator step whose recovery variants are generated eagerly.</summary>
+    private const string EmitRoutineName = "emit";
 
     /// <summary>
     /// Generates + registers the variants of a base failable routine from the deferred index, ONCE
@@ -348,17 +232,9 @@ public sealed partial class SemanticVerifier
             {
                 foreach (GeneratedVariant variant in result.Variants)
                 {
-                    CheckReservedVariantCollision(baseRoutine: deferred.baseRoutine,
-                        variant: variant.Routine);
                     _registry.RegisterRoutine(routine: variant.Routine);
                 }
 
-                // Remember this base's EXACT variants so SynthesizeVariantForBase returns the precise
-                // overload's variant (a by-argType re-lookup can pick the wrong overload — S64 args match an
-                // S8 param via conversion). Keyed by BOTH the base overload's own key and the deferred key.
-                _synthesizedVariantsByBase[key: baseRoutine.RegistryKey] = result.Variants;
-                _synthesizedVariantsByBase[key: deferred.baseRoutine.RegistryKey] =
-                    result.Variants;
                 // ENQUEUE body generation — do NOT generate here: this runs inside the LookupMemberRoutine
                 // on-demand hook (re-entry-guarded), and generating a body re-looks-up its inner variants,
                 // which must re-fire the hook. So bodies are built later by DrainVariantBodyGenQueue, OUTSIDE
@@ -370,10 +246,6 @@ public sealed partial class SemanticVerifier
 
         return true;
     }
-
-    /// <summary>Exact <see cref="GeneratedVariant"/>s per base RegistryKey, so a rewriter can retrieve the
-    /// precise overload's variant instead of a lossy by-argType re-lookup.</summary>
-    private readonly Dictionary<string, List<GeneratedVariant>> _synthesizedVariantsByBase = new();
 
     /// <summary>Bases whose variants are registered but whose bodies are not yet generated. Drained by
     /// <see cref="DrainVariantBodyGenQueue"/> before variant-body analysis.</summary>
@@ -402,11 +274,11 @@ public sealed partial class SemanticVerifier
                 _variantBodyGenQueue.Dequeue();
 
             // The captured base body is the PRE-SA declaration body: if the base failable routine was never
-            // DIRECTLY called (only its try_/check_/lookup_ variant is used — e.g. `S64.from_digit_bytes!`,
-            // reached solely via `try_from_digit_bytes`), SA never annotated its body, so an inner failable
+            // DIRECTLY called (only its try/grab/lookup variant is used — e.g. `S64.from_digit_bytes!`,
+            // reached solely through its try variant), SA never annotated its body, so an inner failable
             // call (`from_digit_bytes_at`) carries NO ResolvedRoutine. The variant-body rewriter's non-tail
             // propagation (ErrorHandlingVariantPass.TryBuildTryPropagation) keys on `ce.ResolvedRoutine is
-            // { IsFailable: true }` to convert that inner call into its own try_ variant + Maybe-unwrap; with a
+            // { IsFailable: true }` to convert that inner call into its own try variant + Maybe-unwrap; with a
             // null ResolvedRoutine it silently skips, leaving the RAW crashable call in the recover variant →
             // the throw propagates and CRASHES on the recoverable path instead of returning absent. Annotate
             // the base body in its owner's context FIRST (idempotent, once per base) so the inner call is
@@ -436,8 +308,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Mints the body of an auto-generated variant arm EXTRACTOR (<c>Arm.create!(from: V)</c>) the first
     /// time a call site resolves it, keyed off the EXACT overload SA resolved (no name-scan). Stores into
-    /// <see cref="_variantBodies"/> so <see cref="AnalyzeVariantBodies"/> annotates it like a try_/check_/
-    /// lookup_ body and it flows through the SAME lowering + reachability + codegen path. Body:
+    /// <see cref="_variantBodies"/> so <see cref="AnalyzeVariantBodies"/> annotates it like a try/grab/
+    /// lookup body and it flows through the SAME lowering + reachability + codegen path. Body:
     /// <code>when from { is Arm v =&gt; return v.duplicate(), else =&gt; absent }</code>
     /// — extract the arm payload when the active arm matches (DEEP-copied via <c>duplicate</c> so the caller
     /// does not alias the variant's heap payload → double-free), else the failable <c>absent</c> crashes on a
@@ -514,51 +386,11 @@ public sealed partial class SemanticVerifier
             Location: loc);
     }
 
-    /// <summary>Variant RegistryKeys already reported as collisions, to avoid duplicate RF-S409s
-    /// when a pre-register pass runs over the same routine set more than once.</summary>
-    private readonly HashSet<string> _reportedVariantCollisions = new();
-
     /// <summary>
-    /// Reports RF-S409 when a hand-declared routine already occupies the exact slot
-    /// (owner + name + signature) the compiler synthesizes for a failable variant
-    /// (<c>try_</c>/<c>check_</c>/<c>lookup_</c>). The <see cref="RoutineInfo.RegistryKey"/>
-    /// match is uniform across member and free routines. Only a genuine collision counts: a
-    /// hand-written <c>try_lock</c> with no failable <c>lock!</c> base generates no variant, so
-    /// it never reaches here — the reserved prefixes cost nothing until a colliding failable
-    /// routine actually exists.
-    /// </summary>
-    private void CheckReservedVariantCollision(RoutineInfo baseRoutine, RoutineInfo variant)
-    {
-        // The variant hasn't been registered yet, so any occupant of its key is pre-existing.
-        // Synthesized occupants (e.g. a stub from another pre-register pass) aren't collisions —
-        // RegisterRoutine never lets a synthesized routine overwrite a user-written one, so a
-        // non-synthesized occupant means a real hand-declared clash.
-        string key = variant.RegistryKey;
-        if (_registry.GetRoutineByExactKey(registryKey: key) is not
-            { IsSynthesized: false } handWritten)
-        {
-            return;
-        }
-
-        SourceLocation? location = handWritten.Location ?? baseRoutine.Location;
-        if (location == null || !_reportedVariantCollisions.Add(item: key))
-        {
-            return;
-        }
-
-        ReportError(code: SemanticDiagnosticCode.ReservedRoutinePrefix,
-            message:
-            $"'{variant.Name}' collides with the variant the compiler generates for failable " +
-            $"'{baseRoutine.Name}!'; the try_/check_/lookup_ prefixes are reserved for " +
-            "compiler-generated failable variants — rename this routine",
-            location: location);
-    }
-
-    /// <summary>
-    /// Phase 3 global: pre-registers try_/check_/lookup_ stub variants for all failable stdlib
+    /// Phase 3 global: pre-registers try/grab/lookup stub variants for all failable stdlib
     /// member routines (e.g., Tracked[T].recover!, ListEmitter[T].emit!).
     /// Must run before Phase 4 user-body analysis so that user code calling these variants
-    /// (e.g., <c>rt.try_recover()</c> or desugared for-loop <c>iter.try_emit()</c>) resolves
+    /// (e.g., <c>try rt.recover()</c> or desugared for-loop <c>iter.emit() (under try)</c>) resolves
     /// without S450. Mirrors <see cref="PreRegisterUserVariants"/> but for stdlib programs.
     /// </summary>
     private void PreRegisterStdlibVariants()
@@ -907,7 +739,7 @@ public sealed partial class SemanticVerifier
     /// creator <see cref="RoutineInfo"/>. Such a decl parses with its type name as the routine name, but the
     /// creator is REGISTERED under the empty <see cref="RoutineInfo.CreatorName"/> (keyed <c>Owner#Params</c>),
     /// so the by-NAME free/member resolution above misses it — leaving the failable creator with NO
-    /// deferred-variant base, so its <c>try_</c>/<c>check_</c>/<c>lookup_</c> conversion variant is never
+    /// deferred-variant base, so its <c>try</c>/<c>grab</c>/<c>lookup</c> conversion variant is never
     /// synthesized and a recover call (<c>try_S64_from_text</c> whose tail is <c>S64!(from_text:)</c>) falls
     /// through to the RAW crashable creator, CRASHING on the recoverable path. Matching the creator overload
     /// by the decl's parameter types registers it as a deferred base like any other failable routine.

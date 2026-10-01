@@ -20,7 +20,7 @@ namespace Builder.Desugaring.Passes;
 /// <code>
 ///  {
 /// var _lf_iter_N = iterable.iter()
-/// loop { when _lf_iter_N.try_emit() { is None -> break; else var v -> body } }
+/// loop { when try _lf_iter_N.emit() { is None -> break; else var v -> body } }
 /// }
 /// </code>
 ///
@@ -30,7 +30,7 @@ namespace Builder.Desugaring.Passes;
 ///  {
 /// var _lf_iter_N = pairs.iter()
 /// loop {
-/// when _lf_iter_N.try_emit() {
+/// when try _lf_iter_N.emit() {
 /// is None -> break
 /// else var _lf_elem_M -> { var a = _lf_elem_M.item0; var b = _lf_elem_M.item1; body }
 ///  }
@@ -44,7 +44,7 @@ namespace Builder.Desugaring.Passes;
 /// var _lf_exhausted_N: Bool = false
 /// var _lf_iter_N = iterable.iter()
 /// loop {
-/// when _lf_iter_N.try_emit() {
+/// when try _lf_iter_N.emit() {
 /// is None -> { _lf_exhausted_N = true; break }
 /// else var x -> body
 ///  }
@@ -454,19 +454,18 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Arguments: [],
             Location: loc) { IsSynthesizedLowering = true };
 
+        // Each step is `try _lf_iter_N.emit()`: the iterator's failable `emit` recovered to a Maybe.
         var tryNextReceiver = new IdentifierExpression(Name: iterName, Location: loc);
-        var tryNextCallExpr = new CallExpression(
+        var emitCall = new CallExpression(
             Callee: new MemberExpression(Object: tryNextReceiver,
-                MemberName: Declaration.RuntimeContract.TryEmit,
+                MemberName: EmitRoutineName,
                 Location: loc),
             Arguments: [],
             Location: loc) { IsSynthesizedLowering = true };
-
-        tryNextCallExpr = AnnotateIterAndTryEmit(eachStmt: eachStmt,
+        Expression tryNextCall = LowerEachStep(eachStmt: eachStmt,
             iterCallExpr: iterCallExpr,
             tryNextReceiver: tryNextReceiver,
-            tryNextCallExpr: tryNextCallExpr);
-        Expression tryNextCall = tryNextCallExpr;
+            emitCall: emitCall);
 
         Statement iterVarStmt = new DeclarationStatement(
             Declaration: new VariableDeclaration(Name: iterName,
@@ -509,52 +508,49 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 loc: loc);
     }
 
+    /// <summary>The iterator step an <c>each</c> loop recovers with <c>try</c>.</summary>
+    private const string EmitRoutineName = "emit";
+
     /// <summary>
-    /// When running after SA (stdlib/variant bodies), annotate ResolvedType, ResolvedRoutine,
-    /// and LoweringKind on the iter and try_emit calls so CallOverloadResolutionPass doesn't
-    /// need to re-classify them (which fails for instantiated bodies where the receiver variable
-    /// has no SA-annotated type), and so reachability marks the CONCRETE emitter's try_emit.
-    /// Skip ErrorTypeSymbol: SA suppresses stdlib errors. Returns the (possibly re-annotated)
-    /// try_emit call expression.
+    /// The step of an <c>each</c> loop: <c>try _lf_iter_N.emit()</c>. Before analysis it is that recovery
+    /// expression, which analysis binds. After analysis (stdlib and variant bodies) the iterable is typed,
+    /// so the <c>iter</c> call is annotated and the step is bound here to the try variant of the CONCRETE
+    /// iterator's <c>emit</c> (so reachability marks that iterator's variant). Skip ErrorTypeSymbol: SA
+    /// suppresses stdlib errors.
     /// </summary>
-    private CallExpression AnnotateIterAndTryEmit(EachStatement eachStmt,
-        CallExpression iterCallExpr, IdentifierExpression tryNextReceiver,
-        CallExpression tryNextCallExpr)
+    private Expression LowerEachStep(EachStatement eachStmt, CallExpression iterCallExpr,
+        IdentifierExpression tryNextReceiver, CallExpression emitCall)
     {
-        if (eachStmt.Iterable.ResolvedType is { } iterType and not ErrorTypeSymbol)
+        if (eachStmt.Iterable.ResolvedType is { } iterType and not ErrorTypeSymbol &&
+            ctx.Registry.LookupMemberRoutine(type: iterType, memberRoutineName: "iter") is
+                { ReturnType: { } rawIteratorType } iterMemberRoutine)
         {
-            RoutineInfo? iterMemberRoutine =
-                ctx.Registry.LookupMemberRoutine(type: iterType, memberRoutineName: "iter");
-            if (iterMemberRoutine?.ReturnType is { } rawIteratorType)
+            // LookupMemberRoutine returns the generic-def `iter`, whose ReturnType still carries the
+            // owner's params (e.g. `?EnumerateEmitter[T, S/Iter]`). Substitute the concrete owner's type
+            // args so the step binds on the CONCRETE emitter (`EnumerateEmitter[Text, ListEmitter[Text]]`);
+            // otherwise reachability marks the unresolved-projection emitter's variant and the concrete
+            // one never generates.
+            TypeSymbol iteratorType = SubstituteForConcreteOwner(type: rawIteratorType, owner: iterType);
+            iterCallExpr.ResolvedRoutine = iterMemberRoutine;
+            iterCallExpr.ResolvedType = iteratorType;
+            // Carry the concrete emitter type onto the receiver so reachability/codegen see it.
+            tryNextReceiver.ResolvedType = iteratorType;
+            if (ctx.Registry.LookupMemberRoutine(type: iteratorType,
+                    memberRoutineName: EmitRoutineName,
+                    isFailable: true) is { } emit &&
+                ctx.Registry.LookupRecoveryVariant(recovered: emit, kind: RecoveryKind.Try) is { } step)
             {
-                // LookupMemberRoutine returns the generic-def `iter`, whose ReturnType still carries the
-                // owner's params (e.g. `?EnumerateEmitter[T, S/Iter]`). Substitute the concrete
-                // owner's type args so `try_emit` resolves on the CONCRETE emitter
-                // (`EnumerateEmitter[Text, ListEmitter[Text]]`); otherwise reachability marks the
-                // unresolved-projection emitter's try_emit and the concrete one never generates.
-                TypeSymbol iteratorType = SubstituteForConcreteOwner(type: rawIteratorType,
-                    owner: iterType);
-                iterCallExpr.ResolvedRoutine = iterMemberRoutine;
-                iterCallExpr.ResolvedType = iteratorType;
-                // Carry the concrete emitter type onto the receiver so reachability/codegen see it.
-                tryNextReceiver.ResolvedType = iteratorType;
-                RoutineInfo? tryNextMemberRoutine =
-                    ctx.Registry.LookupMemberRoutine(type: iteratorType,
-                        memberRoutineName: Declaration.RuntimeContract.TryEmit);
-                if (tryNextMemberRoutine != null)
+                return emitCall with
                 {
-                    tryNextCallExpr = tryNextCallExpr with
-                    {
-                        ResolvedRoutine = tryNextMemberRoutine,
-                        LoweringKind = CallLoweringKind.DirectMemberRoutine,
-                        ResolvedType = tryNextMemberRoutine.ReturnType ??
-                                       tryNextCallExpr.ResolvedType
-                    };
-                }
+                    ResolvedRoutine = step,
+                    LoweringKind = CallLoweringKind.DirectMemberRoutine,
+                    ResolvedType = step.ReturnType,
+                    IsPreAnalyzed = true
+                };
             }
         }
 
-        return tryNextCallExpr;
+        return new RecoveryExpression(Kind: RecoveryKind.Try, Inner: emitCall, Location: emitCall.Location);
     }
 
     /// <summary>

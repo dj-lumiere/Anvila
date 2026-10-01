@@ -472,7 +472,7 @@ public sealed partial class SemanticVerifier
             TypeSymbol? ownerType = LookupTypeWithImports(name: routine.OwnerName!);
             // Protocol-extension decls like `Iterable[Text].join` should have `me` typed as the
             // bracketed owner so the body's `for part in me` resolves `part` from
-            // Iterable[Text]'s try_emit() return. Without this, `me` is the bare gen-def
+            // Iterable[Text]'s `try emit()` return. Without this, `me` is the bare gen-def
             // `Iterable` and body identifiers (parameters, loop vars) get ErrorTypeSymbol.
             // Only override for ProtocolTypeSymbol: for records/entities like
             // `List[PQEntry[TPriority, TElement]]` the gen-param resolution must happen through
@@ -1026,7 +1026,7 @@ public sealed partial class SemanticVerifier
         }
 
         // #81: Result/Lookup cannot be copied from variable to variable
-        // `var r = check_parse!(data)` then `when r` is allowed (call result)
+        // `var r = grab parse(data)` then `when r` is allowed (call result)
         // `var r2 = r1` where r1: Result[T] is not allowed (variable copy)
         if (varDecl.Initializer is IdentifierExpression && IsCarrierType(type: varType) &&
             !IsMaybeType(type: varType))

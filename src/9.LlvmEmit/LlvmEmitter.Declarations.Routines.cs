@@ -862,7 +862,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Emits the fallthrough return for a void return type — the failable-variant carrier form for
-    /// check_/try_ wrappers, or plain <c>ret void</c>.
+    /// grab/try wrappers, or plain <c>ret void</c>.
     /// </summary>
     private void EmitVoidFallthroughReturn(StringBuilder sb, RoutineInfo routine)
     {
@@ -934,6 +934,12 @@ public partial class LlvmEmitter
             if (r.IsDangerous)
             {
                 attrs.Add(item: "dangerous");
+            }
+
+            // A recovery variant has its failable routine's name and parameters: its kind tells them apart.
+            if (r.Recovery is { } recovery)
+            {
+                attrs.Add(item: RoutineInfo.RecoveryKeyword(kind: recovery));
             }
 
             AddVisibilityAndConcurrencyAttrs(r: r, attrs: attrs);
@@ -1186,7 +1192,7 @@ public partial class LlvmEmitter
 
     // A creator is identified by its semantic KIND, not a name substring. SA sets Kind=Creator for
     // `create` and `routine T(...)` (SemanticVerifier.Declarations.cs); error-handling variants inherit it
-    // (ErrorHandlingGenerator copies `Kind = original.Kind`), so try_/check_/lookup_create qualify too.
+    // (ErrorHandlingGenerator copies `Kind = original.Kind`), so try/grab/lookupcreate qualify too.
     private static bool IsCreatorRoutine(RoutineInfo routine)
     {
         return routine.Kind == TypeModel.Enums.RoutineKind.Creator;

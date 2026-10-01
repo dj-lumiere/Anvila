@@ -474,9 +474,9 @@ public partial class Parser
     {
         // Recovery prefix keywords (try/grab/lookup): wrap a failable CALL into a carrier. MILESTONE
         // lowering — rewrite the wrapped call's name to the existing generated recovery variant:
-        //   try foo(a)      -> try_foo(a)          (Maybe[T])
-        //   grab x.foo()    -> x.check_foo()       (Check[T])
-        //   lookup foo()    -> lookup_foo()        (Lookup[T])
+        //   try foo(a)      -> foo's try variant    (Maybe[T])
+        //   grab x.foo()    -> x.foo's grab variant (Check[T])
+        //   lookup foo()    -> foo's lookup variant (Lookup[T])
         // Bare-word keywords only (`try_foo` etc. tokenize as single identifiers). Whole-expression
         // monadic composition + a dedicated RecoveryExpression node replace this rewrite later.
         if (CheckAndAdvance(TokenType.Try, TokenType.Grab, TokenType.Lookup))

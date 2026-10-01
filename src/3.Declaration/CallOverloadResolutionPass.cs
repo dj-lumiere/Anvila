@@ -95,7 +95,7 @@ internal sealed class CallOverloadResolutionPass
     /// <summary>
     /// Classifies call expressions in a flat sequence of statement bodies.
     /// Used for <c>InstantiatedGenericBodies</c> produced by GMP: <see cref="GenericAstRewriter"/>
-    /// rewrites type parameters but does not re-classify <c>try_emit</c> and other wired calls,
+    /// rewrites type parameters but does not re-classify the <c>try</c> variant of <c>emit</c> and other wired calls,
     /// leaving their <c>LoweringKind = Unknown</c>. This pass fills in the missing kind.
     /// </summary>
     public void RunOnStatements(IEnumerable<Statement> statements)

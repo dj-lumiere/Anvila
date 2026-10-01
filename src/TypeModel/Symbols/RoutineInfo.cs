@@ -100,6 +100,13 @@ public sealed class RoutineInfo
                     : $"{Module}.{Name}";
             }
 
+            // A recovery variant shares its failable routine's name and parameters: its kind tells the two
+            // apart (`?` cannot appear in a routine name).
+            if (Recovery is { } recovery)
+            {
+                baseName = $"{baseName}?{RecoveryKeyword(kind: recovery)}";
+            }
+
             if (TypeArguments is { Count: > 0 })
             {
                 string typeArgs = string.Join(separator: ",",
@@ -223,13 +230,13 @@ public sealed class RoutineInfo
     /// Used by <c>ErrorHandlingVariantPass</c> to propagate <see cref="HasThrow"/> /
     /// <see cref="HasAbsent"/> / <see cref="ThrowableTypes"/> through the call graph so that
     /// routines whose failability is purely propagated (e.g. <c>return Foo!(...)</c>) get the
-    /// right wrapper variants (<c>try_</c> / <c>check_</c> / <c>lookup_</c>) generated.
+    /// right wrapper variants (<c>try</c> / <c>grab</c> / <c>lookup</c>) generated.
     /// </summary>
     public HashSet<RoutineInfo> FailableCallees { get; } = [];
 
     /// <summary>
     /// Concrete crashable types directly thrown by this routine (or its corresponding
-    /// <c>check_</c>/<c>lookup_</c> variant). Populated after Phase 4 body analysis.
+    /// <c>grab</c>/<c>lookup</c> variant). Populated after Phase 4 body analysis.
     /// Does not include types thrown by called routines (propagated throws).
     /// </summary>
     public List<TypeSymbol> ThrowableTypes { get; set; } = [];
@@ -466,7 +473,7 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// Which compiler-generated failable wrapper this routine is, if any (None for ordinary
-    /// routines). Orthogonal to <see cref="AsyncStatus"/> — previously the lookup_/check_/try_
+    /// routines). Orthogonal to <see cref="AsyncStatus"/> — previously the lookup/grab/try
     /// variants were mixed into AsyncStatus and are now tracked separately here.
     /// </summary>
     public FailableVariant FailableVariant { get; init; } = FailableVariant.None;
@@ -492,10 +499,30 @@ public sealed class RoutineInfo
     public RoutineInfo? GenericDefinition { get; init; }
 
     /// <summary>
-    /// For generated error-handling variants (try_, check_, lookup_), the original routine name
-    /// they were generated from (e.g., "emit" for "try_emit", "parse" for "try_parse").
+    /// For a recovery variant the builder generates for a failable routine (the routine a <c>try</c>,
+    /// <c>grab</c> or <c>lookup</c> call binds to): the failable routine it recovers. The variant has that
+    /// routine's name and parameters and is told apart by <see cref="Recovery"/>, never by its name. On a
+    /// variant substituted onto a concrete owner this may still be the generic definition's routine.
     /// </summary>
-    public string? OriginalName { get; init; }
+    public RoutineInfo? RecoveryOf { get; init; }
+
+    /// <summary>The recovery keyword this variant serves: <c>try</c> (Maybe[T] or Bool), <c>grab</c>
+    /// (Check[T]) or <c>lookup</c> (Lookup[T]). Null for every other routine.</summary>
+    public RecoveryKind? Recovery { get; init; }
+
+    /// <summary>True for a builder-generated recovery variant (see <see cref="RecoveryOf"/>).</summary>
+    public bool IsRecoveryVariant => Recovery != null;
+
+    /// <summary>The keyword spelling of a recovery kind, used in keys and symbols.</summary>
+    public static string RecoveryKeyword(RecoveryKind kind)
+    {
+        return kind switch
+        {
+            RecoveryKind.Try => "try",
+            RecoveryKind.Grab => "grab",
+            _ => "lookup"
+        };
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RoutineInfo"/> class.
@@ -586,7 +613,9 @@ public sealed class RoutineInfo
             WrapperForwarderInnerMemberRoutine = WrapperForwarderInnerMemberRoutine,
             WrapperForwarderInnerGenericDef = WrapperForwarderInnerGenericDef,
             AsyncStatus = AsyncStatus,
-            FailableVariant = FailableVariant
+            FailableVariant = FailableVariant,
+            RecoveryOf = RecoveryOf,
+            Recovery = Recovery
         };
     }
 

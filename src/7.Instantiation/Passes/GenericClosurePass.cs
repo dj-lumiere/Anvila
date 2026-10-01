@@ -196,10 +196,10 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // that never went through Phase 6 desugaring. Lower them before subsequent passes.
         new ControlFlowLoweringPass(ctx: adapter).RunOnInstantiatedGenericBodies(
             bodies: freshBodies);
-        // Inline simple iterator `emit!` bodies into their for-loops, replacing the `try_emit`
+        // Inline simple iterator `emit!` bodies into their for-loops, replacing the `emit`'s try variant
         // call with the spliced advance. Runs AFTER ControlFlowLowering (which produced the flagged
         // iterator loops) and AFTER monomorphization (so the concrete `emit!` bodies exist in
-        // InstantiatedGenericBodies for lookup). Composed/filtering iterators fall back to try_emit.
+        // InstantiatedGenericBodies for lookup). Composed/filtering iterators fall back to emit's try variant.
         new IteratorInlineLoweringPass(registry: ctx.Registry,
                 monoBodies: adapter.InstantiatedGenericBodies)
            .RunOnInstantiatedGenericBodies(bodies: freshBodies);
@@ -230,7 +230,7 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
             target: ctx.Target,
             buildMode: ctx.BuildMode);
         // Lower synthesized VariantReturnStatement carriers (Try/Check/Lookup `return`s of a composed
-        // iterator's path-2 try_emit body) to ordinary record construction. The main pipeline does this
+        // iterator's path-2 emit's try variant body) to ordinary record construction. The main pipeline does this
         // via VariantReturnLoweringPass.RunOnMonomorphizedBodies at Phase 8, but the collector's
         // freshly-built variant bodies are not in that map — without this they reach codegen as raw
         // VariantReturnStatement and trip the codegen guard.

@@ -106,7 +106,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
         BodyDispatch.RunOnProgram(program: program, lower: LowerRoutineBody);
     }
 
-    /// <summary>Lowers the synthesized try_/check_/lookup_ variant bodies.</summary>
+    /// <summary>Lowers the synthesized try/grab/lookup variant bodies.</summary>
     public void RunOnVariantBodies()
     {
         if (_variantBodies == null)
@@ -133,7 +133,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     }
 
     /// <summary>Lowers carrier-return sites inside monomorphized generic instances (e.g. a concrete
-    /// <c>ListEmittable[Character].try_emit</c>), which are not part of the program/variant-body tracks.</summary>
+    /// <c>ListEmittable[Character].emit's try variant</c>), which are not part of the program/variant-body tracks.</summary>
     public void RunOnMonomorphizedBodies()
     {
         if (ctx.MonomorphizedBodies is not { } bodies)
@@ -146,7 +146,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
 
     /// <summary>Lowers carrier-return sites in a supplied instantiated-body map — used by the demand
     /// collector's <c>LowerFreshBodies</c>, whose freshly-built variant bodies (a composed iterator's
-    /// <c>try_emit</c> built via path-2) are NOT in <see cref="PostprocessingContext.MonomorphizedBodies"/>
+    /// the <c>try</c> variant of <c>emit</c> built via path-2) are NOT in <see cref="PostprocessingContext.MonomorphizedBodies"/>
     /// and so would otherwise reach codegen with un-lowered <see cref="VariantReturnStatement"/> carriers.</summary>
     public void RunOnInstantiatedGenericBodies(Dictionary<string, MonomorphizedBody> bodies)
     {

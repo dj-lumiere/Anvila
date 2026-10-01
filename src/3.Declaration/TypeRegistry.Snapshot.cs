@@ -79,7 +79,7 @@ partial class TypeRegistry
 
         /// <summary>Deferred failable-variant bases (base RegistryKey → base routine, AST body, pessimistic)
         /// captured so a snapshot-restored build — which skips variant pre-registration — can still
-        /// synthesize stdlib <c>try_</c>/<c>check_</c>/<c>lookup_</c> variants on demand. See
+        /// synthesize stdlib <c>try</c>/<c>grab</c>/<c>lookup</c> variants on demand. See
         /// <see cref="DeferredVariantBases"/>.</summary>
         public Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
             pessimistic)> DeferredVariantBases { get; init; } = null!;
@@ -215,6 +215,10 @@ partial class TypeRegistry
         foreach (KeyValuePair<string, RoutineInfo> kv in snapshot.Routines)
         {
             _routines[key: kv.Key] = kv.Value;
+            if (kv.Value.IsRecoveryVariant)
+            {
+                IndexRecoveryVariant(variant: kv.Value);
+            }
         }
 
         foreach (KeyValuePair<string, RoutineInfo> kv in snapshot.RoutinesByQualifiedName)

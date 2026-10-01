@@ -141,7 +141,7 @@ public static class ModularStdlibCache
         /// <summary>Synthesized routine bodies (wired/$represent/$diagnose/derive) produced for this module's types.</summary>
         public Dictionary<string, SynthEntry> SynthesizedBodies { get; set; } = new();
 
-        /// <summary>Error-variant routine bodies (try_/check_/lookup_ wrappers) attributed to this module.</summary>
+        /// <summary>Error-variant routine bodies (try/grab/lookup wrappers) attributed to this module.</summary>
         public Dictionary<string, Statement> VariantBodies { get; set; } = new();
 
         /// <summary>Monomorphized generic routine bodies attributed to the inst pseudo-module.</summary>
@@ -195,7 +195,7 @@ public static class ModularStdlibCache
         /// <summary>The unspecialized body statement carried until specialization time.</summary>
         public Statement Body { get; set; } = null!;
 
-        /// <summary>True if this deferred body was produced under pessimistic (check_) semantics.</summary>
+        /// <summary>True if this deferred body was produced under pessimistic (grab) semantics.</summary>
         public bool Pessimistic { get; set; }
     }
 

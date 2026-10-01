@@ -10,9 +10,9 @@ namespace Builder.Instantiation;
 /// Generates error handling variants for failable (!) routines.
 ///
 /// Generation rules based on throw/absent usage:
-/// - Only absent: try_ (returns T?)
-/// - Only throw: try_ (returns T?) + check_ (returns Result&lt;T&gt;)
-/// - Both: try_ (returns T?) + lookup_ (returns Lookup&lt;T&gt;)
+/// - Only absent: try (returns T?)
+/// - Only throw: try (returns T?) + grab (returns Result&lt;T&gt;)
+/// - Both: try (returns T?) + lookup (returns Lookup&lt;T&gt;)
 ///
 /// Phase 1: Keyword Detection - scan for throw/absent in body
 /// Phase 2: Variant Generation - determine which variants to create
@@ -21,10 +21,6 @@ namespace Builder.Instantiation;
 public sealed class ErrorHandlingGenerator
 {
     private const string NoneTypeName = "None";
-
-    /// <summary>The base name of a constructor's recovery variants (<c>try_$creator</c>): the <c>$</c> keeps
-    /// it out of reach of any source identifier.</summary>
-    internal const string CreatorVariantBase = "$creator";
 
     private readonly TypeRegistry _registry;
 
@@ -38,36 +34,12 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Generates a variant name for an original routine.
-    /// Strips the leading '$' from wired routine names so that "emit" -> "try_emit" (not "try_emit").
-    /// </summary>
-    /// <param name="prefix">The variant prefix (try, check, lookup).</param>
-    /// <param name="original">The original routine.</param>
-    /// <returns>The variant name.</returns>
-    private static string GenerateVariantName(string prefix, RoutineInfo original)
-    {
-        // A creator carries no name (RoutineInfo.CreatorName). Its failable recovery variant is a DISTINCT
-        // internal routine, so it takes a base that no source identifier can spell — a type's own member
-        // routine named `create` must never collide with its constructor's variant. The variant is only
-        // ever reached through `try`/`grab`/`lookup` on a construction, bound by reference.
-        string baseName = original.IsCreator
-            ? CreatorVariantBase
-            : original.Name;
-        return $"{prefix}_{baseName}";
-    }
-
-    /// <summary>
     /// The <see cref="RoutineKind"/> a failable variant must carry. For a NON-creator base the variant keeps
     /// the base's kind. A CREATOR base becomes a <see cref="RoutineKind.CommonRoutine"/> — a STATIC member
-    /// routine (owner-scoped, NO <c>me</c> receiver, like a <c>common routine</c>). Two reasons it can't stay a
-    /// creator NOR become a plain member routine: (1) a creator's <see cref="RoutineInfo.RegistryKey"/> is
-    /// <c>Owner#Params</c> (name-INDEPENDENT — a type has one anonymous constructor family), so a creator-kind
-    /// variant keys IDENTICALLY to the base creator → RF-S409 self-collision + unfindable as
-    /// <c>S64.try_create</c>; (2) a plain <see cref="RoutineKind.MemberRoutine"/> gets a synthetic <c>me</c>
-    /// receiver at codegen (<c>OwnerType != null &amp;&amp; !IsCommon</c>), but the creator has none, so the call
-    /// (which passes only <c>from_x</c>) ABI-mismatches the def (<c>me, from_x</c>) → garbage. CommonRoutine
-    /// keys by name (<c>Owner.try_create#Params</c> — resolvable by <c>LookupMemberRoutineOverload</c>, used by
-    /// the <c>.try_S64()</c> conversion + the variant-body tail rewrite) AND suppresses the receiver.
+    /// routine (owner-scoped, NO <c>me</c> receiver, like a <c>common routine</c>): a creator-kind variant would
+    /// be treated as one of the type's constructors, and a plain <see cref="RoutineKind.MemberRoutine"/> gets a
+    /// synthetic <c>me</c> receiver at codegen (<c>OwnerType != null &amp;&amp; !IsCommon</c>) that the
+    /// creator does not have, so the call (which passes only <c>from_x</c>) would ABI-mismatch the definition.
     /// </summary>
     private static RoutineKind VariantKind(RoutineInfo original)
     {
@@ -106,7 +78,7 @@ public sealed class ErrorHandlingGenerator
     /// Generates wrapper variants. When <paramref name="pessimistic"/> is true, the analysis is
     /// forced to <c>HasThrow=true, HasAbsent=true</c> regardless of body contents — used by
     /// pre-registration for failable routines whose body has no direct <c>throw</c>/<c>absent</c>
-    /// (failability is propagated from called <c>!</c> routines) so that <c>try_</c>/<c>lookup_</c>
+    /// (failability is propagated from called <c>!</c> routines) so that <c>try</c>/<c>lookup</c>
     /// stub variants exist by name for SA resolution. <see cref="ErrorHandlingVariantPass"/>
     /// later refines them after fixpoint propagation.
     /// </summary>
@@ -190,20 +162,20 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Phase 2: builds the list of wrapper variants (try_ always; check_ for throw-only;
-    /// lookup_ for throw+absent) for a failable routine from its <paramref name="analysis"/>.
+    /// Phase 2: builds the list of wrapper variants (try always; grab for throw-only;
+    /// lookup for throw+absent) for a failable routine from its <paramref name="analysis"/>.
     /// </summary>
     private List<GeneratedVariant> BuildVariants(RoutineInfo routine,
         ErrorHandlingAnalysis analysis)
     {
         var variants = new List<GeneratedVariant>();
 
-        // try_ variant is always generated
+        // try variant is always generated
         RoutineInfo tryVariant = GenerateTryVariant(original: routine);
         variants.Add(item: new GeneratedVariant(Kind: ErrorHandlingVariantKind.Try,
             Routine: tryVariant));
 
-        // check_ variant if only throw (no absent)
+        // grab variant if only throw (no absent)
         if (analysis is { HasThrow: true, HasAbsent: false })
         {
             RoutineInfo checkVariant = GenerateCheckVariant(original: routine);
@@ -211,11 +183,11 @@ public sealed class ErrorHandlingGenerator
                 Routine: checkVariant));
         }
 
-        // lookup_ variant if both throw and absent
+        // lookup variant if both throw and absent
         if (analysis is { HasThrow: true, HasAbsent: true })
         {
             RoutineInfo lookupVariant = GenerateLookupVariant(original: routine);
-            // Lookup[None] degenerates to check_ (Result[None]) when the return type is None:
+            // Lookup[None] degenerates to grab (Result[None]) when the return type is None:
             // absent and return are both None so only throw vs no-throw matters.
             // Use Check kind so TransformBody emits Result carriers in the variant body —
             // if Lookup kind is used, the body emits Lookup[None] but the declaration says Result[None].
@@ -323,16 +295,16 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Generates the try_ variant (returns Maybe&lt;T&gt;).
+    /// Generates the try variant (returns Maybe&lt;T&gt;).
     /// throw -> return None
     /// absent -> return None
     /// </summary>
     /// <param name="original">The original routine.</param>
-    /// <returns>The try_ variant routine info.</returns>
+    /// <returns>The try variant routine info.</returns>
     /// <summary>
-    /// Generates only a try_ variant for a failable routine. Used for bodyless protocol
+    /// Generates only a try variant for a failable routine. Used for bodyless protocol
     /// memberRoutines (e.g. <c>Iterator[T].emit!</c>) so that for-loop desugaring's call to
-    /// <c>iter.try_emit()</c> resolves when <c>iter</c> is typed as the bare protocol.
+    /// <c>iter.emit() (under try)</c> resolves when <c>iter</c> is typed as the bare protocol.
     /// </summary>
     public RoutineInfo GenerateTryVariantStub(RoutineInfo original)
     {
@@ -346,7 +318,7 @@ public sealed class ErrorHandlingGenerator
                                 message: "None type not registered");
         TypeSymbol returnType = original.ReturnType ?? noneType;
 
-        // try_x on a None-returning routine -> returns Bool (true=success, false=absent/throw)
+        // the try variant of a None-returning routine returns Bool (true=success, false=absent/throw)
         // Maybe[None] = { i1, void } is not valid LLVM, so Bool is used directly.
         if (returnType.Name == NoneTypeName)
         {
@@ -354,7 +326,7 @@ public sealed class ErrorHandlingGenerator
                                 throw new InvalidOperationException(
                                     message: "Bool type not registered");
 
-            return new RoutineInfo(name: GenerateVariantName(prefix: "try", original: original))
+            return new RoutineInfo(name: original.Name)
             {
                 Kind = VariantKind(original: original),
                 OwnerType = original.OwnerType,
@@ -374,7 +346,8 @@ public sealed class ErrorHandlingGenerator
                 Annotations = original.Annotations,
                 CallingConvention = original.CallingConvention,
                 FailableVariant = FailableVariant.TryBool,
-                OriginalName = original.Name
+                RecoveryOf = original,
+                Recovery = RecoveryKind.Try
             };
         }
 
@@ -387,14 +360,14 @@ public sealed class ErrorHandlingGenerator
             genericDef: maybeDef,
             typeArguments: [carrierInner]);
 
-        return new RoutineInfo(name: GenerateVariantName(prefix: "try", original: original))
+        return new RoutineInfo(name: original.Name)
         {
             Kind = VariantKind(original: original),
             OwnerType = original.OwnerType,
             MeType = VariantMeType(original: original),
             Parameters = original.Parameters,
             ReturnType = maybeType,
-            IsFailable = false, // try_ variants don't fail
+            IsFailable = false, // try variants don't fail
             IsSynthesized = true,
             DeclaredMutation = original.DeclaredMutation,
             MutationCategory = original.MutationCategory,
@@ -406,19 +379,20 @@ public sealed class ErrorHandlingGenerator
             ModulePath = original.ModulePath,
             Annotations = original.Annotations,
             CallingConvention = original.CallingConvention,
-            OriginalName = original.Name
+            RecoveryOf = original,
+            Recovery = RecoveryKind.Try
         };
     }
 
     /// <summary>
-    /// Generates the check_ variant (returns Result&lt;T&gt;).
+    /// Generates the grab variant (returns Result&lt;T&gt;).
     /// throw -> return error
     /// </summary>
     /// <param name="original">The original routine.</param>
-    /// <returns>The check_ variant routine info.</returns>
+    /// <returns>The grab variant routine info.</returns>
     private RoutineInfo GenerateCheckVariant(RoutineInfo original)
     {
-        // check_ returns Result[T] — success carries T, throw carries the error.
+        // grab returns Result[T] — success carries T, throw carries the error.
         TypeSymbol innerType = original.ReturnType ?? _registry.LookupType(name: NoneTypeName) ??
             throw new InvalidOperationException(message: "None type not registered");
 
@@ -431,14 +405,14 @@ public sealed class ErrorHandlingGenerator
             genericDef: resultDef,
             typeArguments: [carrierInner]);
 
-        return new RoutineInfo(name: GenerateVariantName(prefix: "check", original: original))
+        return new RoutineInfo(name: original.Name)
         {
             Kind = VariantKind(original: original),
             OwnerType = original.OwnerType,
             MeType = VariantMeType(original: original),
             Parameters = original.Parameters,
             ReturnType = resultType,
-            IsFailable = false, // check_ variants don't fail
+            IsFailable = false, // grab variants don't fail
             IsSynthesized = true,
             DeclaredMutation = original.DeclaredMutation,
             MutationCategory = original.MutationCategory,
@@ -450,17 +424,18 @@ public sealed class ErrorHandlingGenerator
             ModulePath = original.ModulePath,
             Annotations = original.Annotations,
             CallingConvention = original.CallingConvention,
-            OriginalName = original.Name
+            RecoveryOf = original,
+            Recovery = RecoveryKind.Grab
         };
     }
 
     /// <summary>
-    /// Generates the lookup_ variant (returns Lookup&lt;T&gt;).
+    /// Generates the lookup variant (returns Lookup&lt;T&gt;).
     /// throw -> return error
     /// absent -> return None
     /// </summary>
     /// <param name="original">The original routine.</param>
-    /// <returns>The lookup_ variant routine info.</returns>
+    /// <returns>The lookup variant routine info.</returns>
     private RoutineInfo GenerateLookupVariant(RoutineInfo original)
     {
         TypeSymbol noneType = _registry.LookupType(name: NoneTypeName) ??
@@ -469,7 +444,7 @@ public sealed class ErrorHandlingGenerator
         TypeSymbol returnType = original.ReturnType ?? noneType;
 
         // Lookup[None] degenerates to Result[None]: absent and return are both None,
-        // so the only distinction is throw vs no-throw — same as check_.
+        // so the only distinction is throw vs no-throw — same as grab.
         if (returnType.Name == NoneTypeName)
         {
             TypeSymbol resultDef = _registry.LookupType(name: "Check") ??
@@ -479,8 +454,8 @@ public sealed class ErrorHandlingGenerator
                 genericDef: resultDef,
                 typeArguments: [noneType]);
 
-            // Degenerated: Lookup[None] -> Result[None], and the API name becomes check_ not lookup_
-            return new RoutineInfo(name: GenerateVariantName(prefix: "check", original: original))
+            // Degenerated: Lookup[None] -> Result[None], and the API name becomes grab not lookup
+            return new RoutineInfo(name: original.Name)
             {
                 Kind = VariantKind(original: original),
                 OwnerType = original.OwnerType,
@@ -499,7 +474,8 @@ public sealed class ErrorHandlingGenerator
                 ModulePath = original.ModulePath,
                 Annotations = original.Annotations,
                 CallingConvention = original.CallingConvention,
-                OriginalName = original.Name
+                RecoveryOf = original,
+                Recovery = RecoveryKind.Grab
             };
         }
 
@@ -512,14 +488,14 @@ public sealed class ErrorHandlingGenerator
             genericDef: lookupDef,
             typeArguments: [carrierInner]);
 
-        return new RoutineInfo(name: GenerateVariantName(prefix: "lookup", original: original))
+        return new RoutineInfo(name: original.Name)
         {
             Kind = VariantKind(original: original),
             OwnerType = original.OwnerType,
             MeType = VariantMeType(original: original),
             Parameters = original.Parameters,
             ReturnType = lookupType,
-            IsFailable = false, // lookup_ variants don't fail
+            IsFailable = false, // lookup variants don't fail
             IsSynthesized = true,
             DeclaredMutation = original.DeclaredMutation,
             MutationCategory = original.MutationCategory,
@@ -531,7 +507,8 @@ public sealed class ErrorHandlingGenerator
             ModulePath = original.ModulePath,
             Annotations = original.Annotations,
             CallingConvention = original.CallingConvention,
-            OriginalName = original.Name
+            RecoveryOf = original,
+            Recovery = RecoveryKind.Lookup
         };
     }
 

@@ -15,7 +15,7 @@ namespace Builder.Verification;
 /// break, would nest a <c>when</c> per hop), we synthesize a failable BASE routine
 /// <c>__recover_N!(freevars) -&gt; T</c> whose body is the inner expression in A-normal form (each failable
 /// sub-call hoisted to its own <c>var</c>, in evaluation order), then take that base's
-/// <c>try_</c>/<c>check_</c>/<c>lookup_</c> variant. The variant's <see cref="Builder.Instantiation.ErrorHandlingVariantPass.TransformBody"/>
+/// <c>try</c>/<c>grab</c>/<c>lookup</c> variant. The variant's <see cref="Builder.Instantiation.ErrorHandlingVariantPass.TransformBody"/>
 /// turns every hoisted failable <c>var</c> into its own recovery variant + unwrap + early <c>return</c> —
 /// i.e. the existing per-routine variant machinery does all the threading. The <see cref="RecoveryExpression"/>'s
 /// <see cref="RecoveryExpression.LoweredCall"/> becomes a call to that variant (Phase-6 splices it in).
@@ -53,22 +53,14 @@ public sealed partial class SemanticVerifier
         var hoister = new RecoveryFailableHoister(seed: 0, registry: _registry);
         Expression residual = hoister.VisitExpression(expr: recovery.Inner);
 
-        string recoveryPrefix = recovery.Kind switch
-        {
-            RecoveryKind.Grab => "check",
-            RecoveryKind.Lookup => "lookup",
-            _ => "try"
-        };
-
-        // SINGLE failable call (the overwhelmingly common case): bind its recovery-variant DIRECTLY by
-        // RESOLVED reference — no `try_`/`check_`/`lookup_` NAME is ever formed (names are STRUCTURED, never
-        // string-parsed). The base call already resolved concretely (a concrete receiver → the concrete
-        // member routine, or the failable free reader for a conversion), so we synthesize the base's variant
-        // and substitute it for that same concrete owner: concrete carrier `Maybe[S64]` (not the generic-def
-        // `Maybe[T]`), receiver stays in place so an entity is BORROWED as the base call borrowed it (no
-        // synth-routine by-value capture → no spurious RF-S413). Routine synthesis (below) is the fallback
-        // ONLY for a MULTI-call short-circuit, or a shape SynthesizeVariantForBase cannot mint here (grab's
-        // check_ over an absent-only base — the routine path shapes that), which this gate defers on null.
+        // SINGLE failable call (the overwhelmingly common case): bind its recovery variant DIRECTLY by
+        // reference (TypeRegistry.LookupRecoveryVariant) — the variant is the base routine's, never found by
+        // a name. The base call already resolved concretely (a concrete receiver → the concrete member
+        // routine, or the failable free reader for a conversion), so the variant comes substituted for that
+        // same owner: concrete carrier `Maybe[S64]` (not the generic-def `Maybe[T]`), receiver stays in place
+        // so an entity is BORROWED as the base call borrowed it (no synth-routine by-value capture → no
+        // spurious RF-S413). Routine synthesis (below) is the fallback ONLY for a MULTI-call short-circuit, or
+        // a shape the base has no variant for (grab over an absent-only base — the routine path shapes that).
         if (hoister.Hoisted is
                 [
                     DeclarationStatement
@@ -78,9 +70,8 @@ public sealed partial class SemanticVerifier
                 ] &&
             residual is IdentifierExpression &&
             recovery.Inner is CallExpression { ResolvedRoutine: { } singleBase } singleCall &&
-            SynthesizeVariantForBase(baseOverload: singleBase, prefix: recoveryPrefix) is { } singleVariant &&
-            BindResolvedVariantCall(call: singleCall, baseRoutine: singleBase,
-                genericVariant: singleVariant) is { } boundCall)
+            _registry.LookupRecoveryVariant(recovered: singleBase, kind: recovery.Kind) is { } singleVariant &&
+            BindResolvedVariantCall(call: singleCall, variant: singleVariant) is { } boundCall)
         {
             recovery.LoweredCall = boundCall;
             return boundCall.ResolvedType!;
@@ -115,12 +106,12 @@ public sealed partial class SemanticVerifier
         // Synthesize the failable base routine __recover_N! and register it. It is a TEMPLATE — never called
         // directly (only its recovery variant is), so it is never collected/emitted on its own.
         // The carrier the KEYWORD selects drives which variant the base must expose:
-        //  - try    → try_    (Maybe): pessimistic (throw+absent) generates try_.
-        //  - lookup → lookup_ (Lookup): pessimistic (throw+absent) generates lookup_.
-        //  - grab   → check_  (Check): grab collapses the WHOLE crashable set (and, per the design, promotes
+        //  - try    → try    (Maybe): pessimistic (throw+absent) generates try.
+        //  - lookup → lookup (Lookup): pessimistic (throw+absent) generates lookup.
+        //  - grab   → grab  (Check): grab collapses the WHOLE crashable set (and, per the design, promotes
         //    a sub-call's absent to AbsentValueError) into Check's single Crashable arm. The variant rules
-        //    only mint check_ for a THROW-ONLY shape, so mark grab's base throw-only (HasThrow, no HasAbsent,
-        //    non-pessimistic) — otherwise the both-shape yields lookup_ and no check_ exists.
+        //    only mint grab for a THROW-ONLY shape, so mark grab's base throw-only (HasThrow, no HasAbsent,
+        //    non-pessimistic) — otherwise the both-shape yields lookup and no grab exists.
         bool grab = recovery.Kind == RecoveryKind.Grab;
         string baseName = $"__recover_{_recoveryCompositionSeq++}";
         var baseRoutine = new RoutineInfo(name: baseName)
@@ -141,15 +132,14 @@ public sealed partial class SemanticVerifier
         _registry.RegisterRoutine(routine: baseRoutine);
 
         // Index the base for on-demand variant synthesis. try/lookup use the pessimistic (throw+absent)
-        // shape; grab uses the throw-only shape stamped above (so check_ is generated).
+        // shape; grab uses the throw-only shape stamped above (so grab is generated).
         _registry.DeferredVariantBases[key: baseRoutine.RegistryKey] = (baseRoutine, baseBody, !grab);
 
-        RoutineInfo? variant =
-            SynthesizeVariantForBase(baseOverload: baseRoutine, prefix: recoveryPrefix);
+        RoutineInfo? variant = _registry.LookupRecoveryVariant(recovered: baseRoutine, kind: recovery.Kind);
         if (variant == null)
         {
             // The requested carrier variant is not (yet) synthesizable for this base shape (e.g. `grab`'s
-            // check_ before the Check/Lookup propagation generalization). Surface as a generation error
+            // grab before the Check/Lookup propagation generalization). Surface as a generation error
             // rather than silently miscompiling.
             ReportError(code: SemanticDiagnosticCode.VariantGenerationError,
                 message:
@@ -159,84 +149,88 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // The LoweredCall is a plain free call to the (uniquely-named) variant, passing the captured locals
-        // as named arguments. Re-analyzing it stamps ResolvedRoutine/LoweringKind/ResolvedType the normal way.
+        // The LoweredCall is a free call bound to the variant, passing the captured locals as named
+        // arguments. The variant has its base's name, so the call is bound here and marked analyzed: a
+        // re-analysis by name would bind the failable base instead.
         List<Expression> args = freeParams
-                                .Select(selector: p => (Expression)new NamedArgumentExpression(
-                                    Name: p.Name,
-                                    Value: new IdentifierExpression(Name: p.Name,
-                                        Location: recovery.Location),
-                                    Location: recovery.Location))
+                                .Select(selector: p =>
+                                 {
+                                     var value = new IdentifierExpression(Name: p.Name, Location: recovery.Location);
+                                     AnalyzeExpression(expression: value);
+                                     return (Expression)new NamedArgumentExpression(Name: p.Name,
+                                         Value: value,
+                                         Location: recovery.Location) { ResolvedType = value.ResolvedType };
+                                 })
                                 .ToList();
         var loweredCall = new CallExpression(
-            Callee: new IdentifierExpression(Name: variant.Name, Location: recovery.Location),
+            Callee: new IdentifierExpression(Name: variant.Name, Location: recovery.Location)
+            {
+                ResolvedRoutine = variant
+            },
             Arguments: args,
-            Location: recovery.Location);
-        TypeSymbol carrierType = AnalyzeExpression(expression: loweredCall);
+            Location: recovery.Location)
+        {
+            ResolvedRoutine = variant,
+            ResolvedType = variant.ReturnType,
+            LoweringKind = ClassifyStandaloneRoutineCall(routine: variant),
+            IsPreAnalyzed = true
+        };
         recovery.LoweredCall = loweredCall;
-        return carrierType;
+        return variant.ReturnType ?? ErrorTypeSymbol.Instance;
     }
 
     /// <summary>
-    /// Binds a single failable <paramref name="call"/> to its recovery-variant by RESOLVED reference — no
-    /// <c>try_</c>/<c>check_</c>/<c>lookup_</c> name is ever formed. <paramref name="genericVariant"/> is the
-    /// variant minted for the base (generic-def for a generic owner). Produces a retargeted
-    /// <see cref="CallExpression"/> whose ResolvedRoutine/LoweringKind/ResolvedType are stamped as the normal
-    /// resolution would; returns null when the call shape is not a directly-bindable single call (the caller
-    /// then defers to routine-synthesis composition).
+    /// Binds a single failable <paramref name="call"/> to its recovery <paramref name="variant"/> (already
+    /// substituted for the call's owner). The variant has the base's name and parameters, so the call keeps
+    /// its shape and only its binding changes: ResolvedRoutine/LoweringKind/ResolvedType are stamped as the
+    /// normal resolution would, and the call is marked analyzed (a re-analysis by name would bind the failable
+    /// base). Returns null when the call shape is not a directly-bindable single call (the caller then defers
+    /// to routine-synthesis composition).
     /// </summary>
-    private CallExpression? BindResolvedVariantCall(CallExpression call, RoutineInfo baseRoutine,
-        RoutineInfo genericVariant)
+    private static CallExpression? BindResolvedVariantCall(CallExpression call, RoutineInfo variant)
     {
         // CONVERSION recovery (`try x.S8()`): the base is a failable free reader `S8!(from:)` bound as a
-        // TypeConstructor; its variant is the reader's recovery variant. Keep the member-call shape — codegen's
-        // TypeConstructor path passes the receiver as the `from:` argument and dispatches on ResolvedRoutine —
-        // and stamp the resolved variant + carrier return (the variant's ReturnType is Maybe/Check/Lookup[T]).
+        // TypeConstructor; its variant is the reader's recovery variant. Keep the member-call shape — the
+        // construction passes the receiver as the `from:` argument and dispatches on ResolvedRoutine — and
+        // stamp the variant + carrier return (the variant's ReturnType is Maybe/Check/Lookup[T]).
         if (call.LoweringKind == CallLoweringKind.TypeConstructor)
         {
-            var conv = call with { IsFailable = false };
-            conv.ResolvedRoutine = genericVariant;
+            var conv = call with { IsFailable = false, IsPreAnalyzed = true };
+            conv.ResolvedRoutine = variant;
             conv.LoweringKind = CallLoweringKind.TypeConstructor;
             conv.ConstructedType = call.ConstructedType;
-            conv.ResolvedType = genericVariant.ReturnType;
+            conv.ResolvedType = variant.ReturnType;
             return conv;
         }
 
         switch (call.Callee)
         {
-            // MEMBER call (`l.remove_last()`): the base call already resolved to the concrete-for-owner member
-            // routine, so substitute the (generic-def) variant for the BASE's owner — that owner is already
-            // unwrapped through any access wrapper (`you: Accessing[SortedList[T]]` → owner `SortedList[T]`),
-            // whereas the receiver EXPRESSION's type is still the wrapper. Yields the concrete carrier and keeps
-            // the receiver in place (borrowed, not consumed).
-            case MemberExpression m when (baseRoutine.OwnerType ?? m.Object.ResolvedType) is { } ownerType:
+            // MEMBER call (`l.remove_last()`): the receiver stays in place (borrowed, not consumed).
+            case MemberExpression m:
             {
-                RoutineInfo concrete =
-                    _registry.SubstituteMemberRoutineForOwner(memberRoutine: genericVariant,
-                        resolvedOwner: ownerType) ?? genericVariant;
                 var member = call with
                 {
-                    Callee = m with { MemberName = concrete.Name, IsFailable = false },
-                    IsFailable = false
+                    Callee = m with { IsFailable = false },
+                    IsFailable = false,
+                    IsPreAnalyzed = true
                 };
-                member.ResolvedRoutine = concrete;
-                member.LoweringKind = ClassifyMemberRoutineCall(memberRoutine: concrete);
-                member.ResolvedType = concrete.ReturnType;
+                member.ResolvedRoutine = variant;
+                member.LoweringKind = ClassifyMemberRoutineCall(memberRoutine: variant);
+                member.ResolvedType = variant.ReturnType;
                 return member;
             }
 
-            // FREE call (`make_point(...)`): no generic free recovery exists (measured across the suite), so
-            // the variant is already concrete — bind it verbatim.
             case IdentifierExpression id:
             {
                 var free = call with
                 {
-                    Callee = id with { Name = genericVariant.Name },
-                    IsFailable = false
+                    Callee = id with { ResolvedRoutine = variant },
+                    IsFailable = false,
+                    IsPreAnalyzed = true
                 };
-                free.ResolvedRoutine = genericVariant;
-                free.LoweringKind = ClassifyStandaloneRoutineCall(routine: genericVariant);
-                free.ResolvedType = genericVariant.ReturnType;
+                free.ResolvedRoutine = variant;
+                free.LoweringKind = ClassifyStandaloneRoutineCall(routine: variant);
+                free.ResolvedType = variant.ReturnType;
                 return free;
             }
 

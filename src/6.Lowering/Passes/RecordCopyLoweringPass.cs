@@ -406,7 +406,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // A carrier PAYLOAD EXTRACTION — `<Maybe/Result/Lookup>.value` (a MemberExpression on a
         // carrier), or the `CarrierPayloadExpression` the Result/Lookup path lowers to — is a VIEW
         // into a payload the carrier still owns, NOT an owning copy. It is the shape every `when`/
-        // `each` element binding takes (`else var v -> …` from `try_emit()`'s `Maybe`). Retaining it
+        // `each` element binding takes (`else var v -> …` from `try it.emit()`'s `Maybe`). Retaining it
         // makes the loop element a co-owner (+1) that never escapes the each scope and is never
         // released → a per-iteration leak + needless churn. The carrier owns the payload for as long
         // as the binding is live (non-escaping), and any ESCAPING use retains at its own store site,

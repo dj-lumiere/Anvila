@@ -170,7 +170,7 @@ internal static class GenericAstRewriter
         /// `r` was a protocol-constrained generic param (`__T0 obeys Iterable[S64]`) is typed by SA
         /// as the abstract protocol return (`Iterator[S64]`), but after `__T0 → Range[S64]` the call
         /// re-dispatches to `Range[S64].iter` returning the CONCRETE `RangeIterator[S64]`. Recording
-        /// that here lets later references (`it.try_emit()`) re-dispatch against the concrete iterator
+        /// that here lets later references (`it.emit() (under try)`) re-dispatch against the concrete iterator
         /// instead of the abstract protocol memberRoutine (which has no body → linker error). Only used to
         /// concretize references whose stale type is itself a protocol, so other locals are untouched.
         /// </summary>
@@ -508,6 +508,23 @@ internal static class GenericAstRewriter
                 ? callArgTypes
                 : resolvedParamTypes;
 
+            // A recovery variant is reached through the failable routine it recovers (same name and
+            // parameters): resolve that routine on the concrete owner, then take its variant.
+            if (original.Recovery is { } recovery)
+            {
+                RoutineInfo? resolvedBase = resolvedOwner != null
+                    ? ResolveMemberRoutineOnConcreteOwner(ownerType: resolvedOwner,
+                        memberRoutineName: original.Name,
+                        argTypes: resolvedParamTypes,
+                        isFailable: true)
+                    : original.RecoveryOf is { } recovered
+                        ? ResolveFreeRoutine(original: recovered, resolvedParamTypes: resolvedParamTypes)
+                        : null;
+                return resolvedBase is { IsRecoveryVariant: false }
+                    ? Registry.LookupRecoveryVariant(recovered: resolvedBase, kind: recovery)
+                    : null;
+            }
+
             if (resolvedOwner != null)
             {
                 RoutineInfo? onOwner = ResolveRoutineOnOwner(original: original,
@@ -785,19 +802,27 @@ internal static class GenericAstRewriter
                 return null;
             }
 
-            return call.Callee switch
+            // A call bound to a recovery variant names its failable base: rebind the base on the concrete
+            // owner, then take that base's variant.
+            RecoveryKind? recovery = call.ResolvedRoutine?.Recovery;
+            RoutineInfo? resolved = call.Callee switch
             {
                 MemberExpression member => ResolveMemberCallRoutine(member: member,
-                    callArgTypes: callArgTypes),
+                    callArgTypes: callArgTypes,
+                    isFailable: member.IsFailable || recovery != null),
                 IdentifierExpression identifier => ResolveFreeCallRoutine(call: call,
                     identifier: identifier,
-                    callArgTypes: callArgTypes),
+                    callArgTypes: callArgTypes,
+                    isFailable: call.IsFailable || recovery != null),
                 _ => null
             };
+            return recovery is { } kind && resolved is { IsRecoveryVariant: false }
+                ? Registry.LookupRecoveryVariant(recovered: resolved, kind: kind)
+                : resolved;
         }
 
         private RoutineInfo? ResolveMemberCallRoutine(MemberExpression member,
-            List<TypeSymbol> callArgTypes)
+            List<TypeSymbol> callArgTypes, bool isFailable)
         {
             // The receiver's own ResolvedType is the RAW template annotation — for a universal derive
             // (`T.destroy()`) cloned onto a GENERIC owner it is the bare owner GENERIC-DEF (`ListEmittable[T]`),
@@ -830,15 +855,14 @@ internal static class GenericAstRewriter
             return ResolveMemberRoutineOnConcreteOwner(ownerType: receiverType,
                 memberRoutineName: member.MemberName,
                 argTypes: callArgTypes,
-                isFailable: member.IsFailable);
+                isFailable: isFailable);
         }
 
         private RoutineInfo? ResolveFreeCallRoutine(CallExpression call,
-            IdentifierExpression identifier, List<TypeSymbol> callArgTypes)
+            IdentifierExpression identifier, List<TypeSymbol> callArgTypes, bool isFailable)
         {
             // Identifier names are bare; the failable `!` is a structured flag on the call node.
             string callName = identifier.Name;
-            bool isFailable = call.IsFailable;
 
             RoutineInfo? InstantiateFreeRoutine(RoutineInfo candidate)
             {
@@ -1549,6 +1573,12 @@ internal static class GenericAstRewriter
                 Value = RewriteExpression(expr: nae.Value, ctx: ctx)
             },
 
+            // An analyzed `try`/`grab`/`lookup` is its recovery-variant call: rewrite that call (so it rebinds
+            // on the concrete owner) in its place, as AstRewriter splices it. Unanalyzed, rewrite the inner.
+            RecoveryExpression recovery => recovery.LoweredCall is { } lowered
+                ? RewriteExpression(expr: lowered, ctx: ctx)
+                : recovery with { Inner = RewriteExpression(expr: recovery.Inner, ctx: ctx) },
+
             IdentifierExpression identifier => identifier with { },
 
             // Leaf nodes have no children, but their ResolvedType may still carry a generic
@@ -2144,8 +2174,8 @@ internal static class GenericAstRewriter
                 or ProtocolTypeSymbol or ErrorTypeSymbol or { IsGenericDefinition: true })
         {
             // A protocol-owned memberRoutine is abstract (no body) — after monomorphization the call must
-            // re-dispatch to the concrete implementer (e.g. Iterator[S64].try_emit, resolved via a
-            // constrained generic param's iter, must rebind to RangeIterator[S64].try_emit).
+            // re-dispatch to the concrete implementer (e.g. Iterator[S64].emit's try variant, resolved via a
+            // constrained generic param's iter, must rebind to RangeIterator[S64].emit's try variant).
             return true;
         }
 

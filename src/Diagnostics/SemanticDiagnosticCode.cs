@@ -435,13 +435,6 @@ public enum SemanticDiagnosticCode
     /// <summary>Invalid visibility modifier for this context.</summary>
     InvalidVisibilityModifier = 408,
 
-    /// <summary>
-    /// A hand-declared routine collides with the try_/check_/lookup_ variant the compiler
-    /// synthesizes for a failable (<c>!</c>) routine of the same owner and signature. The
-    /// prefix itself is only reserved when such a failable base actually exists.
-    /// </summary>
-    ReservedRoutinePrefix = 409,
-
     /// <summary>Routine name uses reserved '$' prefix but is not a known wired memberRoutine.</summary>
     UnknownWiredRoutine = 410,
 

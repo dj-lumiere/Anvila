@@ -694,25 +694,25 @@ public enum FailableVariant
     None,
 
     /// <summary>
-    /// Compiler-generated lookup_ variant: wraps a failable routine to return Lookup[T].
+    /// Compiler-generated lookup variant: wraps a failable routine to return Lookup[T].
     /// throw -> error carrier, absent -> zeroinitializer, return -> success carrier.
     /// </summary>
     Lookup,
 
     /// <summary>
-    /// Compiler-generated check_ variant: wraps a failable routine to return Result[None].
+    /// Compiler-generated grab variant: wraps a failable routine to return Result[None].
     /// throw -> error carrier, absent/return -> success zeroinitializer (None).
     /// </summary>
     Check,
 
     /// <summary>
-    /// Compiler-generated try_ variant for None-returning failable routines.
+    /// Compiler-generated try variant for None-returning failable routines.
     /// Returns Bool (i1): true = success, false = absent or throw.
     /// </summary>
     TryBool,
 
     /// <summary>
-    /// Compiler-generated try_ variant for non-None failable routines.
+    /// Compiler-generated try variant for non-None failable routines.
     /// Returns Maybe[T] carrier: absent/throw -> zeroinitializer (None), return value -> present.
     /// RoutineInfo.ReturnType is the full Maybe[T] type; codegen uses GetLLVMType directly.
     /// </summary>
