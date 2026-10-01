@@ -126,10 +126,15 @@ public record TextPart(string Text, SourceLocation Location)
     : InsertedTextPart(Location: Location);
 
 /// <summary>
-/// An embedded expression within an f-string, with optional format specifier.
+/// An embedded expression within an f-string, with optional format specifier. <paramref name="SourceText"/>
+/// is the expression as written (<c>p.x</c> in <c>{p.x:=}</c>), which the <c>=</c> and <c>=?</c> specs print
+/// before the value.
 /// </summary>
-public record ExpressionPart(Expression Expression, string? FormatSpec, SourceLocation Location)
-    : InsertedTextPart(Location: Location);
+public record ExpressionPart(
+    Expression Expression,
+    string? FormatSpec,
+    SourceLocation Location,
+    string? SourceText = null) : InsertedTextPart(Location: Location);
 
 /// <summary>
 /// Expression representing an f-string with text insertion: f"Hello, {name}!"

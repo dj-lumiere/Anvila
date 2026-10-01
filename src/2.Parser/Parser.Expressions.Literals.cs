@@ -80,6 +80,31 @@ public partial class Parser
     /// Tries to parse an inserted text expression (f-string).
     /// Consumes InsertionStart, then text segments and expression parts, until InsertionEnd.
     /// </summary>
+    /// <summary>
+    /// The source text of the tokens from index <paramref name="first"/> up to (not including)
+    /// <paramref name="end"/>: their texts joined with the whitespace that separated them in the file.
+    /// </summary>
+    private string SourceTextOf(int first, int end)
+    {
+        var text = new System.Text.StringBuilder();
+        for (int i = first; i < end && i < _tokens.Count; i++)
+        {
+            Token token = _tokens[index: i];
+            if (i > first)
+            {
+                Token previous = _tokens[index: i - 1];
+                int gap = token.Position >= 0 && previous.Position >= 0
+                    ? token.Position - (previous.Position + previous.Text.Length)
+                    : 0;
+                text.Append(value: ' ', repeatCount: Math.Max(val1: gap, val2: 0));
+            }
+
+            text.Append(value: token.Text);
+        }
+
+        return text.ToString();
+    }
+
     private bool TryParseInsertedText(SourceLocation location, out Expression? result)
     {
         result = null;
@@ -107,7 +132,9 @@ public partial class Parser
                 SourceLocation partLocation = GetLocation(token: braceToken);
 
                 // Parse the expression inside the braces
+                int exprStart = _position;
                 Expression expr = ParseExpression();
+                string sourceText = SourceTextOf(first: exprStart, end: _position);
 
                 // Check for optional format specifier
                 string? formatSpec = null;
@@ -122,7 +149,8 @@ public partial class Parser
 
                 parts.Add(item: new ExpressionPart(Expression: expr,
                     FormatSpec: formatSpec,
-                    Location: partLocation));
+                    Location: partLocation,
+                    SourceText: sourceText));
             }
             else
             {

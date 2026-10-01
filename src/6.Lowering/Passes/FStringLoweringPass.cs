@@ -16,8 +16,8 @@ namespace Builder.Lowering.Passes;
 ///   <item><c>TextPart("text")</c> ??<c>LiteralExpression("text")</c></item>
 ///   <item><c>ExpressionPart(e, null)</c> ??<c>e.represent()</c></item>
 ///   <item><c>ExpressionPart(e, "?")</c> ??<c>e.diagnose()</c></item>
-///   <item><c>ExpressionPart(e, "=")</c> ??<c>"name=" + e.represent()</c></item>
-///   <item><c>ExpressionPart(e, "=?")</c> ??<c>"name=" + e.diagnose()</c></item>
+///   <item><c>ExpressionPart(e, "=")</c> ??<c>"e as written=" + e.represent()</c></item>
+///   <item><c>ExpressionPart(e, "=?")</c> ??<c>"e as written=" + e.diagnose()</c></item>
 /// </list>
 ///
 /// <para>Scope: per-file user/stdlib code via <see cref="Run"/>, plus synthesized variant
@@ -129,18 +129,15 @@ internal sealed class FStringLoweringPass(PostprocessingContext ctx) : AstRewrit
             ? Declaration.RuntimeContract.Display.Diagnose
             : Declaration.RuntimeContract.Display.Represent;
 
-        // "=" and "=?" format specs prepend "varName=" as a text literal.
+        // "=" and "=?" format specs prepend the expression as written, then "=" (`{p.x:=}` -> "p.x=7").
         if (ep.FormatSpec is "=" or "=?")
         {
-            string varName = ep.Expression is IdentifierExpression id
-                ? id.Name
-                : "";
-            if (varName.Length > 0)
-            {
-                exprs.Add(item: new LiteralExpression(Value: varName + "=",
-                    LiteralType: TokenType.TextLiteral,
-                    Location: ep.Location) { ResolvedType = textType });
-            }
+            string written = ep.SourceText ?? (ep.Expression as IdentifierExpression)?.Name ??
+                throw new InvalidOperationException(
+                    message: $"An f-string part with the '{ep.FormatSpec}' spec carries no source text to print.");
+            exprs.Add(item: new LiteralExpression(Value: written + "=",
+                LiteralType: TokenType.TextLiteral,
+                Location: ep.Location) { ResolvedType = textType });
         }
 
         Expression renderCall = new CallExpression(
