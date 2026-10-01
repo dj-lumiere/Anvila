@@ -338,7 +338,7 @@ public sealed partial class SemanticVerifier
                 ? routine.Parameters[index: pi].Location
                 : null;
             _registry.DeclareVariable(name: param.Name, type: param.Type, location: paramLoc,
-                isParameter: true);
+                isParameter: true, isNullable: param.IsNullable);
         }
     }
 

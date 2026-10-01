@@ -529,7 +529,11 @@ internal sealed class SignatureResolver
             {
                 DefaultValue = param.DefaultValue,
                 IsVariadicParam = param.IsVariadic,
-                IsByReference = param.IsByReference
+                IsByReference = param.IsByReference,
+                // A Suflae `E?` parameter resolves to a bare Roamed[E] handle (the null handle is none), so
+                // the `?` survives only in the written type, as for an entity field (TypeBodyResolver).
+                IsNullable = _sa._registry.Rules.EntitiesAreShared && param.Type is { Name: "Maybe" } &&
+                             paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed }
             });
         }
     }

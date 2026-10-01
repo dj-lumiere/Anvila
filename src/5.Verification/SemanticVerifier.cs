@@ -2547,7 +2547,8 @@ public sealed partial class SemanticVerifier
 
         foreach (ParamInfo param in routineInfo.Parameters)
         {
-            _registry.DeclareVariable(name: param.Name, type: param.Type, isParameter: true);
+            _registry.DeclareVariable(name: param.Name, type: param.Type, isParameter: true,
+                isNullable: param.IsNullable);
         }
 
         // Bind the owner type's generic parameters for this re-analysis. When re-analyzing a member body of a

@@ -33,6 +33,12 @@ public sealed class ParamInfo
     public bool IsByReference { get; init; }
 
     /// <summary>
+    /// True for a Suflae entity parameter written <c>E?</c>: its <c>Roamed[E]</c> handle may be the null handle
+    /// (none), so the routine body must check it before reading through it, and a caller may pass none.
+    /// </summary>
+    public bool IsNullable { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ParamInfo"/> class.
     /// </summary>
     /// <param name="name">The name of the parameter.</param>
@@ -55,7 +61,8 @@ public sealed class ParamInfo
             DefaultValue = DefaultValue,
             Index = Index,
             IsVariadicParam = IsVariadicParam,
-            IsByReference = IsByReference
+            IsByReference = IsByReference,
+            IsNullable = IsNullable
         };
     }
 }

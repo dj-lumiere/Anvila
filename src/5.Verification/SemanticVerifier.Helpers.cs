@@ -466,7 +466,8 @@ public sealed partial class SemanticVerifier
             Expression argExpr = binding.Value;
             TypeSymbol argType = AnalyzeExpression(expression: argExpr, expectedType: paramType);
 
-            if (SharedEntities.IsEntityRef(type: paramType) && SharedEntities.IsNullableRead(expr: argExpr))
+            if (!param.IsNullable && SharedEntities.IsEntityRef(type: paramType) &&
+                SharedEntities.IsNullableRead(expr: argExpr))
             {
                 SharedEntities.ReportIntoNonNull(target: $"parameter '{param.Name}' of '{routine.Name}'",
                     value: argExpr,

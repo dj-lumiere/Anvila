@@ -206,6 +206,16 @@ internal sealed class TypeResolver
     /// bare <c>Roamed[E]</c> — an entity reference carries its own none via a null handle, so it needs no
     /// <c>Maybe</c> wrapper (value types still use <c>Maybe[T]</c> for <c>T?</c>).</para>
     /// </summary>
+    /// <summary>
+    /// The same Suflae substitution for a slot type that was INFERRED rather than written: a collection
+    /// literal's element, key or value type taken from its elements (<c>[mine]</c> is a
+    /// <c>List[Roamed[Account]]</c>, exactly like a written <c>List[Account]</c>).
+    /// </summary>
+    internal TypeSymbol RoamInferredSlot(TypeSymbol inferred)
+    {
+        return RoamSharedEntitySlot(resolved: inferred);
+    }
+
     private TypeSymbol RoamSharedEntitySlot(TypeSymbol resolved)
     {
         if (!_sa._registry.Rules.EntitiesAreShared)

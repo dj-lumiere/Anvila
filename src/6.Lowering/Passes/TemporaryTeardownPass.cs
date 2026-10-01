@@ -174,9 +174,21 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         {
             case BlockStatement b:
             {
-                var stmts = b.Statements
-                             .Select(selector: TransformStatement)
-                             .ToList();
+                var stmts = new List<Statement>(capacity: b.Statements.Count);
+                var hoisted = new HashSet<Statement>(comparer: ReferenceEqualityComparer.Instance);
+                for (int i = 0; i < b.Statements.Count; i++)
+                {
+                    Statement original = b.Statements[index: i];
+                    if (hoisted.Contains(item: original))
+                    {
+                        continue;
+                    }
+
+                    Statement lowered = TransformStatement(stmt: original);
+                    stmts.Add(item: HoistLockExit(lowered: lowered, following: b.Statements, after: i,
+                        hoisted: hoisted));
+                }
+
                 return b with { Statements = stmts };
             }
 
@@ -461,6 +473,74 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         }
 
         return new BlockStatement(Statements: stmts, Location: owner.Location);
+    }
+
+    /// <summary>
+    /// A reassignment of a <c>Roamed</c> handle <c>X</c> inside an access-lock bracket
+    /// (<c>X.lock_enter()</c> … <c>X = X.next</c> … <c>X.lock_exit()</c>, RoamedLockBracketLoweringPass) has
+    /// just been expanded to <c>var __rv = RHS ; X.destroy() ; X = __rv</c>. The lock was taken on the old
+    /// object, so it must be released on the old object, and before that object is released: the
+    /// bracket's <c>X.lock_exit()</c> (one of the closing calls right after the statement) moves to just
+    /// before <c>X.destroy()</c>. Left where it was, it would unlock the NEW object (or a none handle) and
+    /// release the old one while still locked. Returns <paramref name="lowered"/> unchanged otherwise.
+    /// </summary>
+    private static Statement HoistLockExit(Statement lowered, List<Statement> following, int after,
+        HashSet<Statement> hoisted)
+    {
+        if (lowered is not BlockStatement block)
+        {
+            return lowered;
+        }
+
+        int destroyAt = block.Statements.FindIndex(match: s => DestroyedLocal(stmt: s) is not null);
+        if (destroyAt < 0)
+        {
+            return lowered;
+        }
+
+        string target = DestroyedLocal(stmt: block.Statements[index: destroyAt])!;
+        for (int j = after + 1; j < following.Count && LockExitHandle(stmt: following[index: j]) is { } handle; j++)
+        {
+            if (handle != target)
+            {
+                continue;
+            }
+
+            hoisted.Add(item: following[index: j]);
+            var statements = new List<Statement>(collection: block.Statements);
+            statements.Insert(index: destroyAt, item: following[index: j]);
+            return block with { Statements = statements };
+        }
+
+        return lowered;
+    }
+
+    /// <summary>The local a <c>local.destroy()</c> statement releases, or null.</summary>
+    private static string? DestroyedLocal(Statement stmt)
+    {
+        return stmt is ExpressionStatement
+        {
+            Expression: CallExpression
+            {
+                Callee: MemberExpression { Object: IdentifierExpression local, MemberName: "destroy" }
+            }
+        }
+            ? local.Name
+            : null;
+    }
+
+    /// <summary>The local a <c>local.lock_exit()</c> statement unlocks, or null.</summary>
+    private static string? LockExitHandle(Statement stmt)
+    {
+        return stmt is ExpressionStatement
+        {
+            Expression: CallExpression
+            {
+                Callee: MemberExpression { Object: IdentifierExpression local } member
+            }
+        } && member.MemberName == RuntimeContract.RoamedMemberRoutine.LockExit
+            ? local.Name
+            : null;
     }
 
     private static DeclarationStatement DeclStmt(string name, Expression init, SourceLocation loc)

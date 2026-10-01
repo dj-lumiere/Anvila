@@ -211,7 +211,10 @@ public sealed partial class SemanticVerifier
                 }
             }
 
-            return elementType;
+            // An entity element inferred from the elements is a shared handle slot in Suflae.
+            return expectedElementType != null
+                ? elementType
+                : _typeResolver.RoamInferredSlot(inferred: elementType);
         }
 
         if (expectedElementType != null)
@@ -432,8 +435,12 @@ public sealed partial class SemanticVerifier
 
         if (set.Elements.Count > 0)
         {
-            return AnalyzeExpression(expression: set.Elements[index: 0],
+            TypeSymbol first = AnalyzeExpression(expression: set.Elements[index: 0],
                 expectedType: expectedElementType);
+            // An entity element inferred from the elements is a shared handle slot in Suflae.
+            return expectedElementType != null
+                ? first
+                : _typeResolver.RoamInferredSlot(inferred: first);
         }
 
         if (expectedElementType != null)
@@ -497,6 +504,11 @@ public sealed partial class SemanticVerifier
         (TypeSymbol? keyType, TypeSymbol? valueType) = InferDictKeyValueTypes(dict: dict,
             expectedKeyType: expectedKeyType,
             expectedValueType: expectedValueType);
+        // An entity key or value inferred from the pairs is a shared handle slot in Suflae.
+        keyType = keyType is null || expectedKeyType != null ? keyType : _typeResolver.RoamInferredSlot(inferred: keyType);
+        valueType = valueType is null || expectedValueType != null
+            ? valueType
+            : _typeResolver.RoamInferredSlot(inferred: valueType);
 
         // Analyze all pairs with the inferred/expected key/value types.
         foreach ((Expression Key, Expression Value) pair in dict.Pairs)
