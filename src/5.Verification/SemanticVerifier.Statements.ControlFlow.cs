@@ -925,7 +925,7 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeDangerStatement(DangerStatement danger)
     {
-        if (_registry.Language == Language.Suflae)
+        if (_registry.Language == Language.Suflae && !danger.IsBuilderWritten)
         {
             ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
                 message: "Danger blocks are not available in Suflae.",

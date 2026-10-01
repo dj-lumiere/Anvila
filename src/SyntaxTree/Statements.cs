@@ -1055,6 +1055,12 @@ public record TypeDestructuringPattern(
 public record DangerStatement(BlockStatement Body, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>
+    /// True for a danger block the builder wrote (the routines that build and run an Agent recipe). It is
+    /// allowed in Suflae, where a written danger block is not.
+    /// </summary>
+    public bool IsBuilderWritten { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

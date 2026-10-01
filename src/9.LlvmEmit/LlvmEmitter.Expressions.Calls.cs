@@ -126,19 +126,6 @@ public partial class LlvmEmitter
             }
         }
 
-        // A `threaded routine` call spawns an OS thread; the expression value is an Agent[T]
-        // handle (kind THREAD).
-        if (routine is { AsyncStatus: AsyncStatus.Threaded })
-        {
-            return EmitThreadedSpawn(sb: sb, routine: routine, arguments: arguments);
-        }
-
-        // A `suspended routine` call creates a coroutine and yields an Agent[T] handle (kind CORO).
-        if (routine is { AsyncStatus: AsyncStatus.Suspended })
-        {
-            return EmitSuspendedSpawn(sb: sb, routine: routine, arguments: arguments);
-        }
-
         // Evaluate arguments and bind them to parameters. RazorForge evaluates arguments in
         // PARAMETER-DECLARATION order regardless of the call-site writing order; named arguments
         // may be reordered and may skip middle parameters that have defaults. So: pre-collect the
@@ -282,9 +269,18 @@ public partial class LlvmEmitter
         bool paramTakesCFnPtr = param.Type?.Name == "CPtr" ||
                                 routine.IsForeign && param.Type is RoutineTypeSymbol;
 
-        // FFI routine argument: bare routine name at a CPtr/Routine param → pass the C-ABI symbol.
-        if (paramTakesCFnPtr && argInner is IdentifierExpression routineRef &&
-            _registry.LookupRoutineByName(name: routineRef.Name) is { } refRoutine &&
+        // By-reference parameter: pass the argument's address, so the routine works on that storage.
+        if (param.IsByReference)
+        {
+            argValues.Add(item: EmitLvalueAddress(sb: sb, expr: argInner));
+            argTypeInfos.Add(item: param.Type);
+            argTypes.Add(item: "ptr");
+            return;
+        }
+
+        // FFI routine argument: a routine name (resolved by semantic analysis) at a CPtr/Routine param
+        // → pass the C-ABI symbol.
+        if (paramTakesCFnPtr && argInner is IdentifierExpression { ResolvedRoutine: { } refRoutine } &&
             param.Type is not null)
         {
             GenerateRoutineDeclaration(routine: refRoutine);
@@ -605,15 +601,8 @@ public partial class LlvmEmitter
             return resultEmitMemberConversionCall;
         }
 
-        // Consulting[T, P] / Amending[T, P] are `@llvm("ptr")` tokens whose pointer targets the shared
-        // GuardController[T, P], NOT the guarded entity. When the resolved memberRoutine is a FORWARDED entity
-        // memberRoutine (owned by the inner T — e.g. `c.bump()`), the callee's `me` must be the entity, so
-        // project the receiver through `controller.data`. Token-own memberRoutines (enter/exit/refer/
-        // control/represent/diagnose/destroy, owned by the token itself) keep the controller ptr.
-        ProjectGuardedMemberReceiver(sb: sb,
-            receiver: ref receiver,
-            receiverType: receiverType,
-            memberRoutine: memberRoutine);
+        // A forwarded entity routine on a Consulting/Amending token already has the entity as its
+        // receiver (WrapperProjectionLoweringPass).
 
         // Suflae `Roamed[E]` receiver transparency is now lowered to real AST nodes by
         // RoamedProjectionLoweringPass (Phase 8): a bare-`me` inner memberRoutine's receiver is rewritten to
@@ -1785,6 +1774,9 @@ public partial class LlvmEmitter
                 EmitLvalueAddress(sb: sb, expr: named.Value),
             IdentifierExpression id => EmitIdentifierLvalueAddress(id: id),
             MemberExpression member => EmitMemberLvalueAddress(sb: sb, member: member, expr: expr),
+            // A record behind a pointer wrapper: the wrapper pointer is the record's storage.
+            WrapperProjectionExpression { Kind: WrapperProjectionKind.RecordAddress } projection =>
+                EmitExpression(sb: sb, expr: projection.Wrapper),
             _ => EmitSpillToTempAddress(sb: sb, expr: expr)
         };
     }
@@ -2203,24 +2195,6 @@ public partial class LlvmEmitter
                 $"member routine '{member.MemberName}' on '{receiverType.FullName}' could not be resolved after all re-lookup attempts. " +
                 $"loweringKind={loweringKind}, resolvedRoutine={resolvedRoutine?.RegistryKey ?? "<null>"}. " +
                 $"Routine: {_currentEmittingRoutine?.Name ?? "<unknown>"} (owner: {_currentEmittingRoutine?.OwnerType?.Name ?? "none"}).");
-        }
-    }
-
-    private void ProjectGuardedMemberReceiver(StringBuilder sb, ref string receiver,
-        TypeSymbol receiverType, RoutineInfo? memberRoutine)
-    {
-        if (memberRoutine is { OwnerType: { } memberRoutineOwner } &&
-            receiverType is RecordTypeSymbol tokenRec &&
-            GetGenericBaseName(type: tokenRec) is Declaration.RuntimeContract.Consulting
-                or Declaration.RuntimeContract.Amending &&
-            tokenRec.TypeArguments is { Count: > 1 } &&
-            tokenRec.TypeArguments[index: 0] is EntityTypeSymbol tokenInner &&
-            memberRoutineOwner.FullName == tokenInner.FullName)
-        {
-            EntityTypeSymbol controller = _registry.GetControllerType(wrapper: tokenRec) ??
-                                          throw new InvalidOperationException(
-                                              message: $"'{tokenRec.Name}' has no controller type.");
-            receiver = ReadControllerData(sb: sb, handle: receiver, controller: controller);
         }
     }
 

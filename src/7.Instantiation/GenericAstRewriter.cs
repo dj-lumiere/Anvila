@@ -1522,6 +1522,13 @@ internal static class GenericAstRewriter
                 Carrier = RewriteExpression(expr: cde.Carrier, ctx: ctx)
             },
 
+            // Wrapper projection (WrapperProjectionLoweringPass, only over concrete wrapper types, so the
+            // controller type needs no substitution).
+            WrapperProjectionExpression wpe => wpe with
+            {
+                Wrapper = RewriteExpression(expr: wpe.Wrapper, ctx: ctx)
+            },
+
             NamedArgumentExpression nae => nae with
             {
                 Value = RewriteExpression(expr: nae.Value, ctx: ctx)

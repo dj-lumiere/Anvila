@@ -297,6 +297,11 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(e: node.Carrier);
         return false;
     }
+    public bool VisitWrapperProjectionExpression(WrapperProjectionExpression node)
+    {
+        Visit(e: node.Wrapper);
+        return false;
+    }
     public bool VisitIsPatternExpression(IsPatternExpression node)
     {
         Visit(e: node.Expression);

@@ -334,8 +334,7 @@ internal partial class Program
                 Builder.Lowering.Passes.CancellationInstrumentationPass.Run(
                     programs: baseR.Registry.UserPrograms,
                     instantiatedBodies: baseR.InstantiatedGenericBodies,
-                    maySuspendKeys: baseR.MaySuspendRoutineKeys,
-                    registry: baseR.Registry);
+                    maySuspendKeys: baseR.MaySuspendRoutineKeys);
 
                 var baseGen = new Builder.LlvmEmit.LlvmEmitter(
                     userPrograms: new System.Collections.Generic.List<(SyntaxTree.Program, string,

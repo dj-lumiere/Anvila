@@ -875,6 +875,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         return $"#crashable_dispatch({node.Carrier.Accept(visitor: this)}, {node.MemberName})";
     }
 
+    /// <inheritdoc/>
+    public string VisitWrapperProjectionExpression(WrapperProjectionExpression node)
+    {
+        return $"#wrapper_projection({node.Wrapper.Accept(visitor: this)}, {node.Kind})";
+    }
+
 
     /// <inheritdoc/>
     public string VisitIsPatternExpression(IsPatternExpression node)

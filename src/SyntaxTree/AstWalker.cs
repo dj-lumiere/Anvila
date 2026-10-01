@@ -295,6 +295,10 @@ public static class AstWalker
             {
                 e.Carrier
             },
+            WrapperProjectionExpression e => new object[]
+            {
+                e.Wrapper
+            },
             IsPatternExpression e => new object[]
             {
                 e.Expression,

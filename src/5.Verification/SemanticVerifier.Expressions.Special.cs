@@ -314,6 +314,14 @@ public sealed partial class SemanticVerifier
 
         // Analyze the operand
         TypeSymbol operandType = AnalyzeExpression(expression: steal.Operand);
+
+        // A builder-written move (an argument moved into an Agent recipe) moves an entity and leaves any
+        // other value, wrappers included, as it is.
+        if (steal.IsImplicitMove && !IsRawEntityType(type: operandType))
+        {
+            steal.ResolvedType = operandType;
+            return operandType;
+        }
         CheckFrozenTokenSource(target: steal.Operand, attempt: "steal", location: steal.Location);
 
         // Aggregate-steal = hole: you cannot move a value OUT of an aggregate's MIDDLE. `steal l[i]`

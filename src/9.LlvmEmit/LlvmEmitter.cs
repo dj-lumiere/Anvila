@@ -121,13 +121,6 @@ public partial class LlvmEmitter
     /// <summary>Output buffer for function definitions.</summary>
     private readonly StringBuilder _functionDefinitions = new();
 
-    /// <summary>Output buffer for auxiliary top-level helper function definitions.</summary>
-    private readonly StringBuilder _auxRoutineDefinitions = new();
-
-    /// <summary>Thunk symbols already emitted for plain routines used as first-class values
-    /// (see <c>EnsureRoutineValueThunk</c>) — dedups the closure-ABI adapter per routine.</summary>
-    private readonly HashSet<string> _emittedRoutineValueThunks = [];
-
     /// <summary>Counter for generating unique temporary variable names.</summary>
     private int _tempCounter;
 
@@ -983,13 +976,6 @@ public partial class LlvmEmitter
             // duplicate-definition of `__emutls_v._rf_trace_stack`. Base/normal-cold builds define them.
             AppendShadowStackHelpers(output: output,
                 deltaMode: _forExternalJitModule || (_residentSymbols.Count > 0 && !_baseMode));
-        }
-
-        // Auxiliary helper definitions
-        if (_auxRoutineDefinitions.Length > 0)
-        {
-            output.AppendLine(value: "; Auxiliary function definitions");
-            output.Append(value: _auxRoutineDefinitions);
         }
 
         // FreeRoutine definitions

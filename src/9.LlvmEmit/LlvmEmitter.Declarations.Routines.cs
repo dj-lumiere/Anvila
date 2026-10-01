@@ -91,8 +91,8 @@ public partial class LlvmEmitter
     private string FormatDeclarationParameter(RoutineInfo routine, ParamInfo param,
         bool isCExtern)
     {
-        // By-ref struct-record thread arg: the worker receives a pointer to the spawner's cell.
-        if (IsByRefThreadArg(routine: routine, param: param))
+        // By-reference parameter: the routine receives a pointer to the caller's storage.
+        if (param.IsByReference)
         {
             return "ptr";
         }
@@ -507,20 +507,20 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Formats a single explicit parameter into its LLVM declaration form, resolving the ABI
-    /// passing mode (by-ref thread arg, ABI-Indirect byval, ABI-Coerce integer, or plain value).
+    /// passing mode (by-reference, ABI-Indirect byval, ABI-Coerce integer, or plain value).
     /// </summary>
     private string FormatDefinitionParameter(RoutineInfo info, ParamInfo param)
     {
-        bool byRefThreadArg = IsByRefThreadArg(routine: info, param: param);
+        bool byReference = param.IsByReference;
         // ABI-Indirect struct value arg: arrives as `ptr byval(%T)` — a pointer to the callee's
         // private copy, doubling as the struct's lvalue address.
-        bool byval = !byRefThreadArg && ParameterPassedByval(routine: info, paramType: param.Type);
+        bool byval = !byReference && ParameterPassedByval(routine: info, paramType: param.Type);
         // ABI-Coerce small struct value arg: arrives as an integer register value.
-        string? coerce = !byRefThreadArg && !byval
+        string? coerce = !byReference && !byval
             ? ParameterCoerceType(routine: info, paramType: param.Type)
             : null;
         string paramType;
-        if (byRefThreadArg)
+        if (byReference)
         {
             paramType = "ptr";
         }
@@ -533,11 +533,11 @@ public partial class LlvmEmitter
             paramType = coerce ?? GetParameterLlvmType(type: param.Type);
         }
 
-        string paramAttrs = byRefThreadArg || byval || coerce != null
+        string paramAttrs = byReference || byval || coerce != null
             ? string.Empty
             : GetExplicitParameterAttributes(type: param.Type);
         string emittedName;
-        if (byRefThreadArg || byval)
+        if (byReference || byval)
         {
             emittedName = $"{param.Name}.addr";
         }
@@ -800,10 +800,10 @@ public partial class LlvmEmitter
     private void RegisterParameterAsLocal(StringBuilder sb, RoutineInfo routine,
         ParamInfo param)
     {
-        // By-ref struct-record thread arg / ABI-Indirect byval param: `%<name>.addr` IS the
-        // parameter (a pointer to the caller's / callee's copy). No alloca/store — field/memberRoutine
-        // access resolves through the address directly.
-        if (IsByRefThreadArg(routine: routine, param: param) ||
+        // By-reference / ABI-Indirect byval param: `%<name>.addr` IS the parameter (a pointer to the
+        // caller's storage / the callee's copy). No alloca/store — field/memberRoutine access resolves
+        // through the address directly.
+        if (param.IsByReference ||
             ParameterPassedByval(routine: routine, paramType: param.Type))
         {
             _localVariables[key: param.Name] = param.Type;
@@ -1407,40 +1407,6 @@ public partial class LlvmEmitter
     private static bool IsByRefMeReceiver(RoutineInfo routine)
     {
         return IsByRefMeRecord(ownerType: routine.OwnerType);
-    }
-
-    /// <summary>
-    /// A <b>thread-shareable</b> record argument to a <c>threaded routine</c> is passed BY
-    /// REFERENCE: the worker's parameter is a pointer to the spawner's storage, so every worker
-    /// that receives the same cell operates on one address (the basis of <c>Atomic[T]</c>
-    /// cross-thread sharing). This mirrors the by-ref <c>me</c> convention — the parameter doubles
-    /// as the field/memberRoutine-access base, no alloca/store copy.
-    /// <para>
-    /// Only types that carry their own synchronization (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>)
-    /// are shared this way. Every OTHER record falls through to the normal by-value parameter path
-    /// (an independent copy is materialised in the worker's prologue), so unsynchronized state can
-    /// never silently alias across the thread boundary. Plain scalar value types
-    /// (numerics, <c>Hijacked</c>, ...) were always by value. SA (RF-S632) rejects by-ref records
-    /// that are neither shareable nor trivially copyable, so they never reach codegen.
-    /// </para>
-    /// </summary>
-    private static bool IsByRefThreadArg(RoutineInfo routine, ParamInfo param)
-    {
-        return routine.AsyncStatus == AsyncStatus.Threaded &&
-               IsByRefMeRecord(ownerType: param.Type) && IsThreadShareableType(type: param.Type);
-    }
-
-    /// <summary>
-    /// True when a type carries its own cross-thread synchronization — the atomic / shared-ownership
-    /// wrappers <c>Atomic[T]</c>, <c>Guarded[T,P]</c>, <c>Witnessed[T,P]</c>. These may be passed by
-    /// reference across a thread boundary; everything else is copied. Mirrors the SA-side
-    /// <c>IsThreadShareable</c>.
-    /// </summary>
-    private static bool IsThreadShareableType(TypeSymbol? type)
-    {
-        return type != null &&
-               GetGenericBaseNameStatic(type: type) is Declaration.RuntimeContract.Atomic
-                   or Declaration.RuntimeContract.Guarded or Declaration.RuntimeContract.Witnessed;
     }
 
     /// <summary>

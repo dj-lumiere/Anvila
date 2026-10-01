@@ -491,6 +491,12 @@ public record CallExpression(
     /// dunder-private memberRoutines directly.
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
+
+    /// <summary>
+    /// True for the call of a <c>threaded</c>/<c>suspended</c> routine inside the routine that runs its
+    /// recipe (AsyncRecipeSynthesisPass): it invokes the routine itself instead of building another recipe.
+    /// </summary>
+    public bool IsDirectAsyncInvoke { get; init; }
 }
 
 /// <summary>
@@ -916,7 +922,15 @@ public record Parameter(
     TypeExpression? Type,
     Expression? DefaultValue,
     SourceLocation Location,
-    bool IsVariadic = false);
+    bool IsVariadic = false)
+{
+    /// <summary>
+    /// True when the argument is passed by its address, so the routine works on the caller's storage
+    /// (set by AsyncRecipeSynthesisPass on a <c>threaded</c> routine's <c>Atomic</c> parameter, shared
+    /// with the worker thread).
+    /// </summary>
+    public bool IsByReference { get; init; }
+}
 
 #endregion
 
@@ -1202,6 +1216,55 @@ public record CrashableDispatchExpression(
 
 #endregion
 
+#region Wrapper Projection Expressions
+
+/// <summary>How a <see cref="WrapperProjectionExpression"/> reaches the value behind its wrapper.</summary>
+public enum WrapperProjectionKind
+{
+    /// <summary>The wrapper handle points at a controller (Retained/Tracked, Guarded/Witnessed and their
+    /// Consulting/Amending tokens, Roamed) and the entity is the controller's <c>data</c> field.</summary>
+    ControllerData,
+
+    /// <summary>The wrapper is a plain pointer to the entity (Viewing, Modifying, Hijacked).</summary>
+    Direct,
+
+    /// <summary>The wrapper is a struct whose <c>Hijacked[T]</c> field holds the entity pointer.</summary>
+    StructField,
+
+    /// <summary>The wrapper is a plain pointer to a record value (Viewing, Modifying, … of a record): the
+    /// pointer is the record's storage address, so its fields are read and written in place.</summary>
+    RecordAddress
+}
+
+/// <summary>
+/// The entity or record a borrow or sharing wrapper stands for, produced by lowering (never parsed).
+/// <c>WrapperProjectionLoweringPass</c> wraps the object of a field access, a field write or a forwarded
+/// entity routine call whose object is a wrapper, so the emitter sees an ordinary entity access, or a
+/// record whose storage address is the wrapper pointer. Its resolved type is the inner entity or record.
+/// </summary>
+/// <param name="Wrapper">The wrapper-typed expression.</param>
+/// <param name="Kind">How the entity pointer is read out of the wrapper.</param>
+/// <param name="Controller">The controller entity type when <paramref name="Kind"/> is
+/// <see cref="WrapperProjectionKind.ControllerData"/>.</param>
+/// <param name="FieldIndex">The struct field that holds the entity pointer when <paramref name="Kind"/> is
+/// <see cref="WrapperProjectionKind.StructField"/>.</param>
+/// <param name="Location">Source location of the projected access.</param>
+public record WrapperProjectionExpression(
+    Expression Wrapper,
+    WrapperProjectionKind Kind,
+    EntityTypeSymbol? Controller,
+    int FieldIndex,
+    SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitWrapperProjectionExpression(node: this);
+    }
+}
+
+#endregion
+
 #region Ownership Transfer Expressions
 
 /// <summary>
@@ -1224,6 +1287,12 @@ public record CrashableDispatchExpression(
 public record StealExpression(Expression Operand, SourceLocation Location)
     : Expression(Location: Location)
 {
+    /// <summary>
+    /// True for a move the builder wrote (an argument moved into an Agent recipe): it moves an entity and
+    /// leaves any other value as it is, where a written <c>steal</c> of a non-entity is an error.
+    /// </summary>
+    public bool IsImplicitMove { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

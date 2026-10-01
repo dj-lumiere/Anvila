@@ -495,7 +495,7 @@ public partial class LlvmEmitter
     /// </summary>
     private void EmitAtomicRmw(StringBuilder sb, AtomicRmwStatement atomic)
     {
-        string fieldPtr = EmitRoamedEntityFieldAddress(sb: sb, fieldMember: atomic.Field);
+        string fieldPtr = EmitProjectedEntityFieldAddress(sb: sb, fieldMember: atomic.Field);
         TypeSymbol fieldType = atomic.Field.ResolvedType ??
                                throw new InvalidOperationException(
                                    message: "An atomic read-modify-write field has no resolved type.");
@@ -513,26 +513,17 @@ public partial class LlvmEmitter
         EmitLine(sb: sb, line: $"  {old} = atomicrmw {op} ptr {fieldPtr}, {llvmType} {deltaVal} seq_cst");
     }
 
-    /// <summary>Projects a field access through a <c>Roamed[E]</c> handle to the field's ADDRESS: read
-    /// the entity ptr from the roam controller's <c>data</c>, then GEP to the field.</summary>
-    private string EmitRoamedEntityFieldAddress(StringBuilder sb, MemberExpression fieldMember)
+    /// <summary>The ADDRESS of a field reached through a projected wrapper (its object is the entity,
+    /// see WrapperProjectionLoweringPass): the entity pointer, then a GEP to the field.</summary>
+    private string EmitProjectedEntityFieldAddress(StringBuilder sb, MemberExpression fieldMember)
     {
-        EntityTypeSymbol entity = fieldMember.Object.ResolvedType switch
+        if (fieldMember.Object is not WrapperProjectionExpression { ResolvedType: EntityTypeSymbol entity })
         {
-            WrapperTypeSymbol { Name: Declaration.RuntimeContract.Roamed, InnerType: EntityTypeSymbol e } => e,
-            RecordTypeSymbol
-            {
-                GenericDefinition.Name: Declaration.RuntimeContract.Roamed,
-                TypeArguments: [EntityTypeSymbol e]
-            } => e,
-            _ => throw new InvalidOperationException(
-                message: $"Field '{fieldMember.MemberName}' is not reached through a Roamed[E] handle.")
-        };
-        string handle = EmitExpression(sb: sb, expr: fieldMember.Object);
-        EntityTypeSymbol controller = _registry.GetControllerType(wrapper: fieldMember.Object.ResolvedType!) ??
-                                      throw new InvalidOperationException(
-                                          message: $"Roamed handle for '{entity.Name}' has no controller type.");
-        string entityPtr = ReadControllerData(sb: sb, handle: handle, controller: controller);
+            throw new InvalidOperationException(
+                message: $"Field '{fieldMember.MemberName}' of an atomic update is not reached through a wrapper projection.");
+        }
+
+        string entityPtr = EmitExpression(sb: sb, expr: fieldMember.Object);
         return EmitEntityMemberVariableFieldPointer(sb: sb,
             entityPtr: entityPtr,
             entity: entity,
@@ -616,6 +607,20 @@ public partial class LlvmEmitter
         // field assignment — not just bare-local identifiers. GEP to the field index and store.
         // Wrapper records (`@llvm("ptr")`) and entities have backend types / pointer identity and
         // are handled by the value-based branches below.
+        // A record field behind a pointer wrapper (WrapperProjectionLoweringPass) is stored in place at
+        // the wrapper pointer, the same address-based write.
+        if (member.Object is WrapperProjectionExpression
+            {
+                Kind: WrapperProjectionKind.RecordAddress, ResolvedType: RecordTypeSymbol projectedRecord
+            })
+        {
+            EmitStructRecordMemberVariableWrite(sb: sb,
+                member: member,
+                value: value,
+                structRecord: projectedRecord);
+            return;
+        }
+
         if (targetType is RecordTypeSymbol { BackendType: null } structRecord &&
             !(GetGenericBaseName(type: structRecord) is { } srBase &&
               WrapperTypeNames.Contains(item: srBase)))
@@ -639,40 +644,8 @@ public partial class LlvmEmitter
                 value: value,
                 valueType: valueType);
         }
-        // Wrapper-of-record field write: Modifying[Record] etc. The wrapper is `@llvm("ptr")`
-        // and the pointer addresses a record value in memory. GEP into the record at the
-        // field index and store. (Record-inner branch must come before the entity-inner one
-        // since RecordTypeSymbol and EntityTypeSymbol are distinct AST nodes.)
-        else if (targetType is RecordTypeSymbol wrapperRecOfRec &&
-                 GetGenericBaseName(type: wrapperRecOfRec) is { } wrapRecBaseName &&
-                 WrapperTypeNames.Contains(item: wrapRecBaseName) &&
-                 wrapperRecOfRec is { BackendType: not null, TypeArguments.Count: > 0 } &&
-                 wrapperRecOfRec.TypeArguments[index: 0] is RecordTypeSymbol innerRecord &&
-                 !wrapperRecOfRec.MemberVariables.Any(
-                     predicate: mv => mv.Name == member.MemberName))
-        {
-            EmitWrapperOfRecordMemberVariableWrite(sb: sb,
-                member: member,
-                value: value,
-                target: target,
-                innerRecord: innerRecord);
-        }
-        // Wrapper type forwarding: Modifying[T], Amending[T], etc. -> write through to inner entity
-        else if (targetType is RecordTypeSymbol wrapperRecord &&
-                 GetGenericBaseName(type: wrapperRecord) is { } wrapBaseName &&
-                 WrapperTypeNames.Contains(item: wrapBaseName) &&
-                 wrapperRecord.TypeArguments is { Count: > 0 } &&
-                 wrapperRecord.TypeArguments[index: 0] is EntityTypeSymbol innerEntity)
-        {
-            EmitWrapperForwardingMemberVariableWrite(sb: sb,
-                member: member,
-                value: value,
-                valueType: valueType,
-                ctx: new WrapperWriteContext(Target: target,
-                    WrapperRecord: wrapperRecord,
-                    WrapBaseName: wrapBaseName,
-                    InnerEntity: innerEntity));
-        }
+        // A write through an entity wrapper arrives with its object projected to the entity
+        // (WrapperProjectionLoweringPass) and takes the entity branch above.
         else
         {
             throw new InvalidOperationException(
@@ -712,119 +685,6 @@ public partial class LlvmEmitter
         EmitLine(sb: sb,
             line: $"  store {GetLlvmType(type: sfInfo.Type)} {value}, ptr {sFieldPtr}");
     }
-
-    /// <summary>GEP-and-store into the record addressed by a <c>@llvm("ptr")</c> wrapper-of-record
-    /// (Modifying[Record] etc.), where <paramref name="target"/> is the loaded wrapper pointer.</summary>
-    private void EmitWrapperOfRecordMemberVariableWrite(StringBuilder sb, MemberExpression member,
-        string value, string target, RecordTypeSymbol innerRecord)
-    {
-        int fieldIndex = -1;
-        MemberVariableInfo? fieldInfo = null;
-        for (int i = 0; i < innerRecord.MemberVariables.Count; i++)
-        {
-            if (innerRecord.MemberVariables[index: i].Name == member.MemberName)
-            {
-                fieldIndex = i;
-                fieldInfo = innerRecord.MemberVariables[index: i];
-                break;
-            }
-        }
-
-        if (fieldIndex < 0 || fieldInfo == null)
-        {
-            throw new InvalidOperationException(
-                message:
-                $"Member '{member.MemberName}' not found on inner record '{innerRecord.Name}'");
-        }
-
-        string innerRecordTypeName = EnsureRecordTypeDeclared(record: innerRecord);
-        string fieldPtr = NextTemp();
-        EmitLine(sb: sb,
-            line:
-            $"  {fieldPtr} = getelementptr {innerRecordTypeName}, ptr {target}, i32 0, i32 {fieldIndex}");
-        EmitLine(sb: sb,
-            line: $"  store {GetLlvmType(type: fieldInfo.Type)} {value}, ptr {fieldPtr}");
-    }
-
-    /// <summary>Forwards a field write through a wrapper (Modifying[T], Retained[T], Roamed[T], …) to
-    /// the inner entity, projecting through the controller's <c>data</c> where needed.</summary>
-    private void EmitWrapperForwardingMemberVariableWrite(StringBuilder sb,
-        MemberExpression member, string value, TypeSymbol? valueType,
-        WrapperWriteContext ctx)
-    {
-        // Roamed[T] projects through RoamController.data and writes directly — handled separately
-        // because the access-lock bracket is already inserted around the whole statement by
-        // RoamedLockBracketLoweringPass; codegen just projects + stores here.
-        if (ctx.WrapperRecord.BackendType != null &&
-            ctx.WrapBaseName == Declaration.RuntimeContract.Roamed)
-        {
-            EmitRoamedWrapperMemberVariableWrite(sb: sb,
-                member: member,
-                value: value,
-                valueType: valueType,
-                ctx: ctx);
-            return;
-        }
-
-        string innerPtr = ResolveWrapperInnerEntityPtr(sb: sb, ctx: ctx);
-        EmitEntityMemberVariableWrite(sb: sb,
-            entityPtr: innerPtr,
-            entity: ctx.InnerEntity,
-            memberVariableName: member.MemberName,
-            value: value,
-            valueType: valueType);
-    }
-
-    /// <summary>Emits a Roamed[T] wrapper field write by projecting through <c>RoamController.data</c>.</summary>
-    private void EmitRoamedWrapperMemberVariableWrite(StringBuilder sb, MemberExpression member,
-        string value, TypeSymbol? valueType, WrapperWriteContext ctx)
-    {
-        EntityTypeSymbol controller = _registry.GetControllerType(wrapper: ctx.WrapperRecord) ??
-                                      throw new InvalidOperationException(
-                                          message: $"'{ctx.WrapperRecord.Name}' has no controller type.");
-        string roamEntPtr = ReadControllerData(sb: sb, handle: ctx.Target, controller: controller);
-        EmitEntityMemberVariableWrite(sb: sb,
-            entityPtr: roamEntPtr,
-            entity: ctx.InnerEntity,
-            memberVariableName: member.MemberName,
-            value: value,
-            valueType: valueType);
-    }
-
-    /// <summary>
-    /// Resolves the inner entity pointer from a wrapper target — projecting through the controller's
-    /// <c>data</c> field for Retained/Tracked, or extracting the Hijacked field for struct wrappers.
-    /// </summary>
-    private string ResolveWrapperInnerEntityPtr(StringBuilder sb, WrapperWriteContext ctx)
-    {
-        string target = ctx.Target;
-        RecordTypeSymbol wrapperRecord = ctx.WrapperRecord;
-        EntityTypeSymbol innerEntity = ctx.InnerEntity;
-
-        // A controller-backed wrapper: the entity lives in the controller's `data` field. Without this,
-        // writes would store into the controller's counts.
-        if (wrapperRecord.BackendType != null &&
-            _registry.GetControllerType(wrapper: wrapperRecord) is { } controller)
-        {
-            return ReadControllerData(sb: sb, handle: target, controller: controller);
-        }
-
-        // Other @llvm("ptr") wrappers: the pointer IS the inner entity directly.
-        if (wrapperRecord.BackendType != null)
-        {
-            return target;
-        }
-
-        // Struct wrapper: extract the Hijacked[T] field that holds the inner entity pointer.
-        string recordTypeName = EnsureRecordTypeDeclared(record: wrapperRecord);
-        string innerPtr = NextTemp();
-        int dataFieldIndex =
-            FindHijackedFieldIndex(wrapperRecord: wrapperRecord, innerEntity: innerEntity);
-        EmitLine(sb: sb,
-            line: $"  {innerPtr} = extractvalue {recordTypeName} {target}, {dataFieldIndex}");
-        return innerPtr;
-    }
-
 
     /// <summary>
     /// Emits an index assignment that has no <c>setitem</c>: a raw GEP + store into contiguous
@@ -1031,12 +891,3 @@ public partial class LlvmEmitter
     }
 }
 
-/// <summary>
-/// Bundles the wrapper-related arguments for <see cref="LlvmEmitter.EmitWrapperForwardingMemberVariableWrite"/>
-/// so the method stays within the parameter-count limit.
-/// </summary>
-internal sealed record WrapperWriteContext(
-    string Target,
-    RecordTypeSymbol WrapperRecord,
-    string WrapBaseName,
-    EntityTypeSymbol InnerEntity);

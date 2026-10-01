@@ -450,6 +450,9 @@ public sealed partial class SemanticVerifier
             return AbortedResult();
         }
 
+        // Each threaded/suspended routine gets the routines that build and run its Agent recipe.
+        AsyncRecipeSynthesisPass.Run(files: [(program, _currentFilePath)], report: ReportError);
+
         RunPhase1Declarations(program: program);
         Mark(label: "Phase 1 Declarations");
         CaptureCurrentImportStateSnapshot(filePath: _currentFilePath);
@@ -1152,8 +1155,9 @@ public sealed partial class SemanticVerifier
 
 
     /// <summary>Stamps the last emitter-facing decisions on every routine body of a program: the
-    /// use-after-steal guards (<see cref="StealGuardLoweringPass"/>) and each throw's crash message
-    /// routine (<see cref="CrashMessageStampPass"/>).</summary>
+    /// use-after-steal guards (<see cref="StealGuardLoweringPass"/>), each throw's crash message
+    /// routine (<see cref="CrashMessageStampPass"/>) and the entity behind each wrapper access
+    /// (<see cref="WrapperProjectionLoweringPass"/>).</summary>
     private void AnnotateForBackend(Program program)
     {
         AstWalker.Walk(root: program,
@@ -1170,6 +1174,7 @@ public sealed partial class SemanticVerifier
     {
         StealGuardLoweringPass.Run(body: body, everStolen: everStolen);
         CrashMessageStampPass.Run(body: body, registry: _registry);
+        WrapperProjectionLoweringPass.Run(body: body, registry: _registry);
     }
 
     /// <summary>
@@ -2035,6 +2040,9 @@ public sealed partial class SemanticVerifier
         {
             return AbortedResult();
         }
+
+        // Each threaded/suspended routine gets the routines that build and run its Agent recipe.
+        AsyncRecipeSynthesisPass.Run(files: files, report: ReportError);
 
         // Every file in the build graph contributes its declarations via Phase 1 below.
         // Pre-mark their declared modules as provided so `import` statements between them

@@ -1607,8 +1607,7 @@ internal partial class Program
         // ASTs in place — the same objects codegen consumes below.
         Builder.Lowering.Passes.CancellationInstrumentationPass.Run(programs: userPrograms,
             instantiatedBodies: result.InstantiatedGenericBodies,
-            maySuspendKeys: result.MaySuspendRoutineKeys,
-            registry: result.Registry);
+            maySuspendKeys: result.MaySuspendRoutineKeys);
 
         // The entry module (manifest executable) is the module declared by the entry file —
         // it, not an arbitrary imported module's `start`, is the program entry point.

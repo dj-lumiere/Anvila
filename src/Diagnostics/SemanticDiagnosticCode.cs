@@ -809,6 +809,10 @@ public enum SemanticDiagnosticCode
     /// handle that crashes when read or torn down.</summary>
     ArrayElementHasNoZeroValue = 641,
 
+    /// <summary>A member or generic routine is marked <c>threaded</c>/<c>suspended</c>: an Agent recipe binds
+    /// the arguments of a non-generic free routine only.</summary>
+    AsyncRoutineNotFree = 642,
+
     /// <summary>A `threaded routine` parameter is neither trivially copyable (passed by value) nor a
     /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias
     /// unsynchronized state across the thread boundary.</summary>

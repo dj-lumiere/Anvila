@@ -175,6 +175,10 @@ internal sealed class MeReferenceScanner : ISyntaxTreeVisitor<bool>
     {
         return node.Carrier.Accept(visitor: this);
     }
+    public bool VisitWrapperProjectionExpression(WrapperProjectionExpression node)
+    {
+        return node.Wrapper.Accept(visitor: this);
+    }
     public bool VisitIsPatternExpression(IsPatternExpression node)
     {
         return node.Expression.Accept(visitor: this) || ScanPattern(pattern: node.Pattern);

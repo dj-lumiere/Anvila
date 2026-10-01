@@ -636,6 +636,18 @@ public partial class LlvmEmitter
             }
         }
 
+        // A record field behind a pointer wrapper is read in place at the record's storage address.
+        if (expr.Object is WrapperProjectionExpression
+            {
+                Kind: WrapperProjectionKind.RecordAddress, ResolvedType: RecordTypeSymbol projectedRecord
+            })
+        {
+            return EmitRecordFieldReadAtAddress(sb: sb,
+                recordAddress: EmitLvalueAddress(sb: sb, expr: expr.Object),
+                record: projectedRecord,
+                memberName: memberName);
+        }
+
         // Evaluate the target expression
         string target = EmitExpression(sb: sb, expr: expr.Object);
 
@@ -651,42 +663,17 @@ public partial class LlvmEmitter
 
         // A marker borrow protocol receiver (Accessing[X]/Controlling[X]) is transparent to its inner X.
 
-        // Wrapper-of-record field read: Modifying[Record], Viewing[Record], etc. The wrapper is
-        // `@llvm("ptr")` and the pointer addresses a record value. GEP at the field index and
-        // load. Mirrors the symmetric write handler in EmitMemberVariableAssignment.
-        if (targetType is RecordTypeSymbol wrapperRecOfRec &&
-            GetGenericBaseName(type: wrapperRecOfRec) is { } wrapRecBaseName &&
-            WrapperTypeNames.Contains(item: wrapRecBaseName) &&
-            wrapperRecOfRec is { BackendType: not null, TypeArguments.Count: > 0 } &&
-            wrapperRecOfRec.TypeArguments[index: 0] is RecordTypeSymbol innerRecord &&
-            !wrapperRecOfRec.MemberVariables.Any(predicate: mv => mv.Name == memberName))
+        // A field read through an entity wrapper arrives with its object projected to the entity
+        // (WrapperProjectionLoweringPass), so a wrapper-of-entity object here is an upstream gap.
+        if (targetType is RecordTypeSymbol unprojected &&
+            GetGenericBaseName(type: unprojected) is { } unprojectedBase &&
+            WrapperTypeNames.Contains(item: unprojectedBase) &&
+            unprojected.TypeArguments is [EntityTypeSymbol, ..] &&
+            !unprojected.MemberVariables.Any(predicate: mv => mv.Name == memberName))
         {
-            string? wrapperRecordFieldRead = TryEmitWrapperRecordFieldRead(sb: sb,
-                target: target,
-                innerRecord: innerRecord,
-                memberName: memberName);
-            if (wrapperRecordFieldRead != null)
-            {
-                return wrapperRecordFieldRead;
-            }
-            // Field not on inner record — fall through to entity branch below in case the
-            // wrapper has a memberRoutine forwarder for this name.
-        }
-
-        // Wrapper type forwarding: Viewing[T], Modifying[T], etc.
-        // These are records wrapping a Hijacked[T] (ptr) — forward member access to the inner entity type
-        if (targetType is RecordTypeSymbol wrapperRecord &&
-            GetGenericBaseName(type: wrapperRecord) is { } wrapBaseName &&
-            WrapperTypeNames.Contains(item: wrapBaseName) &&
-            wrapperRecord.TypeArguments is { Count: > 0 } &&
-            wrapperRecord.TypeArguments[index: 0] is EntityTypeSymbol innerEntity &&
-            !wrapperRecord.MemberVariables.Any(predicate: mv => mv.Name == memberName))
-        {
-            return EmitWrapperEntityMemberVariableRead(sb: sb,
-                target: target,
-                wrapperRecord: wrapperRecord,
-                innerEntity: innerEntity,
-                memberName: memberName);
+            throw new InvalidOperationException(
+                message:
+                $"Member variable '{memberName}' is read through '{unprojected.Name}' without a wrapper projection, in routine: {_currentEmittingRoutine?.RegistryKey ?? "<unknown>"}");
         }
 
         // Most-derived-first: Crashable (an Entity) and Variant (a Record) precede their bases.
@@ -719,111 +706,65 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Reads a field of a record wrapped by a `@llvm("ptr")` wrapper-of-record token (Modifying[Record],
-    /// Viewing[Record], etc.) via GEP + load. Returns null when the field is not on the inner record
-    /// (so the caller falls through to the entity-wrapper branch).
+    /// Reads a field of a record through its storage address (GEP + load).
     /// </summary>
-    private string? TryEmitWrapperRecordFieldRead(StringBuilder sb, string target,
-        RecordTypeSymbol innerRecord, string memberName)
+    private string EmitRecordFieldReadAtAddress(StringBuilder sb, string recordAddress,
+        RecordTypeSymbol record, string memberName)
     {
-        int fieldIndex = -1;
-        MemberVariableInfo? fieldInfo = null;
-        for (int i = 0; i < innerRecord.MemberVariables.Count; i++)
+        int fieldIndex = IndexOfMemberVariable(memberVariables: record.MemberVariables, name: memberName);
+        if (fieldIndex < 0)
         {
-            if (innerRecord.MemberVariables[index: i].Name == memberName)
-            {
-                fieldIndex = i;
-                fieldInfo = innerRecord.MemberVariables[index: i];
-                break;
-            }
+            throw new InvalidOperationException(
+                message: $"Member variable '{memberName}' not found on record '{record.Name}'");
         }
 
-        if (fieldIndex < 0 || fieldInfo == null)
-        {
-            return null;
-        }
-
-        string innerRecordTypeName = EnsureRecordTypeDeclared(record: innerRecord);
+        string recordTypeName = EnsureRecordTypeDeclared(record: record);
         string fieldPtr = NextTemp();
         EmitLine(sb: sb,
             line:
-            $"  {fieldPtr} = getelementptr {innerRecordTypeName}, ptr {target}, i32 0, i32 {fieldIndex}");
+            $"  {fieldPtr} = getelementptr {recordTypeName}, ptr {recordAddress}, i32 0, i32 {fieldIndex}");
         string loaded = NextTemp();
         EmitLine(sb: sb,
-            line: $"  {loaded} = load {GetLlvmType(type: fieldInfo.Type)}, ptr {fieldPtr}");
+            line:
+            $"  {loaded} = load {GetLlvmType(type: record.MemberVariables[index: fieldIndex].Type)}, ptr {fieldPtr}");
         return loaded;
     }
 
     /// <summary>
-    /// Forwards a member-variable read through an entity-wrapping token (Viewing[T], Modifying[T],
-    /// Retained[T], Consulting[T,P], Roamed[T], …) to the inner entity. Resolves the pointer that
-    /// actually addresses the entity (directly for a plain `@llvm("ptr")` wrapper, or via a controller's
-    /// `data` field for Retained/Tracked/Consulting/Amending/Roamed, or via the Hijacked[T] field for a
-    /// struct wrapper) and reads the requested member off it.
+    /// Emits a <see cref="WrapperProjectionExpression"/>: the entity pointer behind a wrapper, read from the
+    /// controller's <c>data</c> field, taken as the wrapper pointer itself, or extracted from the struct
+    /// wrapper's <c>Hijacked[T]</c> field, or the record value loaded from a record wrapper's pointer, as the
+    /// projection is stamped. A record field access goes through the address instead
+    /// (<see cref="EmitLvalueAddress"/>), so this load serves only a use of the whole record.
     /// </summary>
-    private string EmitWrapperEntityMemberVariableRead(StringBuilder sb, string target,
-        RecordTypeSymbol wrapperRecord, EntityTypeSymbol innerEntity, string memberName)
+    private string EmitWrapperProjection(StringBuilder sb, WrapperProjectionExpression projection)
     {
-        // A pointer-backed wrapper whose pointer targets a controller (Retained/Tracked, Guarded/Witnessed
-        // and their Consulting/Amending tokens, Roamed): the entity lives in the controller's `data` field,
-        // so reading straight through the handle would read the controller's counts instead. The access
-        // lock around a Roamed field touch is already an AST call (RoamedLockBracketLoweringPass).
-        string innerPtr;
-        if (wrapperRecord.BackendType != null && _registry.GetControllerType(wrapper: wrapperRecord) is { } controller)
+        string wrapper = EmitExpression(sb: sb, expr: projection.Wrapper);
+        switch (projection.Kind)
         {
-            innerPtr = ReadControllerData(sb: sb, handle: target, controller: controller);
+            case WrapperProjectionKind.ControllerData:
+                return EmitEntityMemberVariableRead(sb: sb,
+                    entityPtr: wrapper,
+                    entity: projection.Controller ??
+                            throw new InvalidOperationException(
+                                message: "A controller-data wrapper projection carries no controller type."),
+                    memberVariableName: Declaration.RuntimeContract.ControllerData);
+            case WrapperProjectionKind.Direct:
+                return wrapper;
+            case WrapperProjectionKind.RecordAddress:
+                string recordValue = NextTemp();
+                EmitLine(sb: sb,
+                    line:
+                    $"  {recordValue} = load {GetLlvmType(type: projection.ResolvedType!)}, ptr {wrapper}");
+                return recordValue;
+            default:
+                string recordTypeName = EnsureRecordTypeDeclared(
+                    record: (RecordTypeSymbol)projection.Wrapper.ResolvedType!);
+                string entityPtr = NextTemp();
+                EmitLine(sb: sb,
+                    line: $"  {entityPtr} = extractvalue {recordTypeName} {wrapper}, {projection.FieldIndex}");
+                return entityPtr;
         }
-        else if (wrapperRecord.BackendType != null)
-        {
-            innerPtr = target;
-        }
-        else
-        {
-            string recordTypeName = EnsureRecordTypeDeclared(record: wrapperRecord);
-            innerPtr = NextTemp();
-            int dataFieldIndex = FindHijackedFieldIndex(wrapperRecord: wrapperRecord,
-                innerEntity: innerEntity);
-            EmitLine(sb: sb,
-                line: $"  {innerPtr} = extractvalue {recordTypeName} {target}, {dataFieldIndex}");
-        }
-
-        return EmitEntityMemberVariableRead(sb: sb,
-            entityPtr: innerPtr,
-            entity: innerEntity,
-            memberVariableName: memberName);
-    }
-
-    /// <summary>
-    /// Reads the entity pointer out of a controller handle: the controller's <c>data</c> field.
-    /// </summary>
-    private string ReadControllerData(StringBuilder sb, string handle, EntityTypeSymbol controller)
-    {
-        return EmitEntityMemberVariableRead(sb: sb,
-            entityPtr: handle,
-            entity: controller,
-            memberVariableName: "data");
-    }
-
-    /// <summary>
-    /// Finds the index of the Hijacked[T] field on a struct wrapper that holds the inner entity
-    /// pointer (e.g. Retained[T] has controller=0, data=1; Consulting[T] has ptr=0). Defaults to 0.
-    /// </summary>
-    private static int FindHijackedFieldIndex(RecordTypeSymbol wrapperRecord,
-        EntityTypeSymbol innerEntity)
-    {
-        for (int fi = 0; fi < wrapperRecord.MemberVariables.Count; fi++)
-        {
-            if (wrapperRecord.MemberVariables[index: fi].Type is WrapperTypeSymbol
-                {
-                    Name: Declaration.RuntimeContract.Hijacked, TypeArguments.Count: > 0
-                } hijacked && hijacked.TypeArguments![index: 0] is EntityTypeSymbol fieldInner &&
-                fieldInner.FullName == innerEntity.FullName)
-            {
-                return fi;
-            }
-        }
-
-        return 0;
     }
 
     /// <summary>

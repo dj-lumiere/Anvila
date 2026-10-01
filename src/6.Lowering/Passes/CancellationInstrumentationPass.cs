@@ -36,12 +36,10 @@ public sealed class CancellationInstrumentationPass
     public const string PopMarker = "__rf_cf_pop";
 
     private readonly HashSet<string> _maySuspend;
-    private readonly TypeRegistry _registry;
 
-    private CancellationInstrumentationPass(HashSet<string> maySuspend, TypeRegistry registry)
+    private CancellationInstrumentationPass(HashSet<string> maySuspend)
     {
         _maySuspend = maySuspend;
-        _registry = registry;
     }
 
     /// <summary>
@@ -61,22 +59,19 @@ public sealed class CancellationInstrumentationPass
     /// </summary>
     public static void Run(IEnumerable<(Program Program, string FilePath, string Module)> programs,
         IReadOnlyDictionary<string, Instantiation.MonomorphizedBody> instantiatedBodies,
-        IReadOnlyCollection<string> maySuspendKeys, TypeRegistry registry)
+        IReadOnlyCollection<string> maySuspendKeys)
     {
         var programList = programs.ToList();
         var maySuspend = new HashSet<string>(collection: maySuspendKeys,
             comparer: StringComparer.Ordinal);
         maySuspend.UnionWith(other: ComputeMaySuspendFromBodies(programs: programList,
-            instantiatedBodies: instantiatedBodies,
-            registry: registry));
+            instantiatedBodies: instantiatedBodies));
         if (maySuspend.Count == 0)
         {
             return;
         }
 
-        var pass = new CancellationInstrumentationPass(
-            maySuspend: maySuspend,
-            registry: registry);
+        var pass = new CancellationInstrumentationPass(maySuspend: maySuspend);
         programs = programList;
 
         foreach ((Program program, _, _) in programs)
@@ -102,28 +97,16 @@ public sealed class CancellationInstrumentationPass
     }
 
     /// <summary>
-    /// Resolves a routine declaration to its <see cref="RoutineInfo"/> so it can be gated on the
-    /// may-suspend set. A member routine declares with a dotted name (<c>Box.do_work</c>); resolve
-    /// it on its owner type. A concrete owner (a user-declared entity/record) resolves directly;
-    /// generic-definition owners (<c>List[T].x</c>) are skipped here — their instrumentation belongs
-    /// on the monomorphized bodies, a separate follow-up.
+    /// The <see cref="RoutineInfo"/> signature resolution recorded for a routine declaration, so it can be
+    /// gated on the may-suspend set. A generic definition (or a member of a generic-definition owner,
+    /// <c>List[T].x</c>) is skipped: its instrumentation belongs on the monomorphized bodies.
     /// </summary>
-    private RoutineInfo? ResolveDecl(RoutineDeclaration decl)
+    private static RoutineInfo? ResolveDecl(RoutineDeclaration decl)
     {
-        if (decl.MemberRoutineName is not { } memberRoutineName)
-        {
-            return _registry.LookupRoutineByName(name: decl.Name, isFailable: decl.IsFailable);
-        }
-
-        // Owner is the RENDERED receiver: a bracketed generic-def owner keys to null here and is skipped
-        // (its instrumentation belongs on the monomorphized bodies), which the bare OwnerName would not
-        // reproduce.
-        TypeSymbol? owner = _registry.LookupType(name: decl.RenderedReceiver!);
-        return owner == null
-            ? null
-            : _registry.LookupMemberRoutine(type: owner,
-                memberRoutineName: memberRoutineName,
-                isFailable: decl.IsFailable);
+        return decl.ResolvedInfo is
+            { IsGenericDefinition: false, OwnerType: null or { IsGenericDefinition: false } } info
+            ? info
+            : null;
     }
 
     private void MaybeInstrument(RoutineDeclaration decl)
@@ -147,19 +130,15 @@ public sealed class CancellationInstrumentationPass
     /// </summary>
     private static IReadOnlySet<string> ComputeMaySuspendFromBodies(
         List<(Program Program, string FilePath, string Module)> programs,
-        IReadOnlyDictionary<string, Instantiation.MonomorphizedBody> instantiatedBodies,
-        TypeRegistry registry)
+        IReadOnlyDictionary<string, Instantiation.MonomorphizedBody> instantiatedBodies)
     {
         var graph = new CallGraph();
-        var resolver = new CancellationInstrumentationPass(
-            maySuspend: new HashSet<string>(comparer: StringComparer.Ordinal),
-            registry: registry);
 
         foreach ((Program program, _, _) in programs)
         {
             foreach (RoutineDeclaration decl in program.Declarations.OfType<RoutineDeclaration>())
             {
-                if (resolver.ResolveDecl(decl: decl) is { } caller)
+                if (ResolveDecl(decl: decl) is { } caller)
                 {
                     RecordBodyEdges(graph: graph, caller: caller, body: decl.Body);
                 }

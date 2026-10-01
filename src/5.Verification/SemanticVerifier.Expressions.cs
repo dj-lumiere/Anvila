@@ -381,12 +381,13 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private RoutineInfo? LookupRoutineWithModulePrefix(string name)
     {
-        // Identifier names are bare — the failable `!` is a structured flag, never in the name.
-        RoutineInfo? routine = _registry.LookupRoutine(fullName: name);
-        if (routine == null && _currentModuleName != null && !name.Contains(value: '.'))
-        {
-            routine = _registry.LookupRoutine(fullName: $"{_currentModuleName}.{name}");
-        }
+        // Identifier names are bare — the failable `!` is a structured flag, never in the name. A routine
+        // of the current module comes first: another module's routine of the same bare name must not
+        // shadow it.
+        RoutineInfo? routine = _currentModuleName != null && !name.Contains(value: '.')
+            ? _registry.LookupRoutine(fullName: $"{_currentModuleName}.{name}")
+            : null;
+        routine ??= _registry.LookupRoutine(fullName: name);
 
         // Generic free routines are indexed only in the generic-overload table, not under a plain
         // name key, so LookupRoutine misses them. A bare reference — e.g. the receiver identifier of

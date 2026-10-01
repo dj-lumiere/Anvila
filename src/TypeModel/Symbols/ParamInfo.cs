@@ -27,6 +27,12 @@ public sealed class ParamInfo
     public bool IsVariadicParam { get; init; }
 
     /// <summary>
+    /// True when the argument is passed by its address, so the routine works on the caller's storage
+    /// (a <c>threaded</c> routine's <c>Atomic</c> parameter shared with the worker thread).
+    /// </summary>
+    public bool IsByReference { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ParamInfo"/> class.
     /// </summary>
     /// <param name="name">The name of the parameter.</param>
@@ -46,7 +52,10 @@ public sealed class ParamInfo
     {
         return new ParamInfo(name: Name, type: newType)
         {
-            DefaultValue = DefaultValue, Index = Index, IsVariadicParam = IsVariadicParam
+            DefaultValue = DefaultValue,
+            Index = Index,
+            IsVariadicParam = IsVariadicParam,
+            IsByReference = IsByReference
         };
     }
 }

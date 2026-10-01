@@ -268,6 +268,11 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the crashable-dispatch expression</returns>
     T VisitCrashableDispatchExpression(CrashableDispatchExpression node);
 
+    /// <summary>Visits a wrapper-projection expression node (the entity behind a wrapper)</summary>
+    /// <param name="node">The wrapper-projection expression to visit</param>
+    /// <returns>Result of visiting the wrapper-projection expression</returns>
+    T VisitWrapperProjectionExpression(WrapperProjectionExpression node);
+
     /// <summary>Visits an is-pattern expression node (pattern matching like 'value is Point (x, y)')</summary>
     /// <param name="node">The is-pattern expression to visit</param>
     /// <returns>Result of visiting the is-pattern expression</returns>

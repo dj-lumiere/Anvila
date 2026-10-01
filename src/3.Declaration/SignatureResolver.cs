@@ -527,7 +527,9 @@ internal sealed class SignatureResolver
         {
             parameters.Add(item: new ParamInfo(name: param.Name, type: paramType)
             {
-                DefaultValue = param.DefaultValue, IsVariadicParam = param.IsVariadic
+                DefaultValue = param.DefaultValue,
+                IsVariadicParam = param.IsVariadic,
+                IsByReference = param.IsByReference
             });
         }
     }

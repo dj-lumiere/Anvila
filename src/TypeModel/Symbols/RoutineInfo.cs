@@ -491,6 +491,12 @@ public sealed class RoutineInfo
     public bool IsAsync => IsSuspended || IsThreaded;
 
     /// <summary>
+    /// For the routine that builds the Agent recipe of a <c>threaded</c>/<c>suspended</c> routine (a call of
+    /// the async routine is analyzed as a call of this one): the async routine it spawns.
+    /// </summary>
+    public RoutineInfo? AsyncSpawnOf { get; set; }
+
+    /// <summary>
     /// For generic definitions, the original generic routine this was resolved from.
     /// </summary>
     public RoutineInfo? GenericDefinition { get; init; }

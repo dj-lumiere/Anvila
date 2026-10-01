@@ -406,6 +406,7 @@ public abstract class AstRewriter
             FlagsTestExpression e => VisitFlagsTest(e: e),
             GenericMemberRoutineCallExpression e => VisitGenericMemberRoutineCall(e: e),
             GenericMemberExpression e => VisitGenericMember(e: e),
+            WrapperProjectionExpression e => VisitWrapperProjection(e: e),
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
     }
@@ -496,6 +497,20 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: o, objB: e.Object)
             ? e
             : e with { Object = o };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="WrapperProjectionExpression"/> by visiting the wrapper it projects.
+    /// Returns the original node when the wrapper is unchanged.
+    /// </summary>
+    /// <param name="e">The wrapper projection to rewrite.</param>
+    /// <returns>The rewritten projection, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitWrapperProjection(WrapperProjectionExpression e)
+    {
+        Expression w = VisitExpression(expr: e.Wrapper);
+        return ReferenceEquals(objA: w, objB: e.Wrapper)
+            ? e
+            : e with { Wrapper = w };
     }
 
     /// <summary>

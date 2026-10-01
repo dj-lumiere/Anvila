@@ -277,8 +277,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
 
     private static bool IsSpawnCall(CallExpression call)
     {
-        return call.ResolvedRoutine is
-            { AsyncStatus: AsyncStatus.Suspended or AsyncStatus.Threaded };
+        return call.ResolvedRoutine is { AsyncSpawnOf: not null };
     }
 
     // Builds `handle.promote()` as an ExpressionStatement when `handle` is a Roamed[T]. promote

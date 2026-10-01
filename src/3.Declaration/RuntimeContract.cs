@@ -313,6 +313,9 @@ public static class RuntimeContract
     /// <summary>Controller behind <c>Roamed[T]</c>.</summary>
     public const string RoamController = "RoamController";
 
+    /// <summary>The controller field that holds the entity behind a controller-backed wrapper.</summary>
+    public const string ControllerData = "data";
+
     /// <summary>
     /// The controller a pointer-backed wrapper points at, or null when the wrapper holds the entity (or a
     /// value) directly. The controller takes the wrapper's type arguments unchanged

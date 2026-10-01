@@ -1071,8 +1071,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                             break;
                         // A routine referenced AS A VALUE (not called) — a bare routine name passed as an
                         // argument (a coroutine/thread entry `coro_body`, a callback, a first-class routine).
-                        // Codegen wraps these in an entry/value thunk (EnsureCoroEntryThunk/RoutineValueThunk)
-                        // whose body calls the routine, so the routine — and its whole transitive closure
+                        // A C entry receives the routine's own symbol and a routine value wraps it in a closure,
+                        // so the routine — and its whole transitive closure
                         // (e.g. coro_body → Worker.do_work → Box's create/destroy) — is genuinely live even
                         // though no CallExpression names it. Discover it here so the demand walk follows it.
                         // Two forms: pre-resolved (ResolvedRoutine set) or a bare name whose ResolvedType is a
