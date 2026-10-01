@@ -55,21 +55,6 @@ internal sealed class TypeLivenessPass(TypeRegistry registry)
         // First transitive closure: follow type arguments, member variables, wrapper inner types.
         DrainWorklist();
 
-        // Seed 2 (deferred): concrete wrapper instances whose inner type is already live.
-        // Deferring prevents phantom wrappers (e.g. BTreeSetNode[Bytes] created
-        // as a SA side-effect of Bytes.split -> List[Bytes] -> List.create(from: SortedSet[T]))
-        // from being seeded just because they exist in the registry.
-        foreach (WrapperTypeSymbol w in registry.AllConcreteWrapperInstances)
-        {
-            if (w.InnerType == null || _live.Contains(item: w.InnerType.FullName))
-            {
-                Enqueue(type: w);
-            }
-        }
-
-        // Second transitive closure: extend from newly seeded wrapper instances.
-        DrainWorklist();
-
         registry.SetLiveConcreteTypes(liveTypes: _live);
     }
 
@@ -108,13 +93,6 @@ internal sealed class TypeLivenessPass(TypeRegistry registry)
                 foreach (MemberVariableInfo mv in entity.MemberVariables)
                 {
                     Enqueue(type: mv.Type);
-                }
-
-                break;
-            case WrapperTypeSymbol wrapper:
-                if (wrapper.InnerType != null)
-                {
-                    Enqueue(type: wrapper.InnerType);
                 }
 
                 break;

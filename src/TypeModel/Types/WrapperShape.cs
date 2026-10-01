@@ -4,9 +4,8 @@ namespace TypeModel.Types;
 
 /// <summary>
 /// Recognizes a wrapper type (Viewing, Modifying, Consulting, Amending, Guarded, Witnessed, Retained,
-/// Tracked, Hijacked, Roamed, and the builder's own Owned) in either representation: the standard library
-/// record's resolution (<c>Hijacked[S64]</c>, the representation every phase now produces) or a
-/// <see cref="WrapperTypeSymbol"/> still built while the wrapper's record is not yet registered.
+/// Tracked, Hijacked, Roamed, and the builder's own Owned): the standard library record's resolution
+/// (<c>Hijacked[S64]</c>).
 /// </summary>
 public static class WrapperShape
 {
@@ -24,10 +23,6 @@ public static class WrapperShape
     {
         switch (type)
         {
-            case WrapperTypeSymbol w:
-                name = w.Name;
-                inner = w.InnerType;
-                return true;
             case RecordTypeSymbol { GenericDefinition: { } def, TypeArguments: [var arg] }
                 when IsWrapperName(name: def.Name):
                 name = def.Name;

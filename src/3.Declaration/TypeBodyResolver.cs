@@ -221,8 +221,8 @@ internal sealed class TypeBodyResolver
         if (memberVariableType != null && memberVariableType is not ErrorTypeSymbol &&
             memberVariableType is not GenericParameterTypeSymbol &&
             !TypeRegistry.IsValueType(type: memberVariableType) && !isReferenceTyped &&
-            !isRoutineTyped && !(memberVariableType is WrapperTypeSymbol wrapper &&
-                                 AssignableWrapperTypes.Contains(item: wrapper.BareName)))
+            !isRoutineTyped && !(WrapperShape.TryGet(type: memberVariableType, name: out string wrapper, inner: out _) &&
+                                 AssignableWrapperTypes.Contains(item: wrapper)))
         {
             _sa.ReportError(code: SemanticDiagnosticCode.RecordContainsNonValueType,
                 message:

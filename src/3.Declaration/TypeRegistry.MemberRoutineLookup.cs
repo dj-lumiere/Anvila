@@ -1314,31 +1314,6 @@ public sealed partial class TypeRegistry
                 isFailable: isFailable);
         }
 
-        // WrapperTypeSymbol (Viewing/Modifying/Consulting/Amending/Guarded/Witnessed)
-        // is the parallel representation to the substituted RecordTypeSymbol of the same wrapper.
-        // The RecordTypeSymbol path finds memberRoutines via its substituted Controlling[InnerT] /
-        // Accessing[InnerT] protocol entry. WrapperTypeSymbol carries no ImplementedProtocols,
-        // so the protocols loop above is skipped — without this fallback, the call dispatcher
-        // would then synthesize a forwarder whose body is never emitted (link error). Resolves
-        // directly to InnerType as a last resort. Hijacked is intentionally excluded — its
-        // members must be reached via explicit extract()/as_entity().
-        //
-        // Retained/Tracked are also excluded: they are an opaque pointer to a RetainController,
-        // not to T directly. Falling through here would dispatch an inner-T memberRoutine with
-        // the controller pointer as receiver, corrupting the strong/weak count fields.
-        // The forwarder-synthesis path emits the correct double-indirection body instead.
-        if (type is WrapperTypeSymbol
-            {
-                Name: RuntimeContract.Viewing or RuntimeContract.Modifying
-                or RuntimeContract.Consulting or RuntimeContract.Amending
-                or RuntimeContract.Guarded or RuntimeContract.Witnessed
-            } forwardingWrapper)
-        {
-            return LookupMemberRoutine(type: forwardingWrapper.InnerType,
-                memberRoutineName: memberRoutineName,
-                isFailable: isFailable);
-        }
-
         return null;
     }
 
@@ -1403,12 +1378,6 @@ public sealed partial class TypeRegistry
             RecordTypeSymbol r => r.GenericDefinition,
             EntityTypeSymbol e => e.GenericDefinition,
             ProtocolTypeSymbol p => p.GenericDefinition,
-            // Wrapper types: memberRoutines are registered on the corresponding RecordTypeSymbol
-            // (e.g. _routinesByOwner["Core.Hijacked"] holds extract, offset, etc.).
-            // Always look up the RecordTypeSymbol by base name, regardless of whether
-            // InnerType is a generic parameter — Hijacked[T] and Hijacked[Character]
-            // both need to route through the generic definition's memberRoutine table.
-            WrapperTypeSymbol wt => LookupType(name: wt.Name),
             _ => null
         };
         if (genericDef == null)
@@ -1650,10 +1619,7 @@ public sealed partial class TypeRegistry
         if (memberRoutine != null)
         {
             bool shouldNormalizeConcreteOwner =
-                (type.IsGenericResolution || type is WrapperTypeSymbol
-                {
-                    TypeArguments: { Count: > 0 }
-                }) && (memberRoutine.OwnerType is { IsGenericDefinition: true } ||
+                type.IsGenericResolution && (memberRoutine.OwnerType is { IsGenericDefinition: true } ||
                        memberRoutine.IsGenericDefinition);
             if (shouldNormalizeConcreteOwner)
             {
@@ -2192,8 +2158,6 @@ public sealed partial class TypeRegistry
             RecordTypeSymbol r => r.GenericDefinition,
             EntityTypeSymbol e => e.GenericDefinition,
             ProtocolTypeSymbol p => p.GenericDefinition,
-            // Wrapper types (Hijacked[T], Hijacked[Byte], etc.) — look up generic def by base name
-            WrapperTypeSymbol => LookupType(name: resolvedOwner.Name),
             _ => null
         };
 
@@ -2235,8 +2199,6 @@ public sealed partial class TypeRegistry
         // Wrapper-forwarder: re-resolve signature against the concrete inner memberRoutine instead of
         // naive name substitution (inner-T vs wrapper-T collision: both T and List[T] use T,
         // so {T: List[Character]} would map List[T].getitem!'s T to List[Character], not Character).
-        // Note: wrapper types like T may be RecordTypeSymbol (declared as `record` in RF),
-        // not WrapperTypeSymbol, so check TypeArguments.Count rather than the runtime type.
         if (memberRoutine is
             {
                 IsSynthesized: true, WrapperForwarderInnerMemberRoutine: { } innerGenMemberRoutine
@@ -2530,7 +2492,6 @@ public sealed partial class TypeRegistry
             RecordTypeSymbol r => r.GenericDefinition,
             EntityTypeSymbol e => e.GenericDefinition,
             ProtocolTypeSymbol p => p.GenericDefinition,
-            WrapperTypeSymbol wt => LookupType(name: wt.Name),
             _ => null
         };
         if (genericDef == null)
@@ -2775,7 +2736,6 @@ public sealed partial class TypeRegistry
             RecordTypeSymbol r => r.GenericDefinition,
             EntityTypeSymbol e => e.GenericDefinition,
             ProtocolTypeSymbol p => p.GenericDefinition,
-            WrapperTypeSymbol wt => LookupType(name: wt.Name),
             _ => null
         };
         if (genericDef != null && !ReferenceEquals(objA: genericDef, objB: type) &&
@@ -2829,7 +2789,6 @@ public sealed partial class TypeRegistry
         string? baseName = type switch
         {
             RecordTypeSymbol { GenericDefinition: { } gd } => gd.BareName,
-            WrapperTypeSymbol wt => wt.BareName,
             RecordTypeSymbol r => r.BareName,
             _ => null
         };

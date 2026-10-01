@@ -370,8 +370,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private void RegisterGlobalsSingleton(IdentifierExpression target, List<Owned> live)
     {
         TypeSymbol? t = ctx.Registry.LookupVariable(name: target.Name)?.Type ?? target.ResolvedType;
-        if (t is not (WrapperTypeSymbol { Name: RuntimeContract.Roamed }
-                or RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed }) ||
+        if (t is not RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed } ||
             !TryResolveDestroy(type: t, destroy: out RoutineInfo? d) || d == null)
         {
             return;

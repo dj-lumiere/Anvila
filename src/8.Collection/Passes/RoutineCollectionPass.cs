@@ -620,7 +620,6 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         {
             RecordTypeSymbol r => r.GenericDefinition,
             EntityTypeSymbol e => e.GenericDefinition,
-            WrapperTypeSymbol w => ctx.Registry.LookupType(name: w.Name),
             _ => null
         };
         if (candidateGenDef == null || !ReferenceEquals(objA: candidateGenDef, objB: genericOwner))

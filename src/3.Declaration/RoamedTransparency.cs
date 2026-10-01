@@ -41,7 +41,6 @@ internal static class RoamedTransparency
         TypeSymbol? inner = receiverType switch
         {
             RecordTypeSymbol { TypeArguments: { Count: >= 1 } ta } => ta[index: 0],
-            WrapperTypeSymbol w => w.InnerType,
             _ => null
         };
         if (inner == null)

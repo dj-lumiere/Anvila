@@ -226,21 +226,8 @@ public partial class LlvmEmitter
     /// </summary>
     internal TypeSymbol ApplyTypeSubstitutions(TypeSymbol type)
     {
-        // Track C: GenericMonomorphizationPass now emits fully-concrete bodies, so codegen holds no
-        // live type-substitution map — every generic parameter is already resolved before emission.
-        // The only remaining work here is normalizing a WrapperTypeSymbol (Hijacked[S64]) to its real
-        // RecordTypeSymbol so LLVM name mangling uses the module-qualified record name.
-        if (type is WrapperTypeSymbol wrapper)
-        {
-            TypeSymbol? wrapperRecordDef = _registry.LookupType(name: wrapper.Name);
-            if (wrapperRecordDef is { IsGenericDefinition: true } &&
-                wrapper.TypeArguments is { Count: > 0 })
-            {
-                return _registry.GetOrCreateResolution(genericDef: wrapperRecordDef,
-                    typeArguments: [.. wrapper.TypeArguments]);
-            }
-        }
-
+        // GenericMonomorphizationPass emits fully-concrete bodies, so codegen holds no live
+        // type-substitution map: every generic parameter is already resolved before emission.
         return type;
     }
 
@@ -260,12 +247,6 @@ public partial class LlvmEmitter
         if (resolvedGenericResolution != null)
         {
             return resolvedGenericResolution;
-        }
-
-        TypeSymbol? resolvedWrapper = TrySubstituteWrapper(type: type, substitutions: substitutions);
-        if (resolvedWrapper != null)
-        {
-            return resolvedWrapper;
         }
 
         TypeSymbol? resolvedGenericDef = TrySubstituteGenericDefinition(
@@ -316,37 +297,6 @@ public partial class LlvmEmitter
         return genericBase != null
             ? _registry.GetOrCreateResolution(genericDef: genericBase, typeArguments: resolvedArgs)
             : null;
-    }
-
-    /// <summary>
-    /// Tries to substitute the inner type of a wrapper type. Returns the substituted wrapper (or
-    /// a resolved generic record) when the inner type changed; returns null if the type is not a wrapper.
-    /// </summary>
-    private TypeSymbol? TrySubstituteWrapper(TypeSymbol type,
-        Dictionary<string, TypeSymbol> substitutions)
-    {
-        if (type is not WrapperTypeSymbol wrapperT)
-        {
-            return null;
-        }
-
-        TypeSymbol resolvedInner = SubstituteTypeParams(type: wrapperT.InnerType,
-            substitutions: substitutions);
-        TypeSymbol? wrapperRecordDef = _registry.LookupType(name: wrapperT.Name);
-        if (wrapperRecordDef is { IsGenericDefinition: true })
-        {
-            return _registry.GetOrCreateResolution(genericDef: wrapperRecordDef,
-                typeArguments: [resolvedInner]);
-        }
-
-        if (!ReferenceEquals(objA: resolvedInner, objB: wrapperT.InnerType))
-        {
-            return new WrapperTypeSymbol(wrapperName: wrapperT.Name,
-                innerType: resolvedInner,
-                isReadOnly: wrapperT.IsReadOnly);
-        }
-
-        return null;
     }
 
     /// <summary>

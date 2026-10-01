@@ -834,9 +834,6 @@ public sealed partial class SemanticVerifier
             ProtocolTypeSymbol p => p.GenericDefinition ?? (p.IsGenericDefinition
                 ? p
                 : null),
-            WrapperTypeSymbol w => w.IsGenericDefinition
-                ? w
-                : null,
             _ => ownerType.IsGenericDefinition
                 ? ownerType
                 : null

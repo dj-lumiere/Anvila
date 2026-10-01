@@ -275,11 +275,6 @@ public partial class LlvmEmitter
                 break;
         }
 
-        if (type is WrapperTypeSymbol wrapper)
-        {
-            EnsureTypeGenerated(type: wrapper.InnerType, visited: visited);
-        }
-
         if (type.TypeArguments is { Count: > 0 } typeArgs)
         {
             foreach (TypeSymbol ta in typeArgs)

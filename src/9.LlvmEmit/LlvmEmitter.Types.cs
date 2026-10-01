@@ -169,10 +169,6 @@ public partial class LlvmEmitter
             // Entities (and Crashable, an entity subclass) -> pointer to LLVM struct
             EntityTypeSymbol => "ptr",
 
-            // Wrappers (Viewing, Modifying, Hijacked, etc.) -> all pointers at LLVM level.
-            // All wrapper kinds lower to a bare pointer; the semantic distinction exists only in the type system.
-            WrapperTypeSymbol => "ptr",
-
             // A marker borrow protocol (Accessing[X]/Controlling[X]) is representation-transparent to its
             // inner X (an entity → ptr, a value → the value's own layout). Monomorphization collapses most
             // markers to X before codegen, but the residual (non-monomorphized paths) still arrives here, so
@@ -708,13 +704,6 @@ public partial class LlvmEmitter
                 typeArguments: substitutedArgs);
         }
 
-        if (type is WrapperTypeSymbol && _registry.LookupType(name: type.Name) is
-                { IsGenericDefinition: true } wrapperRecordDef)
-        {
-            return _registry.GetOrCreateResolution(genericDef: wrapperRecordDef,
-                typeArguments: substitutedArgs);
-        }
-
         return null;
     }
 
@@ -806,15 +795,6 @@ public partial class LlvmEmitter
     /// </summary>
     private TypeSymbol? NormalizeRoutineLookupType(TypeSymbol? type)
     {
-        if (type is WrapperTypeSymbol wrapperType &&
-            _registry.LookupType(name: wrapperType.Name) is
-                { IsGenericDefinition: true } wrapperDef &&
-            wrapperType.TypeArguments is { Count: > 0 })
-        {
-            return _registry.GetOrCreateResolution(genericDef: wrapperDef,
-                typeArguments: wrapperType.TypeArguments);
-        }
-
         return type;
     }
 }

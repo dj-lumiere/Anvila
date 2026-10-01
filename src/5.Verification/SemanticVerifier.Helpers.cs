@@ -854,7 +854,6 @@ public sealed partial class SemanticVerifier
         string baseName = type switch
         {
             RecordTypeSymbol { GenericDefinition: { } gd } => gd.Name,
-            WrapperTypeSymbol w => w.Name,
             _ => string.Empty
         };
         return baseName == Declaration.RuntimeContract.Roamed &&
@@ -1067,9 +1066,6 @@ public sealed partial class SemanticVerifier
         }
 
         // Raw entity E -> Maybe[E]: rvalue entity auto-wraps into Owned, then carrier.
-        // T is declared as `record T` in stdlib, so it surfaces as
-        // RecordTypeSymbol (not WrapperTypeSymbol) at runtime — match by name + arity instead
-        // of pattern-matching the runtime kind.
         if (source.Category == TypeCategory.Entity &&
             IsOwnedOf(type: typeArg, inner: out TypeSymbol? ownedInnerOfMaybe) &&
             (source.Name == ownedInnerOfMaybe.Name ||
@@ -1130,14 +1126,6 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Returns true when <paramref name="type"/> represents <c>X</c> for some inner type
-    /// <c>X</c>, regardless of whether the runtime kind is <see cref="WrapperTypeSymbol"/>
-    /// (legacy) or <see cref="RecordTypeSymbol"/> (current — <c>Owned</c> is declared as
-    /// <c>record T</c> in the stdlib, so most resolutions arrive as records). Resolutions
-    /// of generic records carry their parameterized form in <see cref="TypeSymbol.Name"/>
-    /// (e.g. <c>"Owned[Core.Text]"</c>), so we strip the bracket suffix before comparing.
-    /// </summary>
-    /// <summary>
     /// If <paramref name="type"/> is an ownership-carrying or borrow wrapper
     /// (Retained/Tracked/Modifying/Viewing/Controlling/Accessing/Hijacked) over some inner T,
     /// returns the base wrapper name and inner T. Returns false for anything else.
@@ -1151,13 +1139,6 @@ public sealed partial class SemanticVerifier
             or Declaration.RuntimeContract.Controlling or Declaration.RuntimeContract.Accessing
             or Declaration.RuntimeContract.Hijacked)
         {
-            if (type is WrapperTypeSymbol { InnerType: not null } w)
-            {
-                wrapperBase = baseName;
-                inner = w.InnerType;
-                return true;
-            }
-
             if (type.TypeArguments is { Count: 1 } args)
             {
                 wrapperBase = baseName;
@@ -1173,12 +1154,6 @@ public sealed partial class SemanticVerifier
 
     private static bool IsOwnedOf(TypeSymbol type, out TypeSymbol inner)
     {
-        if (type is WrapperTypeSymbol { Name: Declaration.RuntimeContract.Owned } wrapped)
-        {
-            inner = wrapped.InnerType;
-            return true;
-        }
-
         if (type.BareName == Declaration.RuntimeContract.Owned &&
             type.TypeArguments is { Count: 1 } args)
         {

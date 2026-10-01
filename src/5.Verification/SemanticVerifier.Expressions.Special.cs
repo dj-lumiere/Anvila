@@ -360,7 +360,7 @@ public sealed partial class SemanticVerifier
         }
 
         // T is explicitly stealable — ownership transfer is its design purpose
-        bool isOwned = operandType is WrapperTypeSymbol { Name: Declaration.RuntimeContract.Owned };
+        bool isOwned = WrapperShape.Is(type: operandType, name: Declaration.RuntimeContract.Owned);
 
         // `steal` on a record is a no-op — records are value-typed and have no
         // ownership to transfer. Returning the operand type as-is lets stdlib
@@ -391,10 +391,10 @@ public sealed partial class SemanticVerifier
         // `steal` always produces an rvalue `T` — it consumes an lvalue binding and yields
         // an in-flight entity that must be re-bound (or consumed) at the use site.
         steal.IsInFlight = true;
-        if (isOwned && operandType is WrapperTypeSymbol { InnerType: not null } owned)
+        if (isOwned && WrapperShape.InnerOf(type: operandType) is { } ownedInner)
         {
-            steal.ResolvedType = owned.InnerType;
-            return owned.InnerType;
+            steal.ResolvedType = ownedInner;
+            return ownedInner;
         }
 
         steal.ResolvedType = operandType;

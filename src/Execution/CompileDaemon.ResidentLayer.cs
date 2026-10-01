@@ -241,7 +241,6 @@ internal partial class Program
                 {
                     null => false,
                     _ when type.Module != null && userModules.Contains(item: type.Module) => true,
-                    WrapperTypeSymbol wrapper => IsUserType(type: wrapper.InnerType, userModules: userModules),
                     TupleTypeSymbol tuple => tuple.ElementTypes.Any(predicate: e =>
                         IsUserType(type: e, userModules: userModules)),
                     RoutineTypeSymbol routineType =>

@@ -180,9 +180,8 @@ internal sealed class AutoWiredRegistrationPass
         // Unified destructor: every type without a hand-written destroy gets the derived one. The wrappers
         // that own something (Retained, Roamed, the access tokens, ...) hand-write theirs, so
         // MaybeRegisterDestroy skips them; `Hijacked` owns nothing and has no fields, so it takes the record
-        // derive, whose field walk is empty. Only the parallel WrapperTypeSymbol form is left out: it does not
-        // list the hand-written destroy of its record form.
-        if (bundle.NoneType != null && type is not WrapperTypeSymbol)
+        // derive, whose field walk is empty.
+        if (bundle.NoneType != null)
         {
             MaybeRegisterDestroy(owner: type,
                 noneType: bundle.NoneType,
@@ -287,7 +286,7 @@ internal sealed class AutoWiredRegistrationPass
     private void MaybeRegisterFromSerialCreator(TypeSymbol type, TypeSymbol? serialValueType,
         List<RoutineInfo> existingMemberRoutines)
     {
-        if (serialValueType == null || type.IsGenericDefinition || type is WrapperTypeSymbol ||
+        if (serialValueType == null || type.IsGenericDefinition ||
             !IsFromSerialCandidate(type: type) ||
             existingMemberRoutines.Concat(second: _registry.GetMemberRoutinesForType(type: type))
                                   .Any(predicate: m =>
@@ -942,7 +941,6 @@ internal sealed class AutoWiredRegistrationPass
     {
         string baseName = type switch
         {
-            WrapperTypeSymbol w => w.Name,
             RecordTypeSymbol { GenericDefinition: { } d } => d.Name,
             _ => type.BareName
         };

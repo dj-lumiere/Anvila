@@ -1448,13 +1448,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // an explicit `d.count()` while `d` was still the bare container before promotion) and
         // stamp the inner memberRoutine; codegen projects the Roamed receiver to the inner value for
         // `me`, same as every other inner-memberRoutine call on a Roamed container.
-        // The Roamed handle reaches here in EITHER representation the pipeline produces: a
-        // WrapperTypeSymbol (SuflaeEntityLoweringPass.WrapInRoam) or a RecordTypeSymbol (resolver-
-        // built). Extract the inner container type from whichever it is.
         TypeSymbol? innerRecv = receiverType switch
         {
-            WrapperTypeSymbol w when Declaration.TypeRegistry.GetRcWrapperBaseName(type: w) != null
-                => w.InnerType,
             RecordTypeSymbol r when Declaration.TypeRegistry.GetRcWrapperBaseName(type: r) != null &&
                                   r.TypeArguments is { Count: >= 1 } ra => ra[index: 0],
             _ => null
@@ -1643,8 +1638,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     {
         return type switch
         {
-            WrapperTypeSymbol w when Declaration.TypeRegistry.GetRcWrapperBaseName(type: w) != null
-                => w.InnerType,
             RecordTypeSymbol { TypeArguments: { Count: >= 1 } ra } r when Declaration.TypeRegistry
                .GetRcWrapperBaseName(type: r) != null => ra[index: 0],
             _ => null

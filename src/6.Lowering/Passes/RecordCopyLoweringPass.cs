@@ -127,7 +127,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     // True when the type is an RC wrapper record (Retained/Tracked/Guarded/Witnessed/Roamed). A field of such a
     // type has its release-old/retain-new RC owned by codegen (isRoamedField), so the copy pass must NOT also
     // retain a field-write RHS of this type (double-count). Delegates to the registry's canonical
-    // structural check (matches on GenericDefinition/WrapperTypeSymbol) — no ad-hoc name parsing here.
+    // structural check (matches on GenericDefinition) — no ad-hoc name parsing here.
     private static bool IsRcWrapperType(TypeSymbol? type)
     {
         return type is not null && TypeRegistry.GetRcWrapperBaseName(type: type) is not null;

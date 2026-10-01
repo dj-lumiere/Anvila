@@ -1753,22 +1753,6 @@ public partial class LlvmEmitter
                     message:
                     $"Cannot determine receiver type for member routine call .{member.MemberName} on {objDesc}");
             }
-            // WrapperTypeSymbol (e.g., Hijacked[Byte]) has FullName="Hijacked[Core.Byte]" (Module=null,
-            // inner FullName used for type args) which LookupMemberRoutine can't resolve and emits a wrong
-            // mangled name. Always normalize to the real RecordTypeSymbol (FullName="Core.Hijacked[Byte]")
-            // so both LookupMemberRoutine and LLVM name mangling work correctly.
-            case WrapperTypeSymbol wrapperReceiver:
-            {
-                TypeSymbol? wrapperDef = _registry.LookupType(name: wrapperReceiver.Name);
-                if (wrapperDef is { IsGenericDefinition: true } && wrapperReceiver.TypeArguments is
-                        { Count: > 0 })
-                {
-                    receiverType = _registry.GetOrCreateResolution(genericDef: wrapperDef,
-                        typeArguments: wrapperReceiver.TypeArguments);
-                }
-
-                break;
-            }
         }
 
         return receiverType;

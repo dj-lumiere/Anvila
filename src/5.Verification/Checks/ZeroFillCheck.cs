@@ -46,7 +46,7 @@ internal static class ZeroFillCheck
         {
             case EntityTypeSymbol or CrashableTypeSymbol:
                 return $"'{type.Name}' is an entity";
-            case WrapperTypeSymbol or RecordTypeSymbol
+            case RecordTypeSymbol
                 when Declaration.TypeRegistry.GetRcWrapperBaseName(type: type) != null:
                 return $"'{type.Name}' is a reference-counted handle";
             case TupleTypeSymbol tuple:

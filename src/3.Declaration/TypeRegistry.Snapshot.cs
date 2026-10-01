@@ -25,9 +25,6 @@ partial class TypeRegistry
         /// <summary>Generic-resolution cache keyed by instantiated full name.</summary>
         public Dictionary<string, TypeSymbol> Resolutions { get; init; } = null!;
 
-        /// <summary>Wrapper-type resolution cache (Owned/Retained/etc.) keyed by full name.</summary>
-        public Dictionary<string, WrapperTypeSymbol> WrapperResolutions { get; init; } = null!;
-
         /// <summary>Entity specializations keyed by full name.</summary>
         public Dictionary<string, TypeSymbol> EntitySpecializations { get; init; } = null!;
 
@@ -109,8 +106,6 @@ partial class TypeRegistry
             Language = Language,
             Types = new Dictionary<string, TypeSymbol>(dictionary: _types),
             Resolutions = new Dictionary<string, TypeSymbol>(dictionary: _resolutions),
-            WrapperResolutions =
-                new Dictionary<string, WrapperTypeSymbol>(dictionary: _wrapperResolutions),
             EntitySpecializations =
                 new Dictionary<string, TypeSymbol>(dictionary: _entitySpecializations),
             TypesByShortName = new Dictionary<string, TypeSymbol>(dictionary: _typesByShortName),
@@ -190,11 +185,6 @@ partial class TypeRegistry
         foreach (KeyValuePair<string, TypeSymbol> kv in snapshot.Resolutions)
         {
             _resolutions[key: kv.Key] = kv.Value;
-        }
-
-        foreach (KeyValuePair<string, WrapperTypeSymbol> kv in snapshot.WrapperResolutions)
-        {
-            _wrapperResolutions[key: kv.Key] = kv.Value;
         }
 
         foreach (KeyValuePair<string, TypeSymbol> kv in snapshot.EntitySpecializations)

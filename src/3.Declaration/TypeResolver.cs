@@ -325,8 +325,7 @@ internal sealed class TypeResolver
 
     private static bool IsRoamed(TypeSymbol type)
     {
-        return type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed }
-            or WrapperTypeSymbol { Name: RuntimeContract.Roamed };
+        return type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed };
     }
 
     private TypeSymbol ResolveTypeCore(TypeExpression typeExpr)
@@ -1089,17 +1088,6 @@ internal sealed class TypeResolver
             return true;
         }
 
-        // Wrapper types (Hijacked[T].foo) carry the inner-type binding via
-        // InnerType rather than GenericParameters. If the inner type is
-        // itself a generic-parameter placeholder, accept that name.
-        if (_sa._currentRoutine?.OwnerType is WrapperTypeSymbol
-            {
-                InnerType: GenericParameterTypeSymbol wgp
-            } && wgp.Name == name)
-        {
-            return true;
-        }
-
         // Some owner types lose their declared GenericParameters list when
         // they're stored back as a resolved-type representation (e.g.,
         // Name="Hijacked[T]" with an empty GenericParameters list). Recover
@@ -1183,10 +1171,7 @@ internal sealed class TypeResolver
         }
 
         // Universal memberRoutine (`routine T.bar()`): the owner IS the parameter — a single-slot scope.
-        if (_sa._currentRoutine?.OwnerType is GenericParameterTypeSymbol or WrapperTypeSymbol
-            {
-                InnerType: GenericParameterTypeSymbol
-            })
+        if (_sa._currentRoutine?.OwnerType is GenericParameterTypeSymbol)
         {
             return 0;
         }
@@ -1238,10 +1223,7 @@ internal sealed class TypeResolver
             return true;
         }
 
-        return _sa._currentRoutine?.OwnerType is WrapperTypeSymbol
-        {
-            InnerType: GenericParameterTypeSymbol wgp
-        } && wgp.Name == name;
+        return false;
     }
 
     /// <summary>

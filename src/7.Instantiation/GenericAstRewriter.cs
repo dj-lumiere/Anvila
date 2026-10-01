@@ -217,16 +217,6 @@ internal static class GenericAstRewriter
                 return resolvedDefinition;
             }
 
-            // WrapperTypeSymbol (Hijacked[T] -> Hijacked[S64], or Hijacked[S64] -> stays): always
-            // resolve to the real RecordTypeSymbol so LLVM mangled names use "Core.Hijacked[S64]"
-            // (from RecordTypeSymbol.FullName) rather than "Hijacked[Core.S64]" (WrapperTypeSymbol
-            // with Module=null). The WrapperTypeSymbol.FullName appends inner.FullName which includes
-            // the module prefix, producing the wrong "Hijacked[Core.S64]" format.
-            if (original is WrapperTypeSymbol wrapper)
-            {
-                return ResolveWrapper(wrapper: wrapper);
-            }
-
             // Routine value type (`Routine[(T,), U]` -> `Routine[(S64,), S64]`): RoutineTypeSymbol
             // carries its parameter/return types in dedicated slots, NOT TypeArguments, so the
             // generic-resolution branch above never reaches them. A chained iterator emitter stores
@@ -394,31 +384,6 @@ internal static class GenericAstRewriter
             if (complete && typeArgs.Count > 0)
             {
                 return Registry!.TryGetResolution(genericDef: original, typeArguments: typeArgs);
-            }
-
-            return null;
-        }
-
-        private TypeSymbol? ResolveWrapper(WrapperTypeSymbol wrapper)
-        {
-            var newWrapperArgs = new List<TypeSymbol>(capacity: wrapper.TypeArguments?.Count ?? 1);
-            foreach (TypeSymbol arg in wrapper.TypeArguments ?? [])
-            {
-                TypeSymbol? resolved = ResolveType(original: arg);
-                newWrapperArgs.Add(
-                    item: resolved != null && !ReferenceEquals(objA: resolved, objB: arg)
-                        ? resolved
-                        : arg);
-            }
-
-            if (Registry != null && newWrapperArgs.Count == 1)
-            {
-                // Create-if-missing — body rewriting can encounter wrapper parameterizations
-                // (e.g., Hijacked[Text]) that no earlier pass materialized. Without
-                // creation here, GMP never sees the type and codegen emits unresolved symbols.
-                return Registry.GetOrCreateWrapperType(wrapperName: wrapper.Name,
-                    innerType: newWrapperArgs[index: 0],
-                    isReadOnly: wrapper.IsReadOnly);
             }
 
             return null;
@@ -1036,17 +1001,7 @@ internal static class GenericAstRewriter
                 return null;
             }
 
-            TypeSymbol resolved = ResolveType(original: original) ?? original;
-            if (resolved is WrapperTypeSymbol wrapperType && Registry != null &&
-                Registry.LookupType(name: wrapperType.Name) is
-                    { IsGenericDefinition: true } wrapperDef && wrapperType.TypeArguments is
-                    { Count: > 0 })
-            {
-                return Registry.TryGetResolution(genericDef: wrapperDef,
-                    typeArguments: wrapperType.TypeArguments) ?? resolved;
-            }
-
-            return resolved;
+            return ResolveType(original: original) ?? original;
         }
     }
 

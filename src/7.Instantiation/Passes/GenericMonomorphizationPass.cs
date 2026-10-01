@@ -244,12 +244,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// <summary>Seeds the initial liveness-filtered concrete types and all pre-existing unfiltered instances.</summary>
     private void SeedInitialConcreteTypes()
     {
-        // Seed with liveness-filtered instances + wrapper instances. On an incremental re-run the
-        // Add returns false for everything already processed, so these scans become cheap lookups.
+        // Seed with liveness-filtered instances. On an incremental re-run the Add returns false for
+        // everything already processed, so these scans become cheap lookups.
         foreach (TypeSymbol concreteType in ctx.Registry
                                              .AllConcreteGenericInstances
-                                             .Concat(second: ctx.Registry
-                                                                .AllConcreteWrapperInstances)
                                              .DistinctBy(keySelector: type => type.FullName)
                                              .Where(predicate: t =>
                                                   _processedTypes.Add(item: t.FullName))
@@ -265,20 +263,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // Materialize to a list first — ProcessConcreteType modifies _resolutions during iteration.
         foreach (TypeSymbol preExisting in
                  ctx.Registry.AllConcreteGenericInstancesUnfiltered.ToList())
-        {
-            if (!_processedTypes.Add(item: preExisting.FullName))
-            {
-                continue;
-            }
-
-            ProcessConcreteType(concreteType: preExisting);
-        }
-
-        // Same for wrapper instances (Hijacked[T], T, etc.). Wrappers like Hijacked have
-        // explicit memberRoutine definitions in stdlib that need monomorphization for each concrete T,
-        // but live in _wrapperResolutions and aren't enqueued by NotifyConcreteRegistration.
-        foreach (TypeSymbol preExisting in
-                 ctx.Registry.AllConcreteWrapperInstancesUnfiltered.ToList())
         {
             if (!_processedTypes.Add(item: preExisting.FullName))
             {
@@ -315,22 +299,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 }
 
                 discovered = ctx.Registry.DrainGmpDiscoveryQueue();
-            }
-
-            // Wrapper instances aren't enqueued by NotifyConcreteRegistration (it only handles
-            // EntityTypeSymbol/RecordTypeSymbol). Re-scan _wrapperResolutions each round to pick up
-            // new wrappers like Hijacked[Text] that GenericAstRewriter created while
-            // rewriting List[Text] forwarder bodies.
-            foreach (TypeSymbol wrapper in
-                     ctx.Registry.AllConcreteWrapperInstancesUnfiltered.ToList())
-            {
-                if (!_processedTypes.Add(item: wrapper.FullName))
-                {
-                    continue;
-                }
-
-                ProcessConcreteType(concreteType: wrapper);
-                madeProgress = true;
             }
         } while (madeProgress);
     }
@@ -859,8 +827,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         string[] lifecycleHooks = [DestroyMemberRoutineName, "roam_free", "roam_trace"];
         foreach (TypeSymbol t in ctx.Registry
                                   .AllConcreteGenericInstancesUnfiltered
-                                  .Concat(second: ctx.Registry
-                                                     .AllConcreteWrapperInstancesUnfiltered)
                                   .ToArray())
         {
             if (HasUnfoldedBuildtimeArg(ty: t))
@@ -1990,7 +1956,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return;
         }
 
-        if (GetGenericBase(type: t) != null || t is WrapperTypeSymbol)
+        if (GetGenericBase(type: t) != null)
         {
             sink.TryAdd(key: t.FullName, value: t);
         }
@@ -2030,7 +1996,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         {
             EntityTypeSymbol { GenericDefinition: { } d } => d,
             RecordTypeSymbol { GenericDefinition: { } d } => d,
-            WrapperTypeSymbol wrapper => ctx.Registry.LookupType(name: wrapper.Name),
             _ => null
         };
 
@@ -2590,7 +2555,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             // (which substitutes T with the concrete inner type). Emitting the wrapper generic-def
             // version would attempt to lower a body that still contains unresolved T references
             // (e.g. the as_entity() call), causing Phase B codegen failures.
-            if (type is WrapperTypeSymbol)
+            if (WrapperShape.Is(type: type))
             {
                 continue;
             }
@@ -3065,8 +3030,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
     /// <summary>
     /// Resolves a type by applying generic substitutions.
-    /// Also converts <see cref="WrapperTypeSymbol"/> to the concrete <see cref="RecordTypeSymbol"/>
-    /// so memberRoutine lookup and LLVM name mangling use the correct module-qualified type name.
     /// </summary>
     /// <summary>The inner X of a marker borrow protocol <c>Accessing[X]</c>/<c>Controlling[X]</c>, or null.
     /// A marker is ABI-transparent to its inner, so during monomorphization it is replaced by X — no marker
@@ -3093,14 +3056,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return MarkerInner(t: sub) is { } subbedInner
                 ? ResolveSubstitutedType(type: subbedInner, subs: subs)
                 : sub;
-        }
-
-        // WrapperTypeSymbol (e.g., Hijacked[T] or Hijacked[Core.Byte]) must always be resolved
-        // to the real RecordTypeSymbol so LookupMemberRoutine and LLVM mangled names work correctly.
-        // Use TryGetResolution (lookup-only) -> GMP must not grow AllConcreteGenericInstances.
-        if (type is WrapperTypeSymbol wrapper)
-        {
-            return ResolveWrapperType(wrapper: wrapper, subs: subs);
         }
 
         // Tuples carry their elements in ElementTypes (not TypeArguments), so the generic-resolution
@@ -3150,23 +3105,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         return ctx.Registry.TryGetResolution(genericDef: type, typeArguments: typeArgs!);
-    }
-
-    /// <summary>Resolves a wrapper type by substituting its inner type arguments and looking up the concrete instance.</summary>
-    private TypeSymbol ResolveWrapperType(WrapperTypeSymbol wrapper, Dictionary<string, TypeSymbol> subs)
-    {
-        TypeSymbol? wrapperDef = ctx.Registry.LookupType(name: wrapper.Name);
-        if (wrapperDef is { IsGenericDefinition: true } && wrapper.TypeArguments is { Count: > 0 })
-        {
-            var resolvedInnerArgs = wrapper.TypeArguments
-                                           .Select(selector: a =>
-                                                ResolveSubstitutedType(type: a, subs: subs))
-                                           .ToList();
-            return ctx.Registry.TryGetResolution(genericDef: wrapperDef,
-                typeArguments: resolvedInnerArgs) ?? wrapper;
-        }
-
-        return wrapper;
     }
 
     /// <summary>Resolves a tuple type by substituting each element type.</summary>
@@ -3223,8 +3161,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         // Not yet registered — create it so the concrete signature reaches codegen
-        // without unresolved GenericParameterTypeSymbol. Safe here because wrapper types
-        // are intercepted above (the WrapperTypeSymbol branch) and never reach this path.
+        // without unresolved GenericParameterTypeSymbol.
         // GetOrCreateResolution also enqueues the new type for ProcessConcreteType.
         if (substitutedArgs.All(predicate: a => a is not ErrorTypeSymbol))
         {
@@ -3281,10 +3218,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         TypeSymbol ownerType = resolvedRoutine.OwnerType!;
-        TypeSymbol? ownerGenericDef = GetGenericBase(type: ownerType) ??
-                                    (ownerType is WrapperTypeSymbol
-                                        ? ctx.Registry.LookupType(name: ownerType.Name)
-                                        : null);
+        TypeSymbol? ownerGenericDef = GetGenericBase(type: ownerType);
         if (ownerGenericDef?.GenericParameters is { Count: > 0 } gdParams)
         {
             return $"{ownerGenericDef.Name}[{string.Join(separator: ", ", values: gdParams)}]";
@@ -3425,10 +3359,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private void AddOwnerTypeArgSubstitutions(Dictionary<string, TypeSymbol> typeSubs,
         RoutineInfo resolvedRoutine, TypeSymbol ownerType)
     {
-        TypeSymbol? ownerGenericDef = GetGenericBase(type: ownerType) ??
-                                    (ownerType is WrapperTypeSymbol
-                                        ? ctx.Registry.LookupType(name: ownerType.Name)
-                                        : null);
+        TypeSymbol? ownerGenericDef = GetGenericBase(type: ownerType);
         if (ownerGenericDef?.GenericParameters is { Count: > 0 })
         {
             for (int i = 0;
@@ -3821,12 +3752,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         };
     }
 
-    /// Wrappers (Owned, Retained, Hijacked, ...) are declared with `record` syntax and behave as
-    /// record-category types for constraint purposes; they are tracked as WrapperTypeSymbol for layout
-    /// reasons but a `needs T is RecordType` constraint must still accept them.
+    /// Wrappers (Retained, Hijacked, ...) are standard library records, so a `needs T is RecordType`
+    /// constraint accepts them like any other record.
     private static bool IsRecordLike(TypeSymbol type)
     {
-        return type is RecordTypeSymbol || type is WrapperTypeSymbol;
+        return type is RecordTypeSymbol;
     }
 
     /// <summary>Wraps a pre-built body statement in a minimal shell RoutineDeclaration.</summary>

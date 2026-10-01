@@ -127,10 +127,8 @@ internal sealed class WrapperForwardingPass
     /// </summary>
     public void RunEager()
     {
-        // Collect from both resolution caches: RecordTypeSymbol resolutions AND WrapperTypeSymbol resolutions.
         var candidates = _registry.AllConcreteGenericInstances
                                   .Where(predicate: IsWrapperType)
-                                  .Concat(second: _registry.AllConcreteWrapperInstances)
                                   .Distinct()
                                   .ToList();
 
@@ -206,7 +204,7 @@ internal sealed class WrapperForwardingPass
             ctx.InnerMemberRoutine.MeType is RecordTypeSymbol
             {
                 GenericDefinition.Name: RuntimeContract.Roamed
-            } or WrapperTypeSymbol { Name: RuntimeContract.Roamed })
+            })
         {
             return ctx.InnerMemberRoutine;
         }
@@ -250,7 +248,6 @@ internal sealed class WrapperForwardingPass
         {
             RecordTypeSymbol { GenericDefinition: { } def } => def,
             EntityTypeSymbol { GenericDefinition: { } def } => def,
-            WrapperTypeSymbol => _registry.LookupType(name: wrapperType.Name),
             _ => wrapperType
         };
 

@@ -745,11 +745,6 @@ public class RecordTypeSymbol : TypeSymbol
                 : protocolType.GenericDefinition.CreateInstance(typeArguments: newArgs);
         }
 
-        if (type is WrapperTypeSymbol wrapperType)
-        {
-            return wrapperType.CreateInstance(typeArguments: newArgs);
-        }
-
         return type;
     }
 

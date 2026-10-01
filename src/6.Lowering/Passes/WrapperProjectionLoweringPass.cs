@@ -184,8 +184,6 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
                 record.BackendType == null
                     ? (WrapperProjectionKind.StructField, HijackedFieldIndex(wrapper: record, inner: inner), inner)
                     : (pointerKind, 0, inner),
-            WrapperTypeSymbol { InnerType: EntityTypeSymbol inner } w
-                when RuntimeContract.WrapperTypes.Contains(item: w.BareName) => (pointerKind, 0, inner),
             _ => null
         };
         if (projection is not { } p)

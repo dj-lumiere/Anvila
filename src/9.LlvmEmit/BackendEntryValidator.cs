@@ -322,7 +322,6 @@ public sealed class BackendEntryValidator
 
         return type switch
         {
-            WrapperTypeSymbol wrapper => ContainsUnresolvedBackendGeneric(type: wrapper.InnerType),
             TupleTypeSymbol tuple => tuple.ElementTypes.Any(
                 predicate: ContainsUnresolvedBackendGeneric),
             VariantTypeSymbol variant => variant.Members.Any(predicate: member =>

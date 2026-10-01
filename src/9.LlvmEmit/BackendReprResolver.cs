@@ -54,13 +54,6 @@ public static class BackendReprResolver
                 PointerFlavor: PointerFlavor.Protocol,
                 PointeeType: type),
 
-            WrapperTypeSymbol wrapper => new BackendRepr(Kind: BackendReprKind.WrapperRef,
-                SourceType: type,
-                LlvmAbiType: "ptr",
-                PointerFlavor: ClassifyPointerFlavor(typeName: wrapper.Name),
-                PointeeType: wrapper.InnerType,
-                IsTransparent: true),
-
             RoutineTypeSymbol => new BackendRepr(Kind: BackendReprKind.RoutineRef,
                 SourceType: type,
                 LlvmAbiType: "ptr",

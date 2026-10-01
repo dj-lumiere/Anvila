@@ -260,11 +260,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Wrapper type resolutions cache for synthesized scoped/RC wrappers
     /// (Viewing, Modifying, Consulting, Amending, Hijacked, Retained, Guarded, Tracked, Witnessed).
-    /// Kept separate from <see cref="_resolutions"/> to prevent key collisions when both
-    /// <see cref="GetOrCreateWrapperType"/> and <see cref="GetOrCreateResolution"/> produce
-    /// the same FullName-based key (e.g., "Hijacked[Core.Byte]").
     /// </summary>
-    private readonly Dictionary<string, WrapperTypeSymbol> _wrapperResolutions = new();
 
     /// <summary>
     /// Entity-type specializations of constrained generics, keyed by bare type name.
@@ -1428,15 +1424,11 @@ public sealed partial class TypeRegistry
         // Primary key uses FullName for each type argument (e.g. "Hijacked[Core.Byte]").
         // A short-name alias (e.g. "Hijacked[Byte]") is stored as a backward-compatible fallback.
         // Both keys map to the same TypeSymbol, so AllConcreteGenericInstances uses .Distinct()
-        // to avoid double-processing. Wrapper types are stored in _wrapperResolutions (not here)
-        // to prevent key collisions at the FullName level.
+        // to avoid double-processing.
         string fullKey =
             $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.FullName))}]";
-        // WrapperTypeSymbol.Name is bare ("Owned") without inner type args, so using Name alone
-        // collapses "Maybe[X]" and "Maybe[Y]" to the same shortKey "Maybe[Owned]".
-        // GetShortName expands wrappers to "Wrapper[Inner.Name]" to keep shortKeys distinct.
         string shortKey =
-            $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: GetShortName))}]";
+            $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name))}]";
         // Module-qualified full key: used when @llvm_ir type args are rewritten to fully-qualified
         // names by GenericAstRewriter (e.g. "Collections.BTreeSetNode[Core.S64]"). A BRIDGED (non-ambient)
         // realm def gets a leading `RF::`/`SF::` so a bridged `RF::Core.List[S64]` keys distinctly from the
@@ -1749,7 +1741,7 @@ public sealed partial class TypeRegistry
         }
 
         string shortKey =
-            $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: GetShortName))}]";
+            $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name))}]";
         // The shortKey is a bare-type-arg alias and COLLIDES when two modules declare a same-named type
         // (Hijacked[A/Point] vs Hijacked[B/Point]): a first-wins short alias would return the wrong module's
         // instance, mis-dispatching member routines (a value-record `peek` resolving to an entity `peek`).
@@ -1760,19 +1752,6 @@ public sealed partial class TypeRegistry
             ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef))
         {
             return existing;
-        }
-
-        // Wrapper types (Hijacked, Retained, etc.) are stored in _wrapperResolutions, not _resolutions.
-        if (_wrapperResolutions.TryGetValue(key: fullKey, value: out WrapperTypeSymbol? wrapper))
-        {
-            return wrapper;
-        }
-
-        if (fullKey != shortKey &&
-            _wrapperResolutions.TryGetValue(key: shortKey, value: out wrapper) &&
-            ResolutionTypeArgsMatch(resolved: wrapper, typeArguments: typeArguments))
-        {
-            return wrapper;
         }
 
         return null;
@@ -1903,16 +1882,6 @@ public sealed partial class TypeRegistry
         }
 
         return false;
-    }
-
-    /// Short name for a type argument used in the shortKey of GetOrCreateResolution / TryGetResolution.
-    /// WrapperTypeSymbol.Name is bare ("Owned") without inner args, so we expand it recursively to
-    /// "InnerName" to prevent shortKey collisions across different inner types.
-    private static string GetShortName(TypeSymbol t)
-    {
-        return t is WrapperTypeSymbol wt
-            ? $"{wt.Name}[{GetShortName(t: wt.InnerType)}]"
-            : t.Name;
     }
 
     /// <summary>
@@ -2269,13 +2238,6 @@ public sealed partial class TypeRegistry
             Relazy(t: t);
         }
 
-        foreach (TypeSymbol t in _wrapperResolutions.Values
-                                                  .Distinct()
-                                                  .ToList())
-        {
-            Relazy(t: t);
-        }
-
         return n;
     }
 
@@ -2344,33 +2306,6 @@ public sealed partial class TypeRegistry
 
         return args.All(predicate: IsFullyConcrete);
     }
-
-    /// <summary>
-    /// Returns all concrete WrapperTypeSymbol instances (e.g. Hijacked[RetainController])
-    /// whose type argument is fully resolved (no generic parameters or error types).
-    /// Used by eager wrapper-forwarder synthesis.
-    /// </summary>
-    public IEnumerable<WrapperTypeSymbol> AllConcreteWrapperInstances =>
-        _wrapperResolutions.Values
-                           .Where(predicate: t =>
-                                t.TypeArguments is { Count: > 0 } args &&
-                                args.All(predicate: IsFullyConcrete) && IsConcreteTypeLive(t: t) &&
-                                !IsStdlibLazy(type: t))
-                           .Distinct();
-
-    /// <summary>
-    /// All concrete wrapper instances bypassing the liveness filter. Mirror of
-    /// <see cref="AllConcreteGenericInstancesUnfiltered"/> for wrapper types — used by GMP to
-    /// monomorphize memberRoutines on wrappers like <c>Hijacked[Text]</c> that were created
-    /// during stdlib analysis but never reached the liveness walk (e.g. as a field type of an
-    /// iterator entity referenced indirectly via represent/diagnose).
-    /// </summary>
-    public IEnumerable<WrapperTypeSymbol> AllConcreteWrapperInstancesUnfiltered =>
-        _wrapperResolutions.Values
-                           .Where(predicate: t =>
-                                t.TypeArguments is { Count: > 0 } args &&
-                                args.All(predicate: IsFullyConcrete) && !IsStdlibLazy(type: t))
-                           .Distinct();
 
     /// <summary>
     /// Gets all types that can have memberRoutines (records, entities, choices, flags).

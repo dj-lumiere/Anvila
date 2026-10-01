@@ -22,7 +22,7 @@ public sealed partial class SemanticVerifier
             }
 
             // T / Retained[T] / Tracked[T] / Roamed[T] are declared as `record` in stdlib so they
-            // surface as RecordTypeSymbol, not WrapperTypeSymbol. Their single TypeArgument is the
+            // surface as RecordTypeSymbol. Their single TypeArgument is the
             // wrapped collection type — unwrap so the literal can resolve its base name
             // (PriorityQueue, SortedSet, etc.) from the expected type even when LHS is
             // `Owned[SortedSet[S64]]` etc. Use base-name extraction since instantiated record
@@ -78,20 +78,6 @@ public sealed partial class SemanticVerifier
         return GetTypeBaseName(type: expectedType) == Declaration.RuntimeContract.Roamed
             ? collectionExpectedType!
             : expectedType;
-    }
-
-    private TypeSymbol WrapOwnedCollectionLiteralType(TypeSymbol type, bool wrapForBinding = false)
-    {
-        if (!wrapForBinding)
-        {
-            return type;
-        }
-
-        return type is EntityTypeSymbol
-            ? _registry.GetOrCreateWrapperType(wrapperName: Declaration.RuntimeContract.Owned,
-                innerType: type,
-                isReadOnly: false)
-            : type;
     }
 
     private static long? GetConstGenericLong(TypeSymbol? type)
@@ -300,7 +286,7 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol listType = _registry.GetOrCreateResolution(genericDef: listDef,
             typeArguments: [elementType]);
-        return WrapOwnedCollectionLiteralType(type: listType);
+        return listType;
     }
 
     /// <summary>
@@ -484,7 +470,7 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol setType = _registry.GetOrCreateResolution(genericDef: setDef,
             typeArguments: [elementType]);
-        return WrapOwnedCollectionLiteralType(type: setType);
+        return setType;
     }
 
     private TypeSymbol AnalyzeDictLiteralExpression(DictLiteralExpression dict,
@@ -538,7 +524,7 @@ public sealed partial class SemanticVerifier
 
             TypeSymbol dictType = _registry.GetOrCreateResolution(genericDef: dictDef,
                 typeArguments: [keyType, valueType]);
-            dictResult = WrapOwnedCollectionLiteralType(type: dictType);
+            dictResult = dictType;
         }
 
         // Dict literals build `DictEntry[K, V]` values — that's the from_literal element type.

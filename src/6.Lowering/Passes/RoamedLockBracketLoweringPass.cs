@@ -224,7 +224,6 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     {
         EntityTypeSymbol? inner = t switch
         {
-            WrapperTypeSymbol { Name: RuntimeContract.Roamed, InnerType: EntityTypeSymbol e } => e,
             RecordTypeSymbol
             {
                 GenericDefinition.Name: RuntimeContract.Roamed,
@@ -368,14 +367,12 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             : null;
     }
 
-    // The bare entity `E` inside a `Roamed[E]` handle, in either representation the pipeline produces
-    // (WrapperTypeSymbol from SuflaeEntityLoweringPass.WrapInRoam, RecordTypeSymbol from a resolver-built
-    // handle). Null when the type is not a Roamed handle over an entity.
+    // The bare entity `E` inside a `Roamed[E]` handle. Null when the type is not a Roamed handle over an
+    // entity.
     private static EntityTypeSymbol? RoamedInnerEntity(TypeSymbol? t)
     {
         return t switch
         {
-            WrapperTypeSymbol { Name: RuntimeContract.Roamed, InnerType: EntityTypeSymbol e } => e,
             RecordTypeSymbol
             {
                 GenericDefinition.Name: RuntimeContract.Roamed,

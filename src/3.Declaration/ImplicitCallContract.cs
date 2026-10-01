@@ -61,7 +61,6 @@ internal static class ImplicitCallContract
         TypeSymbol? inner = liveType switch
         {
             RecordTypeSymbol { TypeArguments: { Count: >= 1 } ta } => ta[index: 0],
-            WrapperTypeSymbol w => w.InnerType,
             _ => null
         };
         if (inner != null)

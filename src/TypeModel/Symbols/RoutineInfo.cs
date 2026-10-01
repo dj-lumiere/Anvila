@@ -787,20 +787,6 @@ public sealed class RoutineInfo
                 : protocolType.GenericDefinition.CreateInstance(typeArguments: newArgs);
         }
 
-        // WrapperTypeSymbol (Retained[T], Guarded[T], etc.) — if the registry has a RecordTypeSymbol
-        // for the same base name, prefer that so the concrete type stays RecordTypeSymbol everywhere.
-        // This avoids the WrapperTypeSymbol -> "ptr" codegen mapping mismatch when the actual LLVM
-        // function definition uses the struct layout from the RecordTypeSymbol.
-        if (type is WrapperTypeSymbol && registry != null)
-        {
-            TypeSymbol? recordDef = registry.LookupType(name: type.Name);
-            if (recordDef is RecordTypeSymbol { IsGenericDefinition: true })
-            {
-                return registry.GetOrCreateResolution(genericDef: recordDef,
-                    typeArguments: newArgs);
-            }
-        }
-
         return type.CreateInstance(typeArguments: newArgs);
     }
 }

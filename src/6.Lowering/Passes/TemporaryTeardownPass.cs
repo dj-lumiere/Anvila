@@ -476,7 +476,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// <summary>True for a record target whose old value must be destroyed on reassignment: a managed
     /// leaf with a retaining <c>store</c> (Text/Decimal, or a record carrying such a field), a record
     /// with an RC-wrapper field (checked structurally: a wrapper field is a record type, so the old
-    /// <c>HasRCMemberVariables</c> flag, which looks for WrapperTypeSymbol fields, never fires), or an
+    /// <c>HasRCMemberVariables</c> flag), or an
     /// RC wrapper (Retained/Tracked/Guarded/Witnessed/Roamed, whose
     /// <c>destroy</c> is a no-op on the zeroed handle a <c>lateinit</c> binding starts with). Borrow
     /// views, scalars and plain value records are excluded, and entities are handled by

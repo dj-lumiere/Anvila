@@ -104,9 +104,6 @@ public static class ModularStdlibCache
         /// <summary>Type resolution table (alias/short-name → canonical TypeSymbol) for this module's types.</summary>
         public Dictionary<string, TypeSymbol> Resolutions { get; set; } = new();
 
-        /// <summary>RC wrapper type resolutions (name → WrapperTypeSymbol) for this module.</summary>
-        public Dictionary<string, WrapperTypeSymbol> WrapperResolutions { get; set; } = new();
-
         /// <summary>Entity specialization overrides (key → TypeSymbol) belonging to this module.</summary>
         public Dictionary<string, TypeSymbol> EntitySpecializations { get; set; } = new();
 
@@ -359,12 +356,6 @@ public static class ModularStdlibCache
                .Resolutions[key: kv.Key] = kv.Value;
         }
 
-        foreach (KeyValuePair<string, WrapperTypeSymbol> kv in reg.WrapperResolutions)
-        {
-            getSlice(arg: ModuleOf(o: kv.Value))
-               .WrapperResolutions[key: kv.Key] = kv.Value;
-        }
-
         foreach (KeyValuePair<string, TypeSymbol> kv in reg.EntitySpecializations)
         {
             getSlice(arg: ModuleOf(o: kv.Value))
@@ -585,7 +576,6 @@ public static class ModularStdlibCache
             Language = index.Language,
             Types = merged.Types,
             Resolutions = merged.Resolutions,
-            WrapperResolutions = merged.WrapperResolutions,
             EntitySpecializations = merged.EntitySpecializations,
             TypesByShortName = merged.TypesByShortName,
             Routines = merged.Routines,
@@ -646,11 +636,6 @@ public static class ModularStdlibCache
         foreach (KeyValuePair<string, TypeSymbol> kv in src.Resolutions)
         {
             dst.Resolutions[key: kv.Key] = kv.Value;
-        }
-
-        foreach (KeyValuePair<string, WrapperTypeSymbol> kv in src.WrapperResolutions)
-        {
-            dst.WrapperResolutions[key: kv.Key] = kv.Value;
         }
 
         foreach (KeyValuePair<string, TypeSymbol> kv in src.EntitySpecializations)

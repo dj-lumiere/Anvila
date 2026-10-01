@@ -16,9 +16,10 @@ public partial class LlvmEmitter
     private static TypeSymbol UnwrapCollectionStorageType(TypeSymbol type)
     {
         TypeSymbol current = type;
-        while (current is WrapperTypeSymbol { Name: Declaration.RuntimeContract.Owned } wrapper)
+        while (WrapperShape.TryGet(type: current, name: out string wrapper, inner: out TypeSymbol wrapped) &&
+               wrapper == Declaration.RuntimeContract.Owned)
         {
-            current = wrapper.InnerType;
+            current = wrapped;
         }
 
         return current;

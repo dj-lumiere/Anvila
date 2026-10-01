@@ -1978,17 +1978,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     private static TypeSymbol? UnwrapOwnershipWrapper(TypeSymbol? type)
     {
-        if (type is WrapperTypeSymbol
-            {
-                Name: Declaration.RuntimeContract.Owned or Declaration.RuntimeContract.Retained
-                or Declaration.RuntimeContract.Tracked
-            } w)
-        {
-            return w.InnerType;
-        }
-
         // T / Retained[T] / Tracked[T] are declared as `record T` in stdlib, so
-        // they surface as RecordTypeSymbol, not WrapperTypeSymbol. CheckAndAdvance by base name + single
+        // they surface as RecordTypeSymbol. CheckAndAdvance by base name + single
         // TypeArgument and return the inner collection so downstream lowering sees the actual
         // base (BitList, SortedSet, …) instead of the Owned envelope.
         if (type is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } rec &&

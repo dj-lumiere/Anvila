@@ -1272,12 +1272,8 @@ public partial class LlvmEmitter
         }
 
         // A @readonly method on a wrapper has a pointer `me` it does not write — mark it `readonly`.
-        // Recognise BOTH representations of a wrapper owner: the generic is a WrapperTypeSymbol, but a
-        // MONOMORPHIZED wrapper is a RecordTypeSymbol (e.g. Hijacked[Byte]) matched by its base name in
-        // RuntimeContract.WrapperTypes. The two must emit the SAME attr or the cold vs warm/snapshot
-        // codegen paths diverge (the monomorph reaches codegen in one path, the generic in the other) —
-        // WarmCodegenAst_MatchesCold.
-        bool isWrapperOwner = routine.OwnerType is WrapperTypeSymbol || routine.OwnerType != null &&
+        // A wrapper owner is the record matched by its base name in RuntimeContract.WrapperTypes.
+        bool isWrapperOwner = routine.OwnerType != null &&
             GetGenericBaseNameStatic(type: routine.OwnerType) is { } ownerBase &&
             Declaration.RuntimeContract.WrapperTypes.Contains(item: ownerBase);
         return isWrapperOwner
@@ -1373,7 +1369,7 @@ public partial class LlvmEmitter
         {
             RecordTypeSymbol { BackendType: not null } record => GetZeroValueForLlvmType(
                 llvmType: record.BackendType),
-            EntityTypeSymbol or WrapperTypeSymbol => "null",
+            EntityTypeSymbol => "null",
             _ => "zeroinitializer"
         };
     }
