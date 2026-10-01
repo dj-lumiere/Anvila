@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<!-- A front-on double-horned anvil, faceted: the left half of every piece catches the light. -->
+  <g fill="#F07A48">
+    <polygon points="50,5 50,30 38,30"/>
+    <polygon points="4,33 32,33 32,58 25,58"/>
+    <polygon points="34,32 50,32 50,65 34,57"/>
+    <polygon points="37,67 50,67 50,79 39,79"/>
+    <polygon points="24,81 50,81 50,90 24,90"/>
+    <polygon points="43,92 50,92 50,99"/>
+  </g>
+  <g fill="#C94F2C">
+    <polygon points="50,5 62,30 50,30"/>
+    <polygon points="96,33 68,33 68,58 75,58"/>
+    <polygon points="50,32 66,32 66,57 50,65"/>
+    <polygon points="50,67 63,67 61,79 50,79"/>
+    <polygon points="50,81 76,81 76,90 50,90"/>
+    <polygon points="50,92 57,92 50,99"/>
+  </g>
+</svg>
