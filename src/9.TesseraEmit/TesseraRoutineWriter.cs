@@ -33,6 +33,9 @@ internal sealed class TesseraRoutineWriter
     private readonly List<Block> _blocks = [];
     private readonly Stack<(string Continue, string Break)> _loops = new();
     private Block _current = null!;
+
+    /// <summary>Whether this routine keeps a crash trace frame.</summary>
+    private bool _traced;
     private int _temps;
     private int _labels;
 
@@ -106,6 +109,14 @@ internal sealed class TesseraRoutineWriter
         }
 
         ClaimDeclaredLocals();
+
+        _traced = _module.TracesRoutine(routine: _routine);
+        if (_traced)
+        {
+            Emit(line: $"{TesseraTrace.Push}({TesseraTrace.CString(text: TesseraTrace.FrameName(routine: _routine))}, " +
+                       $"{TesseraTrace.CString(text: _routine.Location?.FileName ?? "")}, " +
+                       $"{_routine.Location?.Line ?? 0}, {_routine.Location?.Column ?? 0})");
+        }
 
         WriteStatement(statement: _body);
         if (!_current.Terminated)
@@ -204,6 +215,12 @@ internal sealed class TesseraRoutineWriter
 
     private void Terminate(string line)
     {
+        // Every return pops the frame the routine pushed. (The value is already computed: it is a temporary.)
+        if (_traced && line.StartsWith(value: "return(", comparisonType: StringComparison.Ordinal))
+        {
+            Emit(line: $"{TesseraTrace.Pop}()");
+        }
+
         Emit(line: line);
         _current.Terminated = true;
     }
@@ -687,6 +704,12 @@ internal sealed class TesseraRoutineWriter
     /// </summary>
     private Operand? WriteCall(CallExpression call, bool asStatement)
     {
+        // The trace's top frame moves to this call, so a crash under it points here.
+        if (_traced && call.Location is { } at && (at.Line > 0 || at.Column > 0))
+        {
+            Emit(line: $"{TesseraTrace.UpdateLocation}({at.Line}, {at.Column})");
+        }
+
         RoutineInfo? routine = call.ResolvedRoutine;
         if (routine is null && call.LoweringKind == CallLoweringKind.TypeConstructor &&
             call.ResolvedType is RecordTypeSymbol { BackendType: null } constructed)
