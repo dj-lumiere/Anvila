@@ -401,7 +401,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emit backend scalar cast as part of this compiler phase.
+    /// Emit backend scalar cast as part of this builder phase.
     /// </summary>
     private string EmitBackendScalarCast(StringBuilder sb, string value, TypeSymbol? sourceType,
         TypeSymbol targetType)
@@ -641,7 +641,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emit binary op as part of this compiler phase.
+    /// Emit binary op as part of this builder phase.
     /// </summary>
     private string EmitBinaryOp(StringBuilder sb, BinaryExpression binary)
     {
@@ -684,7 +684,7 @@ public partial class LlvmEmitter
             BinaryOperator.IdentityNotEqual => EmitIdentityCompare(sb: sb,
                 binary: binary,
                 cmpOp: "ne"),
-            // obeys/disobeys are folded to a compile-time Bool literal by ExpressionLoweringPass
+            // obeys/disobeys are folded to a buildtime Bool literal by ExpressionLoweringPass
             // (SA validates the conformance and gates any error). They must never reach codegen.
             BinaryOperator.Obeys or BinaryOperator.Disobeys => throw new InvalidOperationException(
                 message:
@@ -701,7 +701,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emit binary assign as part of this compiler phase.
+    /// Emit binary assign as part of this builder phase.
     /// </summary>
     private string EmitBinaryAssign(StringBuilder sb, BinaryExpression binary)
     {
@@ -756,7 +756,7 @@ public partial class LlvmEmitter
 
 
     /// <summary>
-    /// Emit unary op as part of this compiler phase.
+    /// Emit unary op as part of this builder phase.
     /// </summary>
     private string EmitUnaryOp(StringBuilder sb, UnaryExpression unary)
     {

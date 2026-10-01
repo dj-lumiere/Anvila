@@ -28,7 +28,7 @@ namespace Builder.Desugaring.Passes;
 internal sealed class GenericCallLoweringPass : AstRewriter
 {
     /// <summary>
-    /// Stores the registry state used by this compiler phase.
+    /// Stores the registry state used by this builder phase.
     /// </summary>
     private readonly TypeRegistry _registry;
 
@@ -40,7 +40,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     private readonly HashSet<string> _restoredVariantKeys;
 
     /// <summary>
-    /// Initializes a new instance with the dependencies required for its compiler phase.
+    /// Initializes a new instance with the dependencies required for its builder phase.
     /// </summary>
     public GenericCallLoweringPass(DesugaringContext ctx) : this(registry: ctx.Registry,
         variantBodies: ctx.VariantBodies,
@@ -50,7 +50,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Initializes a new instance with the dependencies required for its compiler phase.
+    /// Initializes a new instance with the dependencies required for its builder phase.
     /// </summary>
     public GenericCallLoweringPass(TypeRegistry registry,
         Dictionary<string, Statement> variantBodies) : this(registry: registry,
@@ -60,7 +60,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Initializes a new instance with the dependencies required for its compiler phase.
+    /// Initializes a new instance with the dependencies required for its builder phase.
     /// </summary>
     private GenericCallLoweringPass(TypeRegistry registry,
         Dictionary<string, Statement> variantBodies,
@@ -75,7 +75,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void Run(Program program)
     {
@@ -171,7 +171,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Lower member list as part of this compiler phase.
+    /// Lower member list as part of this builder phase.
     /// </summary>
     private void LowerMemberList(List<SyntaxTree.Declaration> members)
     {

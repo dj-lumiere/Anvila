@@ -18,7 +18,7 @@ internal sealed class DerivedOperatorPass
     private readonly TypeRegistry _registry;
     private readonly Dictionary<string, (RoutineInfo Routine, Statement Body)> _synthesizedBodies;
 
-    /// <summary>Synthetic source location used for compiler-generated AST nodes.</summary>
+    /// <summary>Synthetic source location used for builder-generated AST nodes.</summary>
     private static readonly SourceLocation _synthLoc = new(FileName: "",
         Line: 0,
         Column: 0,

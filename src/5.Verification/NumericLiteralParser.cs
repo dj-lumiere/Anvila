@@ -378,7 +378,7 @@ public static partial class NumericLiteralParser
             qMin: -6176,
             qMax: 6111);
 
-        // A numeric literal that overflows the type to infinity is a compile-time error (the
+        // A numeric literal that overflows the type to infinity is a buildtime error (the
         // explicit `inf`/`nan` literals are handled before the encoder). The caller's catch turns
         // this into a semantic diagnostic.
         if (overflow)
@@ -477,7 +477,7 @@ public static partial class NumericLiteralParser
     /// Encodes a decimal literal into IEEE binary128 (Core.B128, @llvm("i128")) bits, correctly
     /// rounded to nearest-even via exact BigInteger arithmetic. Used by both analysis and the LLVM
     /// emitter. Throws <see cref="OverflowException"/> when the value is out
-    /// of binary128's finite range (a compile-time literal overflow); the explicit <c>inf</c>/
+    /// of binary128's finite range (a buildtime literal overflow); the explicit <c>inf</c>/
     /// <c>nan</c> literals are handled by the caller before this is reached.
     /// </summary>
     public static B128 EncodeB128(string str)
@@ -655,7 +655,7 @@ public static partial class NumericLiteralParser
     /// RazorForge's CANONICAL decimal: fractional trailing zeros are stripped so equal values share
     /// bits, while integers (exp &gt;= 0) are left as-is. Pmax 34, stored exponent q in [-6176, 6111].
     /// Throws on overflow — Decimal is finite-only, so a literal that would round to infinity is a
-    /// compile-time range error (the caller's catch turns it into a diagnostic); explicit inf/nan
+    /// buildtime range error (the caller's catch turns it into a diagnostic); explicit inf/nan
     /// literals are rejected by the analyzer before this is reached.
     /// </summary>
     /// <param name="str">The decimal literal string, with optional type suffix.</param>
@@ -697,7 +697,7 @@ public static partial class NumericLiteralParser
     /// Parses an arbitrary precision decimal and returns metadata, using the managed
     /// <see cref="ParseDecimalLiteral"/> splitter (no native FFI — the old decNumber
     /// <c>rf_cs_decimal_from_string</c> backend has been retired). The returned tuple feeds the
-    /// vestigial <c>ParsedDecimal</c> SA result; the compile-time bits come from
+    /// vestigial <c>ParsedDecimal</c> SA result; the buildtime bits come from
     /// <see cref="EncodeDecimalCanonical"/>, which is the single source of truth.
     /// </summary>
     /// <param name="str">The string representation (type suffix already optional).</param>

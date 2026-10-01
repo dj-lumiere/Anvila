@@ -769,7 +769,7 @@ public static class ModularStdlibCache
     [System.Diagnostics.CodeAnalysis.SuppressMessage(category: "csharpsquid", checkId: "S3011",
         Justification =
             "The serializer intentionally reflects over its own private instance fields to persist " +
-            "internal compiler types; the reflected types are internal and never attacker-supplied.")]
+            "internal builder types; the reflected types are internal and never attacker-supplied.")]
     private static FieldInfo[] Fields(Type t)
     {
         if (_fields.TryGetValue(key: t, value: out FieldInfo[]? c))

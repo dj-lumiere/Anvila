@@ -99,19 +99,19 @@ public sealed partial class SemanticVerifier
     /// <summary>Gets whether we're currently inside a danger block.</summary>
     private bool InDangerBlock => _dangerBlockDepth > 0;
 
-    /// <summary>True while analyzing a compiler-generated body (variant or synthesized derived operator).
+    /// <summary>True while analyzing a builder-generated body (variant or synthesized derived operator).
     /// Suppresses the wired-routine direct-call check so SA can fully annotate ResolvedType on
     /// all nodes -> errors are already discarded by AnalyzeCompilerGeneratedBody's error-count guard.</summary>
     internal bool _isInCompilerGeneratedBody;
 
     /// <summary>
-    /// Concrete type-parameter bindings for the compiler-generated body currently being re-analyzed
+    /// Concrete type-parameter bindings for the builder-generated body currently being re-analyzed
     /// (<see cref="AnalyzeCompilerGeneratedBody"/>). Maps a generic parameter NAME (<c>T</c>, <c>N</c>) to
     /// the concrete argument of the routine's owner instance (<c>T</c>→<c>Particle</c>). Consulted by the
     /// type resolver BEFORE the global type lookup so a bare parameter reference in a re-SA'd member body of a
     /// concrete generic instance (e.g. <c>var result = T.blank()</c> in <c>SplitList[Particle].getitem</c>)
     /// resolves to the concrete argument — NOT to a same-named global user type (a <c>record T</c>), which
-    /// otherwise hijacks it (the generic-param-name-collision class). Null outside a compiler-generated body.
+    /// otherwise hijacks it (the generic-param-name-collision class). Null outside a builder-generated body.
     /// </summary>
     internal Dictionary<string, TypeSymbol>? _compilerGeneratedTypeParamBindings;
 
@@ -142,20 +142,20 @@ public sealed partial class SemanticVerifier
     internal readonly HashSet<string> _importedForeignAliases =
         new(comparer: StringComparer.Ordinal);
 
-    /// <summary>Per-file import snapshots used when re-analyzing compiler-generated bodies.</summary>
+    /// <summary>Per-file import snapshots used when re-analyzing builder-generated bodies.</summary>
     private readonly Dictionary<string, HashSet<string>> _importSnapshots =
         new(comparer: StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Per-file imported symbol snapshots used when re-analyzing compiler-generated bodies.</summary>
+    /// <summary>Per-file imported symbol snapshots used when re-analyzing builder-generated bodies.</summary>
     private readonly Dictionary<string, HashSet<string>> _symbolNameSnapshots =
         new(comparer: StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Per-file module-name snapshots used when re-analyzing compiler-generated bodies.</summary>
+    /// <summary>Per-file module-name snapshots used when re-analyzing builder-generated bodies.</summary>
     private readonly Dictionary<string, string?> _moduleNameSnapshots =
         new(comparer: StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Per-file <see cref="_importedForeignAliases"/> snapshots (realm-qualified bare imports),
-    /// so a bare-aliased foreign call inside a re-analyzed compiler-generated body (e.g. a failable
+    /// so a bare-aliased foreign call inside a re-analyzed builder-generated body (e.g. a failable
     /// user routine's `try` variant) keeps passing the realm gate.</summary>
     private readonly Dictionary<string, HashSet<string>> _foreignAliasSnapshots =
         new(comparer: StringComparer.OrdinalIgnoreCase);
@@ -278,12 +278,12 @@ public sealed partial class SemanticVerifier
     #region Constructor
 
     /// <summary>
-    /// Stores the target state used by this compiler phase.
+    /// Stores the target state used by this builder phase.
     /// </summary>
     private readonly TargetConfig _target;
 
     /// <summary>
-    /// Stores the build mode state used by this compiler phase.
+    /// Stores the build mode state used by this builder phase.
     /// </summary>
     private readonly RfBuildMode _buildMode;
 
@@ -1336,7 +1336,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <returns>List of errors found in stdlib routine bodies.</returns>
     /// <summary>Runs the <see cref="Builder.Declaration.RuntimeContractCheck"/> against the loaded
-    /// stdlib registry: asserts every name the compiler hard-codes against the stdlib still resolves.
+    /// stdlib registry: asserts every name the builder hard-codes against the stdlib still resolves.
     /// Call AFTER <see cref="ValidateStdlibBodies"/> (which loads and analyzes the stdlib). Returns a
     /// description per broken contract; empty means all contracts hold.</summary>
     public List<string> CheckRuntimeContract()
@@ -2460,7 +2460,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Analyzes all error-handling variant bodies in the context of their registered RoutineInfo.
-    /// These bodies are compiler-generated, but they still need full semantic annotation before
+    /// These bodies are builder-generated, but they still need full semantic annotation before
     /// the type-aware postprocessing pipeline rewrites operators and expressions.
     /// </summary>
     private void AnalyzeVariantBodies()
@@ -2491,9 +2491,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Analyzes a single compiler-generated AST body in the context of its RoutineInfo.
+    /// Analyzes a single builder-generated AST body in the context of its RoutineInfo.
     /// Sets up scope and parameters identically to AnalyzeFunctionBody, but skips
-    /// validation that doesn't apply to compiler-generated code.
+    /// validation that doesn't apply to builder-generated code.
     /// </summary>
     private void AnalyzeCompilerGeneratedBody(RoutineInfo routineInfo, Statement body,
         bool preservePresetTypes = false)
@@ -2525,7 +2525,7 @@ public sealed partial class SemanticVerifier
             _importedModules.Add(item: "BuilderQuery");
         }
 
-        // Analyze the compiler-generated body in its OWNER's module, not whatever module happens to be
+        // Analyze the builder-generated body in its OWNER's module, not whatever module happens to be
         // current when the body is first made live. A synthesized failable variant of a Core routine
         // (e.g. the try variant of `Decimal.logb`) references Core module-private `secret` types; resolved
         // under a user module those fail the secret-visibility check and silently become ErrorType,
@@ -2564,8 +2564,8 @@ public sealed partial class SemanticVerifier
         _compilerGeneratedTypeParamBindings =
             BindOwnerGenericParamsForReanalysis(routineInfo: routineInfo);
 
-        // Suppress errors for synthesized bodies -> they are compiler-generated and correct by construction.
-        // Any error indicates a compiler bug, not user code error, so we don't surface them.
+        // Suppress errors for synthesized bodies -> they are builder-generated and correct by construction.
+        // Any error indicates a builder bug, not user code error, so we don't surface them.
         // _isInCompilerGeneratedBody bypasses the wired-routine direct-call guard so SA can fully
         // annotate ResolvedType on all nodes (needed by CallOverloadResolutionPass later).
         bool prevIsInCompilerGeneratedBody = _isInCompilerGeneratedBody;
@@ -2604,7 +2604,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Restores the import scope for a compiler-generated body: from the routine's snapshot when one
+    /// Restores the import scope for a builder-generated body: from the routine's snapshot when one
     /// exists, otherwise (single-file path, no stdlib snapshot) a minimal Core + own-module scope so SA
     /// can resolve Core type annotations (S128, U32, …) referenced in the body.
     /// </summary>
@@ -2732,7 +2732,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Performs the capture current import state snapshot step for this compiler phase.
+    /// Performs the capture current import state snapshot step for this builder phase.
     /// </summary>
     private void CaptureCurrentImportStateSnapshot(string filePath)
     {
@@ -2771,7 +2771,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Resolves the snapshot file path from semantic compiler state.
+    /// Resolves the snapshot file path from semantic builder state.
     /// </summary>
     private string? ResolveSnapshotFilePath(string locationFile)
     {

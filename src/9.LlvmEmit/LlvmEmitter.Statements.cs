@@ -214,7 +214,7 @@ public partial class LlvmEmitter
 
         // NOTE: no codegen strong-count bump for RC wrapper var bindings. Copying a Retained[T]/
         // Tracked[T] handle requires an explicit verb (`.retain()`/`.track()`) — implicit copy
-        // (`var b = a`) is a COMPILE ERROR (ImplicitWrapperCopy; Retained/Tracked don't obey
+        // (`var b = a`) is a BUILD ERROR (ImplicitWrapperCopy; Retained/Tracked don't obey
         // Assignable). So an init is always either a fresh handle from `.retain()`/`.track()`
         // (already count=1) or a creator `Retained[T](ctrl)` (count=1) — never an implicit copy
         // needing balance. The old bump (fired on `is not CallExpression`) wrongly counted the
@@ -342,7 +342,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Resolves the variable decl type from semantic compiler state.
+    /// Resolves the variable decl type from semantic builder state.
     /// </summary>
     private TypeSymbol? ResolveVariableDeclType(VariableDeclaration varDecl)
     {
@@ -799,7 +799,7 @@ public partial class LlvmEmitter
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Emit if as part of this compiler phase.
+    /// Emit if as part of this builder phase.
     /// </summary>
     private bool EmitIf(StringBuilder sb, IfStatement ifStmt)
     {

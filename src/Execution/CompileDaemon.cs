@@ -39,7 +39,7 @@ internal partial class Program
 
         /// <summary>A daemon IPC message: written and read as a fixed field sequence with <see cref="BinaryWriter"/>.
         /// Hand-written instead of JSON so the dev-loop client never loads System.Text.Json (its first use cost
-        /// every run ~20 ms). Client and daemon are always the same compiler build (the version-stamped ping
+        /// every run ~20 ms). Client and daemon are always the same builder build (the version-stamped ping
         /// restarts a stale daemon), so the field order needs no versioning.</summary>
         private interface IDaemonMessage<TSelf> where TSelf : IDaemonMessage<TSelf>
         {
@@ -235,7 +235,7 @@ internal partial class Program
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             Console.Error.WriteLine(value: $"[daemon] loading {language} stdlib snapshot...");
-            // Load from the on-disk .pbrf cache when the stdlib+compiler hash matches (~1–2 s), else capture
+            // Load from the on-disk .pbrf cache when the stdlib+builder hash matches (~1–2 s), else capture
             // fresh (~5–8 s) and write the cache for next startup.
             SemanticVerifier.CompiledStdlibState state =
                 Builder.Serialization.StdlibSnapshotCache.LoadOrCapture(language: language,
@@ -398,7 +398,7 @@ internal partial class Program
             }
 
             string pipe = PipeName();
-            // The compiler DLL mtime THIS daemon loaded at startup. A client compares it (via the version-
+            // The builder DLL mtime THIS daemon loaded at startup. A client compares it (via the version-
             // stamped pong) to the CURRENT on-disk mtime; a `dotnet build` that rewrote the DLL makes them
             // differ, so the client knows this daemon is running stale code (old lowering/warm snapshot →
             // e.g. an unlowered GMCE at codegen) and restarts it instead of reusing it.
@@ -865,7 +865,7 @@ internal partial class Program
 
         /// <summary>The `[target] incremental` JIT path (resident-JIT incremental (B) M3): analyze in-process,
         /// then JIT-run @main with a fully-lazy ORC generator that materializes each reached routine on demand
-        /// — served from / written to the per-routine disk IR cache (keyed by stdlib+compiler fingerprint), so
+        /// — served from / written to the per-routine disk IR cache (keyed by stdlib+builder fingerprint), so
         /// a re-run skips codegen + JIT of every routine already cached. Returns true (handled) with the exit
         /// code; a build error is handled (no AOT fallback — it would fail identically).</summary>
         private static bool TryClientJitRunIncremental(ResolvedEntry resolved, out int exitCode)
@@ -892,7 +892,7 @@ internal partial class Program
                 return true;
             }
 
-            // The IR-cache fingerprint is stdlib+compiler-only (program-INVARIANT), so it is known before the
+            // The IR-cache fingerprint is stdlib+builder-only (program-INVARIANT), so it is known before the
             // program is analyzed. Build a predicate cache now and hand its Phase-9 skip predicate to the WARM
             // analysis: an instance whose IR is already cached from a prior run will be an M2b codegen HIT this
             // run (never re-emitted), so its backend-repr+validate (the ~440 ms PostDesugarChecks bulk) is
@@ -1207,7 +1207,7 @@ internal partial class Program
 
         // ---- auto-spawn (manifest `[target] use-daemon = true` -> the builder manages the daemon) -----
 
-        /// <summary>The compiler DLL's on-disk mtime ticks — a cheap version stamp. The daemon captures it at
+        /// <summary>The builder DLL's on-disk mtime ticks — a cheap version stamp. The daemon captures it at
         /// startup and returns it in the pong; a client computes it fresh, so a `dotnet build` that rewrote
         /// the DLL makes them differ (the daemon is running stale code + a stale warm snapshot).</summary>
         private static string CompilerVersionStamp()
@@ -1273,7 +1273,7 @@ internal partial class Program
             return max;
         }
 
-        /// <summary>Pings the daemon and returns the compiler stamp it reported (from <c>pong &lt;stamp&gt;</c>),
+        /// <summary>Pings the daemon and returns the builder stamp it reported (from <c>pong &lt;stamp&gt;</c>),
         /// or null if no daemon answered.</summary>
         private static string? PingStamp(int timeoutMs)
         {
@@ -1298,7 +1298,7 @@ internal partial class Program
         }
 
         /// <summary>Cheap liveness+freshness probe: a daemon counts as usable only if it answers AND is running
-        /// the CURRENT compiler DLL (stamp matches). A STALE daemon (rebuilt compiler) returns false so the
+        /// the CURRENT builder DLL (stamp matches). A STALE daemon (rebuilt builder) returns false so the
         /// caller restarts it — never reused (that was the recurring GMCE / stale-snapshot bug). Never spawns.</summary>
         private static bool TryPing(int timeoutMs)
         {
@@ -1309,7 +1309,7 @@ internal partial class Program
             return fresh;
         }
 
-        /// <summary>If a daemon is up but running a STALE compiler (its stamp differs from the current DLL, or
+        /// <summary>If a daemon is up but running a STALE builder (its stamp differs from the current DLL, or
         /// it is an old daemon that predates the version-stamped pong), send it <c>shutdown</c> and wait for the
         /// pipe to free, so a fresh daemon can take over. No-op when no daemon or a fresh one is up.</summary>
         private static void ShutdownStaleDaemonIfPresent()
@@ -1321,7 +1321,7 @@ internal partial class Program
             }
 
             Console.Error.WriteLine(
-                value: "[daemon] running daemon is stale (compiler or stdlib changed) — restarting it.");
+                value: "[daemon] running daemon is stale (builder or stdlib changed) — restarting it.");
             try { SendRequest(request: new DaemonRequest { Verb = "shutdown" }, timeoutMs: 2000); }
             catch
             {
@@ -1379,7 +1379,7 @@ internal partial class Program
                     return true;
                 }
 
-                // A STALE daemon (older compiler DLL) may still be holding the pipe — shut it down first so
+                // A STALE daemon (older builder DLL) may still be holding the pipe — shut it down first so
                 // the fresh daemon we spawn below can bind. (TryPing above already returned false for it.)
                 ShutdownStaleDaemonIfPresent();
 

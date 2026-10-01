@@ -94,7 +94,7 @@ public record DeclarationStatement(Declaration Declaration, SourceLocation Locat
 public record AssignmentStatement(Expression Target, Expression Value, SourceLocation Location)
     : Statement(Location: Location)
 {
-    /// <summary>True for the compiler-synthesized assignment that initializes a Suflae module-level
+    /// <summary>True for the builder-synthesized assignment that initializes a Suflae module-level
     /// <c>global</c> at the top of <c>start()</c>. Signals the Roamed promotion pass to escape the
     /// global's handle to ESCAPED (armed-lock) mode right after init — a global is reachable from every
     /// task, so its access lock must engage for thread-safe concurrent mutation.</summary>
@@ -582,7 +582,7 @@ public enum ExpandSourceKind
 }
 
 /// <summary>
-/// Compile-time member-expansion loop: <c>expand m in allmemvarof(T)</c>. Unlike the runtime
+/// Buildtime member-expansion loop: <c>expand m in allmemvarof(T)</c>. Unlike the runtime
 /// <see cref="EachStatement"/>, this never survives to codegen — it is UNROLLED at monomorphization
 /// (once per member of the concrete <c>T</c>) by the generic AST rewriter, with the handle
 /// projections (<c>m.name</c>, <c>m.id</c>) folded to literals and <c>x.${m.name}</c> splices
@@ -1165,7 +1165,7 @@ public record VariantReturnStatement(
     /// (a composition propagating an inner carrier's failure — see
     /// <c>ErrorHandlingVariantPass.BuildCarrierPropagationWhen</c>), the expression that yields the caught
     /// error's RUNTIME <c>type_id</c> (the source carrier's <c>type_id</c> member). When set, carrier
-    /// lowering tags the re-wrapped carrier with THIS value instead of a compile-time constant computed
+    /// lowering tags the re-wrapped carrier with THIS value instead of a buildtime constant computed
     /// from the erased <c>Crashable</c> static type (which would mis-tag the payload). Null for a normal
     /// throw of a concretely-typed error, where the static type gives the correct <c>type_id</c>.
     /// </summary>

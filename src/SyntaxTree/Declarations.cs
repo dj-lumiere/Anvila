@@ -194,7 +194,7 @@ public record ExpandMemberDeclaration(
 /// <param name="IsCommon">Whether the routine is a <c>common</c> (type-level static) member routine.</param>
 /// <param name="Async">Suspended or threaded routine mode.</param>
 /// <param name="IsDangerous">Whether the routine requires a <c>danger</c> context.</param>
-/// <param name="IsWiredMemberRoutine">Whether the routine is a wired (compiler-synthesized) member routine.</param>
+/// <param name="IsWiredMemberRoutine">Whether the routine is a wired (builder-synthesized) member routine.</param>
 /// <remarks>
 /// FreeRoutine declarations support:
 /// <list type="bullet">
@@ -661,7 +661,7 @@ public record ImportDeclaration(
 
 /// <summary>
 /// Specifies the async execution model for a routine. This is ORTHOGONAL to
-/// <see cref="FailableVariant"/> (the compiler-generated failable-wrapper kind): a routine has an
+/// <see cref="FailableVariant"/> (the builder-generated failable-wrapper kind): a routine has an
 /// async model AND, independently, may be a generated failable variant. The two used to be mixed
 /// into one enum; they are now separate.
 /// </summary>
@@ -684,35 +684,35 @@ public enum AsyncStatus
 }
 
 /// <summary>
-/// Which compiler-generated failable wrapper a routine is, if any. Orthogonal to
+/// Which builder-generated failable wrapper a routine is, if any. Orthogonal to
 /// <see cref="AsyncStatus"/> (the async execution model). A routine is at most one of these; the
 /// failable variants were previously mixed into <see cref="AsyncStatus"/> and are now separated out.
 /// </summary>
 public enum FailableVariant
 {
-    /// <summary>Not a compiler-generated failable variant (the common case).</summary>
+    /// <summary>Not a builder-generated failable variant (the common case).</summary>
     None,
 
     /// <summary>
-    /// Compiler-generated lookup variant: wraps a failable routine to return Lookup[T].
+    /// Builder-generated lookup variant: wraps a failable routine to return Lookup[T].
     /// throw -> error carrier, absent -> zeroinitializer, return -> success carrier.
     /// </summary>
     Lookup,
 
     /// <summary>
-    /// Compiler-generated grab variant: wraps a failable routine to return Result[None].
+    /// Builder-generated grab variant: wraps a failable routine to return Result[None].
     /// throw -> error carrier, absent/return -> success zeroinitializer (None).
     /// </summary>
     Check,
 
     /// <summary>
-    /// Compiler-generated try variant for None-returning failable routines.
+    /// Builder-generated try variant for None-returning failable routines.
     /// Returns Bool (i1): true = success, false = absent or throw.
     /// </summary>
     TryBool,
 
     /// <summary>
-    /// Compiler-generated try variant for non-None failable routines.
+    /// Builder-generated try variant for non-None failable routines.
     /// Returns Maybe[T] carrier: absent/throw -> zeroinitializer (None), return value -> present.
     /// RoutineInfo.ReturnType is the full Maybe[T] type; codegen uses GetLLVMType directly.
     /// </summary>

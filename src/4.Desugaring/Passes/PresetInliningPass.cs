@@ -28,7 +28,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     // that declares it. `_ownPresets` is the set of preset names declared in the file currently
     // being lowered — a secret preset from another file is NOT in it, so it is left un-inlined and a bare
     // identifier that merely shares a name (e.g. a user `record B` vs a stdlib `secret preset B`) resolves
-    // as its own declaration. Null means "no scoping" (compiler-synthesized variant bodies).
+    // as its own declaration. Null means "no scoping" (builder-synthesized variant bodies).
     //
     // NOTE (module-private secret, WIP): the intended end-state is that `secret` is MODULE-private for
     // ACCESS (un-importable, usable across files of the same module) enforced at the VISIBILITY layer with
@@ -57,7 +57,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void Run(Program program)
     {
@@ -98,7 +98,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     /// </summary>
     public void RunOnVariantBodies()
     {
-        // Synthesized variant bodies are compiler-generated and not tied to a source file. They never
+        // Synthesized variant bodies are builder-generated and not tied to a source file. They never
         // reference file-private secret presets, so an empty own-set is correct (public presets still
         // inline via the registry).
         _ownPresets = new Dictionary<string, PresetDeclaration>(comparer: StringComparer.Ordinal);
@@ -146,7 +146,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     }
 
     /// <summary>
-    /// Lower member list as part of this compiler phase.
+    /// Lower member list as part of this builder phase.
     /// </summary>
     private void LowerMemberList(List<SyntaxTree.Declaration> members)
     {

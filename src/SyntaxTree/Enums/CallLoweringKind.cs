@@ -24,13 +24,13 @@ public enum CallLoweringKind
     /// <summary>Explicit source-level value conversion.</summary>
     ValueConversion,
 
-    /// <summary>BuilderQuery/compiler metadata intrinsic.</summary>
+    /// <summary>BuilderQuery/builder metadata intrinsic.</summary>
     BuilderIntrinsic,
 
     /// <summary>LLVM intrinsic template call.</summary>
     LlvmIntrinsic,
 
-    /// <summary>Runtime/compiler helper intrinsic.</summary>
+    /// <summary>Runtime/builder helper intrinsic.</summary>
     RuntimeIntrinsic,
 
     /// <summary>Indirect or dynamic call through a callable value.</summary>

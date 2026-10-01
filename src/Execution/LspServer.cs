@@ -1129,7 +1129,7 @@ public static class LspServer
                             .ToList();
 
         // Methods whose SPECIALIZED receiver doesn't accept this instantiation (e.g.
-        // `List[Agent[V]].gather` on a `List[FaceDraw]`). The compiler-generated failable variants
+        // `List[Agent[V]].gather` on a `List[FaceDraw]`). The builder-generated failable variants
         // (the try/grab/lookup variants of `gather`) carry no MeType, so key the rejection on the BASE name
         // and let a variant inherit its base's (in)applicability.
         var rejected = new HashSet<string>(collection: ownMethods

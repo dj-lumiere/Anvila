@@ -12,7 +12,7 @@ namespace Builder.Verification.Results;
 /// <param name="Errors">List of semantic errors.</param>
 /// <param name="Warnings">List of semantic warnings.</param>
 /// <param name="ParsedLiterals">Parsed literal values for code generation (b128, d32, d64, d128, Integer, Decimal).</param>
-/// <param name="SynthesizedBodies">AST bodies for compiler-generated routines (derived operators + variant bodies),
+/// <param name="SynthesizedBodies">AST bodies for builder-generated routines (derived operators + variant bodies),
 /// keyed by RoutineInfo.RegistryKey. Includes both ne/lt/etc. operators and pre-transformed
 /// try/grab/lookup variant bodies produced by <see cref="ErrorHandlingVariantPass"/>.</param>
 /// <param name="InstantiatedGenericBodies">Concrete generic memberRoutine bodies produced by

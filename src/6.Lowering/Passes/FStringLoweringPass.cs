@@ -151,7 +151,7 @@ internal sealed class FStringLoweringPass(PostprocessingContext ctx) : AstRewrit
         // short type name in the rendered output, so a value of type
         // `Module.Counter` renders as `Module.?Counter(...)`. The rendered
         // text is post-processed via `Text.replace` because the type-name
-        // prefix is compile-time known and appears verbatim at the head of
+        // prefix is buildtime known and appears verbatim at the head of
         // `diagnose` / `represent` output.
         if (ep.Expression is { IsInFlight: true, ResolvedType: EntityTypeSymbol entityType })
         {
@@ -166,7 +166,7 @@ internal sealed class FStringLoweringPass(PostprocessingContext ctx) : AstRewrit
 
     /// <summary>
     /// Post-processes an in-flight entity's rendered text via <c>Text.replace</c>, inserting a
-    /// <c>?</c> immediately before the short type name in the compile-time-known type-name prefix.
+    /// <c>?</c> immediately before the short type name in the buildtime-known type-name prefix.
     /// </summary>
     private static CallExpression WrapInFlightEntityMarker(Expression renderCall,
         ExpressionPart ep, EntityTypeSymbol entityType, TypeSymbol? textType)

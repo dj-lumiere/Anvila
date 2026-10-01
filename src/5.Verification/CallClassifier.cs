@@ -12,7 +12,7 @@ namespace Builder.Verification;
 internal static class CallClassifier
 {
     /// <summary>
-    /// Performs the classify standalone routine call step for this compiler phase.
+    /// Performs the classify standalone routine call step for this builder phase.
     /// </summary>
     internal static CallLoweringKind ClassifyStandaloneRoutineCall(RoutineInfo routine)
     {
@@ -31,7 +31,7 @@ internal static class CallClassifier
     }
 
     /// <summary>
-    /// Performs the classify memberRoutine call step for this compiler phase.
+    /// Performs the classify memberRoutine call step for this builder phase.
     /// </summary>
     internal static CallLoweringKind ClassifyMemberRoutineCall(RoutineInfo memberRoutine)
     {

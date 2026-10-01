@@ -15,7 +15,7 @@ using TypeModel.Enums;
 namespace Builder.Execution;
 
 /// <summary>
-/// Command-line entry point for the RazorForge compiler toolchain.
+/// Command-line entry point for the RazorForge builder toolchain.
 /// </summary>
 internal partial class Program
 {
@@ -859,7 +859,7 @@ internal partial class Program
         Console.WriteLine(
             value: $"  {tool} help                                 - Show this help");
         Console.WriteLine(
-            value: $"  {tool} version                              - Show compiler version");
+            value: $"  {tool} version                              - Show builder version");
         Console.WriteLine();
         string kinds = string.Join(separator: ", ",
             values: Builder.Frontends.Languages.All.Select(selector: rules => $"{rules.FileExtension} for {rules.Name}"));
@@ -1024,7 +1024,7 @@ internal partial class Program
             var analyzer = new SemanticVerifier(language: language);
             List<SemanticError> stdlibErrors = analyzer.ValidateStdlibBodies();
 
-            // Compiler↔stdlib name-contract check: every routine/type/field name the compiler
+            // Builder↔stdlib name-contract check: every routine/type/field name the builder
             // hard-codes against the stdlib must still resolve. A rename that breaks a contract
             // fails HERE (loudly) instead of silently miscompiling at runtime.
             List<string> contractErrors = analyzer.CheckRuntimeContract();
@@ -1041,7 +1041,7 @@ internal partial class Program
                     value: $"=== RUNTIME-CONTRACT ERRORS ({contractErrors.Count}) ===");
                 Console.WriteLine(
                     value:
-                    "  A name the compiler hard-codes against the stdlib no longer resolves.");
+                    "  A name the builder hard-codes against the stdlib no longer resolves.");
                 Console.WriteLine(
                     value:
                     "  Update src/Resolution/RuntimeContract.cs to match the stdlib rename.");

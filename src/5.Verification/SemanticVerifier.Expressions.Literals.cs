@@ -17,7 +17,7 @@ public sealed partial class SemanticVerifier
     private const string IntegerTypeName = "Integer";
 
     /// <summary>
-    /// Analyze literal expression as part of this compiler phase.
+    /// Analyze literal expression as part of this builder phase.
     /// </summary>
     private TypeSymbol AnalyzeLiteralExpression(LiteralExpression literal,
         TypeSymbol? expectedType = null)
@@ -290,7 +290,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Gets the integer type range needed by this compiler phase.
+    /// Gets the integer type range needed by this builder phase.
     /// </summary>
     private static string GetIntegerTypeRange(string typeName)
     {
@@ -765,7 +765,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parse b128 literal as part of this compiler phase.
+    /// Parse b128 literal as part of this builder phase.
     /// </summary>
     private static ParsedB128 ParseB128Literal(LiteralExpression literal, string rawValue)
     {
@@ -784,7 +784,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parse d32 literal as part of this compiler phase.
+    /// Parse d32 literal as part of this builder phase.
     /// </summary>
     private static ParsedD32 ParseD32Literal(LiteralExpression literal, string rawValue)
     {
@@ -803,7 +803,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parse d64 literal as part of this compiler phase.
+    /// Parse d64 literal as part of this builder phase.
     /// </summary>
     private static ParsedD64 ParseD64Literal(LiteralExpression literal, string rawValue)
     {
@@ -822,7 +822,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parse d128 literal as part of this compiler phase.
+    /// Parse d128 literal as part of this builder phase.
     /// </summary>
     private static ParsedD128 ParseD128Literal(LiteralExpression literal, string rawValue)
     {
@@ -841,7 +841,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parse integer literal as part of this compiler phase.
+    /// Parse integer literal as part of this builder phase.
     /// </summary>
     private ParsedInteger ParseIntegerLiteral(LiteralExpression literal, string rawValue)
     {
@@ -870,7 +870,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parse decimal literal as part of this compiler phase.
+    /// Parse decimal literal as part of this builder phase.
     /// </summary>
     private ParsedDecimal ParseDecimalLiteral(LiteralExpression literal, string rawValue)
     {
@@ -897,8 +897,8 @@ public sealed partial class SemanticVerifier
         // Validate against the i128 BID Decimal range the same way codegen will encode it:
         // EncodeDecimalCanonical throws OverflowException when the value would round to ±infinity,
         // and the ParseDeferredLiteral catch turns that into a clean NumericLiteralParseFailed
-        // diagnostic (overflow-to-infinity is a compile error, not a silently-saturated literal).
-        // This mirrors the D32/D64/D128 fixed-width paths and keeps the compile-time encode the
+        // diagnostic (overflow-to-infinity is a build error, not a silently-saturated literal).
+        // This mirrors the D32/D64/D128 fixed-width paths and keeps the buildtime encode the
         // single source of truth — codegen re-runs EncodeDecimalCanonical on the same text.
         NumericLiteralParser.EncodeDecimalCanonical(str: digits);
 
@@ -1046,7 +1046,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parse decimal by resolved type as part of this compiler phase.
+    /// Parse decimal by resolved type as part of this builder phase.
     /// </summary>
     private ParsedLiteral? ParseDecimalByResolvedType(LiteralExpression literal, string rawValue,
         string resolvedTypeName)

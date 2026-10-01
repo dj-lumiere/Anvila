@@ -1263,7 +1263,7 @@ internal static class GenericAstRewriter
                 Pattern = RewritePattern(pattern: ipe.Pattern, ctx: ctx)
             },
 
-            // Fold T.BS_ROUTINE() -> compile-time literal during monomorphization.
+            // Fold T.BS_ROUTINE() -> buildtime literal during monomorphization.
             // After substituting T -> Byte (or S64 etc.), the identifier is now a concrete
             // type name. BuilderQueryInliningPass handles the static/concrete cases:
             // this fold handles the residual case where the receiver name still matches a

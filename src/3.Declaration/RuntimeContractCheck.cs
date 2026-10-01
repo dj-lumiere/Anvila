@@ -5,18 +5,18 @@ namespace Builder.Declaration;
 
 /// <summary>
 /// The <c>validate-stdlib</c> resolution check for <see cref="RuntimeContract"/> (Design 1 step 2 of
-/// the compiler↔stdlib name-contract work). Turns a SILENT rename miscompile into a LOUD build
-/// failure: for every name the compiler hard-codes against the stdlib, assert it still resolves.
+/// the builder↔stdlib name-contract work). Turns a SILENT rename miscompile into a LOUD build
+/// failure: for every name the builder hard-codes against the stdlib, assert it still resolves.
 ///
 /// <para>A rename like <c>extract</c>/<c>inject</c> → <c>peek</c>/<c>poke</c> (commit 1480acd) used to
-/// compile clean and break at runtime, because the compiler looks these up by literal. With this
+/// compile clean and break at runtime, because the builder looks these up by literal. With this
 /// check wired into the CI-gated <c>validate-stdlib</c> verb, renaming a contract routine/type/field
 /// without updating <see cref="RuntimeContract"/> fails immediately, naming the exact broken contract.</para>
 ///
 /// <para>Scope mirrors <see cref="RuntimeContract"/>: it checks the declared-in-stdlib routine names
 /// (<see cref="RuntimeContract.StdlibRoutineContracts"/>), the wrapper TYPE names
 /// (<see cref="RuntimeContract.WrapperTypes"/>), and the <c>Maybe</c> carrier fields. It deliberately
-/// does NOT check compiler-generated / intrinsic names (the <c>try</c> variant of <c>emit</c>, <c>refer</c>/<c>control</c>,
+/// does NOT check builder-generated / intrinsic names (the <c>try</c> variant of <c>emit</c>, <c>refer</c>/<c>control</c>,
 /// BuilderQuery/<c>data_size</c>) or the native <c>rf_*</c> externs (link-checked C-ABI).</para>
 /// </summary>
 public static class RuntimeContractCheck

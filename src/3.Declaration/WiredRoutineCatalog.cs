@@ -134,7 +134,7 @@ public sealed class WiredEntry
 }
 
 /// <summary>
-/// Single source of truth for the compiler's built-in ("wired") routine names. Every historical
+/// Single source of truth for the builder's built-in ("wired") routine names. Every historical
 /// hard-coded list (capability map, known-wired set, operator→protocol map, reachability seed array)
 /// is now a projection of <see cref="All"/> filtered by a <see cref="WiredViews"/> flag. Adding or
 /// renaming a wired routine is a one-line edit here; the projections (and their <c>#if DEBUG</c>

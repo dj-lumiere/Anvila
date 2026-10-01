@@ -633,8 +633,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ResolvedRoutine = owned.Destroy,
             ResolvedType = _blankType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: owned.Destroy),
-            // Compiler-injected teardown: exempt from the RF-S609 dangerous-call gate. `destroy` is a
-            // dangerous routine, but this call is the compiler's own scope-exit teardown, not a user
+            // Builder-injected teardown: exempt from the RF-S609 dangerous-call gate. `destroy` is a
+            // dangerous routine, but this call is the builder's own scope-exit teardown, not a user
             // calling it outside a `danger` block. Under the demand pipeline this destroy is injected
             // (Phase 7) BEFORE the stdlib body is SA'd on reach, so the dangerous-call check would see it
             // and false-fire — the eager pipeline never did because stdlib SA ran before teardown.
@@ -657,7 +657,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ResolvedRoutine = destroy,
             ResolvedType = _blankType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: destroy),
-            // Compiler-injected teardown — exempt from the RF-S609 dangerous-call gate (see MakeDestroyStmt).
+            // Builder-injected teardown — exempt from the RF-S609 dangerous-call gate (see MakeDestroyStmt).
             IsSynthesizedLowering = true
         };
         return new ExpressionStatement(Expression: call, Location: loc);

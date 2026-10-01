@@ -72,7 +72,7 @@ public class RecordTypeSymbol : TypeSymbol
 
     /// <summary>
     /// C-ABI memory layout control from a <c>@layout("...")</c> annotation. Default (both false/null) is
-    /// the natural C layout the compiler already emits. <see cref="IsPacked"/> = <c>@layout("packed")</c>
+    /// the natural C layout the builder already emits. <see cref="IsPacked"/> = <c>@layout("packed")</c>
     /// (no inter-field padding, struct alignment 1 — LLVM native packed struct <c>&lt;{...}&gt;</c>);
     /// <see cref="ForcedAlignment"/> = <c>@layout("align=N")</c> (raise the struct's alignment to N).
     /// The two compose (packed + forced alignment). <c>@layout("C")</c> sets neither — it only documents
@@ -210,7 +210,7 @@ public class RecordTypeSymbol : TypeSymbol
         RCWrapperBaseNames.Contains(item: wrapper));
 
     /// <summary>
-    /// Whether this is a compiler-known error-handling carrier (Maybe, Result, Lookup).
+    /// Whether this is a builder-known error-handling carrier (Maybe, Result, Lookup).
     /// Set on the generic definition shells registered by TypeRegistry before stdlib loads.
     /// Propagated to all resolved instances via <see cref="CreateInstance"/>.
     /// </summary>

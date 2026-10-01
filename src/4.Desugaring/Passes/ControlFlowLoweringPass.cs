@@ -60,12 +60,12 @@ namespace Builder.Desugaring.Passes;
 internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 {
     /// <summary>
-    /// Tracks the iter count while this compiler phase runs.
+    /// Tracks the iter count while this builder phase runs.
     /// </summary>
     private int _iterCount;
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void Run(Program program)
     {
@@ -100,7 +100,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Lower member list as part of this compiler phase.
+    /// Lower member list as part of this builder phase.
     /// </summary>
     private void LowerMemberList(List<SyntaxTree.Declaration> members)
     {
@@ -120,7 +120,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Lower statement as part of this compiler phase.
+    /// Lower statement as part of this builder phase.
     /// </summary>
     private Statement LowerStatement(Statement stmt)
     {
@@ -431,7 +431,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Lower for as part of this compiler phase.
+    /// Lower for as part of this builder phase.
     /// </summary>
     private BlockStatement LowerEach(EachStatement eachStmt)
     {

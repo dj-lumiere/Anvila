@@ -161,7 +161,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // A user-defined `destroy` replaces the compiler-generated memory teardown (field
+        // A user-defined `destroy` replaces the builder-generated memory teardown (field
         // recursion + invalidate `me`), so the author owns freeing `me` and its fields. Require
         // `dangerous` so this opt-in to manual memory management is explicit at the declaration.
         ValidateDestroyDeclaration(routine: routine);
@@ -216,7 +216,7 @@ public sealed partial class SemanticVerifier
             _dangerBlockDepth = 1;
         }
 
-        // @innate routines have compiler-supplied bodies — skip analysis entirely.
+        // @innate routines have builder-supplied bodies — skip analysis entirely.
         if (routine.Annotations.Contains(item: "innate"))
         {
             if (wasDangerImplicit)
@@ -707,7 +707,7 @@ public sealed partial class SemanticVerifier
             default:
                 ReportWarning(code: SemanticWarningCode.UnknownStatementType,
                     message:
-                    $"Internal: semantic analyzer has no handler for AST node '{statement.GetType().Name}'. This statement will be skipped; downstream analysis may be incomplete. Please report as a compiler bug.",
+                    $"Internal: semantic analyzer has no handler for AST node '{statement.GetType().Name}'. This statement will be skipped; downstream analysis may be incomplete. Please report as a builder bug.",
                     location: statement.Location);
                 break;
         }

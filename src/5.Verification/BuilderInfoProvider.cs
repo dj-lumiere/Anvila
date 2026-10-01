@@ -45,7 +45,7 @@ public static class BuilderInfoProvider
 
     /// <summary>
     /// Per-type CONSTANT list-returning BuilderQuery reflection routines: 0 runtime params, value is a
-    /// compile-time-constant <c>List[Text]</c> of the owner type. These are NOT synthesized as routine
+    /// buildtime-constant <c>List[Text]</c> of the owner type. These are NOT synthesized as routine
     /// bodies (see <c>WiredRoutinePass.TryHandleBuilderQueryConstant</c>); they are folded at the call site
     /// to an inline analyzed list literal by <c>SemanticVerifier.FoldListBuilderQueryReflection</c> BEFORE
     /// reachability — the list analogue of the scalar <c>BuilderQueryInliningPass.IsFoldable</c> foldables, so BuilderQuery
@@ -70,7 +70,7 @@ public static class BuilderInfoProvider
 
     /// <summary>
     /// Per-type CONSTANT entity-list-returning BuilderQuery reflection routines: 0 runtime params, value is a
-    /// compile-time-constant <c>List[E]</c> of a BuilderQuery metadata ENTITY (<c>FieldInfo</c>/
+    /// buildtime-constant <c>List[E]</c> of a BuilderQuery metadata ENTITY (<c>FieldInfo</c>/
     /// <c>ProtocolInfo</c>/<c>RoutineInfo</c>). Like <see cref="ListReturningConstantRoutines"/> these are NOT
     /// synthesized as routine bodies; they are folded at the call site to an inline analyzed
     /// <c>List[E]</c> literal of <c>E(...)</c> creators by

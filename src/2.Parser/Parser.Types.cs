@@ -21,7 +21,7 @@ public partial class Parser
     /// inference); moves are marked by `steal` at use sites.
     /// </remarks>
     /// <returns>A <see cref="TypeExpression"/> AST node.</returns>
-    /// <summary>The recognized compiler-classified type-KIND names, all carrying a <c>-Type</c>
+    /// <summary>The recognized builder-classified type-KIND names, all carrying a <c>-Type</c>
     /// suffix so a reader tells a kind-group membership (<c>RecordType T</c>) apart from a capability
     /// (<c>T obeys Serializable</c>) or a const-generic (<c>U64 N</c>). Written CLASSIFIER-FIRST as
     /// <c>&lt;Name&gt;Type T</c> in a constraint or bracket; the old <c>T is &lt;Name&gt;Type</c>,

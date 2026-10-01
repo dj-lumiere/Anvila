@@ -6,7 +6,7 @@ using Builder.Verification.Results;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Renders compiler diagnostics with a source-line excerpt and column caret, in the style of
+/// Renders builder diagnostics with a source-line excerpt and column caret, in the style of
 /// modern compilers:
 /// <code>
 /// error[RF-S413]: playground\demo.rf:42:15: 'neighbors' cannot be directly assigned...

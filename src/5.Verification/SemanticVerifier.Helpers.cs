@@ -1701,7 +1701,7 @@ public sealed partial class SemanticVerifier
         // calls by OperatorLoweringPass (after SA), so without this check an unsupported operator
         // would slip past SA and surface as an undefined-symbol LINKERR at codegen — e.g. a record
         // with no eq whose `==` resolves to the abstract `Equatable.eq`. A LINKERR on SA-passing
-        // code is a compiler bug; catch it here with a clean diagnostic.
+        // code is a builder bug; catch it here with a clean diagnostic.
         if (op is not (BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater
             or BinaryOperator.GreaterEqual or BinaryOperator.Equal or BinaryOperator.NotEqual))
         {

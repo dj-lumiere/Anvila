@@ -59,7 +59,7 @@ internal static class LazyJitPlanner
     }
 
     /// <summary>Builds the (mainIr, materialize) plan. <paramref name="cache"/> is consulted+populated per
-    /// on-demand routine; pass one keyed by the stdlib+compiler fingerprint.</summary>
+    /// on-demand routine; pass one keyed by the stdlib+builder fingerprint.</summary>
     public static (string mainIr, Func<string, string?> materialize) Build(LazyJitInputs inputs,
         RoutineIrCache cache)
     {

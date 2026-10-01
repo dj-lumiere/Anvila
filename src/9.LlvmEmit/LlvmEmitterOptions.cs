@@ -19,7 +19,7 @@ public sealed class LlvmEmitterOptions
     /// <summary>Build optimization mode (defaults to Debug).</summary>
     public RfBuildMode BuildMode { get; init; } = RfBuildMode.Debug;
 
-    /// <summary>AST bodies for compiler-generated derived operators.</summary>
+    /// <summary>AST bodies for builder-generated derived operators.</summary>
     public IReadOnlyDictionary<string, Statement>? SynthesizedBodies { get; init; }
 
     /// <summary>Instantiated generic bodies from GenericMonomorphizationPass.</summary>

@@ -120,7 +120,7 @@ public sealed class BuildTarget
 }
 
 /// <summary>
-/// The <c>[debug]</c> section — internal compiler diagnostics, formerly the <c>RF_*</c> /
+/// The <c>[debug]</c> section — internal builder diagnostics, formerly the <c>RF_*</c> /
 /// <c>RAZORFORGE_JIT_TRACE</c> environment variables. All default off; niche developer tooling.
 /// </summary>
 public sealed class DebugOptions
@@ -207,7 +207,7 @@ public sealed class ProjectManifest
     /// </summary>
     public BuildTarget Target { get; set; } = new();
 
-    /// <summary>Gets the optional <c>[debug]</c> section (internal compiler diagnostics).</summary>
+    /// <summary>Gets the optional <c>[debug]</c> section (internal builder diagnostics).</summary>
     public DebugOptions Debug { get; set; } = new();
 
     /// <summary>

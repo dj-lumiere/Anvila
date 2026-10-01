@@ -40,7 +40,7 @@ internal sealed class WrapperForwardingPass
     private readonly Dictionary<string, (RoutineInfo Routine, Statement Body)> _synthesizedBodies;
     private readonly HashSet<string> _synthesizedForwarderKeys;
 
-    /// <summary>Synthetic source location used for compiler-generated AST nodes.</summary>
+    /// <summary>Synthetic source location used for builder-generated AST nodes.</summary>
     private static readonly SourceLocation _synthLoc = new(FileName: "",
         Line: 0,
         Column: 0,
@@ -62,7 +62,7 @@ internal sealed class WrapperForwardingPass
         List<Expression> ForwardedArgs);
 
     /// <summary>
-    /// All wrapper types recognized by the compiler for layout/dispatch purposes
+    /// All wrapper types recognized by the builder for layout/dispatch purposes
     /// (codegen write-through, GMP body selection, auto-wired registration, etc.).
     /// </summary>
     private static readonly IReadOnlySet<string> WrapperTypes = RuntimeContract.WrapperTypes;

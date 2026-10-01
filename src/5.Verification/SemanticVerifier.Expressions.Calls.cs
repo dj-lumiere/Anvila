@@ -1431,7 +1431,7 @@ public sealed partial class SemanticVerifier
         // BOTH entity and record targets do inline field-init construction, so both need
         // this — gating on EntityTypeSymbol alone left RECORD constructors (`Point(x: 1)`)
         // with a null expected type → `1` stayed Integer → codegen `Integer`-into-`i64` /
-        // pruned `Integer.from_literal`. Inferring the field type is the compiler's job.
+        // pruned `Integer.from_literal`. Inferring the field type is the builder's job.
         MemberVariableInfo? field = ResolveCtorField(arg: arg,
             posIdx: posIdx,
             ctorMemberVariables: ctorMemberVariables);
@@ -3123,10 +3123,10 @@ public sealed partial class SemanticVerifier
             string hint = member.MemberName == "iter"
                 ? "use an 'each' loop or iterable combinators (skip, take, map, etc.) instead."
                 : "pass the value to a routine whose parameter is typed " +
-                  "Accessing[T] / Controlling[T] — the compiler coerces it for you.";
+                  "Accessing[T] / Controlling[T] — the builder coerces it for you.";
             ReportError(code: SemanticDiagnosticCode.DirectWiredRoutineCall,
                 message:
-                $"member routine '{member.MemberName}' is internal to the compiler — {hint}",
+                $"member routine '{member.MemberName}' is internal to the builder — {hint}",
                 location: call.Location);
             return ErrorTypeSymbol.Instance;
         }

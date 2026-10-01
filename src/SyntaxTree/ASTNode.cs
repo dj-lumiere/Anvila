@@ -253,7 +253,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// </remarks>
     T VisitBracketAccessExpression(BracketAccessExpression node);
 
-    /// <summary>Visits a type-id expression node (compile-time FNV-1a type_id constant)</summary>
+    /// <summary>Visits a type-id expression node (buildtime FNV-1a type_id constant)</summary>
     /// <param name="node">The type-id expression to visit</param>
     /// <returns>Result of visiting the type-id expression</returns>
     T VisitTypeIdExpression(TypeIdExpression node);

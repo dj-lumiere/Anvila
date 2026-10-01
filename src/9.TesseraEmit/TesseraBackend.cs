@@ -4,7 +4,7 @@ namespace Builder.TesseraEmit;
 
 /// <summary>
 /// The Tessera backend: writes the Phase 9 program as Tessera source (<see cref="TesseraWriter"/>), then has the
-/// Tessera compiler, with Tessera's standard library, turn it into LLVM IR. Selected by
+/// Tessera builder, with Tessera's standard library, turn it into LLVM IR. Selected by
 /// <c>[target] backend = "tessera"</c>. It covers a growing subset of the language; anything outside it fails the
 /// build loudly, naming the construct.
 /// </summary>
@@ -54,7 +54,7 @@ public sealed class TesseraBackend : IBuilderBackend
         catch (Tessera.CompileError ex)
         {
             throw new InvalidOperationException(
-                message: $"The Tessera compiler rejected the generated module: {ex.Message}" +
+                message: $"The Tessera builder rejected the generated module: {ex.Message}" +
                          " (set [debug] dump-tessera = true in config.toml to keep the module as <entry>.tess).",
                 innerException: ex);
         }

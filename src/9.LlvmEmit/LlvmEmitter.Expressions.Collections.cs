@@ -78,7 +78,7 @@ public partial class LlvmEmitter
                     resolvedType: resolvedType,
                     arguments: arguments);
             // BitArray[N]: inline bit-packed array construction. All-literal elements pack at
-            // compile time via the shared PackBitArrayLiteralBytes; a non-literal element falls
+            // build time via the shared PackBitArrayLiteralBytes; a non-literal element falls
             // back to the runtime bit-pack.
             case "BitArray":
                 return EmitBitArrayLiteralInline(sb: sb,
@@ -115,7 +115,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// BitArray[N] literal: inline bit-packed construction. All-literal elements pack at compile time
+    /// BitArray[N] literal: inline bit-packed construction. All-literal elements pack at build time
     /// via the shared PackBitArrayLiteralBytes; a non-literal element falls back to the runtime bit-pack.
     /// </summary>
     private string EmitBitArrayLiteralInline(StringBuilder sb, TypeSymbol resolvedType,

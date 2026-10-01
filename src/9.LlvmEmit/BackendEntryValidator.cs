@@ -19,7 +19,7 @@ public sealed class BackendEntryValidator
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> ChildPropertyCache = new();
 
     /// <summary>
-    /// Stores the registry state used by this compiler phase.
+    /// Stores the registry state used by this builder phase.
     /// </summary>
     private readonly TypeRegistry _registry;
 
@@ -61,7 +61,7 @@ public sealed class BackendEntryValidator
             return errors;
         }
 
-        // @innate routines are compiler-intrinsic stubs (e.g. `T.type_name`, `T.var_name`,
+        // @innate routines are builder-intrinsic stubs (e.g. `T.type_name`, `T.var_name`,
         // `page_size`). They are declared without a body in source — codegen and SA already
         // skip them. Monomorphizations inherit the empty body legitimately, so they must not
         // trigger MissingMonomorphizedBody.

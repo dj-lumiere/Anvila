@@ -22,7 +22,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
     /// <c>generic_args</c>/<c>annotations</c>/<c>dependencies</c>) into inline analyzed <c>List[Text]</c>
     /// literals — the list analogue of the scalar BuilderQuery fold. These routines are NOT synthesized as
     /// bodies (<c>WiredRoutinePass.TryHandleBuilderQueryConstant</c> returns early); the value is a
-    /// compile-time constant of the concrete receiver type, recomputed here and emitted as a source-shaped
+    /// buildtime constant of the concrete receiver type, recomputed here and emitted as a source-shaped
     /// <c>[...]</c> literal (so it carries a monomorphized <c>from_literal(Array[Text,N])</c> builder that
     /// reachability seeds like any other collection literal).
     ///
@@ -910,7 +910,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
     }
 
     /// <summary>
-    /// Recomputes the compile-time-constant string list a list-returning BuilderQuery reflection routine
+    /// Recomputes the buildtime-constant string list a list-returning BuilderQuery reflection routine
     /// would return for <paramref name="owner"/>. MUST stay identical to the (now-removed) synthesized
     /// bodies in <c>WiredRoutinePass.TryHandleBuilderQueryConstant</c>. Returns null for a name that is not
     /// a constant list reflection routine.

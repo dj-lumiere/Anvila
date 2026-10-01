@@ -9,7 +9,7 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Global pass that folds compile-time-constant BuilderQuery per-type calls to literal
+/// Global pass that folds buildtime-constant BuilderQuery per-type calls to literal
 /// expressions, eliminating runtime function calls to synthesized stubs.
 ///
 /// <para>Runs in three contexts:</para>

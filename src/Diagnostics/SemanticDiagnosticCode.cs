@@ -959,7 +959,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Cannot modify secret member variable in a 'with' expression.</summary>
     WithSecretMemberProhibited = 778,
 
-    /// <summary>Annotation arguments must be compile-time constant literals or identifiers.</summary>
+    /// <summary>Annotation arguments must be buildtime constant literals or identifiers.</summary>
     AnnotationArgNotLiteral = 784,
 
     /// <summary>'with' expression base must obey the Assignable protocol.</summary>
@@ -991,7 +991,7 @@ public enum SemanticDiagnosticCode
     /// <summary>None cannot be used as a generic type argument (it has no value).</summary>
     NoneAsTypeArgument = 805,
 
-    /// <summary>A user-defined `destroy` overrides the compiler's memory teardown, so it must be
+    /// <summary>A user-defined `destroy` overrides the builder's memory teardown, so it must be
     /// marked `dangerous` — the author takes responsibility for freeing `me` and its fields.</summary>
     DestroyMustBeDangerous = 807,
 

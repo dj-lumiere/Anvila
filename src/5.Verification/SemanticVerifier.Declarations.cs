@@ -66,7 +66,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports a compile error when a file declares both a <c>preset</c> and a type of the same name.
+    /// Reports a build error when a file declares both a <c>preset</c> and a type of the same name.
     /// Cross-file clashes are fine — presets are file-scoped (public ones inline by value; secret ones
     /// are file-private) — but within one file the identifier is genuinely ambiguous: a call like
     /// <c>Foo(...)</c> could mean the constructor or the constant. Scans the file's declarations directly
@@ -502,7 +502,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Rejects records that contain themselves by value (directly or transitively) — such a
     /// record would need infinite storage, and the recursive size computation
-    /// (<c>RecordTypeSymbol.SizeBytes</c>) would otherwise stack-overflow the compiler. Entities,
+    /// (<c>RecordTypeSymbol.SizeBytes</c>) would otherwise stack-overflow the builder. Entities,
     /// wrappers, and <c>@llvm</c>-backed records are pointer-sized, so they break the cycle.
     /// </summary>
     /// <returns><c>true</c> if any self-containing value record was found (and reported).</returns>
@@ -809,7 +809,7 @@ public sealed partial class SemanticVerifier
     /// → heap corruption. It is fine as a LOCAL or as a FIELD of an SF entity (the container owns it);
     /// only the by-value boundary crossing is unsafe. Reports RF-S439 with the safe alternatives. The
     /// build-time invariant <c>AssertNoBareEntityInSignature</c> still guards the OTHER bare-entity case
-    /// (an SF entity that slipped roaming — a compiler bug, no <c>RF::</c> tag).
+    /// (an SF entity that slipped roaming — a builder bug, no <c>RF::</c> tag).
     /// </summary>
     private void CheckSignatureHasNoForeignBareEntity(RoutineDeclaration routine,
         RoutineKind kind)
@@ -1304,7 +1304,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.InnateOverrideNotAllowed,
                 message:
                 $"Cannot override innate routine '{protocol.Name}.{requiredMemberRoutine.Name}'. " +
-                "Innate routines are compiler-provided and cannot be overridden.",
+                "Innate routines are builder-provided and cannot be overridden.",
                 location: typeMemberRoutine.Location ??
                           new SourceLocation(FileName: "",
                               Line: 0,

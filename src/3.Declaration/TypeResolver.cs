@@ -380,13 +380,13 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// Resolves a bare (non-parameterized, non-special-form) type name: compiler-generated param bindings,
+    /// Resolves a bare (non-parameterized, non-special-form) type name: builder-generated param bindings,
     /// the generic-parameter/global-type shadow rule, module-scoped ambiguity reporting, and the final
     /// global lookup — falling back to a const-generic literal or Unknown.
     /// </summary>
     private TypeSymbol ResolveBareNameType(TypeExpression typeExpr)
     {
-        // Compiler-generated re-analysis (AnalyzeCompilerGeneratedBody) of a CONCRETE generic instance's
+        // Builder-generated re-analysis (AnalyzeCompilerGeneratedBody) of a CONCRETE generic instance's
         // member body binds each parameter name to its concrete argument. Resolve a bare parameter reference
         // to that concrete argument BEFORE any global lookup — the concrete owner is not a generic-definition
         // scope, so the definition-param shadow below does NOT fire, and a same-named global user type

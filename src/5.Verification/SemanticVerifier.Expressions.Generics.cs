@@ -908,7 +908,7 @@ public sealed partial class SemanticVerifier
     {
         ReportWarning(code: SemanticWarningCode.UnknownExpressionType,
             message:
-            $"Internal: semantic analyzer has no handler for AST node '{expression.GetType().Name}'. This expression will be skipped; downstream type info may be incomplete. Please report as a compiler bug.",
+            $"Internal: semantic analyzer has no handler for AST node '{expression.GetType().Name}'. This expression will be skipped; downstream type info may be incomplete. Please report as a builder bug.",
             location: expression.Location);
         return ErrorTypeSymbol.Instance;
     }

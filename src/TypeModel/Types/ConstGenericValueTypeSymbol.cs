@@ -3,7 +3,7 @@ using TypeModel.Enums;
 namespace TypeModel.Types;
 
 /// <summary>
-/// Represents a compile-time constant value used as a generic argument.
+/// Represents a buildtime constant value used as a generic argument.
 /// For example, the <c>4</c> in <c>Array[S64, 4]</c> or the <c>8</c> in <c>BitArray[8]</c>.
 /// The <see cref="TypeSymbol.Name"/> is the literal text (e.g., "4", "8u64") so that
 /// generic resolution names include the value (e.g., "Array[S64, 4]").

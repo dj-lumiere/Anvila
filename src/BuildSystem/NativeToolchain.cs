@@ -202,7 +202,7 @@ internal static class NativeToolchain
             CopyDirectoryFiles(srcDir: nativeLibDir, dstDir: exeNativeLibDir);
 
             // Also copy DLLs to the exe root (matches csproj LinkBase="." behavior).
-            // The compiler itself P/Invokes razorforge_runtime.dll, so the target file may be
+            // The builder itself P/Invokes razorforge_runtime.dll, so the target file may be
             // locked by this process. In that case the already-loaded copy is what this run
             // will use anyway — warn and continue rather than failing the build.
             if (Directory.Exists(path: nativeBinDir))
@@ -242,7 +242,7 @@ internal static class NativeToolchain
     }
 
     // Copies a file, tolerating sharing violations when the target is already loaded into this
-    // process (e.g. razorforge_runtime.dll, which the compiler itself P/Invokes). On Windows, a
+    // process (e.g. razorforge_runtime.dll, which the builder itself P/Invokes). On Windows, a
     // loaded DLL is locked against overwrite but can still be renamed — so we move the locked
     // file aside under a unique name and then copy the fresh one into the original path. This
     // guarantees the on-disk artifact is always up to date; the renamed sidecar is harmless and
@@ -919,7 +919,7 @@ internal static class NativeToolchain
             : $" -lm -lpthread -ldl -Wl,-rpath,\"{runtimeLibDir}\"";
     }
 
-    // Compiler-RT builtins resolve softfloat/softint symbols that LLVM emits for types
+    // Builder-RT builtins resolve softfloat/softint symbols that LLVM emits for types
     // without direct hardware support:
     //   fp128 arithmetic: __addtf3, __subtf3, __multf3, __divtf3, __negtf2, __eqtf2, etc.
     //   b16 conversions:  __extendhfsf2, __truncsfhf2

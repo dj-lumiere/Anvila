@@ -122,7 +122,7 @@ public sealed partial class SemanticVerifier
             IsFailable = true,
             IsSynthesized = true,
             HasThrow = grab,
-            // Open: this is compiler-internal, and its variant inherits this visibility. Secret would trip
+            // Open: this is builder-internal, and its variant inherits this visibility. Secret would trip
             // the cross-module access check (RF-S403) at the call site.
             Visibility = VisibilityModifier.Open,
             Location = recovery.Location,

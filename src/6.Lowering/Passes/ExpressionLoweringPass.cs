@@ -542,7 +542,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 LowerBooleanAnd(bin: bin),
             // Step 1h: boolean Or -> short-circuit ConditionalExpression
             { Operator: BinaryOperator.Or } => LowerBooleanOr(bin: bin),
-            // Step 1h-2: obeys/disobeys -> compile-time Bool literal
+            // Step 1h-2: obeys/disobeys -> buildtime Bool literal
             { Operator: BinaryOperator.Obeys or BinaryOperator.Disobeys } => LowerObeysExpr(
                 obeysBin: bin),
             // Step 1j: binary-assign with Maybe member target
@@ -566,7 +566,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return (h, lowered);
     }
 
-    // Step 1h-2: folds obeys/disobeys to a compile-time Bool literal (true for obeys, false for disobeys).
+    // Step 1h-2: folds obeys/disobeys to a buildtime Bool literal (true for obeys, false for disobeys).
     private (List<Statement> Hoisted, Expression Expr) LowerObeysExpr(BinaryExpression obeysBin)
     {
         bool obeysValue = obeysBin.Operator == BinaryOperator.Obeys;

@@ -5,16 +5,16 @@ namespace Builder.Execution;
 
 /// <summary>
 /// Resident-JIT incremental (B) M2b: a disk-backed per-routine IR cache for the fully-lazy on-demand JIT
-/// (<see cref="OrcJitExecutor.JitAndRunLazy"/>). Keyed by (stdlib+compiler fingerprint, mangled routine name),
-/// so a cached one-routine IR module is reused across runs/edits as long as the stdlib and compiler are
+/// (<see cref="OrcJitExecutor.JitAndRunLazy"/>). Keyed by (stdlib+builder fingerprint, mangled routine name),
+/// so a cached one-routine IR module is reused across runs/edits as long as the stdlib and builder are
 /// unchanged — turning M2a's per-run re-emit of every reached routine into a FIRST-RUN-ONLY cost.
 ///
 /// CORRECTNESS: only PURE-STDLIB routines are cached. A routine whose mangled name references a user module
 /// (a monomorphized instance over a user type, e.g. <c>List[Main.UserType].add_last</c>) depends on user code
 /// that changes between edits, so its IR is NOT invariant under the fingerprint — those are never cached and
-/// are re-codegen'd each run (a small set). The fingerprint (stdlib source + compiler asm mtime, via
+/// are re-codegen'd each run (a small set). The fingerprint (stdlib source + builder asm mtime, via
 /// <see cref="Serialization.StdlibSnapshotCache.ComputeStdlibHash"/>) invalidates every entry when the stdlib
-/// or compiler changes. This is the §2A.2② on-demand monomorphization cache, scoped to the safe subset.
+/// or builder changes. This is the §2A.2② on-demand monomorphization cache, scoped to the safe subset.
 /// </summary>
 public sealed class RoutineIrCache
 {
@@ -31,8 +31,8 @@ public sealed class RoutineIrCache
     /// <summary>User-dependent routines that are never cached (re-codegen'd each run).</summary>
     public int Uncacheable { get; private set; }
 
-    /// <param name="fingerprint">Stdlib+compiler content hash; every entry is keyed under it, so a stdlib or
-    /// compiler change invalidates the whole cache.</param>
+    /// <param name="fingerprint">Stdlib+builder content hash; every entry is keyed under it, so a stdlib or
+    /// builder change invalidates the whole cache.</param>
     /// <param name="userModuleSegments">Module-name segments that mark a routine as user-dependent (its IR is
     /// NOT cached). Typically the user program's module name(s).</param>
     /// <param name="dir">Cache directory; defaults to a per-fingerprint temp subdir.</param>

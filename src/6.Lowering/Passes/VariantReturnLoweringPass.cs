@@ -6,7 +6,7 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Phase 8: lowers compiler-synthesized <see cref="VariantReturnStatement"/> nodes into ordinary AST
+/// Phase 8: lowers builder-synthesized <see cref="VariantReturnStatement"/> nodes into ordinary AST
 /// so codegen needs no carrier-construction special-casing (and the dump shows no <c>#carrier</c>
 /// pseudo-op).
 ///
@@ -82,7 +82,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     }
 
     /// <summary>Like <see cref="MakeCarrierReturn"/> but tags the carrier with a RUNTIME <c>type_id</c>
-    /// expression (the caught carrier's own <c>type_id</c>) rather than a compile-time constant — used when
+    /// expression (the caught carrier's own <c>type_id</c>) rather than a buildtime constant — used when
     /// re-throwing an already-erased <c>Crashable</c> whose concrete type is unknown until run time.</summary>
     private static ReturnStatement MakeCarrierReturnDynamic(RecordTypeSymbol carrier,
         Expression typeIdExpr, Expression? payload, SourceLocation loc)
@@ -219,7 +219,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
         }
 
         // Re-throwing an already-erased Crashable (a composition propagating an inner carrier's failure):
-        // the concrete crashable type — hence its type_id — is unknown at compile time, so tag the re-wrapped
+        // the concrete crashable type — hence its type_id — is unknown at build time, so tag the re-wrapped
         // carrier with the RUNTIME type_id read off the source carrier (CrashableTypeIdSource) instead of a
         // constant computed from the erased Crashable static type (which would mis-tag the payload).
         if (vr.CrashableTypeIdSource is { } runtimeTypeId && vr.Value != null)

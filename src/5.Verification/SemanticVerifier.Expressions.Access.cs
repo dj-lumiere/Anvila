@@ -473,7 +473,7 @@ public sealed partial class SemanticVerifier
         // its key. That wrapper is TRANSPARENT: the caller passes a bare `K`. Unwrap it to the inner key
         // type so a bare integer key literal (`d[1]`) conforms to e.g. S64 instead of stalling at the
         // Suflae `Integer` default (RF escapes this only because its default already IS S64). Inferring
-        // the key type through the coercion wrapper is the compiler's job.
+        // the key type through the coercion wrapper is the builder's job.
         if (paramType.TypeArguments is { Count: >= 1 } referArgs &&
             GetTypeBaseName(type: paramType) is Declaration.RuntimeContract.Accessing
                 or Declaration.RuntimeContract.Controlling)

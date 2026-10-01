@@ -5,7 +5,7 @@ using SyntaxTree;
 namespace Builder.LlvmEmit;
 
 /// <summary>
-/// Line-tables-only DWARF debug info emission, so tools (Compiler Explorer, debuggers) can map
+/// Line-tables-only DWARF debug info emission, so tools (Builder Explorer, debuggers) can map
 /// source &lt;-&gt; LLVM IR. Gated on build mode via <see cref="ShouldEmitDebugInfo"/> (same modes as
 /// the runtime trace, whose <c>@_rf_trace_push</c>/<c>@_rf_trace_update_loc</c> calls this pass reuses
 /// as the per-instruction source-location cursor). Implemented as a post-process over the finished IR

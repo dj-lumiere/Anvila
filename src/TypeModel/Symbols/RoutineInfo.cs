@@ -472,7 +472,7 @@ public sealed class RoutineInfo
     public AsyncStatus AsyncStatus { get; init; } = AsyncStatus.None;
 
     /// <summary>
-    /// Which compiler-generated failable wrapper this routine is, if any (None for ordinary
+    /// Which builder-generated failable wrapper this routine is, if any (None for ordinary
     /// routines). Orthogonal to <see cref="AsyncStatus"/> — previously the lookup/grab/try
     /// variants were mixed into AsyncStatus and are now tracked separately here.
     /// </summary>

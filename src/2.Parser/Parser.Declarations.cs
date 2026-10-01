@@ -426,7 +426,7 @@ public partial class Parser
         // ===============================================================================
         // PHASE 6: BODY (indented block)
         // ===============================================================================
-        // @innate routines are compiler-intrinsic: the body is supplied by the compiler,
+        // @innate routines are builder-intrinsic: the body is supplied by the builder,
         // not the source. Allow them to have no written body at all.
 
         BlockStatement body = ParseRoutineBody(annotations: annotations, location: location);

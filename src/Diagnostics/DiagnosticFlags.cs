@@ -1,7 +1,7 @@
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Process-wide compiler diagnostic / dev-loop flags, populated from <c>config.toml</c> at the start
+/// Process-wide builder diagnostic / dev-loop flags, populated from <c>config.toml</c> at the start
 /// of a build. These REPLACE the former <c>RAZORFORGE_*</c> / <c>RF_*</c> environment variables (removed):
 /// dev-loop routing lives in <c>[target]</c> (<c>use-daemon</c>, <c>mode = "debug-jit"</c>) while the
 /// diagnostics below — incl. <c>timing</c> (merged sa/phase) — live in <c>[debug]</c>.

@@ -10,7 +10,7 @@ namespace Builder.LlvmEmit;
 
 // D2 (DEFERRED): Text/Bytes literals still emit their backing arrays + carrier struct as constant
 // globals here rather than lowering to a `CreatorExpression` against the real stdlib Text/Bytes
-// `create`. Doing that fully requires D1's memberwise-create synthesis plus a compile-time
+// `create`. Doing that fully requires D1's memberwise-create synthesis plus a buildtime
 // constant-aggregate argument path (the current stdlib `create` takes runtime args). As a partial
 // step, the carrier struct LAYOUT is now derived from the registered TypeSymbol (BuildLiteralCarrierLayout)
 // instead of a hardcoded `{ ptr, i64, ptr }`.
@@ -114,7 +114,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Packs a flat list of bool-literal elements into <c>(N+7)/8</c> bytes, LSB-first (bit 0 = element
-    /// 0 of each group of 8). Guarded by both BitArray[N] emission sites — the compile-time preset
+    /// 0 of each group of 8). Guarded by both BitArray[N] emission sites — the buildtime preset
     /// initializer (<see cref="BuildBitArrayPresetInitializer"/>) and the inline literal fast path in
     /// <c>EmitCollectionLiteralConstructor</c>.
     /// <para><paramref name="allLiteral"/> is set false as soon as a non-<c>true</c>/<c>false</c>-literal
@@ -189,7 +189,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emit literal as part of this compiler phase.
+    /// Emit literal as part of this builder phase.
     /// </summary>
     private string EmitLiteral(StringBuilder sb, LiteralExpression literal)
     {
@@ -267,7 +267,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Returns whether is decimal float literal type applies in the current compiler context.
+    /// Returns whether is decimal float literal type applies in the current builder context.
     /// </summary>
     private static bool IsDecimalFloatLiteralType(TokenType type)
     {
@@ -283,7 +283,7 @@ public partial class LlvmEmitter
     /// <para>DEFERRED: the values themselves (data ptr / count / null ctrl) are still positionally
     /// hand-built here and the backing arrays are emitted as constant globals — fully routing string/
     /// bytes literals through the real stdlib <c>Text.create</c>/<c>Bytes.create</c> needs D1's
-    /// memberwise-create synthesis plus a compile-time constant-aggregate argument path, which the
+    /// memberwise-create synthesis plus a buildtime constant-aggregate argument path, which the
     /// current stdlib <c>create</c> (runtime-arg) does not accept. See the task report.</para>
     /// </summary>
     private string BuildLiteralCarrierLayout(string carrierName, int expectedMemberVariables,
@@ -495,7 +495,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Stores the numeric suffixes state used by this compiler phase.
+    /// Stores the numeric suffixes state used by this builder phase.
     /// </summary>
     private static readonly string[] NumericSuffixes =
     [
@@ -505,7 +505,7 @@ public partial class LlvmEmitter
     ];
 
     /// <summary>
-    /// Performs the strip numeric suffix step for this compiler phase.
+    /// Performs the strip numeric suffix step for this builder phase.
     /// </summary>
     internal static string StripNumericSuffix(string text)
     {
@@ -608,7 +608,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emit double as LLVM hex as part of this compiler phase.
+    /// Emit double as LLVM hex as part of this builder phase.
     /// </summary>
     private static string EmitDoubleAsLlvmHex(double d, TokenType literalType)
     {

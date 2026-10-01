@@ -12,7 +12,7 @@ namespace Builder.LlvmEmit;
 public partial class LlvmEmitter
 {
     /// <summary>
-    /// Emit routine call as part of this compiler phase.
+    /// Emit routine call as part of this builder phase.
     /// </summary>
     private string EmitRoutineCall(StringBuilder sb, RoutineCallRequest req)
     {
@@ -1232,7 +1232,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Performs the consume transferred call ownership step for this compiler phase.
+    /// Performs the consume transferred call ownership step for this builder phase.
     /// </summary>
     private void ConsumeTransferredCallOwnership(StringBuilder sb, IEnumerable<Expression> arguments)
     {

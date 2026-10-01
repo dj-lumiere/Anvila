@@ -491,7 +491,7 @@ public record CallExpression(
     public List<TypeExpression>? TypeArguments { get; set; }
 
     /// <summary>
-    /// True when this call was synthesized by a compiler lowering pass (e.g.
+    /// True when this call was synthesized by a builder lowering pass (e.g.
     /// <c>ControlFlowLoweringPass</c> emitting <c>iter.iter()</c> / <c>iter.emit() (under try)</c>
     /// for a for-loop). SA uses this to skip checks meant to gate user code from invoking
     /// dunder-private memberRoutines directly.
@@ -1157,7 +1157,7 @@ public record BracketAccessExpression(
 #region Carrier Pattern Expressions
 
 /// <summary>
-/// Expression that produces the compile-time FNV-1a type_id for a type.
+/// Expression that produces the buildtime FNV-1a type_id for a type.
 /// Used in lowered CrashablePattern branches to compare against the carrier's type_id field.
 /// Codegen evaluates this as a U64 literal via ComputeTypeId(Type.FullName).
 /// </summary>

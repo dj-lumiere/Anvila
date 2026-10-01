@@ -6,10 +6,10 @@ namespace Builder.Execution;
 
 /// <summary>
 /// Daemon-lifetime disk cache of the AOT-compiled resident-JIT BASE object file. The stdlib closure IR is
-/// invariant under the stdlib+compiler fingerprint, so it is compiled to a native <c>.o</c> ONCE per
+/// invariant under the stdlib+builder fingerprint, so it is compiled to a native <c>.o</c> ONCE per
 /// fingerprint (opt + <c>clang -c</c>); every subsequent dev-loop build LOADS that object into the JIT and
 /// codegen/JITs only the per-run DELTA (user code + non-resident instantiations), instead of re-JIT-compiling
-/// ~1 MB of stdlib IR each run. Keyed purely by the fingerprint — a stdlib or compiler change yields a new key
+/// ~1 MB of stdlib IR each run. Keyed purely by the fingerprint — a stdlib or builder change yields a new key
 /// (new file), so a stale base can never be loaded. The base IR itself comes from
 /// <c>LlvmEmitter.GenerateBase</c> (non-pruned stdlib, no <c>@main</c>); the per-run delta extern-declares the
 /// symbols this object defines and the JIT resolves delta→base across the link (see OrcJitExecutor).

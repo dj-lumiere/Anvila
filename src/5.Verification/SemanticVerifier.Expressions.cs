@@ -86,7 +86,7 @@ public sealed partial class SemanticVerifier
         // A call bound to its routine gets the defaults of the parameters it leaves out.
         AppendDefaultArguments(call: expression);
 
-        // Compiler-generated bodies are re-analyzed in a synthetic scope where some calls
+        // Builder-generated bodies are re-analyzed in a synthetic scope where some calls
         // cannot be re-resolved (generic-def owners, memberRoutine-generic locals, wired routines,
         // type names outside their import snapshot). Their synthesizer/cloner annotations are
         // correct by construction — never make an annotation WORSE there: don't replace a good
@@ -235,7 +235,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Resolves a bare identifier that names a generic parameter (compiler-generated concrete binding or an
+    /// Resolves a bare identifier that names a generic parameter (builder-generated concrete binding or an
     /// in-scope definition-scope parameter shadowing a same-named global type) or a monomorphization-stamped
     /// concrete type, BEFORE the global type/routine lookup. Returns true and sets <paramref name="result"/>
     /// when one of these resolutions applies; false means the caller should continue with normal lookup.
@@ -244,7 +244,7 @@ public sealed partial class SemanticVerifier
     {
         result = null;
 
-        // Compiler-generated re-analysis of a concrete generic instance's member body binds each parameter
+        // Builder-generated re-analysis of a concrete generic instance's member body binds each parameter
         // name to its concrete argument (T -> Particle). Resolve a bare parameter reference here — the
         // identifier-as-type-receiver path (`var result = T.blank()`) — to that concrete argument BEFORE the
         // global type lookup below. The concrete owner is not a generic-definition scope, so the slot-shadow

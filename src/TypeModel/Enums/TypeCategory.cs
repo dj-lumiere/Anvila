@@ -68,6 +68,6 @@ public enum TypeCategory
     /// <summary>Builder-synthesized wrapper types (Viewing, Modifying, Retained, Tracked, Guarded, Witnessed, Consulting, Amending, Hijacked).</summary>
     Wrapper,
 
-    /// <summary>Compile-time constant value used as a generic argument (e.g., 4 in Array[S64, 4]).</summary>
+    /// <summary>Buildtime constant value used as a generic argument (e.g., 4 in Array[S64, 4]).</summary>
     ConstGenericValue
 }

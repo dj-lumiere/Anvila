@@ -78,7 +78,7 @@ public sealed class InstantiationContext
     public TargetConfig Target { get; }
 
     /// <summary>
-    /// Build mode used when generic expansion depends on compile-time configuration.
+    /// Build mode used when generic expansion depends on buildtime configuration.
     /// </summary>
     public RfBuildMode BuildMode { get; }
 
@@ -248,7 +248,7 @@ public sealed class InstantiationOptions
     /// <summary>Target platform; defaults to the host platform when null.</summary>
     public TargetConfig? Target { get; init; }
 
-    /// <summary>Build mode used when generic expansion depends on compile-time configuration.</summary>
+    /// <summary>Build mode used when generic expansion depends on buildtime configuration.</summary>
     public RfBuildMode BuildMode { get; init; } = RfBuildMode.Debug;
 
     /// <summary>Daemon-lifetime per-body reachability scan cache; null disables caching.</summary>

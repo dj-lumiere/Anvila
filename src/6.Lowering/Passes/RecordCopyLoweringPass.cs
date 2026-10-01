@@ -175,7 +175,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void Run(Program program)
     {
@@ -195,7 +195,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void RunOnVariantBodies()
     {
@@ -309,7 +309,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Lower statement as part of this compiler phase.
+    /// Lower statement as part of this builder phase.
     /// </summary>
     private Statement LowerStatement(Statement stmt)
     {

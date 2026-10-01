@@ -38,7 +38,7 @@ public partial class LlvmEmitter
 
 
     /// <summary>
-    /// Resolves the creator type from semantic compiler state.
+    /// Resolves the creator type from semantic builder state.
     /// </summary>
     private TypeSymbol? ResolveCreatorType(CreatorExpression creator)
     {
@@ -196,7 +196,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Gets the type bit width needed by this compiler phase.
+    /// Gets the type bit width needed by this builder phase.
     /// </summary>
     // NOTE: this derives the bit width by matching on the rendered LLVM type STRING, which the conversion
     // emitters currently rely on. It is intended to be retired in favour of carrying the width structurally
@@ -222,7 +222,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Performs the apply type substitutions step for this compiler phase.
+    /// Performs the apply type substitutions step for this builder phase.
     /// </summary>
     internal TypeSymbol ApplyTypeSubstitutions(TypeSymbol type)
     {
@@ -232,7 +232,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Performs the substitute type params step for this compiler phase.
+    /// Performs the substitute type params step for this builder phase.
     /// </summary>
     internal TypeSymbol SubstituteTypeParams(TypeSymbol type,
         Dictionary<string, TypeSymbol> substitutions)
@@ -413,7 +413,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Resolves the type argument from semantic compiler state.
+    /// Resolves the type argument from semantic builder state.
     /// </summary>
     private TypeSymbol? ResolveTypeArgument(TypeExpression ta)
     {
@@ -479,7 +479,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Resolves the tuple type expression from semantic compiler state.
+    /// Resolves the tuple type expression from semantic builder state.
     /// </summary>
     private TupleTypeSymbol? ResolveTupleTypeExpression(TypeExpression typeExpr)
     {

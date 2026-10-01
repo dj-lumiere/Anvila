@@ -1,7 +1,7 @@
 namespace TypeModel.Enums;
 
 /// <summary>
-/// Whether a record type is a compiler-known error-handling carrier (Maybe, Result, Lookup).
+/// Whether a record type is a builder-known error-handling carrier (Maybe, Result, Lookup).
 /// </summary>
 public enum CarrierKind
 {

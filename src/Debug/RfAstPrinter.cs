@@ -19,7 +19,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     private const string ReturnNoneSuffix = " -> None";
 
     /// <summary>
-    /// Stores the indent state used by this compiler phase.
+    /// Stores the indent state used by this builder phase.
     /// </summary>
     private int _indent;
 
@@ -30,7 +30,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     private string _currentModule = "";
 
     /// <summary>
-    /// Stores the i state used by this compiler phase.
+    /// Stores the i state used by this builder phase.
     /// </summary>
     private string I => new(c: ' ', count: _indent * 4);
 
@@ -265,7 +265,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
     /// <summary>
-    /// Format routine signature as part of this compiler phase.
+    /// Format routine signature as part of this builder phase.
     /// </summary>
     private static string FormatRoutineSignature(RoutineInfo ri)
     {
@@ -392,7 +392,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Performs the print pattern step for this compiler phase.
+    /// Performs the print pattern step for this builder phase.
     /// </summary>
     private string PrintPattern(Pattern p)
     {
@@ -466,7 +466,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
     /// <summary>
-    /// Format literal value as part of this compiler phase.
+    /// Format literal value as part of this builder phase.
     /// </summary>
     private static string FormatLiteralValue(object value, TokenType literalType)
     {
@@ -628,7 +628,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
     /// <summary>
-    /// Performs the escape text step for this compiler phase.
+    /// Performs the escape text step for this builder phase.
     /// </summary>
     private static string EscapeText(string s)
     {

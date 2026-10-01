@@ -37,7 +37,7 @@ internal partial class Program
         /// thread. The next build that finds it finished adopts it: the collector skips its instances, codegen
         /// declares its symbols, and the client loads its object. One layer is compiled at a time and each is
         /// emitted against the residents of its own build, so no symbol is ever defined twice. Layers live for
-        /// the daemon's lifetime (a stdlib or compiler change restarts the daemon).</para>
+        /// the daemon's lifetime (a stdlib or builder change restarts the daemon).</para>
         /// </summary>
         private sealed class ResidentLayer(RfBuildMode buildMode)
         {
@@ -107,7 +107,7 @@ internal partial class Program
             /// <summary>
             /// Between requests: emits the observed build's non-resident stdlib routines as one module (on the
             /// daemon thread, since emission reads that build's analysis state) and compiles it on a background
-            /// thread (external opt/clang runs on files, touching no compiler state).
+            /// thread (external opt/clang runs on files, touching no builder state).
             /// </summary>
             public void StartPendingBuild()
             {

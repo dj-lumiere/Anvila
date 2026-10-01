@@ -6,7 +6,7 @@ namespace Builder.Verification;
 /// <summary>
 /// Redirects P/Invoke loads of <c>razorforge_runtime</c> to a per-process shadow copy in
 /// <c>%TEMP%</c>. Without this, Windows holds an exclusive lock on the canonical DLL for
-/// the lifetime of the compiler process, blocking the build driver from refreshing the
+/// the lifetime of the builder process, blocking the build driver from refreshing the
 /// copy that emitted user programs link against.
 /// </summary>
 public static class RuntimeShadowLoader

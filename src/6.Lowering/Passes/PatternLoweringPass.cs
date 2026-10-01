@@ -85,12 +85,12 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Tracks the temp count while this compiler phase runs.
+    /// Tracks the temp count while this builder phase runs.
     /// </summary>
     private int _tempCount;
 
     /// <summary>
-    /// Performs the next temp name step for this compiler phase.
+    /// Performs the next temp name step for this builder phase.
     /// </summary>
     private string NextTempName(string prefix)
     {
@@ -98,7 +98,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void Run(Program program)
     {
@@ -121,7 +121,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void RunOnVariantBodies()
     {
@@ -414,7 +414,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Returns whether is lowerable applies in the current compiler context.
+    /// Returns whether is lowerable applies in the current builder context.
     /// </summary>
     private static bool IsLowerable(WhenStatement when, TypeSymbol? subjectType)
     {
@@ -423,7 +423,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Returns whether is lowerable pattern applies in the current compiler context.
+    /// Returns whether is lowerable pattern applies in the current builder context.
     /// </summary>
     private static bool IsLowerablePattern(Pattern pattern, TypeSymbol? subjectType)
     {
@@ -1213,7 +1213,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Returns whether is result type applies in the current compiler context.
+    /// Returns whether is result type applies in the current builder context.
     /// </summary>
     private static bool IsResultType(TypeSymbol? type)
     {
@@ -1302,7 +1302,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Builds the make binding used by later compiler work.
+    /// Builds the make binding used by later builder work.
     /// </summary>
     private static DeclarationStatement MakeBinding(string name, Expression value,
         SourceLocation loc)
@@ -1329,7 +1329,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Performs the add temp var step for this compiler phase.
+    /// Performs the add temp var step for this builder phase.
     /// </summary>
     private static void AddTempVar(List<Statement> hoisted, string name, TypeSymbol? typeHint,
         Expression initializer, SourceLocation loc)
@@ -1411,7 +1411,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 static file class StringExt
 {
     /// <summary>
-    /// Returns whether has value applies in the current compiler context.
+    /// Returns whether has value applies in the current builder context.
     /// </summary>
     public static bool HasValue(this string? s)
     {

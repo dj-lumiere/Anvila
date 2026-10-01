@@ -672,7 +672,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Closes the live-routine set under the implicit callees of compiler-synthesized routines.
+    /// Closes the live-routine set under the implicit callees of builder-synthesized routines.
     /// <para>
     /// Routines enlivened AFTER <c>RoutineReachabilityPass</c> (by this pass, e.g. a wired
     /// <c>destroy</c> on <c>Tuple[S64, Bool]</c> pulled in by overflow-arithmetic machinery, or a

@@ -249,7 +249,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a compile-time member-expansion loop.
+    /// Parses a buildtime member-expansion loop.
     /// Syntax (Phase 1): <c>expand m in allmemvarof(T)</c> followed by an indented body.
     /// Unlike <c>each</c> there is no <c>else</c> clause — the loop is unrolled at monomorphization.
     /// </summary>

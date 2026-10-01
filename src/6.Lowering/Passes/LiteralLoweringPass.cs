@@ -62,7 +62,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     private readonly TypeSymbol? _durationType;
 
     /// <summary>
-    /// Initializes a new instance with the dependencies required for its compiler phase.
+    /// Initializes a new instance with the dependencies required for its builder phase.
     /// </summary>
     internal LiteralLoweringPass(PostprocessingContext ctx)
     {
@@ -106,7 +106,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void Run(Program program)
     {
@@ -114,7 +114,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void RunOnVariantBodies()
     {
@@ -268,7 +268,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
                 type: _integerType,
                 fromLiteral: _integerFromLiteral,
                 loc: loc),
-            // Decimal is now @llvm("i128") BID — its literals bake to a compile-time i128 constant
+            // Decimal is now @llvm("i128") BID — its literals bake to a buildtime i128 constant
             // (NumericLiteralParser.EncodeDecimalCanonical) like D128, not a runtime from-string call.
             _ => null
         };
@@ -441,7 +441,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Builds the make byte size creator used by later compiler work.
+    /// Builds the make byte size creator used by later builder work.
     /// </summary>
     private CreatorExpression MakeByteSizeCreator(string text, SourceLocation loc)
     {
@@ -456,7 +456,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Builds the make duration creator used by later compiler work.
+    /// Builds the make duration creator used by later builder work.
     /// </summary>
     private CreatorExpression MakeDurationCreator(string text, TokenType literalType,
         SourceLocation loc)
@@ -476,7 +476,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Builds the make character creator used by later compiler work.
+    /// Builds the make character creator used by later builder work.
     /// </summary>
     private CreatorExpression MakeCharacterCreator(int codepoint, SourceLocation loc)
     {
@@ -490,7 +490,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Builds the make byte creator used by later compiler work.
+    /// Builds the make byte creator used by later builder work.
     /// </summary>
     private CreatorExpression MakeByteCreator(int byteValue, SourceLocation loc)
     {
@@ -506,7 +506,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Initializes a new instance with the dependencies required for its compiler phase.
+    /// Initializes a new instance with the dependencies required for its builder phase.
     /// </summary>
     private static readonly (string Suffix, ulong Multiplier)[] ByteSizeSuffixes =
     [
@@ -520,7 +520,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     ];
 
     /// <summary>
-    /// Performs the compute byte size value step for this compiler phase.
+    /// Performs the compute byte size value step for this builder phase.
     /// </summary>
     private static ulong ComputeByteSizeValue(string text)
     {
@@ -547,7 +547,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Initializes a new instance with the dependencies required for its compiler phase.
+    /// Initializes a new instance with the dependencies required for its builder phase.
     /// </summary>
     private static (long Seconds, long Nanoseconds) ComputeDurationValues(string text,
         TokenType literalType)
@@ -599,7 +599,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Returns whether is byte size literal type applies in the current compiler context.
+    /// Returns whether is byte size literal type applies in the current builder context.
     /// </summary>
     private static bool IsByteSizeLiteralType(TokenType type)
     {
@@ -609,7 +609,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Returns whether is duration literal type applies in the current compiler context.
+    /// Returns whether is duration literal type applies in the current builder context.
     /// </summary>
     private static bool IsDurationLiteralType(TokenType type)
     {

@@ -2,11 +2,11 @@ namespace Builder.Declaration;
 
 /// <summary>
 /// Central inventory of the plain (non-<c>$</c>) stdlib routine names, stdlib type names, and native
-/// runtime symbols that the compiler references by hard-coded string literal. This is the "gather in
-/// one place" step of the compiler↔stdlib name-contract work
+/// runtime symbols that the builder references by hard-coded string literal. This is the "gather in
+/// one place" step of the builder↔stdlib name-contract work
 ///
 /// <para><b>Why this exists.</b> Renaming a stdlib routine (e.g. the <c>extract</c>/<c>inject</c> →
-/// <c>peek</c>/<c>poke</c> rename, commit 1480acd) silently miscompiles: the compiler looks routines
+/// <c>peek</c>/<c>poke</c> rename, commit 1480acd) silently miscompiles: the builder looks routines
 /// up by literal (<c>LookupMemberRoutine(type, "peek")</c>) and sometimes changes teardown/codegen behavior
 /// by matching a callee/type NAME. A rename compiles clean and breaks at runtime. Funnelling every
 /// such literal through this one file makes the coupling visible and gives a single place to add the
@@ -18,7 +18,7 @@ namespace Builder.Declaration;
 /// migrating them to reference these constants (and adding the resolution check) is the follow-up.
 /// The <c>$</c>-wired routine names are intentionally NOT here — they already have a single source of
 /// truth in <see cref="WiredRoutineCatalog"/>. The two marker-protocol verbs <c>refer</c>/<c>control</c>
-/// and the iteration the <c>try</c> variant of <c>emit</c> are compiler-generated and appear as literals at lowering sites,
+/// and the iteration the <c>try</c> variant of <c>emit</c> are builder-generated and appear as literals at lowering sites,
 /// so they are cross-referenced here for completeness (their catalog entry, where one exists, stays
 /// canonical).</para>
 /// </summary>
@@ -27,7 +27,7 @@ public static class RuntimeContract
     // =====================================================================================
     // B-TIER — plain stdlib routine names looked up / property-matched by literal.
     // These are the rename-sensitive contract: an author renaming any of these must update
-    // the compiler, and (once step 2 lands) validate-stdlib will fail loudly if they don't.
+    // the builder, and (once step 2 lands) validate-stdlib will fail loudly if they don't.
     // =====================================================================================
 
     /// <summary>Raw-pointer / entity-escape surface on <c>Hijacked[T]</c> and bare entities.</summary>
@@ -192,7 +192,7 @@ public static class RuntimeContract
     /// <remarks>Sites: OperatorLoweringPass, RoutineReachabilityPass. Failable (throws IndexOutOfBoundsError).</remarks>
     public const string BackResolve = "back_resolve";
 
-    /// <summary><c>data_size()</c> — per-type byte size (compile-time BuilderQuery intrinsic, folded not called).</summary>
+    /// <summary><c>data_size()</c> — per-type byte size (buildtime BuilderQuery intrinsic, folded not called).</summary>
     /// <remarks>Sites: BuilderInfoProvider, BuilderQueryInliningPass, GenericAstRewriter.</remarks>
     public const string DataSize = "data_size";
 
@@ -209,7 +209,7 @@ public static class RuntimeContract
     public const string CrashTitle = "crash_title";
 
     // =====================================================================================
-    // Marker-protocol verbs — compiler-generated $-names that are NOT in WiredRoutineCatalog
+    // Marker-protocol verbs — builder-generated $-names that are NOT in WiredRoutineCatalog
     // but are matched by literal at teardown/lowering sites (grouped with the view-verb sets).
     // =====================================================================================
 
@@ -221,7 +221,7 @@ public static class RuntimeContract
 
     /// <summary>The routine-name contracts that MUST resolve to a real, declared stdlib routine —
     /// the rename-sensitive set that <c>validate-stdlib</c>'s <see cref="RuntimeContractCheck"/>
-    /// asserts. Deliberately EXCLUDES compiler-generated / intrinsic names that have no stdlib
+    /// asserts. Deliberately EXCLUDES builder-generated / intrinsic names that have no stdlib
     /// routine body: the marker verbs
     /// <see cref="Access"/>/<see cref="Control"/>, <see cref="DataSize"/> + the BuilderQuery sets
     /// (folded intrinsics), and the native <see cref="Runtime"/> externs (link-checked C-ABI). The
@@ -237,7 +237,7 @@ public static class RuntimeContract
 
     /// <summary>Additional wrapper / marker-protocol TYPE-name contracts that must each resolve to a
     /// registered type (checked alongside <see cref="WrapperTypes"/> by <see cref="RuntimeContractCheck"/>).
-    /// <see cref="Owned"/> is intentionally excluded — it is a compiler-internal wrapper name with no
+    /// <see cref="Owned"/> is intentionally excluded — it is a builder-internal wrapper name with no
     /// declared stdlib type, so it cannot be resolution-checked.</summary>
     public static readonly IReadOnlyList<string> StdlibTypeContracts =
     [
@@ -313,7 +313,7 @@ public static class RuntimeContract
 
     /// <summary>Biased-reference-counted, auto-promoting handle (Suflae `entity` backing). Registered
     /// as an RC wrapper for lifetime (retain/release), but deliberately NOT in the forwarding /
-    /// read-only / coercion sets: access is compiler-inserted lock-wrapping, never <c>refer</c>/
+    /// read-only / coercion sets: access is builder-inserted lock-wrapping, never <c>refer</c>/
     /// <c>control</c> (which would hand out a lock-bypassing raw reference).</summary>
     public const string Roamed = "Roamed";
 
@@ -349,7 +349,7 @@ public static class RuntimeContract
 
     // Related wrapper / marker-protocol type names that appear in the same type-identity checks as
     // the nine borrow wrappers above, but are NOT part of the borrow-wrapper contract sets.
-    /// <summary>Owning value wrapper (compiler-internal; not a declared stdlib type).</summary>
+    /// <summary>Owning value wrapper (builder-internal; not a declared stdlib type).</summary>
     public const string Owned = "Owned";
 
     /// <summary>Atomic value wrapper.</summary>
@@ -444,7 +444,7 @@ public static class RuntimeContract
         };
 
     // =====================================================================================
-    // BuilderQuery intrinsic names — reflection-style routines folded at compile time
+    // BuilderQuery intrinsic names — reflection-style routines folded at build time
     // (Axis-2 intrinsics: no linkable body, no user-import dependency). Mirrors
     // BuilderInfoProvider.PerTypeRoutines / .StandaloneRoutines.
     // =====================================================================================

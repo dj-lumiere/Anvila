@@ -24,7 +24,7 @@ public partial class LlvmEmitter
     /// <summary>The type registry from semantic analysis.</summary>
     private readonly TypeRegistry _registry;
 
-    /// <summary>AST bodies for compiler-generated derived operators, keyed by RoutineInfo.RegistryKey.</summary>
+    /// <summary>AST bodies for builder-generated derived operators, keyed by RoutineInfo.RegistryKey.</summary>
     private IReadOnlyDictionary<string, Statement> _synthesizedBodies =
         new Dictionary<string, Statement>();
 
@@ -163,7 +163,7 @@ public partial class LlvmEmitter
     /// The emitted <c>define …</c> header line for each generated routine, keyed by mangled name.
     /// Used at output assembly to assert that a routine's <c>define</c> agrees with any <c>declare</c>
     /// recorded for the same symbol (see <see cref="NormalizeFunctionSignature"/>). A mismatch means
-    /// codegen computed the function type two different ways — an internal compiler bug that would
+    /// codegen computed the function type two different ways — an internal builder bug that would
     /// otherwise surface as a cryptic <c>llvm-as</c>/<c>opt</c> "call argument type mismatch" far from
     /// the source. We catch it here instead.
     /// </summary>
@@ -1057,7 +1057,7 @@ public partial class LlvmEmitter
                      $"  declare: {declSig}  ({declLine.Trim()})\n" +
                      $"  define : {defSig}  ({defHeader.Trim()})\n" +
                      "The forward declaration and the emitted body disagree on the function type. " +
-                     "This is an internal compiler error — the conversion/mangling path that built " +
+                     "This is an internal builder error — the conversion/mangling path that built " +
                      "the declare differs from the one that built the define.");
     }
 

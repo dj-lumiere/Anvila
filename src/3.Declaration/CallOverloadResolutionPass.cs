@@ -27,7 +27,7 @@ namespace Builder.Declaration;
 internal sealed class CallOverloadResolutionPass
 {
     /// <summary>
-    /// Stores the registry state used by this compiler phase.
+    /// Stores the registry state used by this builder phase.
     /// </summary>
     private readonly TypeRegistry _registry;
 
@@ -42,7 +42,7 @@ internal sealed class CallOverloadResolutionPass
         new(comparer: StringComparer.Ordinal);
 
     /// <summary>
-    /// Initializes a new instance with the dependencies required for its compiler phase.
+    /// Initializes a new instance with the dependencies required for its builder phase.
     /// </summary>
     internal CallOverloadResolutionPass(PostprocessingContext ctx)
     {
@@ -52,7 +52,7 @@ internal sealed class CallOverloadResolutionPass
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void Run(Program program)
     {
@@ -77,7 +77,7 @@ internal sealed class CallOverloadResolutionPass
     }
 
     /// <summary>
-    /// Runs this compiler phase over its configured input.
+    /// Runs this builder phase over its configured input.
     /// </summary>
     public void RunOnVariantBodies()
     {
@@ -142,7 +142,7 @@ internal sealed class CallOverloadResolutionPass
     }
 
     /// <summary>
-    /// Walk member list as part of this compiler phase.
+    /// Walk member list as part of this builder phase.
     /// </summary>
     private void WalkMemberList(List<SyntaxTree.Declaration> members)
     {
@@ -312,7 +312,7 @@ internal sealed class CallOverloadResolutionPass
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Walk expression as part of this compiler phase.
+    /// Walk expression as part of this builder phase.
     /// </summary>
     private void WalkExpression(Expression expr)
     {
@@ -480,7 +480,7 @@ internal sealed class CallOverloadResolutionPass
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Performs the classify call step for this compiler phase.
+    /// Performs the classify call step for this builder phase.
     /// </summary>
     private void ClassifyCall(CallExpression call)
     {

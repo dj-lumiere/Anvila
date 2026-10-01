@@ -20,7 +20,7 @@ public sealed class PostprocessingContext
     public TargetConfig Target { get; }
 
     /// <summary>
-    /// Build mode used by BuilderQuery and other compile-time metadata lowering.
+    /// Build mode used by BuilderQuery and other buildtime metadata lowering.
     /// </summary>
     public RfBuildMode BuildMode { get; }
 
@@ -31,7 +31,7 @@ public sealed class PostprocessingContext
     public Dictionary<string, Statement> VariantBodies { get; }
 
     /// <summary>
-    /// AST bodies for compiler-generated derived operator routines (ne, lt, le, gt, ge, notcontains),
+    /// AST bodies for builder-generated derived operator routines (ne, lt, le, gt, ge, notcontains),
     /// keyed by RoutineInfo.RegistryKey. Written by Phase 2.6 DerivedOperatorPass.
     /// Phase 8 CallOverloadResolutionPass runs on these to classify all CallExpression nodes.
     /// </summary>

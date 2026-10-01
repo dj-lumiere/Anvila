@@ -14,7 +14,7 @@ public partial class LlvmEmitter
     #region Type Mapping
 
     /// <summary>
-    /// Gets the LLVM type needed by this compiler phase.
+    /// Gets the LLVM type needed by this builder phase.
     /// </summary>
     private static string GetLlvmType(BackendRepr repr)
     {
@@ -22,7 +22,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Gets the expression LLVM type needed by this compiler phase.
+    /// Gets the expression LLVM type needed by this builder phase.
     /// </summary>
     private string GetExpressionLlvmType(Expression expr, string fallback = "i64")
     {
@@ -38,7 +38,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Gets the LLVM type needed by this compiler phase.
+    /// Gets the LLVM type needed by this builder phase.
     /// </summary>
     /// <summary>
     /// The in-MEMORY/aggregate LLVM type of a record field. <c>Bool</c> (register type <c>i1</c>) is
@@ -473,7 +473,7 @@ public partial class LlvmEmitter
     //  !20 = half access tag !21 = fp128 !22 = i128
 
     /// <summary>
-    /// Stores the TBAA metadata section state used by this compiler phase.
+    /// Stores the TBAA metadata section state used by this builder phase.
     /// </summary>
     private static readonly string TbaaMetadataSection = "; TBAA metadata\n" +
                                                          "!0 = !{!\"RF TBAA Root\"}\n" +
@@ -516,7 +516,7 @@ public partial class LlvmEmitter
     };
 
     /// <summary>
-    /// Performs the apply TBAA step for this compiler phase.
+    /// Performs the apply TBAA step for this builder phase.
     /// </summary>
     private static string ApplyTbaa(string ir)
     {
@@ -533,7 +533,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Performs the tag line step for this compiler phase.
+    /// Performs the tag line step for this builder phase.
     /// </summary>
     private static string TagLine(string line)
     {
@@ -747,7 +747,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Gets the member routine lookup name needed by this compiler phase.
+    /// Gets the member routine lookup name needed by this builder phase.
     /// </summary>
     private static string GetMemberRoutineLookupName(RoutineInfo routine)
     {

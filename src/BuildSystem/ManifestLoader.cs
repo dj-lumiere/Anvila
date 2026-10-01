@@ -129,7 +129,7 @@ public static class ManifestLoader
             }
         }
 
-        // [debug] — internal compiler diagnostics (formerly the RF_* / RAZORFORGE_JIT_TRACE env vars).
+        // [debug] — internal builder diagnostics (formerly the RF_* / RAZORFORGE_JIT_TRACE env vars).
         // All optional; niche developer tooling.
         if (root.TryGetValue(key: "debug", value: out object? debugObj) &&
             debugObj is TomlTable debugTable)

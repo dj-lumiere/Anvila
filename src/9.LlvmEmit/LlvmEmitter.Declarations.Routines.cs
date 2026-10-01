@@ -36,7 +36,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Returns true when a routine declaration should be skipped: already generated, compile-time
+    /// Returns true when a routine declaration should be skipped: already generated, buildtime
     /// stubs, generic-definition owners, or signatures containing generic parameters.
     /// </summary>
     private bool ShouldSkipDeclaration(RoutineInfo routine, string funcName)
@@ -573,16 +573,16 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Single source of truth for a routine's LLVM linkage. Compiler-generated routines are referenced
+    /// Single source of truth for a routine's LLVM linkage. Builder-generated routines are referenced
     /// only within this whole-program module, so they get <c>internal</c> linkage (GlobalDCE can strip
-    /// uncalled ones) + <c>nounwind</c> (the runtime never unwinds). A routine is compiler-generated when
+    /// uncalled ones) + <c>nounwind</c> (the runtime never unwinds). A routine is builder-generated when
     /// it is hand-registered (<see cref="RoutineInfo.IsSynthesized"/> / <see cref="RoutineInfo.IsWiredMemberRoutine"/>)
     /// OR a MONOMORPHIZED generic instance — an owner carrying concrete type arguments has no cross-module
     /// source symbol for that instantiation, so it is whole-program-internal BY STRUCTURE. Keying on the
     /// type's structure (not the IsSynthesized flag) is what makes this DETERMINISTIC cold-vs-warm: the flag
     /// drifts because several builder paths (entity self-free tail vs record destroy vs the demand collector)
     /// set it inconsistently on the same monomorphized routine.
-    /// Base mode (resident-JIT): a compiler-generated routine must stay EXTERNAL so the per-run delta module
+    /// Base mode (resident-JIT): a builder-generated routine must stay EXTERNAL so the per-run delta module
     /// can reference it across the base/delta split (<c>internal</c> is module-local, invisible to the delta);
     /// the base is non-pruned + disk-cached, so it needs no GlobalDCE. Both header emitters — this one via
     /// <see cref="BuildDefineHeader"/> and the synthesized-runtime header — MUST route through here so they
@@ -596,14 +596,14 @@ public partial class LlvmEmitter
         bool isCompilerGenerated = routine.IsSynthesized || routine.IsWiredMemberRoutine ||
                                    ownerIsMonomorphizedInstance;
         // Whole-program (non-base) OPTIMIZING builds: give EVERY routine internal linkage, not just
-        // compiler-generated ones. With external linkage LLVM keeps hand-written stdlib helpers
+        // builder-generated ones. With external linkage LLVM keeps hand-written stdlib helpers
         // (to_bits/from_bits/decode/b64_signbit/decfin32/...) as standalone interposable symbols and is
         // far more conservative about inlining/DCE-ing them; internal linkage lets the O2/O3 cost-inliner
         // flatten the small ones and GlobalDCE strip the dead originals (measured ~20-35% on the heavier
         // decimal<->float conversions, whose helper chains are deepest). The sole real entry is @main
         // (emitted separately, external); it calls start() WITHIN the module, and GC hooks are reached by
-        // function-pointer (already internal when compiler-generated), so nothing needs external linkage in
-        // a whole-program executable. Debug keeps the prior linkage (compiler-generated internal only) for
+        // function-pointer (already internal when builder-generated), so nothing needs external linkage in
+        // a whole-program executable. Debug keeps the prior linkage (builder-generated internal only) for
         // stable breakpoints; base mode keeps external for the resident base/delta split.
         bool optimizing = _buildMode is RfBuildMode.Release or RfBuildMode.ReleaseTime
             or RfBuildMode.ReleaseSpace;

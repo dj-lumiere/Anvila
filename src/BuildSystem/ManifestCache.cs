@@ -3,8 +3,8 @@ namespace Builder;
 /// <summary>
 /// Caches the parsed <c>config.toml</c> of an explicit-entry build (<c>buildandrun file.rf</c>) as a small binary
 /// file, so a dev-loop run does not load and JIT the TOML parser (its first use costs ~20 ms per process). The key
-/// covers the manifest's full path, its exact text, and the compiler DLL's timestamp, so any edit to the manifest
-/// or a rebuilt compiler misses the cache. Only manifests whose parse depends on nothing but their own text are
+/// covers the manifest's full path, its exact text, and the builder DLL's timestamp, so any edit to the manifest
+/// or a rebuilt builder misses the cache. Only manifests whose parse depends on nothing but their own text are
 /// cached: a <c>library</c> entry is checked against the disk and <c>[libraries.X]</c> tables are rich, so a
 /// manifest with either is always parsed.
 /// </summary>
@@ -109,7 +109,7 @@ internal static class ManifestCache
         }
     }
 
-    /// <summary>The cache file for this manifest path, text, and compiler build.</summary>
+    /// <summary>The cache file for this manifest path, text, and builder build.</summary>
     private static string CacheFile(string fullPath, string content)
     {
         string? compiler = System.Reflection.Assembly.GetEntryAssembly()?.Location;

@@ -31,7 +31,7 @@ public sealed partial class SemanticVerifier
             // transparent here too, else a bare literal element loses its S64 context and falls back
             // to the Suflae `Integer` default — producing `List[Integer]` that won't assign to the
             // `Roamed[List[S64]]` slot (RF-S201). Inferring the element type through the wrapper is
-            // exactly the compiler's job.
+            // exactly the builder's job.
             if (current is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } recRT &&
                 GetTypeBaseName(type: recRT) is Declaration.RuntimeContract.Owned
                     or Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked
