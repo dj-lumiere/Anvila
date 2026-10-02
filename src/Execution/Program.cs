@@ -883,7 +883,7 @@ internal partial class Program
             value:
             $"  {tool} validate-stdlib [language]           - Validate stdlib routine bodies");
         Console.WriteLine(
-            value: $"  {tool} fmt [--check] <files or dirs...>     - Format sources in place (--check: only list)");
+            value: $"  {tool} fmt [--check] [--keep-order] <files or dirs...> - Format sources in place (--check: only list, --keep-order: keep declaration order)");
         Console.WriteLine(
             value: $"  {tool} help                                 - Show this help");
         Console.WriteLine(

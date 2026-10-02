@@ -7,7 +7,8 @@ namespace Builder.Execution;
 internal partial class Program
 {
     /// <summary>
-    /// Runs <c>fmt [--check] &lt;files or directories...&gt;</c>. Without <c>--check</c> each file that is not in
+    /// Runs <c>fmt [--check] [--keep-order] &lt;files or directories...&gt;</c>. <c>--keep-order</c> keeps top-level
+    /// declarations in source order (for code examples in documentation). Without <c>--check</c> each file that is not in
     /// the canonical layout is rewritten in place. With <c>--check</c> nothing is written: the files that would
     /// change are listed. Either way a file the formatter refuses is listed with the reason and left as it is.
     /// Returns 1 when a file would change (under <c>--check</c>) or was refused, 0 otherwise.
@@ -16,8 +17,10 @@ internal partial class Program
     {
         bool check = args.Skip(count: 1)
                          .Any(predicate: a => a == "--check");
+        bool keepOrder = args.Skip(count: 1)
+                             .Any(predicate: a => a == "--keep-order");
         List<string> targets = args.Skip(count: 1)
-                                   .Where(predicate: a => a != "--check")
+                                   .Where(predicate: a => a is not ("--check" or "--keep-order"))
                                    .ToList();
         if (targets.Count == 0)
         {
@@ -56,7 +59,8 @@ internal partial class Program
         {
             string source = File.ReadAllText(path: file);
             Language language = SourceLanguage(path: file);
-            FormatResult result = SourceFormatter.Format(source: source, fileName: file, language: language);
+            FormatResult result = SourceFormatter.Format(source: source, fileName: file, language: language,
+                keepOrder: keepOrder);
             if (!result.Succeeded)
             {
                 refused++;

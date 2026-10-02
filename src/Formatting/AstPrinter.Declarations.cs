@@ -46,10 +46,16 @@ internal sealed partial class AstPrinter
             return;
         }
 
-        // Stable sort by kind, imports alphabetically within theirs.
+        // Stable sort by kind, imports alphabetically within theirs. A file with a top-level `var` that is not a
+        // `global` is a script of declarations (one with no other loose statement), and like any script it keeps
+        // its source order after the module line and the imports, as does a file formatted with keepOrder.
+        bool sourceOrder = _keepOrder ||
+                           declarations.Any(predicate: d => d is VariableDeclaration { IsGlobal: false });
         List<ISyntaxTreeNode> ordered = declarations
                                        .Select(selector: (node, i) => (node, i))
-                                       .OrderBy(keySelector: p => KindRank(node: p.node))
+                                       .OrderBy(keySelector: p => sourceOrder
+                                            ? Math.Min(val1: KindRank(node: p.node), val2: 2)
+                                            : KindRank(node: p.node))
                                        .ThenBy(keySelector: p => p.node is ImportDeclaration import
                                             ? ImportText(import: import)
                                             : "",
@@ -72,7 +78,8 @@ internal sealed partial class AstPrinter
 
     /// <summary>
     /// Whether <paramref name="node"/> follows <paramref name="previous"/> with no blank line between: imports
-    /// form one group with what follows them, and consecutive presets, like consecutive globals, form a group.
+    /// form one group with what follows them, and consecutive presets, like consecutive globals or consecutive
+    /// top-level `var`s, form a group.
     /// </summary>
     private static bool GroupsWith(ISyntaxTreeNode previous, ISyntaxTreeNode node)
     {
@@ -81,6 +88,8 @@ internal sealed partial class AstPrinter
             ImportDeclaration => true,
             PresetDeclaration => node is PresetDeclaration,
             VariableDeclaration { IsGlobal: true } => node is VariableDeclaration { IsGlobal: true },
+            // Top-level `var`s of a script of declarations read as consecutive statements.
+            VariableDeclaration { IsGlobal: false } => node is VariableDeclaration { IsGlobal: false },
             _ => false
         };
     }

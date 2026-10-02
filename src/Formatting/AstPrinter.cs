@@ -45,10 +45,17 @@ internal sealed partial class AstPrinter
     /// <summary>Blocks a head expression defers until after its line (the arms of a <c>when</c> expression).</summary>
     private readonly List<Action> _deferredBlocks = [];
 
-    /// <summary>Creates a printer over the indexed source of one file.</summary>
-    public AstPrinter(SourceIndex index)
+    /// <summary>Whether top-level declarations stay in source order instead of being grouped by kind.</summary>
+    private readonly bool _keepOrder;
+
+    /// <summary>
+    /// Creates a printer over the indexed source of one file. With <paramref name="keepOrder"/> the top-level
+    /// declarations keep their source order (a code example in documentation reads in the order it was written).
+    /// </summary>
+    public AstPrinter(SourceIndex index, bool keepOrder = false)
     {
         _index = index;
+        _keepOrder = keepOrder;
     }
 
     /// <summary>

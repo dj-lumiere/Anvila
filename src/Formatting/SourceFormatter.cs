@@ -39,14 +39,16 @@ public static class SourceFormatter
 
     /// <summary>Formats <paramref name="source"/>, read from <paramref name="fileName"/>, written in
     /// <paramref name="language"/>.</summary>
-    public static FormatResult Format(string source, string fileName, Language language)
+    /// <param name="keepOrder">Keep the top-level declarations in source order (for code examples in
+    /// documentation) instead of grouping them by kind.</param>
+    public static FormatResult Format(string source, string fileName, Language language, bool keepOrder = false)
     {
         try
         {
-            string output = FormatOrThrow(source: source, fileName: fileName, language: language);
+            string output = FormatOrThrow(source: source, fileName: fileName, language: language, keepOrder: keepOrder);
 
             // The canonical layout is a fixed point: formatting the output again must change nothing.
-            string again = FormatOrThrow(source: output, fileName: fileName, language: language);
+            string again = FormatOrThrow(source: output, fileName: fileName, language: language, keepOrder: keepOrder);
             if (again != output)
             {
                 int line = FirstDifferentLine(a: output, b: again);
@@ -71,12 +73,12 @@ public static class SourceFormatter
         }
     }
 
-    private static string FormatOrThrow(string source, string fileName, Language language)
+    private static string FormatOrThrow(string source, string fileName, Language language, bool keepOrder)
     {
         string normalized = Normalize(source: source);
         ParsedFile input = ParseFile(source: normalized, fileName: fileName, language: language, what: "The file");
 
-        var printer = new AstPrinter(index: input.Index);
+        var printer = new AstPrinter(index: input.Index, keepOrder: keepOrder);
         string output = printer.Print(program: input.Program);
 
         ParsedFile reparsed = ParseFile(source: output, fileName: fileName, language: language,
