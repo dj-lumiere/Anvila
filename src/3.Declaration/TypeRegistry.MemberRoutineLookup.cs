@@ -202,6 +202,8 @@ public sealed partial class TypeRegistry
                 DivergentDuplicateRoutines.Add(item: (existingByKey, routine));
             }
 
+            RecordKindVariants(registryKey: registryKey, existing: existingByKey!, incoming: routine);
+
             bool existingIsUser = !existingByKey!.IsSynthesized;
             bool incomingIsSynthetic = routine.IsSynthesized;
             if (!(existingIsUser && incomingIsSynthetic))
@@ -1203,7 +1205,94 @@ public sealed partial class TypeRegistry
 
     /// <summary>The kind gate constraints (<c>is VariantType/choice/flags/…</c>) that drive
     /// per-type derive selection. Obeys/other constraints are ignored for gating.</summary>
-    private static List<GenericConstraintDeclaration> DeriveKindGates(
+    /// <summary>
+    /// The implementations of one routine split by the KIND of a type argument: same signature, each with its
+    /// own <c>needs</c> (<c>@overridable</c> base with <c>needs AnyType T</c>, <c>@override</c> ones with
+    /// <c>needs EntityType T</c> / <c>needs VariantType T</c>). They share one registry key, so the registry holds
+    /// one of them; the full set is kept here, keyed by that registry key. A concrete owner gets the most
+    /// specific one whose <c>needs</c> hold: <see cref="SelectKindVariant"/> for the call-site constraint check,
+    /// and the monomorphizer ranks the bodies the same way.
+    /// </summary>
+    private readonly Dictionary<string, List<RoutineInfo>> _kindVariants = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>Whether <paramref name="routine"/> is one implementation of a kind-split routine
+    /// (<c>@overridable</c> / <c>@override</c> on a routine of a generic type).</summary>
+    internal static bool IsKindVariant(RoutineInfo routine)
+    {
+        return routine.Annotations.Contains(value: "overridable") || routine.Annotations.Contains(value: "override");
+    }
+
+    private void RecordKindVariants(string registryKey, RoutineInfo existing, RoutineInfo incoming)
+    {
+        if (!IsKindVariant(routine: existing) || !IsKindVariant(routine: incoming) ||
+            ConstraintKey(routine: existing) == ConstraintKey(routine: incoming))
+        {
+            return;
+        }
+
+        if (!_kindVariants.TryGetValue(key: registryKey, value: out List<RoutineInfo>? variants))
+        {
+            variants = [existing];
+            _kindVariants[key: registryKey] = variants;
+        }
+
+        // A routine registered again (a warm rebuild re-reads its file) replaces its earlier self.
+        string incomingKey = ConstraintKey(routine: incoming);
+        variants.RemoveAll(match: v => ConstraintKey(routine: v) == incomingKey);
+        variants.Add(item: incoming);
+    }
+
+    private static string ConstraintKey(RoutineInfo routine)
+    {
+        return string.Join(separator: "&",
+            values: (routine.GenericConstraints ?? [])
+                   .Select(selector: c =>
+                        $"{c.ParameterName}:{c.ConstraintType}:" +
+                        string.Join(separator: ",", values: (c.ConstraintTypes ?? []).Select(selector: t => t.Name)))
+                   .OrderBy(keySelector: s => s, comparer: StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The implementation of a kind-split routine that applies to <paramref name="owner"/>: the one with the most
+    /// kind gates (<c>needs EntityType T</c> beats <c>needs AnyType T</c>) among those whose <c>needs</c> hold for
+    /// its type arguments. <paramref name="routine"/> itself when it is not kind-split or none applies.
+    /// </summary>
+    public RoutineInfo SelectKindVariant(RoutineInfo routine, TypeSymbol? owner)
+    {
+        if (owner == null ||
+            !_kindVariants.TryGetValue(key: RealmRoutineKey(routine: routine.GenericDefinition ?? routine),
+                value: out List<RoutineInfo>? variants))
+        {
+            return routine;
+        }
+
+        RoutineInfo? best = null;
+        int bestScore = -1;
+        foreach (RoutineInfo v in variants)
+        {
+            if (!OwnerConstraintsSatisfied(memberRoutine: v, ownerType: owner))
+            {
+                continue;
+            }
+
+            int score = DeriveKindGates(constraints: v.GenericConstraints).Count;
+            if (score > bestScore)
+            {
+                best = v;
+                bestScore = score;
+            }
+        }
+
+        return best ?? routine;
+    }
+
+    /// <summary>Whether <paramref name="routine"/> has kind-split implementations (see <see cref="SelectKindVariant"/>).</summary>
+    public bool HasKindVariants(RoutineInfo routine)
+    {
+        return _kindVariants.ContainsKey(key: RealmRoutineKey(routine: routine.GenericDefinition ?? routine));
+    }
+
+    internal static List<GenericConstraintDeclaration> DeriveKindGates(
         List<GenericConstraintDeclaration>? constraints)
     {
         return (constraints ?? []).Where(predicate: c =>

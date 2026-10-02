@@ -2808,8 +2808,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // RoutineInfo already says so, and the backends read the return type from it.
         RoutineInfo emitInfo = concreteInfo;
 
-        // Pre-built variant body from ErrorHandlingVariantPass (keyed by generic memberRoutine RegistryKey)
-        if (ctx.VariantBodies.TryGetValue(key: genMemberRoutine.RegistryKey,
+        // Pre-built variant body from ErrorHandlingVariantPass (keyed by generic memberRoutine RegistryKey). A
+        // kind-split routine has one body per kind under that one key, so its variant is built from the body
+        // that applies to this owner instead (the fallback below).
+        if (!ctx.Registry.HasKindVariants(routine: genMemberRoutine) &&
+            ctx.VariantBodies.TryGetValue(key: genMemberRoutine.RegistryKey,
                 value: out Statement? prebuiltVariant))
         {
             Statement rewritten = GenericAstRewriter.RewriteStatement(stmt: prebuiltVariant,
@@ -2830,7 +2833,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         string fallbackAstName =
             BuildAstName(genDef: genDef, routineName: genMemberRoutine.Name);
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: fallbackAstName,
-            expectedParamCount: genMemberRoutine.Parameters.Count);
+            expectedParamCount: genMemberRoutine.Parameters.Count,
+            typeSubs: typeSubs);
 
         if (astDecl == null)
         {
@@ -3512,7 +3516,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     {
         RoutineDeclaration? countOnlyMatch = null;
         RoutineDeclaration? firstMatch = null;
-        foreach (RoutineDeclaration decl in candidates)
+        // The implementations of a kind-split routine (`needs AnyType T` / `needs EntityType T` / …) all pass
+        // for an entity T when only kinds are checked, so the one with the most kind gates goes first: the
+        // entity implementation for an entity, the base one otherwise. Ties keep declaration order.
+        IEnumerable<RoutineDeclaration> ranked = candidates.Count > 1
+            ? candidates.OrderByDescending(keySelector: d => TypeRegistry.DeriveKindGates(constraints: d.GenericConstraints)
+                                                                         .Count)
+            : candidates;
+        foreach (RoutineDeclaration decl in ranked)
         {
             if (requireGenericSuffix && decl.GenericParameters is not { Count: > 0 })
             {

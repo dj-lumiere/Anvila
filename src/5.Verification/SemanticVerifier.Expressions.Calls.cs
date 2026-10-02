@@ -858,7 +858,10 @@ public sealed partial class SemanticVerifier
         // `needs T obeys Copyable`, Widget not Copyable) is RF-S150 here, not an over-prune crash.
         if (memberRoutine != null)
         {
-            ValidateMemberOwnerConstraints(memberRoutine: memberRoutine,
+            // A kind-split routine (`Maybe[T].unwrap_or` for value / entity / variant T) is checked against the
+            // implementation that applies to this owner.
+            ValidateMemberOwnerConstraints(
+                memberRoutine: _registry.SelectKindVariant(routine: memberRoutine, owner: dispatchType),
                 ownerType: dispatchType,
                 location: member.Location);
         }

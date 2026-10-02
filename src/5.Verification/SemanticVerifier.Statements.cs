@@ -300,6 +300,15 @@ public sealed partial class SemanticVerifier
     private RoutineInfo? ResolveRoutineInfoWithFallbacks(RoutineDeclaration routine,
         string baseName, TypeSymbol? routineOwnerType, bool isConstructorDecl)
     {
+        // One implementation of a kind-split routine shares its registry key with the others, so a lookup by
+        // key finds whichever was registered last. Its body is checked under its own `needs`: the info pinned to
+        // this declaration.
+        if (routine.ResolvedInfo is { } pinned && Declaration.TypeRegistry.IsKindVariant(routine: pinned) &&
+            _registry.HasKindVariants(routine: pinned))
+        {
+            return pinned;
+        }
+
         RoutineInfo? routineInfo = ResolveRoutineInfoByRegistryKey(routine: routine,
             baseName: baseName,
             routineOwnerType: routineOwnerType,
