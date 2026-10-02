@@ -94,7 +94,7 @@ internal partial class Program
         // LSP/JSON-RPC over stdin/stdout until the client sends `exit`.
         if (command is "lsp")
         {
-            return LspServer.Run();
+            return LspServer.Run(profile: CliRules.LanguageServer);
         }
 
         // `daemon`: run the warm-compile daemon (foreground). Captures the fully-processed stdlib in RAM

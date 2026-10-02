@@ -14,8 +14,9 @@ using Builder.Verification.Results;
 namespace Builder.Execution;
 
 /// <summary>
-/// A Language Server Protocol server for RazorForge / Suflae, spoken over stdio (launched via
-/// <c>RazorForge --lsp</c>). On every document open/change it runs the real tokenizer → parser →
+/// The Language Server Protocol engine RazorForge and Suflae share, spoken over stdio. Each language runs its own
+/// server (<c>razorforge lsp</c>, <c>suflae lsp</c>) with its own <see cref="Builder.Frontends.LanguageServerProfile"/>
+/// (keywords, names, formatter); the engine serves only that language's files. On every document open/change it runs the real tokenizer → parser →
 /// semantic analyzer and reports positioned diagnostics; the analyzed AST + tokens are then reused
 /// to serve hover (type / routine signature / variable binding), go-to-definition (routines
 /// cross-file, variables/parameters scope-precise), references and rename (binding-precise via the
@@ -71,19 +72,25 @@ public static class LspServer
     // Open documents by URI: their most recent typed AST + token stream (for hover).
     private static readonly Dictionary<string, DocState> Docs = new();
 
+    // The language this server serves (set by Run): its keywords, names, and which files are its own.
+    private static Builder.Frontends.LanguageServerProfile _profile = null!;
+
+    // The text of each open document as the client last sent it (formatting rewrites from it).
+    private static readonly Dictionary<string, string> Texts = new();
+
     /// <summary>
     /// Runs the LSP server, reading JSON-RPC 2.0 messages from stdin and writing responses to
     /// stdout. Redirects all pipeline <c>Console.Write</c> output to stderr so it cannot corrupt
     /// the LSP framing. Returns 0 on a clean shutdown (client sent <c>shutdown</c> then
     /// <c>exit</c>), or 1 if <c>exit</c> arrives without a prior <c>shutdown</c>.
     /// </summary>
-    public static int Run()
+    public static int Run(Builder.Frontends.LanguageServerProfile profile)
     {
         // The protocol owns the real stdout; send stray pipeline output to stderr instead.
         Stream stdout = Console.OpenStandardOutput();
         Stream stdin = Console.OpenStandardInput();
         Console.SetOut(newOut: Console.Error);
-        return Run(stdin: stdin, stdout: stdout);
+        return Run(stdin: stdin, stdout: stdout, profile: profile);
     }
 
     /// <summary>
@@ -92,11 +99,13 @@ public static class LspServer
     /// <see cref="MemoryStream"/> and reading the framed replies back. The public
     /// <see cref="Run()"/> binds these to the process stdin/stdout.
     /// </summary>
-    internal static int Run(Stream stdin, Stream stdout)
+    internal static int Run(Stream stdin, Stream stdout, Builder.Frontends.LanguageServerProfile profile)
     {
         // Fresh transport = fresh document set; a real server starts with none open, and clearing
         // here keeps successive in-process test sessions from leaking state into one another.
         Docs.Clear();
+        Texts.Clear();
+        _profile = profile;
 
         bool shutdownRequested = false;
         while (true)
@@ -165,6 +174,7 @@ public static class LspServer
                                     [key: "workspaceSymbolProvider"] = true,
                                     [key: "inlayHintProvider"] = true,
                                     [key: "codeActionProvider"] = true,
+                                    [key: "documentFormattingProvider"] = true,
                                     [key: "semanticTokensProvider"] =
                                         new Dictionary<string, object?>
                                         {
@@ -178,7 +188,7 @@ public static class LspServer
                                 },
                                 [key: "serverInfo"] = new Dictionary<string, object?>
                                 {
-                                    [key: "name"] = "razorforge-lsp", [key: "version"] = "0.1"
+                                    [key: "name"] = _profile.ServerName, [key: "version"] = "0.1"
                                 }
                             });
                         break;
@@ -257,6 +267,10 @@ public static class LspServer
                         HandleSemanticTokens(stdout: stdout, id: id, root: root);
                         break;
 
+                    case "textDocument/formatting":
+                        HandleFormatting(stdout: stdout, id: id, root: root);
+                        break;
+
                     default:
                         // Unknown REQUEST (has id) — answer with an empty result so the client
                         // does not stall. Unknown NOTIFICATIONS are simply ignored.
@@ -283,6 +297,12 @@ public static class LspServer
         }
 
         string uri = uriEl.GetString() ?? "";
+        // A file of the other language belongs to the other language's server.
+        if (!_profile.Serves(uriOrFileName: uri))
+        {
+            return;
+        }
+
         string? text;
         if (isOpen)
         {
@@ -300,8 +320,41 @@ public static class LspServer
             return;
         }
 
+        Texts[key: uri] = text;
         List<Dictionary<string, object?>> diagnostics = Analyze(uri: uri, text: text);
         PublishDiagnostics(stdout: stdout, uri: uri, diagnostics: diagnostics);
+    }
+
+    /// <summary>
+    /// <c>textDocument/formatting</c>: the whole document in the language's canonical layout, as one edit
+    /// replacing all of it. No edits when the text is already formatted, or when the language's formatter
+    /// refuses the file (it reproduces a file exactly or not at all).
+    /// </summary>
+    private static void HandleFormatting(Stream stdout, JsonElement id, JsonElement root)
+    {
+        string uri = root.TryGetProperty(propertyName: PropParams, value: out JsonElement p) &&
+                     p.TryGetProperty(propertyName: PropTextDocument, value: out JsonElement td) &&
+                     td.TryGetProperty(propertyName: "uri", value: out JsonElement uriEl)
+            ? uriEl.GetString() ?? ""
+            : "";
+        var edits = new List<object?>();
+        if (Texts.TryGetValue(key: uri, value: out string? text) &&
+            _profile.Format(text: text, fileName: UriToFileName(uri: uri)) is { } formatted && formatted != text)
+        {
+            // An end past the last line clamps to the document's end, so the edit covers all of it.
+            int lines = text.Count(predicate: c => c == '\n') + 1;
+            edits.Add(item: new Dictionary<string, object?>
+            {
+                [key: PropRange] = new Dictionary<string, object?>
+                {
+                    [key: PropStart] = new Dictionary<string, object?> { [key: "line"] = 0, [key: PropCharacter] = 0 },
+                    [key: "end"] = new Dictionary<string, object?> { [key: "line"] = lines, [key: PropCharacter] = 0 }
+                },
+                [key: "newText"] = formatted
+            });
+        }
+
+        WriteResult(stdout: stdout, id: id, result: edits);
     }
 
     private static void HandleDidClose(Stream stdout, JsonElement root)
@@ -312,6 +365,7 @@ public static class LspServer
         {
             string uri = uriEl.GetString() ?? "";
             Docs.Remove(key: uri);
+            Texts.Remove(key: uri);
             PublishDiagnostics(stdout: stdout,
                 uri: uri,
                 diagnostics: new List<Dictionary<string, object?>>());
@@ -370,7 +424,7 @@ public static class LspServer
         }
 
         int endCol0 = hit.Column - 1 + hit.Text.Length;
-        string hoverValue = $"```razorforge\n{label}\n```";
+        string hoverValue = $"```{_profile.CodeBlockLanguage}\n{label}\n```";
         if (!string.IsNullOrWhiteSpace(value: documentation))
         {
             hoverValue += $"\n\n{RenderDoc(doc: documentation)}";
@@ -742,78 +796,6 @@ public static class LspServer
     private static readonly List<object?> SemanticTokenModifiers = new() { "deprecated" };
     private const int ModDeprecated = 1; // 1 << 0
 
-    // Completion keyword set (shared RF/SF surface; RF-only ones are harmless in SF suggestions).
-    private static readonly string[] Keywords =
-    {
-        "routine",
-        "entity",
-        "record",
-        "choice",
-        "variant",
-        "protocol",
-        "flags",
-        "crashable",
-        "var",
-        "preset",
-        "lateinit",
-        "secret",
-        "posted",
-        "common",
-        "me",
-        "Me",
-        "obeys",
-        "disobeys",
-        "needs",
-        "relates",
-        "everywhere",
-        "if",
-        "elseif",
-        "else",
-        "then",
-        "unless",
-        "when",
-        "is",
-        "isnot",
-        "loop",
-        "while",
-        "each",
-        "break",
-        "continue",
-        "return",
-        "throw",
-        "absent",
-        "becomes",
-        "pierce",
-        "in",
-        "notin",
-        "to",
-        "til",
-        "by",
-        "steal",
-        "import",
-        "module",
-        "using",
-        "as",
-        "define",
-        "pass",
-        "with",
-        "given",
-        "discard",
-        "and",
-        "or",
-        "not",
-        "but",
-        "true",
-        "false",
-        "None",
-        "none",
-        "suspended",
-        "threaded",
-        "danger",
-        "dangerous",
-        "global"
-    };
-
     /// <summary>
     /// <c>textDocument/references</c>: all occurrences of the symbol under the cursor, in this file.
     /// A variable/parameter binds by <see cref="IdentifierExpression.ResolvedVariable"/> identity, so
@@ -1164,7 +1146,7 @@ public static class LspServer
     private static void AddGlobalCompletions(DocState doc, List<Dictionary<string, object?>> items,
         HashSet<string> seen)
     {
-        foreach (string kw in Keywords)
+        foreach (string kw in _profile.Keywords)
         {
             AddItem(items: items,
                 seen: seen,
@@ -1274,7 +1256,7 @@ public static class LspServer
             resolved[key: PropDocumentation] = new Dictionary<string, object?>
             {
                 [key: "kind"] = PropMarkdown,
-                [key: PropValue] = $"```razorforge\n{label}{detail}\n```"
+                [key: PropValue] = $"```{_profile.CodeBlockLanguage}\n{label}{detail}\n```"
             };
         }
 
@@ -2919,7 +2901,7 @@ public static class LspServer
             },
             [key: "severity"] = severity, // 1 = Error, 2 = Warning
             [key: "code"] = code,
-            [key: "source"] = "razorforge",
+            [key: "source"] = _profile.ServerName,
             [key: "message"] = message
         };
     }

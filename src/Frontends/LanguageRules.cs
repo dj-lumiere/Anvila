@@ -40,6 +40,16 @@ public abstract class LanguageRules
     /// <summary>The tokens of <paramref name="source"/>, read from <paramref name="fileName"/>.</summary>
     public abstract List<Token> Tokenize(string source, string fileName);
 
+    /// <summary>
+    /// Tokenizes and also returns every comment with its position: the token stream drops `#` comments, and a
+    /// tool that reproduces the source (the formatter) needs them back.
+    /// </summary>
+    public abstract (List<Token> Tokens, List<CommentTrivia> Comments) TokenizeWithComments(string source,
+        string fileName);
+
+    /// <summary>The language's own Language Server profile (its keywords, names, and formatter).</summary>
+    public abstract LanguageServerProfile LanguageServer { get; }
+
     /// <summary>True when a bare source file given to the tool runs it (build and execute) rather than
     /// printing its syntax tree.</summary>
     public virtual bool BareSourceRuns => false;
