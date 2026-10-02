@@ -29,6 +29,17 @@ public sealed partial class SemanticVerifier
             return AnalyzeNoneValueLiteral(literal: literal, expectedType: expectedType);
         }
 
+        // A bare integer conforms to a generic type parameter as to any expected type (`step: 1` in a
+        // `Range[T]`): it is a T. Whether T can hold it is checked where T is known, at instantiation
+        // (GenericAstRewriter). A const generic (`needs N is U64`) is a value, not a type, so it doesn't count.
+        if (literal.LiteralType is TokenType.UndecidedInteger &&
+            expectedType is GenericParameterTypeSymbol typeParameter &&
+            !ActiveConstraintsFor(paramName: typeParameter.Name)
+               .Any(predicate: c => c.ConstraintType == ConstraintKind.ConstGeneric))
+        {
+            return typeParameter;
+        }
+
         string? typeName = MapLiteralTypeName(literal: literal);
         if (typeName == null)
         {
@@ -313,7 +324,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Checks if an integer literal value fits within the range of the target type.
     /// </summary>
-    private static bool LiteralFitsInType(LiteralExpression literal, TypeSymbol targetType)
+    internal static bool LiteralFitsInType(LiteralExpression literal, TypeSymbol targetType)
     {
         // String-form literals whose magnitude doesn't fit in 64 bits can only fit in S128/U128.
         if (literal.Value is string strVal)

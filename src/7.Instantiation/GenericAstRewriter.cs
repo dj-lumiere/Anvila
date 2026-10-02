@@ -279,6 +279,13 @@ internal static class GenericAstRewriter
         private TypeSymbol? ResolveAssociatedType(AssociatedProjectionTypeSymbol proj)
         {
             TypeSymbol newBase = ResolveType(original: proj.Base) ?? proj.Base;
+            // In a protocol's own routine `me` is typed as the protocol, so `me.iter()` is `Iterable/Iter`: the
+            // implementer this body is instantiated for (Me) is the type whose binding it means.
+            if (newBase is ProtocolTypeSymbol && TypeSubs!.TryGetValue(key: "Me", value: out TypeSymbol? implementer))
+            {
+                newBase = implementer;
+            }
+
             TypeSymbol? bound = RecordTypeSymbol.ProjectAssociatedBinding(baseType: newBase,
                 slot: proj.SlotName);
             if (bound != null)
@@ -524,7 +531,7 @@ internal static class GenericAstRewriter
             }
 
             if (original.IsGenericDefinition || original.OwnerType is GenericParameterTypeSymbol or
-                    { IsGenericDefinition: true })
+                    AssociatedProjectionTypeSymbol or { IsGenericDefinition: true })
             {
                 return null;
             }
@@ -1576,6 +1583,27 @@ internal static class GenericAstRewriter
     }
 
     /// <summary>
+    /// A bare integer the template typed as its parameter (<c>step: 1</c> in <c>Range[T]</c>) takes the
+    /// concrete type here, which must hold it: a <c>Range[Text]</c>'s <c>1</c>, or a <c>300</c> as a
+    /// <c>U8</c>, fails the build naming the literal, the parameter, and the type it became.
+    /// </summary>
+    private static void CheckLiteralFitsParameter(Expression expr, TypeSymbol? resolvedType)
+    {
+        if (expr is not LiteralExpression { LiteralType: TokenType.UndecidedInteger } literal ||
+            expr.ResolvedType is not GenericParameterTypeSymbol parameter ||
+            resolvedType is null or GenericParameterTypeSymbol ||
+            Builder.Verification.SemanticVerifier.LiteralFitsInType(literal: literal, targetType: resolvedType))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            message: $"{literal.Location.FileName}:{literal.Location.Line}:{literal.Location.Column}: the literal " +
+                     $"{literal.Value} takes the type of {parameter.Name}, which is {resolvedType.Name} here, and a " +
+                     $"{resolvedType.Name} can't hold it.");
+    }
+
+    /// <summary>
     /// After an expression is cloned+substituted, backfills its <see cref="Expression.ResolvedType"/>
     /// with the concrete type and re-binds any resolved routine / constructed type carried by the node.
     /// Mutates <paramref name="result"/> in place.
@@ -1590,6 +1618,7 @@ internal static class GenericAstRewriter
             ctx: ctx);
 
         result.ResolvedType = resolvedType;
+        CheckLiteralFitsParameter(expr: expr, resolvedType: resolvedType);
 
         TypeSymbol? routineResultType = resolvedType ?? result.ResolvedType ?? expr.ResolvedType;
         RebindRewrittenNode(result: result,
@@ -2156,7 +2185,7 @@ internal static class GenericAstRewriter
         // an `x.$nameof(m)` splice is analyzed before `expand` unrolls it into a real field access, so it
         // resolves against the splice's deferred error type and must be rebound on the concrete receiver.
         if (routine.IsGenericDefinition || routine.OwnerType is GenericParameterTypeSymbol
-                or ProtocolTypeSymbol or ErrorTypeSymbol or { IsGenericDefinition: true })
+                or AssociatedProjectionTypeSymbol or ProtocolTypeSymbol or ErrorTypeSymbol or { IsGenericDefinition: true })
         {
             // A protocol-owned memberRoutine is abstract (no body) — after monomorphization the call must
             // re-dispatch to the concrete implementer (e.g. Iterator[S64].emit's try variant, resolved via a
@@ -2176,7 +2205,8 @@ internal static class GenericAstRewriter
             return false;
         }
 
-        if (type is GenericParameterTypeSymbol or ErrorTypeSymbol)
+        // An associated type (`S/Iter`) is a placeholder too: it names a type only once its base is concrete.
+        if (type is GenericParameterTypeSymbol or AssociatedProjectionTypeSymbol or ErrorTypeSymbol)
         {
             return true;
         }
@@ -3392,10 +3422,15 @@ internal static class GenericAstRewriter
                     ctx.LocalTypes[key: vd.Name] = localType;
                 }
 
+                // The storage type LocalTypeStampPass stamped on the template (`__T0/Iter`) substitutes
+                // like any other type, or a template parameter reaches the backend.
                 return vd with
                 {
                     Type = newType,
-                    Initializer = newInit
+                    Initializer = newInit,
+                    LocalType = vd.LocalType is { } stamped
+                        ? ctx.ResolveType(original: stamped) ?? stamped
+                        : null
                 };
             }
 

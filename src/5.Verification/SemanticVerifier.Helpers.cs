@@ -900,7 +900,8 @@ public sealed partial class SemanticVerifier
         }
 
         // Generic type matching.
-        if (IsGenericDefinitionResolutionAssignable(source: source, target: target))
+        if (IsGenericDefinitionResolutionAssignable(source: source, target: target) ||
+            IsTemplateSelfAssignable(source: source, target: target))
         {
             return true;
         }
@@ -926,6 +927,47 @@ public sealed partial class SemanticVerifier
 
         // Raw entity E → Owned[E]: a freshly produced entity transfers ownership.
         return IsOwnedEntityAssignable(source: source, target: target);
+    }
+
+    /// <summary>
+    /// Inside a template, <c>me</c> is typed as the generic definition (<c>SortedSet</c>, or the protocol
+    /// <c>Iterable</c> in a protocol routine), while a type written in the body names the same thing with its
+    /// parameters (<c>SortedSet[T]</c>, <c>Me</c>). Two resolutions of one generic type whose type arguments differ
+    /// only that way (<c>Hijacked[SortedSet]</c> and <c>Hijacked[SortedSet[T]]</c>) are the same type.
+    /// </summary>
+    private bool IsTemplateSelfAssignable(TypeSymbol source, TypeSymbol target)
+    {
+        if (source is not { IsGenericResolution: true, TypeArguments: { } sourceArgs } ||
+            target is not { IsGenericResolution: true, TypeArguments: { } targetArgs } ||
+            source.BareName != target.BareName || sourceArgs.Count != targetArgs.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < sourceArgs.Count; i++)
+        {
+            TypeSymbol s = sourceArgs[index: i];
+            TypeSymbol t = targetArgs[index: i];
+            if (s.FullName == t.FullName || IsGenericDefinitionResolutionAssignable(source: s, target: t) ||
+                IsOwnProtocolSelf(protocol: s, self: t) || IsTemplateSelfAssignable(source: s, target: t))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// <c>me</c> in a routine of protocol <c>P</c> is typed as <c>P</c>, and <c>Me</c> is the type that obeys it: the
+    /// same thing inside that protocol's own routines.
+    /// </summary>
+    private bool IsOwnProtocolSelf(TypeSymbol protocol, TypeSymbol self)
+    {
+        return self is ProtocolSelfTypeSymbol && protocol.Category == TypeCategory.Protocol &&
+               _currentRoutine?.OwnerType is { } owner && owner.BareName == protocol.BareName;
     }
 
     private static bool IsOwnedEntityAssignable(TypeSymbol source, TypeSymbol target)

@@ -596,6 +596,14 @@ internal sealed class TesseraRoutineWriter
                 // A const generic parameter: the monomorphizer stamped its value on the reference.
                 return new Operand(Text: constant.Value.ToString(provider: CultureInfo.InvariantCulture),
                     Type: _module.ConstantType(constant: constant), IsPlace: false);
+            case IdentifierExpression { ResolvedRoutine: { } named }:
+                // A routine taken as a value: its code address, nothing bound.
+                return RoutineValue(routine: named, bound: "null");
+            case ClosureValueExpression closure:
+                return RoutineValue(
+                    routine: closure.Function.ResolvedRoutine ??
+                             throw Unsupported(what: "a closure value without its lifted routine"),
+                    bound: Value(operand: Evaluate(expression: closure.Bound)));
             case IdentifierExpression identifier:
             {
                 Local local = Lookup(name: identifier.Name);
@@ -656,6 +664,110 @@ internal sealed class TesseraRoutineWriter
             default:
                 throw Unsupported(what: $"the expression {expression.GetType().Name}");
         }
+    }
+
+    /// <summary>A routine value: the routine's code address and the bound payload (an address, or null).</summary>
+    private Operand RoutineValue(RoutineInfo routine, string bound)
+    {
+        string record = _module.RoutineValueRecord;
+        string name = $"%t{_temps++}";
+        Emit(line: $"{name} : {record} = {record} {{ fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound} }}");
+        return new Operand(Text: name, Type: null, IsPlace: false);
+    }
+
+    /// <summary>
+    /// The routine value a call goes through, when it calls one: a local holding a routine
+    /// (<c>compare(a: x, b: y)</c>), or a routine-typed field (<c>me.predicate(item)</c>).
+    /// </summary>
+    private (Operand Value, RoutineTypeSymbol Type)? IndirectCallee(CallExpression call)
+    {
+        if (call.Callee is IdentifierExpression id && TryLookup(name: id.Name) is { Type: RoutineTypeSymbol localType } local)
+        {
+            return (new Operand(Text: local.Place, Type: localType, IsPlace: true), localType);
+        }
+
+        if (call.LoweringKind == CallLoweringKind.DynamicCall &&
+            call.Callee is MemberExpression { ResolvedType: RoutineTypeSymbol fieldType } field)
+        {
+            return (Evaluate(expression: field), fieldType);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// A call through a routine value. A plain routine or captureless lambda (bound null) is called with the
+    /// arguments, a capturing lambda with the bound payload after them. Blocks see only their own parameters,
+    /// so the address, the payload and the arguments wait in slots, and both branches leave the result in one.
+    /// </summary>
+    private Operand? WriteIndirectCall(CallExpression call, Operand callee, RoutineTypeSymbol type)
+    {
+        string fat = Receiver(operand: callee);
+        Local fn = ClaimLocal(name: "fn", type: _module.PointerType, initial: $"{fat}.fn");
+        Local bound = ClaimLocal(name: "bound", type: _module.PointerType, initial: $"{fat}.bound");
+        var arguments = new List<Local>();
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            Operand argument = Evaluate(expression: call.Arguments[index: i]);
+            TypeSymbol parameter = type.ParameterTypes[index: i];
+            arguments.Add(item: ClaimLocal(name: "arg", type: parameter,
+                initial: Typed(value: Value(operand: argument), from: argument.Type, to: parameter)));
+        }
+
+        bool returns = !TesseraWriter.IsVoid(type: type.ReturnType);
+        Local? result = returns
+            ? ClaimLocal(name: "result", type: type.ReturnType!, initial: null)
+            : null;
+        string address = Temp(type: _module.AddressType, expression: $"ptrtoint<Addr, U64>({bound.Place}.load())");
+        string unbound = Temp(type: _module.BoolType, expression: $"{address}.eq(0)");
+        string plainLabel = NewLabel(kind: "plain_call");
+        string boundLabel = NewLabel(kind: "bound_call");
+        string afterLabel = NewLabel(kind: "after_call");
+        Terminate(line: $"branch {unbound} ? {Target(label: plainLabel)} : {Target(label: boundLabel)}");
+
+        foreach ((string label, bool withBound) in new[] { (plainLabel, false), (boundLabel, true) })
+        {
+            StartBlock(label: label);
+            string callable = _module.CallableText(routineType: type, withBound: withBound);
+            string target = $"%callee{_temps++}";
+            Emit(line: $"{target} : {callable} = {fn.Place}.cast<{callable}>().load()");
+            IEnumerable<string> values = arguments.Select(selector: a => Temp(type: a.Type, expression: $"{a.Place}.load()"));
+            if (withBound)
+            {
+                values = values.Append(element: $"{bound.Place}.load()");
+            }
+
+            string invocation = $"{target}.call({string.Join(separator: ", ", values: values.ToList())})";
+            if (result is null)
+            {
+                Emit(line: invocation);
+            }
+            else
+            {
+                Emit(line: $"{result.Place}.store({Temp(type: result.Type, expression: invocation)})");
+            }
+
+            Terminate(line: $"jump {Target(label: afterLabel)}");
+        }
+
+        StartBlock(label: afterLabel);
+        return result is null
+            ? null
+            : new Operand(Text: result.Place, Type: result.Type, IsPlace: true);
+    }
+
+    private Local? TryLookup(string name)
+    {
+        for (int i = _scopes.Count - 1; i >= 0; i--)
+        {
+            if (_scopes[index: i]
+               .TryGetValue(key: name, value: out Local? local))
+            {
+                return local;
+            }
+        }
+
+        return null;
     }
 
     private Local Lookup(string name)
@@ -744,9 +856,19 @@ internal sealed class TesseraRoutineWriter
             Type: identity.ResolvedType, IsPlace: false);
     }
 
+    /// <summary>A marker borrow protocol (Accessing[X], Controlling[X]) stands for its inner X.</summary>
+    private static TypeSymbol? Unmarked(TypeSymbol? type)
+    {
+        return type is ProtocolTypeSymbol { TypeArguments: [{ } inner] } marker &&
+               Declaration.RuntimeContract.IsMarkerProtocol(baseName: (marker.GenericDefinition ?? marker).BareName)
+            ? inner
+            : type;
+    }
+
     private Operand EvaluateField(MemberExpression member)
     {
         Operand owner = Evaluate(expression: member.Object);
+        owner = owner with { Type = Unmarked(type: owner.Type) };
         if (owner.Type is EntityTypeSymbol entity)
         {
             string block = Receiver(operand: owner);
@@ -854,6 +976,11 @@ internal sealed class TesseraRoutineWriter
         if (_traced && call.Location is { } at && (at.Line > 0 || at.Column > 0))
         {
             Emit(line: $"{TesseraTrace.UpdateLocation}({at.Line}, {at.Column})");
+        }
+
+        if (IndirectCallee(call: call) is var (callee, routineType))
+        {
+            return WriteIndirectCall(call: call, callee: callee, type: routineType);
         }
 
         RoutineInfo? routine = call.ResolvedRoutine;
@@ -1014,8 +1141,9 @@ internal sealed class TesseraRoutineWriter
         for (int i = 0; i < record.MemberVariables.Count; i++)
         {
             MemberVariableInfo field = record.MemberVariables[index: i];
-            string value = i < creator.MemberVariables.Count
-                ? Value(operand: Evaluate(expression: creator.MemberVariables[index: i].Value))
+            string value = i < creator.MemberVariables.Count &&
+                           Evaluate(expression: creator.MemberVariables[index: i].Value) is var operand
+                ? Typed(value: Value(operand: operand), from: operand.Type, to: field.Type)
                 : ZeroValue(type: field.Type);
             fields.Add(item: $"{field.Name}: {value}");
         }
@@ -1035,8 +1163,14 @@ internal sealed class TesseraRoutineWriter
             throw Unsupported(what: $"an empty creator of the entity {entity.FullName}");
         }
 
+        // A value is handed to its field's type: an untyped address is cast to the pointer the field holds.
         var values = creator.MemberVariables
-                            .Select(selector: m => Value(operand: Evaluate(expression: m.Value)))
+                            .Select(selector: (m, i) =>
+                             {
+                                 Operand operand = Evaluate(expression: m.Value);
+                                 return Typed(value: Value(operand: operand), from: operand.Type,
+                                     to: entity.MemberVariables[index: i].Type);
+                             })
                             .ToList();
         string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "%size: U64",
             returnType: "Addr");

@@ -1636,9 +1636,13 @@ public sealed partial class SemanticVerifier
     /// - Value types are assignable to member variable types
     /// - No duplicate member variable assignments
     /// - All required member variables are provided
+    /// <paramref name="analyzedTypes"/>, when given, holds each value's type already analyzed against its member
+    /// variable's type (a generic construction analyzes its arguments before it knows it is a field-init), in the
+    /// order of <paramref name="memberVariables"/>, so no value is analyzed twice.
     /// </summary>
     private void ValidateCreatorMemberVariables(TypeSymbol type,
-        List<(string Name, Expression Value)> memberVariables, SourceLocation location)
+        List<(string Name, Expression Value)> memberVariables, SourceLocation location,
+        IReadOnlyList<TypeSymbol>? analyzedTypes = null)
     {
         // Get the type's member variables
         List<MemberVariableInfo>? typeMemberVariables = type switch
@@ -1672,12 +1676,15 @@ public sealed partial class SemanticVerifier
         var providedMemberVariables = new HashSet<string>();
 
         // Validate each provided member variable
-        foreach ((string memberVariableName, Expression value) in memberVariables)
+        for (int index = 0; index < memberVariables.Count; index++)
         {
+            (string memberVariableName, Expression value) = memberVariables[index: index];
+            TypeSymbol? analyzed = analyzedTypes?[index];
+
             // A positional argument that no creator accepted (NamePositionalCreatorArguments left it unnamed).
             if (memberVariableName.Length == 0)
             {
-                TypeSymbol argType = AnalyzeExpression(expression: value);
+                TypeSymbol argType = analyzed ?? AnalyzeExpression(expression: value);
                 ReportError(code: SemanticDiagnosticCode.MemberVariableNotFound,
                     message:
                     $"No creator of '{type.Name}' takes a '{argType.Name}' here. Check the argument's type, or name the parameter you mean (for example `{type.Name}(from: ...)`).",
@@ -1702,7 +1709,11 @@ public sealed partial class SemanticVerifier
                     message:
                     $"Type '{type.Name}' does not have a member variable named '{memberVariableName}'.",
                     location: value.Location);
-                AnalyzeExpression(expression: value); // Still analyze the value
+                if (analyzed is null)
+                {
+                    AnalyzeExpression(expression: value); // Still analyze the value
+                }
+
                 continue;
             }
 
@@ -1716,8 +1727,8 @@ public sealed partial class SemanticVerifier
                     SubstituteTypeParameters(type: memberVariableType, genericType: type);
             }
 
-            TypeSymbol valueType =
-                AnalyzeExpression(expression: value, expectedType: memberVariableType);
+            TypeSymbol valueType = analyzed ??
+                                   AnalyzeExpression(expression: value, expectedType: memberVariableType);
 
             // Check type compatibility
             if (!IsAssignableTo(source: valueType, target: memberVariableType))

@@ -206,7 +206,7 @@ public partial class LlvmEmitter
 
             // Unknown
             _ => throw new InvalidOperationException(
-                message: $"Unknown type category: {type.Category}")
+                message: $"Unknown type category: {type.Category} ({type.GetType().Name} '{type.FullName}') [inRoutine={_currentEmittingRoutine?.FullName}]")
         };
     }
 

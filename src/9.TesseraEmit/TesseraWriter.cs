@@ -258,6 +258,46 @@ internal sealed class TesseraWriter
 
     /// <summary>A C routine of the runtime the module calls by itself (not through a <c>C::</c> declaration),
     /// declared once under its own symbol.</summary>
+    private string? _routineValueRecord;
+
+    /// <summary>
+    /// The record every routine value is, whatever its signature (the LLVM emitter's <c>{ ptr, ptr }</c>):
+    /// the code address, and the bound payload a capturing lambda passes as a trailing argument (null for a
+    /// plain routine or a captureless lambda). Declared on first use.
+    /// </summary>
+    public string RoutineValueRecord
+    {
+        get
+        {
+            if (_routineValueRecord != null)
+            {
+                return _routineValueRecord;
+            }
+
+            _routineValueRecord = VerbatimName(text: "Routine value");
+            _records.Append(value: $"record {_routineValueRecord}\n    fn : Addr\n    bound : Addr\n\n");
+            return _routineValueRecord;
+        }
+    }
+
+    /// <summary>
+    /// The Tessera <c>Callable</c> a routine value's code address is called as: the routine type's parameters,
+    /// and with <paramref name="withBound"/> the bound payload after them.
+    /// </summary>
+    public string CallableText(RoutineTypeSymbol routineType, bool withBound)
+    {
+        List<string> parameters = routineType.ParameterTypes.Select(selector: TypeText).ToList();
+        if (withBound)
+        {
+            parameters.Add(item: "Addr");
+        }
+
+        string list = parameters.Count == 1
+            ? $"({parameters[index: 0]},)"
+            : $"({string.Join(separator: ", ", values: parameters)})";
+        return $"Callable<{list}, {TypeText(type: routineType.ReturnType)}>";
+    }
+
     public string RuntimeRoutine(string symbol, string parameters, string returnType)
     {
         if (_externNames.TryGetValue(key: symbol, value: out string? name))
@@ -442,6 +482,13 @@ internal sealed class TesseraWriter
                 return $"({string.Join(separator: ", ", values: tuple.ElementTypes.Select(selector: TypeText))})";
             case EntityTypeSymbol:
                 return "Addr";
+            case RoutineTypeSymbol:
+                return RoutineValueRecord;
+            // A marker borrow protocol (Accessing[X], Controlling[X]) is laid out as its inner X, as in the LLVM
+            // emitter: an entity is its block's address, a value its own layout.
+            case ProtocolTypeSymbol { TypeArguments: [{ } markerInner] } marker when RuntimeContract.IsMarkerProtocol(
+                baseName: (marker.GenericDefinition ?? marker).BareName):
+                return TypeText(type: markerInner);
             case ConstGenericValueTypeSymbol constant:
                 return TypeText(type: ConstantType(constant: constant));
             case RecordTypeSymbol { BackendType: { } backend } record:
@@ -477,6 +524,14 @@ internal sealed class TesseraWriter
             return _input.Registry.GetOrCreateTupleType(elementTypes: [pointer, pointer, pointer]);
         }
     }
+
+    /// <summary>The builder's <c>Bool</c> type.</summary>
+    public TypeSymbol BoolType => _input.Registry.LookupType(name: "Bool") ??
+                                  throw new NotSupportedException(message: "The Tessera backend found no Bool type.");
+
+    /// <summary>The builder's <c>CPtr</c> type: an untyped address, Tessera's <c>Addr</c>.</summary>
+    public TypeSymbol PointerType => _input.Registry.LookupType(name: "CPtr") ??
+                                     throw new NotSupportedException(message: "The Tessera backend found no CPtr type.");
 
     /// <summary>The builder's <c>Address</c> type.</summary>
     public TypeSymbol AddressType => _input.Registry.LookupType(name: "Address") ??

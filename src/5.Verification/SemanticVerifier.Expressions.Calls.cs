@@ -891,6 +891,12 @@ public sealed partial class SemanticVerifier
             dispatchType: dispatchType,
             memberRoutine: ref memberRoutine);
 
+        // Associated-type receiver (`S/Iter`): resolve through the protocol its slot is bound by.
+        ResolveProjectionMemberRoutine(isFailableMemberRoutineCall: isFailableMemberRoutineCall,
+            callLookupName: callLookupName,
+            dispatchType: dispatchType,
+            memberRoutine: ref memberRoutine);
+
         // Ambiguous multi-overload seed. A routine's identity is (name, parameter-types), so once
         // >1 same-name overload is registered the name-only lookups above returned null BY DESIGN
         // (no first-wins — that was the S8-vs-S64 mis-pick bug class). Pin the unique overload from
@@ -3091,6 +3097,74 @@ public sealed partial class SemanticVerifier
                     protocolResolver: LookupTypeWithImports);
             }
         }
+    }
+
+    /// <summary>
+    /// A call on an associated type (<c>it.emit()</c> where <c>it: S/Iter</c>) dispatches as a call on the
+    /// protocol the slot is bound by: <c>Iterable[T]</c> declares <c>relates Iter obeys Emittable[T]</c>, so any
+    /// <c>S/Iter</c> of an <c>S obeys Iterable[S64]</c> has <c>Emittable[S64]</c>'s routines. The protocol's own
+    /// routine is bound (its recovery variants included), and instantiation rebinds it to the implementer's.
+    /// </summary>
+    private void ResolveProjectionMemberRoutine(bool isFailableMemberRoutineCall, string callLookupName,
+        TypeSymbol dispatchType, ref RoutineInfo? memberRoutine)
+    {
+        if (memberRoutine != null || dispatchType is not AssociatedProjectionTypeSymbol projection ||
+            ProjectionBound(projection: projection) is not { } bound)
+        {
+            return;
+        }
+
+        memberRoutine = _registry.LookupMemberRoutine(type: bound, memberRoutineName: callLookupName,
+                            isFailable: isFailableMemberRoutineCall) ??
+                        (isFailableMemberRoutineCall
+                            ? null
+                            : _registry.LookupMemberRoutine(type: bound, memberRoutineName: callLookupName,
+                                isFailable: true));
+    }
+
+    /// <summary>
+    /// The protocol an associated type is bound by: the <c>relates Slot obeys P</c> of a protocol its base
+    /// obeys. The base is a generic parameter (its <c>obeys</c> constraints), <c>Me</c> or the protocol itself in
+    /// a protocol's own routine (that protocol), or another associated type (its bound). Null when none declares
+    /// the slot.
+    /// </summary>
+    private ProtocolTypeSymbol? ProjectionBound(AssociatedProjectionTypeSymbol projection)
+    {
+        IEnumerable<TypeSymbol> obeyed = projection.Base switch
+        {
+            GenericParameterTypeSymbol parameter => ActiveConstraintsFor(paramName: parameter.Name)
+                                                   .Where(predicate: c => c is
+                                                    {
+                                                        ConstraintType: ConstraintKind.Obeys,
+                                                        ConstraintTypes: not null
+                                                    })
+                                                   .SelectMany(selector: c => c.ConstraintTypes!)
+                                                   .Select(selector: t => ResolveType(typeExpr: t)),
+            ProtocolSelfTypeSymbol when _currentRoutine?.OwnerType is ProtocolTypeSymbol own => [own],
+            // `me` in a protocol's own routine is typed as the protocol, so `me.iter()` is `Iterable/Iter`.
+            ProtocolTypeSymbol protocolBase => [protocolBase],
+            AssociatedProjectionTypeSymbol inner when ProjectionBound(projection: inner) is { } innerBound =>
+                [innerBound],
+            _ => []
+        };
+        foreach (TypeSymbol type in obeyed)
+        {
+            if (type is not ProtocolTypeSymbol protocol)
+            {
+                continue;
+            }
+
+            foreach (ProtocolTypeSymbol p in new[] { protocol }.Concat(second: protocol.ParentProtocols))
+            {
+                if (p.AssociatedTypes.FirstOrDefault(predicate: s => s.Name == projection.SlotName)
+                        ?.Constraint is ProtocolTypeSymbol bound)
+                {
+                    return bound;
+                }
+            }
+        }
+
+        return null;
     }
 
     private void ResolveTransparentMemberRoutine(TypeSymbol objectType,

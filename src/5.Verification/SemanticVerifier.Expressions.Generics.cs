@@ -649,6 +649,20 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        // A field-init construction (every argument named): the same checks as a non-generic one, so a
+        // generic body can't put a `Hijacked[U8]` into a `Hijacked[T]` field, name a field the type lacks, or
+        // leave a required one out. A positional argument is a wrapper's single field (`Hijacked[T](me)`).
+        if (generic.Arguments.Count > 0 && generic.Arguments.All(predicate: a => a is NamedArgumentExpression))
+        {
+            ValidateCreatorMemberVariables(type: resolvedType,
+                memberVariables: generic.Arguments
+                                        .Cast<NamedArgumentExpression>()
+                                        .Select(selector: named => (named.Name, named.Value))
+                                        .ToList(),
+                location: generic.Location,
+                analyzedTypes: argTypes);
+        }
+
         ValidateExclusiveTokenUniqueness(arguments: generic.Arguments, location: generic.Location);
         return resolvedType;
     }

@@ -122,7 +122,8 @@ internal sealed class TesseraIntrinsics
             "load" => $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().load()",
             "load_unaligned" => $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().load_unaligned()",
             "store" => $"{Argument(index: 0)}.cast<{Type(index: 1)}>().store({Argument(index: 1)})",
-            "zeroed" => _zero(arg: _resultType),
+            // zero_value is zeroed under an older name: every byte of a T zero.
+            "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"{Argument(index: 0)}.ptr_eq({Argument(index: 1)})",
             // The crash trace the routines keep (TesseraTrace), read by Core's crash_report.
             "trace_depth" => "RF_TRACE_DEPTH.load()",
