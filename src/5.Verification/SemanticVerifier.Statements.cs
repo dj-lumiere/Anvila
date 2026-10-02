@@ -448,7 +448,11 @@ public sealed partial class SemanticVerifier
             (routine.Annotations.Contains(item: "overridable") ||
              routine.Annotations.Contains(item: "override")) &&
             routine.MemberRoutineName is { } memberRoutine && routine.OwnerName is { } ownerName &&
-            !routine.HasReceiverTypeArgs && LookupTypeWithImports(name: ownerName) == null)
+            !routine.HasReceiverTypeArgs &&
+            // A derive template names its owner as a type parameter (`needs T …`), whatever `T` resolves to:
+            // a user `record T` must not turn the template into that record's own routine.
+            (LookupTypeWithImports(name: ownerName) == null ||
+             DeriveOwnerIsTypeParameter(ownerName: ownerName, decl: routine)))
         {
             // The auto-conferred display derives (represent/diagnose) ARE registered universals →
             // `T` is bound → they stay analyzed. Protocol-grounded via the wired catalog, not a

@@ -1255,7 +1255,9 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// The implementation of a kind-split routine that applies to <paramref name="owner"/>: the one with the most
     /// kind gates (<c>needs EntityType T</c> beats <c>needs AnyType T</c>) among those whose <c>needs</c> hold for
-    /// its type arguments. <paramref name="routine"/> itself when it is not kind-split or none applies.
+    /// its type arguments. When none applies (an entity element that is not Copyable), the one for the owner's
+    /// KIND, so the call is checked against what that kind needs and the error names it. <paramref name="routine"/>
+    /// itself when it is not kind-split.
     /// </summary>
     public RoutineInfo SelectKindVariant(RoutineInfo routine, TypeSymbol? owner)
     {
@@ -1266,11 +1268,18 @@ public sealed partial class TypeRegistry
             return routine;
         }
 
+        return MostSpecific(variants: variants, holds: v => OwnerConstraintsSatisfied(memberRoutine: v, ownerType: owner)) ??
+               MostSpecific(variants: variants, holds: v => OwnerKindGatesSatisfied(memberRoutine: v, ownerType: owner)) ??
+               routine;
+    }
+
+    private static RoutineInfo? MostSpecific(List<RoutineInfo> variants, Func<RoutineInfo, bool> holds)
+    {
         RoutineInfo? best = null;
         int bestScore = -1;
         foreach (RoutineInfo v in variants)
         {
-            if (!OwnerConstraintsSatisfied(memberRoutine: v, ownerType: owner))
+            if (!holds(arg: v))
             {
                 continue;
             }
@@ -1283,7 +1292,24 @@ public sealed partial class TypeRegistry
             }
         }
 
-        return best ?? routine;
+        return best;
+    }
+
+    /// <summary>Whether the KIND gates of <paramref name="memberRoutine"/> (<c>needs EntityType T</c>, …) hold for
+    /// <paramref name="ownerType"/>'s type arguments, its <c>obeys</c> constraints aside.</summary>
+    private bool OwnerKindGatesSatisfied(RoutineInfo memberRoutine, TypeSymbol ownerType)
+    {
+        List<GenericConstraintDeclaration> gates = DeriveKindGates(constraints: memberRoutine.GenericConstraints);
+        if (gates.Count == 0)
+        {
+            return true;
+        }
+
+        var gatesOnly = new RoutineInfo(name: memberRoutine.Name)
+        {
+            OwnerType = memberRoutine.OwnerType, GenericConstraints = gates
+        };
+        return OwnerConstraintsSatisfied(memberRoutine: gatesOnly, ownerType: ownerType);
     }
 
     /// <summary>Whether <paramref name="routine"/> has kind-split implementations (see <see cref="SelectKindVariant"/>).</summary>
@@ -2909,9 +2935,14 @@ public sealed partial class TypeRegistry
             return true;
         }
 
-        List<string>? paramNames =
-            (ownerType as RecordTypeSymbol)?.GenericDefinition?.GenericParameters ??
-            ownerType.GenericParameters;
+        // The owner's parameter names come from its generic definition, whether it is a record (`Maybe[T]`) or
+        // an entity (`List[T]`).
+        List<string>? paramNames = ownerType switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } recordDef } => recordDef.GenericParameters,
+            EntityTypeSymbol { GenericDefinition: { } entityDef } => entityDef.GenericParameters,
+            _ => null
+        } ?? ownerType.GenericParameters;
         List<TypeSymbol>? args = ownerType.TypeArguments;
         if (paramNames is null || args is null)
         {

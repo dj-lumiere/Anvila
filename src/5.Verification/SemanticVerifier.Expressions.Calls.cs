@@ -736,6 +736,19 @@ public sealed partial class SemanticVerifier
             memberRoutine: ref memberRoutine,
             ambiguousSeed: ambiguousSeed);
 
+        // Clean-diagnostic gate, on the overload the arguments picked: a member routine whose owner-level
+        // `needs param obeys P` constraint is unmet by the concrete receiver (e.g. `List[Widget].duplicate()` with
+        // `needs T obeys Copyable`, Widget not Copyable) is RF-S150 here, not an over-prune crash. A kind-split
+        // routine (`Maybe[T].unwrap_or` for value / entity / variant T) is checked against the implementation that
+        // applies to this owner.
+        if (memberRoutine != null)
+        {
+            ValidateMemberOwnerConstraints(
+                memberRoutine: _registry.SelectKindVariant(routine: memberRoutine, owner: dispatchType),
+                ownerType: dispatchType,
+                location: member.Location);
+        }
+
         if (AnalyzeResolvedMemberCall(call: call,
                 member: member,
                 objectType: objectType,
@@ -851,19 +864,6 @@ public sealed partial class SemanticVerifier
             memberRoutine = _registry.LookupMemberRoutine(type: dispatchType,
                 memberRoutineName: callLookupName,
                 isFailable: true);
-        }
-
-        // Clean-diagnostic gate: a resolved member routine whose owner-level `needs param obeys P`
-        // constraint is unmet by the concrete receiver (e.g. `List[Widget].duplicate()` with
-        // `needs T obeys Copyable`, Widget not Copyable) is RF-S150 here, not an over-prune crash.
-        if (memberRoutine != null)
-        {
-            // A kind-split routine (`Maybe[T].unwrap_or` for value / entity / variant T) is checked against the
-            // implementation that applies to this owner.
-            ValidateMemberOwnerConstraints(
-                memberRoutine: _registry.SelectKindVariant(routine: memberRoutine, owner: dispatchType),
-                ownerType: dispatchType,
-                location: member.Location);
         }
 
         // Phase D: Transparent wrapper forwarding — if the memberRoutine isn't found directly on
