@@ -322,7 +322,6 @@ public sealed partial class SemanticVerifier
             steal.ResolvedType = operandType;
             return operandType;
         }
-        CheckFrozenTokenSource(target: steal.Operand, attempt: "steal", location: steal.Location);
 
         // Aggregate-steal = hole: you cannot move a value OUT of an aggregate's MIDDLE. `steal l[i]`
         // leaves a dense List with no empty-slot state; `steal o.field` leaves a dangling struct hole.

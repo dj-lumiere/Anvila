@@ -2763,21 +2763,6 @@ public sealed partial class SemanticVerifier
     private void ValidateAccessTokenViewModifyRules(CallExpression call, MemberExpression member,
         TypeSymbol objectType)
     {
-        // #12: Partial access rule — entity.field.view() is not allowed
-        if (member.MemberName is "view" or ModifyMemberRoutineName &&
-            member.Object is MemberExpression innerMember)
-        {
-            TypeSymbol innerObjectType = innerMember.Object.ResolvedType ?? ErrorTypeSymbol.Instance;
-            if (innerObjectType is EntityTypeSymbol)
-            {
-                ReportError(code: SemanticDiagnosticCode.PartialAccessOnEntity,
-                    message:
-                    $"Cannot call '.{member.MemberName}()' on entity member variable '{innerMember.MemberName}'. " +
-                    $"Access the entity directly instead of its individual member variables.",
-                    location: call.Location);
-            }
-        }
-
         // #137: Nested grasping detection
         if (member.MemberName == ModifyMemberRoutineName &&
             IsNestedModifying(source: member.Object))

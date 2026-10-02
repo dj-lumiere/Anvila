@@ -1263,7 +1263,6 @@ public sealed partial class SemanticVerifier
             return targetType;
         }
 
-        CheckFrozenTokenSource(target: target, attempt: "reassign", location: location);
 
         switch (target)
         {
@@ -1343,6 +1342,7 @@ public sealed partial class SemanticVerifier
                 message: $"Cannot assign to preset variable '{id.Name}'.",
                 location: location);
         }
+
 
         // Suflae flow typing: reassigning an entity reference re-derives its nullability.
         if (!_registry.Rules.EntitiesAreShared || varInfo == null ||

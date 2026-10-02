@@ -208,6 +208,7 @@ public sealed partial class SemanticVerifier
 
         // Step 3: Type-check each bound argument against its parameter.
         TypeCheckBoundArguments(routine: routine,
+            arguments: arguments,
             parameters: parameters,
             totalParams: totalParams,
             boundParams: boundParams,
@@ -443,12 +444,64 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// A token parameter takes the entity itself at the call site: <c>total(items: xs)</c> reads as
+    /// <c>total(items: xs.view())</c> for a <c>Viewing[T]</c> (or <c>Accessing[T]</c>) parameter, and
+    /// <c>grow(items: xs)</c> as <c>grow(items: xs.modify())</c> for a <c>Modifying[T]</c> (or <c>Controlling[T]</c>)
+    /// one: the same one-call token written out. A temporary works the same way (<c>total(items: make())</c>): it
+    /// lives until the end of the statement, past the call.
+    /// </summary>
+    private Expression? ImplicitTokenArgument(Expression argExpr, TypeSymbol argType, TypeSymbol paramType)
+    {
+        string? verb = paramType.BareName switch
+        {
+            Declaration.RuntimeContract.Viewing => "view",
+            Declaration.RuntimeContract.Modifying => ModifyMemberRoutineName,
+            _ => null
+        };
+        if (!_registry.Rules.ChecksAccessTokens || argType is not EntityTypeSymbol || verb == null ||
+            paramType.TypeArguments is not [{ } tokenTarget] || tokenTarget.FullName != argType.FullName)
+        {
+            return null;
+        }
+
+        var mint = new CallExpression(
+            Callee: new MemberExpression(Object: argExpr, MemberName: verb, Location: argExpr.Location),
+            Arguments: [],
+            Location: argExpr.Location);
+        AnalyzeExpression(expression: mint, expectedType: paramType);
+        return mint;
+    }
+
+    /// <summary>Puts <paramref name="replacement"/> where <paramref name="original"/> stands in a call's
+    /// argument list, inside its named-argument wrapper when it has one.</summary>
+    private static void ReplaceArgument(List<Expression> arguments, Expression original,
+        Expression replacement)
+    {
+        for (int i = 0; i < arguments.Count; i++)
+        {
+            if (ReferenceEquals(objA: arguments[index: i], objB: original))
+            {
+                arguments[index: i] = replacement;
+                return;
+            }
+
+            if (arguments[index: i] is NamedArgumentExpression named &&
+                ReferenceEquals(objA: named.Value, objB: original))
+            {
+                arguments[index: i] = named with { Value = replacement, ResolvedType = replacement.ResolvedType };
+                return;
+            }
+        }
+    }
+
+    /// <summary>
     /// Type-checks each bound argument against its resolved parameter type, substituting owner/method
     /// generics where applicable, and reporting argument-type mismatch, nullable-entity, and C-boundary
     /// callback violations. Extracted from <see cref="AnalyzeCallArguments"/>.
     /// </summary>
-    private void TypeCheckBoundArguments(RoutineInfo routine, List<ParamInfo> parameters,
-        int totalParams, Dictionary<int, Expression> boundParams, TypeSymbol? callObjectType)
+    private void TypeCheckBoundArguments(RoutineInfo routine, List<Expression> arguments,
+        List<ParamInfo> parameters, int totalParams, Dictionary<int, Expression> boundParams,
+        TypeSymbol? callObjectType)
     {
         foreach (KeyValuePair<int, Expression> binding in boundParams)
         {
@@ -465,6 +518,13 @@ public sealed partial class SemanticVerifier
 
             Expression argExpr = binding.Value;
             TypeSymbol argType = AnalyzeExpression(expression: argExpr, expectedType: paramType);
+
+            if (ImplicitTokenArgument(argExpr: argExpr, argType: argType, paramType: paramType) is { } viewed)
+            {
+                ReplaceArgument(arguments: arguments, original: argExpr, replacement: viewed);
+                argExpr = viewed;
+                argType = viewed.ResolvedType ?? argType;
+            }
 
             if (!param.IsNullable && SharedEntities.IsEntityRef(type: paramType) &&
                 SharedEntities.IsNullableRead(expr: argExpr))

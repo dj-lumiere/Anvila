@@ -721,6 +721,13 @@ public record IndexExpression(Expression Object, Expression Index, SourceLocatio
     /// </summary>
     public RoutineInfo? ResolvedGetItem { get; set; }
 
+    /// <summary>
+    /// True when this subscript reads an entity element into a variable (<c>var b = boxes[0]</c>): the variable
+    /// holds a read token on the element (<c>boxes.view_at(index: 0)</c>), since the element keeps its single
+    /// owner. Lowering mints that token in place of a <c>getitem</c>.
+    /// </summary>
+    public bool ReadsElementToken { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

@@ -755,8 +755,8 @@ public sealed partial class SemanticVerifier
             TypeSymbol returnType = AnalyzeExpression(expression: ret.Value,
                 expectedType: _currentRoutine.ReturnType);
 
-            // Validate that tokens cannot be returned (RazorForge only)
-            ValidateNotTokenReturnType(type: returnType, location: ret.Location);
+            // A token may be returned only when it is taken from `me` (RazorForge only)
+            ValidateNotTokenReturnType(type: returnType, location: ret.Location, returned: ret.Value);
 
             // RF-S413: returning a field or a container element hands the caller an entity its owner
             // still keeps. A returned local is a move, so a bare variable is not flagged here.
@@ -1008,21 +1008,8 @@ public sealed partial class SemanticVerifier
             type: boundType,
             location: usingStmt.Location);
 
-        // While the body runs, the object the token points at must stay put (RF-S639).
-        (string Source, string Verb)? tokenSource =
-            TokenMintSource(resource: usingStmt.Resource, resourceType: resourceType);
-        if (tokenSource is { } frozen)
-        {
-            _frozenTokenSources.Add(item: (frozen.Source, frozen.Verb, usingStmt.Location));
-        }
-
-        // Analyze the body
+        // Analyze the body. (A token's use after its source changed is RazorForge's TokenLifetimeChecker's, RF-S643.)
         AnalyzeStatement(statement: usingStmt.Body);
-
-        if (tokenSource != null)
-        {
-            _frozenTokenSources.RemoveAt(index: _frozenTokenSources.Count - 1);
-        }
 
         // #171/#172: Token/resource scope escape — validate that the using-bound variable
         // is not returned or stored in outer scope (handled by ValidateNotTokenReturnType

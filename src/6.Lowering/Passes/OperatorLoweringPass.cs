@@ -884,6 +884,12 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return typewiseIdent;
         }
 
+        // `var b = boxes[0]` on an entity element holds a read token on it (see IndexExpression.ReadsElementToken).
+        if (idx.ReadsElementToken && MintElementToken(element: idx, write: false) is { } elementToken)
+        {
+            return elementToken;
+        }
+
         // An entity element read as a container (`grid[0][j]`) is reached through a read token on the
         // element, like the write `grid[0][j] = v`: a single-owner element has no holder of its own to hand
         // back through `getitem`.

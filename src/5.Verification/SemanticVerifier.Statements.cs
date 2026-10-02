@@ -737,6 +737,7 @@ public sealed partial class SemanticVerifier
 
         _registry.EnterScope(kind: ScopeKind.Block, name: null);
 
+
         // Once a statement unconditionally diverges (return / throw / absent / break / continue),
         // any following statement in the same block can never execute — report the first such dead
         // statement. (Conditional divergence inside a nested if/when does NOT terminate this block.)
@@ -811,6 +812,7 @@ public sealed partial class SemanticVerifier
             // Type inference from initializer
             varType = RuntimeTypeOfConstGeneric(type: AnalyzeExpression(expression: varDecl.Initializer),
                 initializer: varDecl.Initializer);
+            varType = ElementTokenBinding(initializer: varDecl.Initializer, elementType: varType) ?? varType;
 
             // Collection literals analyze to the bare entity type (List[T] / Set[T] / Dict[K,V]),
             // which can't be stored bare per the entity-ownership rule (S413). At binding sites,
@@ -895,6 +897,29 @@ public sealed partial class SemanticVerifier
 
 
         TrackSpecialVariableRegistrations(varDecl: varDecl, varType: varType);
+    }
+
+    /// <summary>
+    /// An entity element read into a variable (<c>var b = boxes[0]</c>) binds a read token on the element: the
+    /// container keeps owning it, and <c>b</c> reads it in place (<c>boxes.view_at(index: 0)</c>). Returns the
+    /// token type, or null when the initializer is not such a read (a range slice copies; a container without
+    /// <c>view_at</c> has no element token).
+    /// </summary>
+    private TypeSymbol? ElementTokenBinding(Expression initializer, TypeSymbol elementType)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || elementType is not EntityTypeSymbol ||
+            initializer is not IndexExpression { Index: not RangeExpression } element ||
+            element.Object.ResolvedType is not { } containerType ||
+            _registry.LookupMemberRoutine(type: containerType, memberRoutineName: "view_at", isFailable: true) is null ||
+            _registry.LookupType(name: Declaration.RuntimeContract.Viewing) is not { } viewingDef)
+        {
+            return null;
+        }
+
+        TypeSymbol tokenType = _registry.GetOrCreateResolution(genericDef: viewingDef, typeArguments: [elementType]);
+        element.ReadsElementToken = true;
+        element.ResolvedType = tokenType;
+        return tokenType;
     }
 
     /// <summary>
@@ -1042,17 +1067,19 @@ public sealed partial class SemanticVerifier
                 location: varDecl.Location);
         }
 
-        // Scoped access tokens (Viewing / Modifying / Consulting / Amending) cannot bind to a
-        // var at all — they only exist inline within their producing expression. Use the
-        // value inline (`a.view().x`) or open a scope (`using a.view() as v`).
+        // A single-thread token (`var v = a.view()`, `var m = a.modify()`, `var b = boxes[0]`) is a variable like
+        // any other: RazorForge's TokenLifetimeChecker follows where it came from and rejects a use after that object changed.
+        // A lock token (Consulting / Amending) still needs `using`, which takes and releases the lock.
         if (_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType))
         {
-            string wrapperName = varType.BareName;
-            ReportError(code: SemanticDiagnosticCode.ImplicitWrapperCopy,
-                message:
-                $"'{wrapperName}[…]' is a scoped access token and cannot be stored in '{varDecl.Name}'. " +
-                $"Use it inline (e.g. 'expr.member'), or open a scope with 'using expr as {varDecl.Name}'.",
-                location: varDecl.Location);
+            if (varType.BareName is Declaration.RuntimeContract.Consulting or Declaration.RuntimeContract.Amending)
+            {
+                ReportError(code: SemanticDiagnosticCode.ImplicitWrapperCopy,
+                    message:
+                    $"'{varType.BareName}[…]' holds a lock and cannot be stored in '{varDecl.Name}'. " +
+                    $"Open it with 'using expr as {varDecl.Name}', which takes the lock and releases it at the end.",
+                    location: varDecl.Location);
+            }
         }
         else
         {

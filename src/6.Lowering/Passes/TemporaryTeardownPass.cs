@@ -806,8 +806,11 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             null => true,
             GenericParameterTypeSymbol => true,
             ProtocolTypeSymbol => true,
+            // A single-thread token taken from a temporary (`make().view()`) is used within its statement only
+            // (RazorForge's TokenLifetimeChecker rejects a later use), and the spill lives until the statement ends.
             _ => WrapperShape.TryGet(type: resultType, name: out string wrapper, inner: out _) &&
-                 BorrowWrapperNames.Contains(item: wrapper)
+                 BorrowWrapperNames.Contains(item: wrapper) &&
+                 wrapper is not (RuntimeContract.Viewing or RuntimeContract.Modifying)
         };
     }
 

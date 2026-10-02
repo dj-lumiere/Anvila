@@ -745,9 +745,6 @@ public enum SemanticDiagnosticCode
     /// <summary>Variable is a deadref after steal or ownership transfer — cannot be used.</summary>
     UseAfterSteal = 615,
 
-    /// <summary>Partial access on entity (e.g., entity.field.view()) is not allowed.</summary>
-    PartialAccessOnEntity = 616,
-
     /// <summary>Cannot downgrade token permission (e.g., .view() on Modifying/Amending).</summary>
     TokenDowngradeProhibited = 618,
 
@@ -802,6 +799,11 @@ public enum SemanticDiagnosticCode
     /// <summary>A member or generic routine is marked <c>threaded</c>/<c>suspended</c>: an Agent recipe binds
     /// the arguments of a non-generic free routine only.</summary>
     AsyncRoutineNotFree = 642,
+
+    /// <summary>An access token is used after the object it was taken from was replaced, moved out, or went
+    /// out of scope (or, for an element token, after its container could have moved its elements): the token
+    /// no longer points at a live object.</summary>
+    TokenUsedAfterSourceChanged = 643,
 
     /// <summary>A `threaded routine` parameter is neither trivially copyable (passed by value) nor a
     /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias

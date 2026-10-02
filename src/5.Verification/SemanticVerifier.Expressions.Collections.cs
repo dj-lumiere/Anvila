@@ -1044,6 +1044,8 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
+            argType = MarkerTokenArgumentType(routine: genericRoutine, paramType: paramType, argType: argType);
+
             // Recurse into TypeArguments so const- and type-generics inside a parameterized
             // pattern (e.g. array: Array[Byte, N]) bind from the matching position in argType.
             InferMemberRoutineTypeArgumentsFromTypes(paramType: paramType,
@@ -1211,6 +1213,9 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
+            argType = MarkerTokenArgumentType(routine: genericMemberRoutine,
+                paramType: genericMemberRoutine.Parameters[index: i].Type,
+                argType: argType);
             InferMemberRoutineTypeArgumentsFromTypes(
                 paramType: genericMemberRoutine.Parameters[index: i].Type,
                 argType: argType,
@@ -1230,6 +1235,44 @@ public sealed partial class SemanticVerifier
         }
 
         return inferred.ToList()!;
+    }
+
+    /// <summary>
+    /// The type an entity argument binds for a parameter bound by a marker protocol: <c>b: Controlling[Box]</c>
+    /// (desugared to <c>[V obeys Controlling[Box]](b: V)</c>) takes <c>c</c> as <c>c.modify()</c>, so V binds
+    /// <c>Modifying[Box]</c>. <c>Accessing[T]</c> takes it as <c>c.view()</c> (<c>Viewing[T]</c>). The call site then
+    /// writes the token in (see ImplicitTokenArgument). Any other argument keeps its own type.
+    /// </summary>
+    private TypeSymbol MarkerTokenArgumentType(RoutineInfo routine, TypeSymbol paramType, TypeSymbol argType)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || argType is not EntityTypeSymbol ||
+            paramType is not GenericParameterTypeSymbol param || routine.GenericConstraints is not { } constraints)
+        {
+            return argType;
+        }
+
+        string? token = null;
+        foreach (GenericConstraintDeclaration c in constraints)
+        {
+            if (c.ParameterName != param.Name || c.ConstraintType != ConstraintKind.Obeys)
+            {
+                continue;
+            }
+
+            foreach (TypeExpression bound in c.ConstraintTypes)
+            {
+                token ??= bound.Name switch
+                {
+                    Declaration.RuntimeContract.Controlling => Declaration.RuntimeContract.Modifying,
+                    Declaration.RuntimeContract.Accessing => Declaration.RuntimeContract.Viewing,
+                    _ => null
+                };
+            }
+        }
+
+        return token != null && _registry.LookupType(name: token) is { } tokenDef
+            ? _registry.GetOrCreateResolution(genericDef: tokenDef, typeArguments: [argType])
+            : argType;
     }
 
     private static void InferMemberRoutineTypeArgumentsFromTypes(TypeSymbol paramType,
@@ -1255,6 +1298,19 @@ public sealed partial class SemanticVerifier
                 genericParameters: genericParameters,
                 inferred: inferred))
         {
+            return;
+        }
+
+        // A token parameter takes the entity itself at the call site (`largest(items: xs)` views `xs`), so
+        // `Viewing[List[T]]` (or `Modifying[List[T]]`) against `List[S64]` binds through the token: T = S64.
+        if (paramType is { BareName: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying,
+                TypeArguments: [{ } viewed] } &&
+            argType is EntityTypeSymbol)
+        {
+            InferMemberRoutineTypeArgumentsFromTypes(paramType: viewed,
+                argType: argType,
+                genericParameters: genericParameters,
+                inferred: inferred);
             return;
         }
 

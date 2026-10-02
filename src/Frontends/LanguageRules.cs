@@ -180,4 +180,11 @@ public abstract class LanguageRules
     public virtual void LowerShapeUse(PostprocessingContext ctx, Program program)
     {
     }
+
+    /// <summary>Makes the language's own check over analyzed user bodies (RazorForge: token lifetimes), or null
+    /// for a language without one. Called once per build.</summary>
+    internal virtual Verification.IUserBodyCheck? CreateUserBodyCheck(Verification.DiagnosticReporter report)
+    {
+        return null;
+    }
 }

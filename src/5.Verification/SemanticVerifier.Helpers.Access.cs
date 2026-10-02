@@ -32,9 +32,12 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Validates that a type is not an inline-only token when used as a return type.
+    /// Validates a token return. A routine may return a single-thread token (<c>Viewing</c>/<c>Modifying</c>):
+    /// the language's token-lifetime check (RazorForge) checks where it comes from. A lock token and a block result
+    /// may not.
     /// </summary>
-    private void ValidateNotTokenReturnType(TypeSymbol type, SourceLocation location)
+    private void ValidateNotTokenReturnType(TypeSymbol type, SourceLocation location,
+        Expression? returned = null)
     {
         if (!_registry.Rules.ChecksAccessTokens)
         {
@@ -51,13 +54,24 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        if (IsInlineOnlyTokenType(type: type))
+        if (!IsInlineOnlyTokenType(type: type))
         {
-            ReportError(code: SemanticDiagnosticCode.TokenReturnNotAllowed,
-                message:
-                $"Cannot return {GetTokenKindDescription(type: type)} from a routine. Tokens are inline-only and cannot escape their scope.",
-                location: location);
+            return;
         }
+
+        // A single-thread token can be returned: RazorForge's TokenLifetimeChecker checks that every return takes it from one
+        // and the same parameter (`me` included), so the caller knows which object it points at.
+        if (returned != null &&
+            type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.TokenReturnNotAllowed,
+            message:
+            $"Cannot return {GetTokenKindDescription(type: type)} from here. A lock token is opened with 'using', " +
+            "and a block result cannot be a token.",
+            location: location);
     }
 
     /// <summary>
@@ -75,7 +89,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
-                $"Cannot store {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. Tokens are inline-only and cannot be stored.",
+                $"Cannot store {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. A token lives in a routine's locals and is never stored in a field.",
                 location: location);
         }
     }
@@ -296,7 +310,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.TokenVariantPayloadNotAllowed,
                 message:
-                $"Cannot use {GetTokenKindDescription(type: type)} as payload for variant case '{caseName}'. Tokens are inline-only and cannot be stored in variants.",
+                $"Cannot use {GetTokenKindDescription(type: type)} as payload for variant case '{caseName}'. A token lives in a routine's locals and is never stored in a variant.",
                 location: location);
         }
     }
@@ -525,97 +539,10 @@ public sealed partial class SemanticVerifier
             comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
-    // =====================================================================================
-    // Token source freezing (RF-S639)
-    // =====================================================================================
-
-    /// <summary>
-    /// When <paramref name="resource"/> mints an access token from a named path (<c>a.modify()</c>,
-    /// <c>s.inner.amend()</c>), returns that path and the minting verb. Null for anything else.
-    /// </summary>
-    private static (string Source, string Verb)? TokenMintSource(Expression resource,
-        TypeSymbol? resourceType)
-    {
-        Expression mint = resource is NamedArgumentExpression named
-            ? named.Value
-            : resource;
-        if (mint is not CallExpression
-            {
-                Callee: MemberExpression { Object: var receiver } callee, Arguments.Count: 0
-            } || BuildAccessPath(expr: receiver) is not { } path)
-        {
-            return null;
-        }
-
-        // A resolved call counts when it yields a token. An unresolved one (its receiver was already
-        // stolen, say) still counts when it is spelled as a token mint, so the steal it collides with is
-        // reported as the RF-S639 conflict it is.
-        bool mintsToken = resourceType is null or ErrorTypeSymbol
-            ? TokenMintVerbs.Contains(item: callee.MemberName)
-            : IsInlineOnlyTokenType(type: resourceType);
-        return mintsToken
-            ? (path, callee.MemberName)
-            : null;
-    }
-
-    /// <summary>The routines that hand out an access token on their receiver.</summary>
-    private static readonly HashSet<string> TokenMintVerbs =
-        new(comparer: StringComparer.Ordinal) { "view", "modify", "consult", "amend" };
-
-    /// <summary>
-    /// RF-S639: reports <paramref name="target"/> when it names the source of a live access token or a
-    /// prefix of it. A token points at the object it was taken from, so replacing (<c>a = …</c>) or
-    /// moving out (<c>steal a</c>) that object, or anything that owns it, while the token is in use
-    /// would leave the token pointing at freed memory.
-    /// </summary>
-    private void CheckFrozenTokenSource(Expression target, string attempt,
-        SourceLocation location)
-    {
-        CheckFrozenTokenSource(target: target,
-            attempt: attempt,
-            location: location,
-            sources: _frozenTokenSources);
-    }
-
-    private void CheckFrozenTokenSource(Expression target, string attempt,
-        SourceLocation location, IReadOnlyList<(string Source, string Verb, SourceLocation Opened)> sources)
-    {
-        if (sources.Count == 0 || BuildAccessPath(expr: target) is not { } path)
-        {
-            return;
-        }
-
-        foreach ((string source, string verb, SourceLocation opened) in sources)
-        {
-            if (source != path && !source.StartsWith(value: path + "."))
-            {
-                continue;
-            }
-
-            string owner = source == path
-                ? $"'{path}'"
-                : $"'{path}', which owns '{source}',";
-            ReportError(code: SemanticDiagnosticCode.TokenSourceReplaced,
-                message:
-                $"You are trying to {attempt} {owner} while the '{verb}()' token taken from " +
-                $"'{source}' (line {opened.Line}) is still in use. The token points at that object, " +
-                "so it would be left pointing at freed memory. Do this after the token is done: " +
-                "after its 'using' block ends, or outside the call it is passed to.",
-                location: location);
-            return;
-        }
-    }
-
     /// <summary>Analyzes a call, then applies the inline-token source check (RF-S639).</summary>
     private TypeSymbol AnalyzeCallWithInlineTokens(CallExpression call, TypeSymbol? expectedType)
     {
-        TypeSymbol result = AnalyzeCallExpression(call: call, expectedType: expectedType);
-        if (_registry.Rules.ChecksAccessTokens)
-        {
-            CheckInlineTokenSourceSteals(call: call);
-        }
-
-        return result;
+        return AnalyzeCallExpression(call: call, expectedType: expectedType);
     }
 
     /// <summary>
@@ -625,45 +552,6 @@ public sealed partial class SemanticVerifier
     /// checked after all bodies are analyzed, see <c>CheckShapeEffects</c>.) Runs after the call is
     /// analyzed, when argument types are known.
     /// </summary>
-    private void CheckInlineTokenSourceSteals(CallExpression call)
-    {
-        var mints = new List<(string Source, string Verb, SourceLocation Opened)>();
-        if (call.Callee is MemberExpression { Object: var receiver } &&
-            TokenMintSource(resource: receiver, resourceType: receiver.ResolvedType) is { } recvMint)
-        {
-            mints.Add(item: (recvMint.Source, recvMint.Verb, receiver.Location));
-        }
-
-        foreach (Expression arg in call.Arguments)
-        {
-            Expression value = arg is NamedArgumentExpression named
-                ? named.Value
-                : arg;
-            if (TokenMintSource(resource: value, resourceType: value.ResolvedType) is { } argMint)
-            {
-                mints.Add(item: (argMint.Source, argMint.Verb, arg.Location));
-            }
-        }
-
-        // Only this call's own tokens: a steal inside an enclosing `using` region was already
-        // checked against that region's token when the steal was analyzed.
-        if (mints.Count > 0)
-        {
-            foreach (Expression arg in call.Arguments)
-            {
-                foreach (StealExpression steal in CollectSubexpressions(expr: arg)
-                            .OfType<StealExpression>())
-                {
-                    CheckFrozenTokenSource(target: steal.Operand,
-                        attempt: "steal",
-                        location: steal.Location,
-                        sources: mints);
-                }
-            }
-        }
-
-    }
-
     /// <summary>Every expression inside <paramref name="expr"/>, itself included.</summary>
     private static List<Expression> CollectSubexpressions(Expression expr)
     {
