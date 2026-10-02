@@ -228,6 +228,14 @@ internal sealed class TesseraRoutineWriter
 
         switch (statement)
         {
+            case BlockStatement { IntroducesScope: false } grouping:
+                // A statement kept next to its cleanup: what it declares stays visible after it.
+                foreach (Statement s in grouping.Statements)
+                {
+                    WriteStatement(statement: s);
+                }
+
+                break;
             case BlockStatement block:
             {
                 // A scope's locals stop being visible (and stop being passed to blocks) where the scope ends.
@@ -628,6 +636,10 @@ internal sealed class TesseraRoutineWriter
                 // The routine's code address, as native code takes it.
                 return new Operand(Text: Temp(type: address.ResolvedType, expression: $"{_module.RoutineName(routine: native)}.addr()"),
                     Type: address.ResolvedType, IsPlace: false);
+            case ListLiteralExpression { ResolvedType: { } emptyType, Elements.Count: 0 }:
+                // An empty fixed array: its zero value (`Array<T, 0> {}` would read as a record literal).
+                return new Operand(Text: Temp(type: emptyType, expression: ZeroValue(type: emptyType)), Type: emptyType,
+                    IsPlace: false);
             case ListLiteralExpression { ResolvedType: { } arrayType } list:
             {
                 // Only a fixed-array literal reaches a backend (every other collection literal is lowered to calls).
@@ -869,11 +881,21 @@ internal sealed class TesseraRoutineWriter
     {
         Operand owner = Evaluate(expression: member.Object);
         owner = owner with { Type = Unmarked(type: owner.Type) };
+        // The field's declared type, from the type that holds it: a builder-written body (a recovery variant)
+        // can leave the access itself untyped.
+        TypeSymbol? fieldType = (owner.Type switch
+                                    {
+                                        EntityTypeSymbol e => e.MemberVariables,
+                                        RecordTypeSymbol r => r.MemberVariables,
+                                        _ => null
+                                    })
+                                ?.FirstOrDefault(predicate: f => f.Name == member.MemberName)?.Type ??
+                                member.ResolvedType;
         if (owner.Type is EntityTypeSymbol entity)
         {
             string block = Receiver(operand: owner);
             return new Operand(Text: $"{block}.cast<{_module.EntityRecord(entity: entity)}>().{member.MemberName}",
-                Type: member.ResolvedType, IsPlace: true);
+                Type: fieldType, IsPlace: true);
         }
 
         if (owner.Type is not RecordTypeSymbol { BackendType: null })
@@ -883,12 +905,12 @@ internal sealed class TesseraRoutineWriter
 
         if (owner.IsPlace)
         {
-            return new Operand(Text: $"{owner.Text}.{member.MemberName}", Type: member.ResolvedType, IsPlace: true);
+            return new Operand(Text: $"{owner.Text}.{member.MemberName}", Type: fieldType, IsPlace: true);
         }
 
         string record = Receiver(operand: owner);
-        return new Operand(Text: Temp(type: member.ResolvedType, expression: $"{record}.{member.MemberName}"),
-            Type: member.ResolvedType, IsPlace: false);
+        return new Operand(Text: Temp(type: fieldType, expression: $"{record}.{member.MemberName}"),
+            Type: fieldType, IsPlace: false);
     }
 
     /// <summary>

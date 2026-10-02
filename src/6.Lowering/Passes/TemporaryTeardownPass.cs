@@ -386,7 +386,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             stmts.Add(item: MakeDestroyStmt(spill: spills[index: i], loc: owner.Location));
         }
 
-        return new BlockStatement(Statements: stmts, Location: owner.Location);
+        return new BlockStatement(Statements: stmts, Location: owner.Location) { IntroducesScope = false };
     }
 
     // Compute the transferred value while the spills are still alive, tear them down, then
@@ -407,7 +407,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             {
                 ResolvedType = rewritten.ResolvedType
             }));
-        return new BlockStatement(Statements: stmts, Location: owner.Location);
+        return new BlockStatement(Statements: stmts, Location: owner.Location) { IntroducesScope = false };
     }
 
     /// <summary>
@@ -472,7 +472,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             stmts.Add(item: MakeDestroyStmt(spill: spills[index: i], loc: owner.Location));
         }
 
-        return new BlockStatement(Statements: stmts, Location: owner.Location);
+        return new BlockStatement(Statements: stmts, Location: owner.Location) { IntroducesScope = false };
     }
 
     /// <summary>

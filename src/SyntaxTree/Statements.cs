@@ -670,6 +670,13 @@ public static class ExpandSources
 public record BlockStatement(List<Statement> Statements, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>
+    /// False for a block a lowering pass made only to keep a statement next to its cleanup (a local and the
+    /// temporaries its initializer built, then their teardown): the locals it declares stay visible after it, as if
+    /// it were the statement it stands for. A source block is a scope.
+    /// </summary>
+    public bool IntroducesScope { get; init; } = true;
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
