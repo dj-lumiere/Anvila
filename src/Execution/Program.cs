@@ -2053,12 +2053,10 @@ internal partial class Program
             return 1;
         }
 
-        // Optimize the emitted IR, then link it into a native executable. For optimized builds
-        // (anything but -O0 debug), first llvm-link the hot native-runtime bitcode into the module
-        // and internalize during opt, so the allocators/divide shims inline across the RF↔runtime
-        // seam. LTO is skipped transparently (plain opt on the un-linked module) if the toolchain or
-        // sources are unavailable — it must never break a build that would otherwise succeed.
-        // Ingrid's Tessera library always goes in first: its routines are not in the runtime DLL.
+        // Optimize the emitted IR, then link it into a native executable. Ingrid's Tessera library goes
+        // in first (its routines are not in the runtime DLL: the allocators, the divide primitives, the
+        // math), and optimized builds (anything but -O0 debug) internalize during opt, so those inline
+        // across the RF / runtime seam.
         if (!NativeToolchain.TryLinkIngridTessera(exeDir: exeDir,
                 llFile: llFile,
                 linkedFile: out string withIngrid,
@@ -2068,21 +2066,10 @@ internal partial class Program
             return 1;
         }
 
-        string moduleToOptimize = withIngrid;
-        bool internalizeForLto = false;
-        if (buildMode != RfBuildMode.Debug &&
-            NativeToolchain.TryLinkHotRuntimeBitcode(exeDir: exeDir,
-                llFile: withIngrid,
-                linkedFile: out string linkedFile))
-        {
-            moduleToOptimize = linkedFile;
-            internalizeForLto = true;
-        }
-
-        int optResult = NativeToolchain.OptimizeIr(llFile: moduleToOptimize,
+        int optResult = NativeToolchain.OptimizeIr(llFile: withIngrid,
             optFile: optFile,
             buildMode: buildMode,
-            internalizeForLto: internalizeForLto);
+            internalizeForLto: buildMode != RfBuildMode.Debug);
         if (optResult != 0)
         {
             return optResult;

@@ -27,24 +27,6 @@ internal static class NativeToolchain
     private static readonly string CheckoutNativeDir = Path.Combine(path1: "Ingrid", path2: "native");
 
     /// <summary>
-    /// The native-runtime C sources compiled to LLVM bitcode and llvm-linked into the RF module
-    /// before <c>opt</c> (dev-loop LTO). Deliberately narrow — only self-contained, hot functions
-    /// whose inlining across the RF↔runtime seam pays: the allocators (inlining exposes libc
-    /// <c>calloc</c>/<c>malloc</c>/<c>free</c> to LLVM for DCE/promotion) and the word-division
-    /// shims (<c>rf_reciprocal_word</c> folds to 0 on x86-64; <c>rf_udivrem_128_64_pre</c> inlines
-    /// its <c>divq</c>). Both must compile standalone with no third-party dep (that is why the
-    /// divide primitives live in the dependency-free rf_divide.c, split out of bignum_functions.c).
-    /// </summary>
-    private static readonly string[] HotRuntimeSources =
-    [
-        "runtime/memory.c",
-        "runtime/rf_divide.c"
-    ];
-
-    /// <summary>The combined hot-runtime bitcode file name (cached next to the executable).</summary>
-    private const string HotRuntimeBitcodeFileName = "razorforge_runtime_hot.bc";
-
-    /// <summary>
     /// Native DLLs a compiled program needs next to its .exe on Windows: the runtime
     /// itself plus the shared libraries it links dynamically (bdwgc builds as a shared
     /// gc.dll; whether the runtime's import table retains it varies by linker, so it is
@@ -565,11 +547,10 @@ internal static class NativeToolchain
         string optPipelineLevel = OptLevelString(buildMode: buildMode);
 
         // Use -passes='default<Ox>,...' syntax (LLVM 14+; replaces the -Ox -passes=... split form).
-        // When the module has just been llvm-linked with the hot-runtime bitcode, run `internalize`
-        // FIRST (preserving only `main`) so the linked-in runtime definitions become internal — that
-        // lets the inliner inline them (exposing libc calloc/free / the divide shims) and DCE the
-        // unused copies, and avoids a duplicate-definition clash against the runtime DLL at link.
-        // Every other symbol in a whole-program executable is internal by construction, so preserving
+        // With internalizeForLto, `internalize` runs FIRST (preserving only `main`), so the module's
+        // definitions, Ingrid's Tessera library among them (the allocators, the divide primitives), become
+        // internal: the inliner inlines them (exposing libc calloc/free and divq) and DCE drops the unused
+        // ones. Every other symbol in a whole-program executable is internal by construction, so preserving
         // `main` alone is the standard LTO-of-an-exe behavior (callbacks are passed by address, which
         // internalize keeps alive).
         string basePipeline = buildMode == RfBuildMode.Debug
@@ -674,129 +655,6 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// Locates the native runtime C-source directory (<c>Ingrid/native/runtime</c>) by walking up from the
-    /// executable directory — development checkouts only. Returns false in installed/published
-    /// layouts (which ship no C sources), where the caller falls back to a prebuilt bitcode file or
-    /// skips LTO entirely.
-    /// </summary>
-    private static bool TryFindNativeRuntimeDir(string exeDir, out string runtimeDir)
-    {
-        string? current = exeDir;
-        for (int i = 0; i < 6 && current != null; i++)
-        {
-            string candidate = Path.Combine(path1: current, path2: CheckoutNativeDir, path3: "runtime");
-            if (File.Exists(path: Path.Combine(path1: candidate, path2: "memory.c")))
-            {
-                runtimeDir = candidate;
-                return true;
-            }
-
-            current = Path.GetDirectoryName(path: current);
-        }
-
-        runtimeDir = "";
-        return false;
-    }
-
-    /// <summary>
-    /// Builds (or reuses a cached) combined LLVM-bitcode file of the hot runtime sources for LTO.
-    /// Compiles each <see cref="HotRuntimeSources"/> file with <c>clang -emit-llvm</c> and merges them
-    /// with <c>llvm-link</c>, caching the result as <see cref="HotRuntimeBitcodeFileName"/> next to the
-    /// executable and rebuilding only when a source is newer. Returns false (LTO is skipped, the plain
-    /// opt path is used) when the C sources and a prebuilt bitcode are both unavailable, or any tool
-    /// invocation fails — LTO is an optimization, never a correctness requirement.
-    /// </summary>
-    private static bool TryBuildHotRuntimeBitcode(string exeDir, out string hotBcPath)
-    {
-        string outBc = Path.Combine(path1: exeDir, path2: HotRuntimeBitcodeFileName);
-
-        if (!TryFindNativeRuntimeDir(exeDir: exeDir, out string runtimeDir))
-        {
-            // Installed layout: no C sources. Use a prebuilt bitcode if one was shipped.
-            hotBcPath = outBc;
-            return File.Exists(path: outBc);
-        }
-
-        string nativeDir = Path.GetDirectoryName(path: runtimeDir)
-                           ?? throw new InvalidOperationException(
-                               message: "native/runtime has no parent directory.");
-        string includeDir = Path.Combine(path1: nativeDir, path2: "include");
-
-        var sourcePaths = new List<string>();
-        foreach (string rel in HotRuntimeSources)
-        {
-            string src = Path.Combine(path1: nativeDir, path2: rel);
-            if (!File.Exists(path: src))
-            {
-                hotBcPath = "";
-                return false;
-            }
-
-            sourcePaths.Add(item: src);
-        }
-
-        // Reuse the cache when it is newer than every hot source.
-        if (File.Exists(path: outBc))
-        {
-            DateTime bcTime = File.GetLastWriteTimeUtc(path: outBc);
-            if (sourcePaths.All(predicate: s => File.GetLastWriteTimeUtc(path: s) <= bcTime))
-            {
-                hotBcPath = outBc;
-                return true;
-            }
-        }
-
-        var perFileBc = new List<string>();
-        try
-        {
-            foreach (string src in sourcePaths)
-            {
-                string bc = Path.Combine(path1: exeDir,
-                    path2: Path.GetFileNameWithoutExtension(path: src) + ".hot.bc");
-                string clangArgs =
-                    $"-emit-llvm -c -O1 -I \"{includeDir}\" \"{src}\" -o \"{bc}\"";
-                int rc = RunToolCapture(toolPath: ClangTool.Value,
-                    args: clangArgs,
-                    stderr: out string clangErr);
-                if (rc != 0)
-                {
-                    Console.WriteLine(
-                        value:
-                        $"Note: skipping runtime LTO (clang could not compile {Path.GetFileName(path: src)} to bitcode: {clangErr.Trim()}).");
-                    hotBcPath = "";
-                    return false;
-                }
-
-                perFileBc.Add(item: bc);
-            }
-
-            string linkInputs = string.Join(separator: " ",
-                values: perFileBc.Select(selector: b => $"\"{b}\""));
-            int linkRc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-                args: $"{linkInputs} -o \"{outBc}\"",
-                stderr: out string linkErr);
-            if (linkRc != 0)
-            {
-                Console.WriteLine(
-                    value:
-                    $"Note: skipping runtime LTO (llvm-link could not merge hot bitcode: {linkErr.Trim()}).");
-                hotBcPath = "";
-                return false;
-            }
-        }
-        finally
-        {
-            foreach (string bc in perFileBc)
-            {
-                TryRemoveBuildArtifact(path: bc);
-            }
-        }
-
-        hotBcPath = outBc;
-        return true;
-    }
-
-    /// <summary>
     /// llvm-links the emitted RF module (<paramref name="llFile"/>) with Ingrid's Tessera library
     /// (<see cref="IngridTessera"/>) into <paramref name="linkedFile"/>. Unlike the hot-runtime LTO below this isn't
     /// optional: the library's routines are not in the runtime DLL, so a module that calls one links only with it.
@@ -828,44 +686,6 @@ internal static class NativeToolchain
 
         linkedFile = linked;
         error = "";
-        return true;
-    }
-
-    /// <summary>
-    /// llvm-links the emitted RF module (<paramref name="llFile"/>) with the hot-runtime bitcode into
-    /// <paramref name="linkedFile"/>, so a subsequent <c>opt -passes=internalize,default&lt;Ox&gt;</c>
-    /// can inline the runtime allocators/divide shims across the RF↔runtime seam. Returns false
-    /// (caller optimizes the un-linked <paramref name="llFile"/> instead) if the hot bitcode is
-    /// unavailable or llvm-link fails — LTO never blocks a build that would otherwise succeed.
-    /// </summary>
-    internal static bool TryLinkHotRuntimeBitcode(string exeDir, string llFile, out string linkedFile)
-    {
-        linkedFile = "";
-        // Escape hatch for A/B measurement of the LTO win: RF_NO_LTO=1 skips the hot-bitcode link,
-        // so the same source builds against the opaque runtime DLL exactly as before.
-        if (Environment.GetEnvironmentVariable(variable: "RF_NO_LTO") == "1")
-        {
-            return false;
-        }
-
-        if (!TryBuildHotRuntimeBitcode(exeDir: exeDir, out string hotBc))
-        {
-            return false;
-        }
-
-        string linked = Path.ChangeExtension(path: llFile, extension: ".linked.ll");
-        int rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-            args: $"-S \"{llFile}\" \"{hotBc}\" -o \"{linked}\"",
-            stderr: out string err);
-        if (rc != 0)
-        {
-            Console.WriteLine(
-                value:
-                $"Note: skipping runtime LTO (llvm-link could not merge the module: {err.Trim()}).");
-            return false;
-        }
-
-        linkedFile = linked;
         return true;
     }
 

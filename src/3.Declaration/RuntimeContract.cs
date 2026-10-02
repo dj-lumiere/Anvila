@@ -516,14 +516,14 @@ public static class RuntimeContract
 
     // =====================================================================================
     // Native runtime externs — C-ABI symbols emitted directly into the module by codegen.
-    // These are matched against the native runtime library (native/runtime/*.c), NOT stdlib
-    // .rf, so they are a DIFFERENT contract (a rename here means editing the C side too, and
-    // validate-stdlib cannot check them). Collected here so codegen has one name table.
+    // These are matched against Ingrid (its Tessera code: runtime-tessera in the runtime library,
+    // tessera/ linked into every module), NOT stdlib .rf, so they are a DIFFERENT contract (a rename
+    // here means editing Ingrid too, and validate-stdlib cannot check them). Collected here so codegen has one name table.
     // Sites: LlvmEmitter.Expressions (declarations + call sites).
     // =====================================================================================
 
-    /// <summary>Native runtime function symbols referenced by codegen. Names must match
-    /// <c>native/runtime/razorforge_runtime.h</c>.
+    /// <summary>Native runtime function symbols referenced by codegen. Names must match Ingrid's
+    /// exported routines (<c>#export("...")</c>).
     ///
     /// <para>INVENTORY-ONLY: unlike the stdlib names above, codegen still emits these inline in its
     /// IR-template strings (<c>declare .. @rf_allocate_dynamic ..</c> / <c>call .. @rf_...</c>). A
