@@ -32,6 +32,16 @@ namespace Builder.Parser;
 internal static class BracketReclassifyPass
 {
     /// <summary>
+    /// A bracket argument that has no type-argument form (<c>i + 1</c> in <c>m[i + 1, j]</c>, a call). The
+    /// parser reports it at the argument; dropping it to an empty type name lost the expression silently.
+    /// </summary>
+    internal sealed class NotATypeArgumentException(Expression argument)
+        : Exception(message: "A bracket argument is not a type argument.")
+    {
+        public Expression Argument { get; } = argument;
+    }
+
+    /// <summary>
     /// Reclassifies a single freshly-parsed bracket node. The node's Object and children are already
     /// fully parsed at this point, so no surrounding context is required.
     /// </summary>
@@ -123,7 +133,8 @@ internal static class BracketReclassifyPass
         {
             IdentifierExpression id => new TypeExpression(Name: id.Name,
                 GenericArguments: null,
-                Location: id.Location),
+                Location: id.Location,
+                Realm: id.Realm),
             // Projection chain `a/b/c` -> flattened name "a/b/c" (mirrors ParseBaseType's slash path).
             BinaryExpression { Operator: BinaryOperator.TrueDivide } bin => new TypeExpression(
                 Name: FlattenProjection(bin: bin),
@@ -134,7 +145,9 @@ internal static class BracketReclassifyPass
                 GenericArguments: null,
                 Location: lit.Location),
             // Nested generic instantiation as a type argument, e.g. Array[U64, N].
-            GenericMemberExpression gme => new TypeExpression(Name: gme.MemberName,
+            // A qualified one (`a.B[T]`) keeps its qualifier.
+            GenericMemberExpression gme => new TypeExpression(Name: QualifiedGenericName(receiver: gme.Object,
+                    member: gme.MemberName),
                 GenericArguments: gme.TypeArguments,
                 Location: gme.Location),
             GenericMemberRoutineCallExpression gmc => new TypeExpression(
@@ -194,7 +207,22 @@ internal static class BracketReclassifyPass
                 BuildtimeValue: valueSplice.Inner),
             // A TypeExpression already (should not normally occur from bracket parsing) passes through.
             TypeExpression te => te,
-            _ => new TypeExpression(Name: "", GenericArguments: null, Location: expr.Location)
+            _ => throw new NotATypeArgumentException(argument: expr)
+        };
+    }
+
+    /// <summary>
+    /// The type name of a generic reclassified from <c>receiver.member[...]</c>: the member alone for the free
+    /// form (<c>List[T]</c>, whose receiver is that same name), else the receiver's dotted path and the member.
+    /// </summary>
+    private static string QualifiedGenericName(Expression receiver, string member)
+    {
+        return receiver switch
+        {
+            IdentifierExpression id when id.Name == member => member,
+            IdentifierExpression id => $"{id.Name}.{member}",
+            MemberExpression mem => $"{QualifiedName(mem: mem)}.{member}",
+            _ => throw new NotATypeArgumentException(argument: receiver)
         };
     }
 
@@ -211,7 +239,7 @@ internal static class BracketReclassifyPass
             MemberExpression nmem => QualifiedName(mem: nmem),
             BinaryExpression { Operator: BinaryOperator.TrueDivide } nbin => FlattenProjection(
                 bin: nbin),
-            _ => ""
+            _ => throw new NotATypeArgumentException(argument: idx.Object)
         };
         return new TypeExpression(Name: nestedName,
             GenericArguments: [ExpressionToTypeArg(expr: idx.Index)],
@@ -242,9 +270,7 @@ internal static class BracketReclassifyPass
                 sb.Append(value: QualifiedName(mem: mem));
                 break;
             default:
-                // All named expression types are handled above; append nothing for unrecognized nodes.
-                sb.Append(value: "");
-                break;
+                throw new NotATypeArgumentException(argument: expr);
         }
     }
 
@@ -255,7 +281,7 @@ internal static class BracketReclassifyPass
         {
             IdentifierExpression id => id.Name,
             MemberExpression inner => QualifiedName(mem: inner),
-            _ => ""
+            _ => throw new NotATypeArgumentException(argument: mem.Object)
         };
         return prefix.Length == 0
             ? mem.MemberName
@@ -265,6 +291,12 @@ internal static class BracketReclassifyPass
     /// <summary>Returns the source text of a const-generic literal.</summary>
     private static string LiteralText(LiteralExpression lit)
     {
-        return lit.Value?.ToString() ?? "";
+        // A Bool is written lowercase (`ToString` would give "True").
+        return lit.Value switch
+        {
+            bool b => b ? "true" : "false",
+            null => "",
+            var value => value.ToString() ?? ""
+        };
     }
 }

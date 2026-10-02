@@ -453,11 +453,18 @@ public partial class Parser
         bool isDangerous = Rules.AllowsUnsafeCode &&
                            CheckAndAdvance(type: TokenType.Dangerous);
 
+        Token beforeVarOrField = CurrentToken;
         ISyntaxTreeNode? varOrField = TryParseTypeBodyOrVariableDeclaration(
             visibility: visibility,
             annotations: annotations);
         if (varOrField != null)
         {
+            RejectNoEffect(when: isDangerous, at: beforeVarOrField,
+                message: "'dangerous' marks a routine whose signature exposes raw unsafety, and has no effect on a " +
+                         "variable, a member variable or a preset. Remove it (an unsafe operation goes in a 'danger' block).");
+            RejectNoEffect(when: isCommon, at: beforeVarOrField,
+                message: "'common' marks a routine that belongs to its type, not to a value, and has no effect on a " +
+                         "variable, a member variable or a preset. Remove it.");
             return varOrField;
         }
 
@@ -546,6 +553,9 @@ public partial class Parser
         if (_parsingTypeBody && Check(type: TokenType.Identifier) && PeekToken(offset: 1)
                .Type == TokenType.Colon)
         {
+            RejectNoEffect(when: annotations.Count > 0, at: CurrentToken,
+                message: $"An annotation ({string.Join(separator: ", ", values: annotations.Select(selector: a => "@" + a))}) " +
+                         "has no effect on a member variable. Remove it.");
             return ParseTypeBodyFieldDeclaration(visibility: visibility);
         }
 
@@ -561,6 +571,9 @@ public partial class Parser
         // `secret preset NAME` — route to preset parser so it carries the secret flag.
         if (Check(type: TokenType.Preset))
         {
+            RejectNoEffect(when: annotations.Count > 0, at: CurrentToken,
+                message: $"An annotation ({string.Join(separator: ", ", values: annotations.Select(selector: a => "@" + a))}) " +
+                         "has no effect on a preset. Remove it.");
             return ParsePresetInDeclarationPosition(visibility: visibility);
         }
 
@@ -639,6 +652,7 @@ public partial class Parser
         }
 
         RejectCommonOnTypeDeclaration(isCommon: isCommon);
+        RejectNoEffectOnTypeDeclaration(annotations: annotations, visibility: visibility, isDangerous: isDangerous);
 
         if (CheckAndAdvance(type: TokenType.Entity))
         {
@@ -802,6 +816,60 @@ public partial class Parser
     /// a realm-qualified FOREIGN routine (<c>routine C::malloc(...)</c> / <c>routine LLVM::sqrt(...)</c>)
     /// when a realm tag before <c>::</c> is present, otherwise an ordinary routine declaration.
     /// </summary>
+    /// <summary>
+    /// Reports an annotation or modifier written where it has no effect. The parser used to read and drop it, so
+    /// the writer saw nothing happen and nothing said.
+    /// </summary>
+    private void RejectNoEffect(bool when, Token at, string message)
+    {
+        if (!when)
+        {
+            return;
+        }
+
+        throw new GrammarException(code: GrammarDiagnosticCode.ModifierHasNoEffect,
+            message: message,
+            fileName: FileName,
+            line: at.Line,
+            column: at.Column,
+            language: _language);
+    }
+
+    /// <summary>
+    /// The annotations and modifiers a type declaration other than a record does not take: annotations on an
+    /// entity, choice, flags, crashable, variant or protocol; `dangerous` on any type; a visibility on a variant.
+    /// </summary>
+    private void RejectNoEffectOnTypeDeclaration(List<string> annotations, VisibilityModifier visibility,
+        bool isDangerous)
+    {
+        string? kind = CurrentToken.Type switch
+        {
+            TokenType.Entity => "an entity",
+            TokenType.Choice => "a choice",
+            TokenType.Flags => "a flags type",
+            TokenType.Crashable => "a crashable",
+            TokenType.Variant => "a variant",
+            TokenType.Protocol => "a protocol",
+            TokenType.Record => "a record",
+            _ => null
+        };
+        if (kind == null)
+        {
+            return;
+        }
+
+        RejectNoEffect(when: annotations.Count > 0 && CurrentToken.Type != TokenType.Record, at: CurrentToken,
+            message: $"An annotation ({string.Join(separator: ", ", values: annotations.Select(selector: a => "@" + a))}) " +
+                     $"has no effect on {kind}. Remove it.");
+        RejectNoEffect(when: isDangerous, at: CurrentToken,
+            message: $"'dangerous' marks a routine whose signature exposes raw unsafety, and has no effect on {kind}. " +
+                     "Remove it.");
+        RejectNoEffect(when: visibility != VisibilityModifier.Open && CurrentToken.Type == TokenType.Variant,
+            at: CurrentToken,
+            message: $"A variant takes no visibility modifier yet ('{visibility.ToString().ToLowerInvariant()}' would " +
+                     "be ignored). Remove it.");
+    }
+
     private ISyntaxTreeNode ParseRoutineOrForeignDeclaration(VisibilityModifier visibility,
         List<string> annotations, bool isCommon, AsyncStatus asyncStatus,
         bool isDangerous)
@@ -820,6 +888,14 @@ public partial class Parser
             };
             if (conv != null)
             {
+                RejectNoEffect(when: visibility != VisibilityModifier.Open, at: CurrentToken,
+                    message: $"A foreign routine ({CurrentToken.Text}::) takes no visibility modifier " +
+                             $"('{visibility.ToString().ToLowerInvariant()}' would be ignored). Remove it.");
+                RejectNoEffect(when: isCommon, at: CurrentToken,
+                    message: $"'common' has no effect on a foreign routine ({CurrentToken.Text}::). Remove it.");
+                RejectNoEffect(when: asyncStatus != AsyncStatus.None, at: CurrentToken,
+                    message: $"A foreign routine ({CurrentToken.Text}::) cannot be " +
+                             $"'{asyncStatus.ToString().ToLowerInvariant()}'. Remove it.");
                 Advance(); // realm tag (C / LLVM)
                 Advance(); // ::
                 return ParseExternalDeclaration(callingConvention: conv,
@@ -958,15 +1034,24 @@ public partial class Parser
             stmtLateInit = true;
         }
 
+        Token bindingKeyword = CurrentToken;
         if (CheckAndAdvance(TokenType.Var, TokenType.Preset))
         {
+            bool isPreset = bindingKeyword.Type == TokenType.Preset;
+
             // Check if this is destructuring: var (a, b) = expr
             if (Check(type: TokenType.LeftParen))
             {
+                if (isPreset)
+                {
+                    throw ThrowParseError(message: "A preset binds one name: preset NAME: T = value. To take a " +
+                                                   "value apart, use 'var (a, b) = ...'.");
+                }
+
                 return ParseDestructuringDeclaration();
             }
 
-            VariableDeclaration varDecl = ParseVariableDeclaration(isLateInit: stmtLateInit);
+            VariableDeclaration varDecl = ParseVariableDeclaration(isLateInit: stmtLateInit) with { IsPreset = isPreset };
             // Wrap the variable declaration as a declaration statement
             return new DeclarationStatement(Declaration: varDecl, Location: varDecl.Location);
         }

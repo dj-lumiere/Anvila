@@ -883,7 +883,8 @@ public sealed partial class SemanticVerifier
         bool declared = _registry.DeclareVariable(name: varDecl.Name,
             type: varType,
             isNullable: varIsNullable,
-            location: varDecl.Location);
+            location: varDecl.Location,
+            isReadOnly: varDecl.IsPreset);
 
         if (!declared)
         {

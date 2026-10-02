@@ -132,6 +132,13 @@ public record VariableDeclaration(
     bool IsGlobal = false) : Declaration(Location: Location)
 {
     /// <summary>
+    /// A local written <c>preset NAME: T = value</c> inside a routine: it cannot be assigned again. (It is
+    /// evaluated once, like a <c>var</c>; what a build-time preset means in a routine follows the preset CTFE
+    /// work.) The parser used to make it a plain, assignable <c>var</c>.
+    /// </summary>
+    public bool IsPreset { get; init; }
+
+    /// <summary>
     /// The type of the local's storage, stamped at Phase 9 by <c>LocalTypeStampPass</c> for the backends:
     /// the declared type, else the initializer's.
     /// </summary>

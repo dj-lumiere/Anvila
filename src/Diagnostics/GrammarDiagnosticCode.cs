@@ -166,6 +166,13 @@ public enum GrammarDiagnosticCode
     /// <summary><c>x in coll</c> used as a membership test; containment is container-first: <c>coll have x</c>.</summary>
     InAsMembership = 212,
 
+    /// <summary>
+    /// An annotation or modifier was written where it has no effect (an annotation on an entity, <c>dangerous</c>
+    /// on a type, <c>common</c> on a variable, a visibility on a variant or a foreign routine). The parser used to
+    /// drop it without a word.
+    /// </summary>
+    ModifierHasNoEffect = 213,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

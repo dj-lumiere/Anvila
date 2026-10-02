@@ -109,6 +109,28 @@ public partial class Parser
     /// Failability is declared once, on the routine (<c>routine foo!(...)</c>); a call is written plain and
     /// recovered with <c>try</c>/<c>grab</c>/<c>lookup</c>.
     /// </summary>
+    /// <summary>
+    /// Reclassifies a bracket node, reporting an argument of a generic bracket that cannot be a type argument
+    /// where it stands (`m[i + 1, j]` is not an index, since an index has one argument, and `i + 1` is no type).
+    /// </summary>
+    private Expression ReclassifyBracket(BracketAccessExpression node)
+    {
+        try
+        {
+            return BracketReclassifyPass.Reclassify(node: node);
+        }
+        catch (BracketReclassifyPass.NotATypeArgumentException e)
+        {
+            throw new GrammarException(code: GrammarDiagnosticCode.ExpectedTypeArgument,
+                message: "This bracket takes types (it has more than one argument, a call after it, or a type-shaped " +
+                         "argument), and this argument is not a type. An index takes one value: `xs[i]`.",
+                fileName: FileName,
+                line: e.Argument.Location.Line,
+                column: e.Argument.Location.Column,
+                language: _language);
+        }
+    }
+
     private GrammarException BangAtCallSiteError()
     {
         return ThrowParseError(code: GrammarDiagnosticCode.BangAtCallSite,
@@ -194,7 +216,7 @@ public partial class Parser
             Args: bracketArgs,
             CallArgs: callArgs,
             Location: expr.Location);
-        return BracketReclassifyPass.Reclassify(node: bracketNode);
+        return ReclassifyBracket(node: bracketNode);
     }
 
     /// <summary>
@@ -269,7 +291,7 @@ public partial class Parser
             Args: bracketArgs,
             CallArgs: callArgs,
             Location: expr.Location);
-        return BracketReclassifyPass.Reclassify(node: bracketNode);
+        return ReclassifyBracket(node: bracketNode);
     }
 
     /// <summary>

@@ -537,8 +537,22 @@ public partial class Parser
                 TokenType.DecimalLiteral,
                 TokenType.ImaginaryLiteral))
         {
-            // Parse the literal
-            Expression literal = ParsePostfix();
+            // The literal alone, then any postfix steps on it. Only a literal with nothing after it folds the sign
+            // in (`-5` is one literal); `-5.abs()` is the minus of `5.abs()`, as unary minus binds looser than a
+            // postfix step. Parsing the whole postfix chain first and then falling through to ParseUnary dropped the
+            // call, since ParseUnary started after it.
+            Expression literal = ParsePrimary();
+            Expression chained = literal;
+            while (TryParsePostfixStep(expr: ref chained))
+            {
+            }
+
+            if (!ReferenceEquals(objA: chained, objB: literal))
+            {
+                return new UnaryExpression(Operator: TokenToUnaryOperator(tokenType: op.Type),
+                    Operand: chained,
+                    Location: opLocation);
+            }
 
             // If it's a literal expression with string value, prepend negative sign
             if (literal is LiteralExpression { Value: string strVal } litExpr)
@@ -551,6 +565,11 @@ public partial class Parser
                     LiteralType: litExpr.LiteralType,
                     Location: opLocation);
             }
+
+            // The literal is already consumed: whatever it is, it is the operand.
+            return new UnaryExpression(Operator: TokenToUnaryOperator(tokenType: op.Type),
+                Operand: literal,
+                Location: opLocation);
         }
 
         Expression expr = ParseUnary();
