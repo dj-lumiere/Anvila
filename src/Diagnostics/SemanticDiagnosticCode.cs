@@ -805,6 +805,10 @@ public enum SemanticDiagnosticCode
     /// no longer points at a live object.</summary>
     TokenUsedAfterSourceChanged = 643,
 
+    /// <summary>A lazy iterable that points at the collection it was made from (`xs.where(...)`) is kept in a variable,
+    /// a field, or returned. It is used in the statement that makes it (an `each`, a terminal call, an argument).</summary>
+    SourceIterableKept = 644,
+
     /// <summary>A `threaded routine` parameter is neither trivially copyable (passed by value) nor a
     /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias
     /// unsynchronized state across the thread boundary.</summary>
