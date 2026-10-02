@@ -176,6 +176,13 @@ public sealed partial class SemanticVerifier
     /// <summary>Tracks variables invalidated by steal/ownership transfer (#11).</summary>
     private readonly HashSet<string> _deadrefVariables = [];
 
+    /// <summary>The <c>steal</c> that made each name in <see cref="_deadrefVariables"/> dead, so a use can say
+    /// whether it lost to a steal earlier in the code or to one inside the same call.</summary>
+    private readonly Dictionary<string, StealExpression> _stealSites = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The argument lists of the calls whose arguments are being analyzed, innermost last.</summary>
+    private readonly Stack<List<Expression>> _callArgumentsInAnalysis = new();
+
     /// <summary>Ever-stolen-anywhere set (never cleared per-branch) — drives the codegen UAS guard-elision.</summary>
     private readonly HashSet<string> _everStolenVariables = [];
 

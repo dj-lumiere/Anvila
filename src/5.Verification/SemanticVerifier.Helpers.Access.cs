@@ -542,7 +542,17 @@ public sealed partial class SemanticVerifier
     /// <summary>Analyzes a call, then applies the inline-token source check (RF-S639).</summary>
     private TypeSymbol AnalyzeCallWithInlineTokens(CallExpression call, TypeSymbol? expectedType)
     {
-        return AnalyzeCallExpression(call: call, expectedType: expectedType);
+        // Every pass over this call's arguments (overload resolution, then the per-parameter check) knows which
+        // call they belong to, so a use that lost to a `steal` in the same call can say so.
+        _callArgumentsInAnalysis.Push(item: call.Arguments);
+        try
+        {
+            return AnalyzeCallExpression(call: call, expectedType: expectedType);
+        }
+        finally
+        {
+            _callArgumentsInAnalysis.Pop();
+        }
     }
 
     /// <summary>

@@ -773,9 +773,20 @@ public sealed partial class SemanticVerifier
             if (!isNormalizedBareReturn && _currentRoutine.ReturnType != null &&
                 !IsAssignableTo(source: returnType, target: _currentRoutine.ReturnType))
             {
+                // A token where its entity is expected (`var b = boxes[0]` then `return b`): say what the value
+                // is and how to hand back an entity of its own.
+                bool tokenForEntity =
+                    returnType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+                    returnType.TypeArguments is [{ } tokenTarget] &&
+                    tokenTarget.FullName == _currentRoutine.ReturnType.FullName;
                 ReportError(code: SemanticDiagnosticCode.ReturnTypeMismatch,
-                    message:
-                    $"Cannot return value of type '{returnType.Name}' from function expecting '{_currentRoutine.ReturnType.Name}'.",
+                    message: tokenForEntity
+                        ? $"You are returning a '{returnType.Name}' token where this routine returns the " +
+                          $"'{_currentRoutine.ReturnType.Name}' itself. The token only points at an entity something " +
+                          "else owns (an element read into a variable, `var b = boxes[0]`, holds one). Return a copy " +
+                          "with '.duplicate()', take the element out of its container (`remove_at`), or return the token " +
+                          $"by declaring the routine '-> {returnType.Name}'."
+                        : $"Cannot return value of type '{returnType.Name}' from function expecting '{_currentRoutine.ReturnType.Name}'.",
                     location: ret.Location);
             }
         }

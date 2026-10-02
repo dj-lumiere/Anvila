@@ -180,6 +180,23 @@ public sealed partial class SemanticVerifier
     private void AnalyzeCallArguments(RoutineInfo routine, List<Expression> arguments,
         SourceLocation location, TypeSymbol? callObjectType = null)
     {
+        _callArgumentsInAnalysis.Push(item: arguments);
+        try
+        {
+            AnalyzeCallArgumentsCore(routine: routine,
+                arguments: arguments,
+                location: location,
+                callObjectType: callObjectType);
+        }
+        finally
+        {
+            _callArgumentsInAnalysis.Pop();
+        }
+    }
+
+    private void AnalyzeCallArgumentsCore(RoutineInfo routine, List<Expression> arguments,
+        SourceLocation location, TypeSymbol? callObjectType)
+    {
         List<ParamInfo> parameters = routine.Parameters;
         int totalParams = parameters.Count;
 

@@ -482,9 +482,12 @@ public sealed partial class SemanticVerifier
         if (id.IsDeadUse)
         {
             ReportError(code: SemanticDiagnosticCode.UseAfterSteal,
-                message:
-                $"Variable '{id.Name}' is a deadref — it was invalidated by a previous 'steal' or ownership transfer. " +
-                "The variable can no longer be used.",
+                message: StealsInSameCall(name: id.Name) is { } sameCall
+                    ? $"You are using '{id.Name}' in this call, but 'steal {id.Name}' (column {sameCall.Location.Column}) " +
+                      $"moves it out in the same call, so this argument would point at an object that has moved. " +
+                      $"Use '{id.Name}' in one statement and steal it in a separate one after it."
+                    : $"Variable '{id.Name}' is a deadref — it was invalidated by a previous 'steal' or ownership " +
+                      "transfer. The variable can no longer be used.",
                 location: id.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -1332,6 +1335,28 @@ public sealed partial class SemanticVerifier
     /// Validates an identifier (variable) as an assignment target: checks preset immutability and,
     /// in Suflae, updates the variable's nullability flow state based on the RHS.
     /// </summary>
+    /// <summary>The <c>steal</c> of <paramref name="name"/> inside the arguments of the call being analyzed, if the
+    /// name is dead because of it (rather than a steal earlier in the code).</summary>
+    private StealExpression? StealsInSameCall(string name)
+    {
+        if (!_stealSites.TryGetValue(key: name, value: out StealExpression? steal))
+        {
+            return null;
+        }
+
+        // The use may sit in a nested call (`pair(v: c.view(), b: steal c)` uses `c` inside `c.view()`), so every
+        // call whose arguments are being analyzed counts.
+        bool inThisCall = false;
+        foreach (Expression arg in _callArgumentsInAnalysis.SelectMany(selector: args => args))
+        {
+            AstWalker.WalkExpressions(root: arg, visit: e => inThisCall |= ReferenceEquals(objA: e, objB: steal));
+        }
+
+        return inThisCall
+            ? steal
+            : null;
+    }
+
     private void ValidateIdentifierAssignmentTarget(IdentifierExpression id, Expression value,
         SourceLocation location)
     {

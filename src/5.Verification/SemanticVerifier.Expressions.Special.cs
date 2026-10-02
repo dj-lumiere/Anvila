@@ -367,6 +367,13 @@ public sealed partial class SemanticVerifier
         // record (e.g. Text after the refcounted-record migration).
         bool isRecord = operandType is RecordTypeSymbol;
 
+        // The operand already reported its own error (a second `steal` of the same variable, say).
+        if (operandType is ErrorTypeSymbol)
+        {
+            steal.ResolvedType = operandType;
+            return operandType;
+        }
+
         if (!isOwned && !isRecord && !IsRawEntityType(type: operandType))
         {
             ReportError(code: SemanticDiagnosticCode.StealScopeBoundToken,
@@ -382,6 +389,7 @@ public sealed partial class SemanticVerifier
         {
             _deadrefVariables.Add(item: stolenId.Name);
             _everStolenVariables.Add(item: stolenId.Name);
+            _stealSites[key: stolenId.Name] = steal;
         }
 
         // `steal T` unwraps to bare T — T is a binding-only ownership marker,
