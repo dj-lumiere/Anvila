@@ -67,8 +67,8 @@ internal sealed class TesseraWriter
         RegisterCrashReachability();
         foreach ((RoutineInfo info, Statement _) in routines)
         {
-            _routineNames[key: LlvmEmitter.MangleRoutineName(routine: info)] =
-                UniqueName(wanted: Sanitize(text: LlvmEmitter.MangleRoutineName(routine: info)));
+            string symbol = LlvmEmitter.MangleRoutineName(routine: info);
+            _routineNames[key: symbol] = VerbatimName(text: symbol);
         }
 
         StringBuilder definitions = _definitions;
@@ -346,7 +346,7 @@ internal sealed class TesseraWriter
             return name;
         }
 
-        name = UniqueName(wanted: Sanitize(text: entity.FullName) + "_Block");
+        name = VerbatimName(text: entity.FullName + " block");
         _entityRecords[key: entity.FullName] = name;
         var text = new StringBuilder();
         if (entity.MemberVariables.Count < 2)
@@ -376,15 +376,34 @@ internal sealed class TesseraWriter
         return name;
     }
 
+    /// <summary>A builder name as it is, between backticks: a Tessera backtick name holds any character but a
+    /// backtick or a line break, so the name needs no rewriting, and two different names never meet.</summary>
+    private string VerbatimName(string text)
+    {
+        // The attribute prefix stays: a recovery variant (`[member, try] f()`) shares the bare name of its routine.
+        text = text.Trim(trimChar: '"');
+        if (text.Length == 0 || text.IndexOfAny(anyOf: ['`', '\n', '\r']) >= 0)
+        {
+            throw new NotSupportedException(message: $"The Tessera backend can't name '{text}' between backticks.");
+        }
+
+        string name = $"`{text}`";
+        return _usedNames.Add(item: name)
+            ? name
+            : throw new InvalidOperationException(message: $"The Tessera backend named '{text}' twice.");
+    }
+
+    /// <summary>A routine symbol without the attribute prefix the LLVM path writes first (<c>[member] </c>).</summary>
+    private static string WithoutAttributes(string text) =>
+        text.StartsWith(value: '[') && text.IndexOf(value: "] ", comparisonType: StringComparison.Ordinal) is var close and > 0
+            ? text[(close + 2)..]
+            : text;
+
     /// <summary>A Tessera identifier for a builder name: letters and digits kept, every other run of
     /// characters one underscore, the routine attribute prefix (<c>[member] </c>) dropped.</summary>
     private static string Sanitize(string text)
     {
-        text = text.Trim(trimChar: '"');
-        string body = text.StartsWith(value: '[') && text.IndexOf(value: "] ", comparisonType: StringComparison.Ordinal)
-            is var close and > 0
-            ? text[(close + 2)..]
-            : text;
+        string body = WithoutAttributes(text: text.Trim(trimChar: '"'));
         var sb = new StringBuilder(capacity: body.Length);
         foreach (char c in body)
         {
@@ -534,7 +553,7 @@ internal sealed class TesseraWriter
             return name;
         }
 
-        name = UniqueName(wanted: Sanitize(text: record.FullName));
+        name = VerbatimName(text: record.FullName);
         _recordNames[key: record.FullName] = name;
         var text = new StringBuilder();
         text.Append(value: $"record {name}\n");
