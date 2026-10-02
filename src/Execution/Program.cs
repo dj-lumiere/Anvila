@@ -67,7 +67,7 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "parse" or "tokenize" or "codegen" or BuildCommand
-            or "buildandrun" or "check" or "validate-stdlib" or "emit-pbrf" or "emit-ingrid" or "help";
+            or "buildandrun" or "check" or "validate-stdlib" or "emit-pbrf" or "emit-ingrid" or "help" or "fmt";
 
         if (!isCommand && !TryRewriteBareRunArgs(args: ref args, command: ref command))
         {
@@ -194,6 +194,9 @@ internal partial class Program
 
             case "emit-ingrid":
                 return EmitIngrid();
+
+            case "fmt":
+                return RunFormatCommand(args: args);
 
             case "help":
                 PrintUsage();
@@ -879,6 +882,8 @@ internal partial class Program
         Console.WriteLine(
             value:
             $"  {tool} validate-stdlib [language]           - Validate stdlib routine bodies");
+        Console.WriteLine(
+            value: $"  {tool} fmt [--check] <files or dirs...>     - Format sources in place (--check: only list)");
         Console.WriteLine(
             value: $"  {tool} help                                 - Show this help");
         Console.WriteLine(
