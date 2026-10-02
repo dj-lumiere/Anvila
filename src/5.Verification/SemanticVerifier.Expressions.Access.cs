@@ -697,7 +697,21 @@ public sealed partial class SemanticVerifier
         // and tripping S767 fixed-width-mixing diagnostics.
         TypeSymbol? indexExpectedType = ResolveIndexParameterType(getItem: getItem,
             lookupType: lookupType);
-        AnalyzeExpression(expression: index.Index, expectedType: indexExpectedType);
+        TypeSymbol indexType = AnalyzeExpression(expression: index.Index, expectedType: indexExpectedType);
+
+        // The index is getitem's argument, so it has to fit the parameter like any other: an S64 variable is not
+        // a U64 index (variables keep their width; convert it).
+        if (indexExpectedType != null && indexType is not ErrorTypeSymbol &&
+            !ContainsUnresolvedTypeParameter(type: indexExpectedType) &&
+            !ContainsUnresolvedTypeParameter(type: indexType) &&
+            !IsAssignableTo(source: indexType, target: indexExpectedType))
+        {
+            ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                message:
+                $"You index '{lookupType.Name}' with a '{indexType.Name}', but its 'getitem' takes a " +
+                $"'{indexExpectedType.Name}'. Convert the index to '{indexExpectedType.Name}'.",
+                location: index.Index.Location);
+        }
 
         // Failability propagation: the resolved getitem may be `!` per its protocol contract
         // (e.g. Indexable.getitem!). A non-failable caller using `arr[i]` must propagate that.

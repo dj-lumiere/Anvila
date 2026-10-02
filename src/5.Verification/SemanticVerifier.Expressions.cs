@@ -566,6 +566,30 @@ public sealed partial class SemanticVerifier
             location: location);
     }
 
+    /// <summary>
+    /// The number type a literal-only arithmetic or bitwise expression conforms to: the expected type when it is a
+    /// number and every leaf of the expression is a literal, else null (an operand that is a variable or a call
+    /// keeps its own type, and the operator checks the widths).
+    /// </summary>
+    private TypeSymbol? LiteralArithmeticContext(BinaryExpression binary, TypeSymbol? expectedType)
+    {
+        return expectedType != null && IsNumericType(type: expectedType) && IsLiteralArithmetic(expression: binary)
+            ? expectedType
+            : null;
+    }
+
+    private static bool IsLiteralArithmetic(Expression expression)
+    {
+        return expression switch
+        {
+            LiteralExpression => true,
+            BinaryExpression binary when binary.Operator is >= BinaryOperator.Add and <= BinaryOperator.PowerUnchecked
+                or >= BinaryOperator.BitwiseAnd and <= BinaryOperator.LogicalRightShift =>
+                IsLiteralArithmetic(expression: binary.Left) && IsLiteralArithmetic(expression: binary.Right),
+            _ => false
+        };
+    }
+
     private TypeSymbol AnalyzeBinaryExpression(BinaryExpression binary, TypeSymbol? expectedType = null)
     {
         // Buildtime `expand` gate: a comparison/equality on a buildtime member value (me.$nameof(m)) is a
@@ -588,13 +612,23 @@ public sealed partial class SemanticVerifier
             ? expectedType
             : null;
 
+        // A number type expected of arithmetic made only of literals (`var n: U64 = 6 * 5 + 5`, `t[6 *% 5 +% 5]`)
+        // reaches every literal in it, so the whole expression conforms instead of defaulting to S64. A shift
+        // amount and an exponent keep their own types.
+        TypeSymbol? literalCtx = complexCtx ?? LiteralArithmeticContext(binary: binary, expectedType: expectedType);
+        TypeSymbol? rightCtx = binary.Operator is BinaryOperator.ArithmeticLeftShift
+            or BinaryOperator.ArithmeticRightShift or BinaryOperator.LogicalRightShift or BinaryOperator.Power
+            or BinaryOperator.PowerWrap or BinaryOperator.PowerClamp or BinaryOperator.PowerUnchecked
+            ? complexCtx
+            : literalCtx;
+
         // Logical negation should eventually lower through member routines rather than a not operator.
-        TypeSymbol leftType = AnalyzeExpression(expression: binary.Left, expectedType: complexCtx);
+        TypeSymbol leftType = AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
         // Pass leftType as expected for assignments so RHS literals like `none`
         // see the target's carrier-slot type as their contextual expected type.
         TypeSymbol rightType = binary.Operator == BinaryOperator.Assign
             ? AnalyzeExpression(expression: binary.Right, expectedType: leftType)
-            : AnalyzeExpression(expression: binary.Right, expectedType: complexCtx);
+            : AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
 
         (leftType, rightType) = ReinferBinaryLiteralOperands(binary: binary,
             leftType: leftType,
