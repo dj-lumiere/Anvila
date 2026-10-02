@@ -127,7 +127,7 @@ public partial class Parser
         // decl-position use case and would need visibility threading.
         // Name-agnostic: a decl-position expand's source (always `allmemvarof`) is read as a plain
         // identifier — the parser does not know the BuilderExpansion intrinsic names.
-        ConsumeIdentifier(errorMessage: "A decl-position expand only supports 'allmemvarof(T)'.");
+        ExpectExpandSource(expected: "allmemvarof", where: "a member-variable expansion inside a type body");
         Consume(type: TokenType.LeftParen, errorMessage: "Expected '(' after 'allmemvarof'");
         TypeExpression sourceType = ParseType();
         Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after allmemvarof type");
@@ -162,6 +162,24 @@ public partial class Parser
             SourceType: sourceType,
             Templates: templates,
             Location: location);
+    }
+
+    /// <summary>
+    /// Consumes the source name of an expand whose source is fixed by where it stands (<c>branchof</c> in a
+    /// <c>when</c>, <c>allmemvarof</c> in a type body), reporting any other name. The tree keeps no source name for
+    /// these, so an unchecked misspelling would silently mean the fixed one.
+    /// </summary>
+    private void ExpectExpandSource(string expected, string where)
+    {
+        Token source = CurrentToken;
+        string name = ConsumeIdentifier(errorMessage: $"Expected '{expected}' after 'in'");
+        if (name != expected)
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.UnexpectedToken,
+                message: $"You wrote '{name}' as the source of {where}, which only takes '{expected}(T)'. " +
+                         $"Write '{expected}(...)'.",
+                token: source);
+        }
     }
 
     /// <summary>
@@ -477,7 +495,7 @@ public partial class Parser
                 parameters.Add(item: Check(type: TokenType.Me)
                     ? ParseSelfParameter()
                     : ParseRegularParameter());
-            } while (CheckAndAdvance(type: TokenType.Comma));
+            } while (CommaContinuesList(close: TokenType.RightParen));
         }
 
         return parameters;

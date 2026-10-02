@@ -866,7 +866,7 @@ public partial class Parser
                         Location: GetLocation(),
                         IsVariadic: isVariadic));
                 }
-            } while (CheckAndAdvance(type: TokenType.Comma));
+            } while (CommaContinuesList(close: TokenType.RightParen));
         }
 
         Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after parameters");

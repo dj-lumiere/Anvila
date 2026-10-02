@@ -466,6 +466,18 @@ public partial class Parser
             return ParseConditionBasedPattern(clauseLocation: clauseLocation);
         }
 
+        // Flags membership arms: `have READ and WRITE => …` / `lack READ => …` (container-first), as in a
+        // when expression.
+        if (CheckAndAdvance(type: TokenType.Have))
+        {
+            return ParseFlagsWhenPattern(isNegated: false);
+        }
+
+        if (CheckAndAdvance(type: TokenType.Lack))
+        {
+            return ParseFlagsWhenPattern(isNegated: true);
+        }
+
         // Cases 3+4: 'is' / 'isnot' keyword — type or flags pattern
         if (CheckAndAdvance(type: TokenType.Is))
         {
@@ -588,9 +600,10 @@ public partial class Parser
         Consume(type: TokenType.Expand, errorMessage: "Expected 'expand'");
         string handle = ConsumeIdentifier(errorMessage: "Expected expand handle name");
         Consume(type: TokenType.In, errorMessage: "Expected 'in' in expand");
-        // Name-agnostic: the source intrinsic (a when-expand's is always `branchof`) is read as a plain
-        // identifier — the parser does not know the BuilderExpansion intrinsic names.
-        ConsumeIdentifier(errorMessage: "Expected 'branchof' after 'in' in a when-expand");
+        // The source is read as a plain identifier (the BuilderExpansion intrinsics are not keywords), but a
+        // when-expand only walks a variant's arms, so the name must be `branchof`. The tree does not keep it, so
+        // anything else would be silently read as `branchof`.
+        ExpectExpandSource(expected: "branchof", where: "an arm expansion inside a 'when'");
         Consume(type: TokenType.LeftParen, errorMessage: "Expected '(' after 'branchof'");
         TypeExpression sourceType = ParseType();
         Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after branchof type");

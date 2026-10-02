@@ -237,6 +237,29 @@ public partial class Parser
     }
 
     /// <summary>
+    /// Consumes the comma after a list item and reports whether another item follows. A comma right before the
+    /// closing bracket <paramref name="close"/> ends the list: the canonical layout writes one after the last
+    /// item of a list broken one item per line.
+    /// </summary>
+    private bool CommaContinuesList(TokenType close)
+    {
+        if (!CheckAndAdvance(type: TokenType.Comma))
+        {
+            return false;
+        }
+
+        int offset = 0;
+        while (PeekToken(offset: offset)
+                  .Type == TokenType.Newline)
+        {
+            offset++;
+        }
+
+        return PeekToken(offset: offset)
+                  .Type != close;
+    }
+
+    /// <summary>
     /// Parses a comma-separated list of arguments (named or positional).
     /// Called after '(' has been consumed.
     /// </summary>
@@ -265,7 +288,7 @@ public partial class Parser
 
                     // Skip newlines after each argument (before comma or closing paren)
                     while (Check(type: TokenType.Newline)) { Advance(); }
-                } while (CheckAndAdvance(type: TokenType.Comma));
+                } while (CommaContinuesList(close: TokenType.RightParen));
             }
 
             // Skip trailing newlines
@@ -296,7 +319,7 @@ public partial class Parser
             do
             {
                 elements.Add(item: ParseExpression());
-            } while (CheckAndAdvance(type: TokenType.Comma));
+            } while (CommaContinuesList(close: TokenType.RightBracket));
         }
 
         Consume(type: TokenType.RightBracket, errorMessage: "Expected ']' after list elements");
@@ -357,7 +380,7 @@ public partial class Parser
         pairs.Add(item: (firstKey, firstValue));
 
         // Parse remaining key-value pairs
-        while (CheckAndAdvance(type: TokenType.Comma))
+        while (CommaContinuesList(close: TokenType.RightBrace))
         {
             Expression key = ParseExpression();
             Consume(type: TokenType.Colon,
@@ -383,7 +406,7 @@ public partial class Parser
         var elements = new List<Expression> { firstElement };
 
         // Parse remaining elements
-        while (CheckAndAdvance(type: TokenType.Comma))
+        while (CommaContinuesList(close: TokenType.RightBrace))
         {
             elements.Add(item: ParseExpression());
         }

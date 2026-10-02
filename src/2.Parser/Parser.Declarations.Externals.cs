@@ -124,7 +124,7 @@ public partial class Parser
                 }
 
                 parameters.Add(item: ParseExternalParameter(parameters: parameters));
-            } while (CheckAndAdvance(type: TokenType.Comma));
+            } while (CommaContinuesList(close: TokenType.RightParen));
         }
 
         return isVariadic;
