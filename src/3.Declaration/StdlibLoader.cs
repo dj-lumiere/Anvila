@@ -692,6 +692,20 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
+    /// Resolves a written type the way a stdlib signature is resolved (see <see cref="ResolveSimpleType"/>), for a
+    /// tool that reads a stdlib file: the language server colors each type a generic definition's body names,
+    /// which the build only resolves per instance. Nothing is recorded on the syntax.
+    /// </summary>
+    internal static TypeSymbol? ResolveWrittenType(TypeRegistry registry, TypeExpression typeExpr,
+        List<string>? genericParams, string? moduleName)
+    {
+        return ResolveSimpleType(registry: registry,
+            typeExpr: typeExpr,
+            genericParams: genericParams,
+            moduleName: moduleName);
+    }
+
+    /// <summary>
     /// Resolves a type expression to a <see cref="TypeSymbol"/> using the current generic and module context.
     /// Handles splice handles, buildtime values, the <c>Me</c> placeholder, associated-type projections,
     /// generic parameters, const-generic literals, routine types, and parameterized types. Returns null

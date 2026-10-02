@@ -120,6 +120,25 @@ public abstract class LanguageRules
     /// language's containers are shared handles the build cannot follow).</summary>
     public abstract bool ChecksShapeAtRunTime { get; }
 
+    /// <summary>
+    /// The type as the language's user knows it, for anything shown to them (hover, completion, hints). A
+    /// language whose entities are shared handles hides the handle type the builder wraps them in.
+    /// </summary>
+    public virtual TypeModel.Types.TypeSymbol SurfaceType(TypeModel.Types.TypeSymbol type)
+    {
+        return type;
+    }
+
+    /// <summary>
+    /// Text shown to the language's user (a diagnostic message, a signature) with every builder-internal
+    /// type name rewritten to the one the user knows, the text-level counterpart of <see cref="SurfaceType"/>
+    /// for messages that were rendered before the language was known.
+    /// </summary>
+    public virtual string SurfaceText(string text)
+    {
+        return text;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // DECLARATIONS
     // ═══════════════════════════════════════════════════════════════════════════

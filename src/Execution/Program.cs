@@ -1129,7 +1129,7 @@ internal partial class Program
 
     /// <summary>Filters the build graph's units down to USER files (dropping the stdlib files already loaded
     /// by TypeRegistry/StdlibLoader — those under the normalized stdlib root).</summary>
-    private static List<FileBuildUnit> FilterUserUnits(BuildResult buildResult, string stdlibRoot)
+    internal static List<FileBuildUnit> FilterUserUnits(BuildResult buildResult, string stdlibRoot)
     {
         string normalizedStdlib = Path.GetFullPath(path: stdlibRoot);
         return buildResult.Units
@@ -1142,7 +1142,7 @@ internal partial class Program
 
     /// <summary>Orders the user file units by module initialization order, appending any unit not covered by
     /// that order (e.g. an entry file with no module decl) in encounter order.</summary>
-    private static List<(SyntaxTree.Program Program, string FilePath)> OrderUserFiles(
+    internal static List<(SyntaxTree.Program Program, string FilePath)> OrderUserFiles(
         List<FileBuildUnit> userUnits, IReadOnlyList<string> initializationOrder)
     {
         // Map module names back to file units for ordering

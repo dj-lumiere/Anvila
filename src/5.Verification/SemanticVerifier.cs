@@ -341,6 +341,18 @@ public sealed partial class SemanticVerifier
     /// </summary>
     public static TypeRegistry.StdlibSnapshot CaptureStdlibSnapshot(Language language)
     {
+        return CaptureStdlibSnapshotWithPrograms(language: language)
+           .Snapshot;
+    }
+
+    /// <summary>
+    /// <see cref="CaptureStdlibSnapshot"/>, together with the analyzed stdlib programs it was captured from and
+    /// the file each came from, for a tool that reads the stdlib's resolved syntax trees (the language server
+    /// colors a stdlib file by the types its analysis resolved).
+    /// </summary>
+    public static (TypeRegistry.StdlibSnapshot Snapshot, List<(Program Program, string FilePath)> Programs)
+        CaptureStdlibSnapshotWithPrograms(Language language)
+    {
         var sa = new SemanticVerifier(language: language) { SaOnly = true };
         List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: "module __snapshot__",
             fileName: "__snapshot__",
@@ -349,7 +361,10 @@ public sealed partial class SemanticVerifier
             language: language,
             fileName: "__snapshot__");
         sa.Analyze(program: parser.Parse());
-        return sa._registry.CaptureSnapshot();
+        return (sa._registry.CaptureSnapshot(),
+            sa._registry.StdlibPrograms
+              .Select(selector: p => (p.Program, p.FilePath))
+              .ToList());
     }
 
     /// <summary>

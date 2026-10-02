@@ -242,7 +242,8 @@ public partial class Parser
 
         while (!Check(type: TokenType.Dedent) && !IsAtEnd)
         {
-            if (CheckAndAdvance(type: TokenType.Newline))
+            // A member may carry a doc comment, as a choice case does.
+            if (CheckAndAdvance(TokenType.Newline, TokenType.DocComment))
             {
                 continue;
             }
@@ -575,7 +576,8 @@ public partial class Parser
 
         while (!Check(type: TokenType.Dedent) && !IsAtEnd)
         {
-            if (CheckAndAdvance(type: TokenType.Newline))
+            // A member may carry a doc comment, as a choice case does.
+            if (CheckAndAdvance(TokenType.Newline, TokenType.DocComment))
             {
                 continue;
             }

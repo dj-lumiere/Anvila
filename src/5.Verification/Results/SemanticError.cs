@@ -20,10 +20,14 @@ public sealed record SemanticError(
     /// </summary>
     public string CodeString => Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
 
+    /// <summary>The message in the words of the language of the file it points at (see
+    /// <see cref="DiagnosticLanguage.Surface"/>).</summary>
+    public string SurfaceMessage => DiagnosticLanguage.Surface(message: Message, fileName: Location.FileName);
+
     /// <summary>
     /// Gets the formatted error message including diagnostic code and location.
     /// Format: error[RF-S###]: filename:line:column: message (SF-S### for a Suflae file)
     /// </summary>
     public string FormattedMessage =>
-        $"error[{CodeString}]: {Location.FileName}:{Location.Line}:{Location.Column}: {Message}";
+        $"error[{CodeString}]: {Location.FileName}:{Location.Line}:{Location.Column}: {SurfaceMessage}";
 }

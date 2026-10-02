@@ -51,15 +51,66 @@ public static class LspServer
     private const string SuffixDeclaration = "Declaration";
     private const string NodeRoutineDeclaration = "RoutineDeclaration";
 
-    // One pre-analyzed stdlib snapshot per language, captured on first use.
+    /// <summary>A language's pre-analyzed stdlib: the snapshot user files are analyzed against, and the analyzed
+    /// syntax tree of every stdlib file analyzed so far, by its full path (a stdlib file is shown through it).</summary>
+    private sealed record StdlibCapture(
+        TypeRegistry.StdlibSnapshot Snapshot,
+        System.Collections.Concurrent.ConcurrentDictionary<string, SyntaxTree.Program> Programs);
+
+    // One pre-analyzed stdlib per language, captured on first use.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Language,
-        Lazy<TypeRegistry.StdlibSnapshot>> Snapshots = new();
+        Lazy<StdlibCapture>> Captures = new();
+
+    private static StdlibCapture CaptureFor(Language language)
+    {
+        return Captures.GetOrAdd(key: language,
+            valueFactory: lang => new Lazy<StdlibCapture>(valueFactory: () =>
+            {
+                (TypeRegistry.StdlibSnapshot snapshot, List<(SyntaxTree.Program Program, string FilePath)> programs) =
+                    SemanticVerifier.CaptureStdlibSnapshotWithPrograms(language: lang);
+                var byPath = new System.Collections.Concurrent.ConcurrentDictionary<string, SyntaxTree.Program>(
+                    comparer: StringComparer.OrdinalIgnoreCase);
+                foreach ((SyntaxTree.Program program, string filePath) in programs)
+                {
+                    byPath.TryAdd(key: Path.GetFullPath(path: filePath), value: program);
+                }
+
+                return new StdlibCapture(Snapshot: snapshot, Programs: byPath);
+            })).Value;
+    }
 
     private static TypeRegistry.StdlibSnapshot SnapshotFor(Language language)
     {
-        return Snapshots.GetOrAdd(key: language,
-            valueFactory: lang => new Lazy<TypeRegistry.StdlibSnapshot>(valueFactory: () =>
-                SemanticVerifier.CaptureStdlibSnapshot(language: lang))).Value;
+        return CaptureFor(language: language)
+           .Snapshot;
+    }
+
+    /// <summary>
+    /// The analyzed syntax tree of a stdlib file (by the path of the copy the builder reads). The capture holds the
+    /// files it analyzed, the always-loaded ones. Any other module is analyzed once on first need, by analyzing an
+    /// import of it against the snapshot, the way a user file's import loads it.
+    /// </summary>
+    private static SyntaxTree.Program? AnalyzedStdlibProgram(Language language, string copyPath, string? module)
+    {
+        StdlibCapture capture = CaptureFor(language: language);
+        if (capture.Programs.TryGetValue(key: copyPath, value: out SyntaxTree.Program? known) || module == null)
+        {
+            return known;
+        }
+
+        var importer = new SemanticVerifier(language: language, snapshot: capture.Snapshot) { SaOnly = true };
+        const string importerName = "__lsp_stdlib_import__";
+        List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: $"module {importerName}\nimport {module}\n",
+            fileName: importerName,
+            language: language);
+        importer.Analyze(program: new Builder.Parser.Parser(tokens: tokens, language: language, fileName: importerName)
+                                    .Parse());
+        foreach ((SyntaxTree.Program program, string filePath, _) in importer.Registry.StdlibPrograms)
+        {
+            capture.Programs.TryAdd(key: Path.GetFullPath(path: filePath), value: program);
+        }
+
+        return capture.Programs.GetValueOrDefault(key: copyPath);
     }
 
     /// <summary>The last analyzed state of an open document, kept so hover/definition/completion reuse it.</summary>
@@ -74,6 +125,46 @@ public static class LspServer
 
     // The language this server serves (set by Run): its keywords, names, and which files are its own.
     private static Builder.Frontends.LanguageServerProfile _profile = null!;
+
+    /// <summary>The rules of the language this server serves.</summary>
+    private static Builder.Frontends.LanguageRules Rules => Builder.Frontends.Languages.For(language: _profile.Language);
+
+    /// <summary>
+    /// A type as its reader writes it: short names without module paths (<c>List[S64]</c>, not
+    /// <c>List[Core.S64]</c>), in the words of the served language (a Suflae entity without its handle), at every
+    /// depth of its arguments.
+    /// </summary>
+    private static string TypeText(TypeSymbol type)
+    {
+        TypeSymbol shown = Rules.SurfaceType(type: type);
+        if (shown.TypeArguments is { Count: > 0 } args)
+        {
+            return $"{ShortName(name: shown.BareName)}[{string.Join(separator: ", ", values: args.Select(selector: TypeText))}]";
+        }
+
+        // A type whose arguments are spelled only in its name (a tuple, a routine type) loses its module paths there.
+        return shown.Name.Contains(value: '[')
+            ? Surface(text: ModulePath.Replace(input: shown.Name, replacement: ""))
+            : ShortName(name: shown.Name);
+    }
+
+    /// <summary>A type name without its module path (<c>Core.S64</c> reads <c>S64</c>).</summary>
+    private static string ShortName(string name)
+    {
+        return name[(name.LastIndexOf(value: '.') + 1)..];
+    }
+
+    // The module path in front of a type name inside a spelled-out type (`Core.` in `Tuple[Core.S64, Text]`).
+    private static readonly System.Text.RegularExpressions.Regex ModulePath =
+        new(pattern: @"(?<![\w.])(?:[A-Za-z_]\w*\.)+(?=[A-Za-z_])");
+
+    /// <summary>Text shown to the user, in the words of the served language (see
+    /// <see cref="Builder.Frontends.LanguageRules.SurfaceText"/>): a Suflae user never sees the handle type an
+    /// entity is carried in.</summary>
+    private static string Surface(string text)
+    {
+        return Rules.SurfaceText(text: text);
+    }
 
     // The text of each open document as the client last sent it (formatting rewrites from it).
     private static readonly Dictionary<string, string> Texts = new();
@@ -400,15 +491,14 @@ public static class LspServer
             col1: char0 + 1,
             hit: hit);
 
-        // Prefer a richer label when the token names a known kind of symbol:
-        //   • a routine call/reference  → full signature `name(a: T, b: U) -> R`
-        //   • a bound variable/parameter → `name: Type` (with a `(parameter)` note)
-        //   • otherwise                  → the expression's resolved type
+        // Prefer a richer label when the token names a known kind of symbol (a routine, a type, a case, a field, a
+        // variable), with the doc comment written above its declaration; otherwise the expression's resolved type.
         string? label = null;
         string? documentation = null;
+        string? notes = null;
         if (IsIdentifierText(text: hit.Text))
         {
-            (label, documentation) = SymbolHoverLabel(doc: doc, hit: hit);
+            (label, documentation, notes) = SymbolHoverLabel(doc: doc, hit: hit);
         }
 
         if (label == null)
@@ -424,10 +514,26 @@ public static class LspServer
         }
 
         int endCol0 = hit.Column - 1 + hit.Text.Length;
-        string hoverValue = $"```{_profile.CodeBlockLanguage}\n{label}\n```";
+        string hoverValue = $"```{_profile.CodeBlockLanguage}\n{Surface(text: label)}\n```";
         if (!string.IsNullOrWhiteSpace(value: documentation))
         {
-            hoverValue += $"\n\n{RenderDoc(doc: documentation)}";
+            hoverValue += $"\n\n{Surface(text: RenderDoc(doc: documentation))}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(value: notes))
+        {
+            hoverValue += $"\n\n{Surface(text: notes)}";
+        }
+
+        List<(string Parameter, TypeSymbol Argument)> bindings = GenericBindingsAt(doc: doc, hit: hit, best: best)
+                                                                .Where(predicate: b => !(b.Argument is GenericParameterTypeSymbol self &&
+                                                                    self.Name == b.Parameter))
+                                                                .ToList();
+        if (bindings.Count > 0)
+        {
+            hoverValue += "\n\n" + string.Join(separator: "  \n",
+                values: bindings.Select(selector: b =>
+                    Surface(text: $"`{b.Parameter}` is `{TypeText(type: b.Argument)}`")));
         }
 
         WriteResult(stdout: stdout,
@@ -465,6 +571,13 @@ public static class LspServer
                    .Where(predicate: e => e.ResolvedType != null && e.Location.Line == line1)
                    .ToList();
 
+        // `me.balance` and `me` start at the same column: hovering `me` means the identifier.
+        if (typed.OfType<IdentifierExpression>()
+                 .FirstOrDefault(predicate: e => e.Location.Column == hit.Column && e.Name == hit.Text) is { } named)
+        {
+            return named;
+        }
+
         Expression? best = null;
         foreach (Expression e in typed)
         {
@@ -500,33 +613,89 @@ public static class LspServer
             return null;
         }
 
-        string typeName = best.ResolvedType.Name;
-        return IsIdentifierText(text: hit.Text)
+        string typeName = TypeText(type: best.ResolvedType);
+        return hit.Type == TokenType.Identifier
             ? $"{hit.Text}: {typeName}"
             : typeName;
     }
 
-    /// <summary>The richer hover label + documentation for an identifier token: a routine's signature, or a
-    /// bound variable/parameter's <c>name: Type</c> plus ownership notes. Both are null when the token names
-    /// neither (the caller then falls back to the resolved expression type).</summary>
-    private static (string? Label, string? Documentation) SymbolHoverLabel(DocState doc, Token hit)
+    /// <summary>
+    /// The richer hover label for an identifier token, the doc comment of what it names (raw, rendered by the
+    /// caller), and notes (markdown): a routine's signature; a type, by its kind; a case of a choice or flags; a
+    /// field; a variable or parameter (a parameter's doc is its <c>:param:</c> line in its routine's doc). All null
+    /// when the token names none of them (the caller then falls back to the resolved expression type).
+    /// </summary>
+    private static (string? Label, string? Documentation, string? Notes) SymbolHoverLabel(DocState doc, Token hit)
     {
-        RoutineInfo? routine = RoutineReferencedByToken(doc: doc, hit: hit);
-        if (routine != null)
+        // A creator call (`List[S64]()`, `Point(x: 1)`) shows the type it makes, below, as C# shows a constructor's type.
+        RoutineInfo? routine = RoutineReferencedByToken(doc: doc, hit: hit) ?? RoutineDeclaredAtToken(doc: doc, hit: hit);
+        if (routine is { Kind: not RoutineKind.Creator })
         {
-            return ($"routine {routine.Name}{RoutineDetail(r: routine)}", routine.Documentation);
+            return (RoutineHeader(routine: routine), routine.Documentation ?? DocAbove(location: routine.Location), null);
+        }
+
+        SemanticRoles roles = BuildSemanticRoles(nodes: AllNodes(program: doc.Program), tokens: doc.Tokens,
+            registry: doc.Registry);
+        (int, int) key = (hit.Line, hit.Column);
+        if (roles.Cases.TryGetValue(key: key, value: out (TypeSymbol Owner, string Case) found))
+        {
+            return ($"{found.Case}: {TypeText(type: found.Owner)}{CaseValue(owner: found.Owner, name: found.Case)}",
+                CaseDoc(owner: found.Owner, name: found.Case), null);
+        }
+
+        if (roles.Symbols.TryGetValue(key: key, value: out TypeSymbol? type))
+        {
+            TypeSymbol shown = Rules.SurfaceType(type: type);
+            TypeSymbol definition = DefinitionOf(type: shown);
+            string? kind = KindWord(type: definition);
+            string name = HeaderText(type: definition);
+            SourceLocation? declaredAt = DeclarationOf(type: definition);
+            return (SourceHeader(location: declaredAt) ??
+                    (kind != null
+                        ? $"{kind} {name}"
+                        : name) + DeclarationClauses(type: definition),
+                DocAbove(location: declaredAt), null);
+        }
+
+        if (FieldAtToken(doc: doc, hit: hit) is { } field)
+        {
+            return ($"{field.Name}: {TypeText(type: field.Type)}", DocAbove(location: field.Location), null);
+        }
+
+        // A parameter where its routine's header declares it (a parameter's own location is not its name's).
+        foreach (RoutineDeclaration declaring in AllNodes(program: doc.Program)
+                    .OfType<RoutineDeclaration>()
+                    .Where(predicate: r => r.Location.Line == hit.Line && hit.Type == TokenType.Identifier))
+        {
+            if (declaring.Parameters.FirstOrDefault(predicate: p => p.Name == hit.Text) is { } parameter &&
+                declaring.ResolvedInfo?.Parameters.FirstOrDefault(predicate: p => p.Name == parameter.Name) is { } info)
+            {
+                string? routineDoc = declaring.ResolvedInfo.Documentation ?? declaring.Documentation ??
+                                     DocAbove(location: declaring.Location);
+                string? paramDoc = routineDoc == null
+                    ? null
+                    : ParseDoc(doc: routineDoc)
+                     .Params.FirstOrDefault(predicate: x => x.Name == parameter.Name)
+                     .Desc;
+                return ($"{parameter.Name}: {TypeText(type: info.Type)}", null,
+                    string.IsNullOrWhiteSpace(value: paramDoc)
+                        ? null
+                        : paramDoc);
+            }
         }
 
         VariableInfo? bound = VariableBoundAtToken(doc: doc, hit: hit);
         if (bound == null)
         {
-            return (null, null);
+            return DeclaredVariableAtToken(doc: doc, hit: hit) is { } declared
+                ? ($"{declared.Name}: {TypeText(type: declared.Type)}", DocAbove(location: declared.Location), null)
+                : (null, null, null);
         }
 
         string kindNote = bound.IsPreset
             ? "preset "
             : "";
-        string label = $"{kindNote}{bound.Name}: {bound.Type.Name}";
+        string label = $"{kindNote}{bound.Name}: {TypeText(type: bound.Type)}";
 
         // Ownership state: is this exact occurrence dead (moved out by an earlier steal)?
         bool deadHere = AllNodes(program: doc.Program)
@@ -535,6 +704,11 @@ public static class LspServer
                                             e.Location.Line == hit.Line &&
                                             e.Location.Column == hit.Column);
         var notes = new List<string>();
+        if (bound.IsParameter && ParameterDoc(doc: doc, parameter: bound) is { } described)
+        {
+            notes.Add(item: described);
+        }
+
         if (deadHere)
         {
             notes.Add(item: "⚠️ **moved out** — this value's ownership was transferred by an " +
@@ -546,10 +720,472 @@ public static class LspServer
             notes.Add(item: own);
         }
 
-        string? documentation = notes.Count > 0
-            ? string.Join(separator: "\n\n", values: notes)
+        return (label,
+            bound.IsParameter
+                ? null
+                : DocAbove(location: bound.Location),
+            notes.Count > 0
+                ? string.Join(separator: "\n\n", values: notes)
+                : null);
+    }
+
+    /// <summary>
+    /// A routine as its declaration reads: the type it belongs to (<c>routine Account.deposit</c>, a generic owner
+    /// with its parameters, <c>Array[T, N].getitem</c>), its own generic parameters, its signature, and the
+    /// <c>needs</c> clauses it declares.
+    /// </summary>
+    private static string RoutineHeader(RoutineInfo routine)
+    {
+        RoutineInfo shown = routine.GenericDefinition ?? routine;
+        TypeSymbol? ownerType = routine.OwnerType ?? shown.OwnerType;
+        string owner = ownerType != null
+            ? HeaderText(type: Rules.SurfaceType(type: ownerType)) + "."
+            : "";
+        List<string> ownerParameters = ownerType != null
+            ? DefinitionOf(type: Rules.SurfaceType(type: ownerType)).GenericParameters ?? []
+            : [];
+        List<string> own = (shown.GenericParameters ?? [])
+                          .Where(predicate: g => !g.StartsWith(value: "__", comparisonType: StringComparison.Ordinal) &&
+                                                 !ownerParameters.Contains(item: g))
+                          .ToList();
+        string generics = own.Count > 0
+            ? $"[{string.Join(separator: ", ", values: own)}]"
+            : "";
+        return $"routine {owner}{routine.Name}{generics}{RoutineDetail(r: routine)}" +
+               NeedsClauses(constraints: shown.GenericConstraints);
+    }
+
+    /// <summary>A type's name with its own generic parameters when it is a definition (<c>Array[T, N]</c>), else the
+    /// type as written (<c>Array[S32, 4]</c>).</summary>
+    private static string HeaderText(TypeSymbol type)
+    {
+        return type.TypeArguments is not { Count: > 0 } && type.GenericParameters is { Count: > 0 } parameters
+            ? $"{ShortName(name: type.BareName)}[{string.Join(separator: ", ", values: parameters)}]"
+            : TypeText(type: type);
+    }
+
+    /// <summary>
+    /// A type declaration's header exactly as written: its name line and the <c>obeys</c> / <c>needs</c> /
+    /// <c>relates</c> lines right below it (conditions included), so hover shows what the declaration says rather
+    /// than the protocols the build confers on its own. Null when the source can't be read.
+    /// </summary>
+    private static string? SourceHeader(SourceLocation? location)
+    {
+        if (location is not { FileName: { Length: > 0 } file, Line: > 0 })
+        {
+            return null;
+        }
+
+        string full = Path.GetFullPath(path: file);
+        string? text = Texts.FirstOrDefault(predicate: kv => string.Equals(
+                                 a: Path.GetFullPath(path: UriToFileName(uri: kv.Key)), b: full,
+                                 comparisonType: StringComparison.OrdinalIgnoreCase))
+                            .Value ?? (File.Exists(path: full)
+                            ? File.ReadAllText(path: full)
+                            : null);
+        if (text == null)
+        {
+            return null;
+        }
+
+        string[] lines = text.ReplaceLineEndings(replacementText: "\n")
+                             .Split(separator: '\n');
+        if (location.Line > lines.Length)
+        {
+            return null;
+        }
+
+        var header = new List<string> { lines[location.Line - 1].Trim() };
+        for (int i = location.Line; i < lines.Length; i++)
+        {
+            string line = lines[i];
+            string trimmed = line.TrimStart();
+            bool clause = line.Length == trimmed.Length &&
+                          (trimmed.StartsWith(value: "obeys ", comparisonType: StringComparison.Ordinal) ||
+                           trimmed.StartsWith(value: "needs ", comparisonType: StringComparison.Ordinal) ||
+                           trimmed.StartsWith(value: "relates ", comparisonType: StringComparison.Ordinal));
+
+            // A clause broken across lines ends its line with a comma and continues one level in.
+            bool continuation = trimmed.Length > 0 && line.Length > trimmed.Length &&
+                                header[^1].EndsWith(value: ',');
+            if (clause || continuation)
+            {
+                header.Add(item: (continuation
+                    ? "    "
+                    : "") + trimmed.TrimEnd());
+                continue;
+            }
+
+            break;
+        }
+
+        return string.Join(separator: "\n", values: header);
+    }
+
+    /// <summary>The clause lines a type declaration carries below its header: <c>obeys</c> and <c>needs</c>.</summary>
+    private static string DeclarationClauses(TypeSymbol type)
+    {
+        List<TypeSymbol> protocols = type switch
+        {
+            EntityTypeSymbol entity => entity.ImplementedProtocols,
+            RecordTypeSymbol record => record.ImplementedProtocols,
+            _ => []
+        };
+        string obeys = protocols.Count > 0
+            ? "\nobeys " + string.Join(separator: ", ", values: protocols.Select(selector: p => HeaderOrText(type: p)))
+            : "";
+        return obeys + NeedsClauses(constraints: type.GenericConstraints);
+    }
+
+    /// <summary>A protocol as written in an <c>obeys</c> list: its arguments as resolved (<c>Iterable[T]</c>).</summary>
+    private static string HeaderOrText(TypeSymbol type)
+    {
+        return type.TypeArguments is { Count: > 0 }
+            ? TypeText(type: type)
+            : ShortName(name: type.BareName);
+    }
+
+    /// <summary>
+    /// The <c>needs</c> clauses of a declaration, laid out as the formatter writes them: one line of the kind and
+    /// const-type classifiers (<c>needs U64 N, EntityType A</c>), one line per protocol or type constraint
+    /// (<c>needs K obeys Hashable, Equatable</c>), then the <c>everywhere</c> gates. A parameter the build invented
+    /// for a protocol-typed parameter (<c>__T0</c>) is not written in the source and is left out.
+    /// </summary>
+    private static string NeedsClauses(List<GenericConstraintDeclaration>? constraints)
+    {
+        List<GenericConstraintDeclaration> written = (constraints ?? [])
+                                                    .Where(predicate: c => !c.ParameterName.StartsWith(value: "__",
+                                                         comparisonType: StringComparison.Ordinal))
+                                                    .ToList();
+        var lines = new List<string>();
+        List<string> kinds = written.Where(predicate: c => c.ConstraintType is not (ConstraintKind.Obeys or
+                                        ConstraintKind.TypeEquality or ConstraintKind.Everywhere))
+                                    .Select(selector: ConstraintText)
+                                    .ToList();
+        if (kinds.Count > 0)
+        {
+            lines.Add(item: "needs " + string.Join(separator: ", ", values: kinds));
+        }
+
+        lines.AddRange(collection: written.Where(predicate: c => c.ConstraintType is ConstraintKind.Obeys or
+                                              ConstraintKind.TypeEquality)
+                                          .Select(selector: c => "needs " + ConstraintText(constraint: c)));
+        List<string> everywhere = written.Where(predicate: c => c.ConstraintType == ConstraintKind.Everywhere)
+                                         .SelectMany(selector: c => c.ConstraintTypes ?? [])
+                                         .Select(selector: WrittenTypeText)
+                                         .ToList();
+        if (everywhere.Count > 0)
+        {
+            lines.Add(item: "needs " + string.Join(separator: ", ", values: everywhere) + " everywhere");
+        }
+
+        return string.Concat(values: lines.Select(selector: l => "\n" + l));
+    }
+
+    /// <summary>One constraint as written after <c>needs</c>.</summary>
+    private static string ConstraintText(GenericConstraintDeclaration constraint)
+    {
+        List<TypeExpression> types = constraint.ConstraintTypes ?? [];
+        string list = string.Join(separator: ", ", values: types.Select(selector: WrittenTypeText));
+        return constraint.ConstraintType switch
+        {
+            ConstraintKind.Obeys => $"{constraint.ParameterName} obeys {list}",
+            ConstraintKind.TypeEquality when types.Count == 1 => $"{constraint.ParameterName} is {list}",
+            ConstraintKind.TypeEquality => $"{constraint.ParameterName} in [{list}]",
+            ConstraintKind.ConstGeneric when types.Count == 1 => $"{list} {constraint.ParameterName}",
+            _ when ConstraintKindTokens.TryGetValue(key: constraint.ConstraintType,
+                value: out (string Spelling, string Kind) named) => $"{named.Spelling} {constraint.ParameterName}",
+            _ => constraint.ParameterName
+        };
+    }
+
+    /// <summary>A written type as source spells it (<c>Iterable[T]</c>).</summary>
+    private static string WrittenTypeText(TypeExpression type)
+    {
+        return type.GenericArguments is { Count: > 0 } args
+            ? $"{ShortName(name: type.Name)}[{string.Join(separator: ", ", values: args.Select(selector: WrittenTypeText))}]"
+            : ShortName(name: type.Name);
+    }
+
+    /// <summary>The routine whose declaration names the token (its name in <c>routine name(...)</c>).</summary>
+    private static RoutineInfo? RoutineDeclaredAtToken(DocState doc, Token hit)
+    {
+        return AllNodes(program: doc.Program)
+              .OfType<RoutineDeclaration>()
+              .Select(selector: r => r.ResolvedInfo)
+              .FirstOrDefault(predicate: r => r != null && r.Name == hit.Text && r.Location?.Line == hit.Line);
+    }
+
+    /// <summary>
+    /// Where a type is declared. A user type's symbol keeps its declaration's position. A stdlib type's does not (the
+    /// build reads a missing position as "stdlib" to skip its protocol checks), so its file comes from the module
+    /// index the build resolves imports with, and its line from the declaration keyword that names it there.
+    /// </summary>
+    private static SourceLocation? DeclarationOf(TypeSymbol type)
+    {
+        if (type.Location is { FileName.Length: > 0 } known)
+        {
+            return known;
+        }
+
+        string name = ShortName(name: type.BareName);
+        string stdlibRoot = Path.GetFullPath(path: StdlibLoader.GetDefaultStdlibPath());
+        if (type.Module is not { } module ||
+            !StdlibIndexFor(language: _profile.Language, stdlibRoot: stdlibRoot, libraryRoots: [])
+               .TryGetValue(key: $"{module}.{name}", value: out string? file) ||
+            TokensOf(fileName: file) is not { } tokens)
+        {
+            return null;
+        }
+
+        // The index keeps the first file to claim `module.Name`, which can be another file of the module (one with a
+        // conversion routine named after the type): then the declaration is looked for in the module's other files.
+        return DeclarationIn(file: file, tokens: tokens, name: name) ??
+               StdlibDeclarations.GetOrAdd(key: $"{module}.{name}",
+                   valueFactory: _ => FindStdlibDeclaration(stdlibRoot: stdlibRoot, module: module, name: name));
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SourceLocation?>
+        StdlibDeclarations = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The type declaration named <paramref name="name"/> in a file's tokens: the declaration keyword just
+    /// before the name.</summary>
+    private static SourceLocation? DeclarationIn(string file, List<Token> tokens, string name)
+    {
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            if (tokens[index: i].Type == TokenType.Identifier && tokens[index: i].Text == name &&
+                tokens[index: i - 1].Type is TokenType.Record or TokenType.Entity or TokenType.Choice or
+                    TokenType.Flags or TokenType.Variant or TokenType.Protocol or TokenType.Crashable)
+            {
+                return new SourceLocation(FileName: file, Line: tokens[index: i - 1].Line,
+                    Column: tokens[index: i - 1].Column, Position: 0);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Looks through the stdlib files of a module (by their <c>module</c> header) for a type's declaration,
+    /// reading only the files whose text names it after a declaration keyword.</summary>
+    private static SourceLocation? FindStdlibDeclaration(string stdlibRoot, string module, string name)
+    {
+        string[] keywords = ["record ", "entity ", "choice ", "flags ", "variant ", "protocol ", "crashable "];
+        foreach (string file in Directory.EnumerateFiles(path: stdlibRoot, searchPattern: "*.*",
+                     searchOption: SearchOption.AllDirectories))
+        {
+            string text = File.ReadAllText(path: file);
+            if (!keywords.Any(predicate: k => text.Contains(value: k + name, comparisonType: StringComparison.Ordinal)) ||
+                TokensOf(fileName: file) is not { } tokens ||
+                tokens.SkipWhile(predicate: t => t.Type != TokenType.Module)
+                      .Skip(count: 1)
+                      .TakeWhile(predicate: t => t.Type != TokenType.Newline)
+                      .Select(selector: t => t.Text) is var header && string.Concat(values: header) != module)
+            {
+                continue;
+            }
+
+            if (DeclarationIn(file: file, tokens: tokens, name: name) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The generic definition a type was instantiated from (where its doc comment is), or the type.</summary>
+    private static TypeSymbol DefinitionOf(TypeSymbol type)
+    {
+        return type switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } definition } => definition,
+            EntityTypeSymbol { GenericDefinition: { } definition } => definition,
+            _ => type
+        };
+    }
+
+    /// <summary>The declaration keyword of a type's kind, as hover shows it before its name (none for a tuple, a
+    /// routine type or an unresolved one).</summary>
+    private static string? KindWord(TypeSymbol type)
+    {
+        return type switch
+        {
+            CrashableTypeSymbol => "crashable",
+            EntityTypeSymbol => "entity",
+            VariantTypeSymbol => "variant",
+            ChoiceTypeSymbol => "choice",
+            FlagsTypeSymbol => "flags",
+            TupleTypeSymbol => null,
+            RecordTypeSymbol => "record",
+            ProtocolTypeSymbol => "protocol",
+            GenericParameterTypeSymbol or AssociatedProjectionTypeSymbol or ProtocolSelfTypeSymbol => "type parameter",
+            _ => null
+        };
+    }
+
+    /// <summary>The field a member access names at the token (<c>p.x</c>), from its receiver's resolved type.</summary>
+    private static MemberVariableInfo? FieldAtToken(DocState doc, Token hit)
+    {
+        foreach (MemberExpression member in AllNodes(program: doc.Program)
+                    .OfType<MemberExpression>())
+        {
+            if (member.MemberName != hit.Text || member.Location.Line != hit.Line ||
+                MemberNameToken(tokens: doc.Tokens, member: member) is not { } name || name.Column != hit.Column ||
+                member.Object.ResolvedType is not { } receiver)
+            {
+                continue;
+            }
+
+            List<MemberVariableInfo> fields = Rules.SurfaceType(type: receiver) switch
+            {
+                EntityTypeSymbol entity => entity.MemberVariables,
+                RecordTypeSymbol record => record.MemberVariables,
+                _ => []
+            };
+            if (fields.FirstOrDefault(predicate: f => f.Name == member.MemberName) is { } field)
+            {
+                return field;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>A case's value as hover shows it after its type: a choice case's number (written or assigned), a
+    /// flags member's bit (<c>= 4 (1 &lt;&lt; 2)</c>).</summary>
+    private static string CaseValue(TypeSymbol owner, string name)
+    {
+        return Rules.SurfaceType(type: owner) switch
+        {
+            ChoiceTypeSymbol choice when choice.Cases.FirstOrDefault(predicate: c => c.Name == name) is { } choiceCase =>
+                $" = {choiceCase.ComputedValue}",
+            FlagsTypeSymbol flags when flags.Members.FirstOrDefault(predicate: m => m.Name == name) is { } member =>
+                $" = {1UL << member.BitPosition} (1 << {member.BitPosition})",
+            _ => ""
+        };
+    }
+
+    /// <summary>The doc of a case: the doc comment above it in its choice or flags declaration.</summary>
+    private static string? CaseDoc(TypeSymbol owner, string name)
+    {
+        TypeSymbol shown = Rules.SurfaceType(type: owner);
+        if (shown is ChoiceTypeSymbol choice)
+        {
+            if (choice.Cases.FirstOrDefault(predicate: c => c.Name == name)?.Location is { FileName.Length: > 0 } caseAt)
+            {
+                return DocAbove(location: caseAt);
+            }
+        }
+
+        // A flags member keeps no position: it is the first token spelled so below the declaration.
+        if (DeclarationOf(type: shown) is { FileName: { Length: > 0 } file } at && TokensOf(fileName: file) is { } tokens &&
+            tokens.Where(predicate: t => t.Line > at.Line && t.Type == TokenType.Identifier && t.Text == name)
+                  .MinBy(keySelector: t => (t.Line, t.Column)) is { } member)
+        {
+            return DocAbove(location: new SourceLocation(FileName: file, Line: member.Line, Column: member.Column,
+                Position: 0));
+        }
+
+        return null;
+    }
+
+    /// <summary>A parameter's line in the doc comment of the routine it belongs to (<c>:param name: …</c>).</summary>
+    private static string? ParameterDoc(DocState doc, VariableInfo parameter)
+    {
+        RoutineDeclaration? routine = AllNodes(program: doc.Program)
+                                     .OfType<RoutineDeclaration>()
+                                     .Where(predicate: r => r.Parameters.Any(predicate: p =>
+                                          p.Location.Line == parameter.Location?.Line &&
+                                          p.Location.Column == parameter.Location?.Column))
+                                     .FirstOrDefault();
+        string? routineDoc = routine?.ResolvedInfo?.Documentation ?? routine?.Documentation ??
+                             DocAbove(location: routine?.Location);
+        if (routineDoc == null)
+        {
+            return null;
+        }
+
+        string description = ParseDoc(doc: routineDoc)
+                            .Params.FirstOrDefault(predicate: x => x.Name == parameter.Name)
+                            .Desc;
+        return string.IsNullOrWhiteSpace(value: description)
+            ? null
+            : description;
+    }
+
+    // Tokens of files that declare something hovered, by full path, kept while the file is unchanged.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Stamp, List<Token> Tokens)>
+        FileTokens = new(comparer: StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The tokens of a file: an open document as it stands in the editor, any other one as saved.</summary>
+    private static List<Token>? TokensOf(string fileName)
+    {
+        string full = Path.GetFullPath(path: fileName);
+        foreach ((string uri, DocState open) in Docs)
+        {
+            if (string.Equals(a: Path.GetFullPath(path: UriToFileName(uri: uri)), b: full,
+                    comparisonType: StringComparison.OrdinalIgnoreCase))
+            {
+                return open.Tokens;
+            }
+        }
+
+        if (!File.Exists(path: full))
+        {
+            return null;
+        }
+
+        DateTime stamp = File.GetLastWriteTimeUtc(path: full);
+        if (FileTokens.TryGetValue(key: full, value: out (DateTime Stamp, List<Token> Tokens) cached) &&
+            cached.Stamp == stamp)
+        {
+            return cached.Tokens;
+        }
+
+        List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: File.ReadAllText(path: full), fileName: full,
+            language: Builder.Frontends.Languages.OfFile(fileName: full));
+        FileTokens[key: full] = (stamp, tokens);
+        return tokens;
+    }
+
+    /// <summary>
+    /// The doc comment written directly above a declaration: the <c>###</c> lines right above its line, past any
+    /// annotation lines (<c>@readonly</c>), joined as the parser joins a top-level declaration's. It reads the
+    /// declaring file's own tokens, so it finds the doc of a field, a case or a member as well as of a top-level
+    /// declaration, in this file or any other (the stdlib included).
+    /// </summary>
+    private static string? DocAbove(SourceLocation? location)
+    {
+        if (location is not { FileName: { Length: > 0 } file, Line: > 1 } || TokensOf(fileName: file) is not { } tokens)
+        {
+            return null;
+        }
+
+        Dictionary<int, List<Token>> byLine = tokens.Where(predicate: t =>
+                                                         t.Type is not (TokenType.Newline or TokenType.Indent or
+                                                             TokenType.Dedent or TokenType.Eof))
+                                                    .GroupBy(keySelector: t => t.Line)
+                                                    .ToDictionary(keySelector: g => g.Key,
+                                                         elementSelector: g => g.OrderBy(keySelector: t => t.Column)
+                                                                                .ToList());
+        var lines = new List<string>();
+        for (int line = location.Line - 1; line > 0 && byLine.TryGetValue(key: line, value: out List<Token>? onLine); line--)
+        {
+            if (onLine.All(predicate: t => t.Type == TokenType.DocComment))
+            {
+                lines.AddRange(collection: onLine.Select(selector: t => t.Text.Trim()));
+            }
+            else if (!onLine[index: 0].Text.StartsWith(value: '@'))
+            {
+                break;
+            }
+        }
+
+        lines.Reverse();
+        return lines.Count > 0
+            ? string.Join(separator: "\n", values: lines)
             : null;
-        return (label, documentation);
     }
 
     /// <summary>
@@ -559,21 +1195,108 @@ public static class LspServer
     /// </summary>
     private static RoutineInfo? RoutineReferencedByToken(DocState doc, Token hit)
     {
-        foreach (CallExpression call in AllNodes(program: doc.Program)
-                    .OfType<CallExpression>())
-        {
-            if (call.ResolvedRoutine == null)
-            {
-                continue;
-            }
+        return CallReferencedByToken(doc: doc, hit: hit)?.ResolvedRoutine;
+    }
 
-            if (CalleeMatchesHit(callee: call.Callee, hit: hit))
+    /// <summary>The resolved call whose callee is the hit token (see <see cref="RoutineReferencedByToken"/>).</summary>
+    private static CallExpression? CallReferencedByToken(DocState doc, Token hit)
+    {
+        return AllNodes(program: doc.Program)
+              .OfType<CallExpression>()
+              .FirstOrDefault(predicate: call =>
+                   call.ResolvedRoutine != null && CalleeMatchesHit(callee: call.Callee, hit: hit));
+    }
+
+    /// <summary>
+    /// What each generic parameter stands for at the hovered token, like C#'s "T is string": for a call, the
+    /// receiver type's parameters and the routine's own (as instantiated, or else as its arguments bind them),
+    /// for a variable or an expression, its type's parameters.
+    /// </summary>
+    private static List<(string Parameter, TypeSymbol Argument)> GenericBindingsAt(DocState doc, Token hit,
+        Expression? best)
+    {
+        if (IsIdentifierText(text: hit.Text) && CallReferencedByToken(doc: doc, hit: hit) is { } call)
+        {
+            return call.ResolvedRoutine is { Kind: RoutineKind.Creator } && call.ResolvedType is { } made
+                ? TypeBindings(type: Rules.SurfaceType(type: made))
+                : CallBindings(call: call);
+        }
+
+        TypeSymbol? type = IsIdentifierText(text: hit.Text)
+            ? VariableBoundAtToken(doc: doc, hit: hit)?.Type ?? best?.ResolvedType
+            : best?.ResolvedType;
+        return type != null
+            ? TypeBindings(type: Rules.SurfaceType(type: type))
+            : [];
+    }
+
+    /// <summary>The generic parameters of a call: the receiver's (<c>List[T].add_last</c> called on a
+    /// <c>List[S32]</c> binds <c>T</c> to <c>S32</c>), then the routine's own.</summary>
+    private static List<(string Parameter, TypeSymbol Argument)> CallBindings(CallExpression call)
+    {
+        var bindings = new List<(string Parameter, TypeSymbol Argument)>();
+        if (call.Callee is MemberExpression { Object.ResolvedType: { } receiver })
+        {
+            bindings.AddRange(collection: TypeBindings(type: Rules.SurfaceType(type: receiver)));
+        }
+
+        RoutineInfo routine = call.ResolvedRoutine!;
+        List<string>? names = routine.GenericDefinition?.GenericParameters ?? routine.GenericParameters;
+        if (names is not { Count: > 0 })
+        {
+            return bindings;
+        }
+
+        if (routine.TypeArguments is { } args && args.Count == names.Count)
+        {
+            bindings.AddRange(collection: names.Zip(second: args));
+            return bindings;
+        }
+
+        // Not instantiated in this analysis: a parameter declared as a bare generic parameter takes the
+        // type of the argument passed to it.
+        for (int i = 0; i < routine.Parameters.Count; i++)
+        {
+            if (routine.Parameters[index: i].Type is GenericParameterTypeSymbol param &&
+                names.Contains(item: param.Name) &&
+                bindings.All(predicate: b => b.Parameter != param.Name) &&
+                ArgumentFor(call: call, position: i, name: routine.Parameters[index: i].Name)?.ResolvedType is { } argType)
             {
-                return call.ResolvedRoutine;
+                bindings.Add(item: (param.Name, argType));
             }
         }
 
-        return null;
+        return bindings;
+    }
+
+    /// <summary>The argument a call passes to a parameter: by name when the call names it, else by position.</summary>
+    private static Expression? ArgumentFor(CallExpression call, int position, string name)
+    {
+        if (call.Arguments.OfType<NamedArgumentExpression>()
+                .FirstOrDefault(predicate: a => a.Name == name) is { } named)
+        {
+            return named.Value;
+        }
+
+        return position < call.Arguments.Count && call.Arguments[index: position] is not NamedArgumentExpression
+            ? call.Arguments[index: position]
+            : null;
+    }
+
+    /// <summary>The generic parameters of an instantiated type, paired with its arguments
+    /// (<c>Dict[K, V]</c> as <c>Dict[Text, S64]</c> gives <c>K</c> = Text and <c>V</c> = S64).</summary>
+    private static List<(string Parameter, TypeSymbol Argument)> TypeBindings(TypeSymbol type)
+    {
+        List<string>? names = type switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters,
+            EntityTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters,
+            _ => null
+        };
+        return names != null && type.TypeArguments is { } args && args.Count == names.Count
+            ? names.Zip(second: args)
+                   .ToList()
+            : [];
     }
 
     /// <summary>Whether a call's callee expression matches the hit token — used to resolve which routine
@@ -627,6 +1350,11 @@ public static class LspServer
     /// </summary>
     private static string? OwnershipNote(TypeSymbol type)
     {
+        if (!Rules.ChecksOwnership)
+        {
+            return null;
+        }
+
         if (type is EntityTypeSymbol)
         {
             return
@@ -642,6 +1370,27 @@ public static class LspServer
             "Controlling" or "Accessing" => "🔗 a reference protocol, not a pass-currency.",
             _ => null
         };
+    }
+
+    /// <summary>The name a <c>var</c> declaration at the token declares, with its type (written or inferred).</summary>
+    private static (string Name, TypeSymbol Type, SourceLocation Location)? DeclaredVariableAtToken(DocState doc, Token hit)
+    {
+        foreach (VariableDeclaration vd in AllNodes(program: doc.Program)
+                    .OfType<VariableDeclaration>())
+        {
+            if (vd.Name != hit.Text || vd.Location.Line != hit.Line)
+            {
+                continue;
+            }
+
+            TypeSymbol? type = vd.Type?.ResolvedType ?? vd.Initializer?.ResolvedType;
+            if (type != null && !type.Name.StartsWith(value: '<'))
+            {
+                return (vd.Name, type, vd.Location);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The variable/parameter binding an identifier token resolved to (via the stamped
@@ -783,7 +1532,17 @@ public static class LspServer
         "keyword", // 5
         "string", // 6
         "number", // 7
-        "comment" // 8
+        "comment", // 8
+        "namespace", // 9: a module path
+        "operator", // 10
+        // The two kinds of type, which a reader tells apart by color. A record (also a choice, a flags, a
+        // crashable, and a variant of records) is a copied value, an entity (also a variant holding an
+        // entity) is an object with an identity.
+        "recordType", // 11
+        "entityType", // 12
+        "interface", // 13: a protocol
+        "typeParameter", // 14
+        "constant" // 15: a preset or a global
     };
 
     private static int SemTok(string name)
@@ -1037,7 +1796,9 @@ public static class LspServer
         Token? receiver = MemberReceiverToken(doc: doc, line0: line0, char0: char0);
         if (receiver != null)
         {
-            TypeSymbol? receiverType = ReceiverType(doc: doc, receiver: receiver);
+            TypeSymbol? receiverType = ReceiverType(doc: doc, receiver: receiver) is { } handled
+                ? Rules.SurfaceType(type: handled)
+                : null;
             if (receiverType != null)
             {
                 AddMemberCompletions(doc: doc,
@@ -1093,14 +1854,15 @@ public static class LspServer
         // them for `me.` (inside the type's own body they are accessible).
         bool includeSecret = receiver.Text == "me";
 
-        foreach ((string name, string type) in MemberVariableSignatures(type: receiverType,
+        foreach ((string name, string type, SourceLocation? location) in MemberVariableSignatures(type: receiverType,
                      includeSecret: includeSecret))
         {
             AddItem(items: items,
                 seen: seen,
                 label: name,
-                kind: 5,
-                detail: $": {type}"); // Field
+                kind: 5, // Field
+                detail: $": {type}",
+                documentation: DocAbove(location: location));
         }
 
         // Resolved own member routines — GetOwnMemberRoutinesResolved substitutes the generic
@@ -1183,7 +1945,10 @@ public static class LspServer
                 AddItem(items: items,
                     seen: seen,
                     label: dn,
-                    kind: kind);
+                    kind: kind,
+                    documentation: node is SyntaxTree.Declaration declaration
+                        ? declaration.Documentation ?? DocAbove(location: declaration.Location)
+                        : null);
             }
         }
     }
@@ -1405,7 +2170,7 @@ public static class LspServer
             {
                 new Dictionary<string, object?>
                 {
-                    [key: PropLabel] = $"{routine.Name}{RoutineDetail(r: routine)}",
+                    [key: PropLabel] = Surface(text: $"{routine.Name}{RoutineDetail(r: routine)}"),
                     [key: "parameters"] = parameters,
                     // Signature-level doc = the SUMMARY only; per-parameter `:param:` text is attached to
                     // each parameter above, and Returns/Throws render in hover, so don't repeat them here.
@@ -1426,7 +2191,7 @@ public static class LspServer
                        {
                            var pdict = new Dictionary<string, object?>
                            {
-                               [key: PropLabel] = $"{p.Name}: {p.Type.Name}"
+                               [key: PropLabel] = Surface(text: $"{p.Name}: {TypeText(type: p.Type)}")
                            };
                            string? pdesc = sigDoc
                                          ?.Params.FirstOrDefault(predicate: x => x.Name == p.Name)
@@ -1536,8 +2301,9 @@ public static class LspServer
     }
 
     /// <summary>
-    /// <c>textDocument/semanticTokens/full</c>: classify identifier tokens as <c>function</c> (a call
-    /// callee at that position) or <c>variable</c>, delta-encoded per the LSP spec.
+    /// <c>textDocument/semanticTokens/full</c>: every token's role, delta-encoded per the LSP spec. A type name
+    /// is colored by its kind (a record or an entity, a protocol, a generic parameter), a routine wherever it is
+    /// declared or called, a module path, a preset or global, and an operator. See <see cref="SemanticTokenTypes"/>.
     /// </summary>
     private static void HandleSemanticTokens(Stream stdout, JsonElement id, JsonElement root)
     {
@@ -1552,41 +2318,148 @@ public static class LspServer
             return;
         }
 
-        List<ISyntaxTreeNode> nodes = AllNodes(program: doc.Program);
-        BuildSemanticRoleSets(nodes: nodes,
-            functionPos: out HashSet<(int, int)> functionPos,
-            typePos: out HashSet<(int, int)> typePos,
-            variablePos: out HashSet<(int, int)> variablePos,
-            deadPos: out HashSet<(int, int)> deadPos);
-
-        List<object?> data = BuildDeltaEncodedTokens(doc: doc,
-            functionPos: functionPos,
-            typePos: typePos,
-            variablePos: variablePos,
-            deadPos: deadPos);
+        SemanticRoles roles = BuildSemanticRoles(nodes: AllNodes(program: doc.Program), tokens: doc.Tokens,
+            registry: doc.Registry);
+        List<object?> data = BuildDeltaEncodedTokens(doc: doc, roles: roles);
 
         WriteResult(stdout: stdout,
             id: id,
             result: new Dictionary<string, object?> { [key: "data"] = data });
     }
 
-    /// <summary>Builds the four AST-derived position sets used to classify identifier tokens for semantic
-    /// highlighting: call-callee positions (function), typed variable positions, type-name positions, and
-    /// dead-use (moved-out) positions.</summary>
-    private static void BuildSemanticRoleSets(List<ISyntaxTreeNode> nodes,
-        out HashSet<(int, int)> functionPos, out HashSet<(int, int)> typePos,
-        out HashSet<(int, int)> variablePos, out HashSet<(int, int)> deadPos)
+    /// <summary>
+    /// What the analyzed AST says about identifier positions: call callees, variables, presets and globals, dead
+    /// (moved-out) uses, and the token kind of every position where a type is named, taken from what the analysis
+    /// resolved there (never from looking a name up).
+    /// </summary>
+    private sealed record SemanticRoles(
+        HashSet<(int, int)> Function,
+        HashSet<(int, int)> Variable,
+        HashSet<(int, int)> Constant,
+        HashSet<(int, int)> Dead,
+        Dictionary<(int, int), string> Types,
+        Dictionary<(int, int), TypeSymbol> Symbols,
+        Dictionary<(int, int), (TypeSymbol Owner, string Case)> Cases);
+
+    /// <summary>Colors a position as the type resolved there, and keeps the type for hover.</summary>
+    private static void AddType(SemanticRoles roles, (int, int) key, TypeSymbol type, bool replace = false)
     {
-        functionPos = new HashSet<(int, int)>();
-        typePos = new HashSet<(int, int)>();
-        variablePos = new HashSet<(int, int)>();
-        deadPos = new HashSet<(int, int)>();
+        string kind = TypeTokenKind(type: type);
+        if (replace)
+        {
+            roles.Types[key: key] = kind;
+            roles.Symbols[key: key] = type;
+        }
+        else if (roles.Types.TryAdd(key: key, value: kind))
+        {
+            roles.Symbols[key: key] = type;
+        }
+    }
+
+    /// <summary>Colors a position as a case of a choice or a flags (a constant), and keeps whose case it is.</summary>
+    private static void AddCase(SemanticRoles roles, (int, int) key, TypeSymbol owner, string name)
+    {
+        roles.Constant.Add(item: key);
+        roles.Cases.TryAdd(key: key, value: (owner, name));
+    }
+
+    /// <summary>The case names of a choice or a flags type, or null for any other type.</summary>
+    private static IEnumerable<string>? CaseNames(TypeSymbol? type)
+    {
+        return Rules.SurfaceType(type: type ?? ErrorTypeSymbol.Instance) switch
+        {
+            ChoiceTypeSymbol choice => choice.Cases.Select(selector: c => c.Name),
+            FlagsTypeSymbol flags => flags.Members.Select(selector: m => m.Name),
+            _ => null
+        };
+    }
+
+    private static SemanticRoles BuildSemanticRoles(List<ISyntaxTreeNode> nodes, List<Token> tokens,
+        TypeRegistry registry)
+    {
+        var roles = new SemanticRoles(Function: [], Variable: [], Constant: [], Dead: [], Types: [], Symbols: [],
+            Cases: []);
+
+        // The analysis keeps some resolutions on the symbol it built rather than on the syntax: a stdlib
+        // signature, a generic routine's parameters, a field. Each such written type is paired with the slot of
+        // that symbol it was resolved for, found by where it was declared.
+        var declared = new Dictionary<(string File, int Line, int Column), TypeSymbol>();
+        foreach (TypeSymbol type in registry.GetAllTypes()
+                                            .Where(predicate: t => !t.IsGenericResolution))
+        {
+            if (type.Location is { FileName: { Length: > 0 } file } at)
+            {
+                declared.TryAdd(key: (Path.GetFullPath(path: file).ToUpperInvariant(), at.Line, at.Column), value: type);
+            }
+        }
+
+        string? module = nodes.OfType<ModuleDeclaration>()
+                              .FirstOrDefault()
+                             ?.Path;
+        foreach (ISyntaxTreeNode node in nodes)
+        {
+            PairDeclaredTypes(node: node, declared: declared, tokens: tokens, registry: registry, module: module,
+                roles: roles);
+        }
+
+        // Inside a generic declaration its parameters shadow every other type (the resolver's own rule), also
+        // where the shared tree carries the type of the last instance analyzed through it.
+        List<(SyntaxTree.Declaration Declaration, List<string> Parameters, List<TypeExpression> Written)> scopes =
+            nodes.OfType<SyntaxTree.Declaration>()
+                 .Select(selector: d => (Declaration: d,
+                      Parameters: ScopeParameters(declaration: d, registry: registry, module: module),
+                      Written: WrittenTypesIn(declaration: d)))
+                 .Where(predicate: scope => scope.Written.Count > 0)
+                 .ToList();
+        foreach ((_, List<string> parameters, List<TypeExpression> written) in scopes)
+        {
+            foreach (TypeExpression type in written.Where(predicate: w => parameters.Contains(item: w.Name)))
+            {
+                roles.Types.TryAdd(key: (type.Location.Line, type.Location.Column), value: "typeParameter");
+            }
+        }
+
+        // A type written in a type position (`x: S64`, `List[T]`) that the analysis resolved in place.
+        foreach (TypeExpression written in nodes.OfType<TypeExpression>())
+        {
+            PairWrittenType(written: written, resolved: written.ResolvedType, roles: roles);
+        }
+
+        // A type called to make a value (`List[S64]()`, `Point(x: 1)`) is colored as the type, as C# colors a
+        // constructor.
+        foreach (CreatorExpression creator in nodes.OfType<CreatorExpression>())
+        {
+            if (creator.ResolvedType is { } type)
+            {
+                AddType(roles: roles, key: (creator.Location.Line, creator.Location.Column), type: type);
+            }
+        }
 
         foreach (CallExpression call in nodes.OfType<CallExpression>())
         {
-            if (call.Callee is IdentifierExpression cid)
+            if (call.Callee is not IdentifierExpression cid)
             {
-                functionPos.Add(item: (cid.Location.Line, cid.Location.Column));
+                continue;
+            }
+
+            (int Line, int Column) key = (cid.Location.Line, cid.Location.Column);
+
+            // Making a value: a creator, a record built field by field (no routine behind it), or a type's
+            // conversion routine (`CStr(from: text)`). The callee names the type that was made.
+            TypeSymbol? made = call.ResolvedRoutine switch
+            {
+                { Kind: RoutineKind.Creator } creator => call.ResolvedType ?? creator.OwnerType,
+                null => call.ResolvedType,
+                { OwnerType: { } owner } => owner,
+                _ => null
+            };
+            if (made != null && ShortName(name: Rules.SurfaceType(type: made).BareName) == cid.Name)
+            {
+                AddType(roles: roles, key: key, type: made);
+            }
+            else
+            {
+                roles.Function.Add(item: key);
             }
         }
 
@@ -1595,26 +2468,553 @@ public static class LspServer
             (int Line, int Column) key = (ide.Location.Line, ide.Location.Column);
             if (ide.IsDeadUse)
             {
-                deadPos.Add(item: key); // read after its ownership was moved out — grey it out
+                roles.Dead.Add(item: key); // read after its ownership was moved out — grey it out
             }
 
-            if (ide.ResolvedVariable != null)
+            if (ide.ResolvedVariable == null && ide.ResolvedType is { } caseOwner &&
+                (ide.ResolvedFlagsBit != null || CaseNames(type: caseOwner)?.Contains(value: ide.Name) == true))
             {
-                variablePos.Add(item: key);
+                AddCase(roles: roles, key: key, owner: caseOwner, name: ide.Name);
             }
-            else if (ide.ResolvedType is { } rt && IsTypeLikeName(name: ide.Name) &&
-                     rt.Name == ide.Name)
+            else if (ide.IsModuleGlobal || ide.ResolvedVariable is { IsPreset: true } or { IsGlobal: true })
             {
-                typePos.Add(item: key);
+                roles.Constant.Add(item: key);
+            }
+            else if (ide.ResolvedVariable != null)
+            {
+                roles.Variable.Add(item: key);
+            }
+            else if (ide.ResolvedType is { } type && ShortName(name: Rules.SurfaceType(type: type).BareName) == ide.Name)
+            {
+                // The type itself used as a value (`S64.MAX`, `Text.from(...)`).
+                AddType(roles: roles, key: key, type: type);
+            }
+        }
+
+        foreach (MemberExpression member in nodes.OfType<MemberExpression>())
+        {
+            if (member.ResolvedType is { } owner && CaseNames(type: owner)?.Contains(value: member.MemberName) == true &&
+                MemberNameToken(tokens: tokens, member: member) is { } name)
+            {
+                AddCase(roles: roles, key: (name.Line, name.Column), owner: owner, name: member.MemberName);
+            }
+        }
+
+        foreach (RoutineDeclaration routine in nodes.OfType<RoutineDeclaration>())
+        {
+            AddUnresolvedCases(routine: routine, roles: roles);
+        }
+
+        foreach (ISyntaxTreeNode node in nodes)
+        {
+            AddDeclarationRoles(node: node, tokens: tokens, roles: roles);
+        }
+
+        // What is left was never resolved by the build (a generic definition's body is analyzed per instance):
+        // resolved here the way the build resolves a stdlib signature, in the declaration's generic scope.
+        foreach ((SyntaxTree.Declaration declaration, List<string> parameters, List<TypeExpression> written) in scopes)
+        {
+            foreach (TypeExpression type in written.Where(predicate: w =>
+                         !roles.Types.ContainsKey(key: (w.Location.Line, w.Location.Column))))
+            {
+                PairWrittenType(written: type,
+                    resolved: StdlibLoader.ResolveWrittenType(registry: registry, typeExpr: type,
+                        genericParams: parameters, moduleName: module),
+                    roles: roles);
+            }
+
+            // `Copyable onlyif T obeys Assignable`: the parameter a conformance condition is about.
+            foreach (TypeExpression type in written.Where(predicate: w => w.ConformanceConditions != null))
+            {
+                foreach (GenericConstraintDeclaration condition in type.ConformanceConditions!)
+                {
+                    if (TokenOnLine(tokens: tokens, line: condition.Location?.Line ?? type.Location.Line,
+                            text: condition.ParameterName) is { } parameter)
+                    {
+                        roles.Types.TryAdd(key: (parameter.Line, parameter.Column), value: "typeParameter");
+                    }
+                }
+            }
+
+            AddTypesUsedAsValues(declaration: declaration, parameters: parameters, registry: registry, module: module,
+                roles: roles);
+        }
+
+        return roles;
+    }
+
+    /// <summary>
+    /// A type named where a value goes, in a body the build never analyzed (a generic definition's): the receiver
+    /// of a member access or call (<c>T.data_size()</c>, <c>U128.from_bytes_le(...)</c>, <c>List[T]()</c>) or a
+    /// callee (<c>S128(...)</c>). A generic parameter is one by scope, any other name by the resolver a stdlib signature
+    /// goes through.
+    /// </summary>
+    private static void AddTypesUsedAsValues(SyntaxTree.Declaration declaration, List<string> parameters,
+        TypeRegistry registry, string? module, SemanticRoles roles)
+    {
+        var acc = new List<ISyntaxTreeNode>();
+        CollectAllNodes(node: declaration, acc: acc,
+            seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
+        IEnumerable<IdentifierExpression> named = acc.OfType<MemberExpression>()
+                                                     .Select(selector: m => m.Object)
+                                                     .Concat(second: acc.OfType<GenericMemberRoutineCallExpression>()
+                                                                        .Select(selector: g => g.Object))
+                                                     .Concat(second: acc.OfType<CallExpression>()
+                                                                        .Select(selector: c => c.Callee))
+                                                     .OfType<IdentifierExpression>()
+                                                     .Where(predicate: e => e.ResolvedVariable == null &&
+                                                                            e.ResolvedType == null && e.Realm == null);
+        // `List[T](...)` in a generic definition's body: a creator nothing resolved.
+        foreach (CreatorExpression creator in acc.OfType<CreatorExpression>()
+                                                 .Where(predicate: c => c.ResolvedType == null))
+        {
+            (int Line, int Column) key = (creator.Location.Line, creator.Location.Column);
+            if (!roles.Types.ContainsKey(key: key) &&
+                StdlibLoader.ResolveWrittenType(registry: registry,
+                    typeExpr: new TypeExpression(Name: creator.TypeName, GenericArguments: creator.TypeArguments,
+                        Location: creator.Location),
+                    genericParams: parameters, moduleName: module) is { } made and not ErrorTypeSymbol)
+            {
+                AddType(roles: roles, key: key, type: made, replace: true);
+            }
+        }
+
+        foreach (IdentifierExpression name in named)
+        {
+            (int Line, int Column) key = (name.Location.Line, name.Location.Column);
+            if (roles.Types.ContainsKey(key: key))
+            {
+                continue;
+            }
+
+            if (parameters.Contains(item: name.Name))
+            {
+                roles.Types[key: key] = "typeParameter";
+            }
+            else if (StdlibLoader.ResolveWrittenType(registry: registry,
+                         typeExpr: new TypeExpression(Name: name.Name, GenericArguments: null, Location: name.Location),
+                         genericParams: parameters, moduleName: module) is { } type and not ErrorTypeSymbol)
+            {
+                AddType(roles: roles, key: key, type: type, replace: true);
             }
         }
     }
 
+    /// <summary>
+    /// The generic parameters in scope inside a declaration: its own, and for a member routine its owner's
+    /// (<c>routine List[T].add_last</c> sees <c>T</c>): a receiver argument is a parameter unless it names a type
+    /// (<c>Iterable[Text].join</c> specializes), the rule the build resolves receivers by.
+    /// </summary>
+    private static List<string> ScopeParameters(SyntaxTree.Declaration declaration, TypeRegistry registry,
+        string? module)
+    {
+        var parameters = new List<string>();
+        if (declaration.GetType()
+                       .GetProperty(name: "GenericParameters")
+                      ?.GetValue(obj: declaration) is List<string> own)
+        {
+            parameters.AddRange(collection: own);
+        }
+
+        if (declaration is RoutineDeclaration { ReceiverType.GenericArguments: { } receiverArgs })
+        {
+            parameters.AddRange(collection: receiverArgs
+                                           .Where(predicate: a => a.GenericArguments is not { Count: > 0 } &&
+                                                                  StdlibLoader.ResolveWrittenType(registry: registry,
+                                                                      typeExpr: a, genericParams: null,
+                                                                      moduleName: module) == null)
+                                           .Select(selector: a => a.Name));
+        }
+
+        if (declaration is RoutineDeclaration { ResolvedInfo.OwnerType: { } owner })
+        {
+            parameters.AddRange(collection: owner switch
+            {
+                RecordTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters ?? [],
+                EntityTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters ?? [],
+                _ => owner.GenericParameters ?? []
+            });
+        }
+
+        return parameters;
+    }
+
+    /// <summary>Every type a declaration writes, in its header, its constraints, its members and its body (a nested
+    /// declaration is also a scope of its own, and its parameters were claimed before any outer resolution).</summary>
+    private static List<TypeExpression> WrittenTypesIn(SyntaxTree.Declaration declaration)
+    {
+        var acc = new List<ISyntaxTreeNode>();
+        CollectAllNodes(node: declaration, acc: acc,
+            seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
+        return acc.OfType<TypeExpression>()
+                  .ToList();
+    }
+
+    /// <summary>
+    /// Colors a written type and, slot by slot, its written generic arguments by what the analysis resolved for
+    /// them (<c>List[T]</c> against <c>List[T]</c>: the list, then the parameter).
+    /// </summary>
+    private static void PairWrittenType(TypeExpression? written, TypeSymbol? resolved, SemanticRoles roles)
+    {
+        if (written == null || resolved == null || resolved is ErrorTypeSymbol)
+        {
+            return;
+        }
+
+        TypeSymbol shown = Rules.SurfaceType(type: resolved);
+
+        // Desugaring wraps a written type at its own position (a variadic `items...: T` becomes the array of its
+        // arguments, `Array[T, N]`, and `T?` a `Maybe[T]`): only the wrapped type was written there.
+        if (written.GenericArguments is [var wrapped, ..] &&
+            wrapped.Location.Line == written.Location.Line && wrapped.Location.Column == written.Location.Column)
+        {
+            PairWrittenType(written: wrapped,
+                resolved: shown.TypeArguments is [var wrappedType, ..] ? wrappedType : null,
+                roles: roles);
+            return;
+        }
+
+        AddType(roles: roles, key: (written.Location.Line, written.Location.Column), type: shown);
+        if (written.GenericArguments is { Count: > 0 } writtenArgs && shown.TypeArguments is { } resolvedArgs &&
+            writtenArgs.Count == resolvedArgs.Count)
+        {
+            for (int i = 0; i < writtenArgs.Count; i++)
+            {
+                PairWrittenType(written: writtenArgs[index: i], resolved: resolvedArgs[index: i], roles: roles);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Pairs the types a declaration writes with what the analysis resolved for them on its symbol: a routine's
+    /// parameters and result (and its owner's generic parameters), a type's fields, protocols, associated-type
+    /// bindings and variant members.
+    /// </summary>
+    private static void PairDeclaredTypes(ISyntaxTreeNode node,
+        Dictionary<(string File, int Line, int Column), TypeSymbol> declared, List<Token> tokens, TypeRegistry registry,
+        string? module, SemanticRoles roles)
+    {
+        if (node is RoutineDeclaration { ResolvedInfo: { } routine } routineDecl)
+        {
+            foreach (Parameter parameter in routineDecl.Parameters)
+            {
+                PairWrittenType(written: parameter.Type,
+                    resolved: routine.Parameters.FirstOrDefault(predicate: p => p.Name == parameter.Name)?.Type,
+                    roles: roles);
+            }
+
+            PairWrittenType(written: routineDecl.ReturnType, resolved: routine.ReturnType, roles: roles);
+
+            // `routine List[T].add_last`: the owner's own parameters, written in the header.
+            TypeSymbol? owner = routine.OwnerType;
+            List<string>? ownerParameters = owner switch
+            {
+                RecordTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters,
+                EntityTypeSymbol { GenericDefinition: { } definition } => definition.GenericParameters,
+                _ => owner?.GenericParameters
+            };
+            if (ownerParameters != null)
+            {
+                foreach (Token parameter in tokens.Where(predicate: t =>
+                             t.Line == routineDecl.Location.Line && t.Type == TokenType.Identifier &&
+                             ownerParameters.Contains(item: t.Text)))
+                {
+                    roles.Types.TryAdd(key: (parameter.Line, parameter.Column), value: "typeParameter");
+                }
+            }
+
+            return;
+        }
+
+        if (node is SyntaxTree.Declaration obeying &&
+            obeying.GetType()
+                   .GetProperty(name: "Protocols")
+                  ?.GetValue(obj: obeying) is List<TypeExpression> obeyedProtocols)
+        {
+            foreach (TypeExpression protocol in obeyedProtocols)
+            {
+                roles.Types.TryAdd(key: (protocol.Location.Line, protocol.Location.Column), value: "interface");
+            }
+        }
+
+        if (node is not SyntaxTree.Declaration { Location.FileName: { Length: > 0 } file } typeDecl ||
+            !declared.TryGetValue(key: (Path.GetFullPath(path: file).ToUpperInvariant(), typeDecl.Location.Line,
+                typeDecl.Location.Column), value: out TypeSymbol? symbol))
+        {
+            return;
+        }
+
+        if (typeDecl.GetType()
+                    .GetProperty(name: "Name")
+                   ?.GetValue(obj: typeDecl) is string name &&
+            TokenOnLine(tokens: tokens, line: typeDecl.Location.Line, text: name) is { } nameToken)
+        {
+            AddType(roles: roles, key: (nameToken.Line, nameToken.Column), type: symbol, replace: true);
+        }
+
+        (List<MemberVariableInfo> fields, List<TypeSymbol> protocols, Dictionary<string, TypeSymbol> bindings) = symbol switch
+        {
+            EntityTypeSymbol entity => (entity.MemberVariables, entity.ImplementedProtocols, entity.AssociatedTypeBindings),
+            RecordTypeSymbol record => (record.MemberVariables, record.ImplementedProtocols, record.AssociatedTypeBindings),
+            _ => ([], [], [])
+        };
+
+        List<SyntaxTree.Declaration> members = typeDecl switch
+        {
+            EntityDeclaration entityDecl => entityDecl.Members,
+            RecordDeclaration recordDecl => recordDecl.Members,
+            CrashableDeclaration crashableDecl => crashableDecl.Members,
+            _ => []
+        };
+        foreach (VariableDeclaration field in members.OfType<VariableDeclaration>())
+        {
+            PairWrittenType(written: field.Type,
+                resolved: fields.FirstOrDefault(predicate: f => f.Name == field.Name)?.Type,
+                roles: roles);
+        }
+
+        if (typeDecl.GetType()
+                    .GetProperty(name: "Protocols")
+                   ?.GetValue(obj: typeDecl) is List<TypeExpression> obeyed)
+        {
+            foreach (TypeExpression protocol in obeyed)
+            {
+                PairWrittenType(written: protocol,
+                    resolved: protocols.FirstOrDefault(predicate: p =>
+                        ShortName(name: p.BareName) == ShortName(name: protocol.Name)),
+                    roles: roles);
+                roles.Types.TryAdd(key: (protocol.Location.Line, protocol.Location.Column), value: "interface");
+            }
+        }
+
+        if (typeDecl.GetType()
+                    .GetProperty(name: "AssociatedTypes")
+                   ?.GetValue(obj: typeDecl) is List<AssociatedTypeDeclaration> associated)
+        {
+            foreach (AssociatedTypeDeclaration slot in associated)
+            {
+                PairWrittenType(written: slot.Binding, resolved: bindings.GetValueOrDefault(key: slot.Name), roles: roles);
+                if (slot.Constraint != null)
+                {
+                    roles.Types.TryAdd(key: (slot.Constraint.Location.Line, slot.Constraint.Location.Column),
+                        value: "interface");
+                }
+            }
+        }
+
+        if (typeDecl is ChoiceDeclaration choiceDecl)
+        {
+            foreach (ChoiceCase choiceCase in choiceDecl.Cases)
+            {
+                if (TokenOnLine(tokens: tokens, line: choiceCase.Location.Line, text: choiceCase.Name) is { } caseToken)
+                {
+                    AddCase(roles: roles, key: (caseToken.Line, caseToken.Column), owner: symbol, name: choiceCase.Name);
+                }
+            }
+        }
+
+        if (typeDecl is FlagsDeclaration flagsDecl)
+        {
+            foreach (Token member in FlagsMemberTokens(tokens: tokens, flags: flagsDecl))
+            {
+                AddCase(roles: roles, key: (member.Line, member.Column), owner: symbol, name: member.Text);
+            }
+        }
+
+        if (typeDecl is VariantDeclaration variantDecl && symbol is VariantTypeSymbol variant)
+        {
+            List<VariantMemberInfo> arms = variant.Members.Where(predicate: m => !m.IsNone)
+                                                  .ToList();
+            List<VariantMember> writtenArms = variantDecl.Members.Where(predicate: m => m.Type.Name != "None")
+                                                         .ToList();
+            for (int i = 0; i < Math.Min(val1: arms.Count, val2: writtenArms.Count); i++)
+            {
+                PairWrittenType(written: writtenArms[index: i].Type, resolved: arms[index: i].Type, roles: roles);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The names a declaration introduces: a type's name (its kind is the declaration's own), its generic
+    /// parameters and associated types, the kind a constraint names, and for a routine its name and the type it
+    /// belongs to (<c>routine Account.deposit</c>).
+    /// </summary>
+    private static void AddDeclarationRoles(ISyntaxTreeNode node, List<Token> tokens, SemanticRoles roles)
+    {
+        if (node is not SyntaxTree.Declaration declaration)
+        {
+            return;
+        }
+
+        int line = declaration.Location.Line;
+
+        // `needs T obeys Comparable`, `T is EntityType`: the parameter, and the kind a kind constraint names.
+        if (declaration.GetType()
+                       .GetProperty(name: "GenericConstraints")
+                      ?.GetValue(obj: declaration) is List<GenericConstraintDeclaration> constraints)
+        {
+            foreach (GenericConstraintDeclaration constraint in constraints)
+            {
+                int at = constraint.Location?.Line ?? line;
+                if (TokenOnLine(tokens: tokens, line: at, text: constraint.ParameterName) is { } parameter)
+                {
+                    roles.Types.TryAdd(key: (parameter.Line, parameter.Column), value: "typeParameter");
+                }
+
+                if (ConstraintKindTokens.TryGetValue(key: constraint.ConstraintType,
+                        value: out (string Spelling, string Kind) named) &&
+                    TokenOnLine(tokens: tokens, line: at, text: named.Spelling) is { } spelled)
+                {
+                    roles.Types.TryAdd(key: (spelled.Line, spelled.Column), value: named.Kind);
+                }
+            }
+        }
+
+        // `relates ListEmittable[T] as Iter`: the associated-type slot stands for a type like a parameter.
+        if (declaration.GetType()
+                       .GetProperty(name: "AssociatedTypes")
+                      ?.GetValue(obj: declaration) is List<AssociatedTypeDeclaration> associated)
+        {
+            foreach (AssociatedTypeDeclaration slot in associated)
+            {
+                if (TokenOnLine(tokens: tokens, line: slot.Location?.Line ?? line, text: slot.Name) is { } name)
+                {
+                    roles.Types.TryAdd(key: (name.Line, name.Column), value: "typeParameter");
+                }
+            }
+        }
+        string? kind = declaration switch
+        {
+            RecordDeclaration or ChoiceDeclaration or FlagsDeclaration or CrashableDeclaration => "recordType",
+            EntityDeclaration => "entityType",
+            ProtocolDeclaration => "interface",
+            VariantDeclaration variant => variant.Members.Any(predicate: m =>
+                m.Type.ResolvedType is { } armType && TypeTokenKind(type: armType) == "entityType")
+                ? "entityType"
+                : "recordType",
+            _ => null
+        };
+        string? typeName = declaration.GetType()
+                                      .GetProperty(name: "Name")
+                                     ?.GetValue(obj: declaration) as string;
+        if (kind != null && typeName != null && TokenOnLine(tokens: tokens, line: line, text: typeName) is { } declared)
+        {
+            roles.Types.TryAdd(key: (declared.Line, declared.Column), value: kind);
+        }
+
+        if (declaration is RoutineDeclaration { ResolvedInfo: { } routine })
+        {
+            // `routine Account.deposit`: the first name after `routine` is the owner when there is one.
+            List<Token> header = tokens.Where(predicate: t => t.Line == line && t.Type == TokenType.Identifier)
+                                       .OrderBy(keySelector: t => t.Column)
+                                       .ToList();
+            if (routine.OwnerType is { } owner && header.Count > 1)
+            {
+                AddType(roles: roles, key: (header[index: 0].Line, header[index: 0].Column), type: owner);
+            }
+
+            if (header.FirstOrDefault(predicate: t => t.Text == routine.Name &&
+                                                      (routine.OwnerType == null || t != header[index: 0])) is { } name)
+            {
+                roles.Function.Add(item: (name.Line, name.Column));
+            }
+        }
+
+        if (declaration.GetType()
+                       .GetProperty(name: "GenericParameters")
+                      ?.GetValue(obj: declaration) is List<string> parameters)
+        {
+            foreach (Token parameter in tokens.Where(predicate: t =>
+                         t.Line == line && t.Type == TokenType.Identifier && parameters.Contains(item: t.Text)))
+            {
+                roles.Types.TryAdd(key: (parameter.Line, parameter.Column), value: "typeParameter");
+            }
+        }
+    }
+
+    /// <summary>The member names of a flags declaration, as written in its body (the lines below its header, up to
+    /// the next line that starts at the header's own indentation or less).</summary>
+    private static IEnumerable<Token> FlagsMemberTokens(List<Token> tokens, FlagsDeclaration flags)
+    {
+        int header = flags.Location.Line;
+        int end = tokens.Where(predicate: t => t.Line > header && t.Type == TokenType.Identifier &&
+                                               t.Column <= flags.Location.Column)
+                        .Select(selector: t => t.Line)
+                        .DefaultIfEmpty(defaultValue: int.MaxValue)
+                        .Min();
+        return tokens.Where(predicate: t => t.Line > header && t.Line < end && t.Type == TokenType.Identifier &&
+                                            flags.Members.Contains(item: t.Text));
+    }
+
+    /// <summary>The token of a member access's member name: the first one spelled so after the object starts.</summary>
+    private static Token? MemberNameToken(List<Token> tokens, MemberExpression member)
+    {
+        return tokens.Where(predicate: t => t.Line == member.Location.Line && t.Column > member.Location.Column &&
+                                            t.Type == TokenType.Identifier && t.Text == member.MemberName)
+                     .MinBy(keySelector: t => t.Column);
+    }
+
+    /// <summary>
+    /// In a body the build never analyzed (a generic definition's), a bare name that is a case of a choice or flags
+    /// the routine's own signature names (its result, a parameter, its owner): what the build resolves it to by the
+    /// expected type.
+    /// </summary>
+    private static void AddUnresolvedCases(RoutineDeclaration routine, SemanticRoles roles)
+    {
+        if (routine.ResolvedInfo is not { } info)
+        {
+            return;
+        }
+
+        List<TypeSymbol> signature = info.Parameters.Select(selector: p => p.Type)
+                                         .Append(element: info.ReturnType ?? ErrorTypeSymbol.Instance)
+                                         .Append(element: info.OwnerType ?? ErrorTypeSymbol.Instance)
+                                         .Where(predicate: t => CaseNames(type: t) != null)
+                                         .ToList();
+        if (signature.Count == 0)
+        {
+            return;
+        }
+
+        var acc = new List<ISyntaxTreeNode>();
+        CollectAllNodes(node: routine.Body, acc: acc,
+            seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
+        foreach (IdentifierExpression name in acc.OfType<IdentifierExpression>()
+                                                 .Where(predicate: e => e.ResolvedVariable == null && e.ResolvedType == null))
+        {
+            if (signature.FirstOrDefault(predicate: t => CaseNames(type: t)!.Contains(value: name.Name)) is { } owner)
+            {
+                AddCase(roles: roles, key: (name.Location.Line, name.Location.Column), owner: owner, name: name.Name);
+            }
+        }
+    }
+
+    /// <summary>The first identifier token on a line spelled <paramref name="text"/>.</summary>
+    private static Token? TokenOnLine(List<Token> tokens, int line, string text)
+    {
+        return tokens.Where(predicate: t => t.Line == line && t.Type == TokenType.Identifier && t.Text == text)
+                     .MinBy(keySelector: t => t.Column);
+    }
+
+    // A kind constraint (`needs T is RecordType`) names a kind of type: it takes that kind's color. The others
+    // (`AnyType`, `RedirectType`) bound a parameter the way a protocol does.
+    private static readonly Dictionary<ConstraintKind, (string Spelling, string Kind)> ConstraintKindTokens = new()
+    {
+        [key: ConstraintKind.RecordType] = ("RecordType", "recordType"),
+        [key: ConstraintKind.ChoiceType] = ("ChoiceType", "recordType"),
+        [key: ConstraintKind.FlagsType] = ("FlagsType", "recordType"),
+        [key: ConstraintKind.Crashable] = ("CrashableType", "recordType"),
+        [key: ConstraintKind.RoutineType] = ("RoutineType", "recordType"),
+        [key: ConstraintKind.TupleType] = ("TupleType", "recordType"),
+        [key: ConstraintKind.VariantType] = ("VariantType", "recordType"),
+        [key: ConstraintKind.EntityType] = ("EntityType", "entityType"),
+        [key: ConstraintKind.AnyType] = ("AnyType", "interface"),
+        [key: ConstraintKind.RedirectType] = ("RedirectType", "interface")
+    };
+
     /// <summary>Encodes the document's tokens as a delta-encoded LSP semantic token data array
     /// (deltaLine, deltaChar, length, tokenType, modifiers per token).</summary>
-    private static List<object?> BuildDeltaEncodedTokens(DocState doc,
-        HashSet<(int, int)> functionPos, HashSet<(int, int)> typePos,
-        HashSet<(int, int)> variablePos, HashSet<(int, int)> deadPos)
+    private static List<object?> BuildDeltaEncodedTokens(DocState doc, SemanticRoles roles)
     {
         var toks = doc.Tokens
                       .Where(predicate: t =>
@@ -1627,15 +3027,21 @@ public static class LspServer
         var data = new List<object?>();
         int prevLine = 0;
         int prevChar = 0;
-        foreach (Token t in toks)
+        int modulePathLine = -1; // the line of an `import` / `module` header: its names are a module path
+        for (int i = 0; i < toks.Count; i++)
         {
-            int type = ClassifyToken(t: t,
-                functionPos: functionPos,
-                typePos: typePos,
-                variablePos: variablePos);
+            Token t = toks[index: i];
+            if (t.Type is TokenType.Import or TokenType.Module)
+            {
+                modulePathLine = t.Line;
+            }
+
+            int type = t.Type == TokenType.Identifier
+                ? ClassifyIdentifierToken(doc: doc, toks: toks, at: i, roles: roles, modulePathLine: modulePathLine)
+                : ClassifyNonIdentifierToken(t: t);
             if (type < 0)
             {
-                continue; // operators / punctuation — left to the TextMate grammar
+                continue; // punctuation, text, comments — left to the TextMate grammar
             }
 
             int line0 = t.Line - 1;
@@ -1644,7 +3050,7 @@ public static class LspServer
             int deltaChar = deltaLine == 0
                 ? char0 - prevChar
                 : char0;
-            int mods = deadPos.Contains(item: (t.Line, t.Column))
+            int mods = roles.Dead.Contains(item: (t.Line, t.Column))
                 ? ModDeprecated
                 : 0;
             data.Add(item: deltaLine);
@@ -1660,65 +3066,112 @@ public static class LspServer
     }
 
     /// <summary>
-    /// Maps one token to a semantic-token legend index, or -1 to leave it to the TextMate grammar
-    /// (operators / punctuation). Identifiers use the AST-derived role sets; everything else is
-    /// classified structurally from its <see cref="TokenType"/>.
+    /// Classifies an <c>Identifier</c> token. In order: a module path (and a realm before <c>::</c>); a preset or
+    /// global; a variable; a type, by the kind the analysis resolved at that position; a routine (a resolved
+    /// callee or declaration, or a name followed by its argument list, which covers member calls). A name the
+    /// analysis resolved to nothing is left to the TextMate grammar.
     /// </summary>
-    private static int ClassifyToken(Token t, HashSet<(int, int)> functionPos,
-        HashSet<(int, int)> typePos, HashSet<(int, int)> variablePos)
+    private static int ClassifyIdentifierToken(DocState doc, List<Token> toks, int at, SemanticRoles roles,
+        int modulePathLine)
     {
-        if (t.Type == TokenType.Identifier)
-        {
-            return ClassifyIdentifierToken(t: t,
-                functionPos: functionPos,
-                typePos: typePos,
-                variablePos: variablePos);
-        }
-
-        return ClassifyNonIdentifierToken(t: t);
-    }
-
-    /// <summary>Classifies an <c>Identifier</c>-typed token using the AST-derived role sets, falling back
-    /// to the PascalCase naming convention for unresolved names.</summary>
-    private static int ClassifyIdentifierToken(Token t, HashSet<(int, int)> functionPos,
-        HashSet<(int, int)> typePos, HashSet<(int, int)> variablePos)
-    {
+        Token t = toks[index: at];
         (int, int) key = (t.Line, t.Column);
-        if (functionPos.Contains(item: key))
+        if (t.Line == modulePathLine ||
+            at + 1 < toks.Count && toks[index: at + 1].Type == TokenType.DoubleColon)
         {
-            return SemTok(name: "function");
+            return SemTok(name: "namespace");
         }
 
-        if (variablePos.Contains(item: key))
+        if (roles.Constant.Contains(item: key) ||
+            at > 0 && toks[index: at - 1].Type is TokenType.Preset or TokenType.Global)
+        {
+            return SemTok(name: "constant");
+        }
+
+        if (roles.Variable.Contains(item: key))
         {
             return SemTok(name: "variable");
         }
 
-        if (typePos.Contains(item: key))
+        if (roles.Types.TryGetValue(key: key, value: out string? kind))
         {
-            return SemTok(name: "type");
+            return SemTok(name: kind);
         }
 
-        // Unresolved bare identifier — fall back to the naming convention (PascalCase = type).
-        return IsTypeLikeName(name: t.Text)
-            ? SemTok(name: "type")
-            : SemTok(name: "variable");
+        if (roles.Function.Contains(item: key) || OpensArgumentList(toks: toks, at: at))
+        {
+            return SemTok(name: "function");
+        }
+
+        // A preset the analysis inlined leaves no variable behind at its use.
+        if (doc.Registry.LookupVariable(name: t.Text) is { IsPreset: true } or { IsGlobal: true })
+        {
+            return SemTok(name: "constant");
+        }
+
+        return -1;
     }
 
-    /// <summary>Classifies a non-identifier token as comment, string, number, keyword, or -1
-    /// (operators / punctuation, left to the TextMate grammar).</summary>
-    private static int ClassifyNonIdentifierToken(Token t)
+    /// <summary>Whether the name at <paramref name="at"/> is followed by an argument list, directly
+    /// (<c>name(</c>) or after its generic arguments (<c>name[T](</c>).</summary>
+    private static bool OpensArgumentList(List<Token> toks, int at)
     {
-        string tn = t.Type.ToString();
-        if (tn.Contains(value: "Comment"))
+        int next = at + 1;
+        if (next < toks.Count && toks[index: next].Type == TokenType.LeftBracket)
         {
-            return SemTok(name: "comment");
+            int depth = 0;
+            for (; next < toks.Count; next++)
+            {
+                if (toks[index: next].Type == TokenType.LeftBracket)
+                {
+                    depth++;
+                }
+                else if (toks[index: next].Type == TokenType.RightBracket && --depth == 0)
+                {
+                    next++;
+                    break;
+                }
+            }
         }
 
-        if (t.Type is TokenType.TextLiteral or TokenType.RawText or TokenType.TextSegment
-            or TokenType.CharacterLiteral)
+        return next < toks.Count && toks[index: next].Type == TokenType.LeftParen &&
+               toks[index: next].Line == toks[index: at].Line;
+    }
+
+    /// <summary>
+    /// The token kind of a type, as the served language's user knows it. A crashable reads as a record (it is
+    /// checked before entity, which it extends), a variant is an entity when one of its members is, a routine type
+    /// is a value like a record, and <c>Me</c> or an associated type stands for a type the way a generic
+    /// parameter does.
+    /// </summary>
+    private static string TypeTokenKind(TypeSymbol type)
+    {
+        return Rules.SurfaceType(type: type) switch
         {
-            return SemTok(name: "string");
+            CrashableTypeSymbol => "recordType",
+            EntityTypeSymbol => "entityType",
+            VariantTypeSymbol variant => variant.Members.Any(predicate: m =>
+                m.Type != null && Rules.SurfaceType(type: m.Type) is EntityTypeSymbol and not CrashableTypeSymbol)
+                ? "entityType"
+                : "recordType",
+            RecordTypeSymbol or RoutineTypeSymbol => "recordType",
+            ProtocolTypeSymbol => "interface",
+            GenericParameterTypeSymbol or ProtocolSelfTypeSymbol or AssociatedProjectionTypeSymbol => "typeParameter",
+            _ => "type"
+        };
+    }
+
+    /// <summary>Classifies a non-identifier token as comment, string, number, keyword, operator, or -1
+    /// (punctuation, left to the TextMate grammar).</summary>
+    private static int ClassifyNonIdentifierToken(Token t)
+    {
+        // A comment or text token holds its content without its markers (`###`, the quotes), so its span can't be
+        // taken from it: the TextMate grammar colors comments and text, interpolation included.
+        string tn = t.Type.ToString();
+        if (tn.Contains(value: "Comment") || tn.Contains(value: "Text") || t.Type == TokenType.CharacterLiteral ||
+            t.Text[index: 0] is '"' or '\'')
+        {
+            return -1;
         }
 
         // Numeric literals: the suffixed *Literal kinds AND the pre-resolution "UndecidedInteger" /
@@ -1731,18 +3184,15 @@ public static class LspServer
         }
 
         // A word-shaped non-identifier token is a keyword (routine, entity, if, each, true, ...).
-        if (t.Text.Length > 0 && (char.IsLetter(c: t.Text[index: 0]) || t.Text[index: 0] == '_'))
+        if (char.IsLetter(c: t.Text[index: 0]) || t.Text[index: 0] == '_')
         {
             return SemTok(name: "keyword");
         }
 
-        return -1; // operators / punctuation
-    }
-
-    /// <summary>Naming-convention heuristic: PascalCase identifiers denote types in RazorForge/Suflae.</summary>
-    private static bool IsTypeLikeName(string name)
-    {
-        return name.Length > 0 && char.IsUpper(c: name[index: 0]);
+        // Brackets, separators and the `:` of a binding are punctuation. Every other symbol is an operator.
+        return t.Text is "(" or ")" or "[" or "]" or "{" or "}" or "," or "." or ":" or "::" or ";"
+            ? -1
+            : SemTok(name: "operator");
     }
 
     // LSP SymbolKind numbers used below: File=1 Module=2 Namespace=3 Class=5 Method=6 Property=7 Field=8
@@ -1967,7 +3417,7 @@ public static class LspServer
                 {
                     [key: "line"] = line1 - 1, [key: PropCharacter] = col1 - 1
                 },
-                [key: PropLabel] = labelText,
+                [key: PropLabel] = Surface(text: labelText),
                 [key: "kind"] = kind,
                 [key: "paddingLeft"] = padLeft
             });
@@ -1989,7 +3439,7 @@ public static class LspServer
                     {
                         AddHint(line1: nameTok.Line,
                             col1: nameTok.Column + nameTok.Text.Length,
-                            labelText: $": {vt.Name}",
+                            labelText: $": {TypeText(type: vt)}",
                             kind: 1,
                             padLeft: false);
                     }
@@ -2168,7 +3618,7 @@ public static class LspServer
             new Dictionary<string, object?> { [key: PropLabel] = label, [key: "kind"] = kind };
         if (detail != null)
         {
-            item[key: "detail"] = detail;
+            item[key: "detail"] = Surface(text: detail);
         }
 
         if (!string.IsNullOrWhiteSpace(value: documentation))
@@ -2363,9 +3813,9 @@ public static class LspServer
     private static string RoutineDetail(RoutineInfo r)
     {
         string ps = string.Join(separator: ", ",
-            values: r.Parameters.Select(selector: p => $"{p.Name}: {p.Type.Name}"));
+            values: r.Parameters.Select(selector: p => $"{p.Name}: {TypeText(type: p.Type)}"));
         string ret = r.ReturnType != null
-            ? $" -> {r.ReturnType.Name}"
+            ? $" -> {TypeText(type: r.ReturnType)}"
             : "";
         string bang = r.IsFailable
             ? "!"
@@ -2530,8 +3980,8 @@ public static class LspServer
         return true;
     }
 
-    private static IEnumerable<(string Name, string Type)> MemberVariableSignatures(TypeSymbol type,
-        bool includeSecret)
+    private static IEnumerable<(string Name, string Type, SourceLocation? Location)> MemberVariableSignatures(
+        TypeSymbol type, bool includeSecret)
     {
         IEnumerable<MemberVariableInfo> members = type switch
         {
@@ -2544,7 +3994,7 @@ public static class LspServer
         // them to an outside `x.` completion. `posted` (open read / secret write) stays visible.
         return members
               .Where(predicate: v => includeSecret || v.Visibility != VisibilityModifier.Secret)
-              .Select(selector: v => (v.Name, v.Type.Name));
+              .Select(selector: v => (v.Name, TypeText(type: v.Type), v.Location));
     }
 
     /// <summary>An LSP Location for a 1-based (line, column) span of <paramref name="length"/> chars.</summary>
@@ -2687,14 +4137,25 @@ public static class LspServer
             case System.Collections.IEnumerable seq and not string:
                 foreach (object? item in seq)
                 {
-                    if (item is ISyntaxTreeNode c)
+                    if (item is ISyntaxTreeNode or { } and not string && IsSyntaxRecord(value: item))
                     {
-                        CollectAllNodes(node: c, acc: acc, seen: seen);
+                        CollectAllNodes(node: item, acc: acc, seen: seen);
                     }
                 }
 
                 break;
+            case { } record when IsSyntaxRecord(value: record):
+                CollectAllNodes(node: record, acc: acc, seen: seen);
+                break;
         }
+    }
+
+    /// <summary>A part of the syntax tree that is not a node itself but holds nodes: a parameter, a variant
+    /// member, a generic constraint, an associated-type clause.</summary>
+    private static bool IsSyntaxRecord(object value)
+    {
+        Type type = value.GetType();
+        return type is { IsEnum: false, IsPrimitive: false } && type.Namespace == nameof(SyntaxTree);
     }
 
     /// <summary>All syntax-tree nodes of a document, computed once per hover/definition request.</summary>
@@ -2788,16 +4249,19 @@ public static class LspServer
     }
 
     /// <summary>
-    /// Runs the front end (tokenize → parse → SA against the cached stdlib snapshot) on the
-    /// document text and maps every parse error, semantic error, and warning to an LSP diagnostic.
-    /// Any unexpected exception in the pipeline becomes a single diagnostic rather than crashing
-    /// the server.
+    /// Analyzes a document the way <c>check</c> builds it, so the editor reports exactly what the builder would:
+    /// the build driver reads the file and everything it imports (the language's prelude, sibling files of its
+    /// module, the project's other modules, with every open document read as it stands in the editor), then the
+    /// project's files are analyzed together against the cached stdlib snapshot. Only this document's own
+    /// diagnostics are reported. A standard library file is already part of that snapshot, so analyzing it again
+    /// as user code would only report its own declarations as duplicates: it gets grammar errors alone.
+    /// Any unexpected exception in the pipeline becomes a single diagnostic rather than crashing the server.
     /// </summary>
     private static List<Dictionary<string, object?>> Analyze(string uri, string text)
     {
         var diagnostics = new List<Dictionary<string, object?>>();
         Language lang = Builder.Frontends.Languages.OfFile(fileName: uri);
-        string fileName = UriToFileName(uri: uri);
+        string fileName = Path.GetFullPath(path: UriToFileName(uri: uri));
 
         try
         {
@@ -2813,7 +4277,8 @@ public static class LspServer
                             ?.Text.Length ?? 1;
             }
 
-            foreach (GrammarException pe in parser.GetStructuredErrors())
+            IReadOnlyList<GrammarException> grammarErrors = parser.GetStructuredErrors();
+            foreach (GrammarException pe in grammarErrors)
             {
                 diagnostics.Add(item: MakeDiagnostic(line: pe.Line,
                     column: pe.Column,
@@ -2824,32 +4289,88 @@ public static class LspServer
             }
 
             TypeRegistry.StdlibSnapshot snapshot = SnapshotFor(language: lang);
-            var verifier =
-                new SemanticVerifier(language: lang, snapshot: snapshot) { SaOnly = true };
-            AnalysisResult result = verifier.Analyze(program: program);
+            var verifier = new SemanticVerifier(language: lang, snapshot: snapshot) { SaOnly = true };
+            string stdlibRoot = Path.GetFullPath(path: StdlibLoader.GetDefaultStdlibPath());
+            if (StdlibCopyOf(fileName: fileName, stdlibRoot: stdlibRoot) is { } copy)
+            {
+                // Shown through its analyzed tree while the text is the one the builder reads. Mid-edit, the
+                // positions no longer match it, so the file shows as parsed.
+                string? module = program.Declarations.OfType<ModuleDeclaration>()
+                                        .FirstOrDefault()
+                                       ?.Path;
+                SyntaxTree.Program shown = SameText(a: File.ReadAllText(path: copy), b: text) &&
+                                           AnalyzedStdlibProgram(language: lang, copyPath: copy, module: module) is
+                                               { } analyzed
+                    ? analyzed
+                    : program;
+                Docs[key: uri] = new DocState(Program: shown, Tokens: tokens, Lang: lang, Registry: verifier.Registry);
+                return diagnostics;
+            }
 
-            foreach (SemanticError e in result.Errors)
+            (string projectRoot, IReadOnlyList<string> libraryRoots) = ProjectOf(fileName: fileName);
+            var driver = new BuildDriver(projectRoot: projectRoot,
+                stdlibRoot: stdlibRoot,
+                language: lang,
+                libraryRoots: libraryRoots,
+                cachedStdlibIndex: StdlibIndexFor(language: lang, stdlibRoot: stdlibRoot, libraryRoots: libraryRoots))
+            {
+                SourceOverrides = OpenSources()
+            };
+            BuildResult build = driver.CompileFile(entryFile: fileName);
+
+            // Grammar errors in this file were reported from its own parse above.
+            foreach (SemanticError e in build.Errors.Where(predicate: e =>
+                         IsThisFile(location: e.Location, fileName: fileName) &&
+                         !(grammarErrors.Count > 0 && e.Code == SemanticDiagnosticCode.ParseError)))
             {
                 diagnostics.Add(item: MakeDiagnostic(line: e.Location.Line,
                     column: e.Location.Column,
                     severity: 1,
-                    code: e.Code.ToCodeString(language: lang),
-                    message: e.Message,
+                    code: e.CodeString,
+                    message: e.SurfaceMessage,
                     length: SpanLen(line: e.Location.Line, col: e.Location.Column)));
             }
 
-            foreach (SemanticWarning w in result.Warnings)
+            FileBuildUnit? unit = build.Units.FirstOrDefault(predicate: u =>
+                string.Equals(a: Path.GetFullPath(path: u.FilePath), b: fileName,
+                    comparisonType: StringComparison.OrdinalIgnoreCase));
+            if (build.Errors.Count > 0 || unit == null)
+            {
+                // Like check, a project that doesn't build is not analyzed: its build errors are the ones to fix.
+                Docs[key: uri] = new DocState(Program: program, Tokens: tokens, Lang: lang, Registry: verifier.Registry);
+                return diagnostics;
+            }
+
+            List<(SyntaxTree.Program Program, string FilePath)> files = Program.OrderUserFiles(
+                userUnits: Program.FilterUserUnits(buildResult: build, stdlibRoot: stdlibRoot),
+                initializationOrder: build.InitializationOrder);
+            verifier.Registry.UseModuleResolver(resolver: driver.Resolver);
+            AnalysisResult result = verifier.AnalyzeMultiple(files: files);
+
+            foreach (SemanticError e in result.Errors.Where(predicate: e =>
+                         IsThisFile(location: e.Location, fileName: fileName)))
+            {
+                diagnostics.Add(item: MakeDiagnostic(line: e.Location.Line,
+                    column: e.Location.Column,
+                    severity: 1,
+                    code: e.CodeString,
+                    message: e.SurfaceMessage,
+                    length: SpanLen(line: e.Location.Line, col: e.Location.Column)));
+            }
+
+            foreach (SemanticWarning w in result.Warnings.Where(predicate: w =>
+                         IsThisFile(location: w.Location, fileName: fileName)))
             {
                 diagnostics.Add(item: MakeDiagnostic(line: w.Location.Line,
                     column: w.Location.Column,
                     severity: 2,
-                    code: w.Code.ToCodeString(language: lang),
-                    message: w.Message,
+                    code: w.CodeString,
+                    message: w.SurfaceMessage,
                     length: SpanLen(line: w.Location.Line, col: w.Location.Column)));
             }
 
             // Keep the typed AST + tokens + registry so hover/definition/completion reuse this analysis.
-            Docs[key: uri] = new DocState(Program: program,
+            Docs[key: uri] = new DocState(Program: unit.Ast,
                 Tokens: tokens,
                 Lang: lang,
                 Registry: verifier.Registry);
@@ -2868,11 +4389,80 @@ public static class LspServer
             diagnostics.Add(item: MakeDiagnostic(line: 1,
                 column: 1,
                 severity: 1,
-                code: "RF-LSP",
+                code: $"{Rules.ShortName}-LSP",
                 message: $"internal analyzer error: {ex.Message}"));
         }
 
         return diagnostics;
+    }
+
+    /// <summary>Whether <paramref name="path"/> lies inside <paramref name="folder"/> (both full paths).</summary>
+    private static bool IsUnder(string path, string folder)
+    {
+        string prefix = folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+                        Path.DirectorySeparatorChar;
+        return path.StartsWith(value: prefix, comparisonType: StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whether a diagnostic points into the analyzed document.</summary>
+    private static bool IsThisFile(SourceLocation location, string fileName)
+    {
+        return !string.IsNullOrEmpty(value: location.FileName) &&
+               string.Equals(a: Path.GetFullPath(path: location.FileName),
+                   b: fileName,
+                   comparisonType: StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The project a file belongs to, found the way <c>check</c> finds it: the folder of the nearest
+    /// <c>config.toml</c> above it with that manifest's library folders, or the file's own folder when there is no
+    /// manifest (or it can't be read).
+    /// </summary>
+    private static (string Root, IReadOnlyList<string> Libraries) ProjectOf(string fileName)
+    {
+        string folder = Path.GetDirectoryName(path: fileName) ?? ".";
+        string? manifestPath = ManifestLoader.FindManifest(startDir: folder);
+        if (manifestPath == null)
+        {
+            return (folder, []);
+        }
+
+        try
+        {
+            ProjectManifest manifest = ManifestLoader.Load(tomlPath: manifestPath, resolveExecutable: false);
+            return (manifest.ManifestDirectory, manifest.Target.Libraries);
+        }
+        catch (Exception)
+        {
+            return (folder, []);
+        }
+    }
+
+    /// <summary>The documents open in the editor, by full path, as the build driver reads them.</summary>
+    private static Dictionary<string, string> OpenSources()
+    {
+        var sources = new Dictionary<string, string>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach ((string openUri, string openText) in Texts)
+        {
+            sources[key: Path.GetFullPath(path: UriToFileName(uri: openUri))] = openText;
+        }
+
+        return sources;
+    }
+
+    // The stdlib import index per language and library set, built once: re-parsing every stdlib file to find
+    // its modules on each keystroke would cost most of a second.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,
+        Lazy<IReadOnlyDictionary<string, string>>> StdlibIndexes = new();
+
+    private static IReadOnlyDictionary<string, string> StdlibIndexFor(Language language, string stdlibRoot,
+        IReadOnlyList<string> libraryRoots)
+    {
+        string key = $"{language}|{string.Join(separator: "|", values: libraryRoots)}";
+        return StdlibIndexes.GetOrAdd(key: key,
+            valueFactory: _ => new Lazy<IReadOnlyDictionary<string, string>>(valueFactory: () =>
+                BuildDriver.BuildStdlibIndex(stdlibRoot: stdlibRoot, language: language,
+                    libraryRoots: libraryRoots))).Value;
     }
 
     /// <summary>
@@ -3027,12 +4617,67 @@ public static class LspServer
     /// <summary>file:// URI → a plain path for the tokenizer/parser (best-effort; used only for messages).</summary>
     private static string UriToFileName(string uri)
     {
-        if (Uri.TryCreate(uriString: uri, uriKind: UriKind.Absolute, result: out Uri? parsed) &&
-            parsed.IsFile)
+        if (!uri.StartsWith(value: "file:", comparisonType: StringComparison.OrdinalIgnoreCase))
         {
-            return parsed.LocalPath;
+            return uri;
         }
 
-        return uri;
+        // Clients escape the drive colon (JetBrains IDEs send `file:///l%3A/x.rf`), which Uri.LocalPath leaves as
+        // `/l:/x.rf`. Unescape, drop the slashes, and give a path without a drive letter its root back.
+        string path = Uri.UnescapeDataString(stringToUnescape: uri["file:".Length..])
+                         .TrimStart('/');
+        if (!(path.Length >= 2 && path[index: 1] == ':'))
+        {
+            path = "/" + path;
+        }
+
+        return path.Replace(oldChar: '/', newChar: Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>
+    /// The copy of a standard library file the builder reads, or null when the file is not part of the stdlib. A
+    /// file under that stdlib is its own copy. The stdlib's sources are edited in a language project's
+    /// <c>Standard</c> folder and copied next to the builder as <c>Standard/&lt;Language&gt;/...</c>.
+    /// </summary>
+    private static string? StdlibCopyOf(string fileName, string stdlibRoot)
+    {
+        if (IsUnder(path: fileName, folder: stdlibRoot))
+        {
+            return fileName;
+        }
+
+        if (!Directory.Exists(path: stdlibRoot))
+        {
+            return null;
+        }
+
+        for (string? folder = Path.GetDirectoryName(path: fileName);
+             folder != null;
+             folder = Path.GetDirectoryName(path: folder))
+        {
+            if (!string.Equals(a: Path.GetFileName(path: folder), b: "Standard",
+                    comparisonType: StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string relative = Path.GetRelativePath(relativeTo: folder, path: fileName);
+            string? copy = Directory.EnumerateDirectories(path: stdlibRoot)
+                                    .Select(selector: languageFolder =>
+                                         Path.GetFullPath(path: Path.Combine(path1: languageFolder, path2: relative)))
+                                    .FirstOrDefault(predicate: File.Exists);
+            if (copy != null)
+            {
+                return copy;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether two texts are the same apart from line endings.</summary>
+    private static bool SameText(string a, string b)
+    {
+        return string.Equals(a: a.ReplaceLineEndings(), b: b.ReplaceLineEndings(), comparisonType: StringComparison.Ordinal);
     }
 }

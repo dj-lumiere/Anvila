@@ -83,6 +83,12 @@ public sealed class BuildDriver
     private readonly IReadOnlyDictionary<string, string>? _cachedStdlibIndex;
 
     /// <summary>
+    /// Source text that stands in for a file's contents on disk, keyed by full path (case-insensitive): the
+    /// language server builds the documents open in the editor as they are being edited, saved or not.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? SourceOverrides { get; init; }
+
+    /// <summary>
     /// Builds the stdlib import index ONCE (parses every stdlib file for its module/symbol → path entries)
     /// and returns an immutable snapshot for daemon-side caching. Subsequent <see cref="BuildDriver"/>s reuse
     /// it via the <c>cachedStdlibIndex</c> ctor arg, skipping the per-request re-parse.
@@ -538,7 +544,10 @@ public sealed class BuildDriver
     {
         try
         {
-            string code = File.ReadAllText(path: filePath);
+            string code = SourceOverrides != null &&
+                          SourceOverrides.TryGetValue(key: Path.GetFullPath(path: filePath), value: out string? edited)
+                ? edited
+                : File.ReadAllText(path: filePath);
             Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
 
             // Validate language consistency: a build reads its own language and RazorForge (the

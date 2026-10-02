@@ -24,4 +24,14 @@ public static class DiagnosticLanguage
     {
         return Languages.OfFile(fileName: fileName);
     }
+
+    /// <summary>A message about <paramref name="fileName"/> in the words that file's language uses: a type the
+    /// builder wraps (a Suflae entity's handle) reads as the type its user wrote.</summary>
+    public static string Surface(string message, string? fileName)
+    {
+        Language language = OfFile(fileName: fileName);
+        return Languages.IsRegistered(language: language)
+            ? Languages.For(language: language).SurfaceText(text: message)
+            : message;
+    }
 }
