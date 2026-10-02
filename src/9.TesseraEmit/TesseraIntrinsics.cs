@@ -280,13 +280,15 @@ internal sealed class TesseraIntrinsics
         return $"{operation}<{Type(index: 0)}, {_typeText(arg: _resultType)}>({Argument(index: 0)})";
     }
 
-    /// <summary>The wrapped result and whether it overflowed, as the (value, flag) tuple the primitive returns.</summary>
+    /// <summary>
+    /// The wrapped result and whether it overflowed, as the (value, flag) tuple the primitive returns. A builder
+    /// tuple is a record with fields <c>item0</c>, <c>item1</c>, ….
+    /// </summary>
     private string Checked(string operation, string overflows)
     {
         string type = Type(index: 0);
-        // A tuple literal is written like a record's, `{ a, b }`; its type comes from the binding it goes to.
-        return $"{{ {operation}<{type}>({Argument(index: 0)}, {Argument(index: 1)}), " +
-               $"{overflows}<{type}>({Argument(index: 0)}, {Argument(index: 1)}) }}";
+        return $"{_typeText(arg: _resultType)} {{ item0: {operation}<{type}>({Argument(index: 0)}, {Argument(index: 1)}), " +
+               $"item1: {overflows}<{type}>({Argument(index: 0)}, {Argument(index: 1)}) }}";
     }
 
     /// <summary>

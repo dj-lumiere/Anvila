@@ -515,8 +515,6 @@ internal sealed class TesseraWriter
                 return "Void";
             case VariantTypeSymbol variant:
                 return VariantRecord(variant: variant);
-            case TupleTypeSymbol { ElementTypes.Count: >= 2 and <= 4 } tuple:
-                return $"({string.Join(separator: ", ", values: tuple.ElementTypes.Select(selector: TypeText))})";
             case EntityTypeSymbol:
                 return "Addr";
             case RoutineTypeSymbol:
@@ -584,7 +582,8 @@ internal sealed class TesseraWriter
     {
         string? byName = record.BareName switch
         {
-            "S8" or "S16" or "S32" or "S64" or "S128" or "U8" or "U16" or "U32" or "U64" or "U128" => record.BareName,
+            "S8" or "S16" or "S32" or "S64" or "S128" or "S256" or "U8" or "U16" or "U32" or "U64" or "U128" or "U256" =>
+                record.BareName,
             "Bool" => "Bool",
             "Byte" => "U8",
             "B16" => "F16",

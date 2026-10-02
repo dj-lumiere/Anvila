@@ -967,6 +967,68 @@ internal sealed class TesseraRoutineWriter
         return $"{tessera}.from_bits(0x{bits:X})";
     }
 
+    /// <summary>
+    /// The bits of a literal whose type is an integer bit carrier: B128 (IEEE binary128) and the decimal floats
+    /// D32/D64/D128/Decimal (BID). The encodings are the ones the verifier checked the literal with and the LLVM
+    /// emitter writes: binary128 rounds half to even, a hexadecimal B128 is exact, and Decimal is canonical and
+    /// finite. inf and nan use the quiet-NaN and infinity patterns.
+    /// </summary>
+    private static UInt128 BitPatternLiteral(string text, TokenType type)
+    {
+        if (type == TokenType.B128Literal && NumericLiteralParser.IsHexFloatText(text: text))
+        {
+            string cleaned = SemanticVerifier.StripHexFloatSuffix(rawValue: text)
+                                             .Replace(oldValue: "_", newValue: "");
+            if (NumericLiteralParser.TryEncodeHexFloat(cleaned: cleaned, mantBits: 112, expBits: 15,
+                    bits: out UInt128 hexBits) != NumericLiteralParser.HexFloatStatus.Exact)
+            {
+                throw new NotSupportedException(message: $"The Tessera backend cannot encode the literal {text}.");
+            }
+
+            return hexBits;
+        }
+
+        // The decimal encoders read a remaining `dn` suffix themselves.
+        string digits = LlvmEmitter.StripNumericSuffix(text: text);
+        if (digits is "inf" or "nan")
+        {
+            bool nan = digits == "nan";
+            return type switch
+            {
+                TokenType.B128Literal => new UInt128(upper: nan ? 0x7FFF800000000000UL : 0x7FFF000000000000UL,
+                    lower: 0),
+                TokenType.D32Literal => nan ? 0x7C000000U : 0x78000000U,
+                TokenType.D64Literal => nan ? 0x7C00000000000000UL : 0x7800000000000000UL,
+                TokenType.D128Literal => new UInt128(upper: nan ? 0x7C00000000000000UL : 0x7800000000000000UL,
+                    lower: 0),
+                _ => throw new NotSupportedException(message: $"A Decimal literal cannot be {digits}.")
+            };
+        }
+
+        switch (type)
+        {
+            case TokenType.B128Literal:
+            {
+                NumericLiteralParser.B128 b128 = NumericLiteralParser.EncodeB128(str: digits);
+                return new UInt128(upper: b128.Hi, lower: b128.Lo);
+            }
+            case TokenType.D32Literal:
+                return NumericLiteralParser.EncodeD32Bid(str: digits).Value;
+            case TokenType.D64Literal:
+                return NumericLiteralParser.EncodeD64Bid(str: digits).Value;
+            case TokenType.D128Literal:
+            {
+                NumericLiteralParser.D128 d128 = NumericLiteralParser.EncodeD128Bid(str: digits);
+                return new UInt128(upper: d128.Hi, lower: d128.Lo);
+            }
+            default:
+            {
+                NumericLiteralParser.D128 decimalBits = NumericLiteralParser.EncodeDecimalCanonical(str: digits);
+                return new UInt128(upper: decimalBits.Hi, lower: decimalBits.Lo);
+            }
+        }
+    }
+
     /// <summary>A scalar literal as a Tessera constant, usable in a global's initializer.</summary>
     internal static string ConstantText(LiteralExpression literal)
     {
@@ -986,6 +1048,9 @@ internal sealed class TesseraRoutineWriter
                                                          .TrimEnd(trimChar: '_')),
             string text when LlvmEmitter.IsIntegerLiteralType(type: literal.LiteralType) =>
                 LlvmEmitter.StripNumericSuffix(text: text),
+            string text when literal.LiteralType is TokenType.B128Literal or TokenType.D32Literal or
+                TokenType.D64Literal or TokenType.D128Literal or TokenType.DecimalLiteral =>
+                $"0x{BitPatternLiteral(text: text, type: literal.LiteralType):X}",
             bool b => b
                 ? "true"
                 : "false",
@@ -1136,16 +1201,6 @@ internal sealed class TesseraRoutineWriter
         if (type is EntityTypeSymbol entity)
         {
             return EvaluateEntityCreator(creator: creator, entity: entity);
-        }
-
-        if (type is TupleTypeSymbol tuple)
-        {
-            var items = creator.MemberVariables
-                               .Select(selector: m => Value(operand: Evaluate(expression: m.Value)))
-                               .ToList();
-            // A tuple literal is written like a record's, `{ a, b }`; its type comes from the binding.
-            return new Operand(Text: Temp(type: tuple, expression: $"{{ {string.Join(separator: ", ", values: items)} }}"),
-                Type: tuple, IsPlace: false);
         }
 
         // A backend-represented record (a number, an Array) built from nothing is its zero value.
