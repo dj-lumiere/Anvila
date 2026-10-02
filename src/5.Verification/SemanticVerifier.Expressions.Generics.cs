@@ -511,6 +511,18 @@ public sealed partial class SemanticVerifier
             typeSymbol = realmCtorDef;
         }
 
+        // The type needs one argument per parameter (`Guarded[T, P]` takes both T and the lock policy P).
+        if (typeSymbol.GenericParameters is { } expectedParams && expectedParams.Count != typeArgs.Count)
+        {
+            ReportError(code: SemanticDiagnosticCode.WrongTypeArgumentCount,
+                message:
+                $"You are constructing '{typeSymbol.Name}' with {typeArgs.Count} type argument(s), but it takes " +
+                $"{expectedParams.Count}: '{typeSymbol.Name}[{string.Join(separator: ", ", values: expectedParams)}]'. " +
+                "Give one type for each.",
+                location: generic.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         // The type's own `needs` constraints (`SplitList[T] needs T obeys Splittable`) on a concrete
         // construction. Inside a template (`EnumerateIterable[T, Me]`) the arguments are still open and are
         // checked where the template is used.

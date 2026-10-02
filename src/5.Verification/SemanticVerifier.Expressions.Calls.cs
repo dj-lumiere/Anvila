@@ -3167,7 +3167,12 @@ public sealed partial class SemanticVerifier
         bool isFailableMemberRoutineCall, string callLookupName, ref TypeSymbol dispatchType,
         ref RoutineInfo? memberRoutine)
     {
-        if (memberRoutine == null &&
+        // A token taken on a marker-bound parameter (`b.view()` with `b: Accessing[Box]`) is a token on the entity it
+        // stands for, not on the parameter's placeholder type, so it resolves on the inner type like any member.
+        bool tokenMint = callLookupName is "view" or ModifyMemberRoutineName &&
+                         memberRoutine?.OwnerType is GenericParameterTypeSymbol &&
+                         objectType is GenericParameterTypeSymbol;
+        if ((memberRoutine == null || tokenMint) &&
             TryUnwrapMarkerReceiver(type: objectType, innerType: out TypeSymbol target))
         {
             dispatchType = target;
