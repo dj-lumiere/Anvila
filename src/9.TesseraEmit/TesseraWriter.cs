@@ -389,6 +389,79 @@ internal sealed class TesseraWriter
         return $"Callable<{list}, {TypeText(type: routineType.ReturnType)}>";
     }
 
+    private readonly Dictionary<string, string> _routineValueCalls = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The routine that calls a routine value of <paramref name="routineType"/>: a plain routine or captureless
+    /// lambda (bound null) gets the arguments, a capturing lambda the bound payload after them. Written once per
+    /// signature, so a call through a routine value stays one operation in its routine and a value computed
+    /// before it in the same expression is still in scope after it.
+    /// </summary>
+    public string RoutineValueCall(RoutineTypeSymbol routineType)
+    {
+        string plain = CallableText(routineType: routineType, withBound: false);
+        if (_routineValueCalls.TryGetValue(key: plain, value: out string? existing))
+        {
+            return existing;
+        }
+
+        // The signature names the routine. Its type names are backtick names themselves, so their backticks go.
+        string name = VerbatimName(text: $"call {plain.Replace(oldValue: "`", newValue: "")}");
+        _routineValueCalls[key: plain] = name;
+        string bound = CallableText(routineType: routineType, withBound: true);
+        bool returns = !IsVoid(type: routineType.ReturnType);
+        string returnType = returns
+            ? TypeText(type: routineType.ReturnType)
+            : "Void";
+        List<string> types = routineType.ParameterTypes.Select(selector: TypeText).ToList();
+        string Names(string prefix) => string.Concat(values: types.Select(selector: (_, i) => $", %{prefix}{i}"));
+        string Parameters(string prefix) =>
+            string.Concat(values: types.Select(selector: (t, i) => $", %{prefix}{i}: {t}"));
+        string Arguments(string prefix) => string.Join(separator: ", ",
+            values: types.Select(selector: (_, i) => $"%{prefix}{i}"));
+
+        var text = new StringBuilder();
+        text.Append(value: $"routine {name}(%value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
+            .Append(value: "    block entry():\n")
+            .Append(value: "        %fn : Addr = %value.fn\n")
+            .Append(value: "        %bound : Addr = %value.bound\n")
+            .Append(value: "        %address : U64 = ptrtoint<Addr, U64>(%bound)\n")
+            .Append(value: "        %unbound : Bool = %address.eq(0)\n")
+            .Append(value: $"        branch %unbound ? plain(%fn{Names(prefix: "a")}) : bound(%fn, %bound{Names(prefix: "a")})\n\n");
+        foreach ((string block, string callable, string extra, string prefix) in new[]
+                 {
+                     ("plain", plain, "", "p"),
+                     ("bound", bound, ", %payload: Addr", "b")
+                 })
+        {
+            string arguments = Arguments(prefix: prefix);
+            if (extra.Length > 0)
+            {
+                arguments = arguments.Length > 0
+                    ? $"{arguments}, %payload"
+                    : "%payload";
+            }
+
+            // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
+            text.Append(value: $"    block {block}(%code: Addr{extra}{Parameters(prefix: prefix)}):\n")
+                .Append(value: "        claim %slot : @Addr <- %code\n")
+                .Append(value: $"        %callee : {callable} = %slot.to<@{callable}>().load()\n");
+            if (returns)
+            {
+                text.Append(value: $"        %result : {returnType} = %callee.call({arguments})\n")
+                    .Append(value: "        return(%result)\n\n");
+            }
+            else
+            {
+                text.Append(value: $"        %callee.call({arguments})\n")
+                    .Append(value: "        return()\n\n");
+            }
+        }
+
+        _definitions.Append(value: text);
+        return name;
+    }
+
     public string RuntimeRoutine(string symbol, string parameters, string returnType)
     {
         if (_externNames.TryGetValue(key: symbol, value: out string? name))

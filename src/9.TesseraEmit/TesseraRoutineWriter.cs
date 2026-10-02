@@ -723,64 +723,28 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>
-    /// A call through a routine value. A plain routine or captureless lambda (bound null) is called with the
-    /// arguments, a capturing lambda with the bound payload after them. Blocks see only their own parameters,
-    /// so the address, the payload and the arguments wait in slots, and both branches leave the result in one.
+    /// A call through a routine value: one call to the module's routine for that signature
+    /// (<c>TesseraWriter.RoutineValueCall</c>), which branches on the bound payload.
     /// </summary>
     private Operand? WriteIndirectCall(CallExpression call, Operand callee, RoutineTypeSymbol type)
     {
-        string fat = Receiver(operand: callee);
-        Local fn = ClaimLocal(name: "fn", type: _module.PointerType, initial: $"{fat}.fn");
-        Local bound = ClaimLocal(name: "bound", type: _module.PointerType, initial: $"{fat}.bound");
-        var arguments = new List<Local>();
+        var values = new List<string> { Value(operand: callee) };
         for (int i = 0; i < call.Arguments.Count; i++)
         {
             Operand argument = Evaluate(expression: call.Arguments[index: i]);
-            TypeSymbol parameter = type.ParameterTypes[index: i];
-            arguments.Add(item: ClaimLocal(name: "arg", type: parameter,
-                initial: Typed(value: Value(operand: argument), from: argument.Type, to: parameter)));
+            values.Add(item: Typed(value: Value(operand: argument), from: argument.Type,
+                to: type.ParameterTypes[index: i]));
         }
 
-        bool returns = !TesseraWriter.IsVoid(type: type.ReturnType);
-        Local? result = returns
-            ? ClaimLocal(name: "result", type: type.ReturnType!, initial: null)
-            : null;
-        string address = Temp(type: _module.AddressType, expression: $"ptrtoint<Addr, U64>({bound.Place}.load())");
-        string unbound = Temp(type: _module.BoolType, expression: $"{address}.eq(0)");
-        string plainLabel = NewLabel(kind: "plain_call");
-        string boundLabel = NewLabel(kind: "bound_call");
-        string afterLabel = NewLabel(kind: "after_call");
-        Terminate(line: $"branch {unbound} ? {Target(label: plainLabel)} : {Target(label: boundLabel)}");
-
-        foreach ((string label, bool withBound) in new[] { (plainLabel, false), (boundLabel, true) })
+        string invocation = $"{_module.RoutineValueCall(routineType: type)}({string.Join(separator: ", ", values: values)})";
+        if (TesseraWriter.IsVoid(type: type.ReturnType))
         {
-            StartBlock(label: label);
-            string callable = _module.CallableText(routineType: type, withBound: withBound);
-            string target = $"%callee{_temps++}";
-            Emit(line: $"{target} : {callable} = {fn.Place}.to<@{callable}>().load()");
-            IEnumerable<string> values = arguments.Select(selector: a => Temp(type: a.Type, expression: $"{a.Place}.load()"));
-            if (withBound)
-            {
-                values = values.Append(element: $"{bound.Place}.load()");
-            }
-
-            string invocation = $"{target}.call({string.Join(separator: ", ", values: values.ToList())})";
-            if (result is null)
-            {
-                Emit(line: invocation);
-            }
-            else
-            {
-                Emit(line: $"{result.Place}.store({Temp(type: result.Type, expression: invocation)})");
-            }
-
-            Terminate(line: $"jump {Target(label: afterLabel)}");
+            Emit(line: invocation);
+            return null;
         }
 
-        StartBlock(label: afterLabel);
-        return result is null
-            ? null
-            : new Operand(Text: result.Place, Type: result.Type, IsPlace: true);
+        return new Operand(Text: Temp(type: type.ReturnType, expression: invocation), Type: type.ReturnType,
+            IsPlace: false);
     }
 
     private Local? TryLookup(string name)
