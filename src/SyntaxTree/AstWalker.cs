@@ -255,7 +255,6 @@ public static class AstWalker
                 e.Value
             },
             CreatorExpression e => CreatorExpressionChildren(e: e),
-            WithExpression e => WithExpressionChildren(e: e),
             MemberExpression e => new object[]
             {
                 e.Object
@@ -454,20 +453,6 @@ public static class AstWalker
         foreach ((string Name, Expression Value) mv in e.MemberVariables)
         {
             yield return mv.Value;
-        }
-    }
-
-    private static IEnumerable<object> WithExpressionChildren(WithExpression e)
-    {
-        yield return e.Base;
-        foreach ((List<string>? Path, Expression? Index, Expression Value) u in e.Updates)
-        {
-            if (u.Index != null)
-            {
-                yield return u.Index;
-            }
-
-            yield return u.Value;
         }
     }
 

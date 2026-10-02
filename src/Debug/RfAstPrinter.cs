@@ -1000,37 +1000,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
 
-    /// <inheritdoc/>
-    public string VisitWithExpression(WithExpression node)
-    {
-        IEnumerable<string> updates = node.Updates.Select(selector: u =>
-        {
-            string path = u.MemberVariablePath != null
-                ? string.Join(separator: ".", values: u.MemberVariablePath)
-                : "";
-            string idx = u.Index != null
-                ? $"[{u.Index.Accept(visitor: this)}]"
-                : "";
-            string target;
-            if (path.Length > 0 && idx.Length > 0)
-            {
-                target = $"{path}{idx}";
-            }
-            else if (path.Length > 0)
-            {
-                target = path;
-            }
-            else
-            {
-                target = idx;
-            }
-
-            return $"{target}: {u.Value.Accept(visitor: this)}";
-        });
-        return
-            $"with({node.Base.Accept(visitor: this)}, {string.Join(separator: ", ", values: updates)})";
-    }
-
 
     /// <inheritdoc/>
     public string VisitIndexExpression(IndexExpression node)

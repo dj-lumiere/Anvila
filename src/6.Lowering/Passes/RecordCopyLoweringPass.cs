@@ -555,8 +555,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
             return MakeCopyCall(expr: expr, copyMemberRoutine: copyMemberRoutine!);
         }
 
-        // (`a[i]` element reads are legitimized into an owned value by OperatorLoweringPass, which wraps the
-        // raw `getitem` peek in the element type's `store` — no copy injection is needed for them here.)
+        // (`a[i]` is a `getitem` call, which hands back a holder of its own — no copy injection is needed here.)
 
         // For complex expressions in ownership positions (calls, constructors, etc.),
         // recurse into argument positions (which are themselves copy positions).
@@ -591,16 +590,13 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private CallExpression StripStealFromCall(CallExpression call)
     {
         bool changed = false;
-        // A store primitive (poke / store / store_element_ref) MOVES its argument into raw
-        // storage — ScopeTeardownLoweringPass already marks that argument as moved (never torn
-        // down). Injecting a retaining copy here would double-count: the copy is written into
-        // memory while the un-released source keeps its own reference, leaking one ref per store
-        // (e.g. List.add_last's `poke(value)` chain roamed the element TWICE — once for poke's
-        // param, once for the inner `LLVM::store` arg — with neither released, so a cycle held
-        // through a container never reaches its cycle-internal refcount and cc_collect can't
-        // reap it). Pass store-primitive args through untouched to keep copy==teardown.
-        bool isStorePrimitive = CalleeName(callee: call.Callee) is { } cn &&
-                                RuntimeContract.StorePrimitives.Contains(item: cn);
+        // A raw memory write (an `LLVM::` store intrinsic) makes the memory slot a new holder of the value,
+        // so a counted value is retained here, once. Routines that only pass the value down to such a write
+        // (`poke`, a collection's `add_last`) are ordinary calls: retaining at each of them too counted one
+        // slot several times (`List.add_last` -> `poke` -> `LLVM::store` retained the element twice, so a
+        // cycle held through a container never reached its internal count and the collector couldn't reap
+        // it). Decided by the resolved routine, not a name, so a user routine called `store` is ordinary.
+        bool isStorePrimitive = RuntimeContract.IsRawStore(resolved: call.ResolvedRoutine, callee: call.Callee);
         // A CONSTRUCTOR/conversion call (ConstructedType != null) persists its args into the new
         // value's fields — a DESTINATION, exactly like a CreatorExpression member-init — so its
         // borrowed-ref args must be retained (a bare struct copy would alias the source and
@@ -679,11 +675,9 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         GenericMemberRoutineCallExpression gmc)
     {
         bool changed = false;
-        // Store-primitive move semantics (see the CallExpression case) — e.g. poke lowers to
-        // `LLVM::store[T](me, value)`, a generic memberRoutine call whose `value` arg is moved into
-        // memory and must NOT be retain-copied here.
-        bool isStorePrimitiveG = CalleeName(callee: gmc.Object) is { } gcn &&
-                                 RuntimeContract.StorePrimitives.Contains(item: gcn);
+        // A raw memory write as a generic call (`poke` lowers to `LLVM::store[T](me, value)`): the slot is a
+        // new holder, retained here once (see the CallExpression case).
+        bool isStorePrimitiveG = RuntimeContract.IsRawStore(resolved: gmc.ResolvedRoutine, callee: gmc.Object);
         bool isDestinationG = isStorePrimitiveG || gmc.ConstructedType is not null;
         var args = new List<Expression>(capacity: gmc.Arguments.Count);
         foreach (Expression arg in gmc.Arguments)

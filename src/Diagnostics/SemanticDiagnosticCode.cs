@@ -585,9 +585,6 @@ public enum SemanticDiagnosticCode
     /// <summary>Cannot call writable memberRoutine through read-only wrapper.</summary>
     WritableMemberRoutineThroughReadOnlyWrapper = 456,
 
-    /// <summary>'with' expression requires a record type.</summary>
-    WithExpressionNotRecord = 457,
-
     /// <summary>memberRoutine not found on type.</summary>
     MemberRoutineNotFound = 458,
 
@@ -956,14 +953,8 @@ public enum SemanticDiagnosticCode
     /// <summary>Annotation arguments must be build-time constants.</summary>
     AnnotationArgNotConstant = 777,
 
-    /// <summary>Cannot modify secret member variable in a 'with' expression.</summary>
-    WithSecretMemberProhibited = 778,
-
     /// <summary>Annotation arguments must be buildtime constant literals or identifiers.</summary>
     AnnotationArgNotLiteral = 784,
-
-    /// <summary>'with' expression base must obey the Assignable protocol.</summary>
-    WithBaseNotAssignable = 785,
 
     /// <summary>A statement is unreachable: a preceding statement in the same block always diverges
     /// (return / throw / absent / break / continue), so control can never reach this one.</summary>

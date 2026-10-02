@@ -1,3 +1,7 @@
+using SyntaxTree;
+using TypeModel.Enums;
+using TypeModel.Symbols;
+
 namespace Builder.Declaration;
 
 /// <summary>
@@ -268,14 +272,36 @@ public static class RuntimeContract
     // (Design 2B). Kept here so the sets have one definition to point every copy at.
     // =====================================================================================
 
-    /// <summary>Store primitives: a call to one of these MOVES its argument into storage, so the
-    /// source binding is not torn down at scope exit.</summary>
-    /// <remarks>Sites: ScopeTeardownLoweringPass.StorePrimitives.</remarks>
-    public static readonly IReadOnlySet<string> StorePrimitives =
+    /// <summary>The <c>LLVM::</c> intrinsics that write a value into raw memory.</summary>
+    private static readonly IReadOnlySet<string> RawStoreIntrinsics =
         new HashSet<string>(comparer: StringComparer.Ordinal)
         {
-            RawPointer.Poke, "store_element_ref", "store"
+            "store", "store_element_ref", "atomic_store"
         };
+
+    /// <summary>
+    /// Whether a call writes its value into raw memory: a call of an <c>LLVM::</c> store intrinsic, decided by
+    /// the routine the call resolved to (or, before resolution, the <c>LLVM::</c>-qualified callee), never by a
+    /// bare name, so a user routine named <c>store</c> is an ordinary call. The memory slot written is a new
+    /// holder of the value: a counted value (Text, an RC wrapper, Roamed) is retained there, exactly once
+    /// however many routines (<c>poke</c>, a collection's add) passed the value down to it.
+    /// </summary>
+    public static bool IsRawStore(RoutineInfo? resolved, Expression? callee)
+    {
+        if (resolved is { Realm: RoutineRealm.LLVM })
+        {
+            return RawStoreIntrinsics.Contains(item: resolved.Name);
+        }
+
+        RoutineInfo? named = (callee as IdentifierExpression)?.ResolvedRoutine;
+        if (named is { Realm: RoutineRealm.LLVM })
+        {
+            return RawStoreIntrinsics.Contains(item: named.Name);
+        }
+
+        return callee is IdentifierExpression { Realm: "LLVM", Name: var name } &&
+               RawStoreIntrinsics.Contains(item: name);
+    }
 
     /// <summary>Index-store verbs: an index assignment <c>a[i] = v</c> lowers to a call of one of these,
     /// which stores its VALUE argument into the receiver. The call keeps the assignment's ownership: it is

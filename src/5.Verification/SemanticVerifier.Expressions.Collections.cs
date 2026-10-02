@@ -754,67 +754,6 @@ public sealed partial class SemanticVerifier
         return AnalyzeExpression(expression: block.Value);
     }
 
-    private TypeSymbol AnalyzeWithExpression(WithExpression with)
-    {
-        TypeSymbol baseType = AnalyzeExpression(expression: with.Base);
-
-        // 'with' expressions are only valid on record types
-        if (baseType.Category != TypeCategory.Record)
-        {
-            ReportError(code: SemanticDiagnosticCode.WithExpressionNotRecord,
-                message: $"'with' expression requires a record type, got '{baseType.Name}'.",
-                location: with.Location);
-        }
-        else if (!Wrappers.IsTriviallyAssignable(type: baseType))
-        {
-            // `with` lowers to `tmp = base.assign(); tmp.field = v` — so the base must obey
-            // Assignable. Records with ownership-bearing fields that don't opt in are rejected
-            // here rather than producing a broken lowered AST.
-            ReportError(code: SemanticDiagnosticCode.WithBaseNotAssignable,
-                message:
-                $"'with' expression base of type '{baseType.Name}' must obey 'Assignable'. " +
-                "Add 'obeys Assignable' and define 'assign() -> Me', or reconstruct the value explicitly.",
-                location: with.Location);
-        }
-
-        // Analyze update expressions
-        foreach ((List<string>? fieldPath, Expression? index, Expression value) in with.Updates)
-        {
-            // Analyze index expression if present
-            if (index != null)
-            {
-                AnalyzeExpression(expression: index);
-            }
-
-            AnalyzeExpression(expression: value);
-
-            if (fieldPath is { Count: > 0 } && baseType is RecordTypeSymbol recordType)
-            {
-                MemberVariableInfo? memberInfo =
-                    recordType.LookupMemberVariable(memberVariableName: fieldPath[index: 0]);
-                if (memberInfo == null)
-                {
-                    // The field named in the update doesn't exist on the record.
-                    ReportError(code: SemanticDiagnosticCode.MemberVariableNotFound,
-                        message:
-                        $"'{baseType.Name}' has no member variable '{fieldPath[index: 0]}'.",
-                        location: with.Location);
-                }
-                // #45: Cannot modify secret member variables in 'with' expression
-                else if (memberInfo is { Visibility: VisibilityModifier.Secret })
-                {
-                    ReportError(code: SemanticDiagnosticCode.WithSecretMemberProhibited,
-                        message:
-                        $"Cannot modify secret member variable '{fieldPath[index: 0]}' in 'with' expression.",
-                        location: with.Location);
-                }
-            }
-        }
-
-        // Returns the same type as the base
-        return baseType;
-    }
-
     /// <summary>
     /// Analyzes a when expression (pattern matching expression).
     /// Returns the common type of all branch results.

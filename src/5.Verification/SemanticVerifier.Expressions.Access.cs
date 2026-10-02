@@ -1126,10 +1126,6 @@ public sealed partial class SemanticVerifier
                 CollectIdentifiersRecursive(expression: block.Value, identifiers: identifiers);
                 break;
 
-            case WithExpression with:
-                CollectIdentifiersFromWith(with: with, identifiers: identifiers);
-                break;
-
             case IsPatternExpression isPat:
                 CollectIdentifiersRecursive(expression: isPat.Expression,
                     identifiers: identifiers);
@@ -1211,22 +1207,6 @@ public sealed partial class SemanticVerifier
         if (range.Step != null)
         {
             CollectIdentifiersRecursive(expression: range.Step, identifiers: identifiers);
-        }
-    }
-
-    /// <summary>Recurses into a `with` expression's base and each update (optional index + value).</summary>
-    private static void CollectIdentifiersFromWith(WithExpression with,
-        List<IdentifierExpression> identifiers)
-    {
-        CollectIdentifiersRecursive(expression: with.Base, identifiers: identifiers);
-        foreach ((_, Expression? index, Expression value) in with.Updates)
-        {
-            if (index != null)
-            {
-                CollectIdentifiersRecursive(expression: index, identifiers: identifiers);
-            }
-
-            CollectIdentifiersRecursive(expression: value, identifiers: identifiers);
         }
     }
 

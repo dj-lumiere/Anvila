@@ -1,5 +1,6 @@
 using Builder.Verification;
 using TypeModel.Enums;
+using TypeModel.Symbols;
 using TypeModel.Types;
 
 namespace Builder.Declaration;
@@ -233,14 +234,15 @@ internal sealed class ProtocolConformanceAnalyzer
 
         foreach (TypeSymbol type in _sa._registry.GetTypesWithMemberRoutines())
         {
-            if (type.IsGenericDefinition)
+            List<TypeSymbol> existing = GetImplementedProtocols(type: type);
+            if (existing.Any(predicate: p => p.Name is AssignableProtocol or CopyableProtocol))
             {
                 continue;
             }
 
-            List<TypeSymbol> existing = GetImplementedProtocols(type: type);
-            if (existing.Any(predicate: p => p.Name is AssignableProtocol or CopyableProtocol))
+            if (type.IsGenericDefinition)
             {
+                ApplyGenericAssignableConformance(type: type, existing: existing, assignable: Assignable);
                 continue;
             }
 
@@ -253,6 +255,55 @@ internal sealed class ProtocolConformanceAnalyzer
             _sa._implicitProtocolConformances.Add(item: (type.FullName, Assignable.Name));
             UpdateTypeProtocols(type: type, protocols: merged);
         }
+    }
+
+    /// <summary>
+    /// Auto-derives <c>Assignable</c> for a generic record DEFINITION (<c>DictEntry[K, V]</c>) the way the cascade
+    /// does for a concrete record, conditioned on its parameters: <c>Assignable onlyif K obeys Assignable,
+    /// V obeys Assignable</c> for each parameter that is a field's type. An instance created after this pass
+    /// (one first named while a generic body is monomorphized) folds in its definition's protocols, so it
+    /// obeys Assignable (and finds the derived <c>assign</c>) exactly when its arguments do. A field whose type
+    /// is neither a parameter nor itself Assignable (an entity, an access token, a parameter nested in another
+    /// type) leaves the definition alone.
+    /// </summary>
+    private void ApplyGenericAssignableConformance(TypeSymbol type, List<TypeSymbol> existing,
+        ProtocolTypeSymbol assignable)
+    {
+        if (type is not RecordTypeSymbol { MemberVariables: { Count: > 0 } fields } record ||
+            type is VariantTypeSymbol || Wrappers.IsWrapperType(type: type))
+        {
+            return;
+        }
+
+        var conditions = new List<(string ParamName, string ProtocolName)>();
+        foreach (MemberVariableInfo field in fields)
+        {
+            if (field.Type is GenericParameterTypeSymbol param)
+            {
+                if (!conditions.Any(predicate: c => c.ParamName == param.Name))
+                {
+                    conditions.Add(item: (param.Name, AssignableProtocol));
+                }
+
+                continue;
+            }
+
+            bool concrete = !field.Type.IsGenericDefinition &&
+                            field.Type.TypeArguments?.Any(predicate: a => a is GenericParameterTypeSymbol) != true;
+            if (!concrete || !(_sa._registry.CanAutoDeriveAssignable(type: field.Type) ||
+                               _sa._registry.CanMemberVariableWalkAssignable(type: field.Type) ||
+                               _sa._registry.TypeObeysProtocol(type: field.Type, protocolName: AssignableProtocol)))
+            {
+                return;
+            }
+        }
+
+        record.ConditionalObeys ??= new Dictionary<string, List<(string ParamName, string ProtocolName)>>(
+            comparer: StringComparer.Ordinal);
+        record.ConditionalObeys[key: AssignableProtocol] = conditions;
+        var merged = new List<TypeSymbol>(collection: existing) { assignable };
+        _sa._implicitProtocolConformances.Add(item: (type.FullName, assignable.Name));
+        UpdateTypeProtocols(type: type, protocols: merged);
     }
 
     /// <summary>

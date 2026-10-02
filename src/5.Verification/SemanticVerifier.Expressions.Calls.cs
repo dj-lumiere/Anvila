@@ -872,6 +872,18 @@ public sealed partial class SemanticVerifier
                 memberRoutineName: callLookupName,
                 isFailable: isFailableMemberRoutineCall);
         }
+        // A wrapper that obeys a protocol only through its inner type (`Roamed[T] obeys Copyable onlyif T
+        // obeys Copyable`) finds the protocol's member or the universal derive (`duplicate` = `assign`), not
+        // a routine of its own. The inner type's routine is the real one: `duplicate` on a Roamed handle is
+        // the entity's own duplicate, never one more share.
+        else if (memberRoutine?.OwnerType is ProtocolTypeSymbol or GenericParameterTypeSymbol &&
+                 Wrappers.IsWrapperType(type: dispatchType) &&
+                 TrySynthesizeWrapperForwarder(wrapperType: dispatchType,
+                     memberRoutineName: callLookupName,
+                     isFailable: isFailableMemberRoutineCall) is { } forwarded)
+        {
+            memberRoutine = forwarded;
+        }
 
         ResolveTransparentMemberRoutine(objectType: objectType,
             isFailableMemberRoutineCall: isFailableMemberRoutineCall,

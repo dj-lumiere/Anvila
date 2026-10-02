@@ -244,7 +244,6 @@ public enum TokenType
     /// <summary>
     /// Record declaration keyword.
     /// Value type for simple, fixed-size data with value semantics. Copied on assignment.
-    /// Use 'with' for modified copies (record with (memberVar: value)).
     /// </summary>
     Record,
 
@@ -473,9 +472,6 @@ public enum TokenType
 
     /// <summary>Danger mode keyword for unsafe operations (danger! indented block)</summary>
     Danger,
-
-    /// <summary>With clause keyword for record copying with modifications (a with .x: 42)</summary>
-    With,
 
     /// <summary>Given clause keyword for lambda captures (x given a => x + a)</summary>
     Given,

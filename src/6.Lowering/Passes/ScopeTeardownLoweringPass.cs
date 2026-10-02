@@ -787,14 +787,13 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     // -----------------------------------------------------------------------------
     // Move pre-scan: a binding whose ownership leaves the routine is never torn down here.
-    // A binding is "moved" when it is: stolen; consumed by `.retain()`/`.track()` (bare entity)
-    // written into storage by a store primitive (`poke`/`store_element_ref`/`store`); or assigned
-    // into another binding/field. These are all unambiguous ownership transfers — unlike general
-    // argument passing (which is usually a borrow), so we do NOT treat plain call args as moves.
-    // (`load_element_ref` is a READ, not a store, so it is excluded.)
+    // A binding is "moved" when it is: stolen; consumed by `.retain()`/`.track()` (bare entity);
+    // a bare ENTITY handed to a parameter that takes a bare entity (a consuming parameter: the callee owns it
+    // now, as in a generic `add_last` -> `poke` -> `LLVM::store` chain after monomorphization, where no
+    // `steal` is spelled) or written into raw memory; or assigned into another binding/field. A counted RECORD
+    // (Text, an RC wrapper, Roamed) written into memory is not moved: the slot is one more holder, retained at
+    // the write, and the binding still releases its own at scope exit. Plain argument passing is not a move.
     // -----------------------------------------------------------------------------
-
-    private static readonly IReadOnlySet<string> StorePrimitives = RuntimeContract.StorePrimitives;
 
     private void CollectMovedNames(Statement stmt)
     {
@@ -803,6 +802,20 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     private void CollectMovedNamesFromNode(object node)
     {
+        // A bare entity handed to a consuming parameter, or written into raw memory, moves there. Checked for
+        // every call, alongside the call shapes below.
+        switch (node)
+        {
+            case CallExpression call:
+                HandleEntityHandOff(arguments: call.Arguments, routine: call.ResolvedRoutine,
+                    rawStore: RuntimeContract.IsRawStore(resolved: call.ResolvedRoutine, callee: call.Callee));
+                break;
+            case GenericMemberRoutineCallExpression gcall:
+                HandleEntityHandOff(arguments: gcall.Arguments, routine: gcall.ResolvedRoutine,
+                    rawStore: RuntimeContract.IsRawStore(resolved: gcall.ResolvedRoutine, callee: gcall.Object));
+                break;
+        }
+
         switch (node)
         {
             case StealExpression { Operand: IdentifierExpression id }:
@@ -822,12 +835,6 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 } rcCtorCall when rcCtorCall.ResolvedType is { } rcRes &&
                                   TypeRegistry.GetRcWrapperBaseName(type: rcRes) is not null:
                 _movedNames.Add(item: recv.Name);
-                break;
-            // Store primitives write their argument(s) into memory/storage — the source binding
-            // is moved into the container, not dropped at scope exit.
-            case CallExpression call when CalleeName(callee: call.Callee) is { } n &&
-                                          StorePrimitives.Contains(item: n):
-                HandleStorePrimitiveMove(call: call);
                 break;
             // An index store `a.setitem(i, v)` is the lowered `a[i] = v`: like that assignment, a bare
             // binding passed as the VALUE moves into the receiver. The index is only read.
@@ -901,13 +908,32 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
     }
 
-    private void HandleStorePrimitiveMove(CallExpression call)
+    /// <summary>
+    /// Marks each bare-entity binding a call takes ownership of: one passed to a parameter whose type is a bare
+    /// entity (named arguments match by name, positional ones in order), or any bare-entity argument of a raw
+    /// memory write.
+    /// </summary>
+    private void HandleEntityHandOff(List<Expression> arguments, RoutineInfo? routine, bool rawStore)
     {
-        foreach (Expression arg in call.Arguments)
+        List<ParamInfo> parameters = routine?.Parameters
+                                             .Where(predicate: p => p.Name != "me")
+                                             .ToList() ?? [];
+        for (int i = 0; i < arguments.Count; i++)
         {
-            if (Unwrap(e: arg) is IdentifierExpression a)
+            Expression arg = arguments[index: i];
+            if (Unwrap(e: arg) is not IdentifierExpression { ResolvedType: EntityTypeSymbol } binding)
             {
-                _movedNames.Add(item: a.Name);
+                continue;
+            }
+
+            ParamInfo? parameter = arg is NamedArgumentExpression named
+                ? parameters.FirstOrDefault(predicate: p => p.Name == named.Name)
+                : i < parameters.Count
+                    ? parameters[index: i]
+                    : null;
+            if (rawStore || parameter?.Type is EntityTypeSymbol)
+            {
+                _movedNames.Add(item: binding.Name);
             }
         }
     }

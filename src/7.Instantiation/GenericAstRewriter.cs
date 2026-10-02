@@ -1426,15 +1426,6 @@ internal static class GenericAstRewriter
                                 .ToList()
             },
 
-            WithExpression we => we with
-            {
-                Base = RewriteExpression(expr: we.Base, ctx: ctx),
-                Updates = we.Updates
-                            .Select(selector: u => (u.MemberVariablePath, u.Index != null
-                                 ? RewriteExpression(expr: u.Index, ctx: ctx)
-                                 : null, RewriteExpression(expr: u.Value, ctx: ctx)))
-                            .ToList()
-            },
 
             InsertedTextExpression ite => ite with
             {

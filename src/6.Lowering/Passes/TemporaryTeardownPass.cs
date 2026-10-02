@@ -63,7 +63,6 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
     /// <summary>Set while lowering monomorphized bodies: only reassignment release is added, with no
     /// temporary spills (the generic definition's spills already ran before monomorphization).</summary>
-    private bool _reassignOnly;
 
     /// <summary>The reference primitives whose result is a borrow of a referent owned elsewhere —
     /// a temporary produced by one of these owns nothing, so it must not be torn down. Mirrors
@@ -77,12 +76,11 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     private static readonly IReadOnlySet<string> BorrowWrapperNames =
         RuntimeContract.ReferringWrapperNAmes;
 
-    /// <summary>Store primitives whose value argument is MOVED into raw storage — its arg must NOT be
-    /// torn down at the caller (it lives on in the container). Mirrors
-    /// <see cref="RuntimeContract.StorePrimitives"/> / RecordCopyLoweringPass's store-primitive gate.</summary>
-    private static bool IsStorePrimitiveCall(string calleeName)
+    /// <summary>Whether a call is a raw memory write (<see cref="RuntimeContract.IsRawStore"/>), whose fresh value
+    /// argument moves into the written slot, so it must NOT be torn down at the caller.</summary>
+    private static bool IsRawStoreCall(CallExpression call)
     {
-        return RuntimeContract.StorePrimitives.Contains(item: calleeName);
+        return RuntimeContract.IsRawStore(resolved: call.ResolvedRoutine, callee: call.Callee);
     }
 
     private sealed record Spill(string Name, TypeSymbol Type, RoutineInfo Destroy, Expression Init);
@@ -124,16 +122,19 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Adds the old-value release to reassignments in monomorphized bodies. In a generic definition a
-    /// target typed <c>T</c> has no known lifecycle, so the pre-monomorphization run leaves it alone;
-    /// once <c>T</c> is concrete (<c>Retained[E]</c>, <c>Text</c>, a record with RC fields) the
-    /// overwrite must destroy the old value. Reassignments already lowered before monomorphization end
-    /// in a marked <c>target = __rv</c> tail and are skipped, so this never releases twice. Runs after
-    /// the post-monomorphization <see cref="RecordCopyLoweringPass"/>, like the Phase 8 run.
+    /// Lowers monomorphized bodies. In a generic definition a value typed <c>T</c> has no known lifecycle,
+    /// so the pre-monomorphization run leaves it alone: an <c>a[i]</c> handed to a call, or an overwrite
+    /// of a <c>T</c> local. Once <c>T</c> is concrete (<c>Retained[E]</c>, <c>Roamed[E]</c>, <c>Text</c>, a
+    /// record with RC fields), the <c>getitem</c> holder is torn down after the call and the overwrite
+    /// destroys the old value. Other <c>T</c> producers stay as they are: a generic body also reads
+    /// elements in place (<c>peek()</c>, <c>get_raw</c>) without taking a holder, and those must not be
+    /// released. What the earlier run already lowered is left as is: a spilled producer is now a binding,
+    /// and a lowered reassignment ends in a marked <c>target = __rv</c> tail. Runs after the
+    /// post-monomorphization <see cref="RecordCopyLoweringPass"/>, like the Phase 8 run.
     /// </summary>
-    public void RunReassignOnInstantiatedGenericBodies(Dictionary<string, MonomorphizedBody> bodies)
+    public void RunOnInstantiatedGenericBodies(Dictionary<string, MonomorphizedBody> bodies)
     {
-        _reassignOnly = true;
+        _instantiated = true;
         try
         {
             BodyDispatch.RunOnInstantiatedGenericBodies(bodies: bodies,
@@ -141,9 +142,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         }
         finally
         {
-            _reassignOnly = false;
+            _instantiated = false;
         }
     }
+
+    /// <summary>True while lowering monomorphized bodies (see <see cref="RunOnInstantiatedGenericBodies"/>).</summary>
+    private bool _instantiated;
 
     private void LowerMemberList(List<SyntaxTree.Declaration> members)
     {
@@ -347,11 +351,6 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         Func<Expression, Statement> rebuildWithCondition, bool topOwning = true,
         bool isTerminator = false)
     {
-        if (_reassignOnly)
-        {
-            return owner;
-        }
-
         var spills = new List<Spill>();
         Expression rewritten = Visit(e: root, objectPos: !topOwning, spills: spills);
         if (spills.Count == 0)
@@ -446,7 +445,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         RoutineInfo destroy = ctx.Registry.GetLifecycle(type: t)
                                  .Destroy!;
         var spills = new List<Spill>();
-        Expression rhs2 = _reassignOnly
+        Expression rhs2 = _instantiated
             ? rhs
             : Visit(e: rhs, objectPos: false, spills: spills);
 
@@ -599,9 +598,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 Expression newCallee = Visit(e: call.Callee, objectPos: false, spills: spills);
                 // See the member-call case: owning-position args (torn down at the caller) unless this is
                 // a store primitive.
-                bool argsOwned = call.ConstructedType is null &&
-                                 (call.Callee is not IdentifierExpression fid ||
-                                  !IsStorePrimitiveCall(calleeName: fid.Name));
+                bool argsOwned = call.ConstructedType is null && !IsRawStoreCall(call: call);
                 var newArgs = call.Arguments
                                   .Select(selector: a =>
                                        Visit(e: a, objectPos: argsOwned, spills: spills))
@@ -625,8 +622,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 return ix with { Object = newObj, Index = newIdx };
             }
 
+            // A named argument is an argument like a positional one: its value takes the position the call
+            // gives it (a fresh value passed to a call is torn down after the call).
             case NamedArgumentExpression na:
-                return na with { Value = Visit(e: na.Value, objectPos: false, spills: spills) };
+                return na with { Value = Visit(e: na.Value, objectPos: objectPos, spills: spills) };
 
             case BinaryExpression b:
                 return b with
@@ -645,6 +644,19 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                     Operand = Visit(e: st.Operand, objectPos: false, spills: spills)
                 };
 
+            // An inline `Array[T, N]` literal handed to a call (the packed `elements...` of `from_literal`) only
+            // carries its elements to the callee, which stores what it keeps. Each fresh element is then an
+            // argument like any other and is torn down after the call. A literal that initializes a binding
+            // (not an argument) owns its elements, so nothing is torn down there.
+            case ListLiteralExpression { ResolvedType: RecordTypeSymbol { GenericDefinition.Name: "Array" } } arr
+                when objectPos:
+                return arr with
+                {
+                    Elements = arr.Elements
+                                  .Select(selector: el => Visit(e: el, objectPos: true, spills: spills))
+                                  .ToList()
+                };
+
             default:
                 // Identifiers, literals, and node forms not modeled here: leave untouched. A producer
                 // sitting at the very top in a discarded position is still handled below.
@@ -659,16 +671,15 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // teardown is decided HERE, where the enclosing call's result type is known, so the
         // aliasing guard can apply. Nested receivers (a.b().c()) are handled by this same
         // branch one level down, each guarded by its own call's result type.
-        // A COPY verb (`store` / a variant's deep `copy`) reads its receiver to MINT an owned
-        // value — so the receiver is a value being copied FROM (an lvalue read, or the raw `peek`
-        // an `a[i]` desugars to), never a fresh owned producer to tear down here. The minted copy
-        // (the call result) is what gets torn down. This is uniform: nothing about `getitem` is
-        // special — any copy-verb receiver is left alone. (No `freshProducer().assign()` is ever
-        // emitted — the copy pass injects `store` only onto lvalue reads and `a[i]`.)
-        // A COPY verb (`store`/`copy`) reads its receiver, and constructing an RC wrapper FROM a
-        // bare entity (STRUCTURAL: entity receiver + RC-wrapper result) moves it into the
-        // controller — in both cases the receiver is not a fresh producer to tear down here.
-        bool receiverConsumed = m.MemberName is "assign" or "duplicate" ||
+        // A COPY verb (`assign` / `duplicate`) reads its receiver to MINT an owned value — so the
+        // receiver is a value being copied FROM (an lvalue read, or a raw in-place read like a
+        // container's `get_raw`), not a fresh owned producer to tear down here. The minted copy (the
+        // call result) is what gets torn down. The exception is `a[i]`: `getitem` hands back a holder
+        // of its own, so `xs[0].duplicate()` still releases the element it read.
+        // Constructing an RC wrapper FROM a bare entity (STRUCTURAL: entity receiver + RC-wrapper
+        // result) moves it into the controller, so that receiver is not torn down either.
+        bool receiverIsIndexRead = m.Object is CallExpression { Callee: MemberExpression { MemberName: "getitem" } };
+        bool receiverConsumed = m.MemberName is "assign" or "duplicate" && !receiverIsIndexRead ||
                                 m.Object.ResolvedType is EntityTypeSymbol &&
                                 call.ResolvedType is { } rcCtorRes &&
                                 TypeRegistry.GetRcWrapperBaseName(type: rcCtorRes) is not null;
@@ -690,16 +701,16 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
         // Three-rules model: a fresh owned RVALUE arg passed to a borrow param is torn down at
         // the CALLER (the callee only borrows it and no longer frees it). So visit args in owning
-        // position — EXCEPT for a store primitive (poke/store_element_ref/store), whose value arg
-        // is MOVED into raw storage (RecordCopyLoweringPass retains it there); spilling it would
-        // free the just-inserted element → UAF.
+        // position — EXCEPT for a raw memory write (an `LLVM::` store intrinsic), whose value arg is
+        // MOVED into the slot; spilling it would free the just-inserted element → UAF. A routine that only
+        // passes the value down to such a write (`poke`) borrows it like any other call.
         // A CONSTRUCTOR/conversion call (ConstructedType != null) persists its args into the new
         // value's fields (a destination that RETAINS via RecordCopyLoweringPass), and a store
         // primitive MOVES its value into storage — in both cases the arg lives on, so it must NOT
         // be torn down at the caller. An index store (`a[i] = v` as `a.setitem(i, v)`) is the same kind
         // of destination. Only a plain routine/memberRoutine borrows a fresh rvalue arg.
         bool argsOwned = call.ConstructedType is null &&
-                         !IsStorePrimitiveCall(calleeName: m.MemberName) &&
+                         !IsRawStoreCall(call: call) &&
                          !RuntimeContract.IndexStoreVerbs.Contains(item: m.MemberName);
         var newArgs = call.Arguments
                           .Select(selector: a => Visit(e: a, objectPos: argsOwned, spills: spills))
@@ -750,6 +761,11 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             return false;
         }
 
+        if (_instantiated && e is not CallExpression { Callee: MemberExpression { MemberName: "getitem" } })
+        {
+            return false;
+        }
+
         if (e is CallExpression { Callee: MemberExpression vm } &&
             ViewVerbs.Contains(item: vm.MemberName))
         {
@@ -768,12 +784,15 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             return false;
         }
 
-        // Only HEAP-owning RECORDS are spilled: a managed leaf with a retaining store (Text/Decimal)
-        // or a record carrying RC-wrapper fields. Their destroy releases a refcounted controller, so
-        // an extra balanced release is always safe. Entities are deliberately excluded for now (their
-        // single-owner lifetime and fluent `me` returns are trickier to prove alias-free); plain value
-        // records / scalars have a no-op destroy and would only bloat the IR.
-        return t is RecordTypeSymbol rec && (lc.Store != null || rec.HasRCMemberVariables);
+        // Only HEAP-owning RECORDS are spilled: a managed leaf with a retaining store (Text/Decimal),
+        // an RC wrapper (Retained/Tracked/Guarded/Witnessed/Roamed: a fresh `x.share()` handed to a call
+        // is a holder of its own, released here once the call is done), or a record carrying RC-wrapper
+        // fields. Their destroy releases a refcounted controller, so an extra balanced release is always
+        // safe. Entities are deliberately excluded for now (their single-owner lifetime and fluent `me`
+        // returns are trickier to prove alias-free); plain value records / scalars have a no-op destroy
+        // and would only bloat the IR.
+        return t is RecordTypeSymbol rec && (lc.Store != null || rec.HasRCMemberVariables ||
+                                             TypeRegistry.GetRcWrapperBaseName(type: rec) is not null);
     }
 
     /// <summary>True when a call result MAY be a borrow/view pointing into the receiver, so freeing

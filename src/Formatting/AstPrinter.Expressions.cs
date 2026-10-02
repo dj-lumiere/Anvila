@@ -17,14 +17,13 @@ internal enum ExprContext
 /// <summary>
 /// Printing of expressions, types and patterns. Parentheses are printed only where the parser needs them: each
 /// node knows the precedence level the parser produces it at, each operand position knows the level the parser
-/// reads there, and a node whose tail would swallow what follows it (a recovery prefix, a lambda, a
-/// <c>with</c>) is parenthesized when something it would swallow follows.
+/// reads there, and a node whose tail would swallow what follows it (a recovery prefix, a lambda) is parenthesized
+/// when something it would swallow follows.
 /// </summary>
 internal sealed partial class AstPrinter
 {
     // Precedence levels, from the parser's call chain (a higher level binds tighter).
     private const int PAssign = 1;
-    private const int PWith = 2;
     private const int PConditional = 3;
     private const int PCoalesce = 4;
     private const int POr = 5;
@@ -94,7 +93,6 @@ internal sealed partial class AstPrinter
             RecoveryExpression => follow >= POr,
             LambdaExpression => follow >= PAssign,
             ConditionalExpression => follow >= PAssign,
-            WithExpression => comma || follow >= PCoalesce,
             // `x have A and B` reads as a flags test, and a bare `x is T and y` is rejected.
             FlagsTestExpression => follow is POr or PAnd,
             BinaryExpression { Operator: BinaryOperator.Have or BinaryOperator.Lack, Right: IdentifierExpression } =>
@@ -112,7 +110,6 @@ internal sealed partial class AstPrinter
         {
             BinaryExpression binary => BinaryPrecedence(binary: binary),
             CompoundAssignmentExpression => PAssign,
-            WithExpression => PWith,
             ConditionalExpression => PConditional,
             RangeExpression => PRange,
             ChainedComparisonExpression => PComparison,
@@ -174,7 +171,7 @@ internal sealed partial class AstPrinter
             case BinaryExpression binary:
                 return BinaryDoc(binary: binary, follow: follow);
             case CompoundAssignmentExpression compound:
-                return Doc.Concat(Expr(expression: compound.Target, min: PWith, follow: PAssign, comma: false),
+                return Doc.Concat(Expr(expression: compound.Target, min: PConditional, follow: PAssign, comma: false),
                     Doc.Text(text: " " + compound.Operator.ToStringRepresentation() + "= "),
                     Expr(expression: compound.Value, min: PAssign, follow: follow, comma: comma));
             case UnaryExpression unary:
@@ -257,8 +254,6 @@ internal sealed partial class AstPrinter
                     Expr(expression: conditional.TrueExpression, min: 0, follow: 0, comma: false),
                     Doc.Text(text: " else "),
                     Expr(expression: conditional.FalseExpression, min: 0, follow: follow, comma: comma));
-            case WithExpression with:
-                return WithDoc(with: with);
             case LambdaExpression lambda:
                 return LambdaDoc(lambda: lambda);
             case IsPatternExpression isPattern:
@@ -530,12 +525,12 @@ internal sealed partial class AstPrinter
                 or BinaryOperator.MultiplyClamp or BinaryOperator.TrueDivClamp or BinaryOperator.PowerClamp
                 or BinaryOperator.NoneCoalesce)
         {
-            return Doc.Concat(Expr(expression: binary.Left, min: PWith, follow: PAssign, comma: false),
+            return Doc.Concat(Expr(expression: binary.Left, min: PConditional, follow: PAssign, comma: false),
                 Doc.Text(text: " " + op.ToStringRepresentation() + "= "),
                 Expr(expression: value.Right, min: PAssign, follow: follow, comma: false));
         }
 
-        return Doc.Concat(Expr(expression: binary.Left, min: PWith, follow: PAssign, comma: false),
+        return Doc.Concat(Expr(expression: binary.Left, min: PConditional, follow: PAssign, comma: false),
             Doc.Text(text: " = "),
             Expr(expression: binary.Right, min: PAssign, follow: follow, comma: false));
     }
@@ -646,41 +641,6 @@ internal sealed partial class AstPrinter
                     ? follow
                     : PComparison,
                 parentLevel: PComparison));
-        }
-
-        return Doc.Concat(parts: parts);
-    }
-
-    private Doc WithDoc(WithExpression with)
-    {
-        var parts = new List<Doc>
-        {
-            Expr(expression: with.Base, min: PCoalesce, follow: PWith, comma: false),
-            Doc.Text(text: " with ")
-        };
-        for (int i = 0; i < with.Updates.Count; i++)
-        {
-            (List<string>? path, Expression? index, Expression value) = with.Updates[index: i];
-            if (i > 0)
-            {
-                parts.Add(item: Doc.Text(text: ", "));
-            }
-
-            if (path != null)
-            {
-                parts.Add(item: Doc.Text(text: "." + string.Join(separator: ".", values: path) + " = "));
-            }
-            else if (index != null)
-            {
-                parts.Add(item: InBrackets(open: "[", close: "] = ",
-                    content: () => Expr(expression: index, min: 0, follow: 0, comma: false)));
-            }
-            else
-            {
-                throw Refuse(at: with.Location, reason: "a with update without a target");
-            }
-
-            parts.Add(item: Expr(expression: value, min: PCoalesce, follow: 0, comma: i < with.Updates.Count - 1));
         }
 
         return Doc.Concat(parts: parts);

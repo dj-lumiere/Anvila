@@ -427,7 +427,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 // Strip the wrapper -- after SA the argument is already in its correct position.
                 LowerExpr(expr: named.Value),
             CreatorExpression creator => LowerCreatorExpr(creator: creator, expr: expr),
-            WithExpression withExpr => LowerWithExpression(withExpr: withExpr),
             GenericMemberRoutineCallExpression gmc => LowerGenericMemberRoutineCall(gmc: gmc,
                 expr: expr),
             CompoundAssignmentExpression compound => LowerCompoundAssignment(compound: compound),
@@ -2375,57 +2374,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// <c>Maybe[T entity]</c> absence checks are NOT lowered here (require Snatched null compare);
     /// they fall through unchanged for <c>EmitIsPattern</c> in codegen.
     /// </summary>
-    /// <summary>
-    /// Lowers <c>base with .field1 = v1, .field2 = v2</c> into
-    /// <c>var tmp = base.assign(); tmp.field1 = v1; tmp.field2 = v2; tmp</c>. The
-    /// <c>store</c> dispatch carries any per-field semantics (e.g. retains on
-    /// <c>Retained[T]</c> fields) that a field-by-field constructor rebuild would skip.
-    /// SA gates this in <c>AnalyzeWithExpression</c> (base type must obey Assignable).
-    /// Only handles simple (non-nested, non-index) updates on RecordTypeSymbol.
-    /// </summary>
-    private (List<Statement> Hoisted, Expression Expr) LowerWithExpression(WithExpression withExpr)
-    {
-        (List<Statement> baseHoisted, Expression loweredBase) = LowerExpr(expr: withExpr.Base);
-        SourceLocation loc = withExpr.Location;
-
-        TypeSymbol? baseType = withExpr.Base.ResolvedType;
-        if (baseType is not RecordTypeSymbol recordType)
-        {
-            // Not a record -- pass through unchanged.
-            if (ReferenceEquals(objA: loweredBase, objB: withExpr.Base) && baseHoisted.Count == 0)
-            {
-                return ([], withExpr);
-            }
-
-            return (baseHoisted, withExpr with { Base = loweredBase });
-        }
-
-        // Hoist base to a temp if it isn't a trivial identifier (avoid double-eval).
-        var hoisted = new List<Statement>(collection: baseHoisted);
-        Expression baseRef = HoistWithBase(loweredBase: loweredBase,
-            baseType: baseType,
-            loc: loc,
-            hoisted: hoisted);
-
-        // Lower each override expression up front.
-        (bool allSimple, List<(string Field, Expression Value)> loweredOverrides) =
-            LowerWithOverrides(withExpr: withExpr, hoisted: hoisted);
-
-        if (!allSimple)
-        {
-            // Nested paths or index updates -- not yet lowered; pass through.
-            return (hoisted, withExpr with { Base = baseRef });
-        }
-
-        Expression copyRef = BuildWithCopy(baseRef: baseRef,
-            baseType: baseType,
-            recordType: recordType,
-            loweredOverrides: loweredOverrides,
-            loc: loc,
-            hoisted: hoisted);
-        return (hoisted, copyRef);
-    }
-
     // Hoists the with-base to a temp var if it isn't already a trivial identifier (avoid double-eval),
     // returning the reference to use for the base.
     private Expression HoistWithBase(Expression loweredBase, TypeSymbol baseType, SourceLocation loc,
@@ -2447,26 +2395,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     // Lowers each with-override value expression, appending any hoisted statements. Returns
     // AllSimple=false the moment a nested path or index update is seen (not yet lowered).
-    private (bool AllSimple, List<(string Field, Expression Value)> Overrides) LowerWithOverrides(
-        WithExpression withExpr, List<Statement> hoisted)
-    {
-        var loweredOverrides = new List<(string Field, Expression Value)>();
-        foreach ((List<string>? path, Expression? idx, Expression value) in withExpr.Updates)
-        {
-            if (path is [string singleField] && idx == null)
-            {
-                (List<Statement> valH, Expression loweredVal) = LowerExpr(expr: value);
-                hoisted.AddRange(collection: valH);
-                loweredOverrides.Add(item: (singleField, loweredVal));
-            }
-            else
-            {
-                return (false, loweredOverrides);
-            }
-        }
-
-        return (true, loweredOverrides);
-    }
 
     // Builds `var with_copy = baseRef.assign(); with_copy.field = value; …` returning the copy ref.
     private IdentifierExpression BuildWithCopy(Expression baseRef, TypeSymbol baseType,

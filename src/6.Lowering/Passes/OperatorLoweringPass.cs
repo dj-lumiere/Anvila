@@ -476,9 +476,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// <summary>
     /// Dispatches the operator-sugar expression kinds this pass rewrites into their transform hooks.
     /// The base <see cref="AstRewriter.VisitExpression"/> supplies structural recursion for every other
-    /// kind; two node types the base leaves untouched — <see cref="WithExpression"/> (base recurses its
-    /// members) and <see cref="LambdaExpression"/> (its body) — are recursed here to preserve the
-    /// original pass's coverage. <see cref="ConditionalExpression"/> is handled via
+    /// kind; the one node type the base leaves untouched, <see cref="LambdaExpression"/> (its body), is
+    /// recursed here to preserve the original pass's coverage. <see cref="ConditionalExpression"/> is handled via
     /// <see cref="VisitConditional"/> (only its condition is lowered).
     /// </summary>
     public override Expression VisitExpression(Expression expr)
@@ -501,29 +500,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
         switch (expr)
         {
-            case WithExpression withExpr:
-            {
-                Expression loweredBase = VisitExpression(expr: withExpr.Base);
-                var updates =
-                    new List<(List<string>? Path, Expression? Index, Expression Value)>(
-                        capacity: withExpr.Updates.Count);
-                bool changed = !ReferenceEquals(objA: loweredBase, objB: withExpr.Base);
-                foreach ((List<string>? path, Expression? index, Expression value) in withExpr
-                            .Updates)
-                {
-                    Expression loweredVal = VisitExpression(expr: value);
-                    updates.Add(item: (path, index, loweredVal));
-                    if (!ReferenceEquals(objA: loweredVal, objB: value))
-                    {
-                        changed = true;
-                    }
-                }
-
-                return changed
-                    ? withExpr with { Base = loweredBase, Updates = updates }
-                    : expr;
-            }
-
             case LambdaExpression lambda:
             {
                 Expression loweredBody = VisitExpression(expr: lambda.Body);
@@ -908,7 +884,11 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return typewiseIdent;
         }
 
-        Expression loweredObj = VisitExpression(expr: idx.Object);
+        // An entity element read as a container (`grid[0][j]`) is reached through a read token on the
+        // element, like the write `grid[0][j] = v`: a single-owner element has no holder of its own to hand
+        // back through `getitem`.
+        Expression loweredObj = LowerElementPath(expr: idx.Object, write: false) ??
+                                VisitExpression(expr: idx.Object);
         Expression loweredIdx = VisitExpression(expr: idx.Index);
         TypeSymbol? targetType = idx.Object.ResolvedType;
 
@@ -932,14 +912,14 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         var member = new MemberExpression(Object: loweredObj,
             MemberName: GetItemMemberRoutine,
             Location: idx.Location);
-        var getitemCall =
-            new CallExpression(Callee: member, Arguments: [loweredIdx], Location: idx.Location)
-            {
-                ResolvedRoutine = resolvedGetItem,
-                ResolvedType = idx.ResolvedType,
-                LoweringKind = getitemKind
-            };
-        return WrapGetItemWithStore(getitemCall: getitemCall, idx: idx);
+        // `getitem` hands back a holder of its own (the container keeps its element), so the read needs no
+        // copy around it.
+        return new CallExpression(Callee: member, Arguments: [loweredIdx], Location: idx.Location)
+        {
+            ResolvedRoutine = resolvedGetItem,
+            ResolvedType = idx.ResolvedType,
+            LoweringKind = getitemKind
+        };
     }
 
     /// <summary>
@@ -1029,41 +1009,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         }
 
         return loweredIdx;
-    }
-
-    /// <summary>
-    /// Wraps a <c>getitem!</c> call in the element type's <c>store</c> member routine when the
-    /// element type owns its data (Text, Integer, variant wrappers). A trivially-copyable or
-    /// entity element passes through unwrapped. Extracted from <see cref="LowerIndexExpression"/>.
-    /// </summary>
-    private CallExpression WrapGetItemWithStore(CallExpression getitemCall, IndexExpression idx)
-    {
-        // `a[i]` reads an element the container still owns. Apply the element type's store
-        // (a retaining copy for Text/Integer/variant) so the read no longer aliases the
-        // buffer's live element and avoids a double-free on teardown. A trivially-copyable
-        // element has no retaining store (GetLifecycle.Store == null) and is left bare.
-        // A bare entity element likewise has no store — reading one out to keep it is rejected
-        // at SA (single-owner), so it never needs a copy here.
-        TypeSymbol? elemType = idx.ResolvedType;
-        RoutineInfo? elemStore = elemType != null
-            ? ctx.Registry.GetLifecycle(type: elemType)
-                 .Store
-            : null;
-        if (elemStore == null)
-        {
-            return getitemCall;
-        }
-
-        var storeCallee = new MemberExpression(
-            Object: getitemCall,
-            MemberName: elemStore.Name,
-            Location: idx.Location) { ResolvedType = elemType };
-        return new CallExpression(Callee: storeCallee, Arguments: [], Location: idx.Location)
-        {
-            ResolvedRoutine = elemStore,
-            ResolvedType = elemType,
-            LoweringKind = ClassifyMemberRoutine(memberRoutine: elemStore)
-        };
     }
 
     /// <summary>

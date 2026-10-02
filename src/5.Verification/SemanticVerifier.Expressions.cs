@@ -62,7 +62,6 @@ public sealed partial class SemanticVerifier
             TypeConversionExpression conv => AnalyzeTypeConversionExpression(conv: conv),
             ChainedComparisonExpression chain => AnalyzeChainedComparisonExpression(chain: chain),
             BlockExpression block => AnalyzeBlockExpression(block: block),
-            WithExpression with => AnalyzeWithExpression(with: with),
             NamedArgumentExpression named => AnalyzeExpression(expression: named.Value,
                 expectedType: expectedType),
             DictEntryLiteralExpression dictEntry => AnalyzeDictEntryLiteralExpression(

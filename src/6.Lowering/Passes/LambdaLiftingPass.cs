@@ -538,34 +538,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                                              .ToList()
                 },
                 original: creator),
-            WithExpression withExpr => CopyResolvedType(rewritten: withExpr with
-                {
-                    Base = RewriteExpression(expression: withExpr.Base,
-                        scope: scope,
-                        inheritedGenericParameters: inheritedGenericParameters,
-                        inheritedGenericConstraints: inheritedGenericConstraints,
-                        includeMe: includeMe),
-                    Updates = withExpr.Updates
-                                      .Select(selector: update => (update.MemberVariablePath,
-                                           update.Index != null
-                                               ? RewriteExpression(expression: update.Index,
-                                                   scope: scope,
-                                                   inheritedGenericParameters:
-                                                   inheritedGenericParameters,
-                                                   inheritedGenericConstraints:
-                                                   inheritedGenericConstraints,
-                                                   includeMe: includeMe)
-                                               : null,
-                                           RewriteExpression(expression: update.Value,
-                                               scope: scope,
-                                               inheritedGenericParameters:
-                                               inheritedGenericParameters,
-                                               inheritedGenericConstraints:
-                                               inheritedGenericConstraints,
-                                               includeMe: includeMe)))
-                                      .ToList()
-                },
-                original: withExpr),
             GenericMemberRoutineCallExpression genericCall => CopyResolvedType(
                 rewritten: genericCall with
                 {
@@ -1685,13 +1657,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
 
                 break;
 
-            case WithExpression withExpr:
-                CollectCapturesInWith(withExpr: withExpr,
-                    outerScope: outerScope,
-                    parameterNames: parameterNames,
-                    captures: captures);
-                break;
-
             case GenericMemberRoutineCallExpression genericCall:
                 CollectLocalCapturesRecursive(expression: genericCall.Object,
                     outerScope: outerScope,
@@ -1894,29 +1859,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             if (part is ExpressionPart expressionPart)
             {
                 CollectLocalCapturesRecursive(expression: expressionPart.Expression,
-                    outerScope: outerScope,
-                    parameterNames: parameterNames,
-                    captures: captures);
-            }
-        }
-    }
-
-    private static void CollectCapturesInWith(WithExpression withExpr, HashSet<string> outerScope,
-        HashSet<string> parameterNames, HashSet<string> captures)
-    {
-        CollectLocalCapturesRecursive(expression: withExpr.Base,
-            outerScope: outerScope,
-            parameterNames: parameterNames,
-            captures: captures);
-        foreach ((_, Expression? index, Expression value) in withExpr.Updates)
-        {
-            CollectLocalCapturesRecursive(expression: value,
-                outerScope: outerScope,
-                parameterNames: parameterNames,
-                captures: captures);
-            if (index != null)
-            {
-                CollectLocalCapturesRecursive(expression: index,
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);

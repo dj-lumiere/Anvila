@@ -612,36 +612,6 @@ public record CreatorExpression(
 }
 
 /// <summary>
-/// Expression for functional update - creating a modified copy of a value with specified changes.
-/// Represents the 'with' keyword for unmodifiable updates.
-/// </summary>
-/// <param name="Base">The base expression to copy and modify</param>
-/// <param name="Updates">List of member variable/index updates (name/index, value)</param>
-/// <param name="Location">Source location information</param>
-/// <remarks>
-/// With expression patterns:
-/// <list type="bullet">
-/// <item>Member variable update: record with .memberVar = newValue</item>
-/// <item>Multiple member variables: record with .x = 1, .y = 2</item>
-/// <item>Nested member variable: record with .address.city = "NYC"</item>
-/// <item>Index update: collection with [i] = newValue</item>
-/// </list>
-/// For member variable updates, MemberVariablePath is set and Index is null.
-/// For index updates, Index is set and MemberVariablePath is null.
-/// </remarks>
-public record WithExpression(
-    Expression Base,
-    List<(List<string>? MemberVariablePath, Expression? Index, Expression Value)> Updates,
-    SourceLocation Location) : Expression(Location: Location)
-{
-    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
-    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
-    {
-        return visitor.VisitWithExpression(node: this);
-    }
-}
-
-/// <summary>
 /// Expression that accesses a member (member variable or member routine) of an object.
 /// Represents the dot notation for accessing object members.
 /// </summary>

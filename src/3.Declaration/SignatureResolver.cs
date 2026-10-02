@@ -1081,6 +1081,15 @@ internal sealed class SignatureResolver
             return true;
         }
 
+        // A Suflae entity is shared, so its signature slots resolve to Roamed[E]: a `duplicate` written
+        // `-> Point` reads as Roamed[Point], and that handle is still the entity's Me.
+        if (ownerType is EntityTypeSymbol &&
+            actualType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed } &&
+            actualType.TypeArguments is [{ } roamedInner])
+        {
+            return MeTypeMatches(actualType: roamedInner, ownerType: ownerType);
+        }
+
         // Generic resolution: actual is a generic instance of the owner type definition
         TypeSymbol? actualDef = actualType switch
         {

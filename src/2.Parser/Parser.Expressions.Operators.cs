@@ -11,7 +11,7 @@ public partial class Parser
 {
     private Expression ParseAssignment()
     {
-        Expression expr = ParseWith();
+        Expression expr = ParseInlineConditional();
         Expression value;
         // Check for simple assignment
         if (CheckAndAdvance(type: TokenType.Assign))
@@ -94,76 +94,6 @@ public partial class Parser
         }
 
         return op;
-    }
-
-    /// <summary>
-    /// Parses with expressions (lowest precedence operator).
-    /// Syntax: <c>expr with .memberVar = value, .nested.memberVar = value, [index] = value</c>
-    /// </summary>
-    /// <returns>The parsed expression, possibly a with expression.</returns>
-    private Expression ParseWith()
-    {
-        Expression expr = ParseInlineConditional();
-
-        if (CheckAndAdvance(type: TokenType.With))
-        {
-            SourceLocation withLocation = GetLocation(token: PeekToken(offset: -1));
-            var updates =
-                new List<(List<string>? MemberVariablePath, Expression? Index, Expression Value
-                    )>();
-
-            do
-            {
-                List<string>? fieldPath = null;
-                Expression? indexExpr = null;
-
-                if (CheckAndAdvance(type: TokenType.LeftBracket))
-                {
-                    // Index update: [expr] = value
-                    indexExpr = ParseExpression();
-                    Consume(type: TokenType.RightBracket,
-                        errorMessage: "Expected ']' after index in with expression");
-                }
-                else if (CheckAndAdvance(type: TokenType.Dot))
-                {
-                    // Member variable update: .memberVar or .memberVar.nested
-                    fieldPath = [];
-                    Token memberVariableToken = Consume(type: TokenType.Identifier,
-                        errorMessage:
-                        "Expected member variable name after '.' in with expression");
-                    fieldPath.Add(item: memberVariableToken.Text);
-
-                    // Parse nested member variable path: .address.city
-                    while (Check(type: TokenType.Dot) && PeekToken(offset: 1)
-                              .Type == TokenType.Identifier)
-                    {
-                        Advance(); // consume dot
-                        Token nestedToken = Consume(type: TokenType.Identifier,
-                            errorMessage: "Expected member variable name in with expression");
-                        fieldPath.Add(item: nestedToken.Text);
-                    }
-                }
-                else
-                {
-                    throw new GrammarException(code: GrammarDiagnosticCode.UnexpectedToken,
-                        message: "Expected '.' or '[' in with expression",
-                        fileName: FileName,
-                        line: CurrentToken.Line,
-                        column: CurrentToken.Column,
-                        language: _language);
-                }
-
-                Consume(type: TokenType.Assign,
-                    errorMessage:
-                    "Expected '=' after member variable or index in with expression");
-                Expression value = ParseInlineConditional();
-                updates.Add(item: (fieldPath, indexExpr, value));
-            } while (CheckAndAdvance(type: TokenType.Comma));
-
-            expr = new WithExpression(Base: expr, Updates: updates, Location: withLocation);
-        }
-
-        return expr;
     }
 
     /// <summary>

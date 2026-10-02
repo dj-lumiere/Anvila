@@ -218,18 +218,6 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
 
         return false;
     }
-    public bool VisitWithExpression(WithExpression node)
-    {
-        Visit(e: node.Base);
-        foreach ((List<string>? MemberVariablePath, Expression? Index, Expression Value) u in node
-                    .Updates)
-        {
-            Visit(e: u.Value);
-            Visit(e: u.Index);
-        }
-
-        return false;
-    }
     public bool VisitIndexExpression(IndexExpression node)
     {
         Visit(e: node.Object);

@@ -191,7 +191,10 @@ internal sealed class CallBindingPass : AstRewriter
             return null;
         }
 
-        bool otherOwner = routine.OwnerType is not ProtocolTypeSymbol && routine.OwnerType!.FullName != receiver.FullName;
+        // A Suflae entity's routine takes the Roamed handle as `me`, so a `Roamed[Point]` receiver is already
+        // its own receiver.
+        bool otherOwner = routine.OwnerType is not ProtocolTypeSymbol && routine.OwnerType!.FullName != receiver.FullName &&
+                          routine.MeType?.FullName != receiver.FullName;
         bool generic = routine.OwnerType is { IsGenericDefinition: true } or GenericParameterTypeSymbol ||
                        routine.IsGenericDefinition ||
                        routine.TypeArguments?.Any(predicate: t => t is GenericParameterTypeSymbol or ErrorTypeSymbol) == true;
@@ -209,7 +212,7 @@ internal sealed class CallBindingPass : AstRewriter
         // A method-generic call is already its instantiation; the receiver lookup would hand back the template.
         return _registry.LookupMemberRoutineOverload(type: receiver,
             memberRoutineName: routine.Name,
-            argTypes: argumentTypes) is { IsGenericDefinition: false } own
+            argTypes: argumentTypes) is { IsGenericDefinition: false, OwnerType: not ProtocolTypeSymbol } own
             ? own
             : null;
     }

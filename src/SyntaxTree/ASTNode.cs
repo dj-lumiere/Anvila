@@ -173,11 +173,6 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the creator expression</returns>
     T VisitCreatorExpression(CreatorExpression node);
 
-    /// <summary>Visits a with expression node (functional update like value with (memberVar: newVal))</summary>
-    /// <param name="node">The with expression to visit</param>
-    /// <returns>Result of visiting the with expression</returns>
-    T VisitWithExpression(WithExpression node);
-
     /// <summary>Visits a member expression node (member variable access like obj.memberVar)</summary>
     /// <param name="node">The member expression to visit</param>
     /// <returns>Result of visiting the member expression</returns>
