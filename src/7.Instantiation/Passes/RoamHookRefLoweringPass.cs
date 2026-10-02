@@ -6,8 +6,8 @@ using TypeModel.Types;
 namespace Builder.Instantiation.Passes;
 
 /// <summary>
-/// Lowers the cycle-collector hook intrinsics <c>&lt;entity&gt;.roam_trace_ref()</c> /
-/// <c>.roam_free_ref()</c> into the routine's native code address. Runs post-monomorphization
+/// Lowers the Roamed hook intrinsics <c>&lt;entity&gt;.roam_trace_ref()</c> / <c>.roam_free_ref()</c> /
+/// <c>.roam_drop_ref()</c> into the routine's native code address. Runs post-monomorphization
 /// (inside <see cref="GenericClosurePass"/>), where the receiver's concrete entity type is known —
 /// the source call lives in the generic <c>RoamController[T]</c> body, so the receiver is a plain
 /// generic parameter until GMP substitutes it.
@@ -25,6 +25,7 @@ internal sealed class RoamHookRefLoweringPass
 {
     private const string TraceRef = "roam_trace_ref";
     private const string FreeRef = "roam_free_ref";
+    private const string DropRef = "roam_drop_ref";
     private const string TraceImpl = "roam_trace";
     private const string FreeImpl = "roam_free";
 
@@ -253,7 +254,7 @@ internal sealed class RoamHookRefLoweringPass
             return null;
         }
 
-        if (member.MemberName is not (TraceRef or FreeRef))
+        if (member.MemberName is not (TraceRef or FreeRef or DropRef))
         {
             return null;
         }
@@ -264,10 +265,16 @@ internal sealed class RoamHookRefLoweringPass
             return null;
         }
 
-        string implName = member.MemberName == TraceRef
-            ? TraceImpl
-            : FreeImpl;
-        RoutineInfo? impl = _registry.LookupMemberRoutine(type: ent, memberRoutineName: implName);
+        // The drop hook is the entity's own destroy: what the last strong release runs (the collector's free hook
+        // differs, it leaves the Roamed fields to the collector).
+        string implName = member.MemberName switch
+        {
+            TraceRef => TraceImpl,
+            FreeRef => FreeImpl,
+            _ => RuntimeContract.Destroy
+        };
+        RoutineInfo? impl = _registry.LookupMemberRoutineOverload(type: ent, memberRoutineName: implName,
+            argTypes: []);
         if (impl is not { Parameters.Count: 0 })
         {
             return null;

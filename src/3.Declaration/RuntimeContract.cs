@@ -155,6 +155,9 @@ public static class RuntimeContract
     /// RoutineReachabilityPass (seed). Body is aggregate field-walk or scalar box.</remarks>
     public const string Serialize = "serialize";
 
+    /// <summary>The teardown member routine every entity has: what scope exit and a last strong release run.</summary>
+    public const string Destroy = "destroy";
+
     /// <summary>The entity-footprint allocation primitive <c>hollow[T]()</c> (Core, bodyless).</summary>
     public const string Hollow = "hollow";
 

@@ -934,12 +934,19 @@ internal static class NativeToolchain
 
     // MSVC-target clang needs the CRT and kernel32 import libraries named explicitly when
     // linking from LLVM IR. The mingw-target clang (bundled self-contained toolchain) links
-    // its own CRT and the Win32 import libraries automatically.
+    // its own CRT and the Win32 import libraries automatically. Either way synchronization is
+    // named: Ingrid's Tessera code (the Roamed runtime's world lock) waits with WaitOnAddress /
+    // WakeByAddressAll, which no default import library carries.
     private static string WindowsThreadingLibsFragment()
     {
-        return OperatingSystem.IsWindows() && !ClangIsMingw.Value
-            ? " -lucrt -lmsvcrt -lkernel32"
-            : "";
+        if (!OperatingSystem.IsWindows())
+        {
+            return "";
+        }
+
+        return ClangIsMingw.Value
+            ? " -lsynchronization"
+            : " -lucrt -lmsvcrt -lkernel32 -lsynchronization";
     }
 
     // On Linux/macOS the LLVM IR emits direct calls into libm (floor, exp, pow, …) and the
