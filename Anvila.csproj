@@ -35,15 +35,23 @@
        it (MSB3021 "being used by another process"). The daemon is stale after any C# change anyway (it
        would be shut down as stale on the next ping), so killing it here is free — the next run cold-spawns
        a fresh warm daemon. Best-effort (ContinueOnError): no daemon → no-op. -->
-  <Target Name="StopResidentDaemonBeforeBuild" BeforeTargets="BeforeBuild" Condition="'$(OS)' == 'Windows_NT'">
+  <Target Name="StopResidentDaemonBeforeBuild" BeforeTargets="BeforeBuild"
+          Condition="'$(OS)' == 'Windows_NT' And '$(KeepResidentDaemons)' != 'true'">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\stop-resident-daemon.ps1&quot;"
           ContinueOnError="true"/>
   </Target>
 
-  <!-- Build Ingrid's native libraries before the builder. -->
-  <Target Name="BuildNativeLibraries" BeforeTargets="BeforeBuild" Condition="'$(SkipNative)' != 'true'">
-    <Exec Command="&quot;$(IngridNativeDir)\build.bat&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' == 'Windows_NT'"/>
-    <Exec Command="bash &quot;$(IngridNativeDir)/build.sh&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' != 'Windows_NT'"/>
+  <!-- Build Ingrid's native libraries before the builder compiles, once the Tessera builder is built: the runtime
+       library has code written in Tessera (Ingrid/runtime-tessera), which CMake compiles with it (TESSERA_DLL). -->
+  <PropertyGroup>
+    <TesseraBuilderDll>$(MSBuildProjectDirectory)\..\Tessera\bin\$(Configuration)\net10.0\tessera.dll</TesseraBuilderDll>
+  </PropertyGroup>
+  <Target Name="BuildNativeLibraries" AfterTargets="ResolveProjectReferences" BeforeTargets="CoreCompile"
+          Condition="'$(SkipNative)' != 'true'">
+    <Exec Command="&quot;$(IngridNativeDir)\build.bat&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' == 'Windows_NT'"
+          EnvironmentVariables="TESSERA_DLL=$(TesseraBuilderDll)"/>
+    <Exec Command="bash &quot;$(IngridNativeDir)/build.sh&quot;" WorkingDirectory="$(IngridNativeDir)" Condition="'$(OS)' != 'Windows_NT'"
+          EnvironmentVariables="TESSERA_DLL=$(TesseraBuilderDll)"/>
   </Target>
 
   <ItemGroup>

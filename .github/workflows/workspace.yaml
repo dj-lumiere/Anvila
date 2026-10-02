@@ -65,12 +65,13 @@ jobs:
 
       - name: Build native libraries
         run: |
+          # Ingrid's runtime has code written in Tessera (Ingrid/runtime-tessera), compiled by the Tessera builder.
+          dotnet build Tessera/Tessera.csproj --configuration Release
+          export TESSERA_DLL="$GITHUB_WORKSPACE/Tessera/bin/Release/net10.0/tessera.dll"
           cd Ingrid/native
           chmod +x build.sh
-          # Clang 16+ promoted -Wimplicit-function-declaration to an error by default. The vendored libuv
-          # brings its own CMakeLists.txt, for which the per-target flags in cmake/*.cmake don't apply, so
-          # blanket the build with the flag as a safety net, paired with _GNU_SOURCE so glibc exposes the
-          # full POSIX surface (lseek, mlock, ftruncate, etc.).
+          # _GNU_SOURCE so glibc exposes the full POSIX surface; -Wno-implicit-function-declaration as a safety
+          # net (Clang 16+ made it an error by default).
           export CC=clang
           export CXX=clang++
           export CFLAGS="-D_GNU_SOURCE -Wno-implicit-function-declaration"
@@ -241,6 +242,9 @@ jobs:
 
       - name: Build native libraries
         run: |
+          # Ingrid's runtime has code written in Tessera (Ingrid/runtime-tessera), compiled by the Tessera builder.
+          dotnet build Tessera/Tessera.csproj --configuration Release
+          export TESSERA_DLL="$GITHUB_WORKSPACE/Tessera/bin/Release/net10.0/tessera.dll"
           cd Ingrid/native
           chmod +x build.sh
           export CC=clang

@@ -1,8 +1,7 @@
 name: Checkout the LumiFoundry workspace
 description: >
   Checks out Anvila, Ingrid, RazorForge, Suflae and Tessera side by side under the workspace root, the layout
-  their project references (..\Anvila, ..\Ingrid, ..\Tessera) expect, and fetches the native library sources
-  Ingrid builds.
+  their project references (..\Anvila, ..\Ingrid, ..\Tessera) expect.
   The repository that triggered the run is checked out at its own commit, every other one at master.
 
 runs:
@@ -47,10 +46,3 @@ runs:
         path: Tessera
         ref: ${{ github.repository == 'dj-lumiere/Tessera' && github.sha || 'master' }}
         fetch-depth: ${{ github.repository == 'dj-lumiere/Tessera' && '0' || '1' }}
-
-    - name: Fetch native library sources (libuv, libco)
-      shell: bash
-      run: |
-        cd Ingrid/native
-        git clone --depth 1 https://github.com/libuv/libuv.git libuv
-        git clone --depth 1 https://github.com/higan-emu/libco.git libco
