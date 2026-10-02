@@ -766,7 +766,7 @@ internal sealed partial class AstPrinter
                             .ToList();
         _whenCondition = savedCondition;
         _bracketDepth--;
-        return BracketList(open: open, close: close, items: items);
+        return PackedList(open: open, close: close, items: items);
     }
 
     private Doc DictDoc(DictLiteralExpression dict)
@@ -791,7 +791,7 @@ internal sealed partial class AstPrinter
                         .ToList();
         _whenCondition = savedCondition;
         _bracketDepth--;
-        return BracketList(open: "{", close: "}", items: items);
+        return PackedList(open: "{", close: "}", items: items);
     }
 
     /// <summary>

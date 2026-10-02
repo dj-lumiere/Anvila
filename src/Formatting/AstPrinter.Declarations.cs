@@ -750,11 +750,46 @@ internal sealed partial class AstPrinter
             Doc.Text(text: close)));
     }
 
+    /// <summary>
+    /// A collection literal: flat when it fits, and otherwise the open bracket ending the line, the elements
+    /// packed as many to a line as fit, one level in, a comma after the last, and the close bracket alone at the
+    /// opening line's indent.
+    /// </summary>
+    private static Doc PackedList(string open, string close, List<Doc> items)
+    {
+        if (items.Count == 0)
+        {
+            return Doc.Text(text: open + close);
+        }
+
+        var inner = new List<Doc> { Doc.SoftLine };
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (i > 0)
+            {
+                // The next element and the comma after it (the last one's comma is printed broken only).
+                inner.Add(item: Doc.FillLine(nextWidth: items[index: i]
+                                                      .Flat()
+                                                      .Length + 1));
+            }
+
+            inner.Add(item: items[index: i]);
+            inner.Add(item: i < items.Count - 1
+                ? Doc.Text(text: ",")
+                : Doc.IfBreak(broken: Doc.Text(text: ","), flat: Doc.Empty));
+        }
+
+        return Doc.Group(content: Doc.Concat(Doc.Text(text: open),
+            Doc.Nest(indent: IndentWidth, content: Doc.Concat(parts: inner)),
+            Doc.SoftLine,
+            Doc.Text(text: close)));
+    }
+
     private static bool CanBreak(Doc doc)
     {
         return doc switch
         {
-            LineDoc => true,
+            LineDoc or FillLineDoc => true,
             ConcatDoc concat => concat.Parts.Any(predicate: CanBreak),
             NestDoc nest => CanBreak(doc: nest.Content),
             GroupDoc group => group.AlwaysBroken || CanBreak(doc: group.Content),

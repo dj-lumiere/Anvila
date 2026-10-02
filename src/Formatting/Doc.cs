@@ -49,6 +49,15 @@ internal abstract record Doc
         return new GroupDoc(Content: content);
     }
 
+    /// <summary>
+    /// Inside a broken group, a space when the next <paramref name="nextWidth"/> columns still fit on the line and
+    /// a line break otherwise (fill packing). A space inside a flat group.
+    /// </summary>
+    public static Doc FillLine(int nextWidth)
+    {
+        return new FillLineDoc(NextWidth: nextWidth);
+    }
+
     /// <summary>A unit that is always laid out broken, and so breaks every group around it.</summary>
     public static Doc BrokenGroup(Doc content)
     {
@@ -96,6 +105,9 @@ internal abstract record Doc
                 }
 
                 break;
+            case FillLineDoc:
+                text.Append(value: ' ');
+                break;
             case IfBreakDoc i:
                 AppendFlat(doc: i.WhenFlat, text: text);
                 break;
@@ -117,6 +129,9 @@ internal sealed record GroupDoc(Doc Content, bool AlwaysBroken = false) : Doc;
 
 /// <summary>A possible line break.</summary>
 internal sealed record LineDoc(bool Soft) : Doc;
+
+/// <summary>A space or a line break, whichever lets the next item fit (fill packing).</summary>
+internal sealed record FillLineDoc(int NextWidth) : Doc;
 
 /// <summary>Text that depends on whether the enclosing group broke.</summary>
 internal sealed record IfBreakDoc(Doc Broken, Doc WhenFlat) : Doc;
@@ -189,6 +204,21 @@ internal static class DocRenderer
                             current.Append(value: ' ');
                             column++;
                         }
+                    }
+                    else
+                    {
+                        lines.Add(item: current.ToString());
+                        current.Clear();
+                        current.Append(value: ' ', repeatCount: command.Indent);
+                        column = command.Indent;
+                    }
+
+                    break;
+                case FillLineDoc fill:
+                    if (command.Mode == Mode.Flat || column + 1 + fill.NextWidth <= width)
+                    {
+                        current.Append(value: ' ');
+                        column++;
                     }
                     else
                     {
@@ -275,6 +305,14 @@ internal static class DocRenderer
                         room--;
                     }
 
+                    break;
+                case FillLineDoc:
+                    if (command.Mode == Mode.Break)
+                    {
+                        return true;
+                    }
+
+                    room--;
                     break;
                 case IfBreakDoc i:
                     stack.Add(item: command with
