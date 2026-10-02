@@ -257,13 +257,15 @@ internal sealed partial class AstPrinter
             case RecordDeclaration record:
                 PrintTypeHeader(keyword: "record", declaration: record, start: start, depth: depth,
                     visibility: record.Visibility, constraints: record.GenericConstraints,
-                    obeys: record.Protocols, relates: record.AssociatedTypes);
+                    obeys: record.Protocols, relates: record.AssociatedTypes,
+                    genericParameters: record.GenericParameters);
                 PrintMembers(keyword: record.Location, members: record.Members, hasPass: record.HasPassBody, depth: depth + 1);
                 break;
             case EntityDeclaration entity:
                 PrintTypeHeader(keyword: "entity", declaration: entity, start: start, depth: depth,
                     visibility: entity.Visibility, constraints: entity.GenericConstraints,
-                    obeys: entity.Protocols, relates: entity.AssociatedTypes);
+                    obeys: entity.Protocols, relates: entity.AssociatedTypes,
+                    genericParameters: entity.GenericParameters);
                 PrintMembers(keyword: entity.Location, members: entity.Members, hasPass: entity.HasPassBody, depth: depth + 1);
                 break;
             case CrashableDeclaration crashable:
@@ -453,9 +455,17 @@ internal sealed partial class AstPrinter
         int argument = i + 1;
         while (argument < close)
         {
+            // An argument ends at a comma outside the tuples it may hold.
             int end = argument;
-            while (end < close && _index.Tokens[index: end].Type != TokenType.Comma)
+            int depth = 0;
+            while (end < close && (depth > 0 || _index.Tokens[index: end].Type != TokenType.Comma))
             {
+                depth += _index.Tokens[index: end].Type switch
+                {
+                    TokenType.LeftParen => 1,
+                    TokenType.RightParen => -1,
+                    _ => 0
+                };
                 end++;
             }
 
@@ -477,20 +487,34 @@ internal sealed partial class AstPrinter
         return AnnotationValue(first: first, last: last);
     }
 
+    /// <summary>
+    /// An annotation argument's value: a literal, a name, a negative number or a tuple of values, spelled with the
+    /// canonical spacing (<c>(1, -2)</c>).
+    /// </summary>
     private string AnnotationValue(int first, int last)
     {
-        if (first != last)
+        var text = new System.Text.StringBuilder();
+        for (int i = first; i <= last; i++)
         {
-            throw Refuse(line: _index.Tokens[index: first].Line, reason: "an annotation argument of several tokens");
+            Token token = _index.Tokens[index: i];
+            if (token.Type == TokenType.Comma)
+            {
+                text.Append(value: ", ");
+                continue;
+            }
+
+            text.Append(value: token.Type switch
+            {
+                TokenType.TextLiteral => Literals.QuoteText(value: token.Text, bytes: false),
+                TokenType.BytesLiteral => "b" + Literals.QuoteText(value: token.Text, bytes: true),
+                _ when token.Text is "inf" or "nan" => LiteralValueText(value: token.Text, type: token.Type,
+                    at: new SourceLocation(FileName: token.FileName, Line: token.Line, Column: token.Column,
+                        Position: token.Position)),
+                _ => token.Text
+            });
         }
 
-        Token token = _index.Tokens[index: first];
-        return token.Type switch
-        {
-            TokenType.TextLiteral => Literals.QuoteText(value: token.Text, bytes: false),
-            TokenType.BytesLiteral => "b" + Literals.QuoteText(value: token.Text, bytes: true),
-            _ => token.Text
-        };
+        return text.ToString();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -525,41 +549,178 @@ internal sealed partial class AstPrinter
     }
 
     /// <summary>
-    /// Splits a declaration's generic constraints into those written inside its header brackets (printed with the
-    /// header's tokens) and those written in <c>needs</c> clauses. The inline ones must come first, as the parser
-    /// lists them.
+    /// The generic constraints printed as <c>needs</c> clauses: all of them except those inside a header bracket
+    /// the formatter keeps as written (<paramref name="kept"/>, source ranges).
     /// </summary>
     private List<GenericConstraintDeclaration> NeedsConstraints(List<GenericConstraintDeclaration>? constraints,
-        int headerFirst, int headerLast, SourceLocation at)
+        List<(int From, int To)> kept, SourceLocation at)
     {
         var needs = new List<GenericConstraintDeclaration>();
-        if (constraints == null)
-        {
-            return needs;
-        }
-
-        int from = _index.Tokens[index: headerFirst].Position;
-        int to = _index.TokenEnd(tokenIndex: headerLast);
-        foreach (GenericConstraintDeclaration constraint in constraints)
+        foreach (GenericConstraintDeclaration constraint in constraints ?? [])
         {
             if (constraint.Location == null)
             {
                 throw Refuse(at: at, reason: "a generic constraint without a location");
             }
 
-            bool inline = constraint.Location.Position >= from && constraint.Location.Position < to;
-            if (inline && needs.Count > 0)
-            {
-                throw Refuse(at: at, reason: "a header bracket constraint listed after a needs clause");
-            }
-
-            if (!inline)
+            if (!kept.Any(predicate: span => constraint.Location.Position >= span.From &&
+                                              constraint.Location.Position < span.To))
             {
                 needs.Add(item: constraint);
             }
         }
 
         return needs;
+    }
+
+    /// <summary>
+    /// A routine's name as written from <paramref name="first"/> to <paramref name="last"/> (receiver, dots,
+    /// <c>!</c>), with each generic parameter bracket reduced to its bare parameter names: their kinds and
+    /// constraints move to <c>needs</c> clauses. A bracket of type arguments (<c>List[DictEntry[K, V]]</c>) stays
+    /// as written, and its source range goes into <paramref name="kept"/>.
+    /// </summary>
+    private string RoutineNameText(int first, int last, List<(int From, int To)> kept)
+    {
+        var text = new System.Text.StringBuilder();
+        int segment = first;
+        for (int i = first; i <= last; i++)
+        {
+            if (_index.Tokens[index: i].Type != TokenType.LeftBracket)
+            {
+                continue;
+            }
+
+            int close = _index.MatchingClose(openIndex: i);
+            List<string>? names = BareParameterNames(open: i, close: close);
+            if (names == null)
+            {
+                kept.Add(item: (_index.Tokens[index: i].Position, _index.TokenEnd(tokenIndex: close)));
+            }
+            else
+            {
+                if (i > segment)
+                {
+                    text.Append(value: _index.Respace(first: segment, last: i - 1));
+                }
+
+                text.Append(value: "[" + string.Join(separator: ", ", values: names) + "]");
+                segment = close + 1;
+            }
+
+            i = close;
+        }
+
+        if (segment <= last)
+        {
+            text.Append(value: _index.Respace(first: segment, last: last));
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// The parameter names of a generic parameter bracket, read the way the parser reads one (<c>[T]</c>,
+    /// <c>[AnyType T]</c>, <c>[U64 N]</c>, <c>[T obeys A, B]</c>, <c>[T is S32]</c>, <c>[T in [A, B]]</c>), or null
+    /// when the bracket holds something else (type arguments with brackets of their own).
+    /// </summary>
+    private List<string>? BareParameterNames(int open, int close)
+    {
+        for (int k = open + 1; k < close; k++)
+        {
+            if (_index.Tokens[index: k].Type == TokenType.LeftBracket &&
+                _index.Tokens[index: k - 1].Type != TokenType.In)
+            {
+                return null;
+            }
+        }
+
+        var names = new List<string>();
+        int i = open + 1;
+        while (true)
+        {
+            Token current = _index.Tokens[index: i];
+            if (current.Type != TokenType.Identifier)
+            {
+                return null;
+            }
+
+            if (_index.Tokens[index: i + 1].Type == TokenType.Identifier)
+            {
+                names.Add(item: _index.Tokens[index: i + 1].Text);
+                i += 2;
+            }
+            else
+            {
+                names.Add(item: current.Text);
+                i++;
+                switch (_index.Tokens[index: i].Type)
+                {
+                    case TokenType.Obeys:
+                        i = SkipSimpleType(at: i + 1);
+                        while (i > 0 && _index.Tokens[index: i].Type == TokenType.Comma &&
+                               _index.Tokens[index: i + 1].Type != TokenType.RightBracket &&
+                               !(_index.Tokens[index: i + 1].Type == TokenType.Identifier &&
+                                 _index.Tokens[index: i + 2].Type is TokenType.Obeys or TokenType.Is
+                                     or TokenType.In))
+                        {
+                            i = SkipSimpleType(at: i + 1);
+                        }
+
+                        break;
+                    case TokenType.Is:
+                        i = SkipSimpleType(at: i + 1);
+                        break;
+                    case TokenType.In:
+                        if (_index.Tokens[index: i + 1].Type != TokenType.LeftBracket)
+                        {
+                            return null;
+                        }
+
+                        i = _index.MatchingClose(openIndex: i + 1) + 1;
+                        break;
+                }
+            }
+
+            if (i <= 0 || i > close)
+            {
+                return null;
+            }
+
+            if (_index.Tokens[index: i].Type == TokenType.Comma)
+            {
+                i++;
+                continue;
+            }
+
+            return i == close
+                ? names
+                : null;
+        }
+    }
+
+    /// <summary>The index after a bracket-free type (<c>Name</c>, <c>a/B</c>, <c>Name?</c>) at
+    /// <paramref name="at"/>, or -1.</summary>
+    private int SkipSimpleType(int at)
+    {
+        int i = at;
+        if (_index.Tokens[index: i].Type is not (TokenType.Identifier or TokenType.MyType or TokenType.None))
+        {
+            return -1;
+        }
+
+        i++;
+        while (_index.Tokens[index: i].Type is TokenType.Slash or TokenType.Dot or TokenType.DoubleColon &&
+               _index.Tokens[index: i + 1].Type == TokenType.Identifier)
+        {
+            i += 2;
+        }
+
+        if (_index.Tokens[index: i].Type == TokenType.Question)
+        {
+            i++;
+        }
+
+        return i;
     }
 
     private void PrintRoutine(RoutineDeclaration routine, int start, int depth)
@@ -582,12 +743,14 @@ internal sealed partial class AstPrinter
                                AsyncStatus.Threaded => "threaded ",
                                _ => ""
                            };
-        Doc head = Doc.Concat(Doc.Text(text: modifiers + "routine " + _index.Respace(first: keyword + 1, last: open - 1)),
+        var kept = new List<(int From, int To)>();
+        Doc head = Doc.Concat(Doc.Text(text: modifiers + "routine " + RoutineNameText(first: keyword + 1,
+                last: open - 1, kept: kept)),
             ParameterList(parameters: routine.Parameters, typeOnly: null, variadicTail: false),
             ReturnTypeDoc(type: routine.ReturnType));
         EmitHead(start: start, depth: depth, head: head);
-        PrintNeeds(needs: NeedsConstraints(constraints: routine.GenericConstraints, headerFirst: keyword + 1,
-            headerLast: open - 1, at: routine.Location), depth: depth);
+        PrintNeeds(needs: NeedsConstraints(constraints: routine.GenericConstraints, kept: kept, at: routine.Location),
+            depth: depth);
 
         if (routine.Body is not BlockStatement body)
         {
@@ -606,15 +769,16 @@ internal sealed partial class AstPrinter
     {
         int realm = _index.TokenIndexAt(position: external.Location.Position);
         int open = ParameterListOpen(from: realm, at: external.Location);
+        var kept = new List<(int From, int To)>();
         Doc head = Doc.Concat(Doc.Text(text: (external.IsDangerous
                 ? "dangerous "
-                : "") + "routine " + _index.Respace(first: realm, last: open - 1)),
+                : "") + "routine " + RoutineNameText(first: realm, last: open - 1, kept: kept)),
             ParameterList(parameters: external.Parameters, typeOnly: TypeOnlyParameters(open: open),
                 variadicTail: external.IsVariadic),
             ReturnTypeDoc(type: external.ReturnType));
         EmitHead(start: start, depth: depth, head: head);
-        PrintNeeds(needs: NeedsConstraints(constraints: external.GenericConstraints, headerFirst: realm,
-            headerLast: open - 1, at: external.Location), depth: depth);
+        PrintNeeds(needs: NeedsConstraints(constraints: external.GenericConstraints, kept: kept,
+            at: external.Location), depth: depth);
     }
 
     private Doc ReturnTypeDoc(TypeExpression? type)
@@ -807,15 +971,82 @@ internal sealed partial class AstPrinter
         };
     }
 
+    /// <summary>
+    /// Writes the <c>needs</c> clauses: first one line of the kind and const-type classifiers
+    /// (<c>needs EntityType A, U64 B</c>), then one line per protocol or type constraint
+    /// (<c>needs A obeys P1, P2</c>), then the <c>everywhere</c> gates. A line longer than the limit continues one
+    /// level in, filled.
+    /// </summary>
     private void PrintNeeds(List<GenericConstraintDeclaration> needs, int depth)
     {
-        foreach (GenericConstraintDeclaration constraint in needs)
+        List<GenericConstraintDeclaration> kinds = needs.Where(predicate: IsKindConstraint)
+                                                        .ToList();
+        if (kinds.Count > 0)
         {
-            int start = LineStart(location: constraint.Location!);
-            EmitPrefix(start: start, depth: depth, first: false, policy: BlankPolicy.None);
-            EmitHead(start: start, depth: depth, head: Doc.Concat(Doc.Text(text: "needs "),
-                ConstraintDoc(constraint: constraint)));
+            EmitClause(location: kinds[index: 0].Location!, depth: depth, head: ClauseDoc(prefix: "needs ",
+                items: kinds.Select(selector: ConstraintDoc)
+                            .ToList()));
         }
+
+        foreach (GenericConstraintDeclaration constraint in needs.Where(predicate: c =>
+                     !IsKindConstraint(constraint: c) && c.ConstraintType != ConstraintKind.Everywhere))
+        {
+            List<TypeExpression> types = constraint.ConstraintTypes ?? [];
+            Doc clause = constraint.ConstraintType == ConstraintKind.Obeys
+                ? ClauseDoc(prefix: "needs " + constraint.ParameterName + " obeys ",
+                    items: types.Select(selector: TypeDoc)
+                                .ToList())
+                : Doc.Concat(Doc.Text(text: "needs "), ConstraintDoc(constraint: constraint));
+            EmitClause(location: constraint.Location!, depth: depth, head: clause);
+        }
+
+        foreach (GenericConstraintDeclaration constraint in needs.Where(predicate: c =>
+                     c.ConstraintType == ConstraintKind.Everywhere))
+        {
+            EmitClause(location: constraint.Location!, depth: depth,
+                head: Doc.Concat(Doc.Text(text: "needs "), ConstraintDoc(constraint: constraint)));
+        }
+    }
+
+    /// <summary>A kind or const-type classifier constraint (<c>EntityType A</c>, <c>U64 N</c>).</summary>
+    private static bool IsKindConstraint(GenericConstraintDeclaration constraint)
+    {
+        return constraint.ConstraintType is not (ConstraintKind.Obeys or ConstraintKind.TypeEquality
+            or ConstraintKind.Everywhere);
+    }
+
+    /// <summary>Writes one header clause line, with the comments written before it.</summary>
+    private void EmitClause(SourceLocation location, int depth, Doc head)
+    {
+        int start = LineStart(location: location);
+        EmitPrefix(start: start, depth: depth, first: false, policy: BlankPolicy.None);
+        EmitHead(start: start, depth: depth, head: head);
+    }
+
+    /// <summary>
+    /// <c>prefix item, item, …</c> on one line, or, when it does not fit, the items filled onto continuation lines
+    /// one level in (the lexers read a deeper line after a trailing comma as continuing the clause).
+    /// </summary>
+    private static Doc ClauseDoc(string prefix, List<Doc> items)
+    {
+        var parts = new List<Doc>();
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (i > 0)
+            {
+                parts.Add(item: Doc.Text(text: ","));
+                parts.Add(item: Doc.FillLine(nextWidth: items[index: i]
+                                                     .Flat()
+                                                     .Length + (i < items.Count - 1
+                                                     ? 1
+                                                     : 0)));
+            }
+
+            parts.Add(item: items[index: i]);
+        }
+
+        return Doc.Group(content: Doc.Concat(Doc.Text(text: prefix),
+            Doc.Nest(indent: IndentWidth, content: Doc.Concat(parts: parts))));
     }
 
     private Doc ConstraintDoc(GenericConstraintDeclaration constraint)
@@ -879,60 +1110,25 @@ internal sealed partial class AstPrinter
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// The index of the last token of a type declaration's name: the name itself, or the <c>]</c> closing its
-    /// generic parameters.
-    /// </summary>
-    private int TypeNameEnd(int nameIndex)
-    {
-        return nameIndex + 1 < _index.Tokens.Count && _index.Tokens[index: nameIndex + 1].Type == TokenType.LeftBracket
-            ? _index.MatchingClose(openIndex: nameIndex + 1)
-            : nameIndex;
-    }
-
-    /// <summary>
-    /// Writes a type declaration's header line and its clause lines: <c>obeys</c>, then each <c>needs</c>, then
-    /// each <c>relates</c>, every clause on its own line at the header's indent.
+    /// Writes a type declaration's header line and its clause lines, each on its own line at the header's indent:
+    /// each <c>relates</c>, then <c>obeys</c>, then the <c>needs</c> clauses.
     /// </summary>
     private void PrintTypeHeader(string keyword, SyntaxTree.Declaration declaration, int start, int depth,
         VisibilityModifier visibility, List<GenericConstraintDeclaration>? constraints, List<TypeExpression> obeys,
-        List<AssociatedTypeDeclaration>? relates, bool obeysAllowConditions = true)
+        List<AssociatedTypeDeclaration>? relates, List<string>? genericParameters = null,
+        bool obeysAllowConditions = true)
     {
+        // The name, with bare parameter names in its brackets: their kinds and constraints go to `needs`.
         int keywordIndex = _index.TokenIndexAt(position: declaration.Location.Position);
-        int nameIndex = keywordIndex + 1;
-        int nameEnd = TypeNameEnd(nameIndex: nameIndex);
-        EmitHead(start: start, depth: depth, head: Doc.Text(
-            text: VisibilityPrefix(visibility: visibility, at: declaration.Location, printer: this) + keyword + " " +
-                  _index.Respace(first: nameIndex, last: nameEnd)));
-
-        if (obeys.Count > 0)
+        string name = _index.Tokens[index: keywordIndex + 1].Text;
+        if (genericParameters is { Count: > 0 })
         {
-            var parts = new List<Doc> { Doc.Text(text: "obeys ") };
-            for (int i = 0; i < obeys.Count; i++)
-            {
-                if (i > 0)
-                {
-                    parts.Add(item: Doc.Text(text: ", "));
-                }
-
-                parts.Add(item: TypeDoc(type: obeys[index: i]));
-                if (obeys[index: i].ConformanceConditions is { Count: > 0 } conditions)
-                {
-                    if (!obeysAllowConditions)
-                    {
-                        throw Refuse(at: declaration.Location, reason: "an onlyif condition on a protocol's parent");
-                    }
-
-                    parts.Add(item: OnlyIfDoc(conditions: conditions));
-                }
-            }
-
-            int obeysStart = LineStart(location: obeys[index: 0].Location);
-            EmitPrefix(start: obeysStart, depth: depth, first: false, policy: BlankPolicy.None);
-            EmitHead(start: obeysStart, depth: depth, head: Doc.Concat(parts: parts));
+            name += "[" + string.Join(separator: ", ", values: genericParameters) + "]";
         }
 
-        PrintNeeds(needs: NeedsConstraints(constraints: constraints, headerFirst: nameIndex, headerLast: nameEnd,
-            at: declaration.Location), depth: depth);
+        EmitHead(start: start, depth: depth, head: Doc.Text(
+            text: VisibilityPrefix(visibility: visibility, at: declaration.Location, printer: this) + keyword + " " +
+                  name));
 
         foreach (AssociatedTypeDeclaration associated in relates ?? [])
         {
@@ -945,10 +1141,34 @@ internal sealed partial class AstPrinter
                 { Binding: null, Constraint: null } => Doc.Text(text: "relates " + associated.Name),
                 _ => throw Refuse(at: associated.Location, reason: "a relates clause with both a binding and a bound")
             };
-            int relatesStart = LineStart(location: associated.Location!);
-            EmitPrefix(start: relatesStart, depth: depth, first: false, policy: BlankPolicy.None);
-            EmitHead(start: relatesStart, depth: depth, head: clause);
+            EmitClause(location: associated.Location!, depth: depth, head: clause);
         }
+
+        if (obeys.Count > 0)
+        {
+            var items = new List<Doc>();
+            foreach (TypeExpression protocol in obeys)
+            {
+                if (protocol.ConformanceConditions is { Count: > 0 } conditions)
+                {
+                    if (!obeysAllowConditions)
+                    {
+                        throw Refuse(at: declaration.Location, reason: "an onlyif condition on a protocol's parent");
+                    }
+
+                    items.Add(item: Doc.Concat(TypeDoc(type: protocol), OnlyIfDoc(conditions: conditions)));
+                }
+                else
+                {
+                    items.Add(item: TypeDoc(type: protocol));
+                }
+            }
+
+            EmitClause(location: obeys[index: 0].Location, depth: depth, head: ClauseDoc(prefix: "obeys ", items: items));
+        }
+
+        PrintNeeds(needs: NeedsConstraints(constraints: constraints, kept: [], at: declaration.Location),
+            depth: depth);
     }
 
     private Doc OnlyIfDoc(List<GenericConstraintDeclaration> conditions)
@@ -1141,7 +1361,8 @@ internal sealed partial class AstPrinter
     private void PrintVariant(VariantDeclaration variant, int start, int depth)
     {
         PrintTypeHeader(keyword: "variant", declaration: variant, start: start, depth: depth,
-            visibility: VisibilityModifier.Open, constraints: variant.GenericConstraints, obeys: [], relates: null);
+            visibility: VisibilityModifier.Open, constraints: variant.GenericConstraints, obeys: [], relates: null,
+            genericParameters: variant.GenericParameters);
         bool first = true;
         foreach (VariantMember member in variant.Members)
         {
@@ -1158,7 +1379,8 @@ internal sealed partial class AstPrinter
     {
         PrintTypeHeader(keyword: "protocol", declaration: protocol, start: start, depth: depth,
             visibility: protocol.Visibility, constraints: protocol.GenericConstraints, obeys: protocol.ParentProtocols,
-            relates: protocol.AssociatedTypes, obeysAllowConditions: false);
+            relates: protocol.AssociatedTypes, genericParameters: protocol.GenericParameters,
+            obeysAllowConditions: false);
         bool first = true;
         foreach (RoutineSignature signature in protocol.MemberRoutines)
         {

@@ -153,14 +153,58 @@ internal static class AstComparer
                 continue;
             }
 
-            string? difference = CompareValues(expected: property.GetValue(obj: expected),
-                actual: property.GetValue(obj: actual),
-                path: $"{path}.{property.Name}",
-                depth: depth + 1);
+            // Generic constraints are a set: the layout lists the kind classifiers first and the bracket
+            // constraints as `needs` clauses, which can reorder them.
+            string? difference = property.Name == "GenericConstraints"
+                ? CompareUnordered(expected: property.GetValue(obj: expected) as IList,
+                    actual: property.GetValue(obj: actual) as IList,
+                    path: $"{path}.{property.Name}",
+                    depth: depth + 1)
+                : CompareValues(expected: property.GetValue(obj: expected),
+                    actual: property.GetValue(obj: actual),
+                    path: $"{path}.{property.Name}",
+                    depth: depth + 1);
             if (difference != null)
             {
                 return difference;
             }
+        }
+
+        return null;
+    }
+
+    /// <summary>Compares two lists as multisets: each expected item must match a distinct actual item.</summary>
+    private static string? CompareUnordered(IList? expected, IList? actual, string path, int depth)
+    {
+        if (expected == null || actual == null)
+        {
+            return CompareValues(expected: expected, actual: actual, path: path, depth: depth);
+        }
+
+        if (expected.Count != actual.Count)
+        {
+            return $"{path}: {expected.Count} items became {actual.Count}";
+        }
+
+        var used = new bool[actual.Count];
+        for (int i = 0; i < expected.Count; i++)
+        {
+            int match = -1;
+            for (int k = 0; k < actual.Count && match < 0; k++)
+            {
+                if (!used[k] && CompareValues(expected: expected[index: i], actual: actual[index: k],
+                        path: path, depth: depth + 1) == null)
+                {
+                    match = k;
+                }
+            }
+
+            if (match < 0)
+            {
+                return $"{path}[{i}]: no matching item in the formatted tree";
+            }
+
+            used[match] = true;
         }
 
         return null;

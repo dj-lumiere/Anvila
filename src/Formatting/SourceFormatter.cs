@@ -39,6 +39,9 @@ public static class SourceFormatter
 
     /// <summary>Formats <paramref name="source"/>, read from <paramref name="fileName"/>, written in
     /// <paramref name="language"/>.</summary>
+    /// <param name="source">The source text.</param>
+    /// <param name="fileName">The file it was read from (for messages).</param>
+    /// <param name="language">The language it is written in.</param>
     /// <param name="keepOrder">Keep the top-level declarations in source order (for code examples in
     /// documentation) instead of grouping them by kind.</param>
     public static FormatResult Format(string source, string fileName, Language language, bool keepOrder = false)

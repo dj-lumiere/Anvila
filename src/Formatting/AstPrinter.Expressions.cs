@@ -832,6 +832,17 @@ internal sealed partial class AstPrinter
     /// </summary>
     private string TypeArgumentText(TypeExpression type)
     {
+        // A literal written as a type argument keeps its spelling (`CSVParser['	']`): the tree holds its value.
+        Token written = _index.Tokens[index: _index.TokenIndexAt(position: type.Location.Position)];
+        if (type.GenericArguments == null && written.Position == type.Location.Position &&
+            written.Type is TokenType.CharacterLiteral or TokenType.ByteLetterLiteral or TokenType.TextLiteral
+                or TokenType.RawText or TokenType.BytesLiteral or TokenType.BytesRawLiteral)
+        {
+            return written.Type is TokenType.CharacterLiteral or TokenType.ByteLetterLiteral
+                ? written.Text
+                : _index.TokenSourceText(tokenIndex: _index.TokenIndexAt(position: type.Location.Position));
+        }
+
         if (type.SpliceHandle != null)
         {
             return Splices.TypeOf(handle: type.SpliceHandle);
@@ -1041,6 +1052,13 @@ internal sealed partial class AstPrinter
     {
         if (binding.NestedPattern != null)
         {
+            // A literal element of a tuple pattern in a `when` arm (`(0, y) => …`).
+            if (binding.NestedPattern is LiteralPattern literal && binding.MemberVariableName == null &&
+                binding.BindingName == null)
+            {
+                return LiteralPatternText(literal: literal);
+            }
+
             if (binding.NestedPattern is not DestructuringPattern nested)
             {
                 throw Unsupported(node: binding.NestedPattern, at: binding.Location);
@@ -1096,6 +1114,8 @@ internal sealed partial class AstPrinter
                 return Doc.Concat(PatternDoc(pattern: guard.InnerPattern, conditionBased: conditionBased),
                     Doc.Text(text: " and "),
                     Expr(expression: guard.Guard, context: ExprContext.Statement));
+            case DestructuringPattern tuple:
+                return Doc.Text(text: BindingsText(bindings: tuple.Bindings));
             case SpliceTypePattern splice:
                 return Doc.Text(text: "is " + Splices.TypeOf(handle: splice.HandleName) + (splice.VariableName != null
                     ? " " + splice.VariableName
