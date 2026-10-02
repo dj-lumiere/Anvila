@@ -271,7 +271,7 @@ internal sealed class TesseraIntrinsics
             : null);
     }
 
-    /// <summary>A raw generic operation over the first operand's type: <c>add&lt;S32&gt;(%a, %b)</c>.</summary>
+    /// <summary>A raw generic operation over the first operand's type: <c>add&lt;S32&gt;(a, b)</c>.</summary>
     private string Generic(string operation)
     {
         return $"{operation}<{Type(index: 0)}>({string.Join(separator: ", ", values: _arguments.Select(selector: a => a.Value))})";
@@ -291,7 +291,7 @@ internal sealed class TesseraIntrinsics
         return $"sub<{type}>(bxor<{type}>({value}, {mask}), {mask})";
     }
 
-    /// <summary>A conversion between the operand's type and the result type: <c>sext&lt;S32, S64&gt;(%v)</c>.</summary>
+    /// <summary>A conversion between the operand's type and the result type: <c>sext&lt;S32, S64&gt;(v)</c>.</summary>
     private string Conversion(string operation)
     {
         return $"{operation}<{Type(index: 0)}, {_typeText(arg: _resultType)}>({Argument(index: 0)})";

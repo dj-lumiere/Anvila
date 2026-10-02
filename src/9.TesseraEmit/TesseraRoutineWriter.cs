@@ -15,7 +15,7 @@ namespace Builder.TesseraEmit;
 /// Writes one routine as Tessera. Every local lives in a claimed stack slot, as in the LLVM emitter's
 /// alloca-per-local output (LLVM promotes the slots to registers): a read is a <c>load</c>, a write a
 /// <c>store</c>. A slot is claimed where its local is declared, with the value it starts with
-/// (<c>claim %x : @T &lt;- value</c>). A Tessera block sees only its own parameters and the routine's, so a
+/// (<c>claim x : @T &lt;- value</c>). A Tessera block sees only its own parameters and the routine's, so a
 /// block takes the slots visible where the statement that makes it stands, and every jump to it passes them.
 /// Each value a statement computes is bound to a temporary, in evaluation order.
 /// </summary>
@@ -88,13 +88,13 @@ internal sealed class TesseraRoutineWriter
             TypeSymbol owner = _routine.OwnerType!;
             if (MeByReference)
             {
-                parameters.Add(item: $"%me: @{TypeText(type: owner)}");
-                scope[key: "me"] = new Local(Place: "%me", Type: owner);
+                parameters.Add(item: $"me: @{TypeText(type: owner)}");
+                scope[key: "me"] = new Local(Place: "me", Type: owner);
             }
             else
             {
-                parameters.Add(item: $"%arg_me: {TypeText(type: owner)}");
-                scope[key: "me"] = ClaimLocal(name: "me", type: owner, initial: "%arg_me");
+                parameters.Add(item: $"arg_me: {TypeText(type: owner)}");
+                scope[key: "me"] = ClaimLocal(name: "me", type: owner, initial: "arg_me");
             }
         }
 
@@ -102,13 +102,13 @@ internal sealed class TesseraRoutineWriter
         {
             if (param.IsByReference)
             {
-                parameters.Add(item: $"%arg_{param.Name}: @{TypeText(type: param.Type)}");
-                scope[key: param.Name] = new Local(Place: $"%arg_{param.Name}", Type: param.Type);
+                parameters.Add(item: $"arg_{param.Name}: @{TypeText(type: param.Type)}");
+                scope[key: param.Name] = new Local(Place: $"arg_{param.Name}", Type: param.Type);
             }
             else
             {
-                parameters.Add(item: $"%arg_{param.Name}: {TypeText(type: param.Type)}");
-                scope[key: param.Name] = ClaimLocal(name: param.Name, type: param.Type, initial: $"%arg_{param.Name}");
+                parameters.Add(item: $"arg_{param.Name}: {TypeText(type: param.Type)}");
+                scope[key: param.Name] = ClaimLocal(name: param.Name, type: param.Type, initial: $"arg_{param.Name}");
             }
         }
 
@@ -163,7 +163,7 @@ internal sealed class TesseraRoutineWriter
     /// </summary>
     private Local ClaimLocal(string name, TypeSymbol type, string? initial)
     {
-        var local = new Local(Place: $"%{name}_{_slotCount++}", Type: type);
+        var local = new Local(Place: $"{name}_{_slotCount++}", Type: type);
         Emit(line: $"claim {local.Place} : @{TypeText(type: type)} <- {initial ?? "uninit"}");
         _visible.Add(item: local);
         return local;
@@ -212,7 +212,7 @@ internal sealed class TesseraRoutineWriter
 
     private string Temp(TypeSymbol? type, string expression)
     {
-        string name = $"%t{_temps++}";
+        string name = $"t{_temps++}";
         Emit(line: $"{name} : {TypeText(type: type)} = {expression}");
         return name;
     }
@@ -300,7 +300,7 @@ internal sealed class TesseraRoutineWriter
                 WriteCancellationPush(push: push);
                 break;
             case CancellationPopStatement pop:
-                Emit(line: $"{_module.RuntimeRoutine(symbol: Declaration.RuntimeContract.Runtime.CoroCfPop, parameters: "%node: Addr", returnType: "Void")}" +
+                Emit(line: $"{_module.RuntimeRoutine(symbol: Declaration.RuntimeContract.Runtime.CoroCfPop, parameters: "node: Addr", returnType: "Void")}" +
                            $"({Lookup(name: CancellationNodeName(local: pop.Local)).Place})");
                 break;
             default:
@@ -322,7 +322,7 @@ internal sealed class TesseraRoutineWriter
             initial: null);
         _scopes[^1][key: CancellationNodeName(local: push.Local)] = node;
         string runtime = _module.RuntimeRoutine(symbol: Declaration.RuntimeContract.Runtime.CoroCfPush,
-            parameters: "%node: Addr, %value: Addr, %destroy: Addr", returnType: "Void");
+            parameters: "node: Addr, value: Addr, destroy: Addr", returnType: "Void");
         Emit(line: $"{runtime}({node.Place}, {value}, {_module.RoutineName(routine: push.Destroy)}.addr())");
     }
 
@@ -538,7 +538,7 @@ internal sealed class TesseraRoutineWriter
             return operand.Text;
         }
 
-        string slot = $"%spill{_temps++}";
+        string slot = $"spill{_temps++}";
         Emit(line: $"claim {slot} : @{TypeText(type: operand.Type)} <- {operand.Text}");
         return slot;
     }
@@ -564,7 +564,7 @@ internal sealed class TesseraRoutineWriter
                 return "null";
         }
 
-        string slot = $"%zero{_temps++}";
+        string slot = $"zero{_temps++}";
         Emit(line: $"claim {slot} : @{text} <- uninit");
         Emit(line: $"{slot}.zeroinit(1)");
         return $"{slot}.load()";
@@ -574,7 +574,7 @@ internal sealed class TesseraRoutineWriter
     private string Receiver(Operand operand)
     {
         string value = Value(operand: operand);
-        return value.StartsWith(value: '%')
+        return TesseraWriter.IsName(text: value)
             ? value
             : Temp(type: operand.Type, expression: value);
     }
@@ -585,7 +585,7 @@ internal sealed class TesseraRoutineWriter
         {
             case EntityAllocationExpression { ResolvedType: EntityTypeSymbol entity }:
             {
-                string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "%size: U64",
+                string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
                     returnType: "Addr");
                 string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
                 Emit(line: $"{block}.to<@{_module.EntityRecord(entity: entity)}>().zeroinit(1)");
@@ -697,7 +697,7 @@ internal sealed class TesseraRoutineWriter
     private Operand RoutineValue(RoutineInfo routine, string bound)
     {
         string record = _module.RoutineValueRecord;
-        string name = $"%t{_temps++}";
+        string name = $"t{_temps++}";
         Emit(line: $"{name} : {record} = {record} {{ fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound} }}");
         return new Operand(Text: name, Type: null, IsPlace: false);
     }
@@ -1228,7 +1228,7 @@ internal sealed class TesseraRoutineWriter
                                      to: entity.MemberVariables[index: i].Type);
                              })
                             .ToList();
-        string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "%size: U64",
+        string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
             returnType: "Addr");
         string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
         for (int i = 0; i < values.Count; i++)
@@ -1255,7 +1255,7 @@ internal sealed class TesseraRoutineWriter
         };
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
-        string slot = $"%carrier{_temps++}";
+        string slot = $"carrier{_temps++}";
         Emit(line: $"claim {slot} : @{TypeText(type: carrier)} <- uninit");
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
@@ -1303,7 +1303,7 @@ internal sealed class TesseraRoutineWriter
         string place = Place(operand: carrier);
         TypeSymbol typeIdType = record.MemberVariables[index: 0].Type;
         string typeId = Temp(type: typeIdType, expression: $"{place}.{record.MemberVariables[index: 0].Name}.load()");
-        string address = $"%t{_temps++}";
+        string address = $"t{_temps++}";
         Emit(line: $"{address} : Addr = {place}.{record.MemberVariables[index: 1].Name}.to<@Addr>().load()");
         (string routine, TypeSymbol result) = _module.CrashableDispatch(member: dispatch.MemberName,
             typeIdType: typeIdType);

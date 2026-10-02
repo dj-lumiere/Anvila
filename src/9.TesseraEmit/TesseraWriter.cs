@@ -242,19 +242,19 @@ internal sealed class TesseraWriter
         string idType = TypeText(type: typeIdType);
         string resultType = TypeText(type: result);
         var text = new StringBuilder();
-        text.Append(value: $"routine {name}(%type_id: {idType}, %error: Addr) -> {resultType}\n");
+        text.Append(value: $"routine {name}(type_id: {idType}, error: Addr) -> {resultType}\n");
         for (int i = 0; i < arms.Count; i++)
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
             string receiver = TypeText(type: routine.OwnerType) is ['@', .. var pointee]
-                ? $"%error.to<@{pointee}>()"
-                : "%error";
+                ? $"error.to<@{pointee}>()"
+                : "error";
             text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}():\n")
-                .Append(value: $"        %is_{i} : Bool = ieq<{idType}>(%type_id, 0x{id:X})\n")
-                .Append(value: $"        branch %is_{i} ? case_{i}() : next_{i + 1}()\n\n")
+                .Append(value: $"        is_{i} : Bool = ieq<{idType}>(type_id, 0x{id:X})\n")
+                .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
                 .Append(value: $"    block case_{i}():\n")
-                .Append(value: $"        %r_{i} : {resultType} = {RoutineName(routine: routine)}({receiver})\n")
-                .Append(value: $"        return(%r_{i})\n\n");
+                .Append(value: $"        r_{i} : {resultType} = {RoutineName(routine: routine)}({receiver})\n")
+                .Append(value: $"        return(r_{i})\n\n");
         }
 
         text.Append(value: $"    block next_{arms.Count}():\n        unreachable\n\n");
@@ -303,7 +303,7 @@ internal sealed class TesseraWriter
         string parameters = string.Join(separator: ", ",
             // A C parameter's name is only a label; Tessera reserves `self` for a receiver.
             values: routine.Parameters.Select(selector: p =>
-                $"%{(p.Name == "self" ? "self_" : p.Name)}: {TypeText(type: p.Type)}"));
+                $"{(p.Name == "self" ? "self_" : ValueName(name: p.Name))}: {TypeText(type: p.Type)}"));
         _externs.Append(value: $"#[external(\"c\"), symbol(\"{symbol}\")]\n" +
                                $"routine {name}({parameters}) -> {TypeText(type: routine.ReturnType)}\n\n");
         return name;
@@ -414,46 +414,46 @@ internal sealed class TesseraWriter
             ? TypeText(type: routineType.ReturnType)
             : "Void";
         List<string> types = routineType.ParameterTypes.Select(selector: TypeText).ToList();
-        string Names(string prefix) => string.Concat(values: types.Select(selector: (_, i) => $", %{prefix}{i}"));
+        string Names(string prefix) => string.Concat(values: types.Select(selector: (_, i) => $", {prefix}{i}"));
         string Parameters(string prefix) =>
-            string.Concat(values: types.Select(selector: (t, i) => $", %{prefix}{i}: {t}"));
+            string.Concat(values: types.Select(selector: (t, i) => $", {prefix}{i}: {t}"));
         string Arguments(string prefix) => string.Join(separator: ", ",
-            values: types.Select(selector: (_, i) => $"%{prefix}{i}"));
+            values: types.Select(selector: (_, i) => $"{prefix}{i}"));
 
         var text = new StringBuilder();
-        text.Append(value: $"routine {name}(%value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
+        text.Append(value: $"routine {name}(value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
             .Append(value: "    block entry():\n")
-            .Append(value: "        %fn : Addr = %value.fn\n")
-            .Append(value: "        %bound : Addr = %value.bound\n")
-            .Append(value: "        %address : U64 = ptrtoint<Addr, U64>(%bound)\n")
-            .Append(value: "        %unbound : Bool = %address.eq(0)\n")
-            .Append(value: $"        branch %unbound ? plain(%fn{Names(prefix: "a")}) : bound(%fn, %bound{Names(prefix: "a")})\n\n");
+            .Append(value: "        fn : Addr = value.fn\n")
+            .Append(value: "        bound : Addr = value.bound\n")
+            .Append(value: "        address : U64 = ptrtoint<Addr, U64>(bound)\n")
+            .Append(value: "        unbound : Bool = address.eq(0)\n")
+            .Append(value: $"        branch unbound ? plain(fn{Names(prefix: "a")}) : bound(fn, bound{Names(prefix: "a")})\n\n");
         foreach ((string block, string callable, string extra, string prefix) in new[]
                  {
                      ("plain", plain, "", "p"),
-                     ("bound", bound, ", %payload: Addr", "b")
+                     ("bound", bound, ", payload: Addr", "b")
                  })
         {
             string arguments = Arguments(prefix: prefix);
             if (extra.Length > 0)
             {
                 arguments = arguments.Length > 0
-                    ? $"{arguments}, %payload"
-                    : "%payload";
+                    ? $"{arguments}, payload"
+                    : "payload";
             }
 
             // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
-            text.Append(value: $"    block {block}(%code: Addr{extra}{Parameters(prefix: prefix)}):\n")
-                .Append(value: "        claim %slot : @Addr <- %code\n")
-                .Append(value: $"        %callee : {callable} = %slot.to<@{callable}>().load()\n");
+            text.Append(value: $"    block {block}(code: Addr{extra}{Parameters(prefix: prefix)}):\n")
+                .Append(value: "        claim slot : @Addr <- code\n")
+                .Append(value: $"        callee : {callable} = slot.to<@{callable}>().load()\n");
             if (returns)
             {
-                text.Append(value: $"        %result : {returnType} = %callee.call({arguments})\n")
-                    .Append(value: "        return(%result)\n\n");
+                text.Append(value: $"        result : {returnType} = callee.call({arguments})\n")
+                    .Append(value: "        return(result)\n\n");
             }
             else
             {
-                text.Append(value: $"        %callee.call({arguments})\n")
+                text.Append(value: $"        callee.call({arguments})\n")
                     .Append(value: "        return()\n\n");
             }
         }
@@ -568,6 +568,25 @@ internal sealed class TesseraWriter
                 .Append(value: '\n');
         return name;
     }
+
+    /// <summary>The words a Tessera statement, target, or expression starts with: a value of such a name is written
+    /// between backticks.</summary>
+    private static readonly HashSet<string> TesseraKeywords =
+    [
+        "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "uninit",
+        "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
+        "define", "private", "internal", "module", "import",
+    ];
+
+    /// <summary>A value named as the builder's program names it: a Tessera keyword goes between backticks.</summary>
+    public static string ValueName(string name) => TesseraKeywords.Contains(item: name) ? $"`{name}`" : name;
+
+    /// <summary>Whether an operand's text is a value's name (a binding, a parameter, a preset), as opposed to a
+    /// literal or an expression.</summary>
+    public static bool IsName(string text) =>
+        text.Length > 0
+        && (text[0] == '`' || ((char.IsLetter(c: text[0]) || text[0] == '_') && text.All(predicate: c => char.IsLetterOrDigit(c: c) || c == '_')))
+        && text is not ("true" or "false" or "null");
 
     private string UniqueName(string wanted)
     {
@@ -805,7 +824,7 @@ internal sealed class TesseraWriter
         return "#[external(\"c\"), symbol(\"rf_runtime_init\")]\n" +
                "routine rf_runtime_init() -> Void\n\n" +
                "#[external(\"c\"), symbol(\"__rf_set_trace_mode\")]\n" +
-               "routine c_rf_set_trace_mode(%mode: S32) -> Void\n\n" +
+               "routine c_rf_set_trace_mode(mode: S32) -> Void\n\n" +
                "routine main() -> S32\n" +
                "    block entry():\n" +
                "        rf_runtime_init()\n" +

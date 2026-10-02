@@ -36,16 +36,16 @@ internal static class TesseraTrace
         global RF_TRACE_DEPTH: @S32
 
         /// Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
-        routine rf_trace_push(%routine: @Byte, %file: @Byte, %line: S32, %column: S32) -> Void
+        routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
             block entry():
-                %depth : S32         = RF_TRACE_DEPTH.load()
-                %index : USize       = zext<S32, USize>(band<S32>(%depth, 31))
-                %frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(%index)
-                %frame.routine.store(%routine)
-                %frame.file.store(%file)
-                %frame.line.store(%line)
-                %frame.column.store(%column)
-                add<S32>(%depth, 1).store_into(RF_TRACE_DEPTH)
+                depth : S32         = RF_TRACE_DEPTH.load()
+                index : USize       = zext<S32, USize>(band<S32>(depth, 31))
+                frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(index)
+                frame.routine.store(routine_name)
+                frame.file.store(file)
+                frame.line.store(line)
+                frame.column.store(column)
+                add<S32>(depth, 1).store_into(RF_TRACE_DEPTH)
                 return()
 
         routine rf_trace_pop() -> Void
@@ -54,16 +54,16 @@ internal static class TesseraTrace
                 return()
 
         /// Moves the top frame to the position of the call about to be made.
-        routine rf_trace_update_loc(%line: S32, %column: S32) -> Void
+        routine rf_trace_update_loc(line: S32, column: S32) -> Void
             block entry():
-                %depth : S32 = RF_TRACE_DEPTH.load()
-                branch %depth.gt(0) ? update(%depth) : return()
+                depth : S32 = RF_TRACE_DEPTH.load()
+                branch depth.gt(0) ? update(depth) : return()
 
-            block update(%depth: S32):
-                %index : USize = zext<S32, USize>(band<S32>(sub<S32>(%depth, 1), 31))
-                %frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(%index)
-                %frame.line.store(%line)
-                %frame.column.store(%column)
+            block update(depth: S32):
+                index : USize = zext<S32, USize>(band<S32>(sub<S32>(depth, 1), 31))
+                frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(index)
+                frame.line.store(line)
+                frame.column.store(column)
                 return()
 
 
