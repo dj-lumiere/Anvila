@@ -220,7 +220,8 @@ internal sealed class TesseraIntrinsics
 
     /// <summary>
     /// A sequentially consistent compare-and-exchange as the pair RazorForge returns: the value the address held and
-    /// whether it was replaced. Tessera's raw form returns the flag and stores the held value in a slot.
+    /// whether it was replaced. Tessera's raw form returns the flag and stores the held value in a slot. A builder
+    /// tuple is a record with fields <c>item0</c>, <c>item1</c>.
     /// </summary>
     private string CompareExchange()
     {
@@ -229,7 +230,7 @@ internal sealed class TesseraIntrinsics
         _emit(obj: $"{previous}_swapped : Bool = {Argument(index: 0)}.to<@{type}>()" +
                    $".atomic_compare_exchange_raw({Argument(index: 1)}, {Argument(index: 2)}, {previous})");
         _emit(obj: $"{previous}_held : {type} = {previous}.load()");
-        return $"{{ {previous}_held, {previous}_swapped }}";
+        return $"{_typeText(arg: _resultType)} {{ item0: {previous}_held, item1: {previous}_swapped }}";
     }
 
     /// <summary>A sequentially consistent atomic operation on the value at the address, of the value's type.</summary>
