@@ -258,6 +258,44 @@ internal sealed class TesseraWriter
 
     /// <summary>A C routine of the runtime the module calls by itself (not through a <c>C::</c> declaration),
     /// declared once under its own symbol.</summary>
+    private readonly Dictionary<string, string> _variantRecords = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The record a variant is, laid out as the LLVM emitter lays it out: the live case's type id, then the
+    /// bytes of the largest payload, which every case shares (a payload is stored and read at its own type
+    /// through a cast of those bytes). Tessera sizes the bytes, from the payload types themselves.
+    /// </summary>
+    public string VariantRecord(VariantTypeSymbol variant)
+    {
+        if (_variantRecords.TryGetValue(key: variant.FullName, value: out string? name))
+        {
+            return name;
+        }
+
+        name = VerbatimName(text: $"Variant.{variant.FullName}");
+        _variantRecords[key: variant.FullName] = name;
+        List<string> payloads = variant.Members
+                                       .Where(predicate: m => m is { IsNone: false, Type: not null })
+                                       .Select(selector: m => $"sizeof<{TypeText(type: m.Type)}>()")
+                                       .ToList();
+        var text = new StringBuilder();
+        if (payloads.Count == 0)
+        {
+            // Only payload-less cases: the type id alone, still a record as in the LLVM emitter.
+            text.Append(value: "#aggregate\n");
+        }
+
+        text.Append(value: $"record {name}\n    tag : U64\n");
+        if (payloads.Count > 0)
+        {
+            text.Append(value: $"    payload : Array<Byte, max({string.Join(separator: ", ", values: payloads)})>\n");
+        }
+
+        _records.Append(value: text)
+                .Append(value: '\n');
+        return name;
+    }
+
     private string? _routineValueRecord;
 
     /// <summary>
@@ -334,7 +372,7 @@ internal sealed class TesseraWriter
         _texts[key: initial] = name;
         _globals.Append(value: $"global {name}: @{type} <- {initial}\n\n");
         // The value is a pointer to the first element.
-        name = $"{name}.cast<{TypeText(type: data.ElementType)}>()";
+        name = $"{name}.to<@{TypeText(type: data.ElementType)}>()";
         _texts[key: initial] = name;
         return name;
     }
@@ -476,8 +514,7 @@ internal sealed class TesseraWriter
             case RecordTypeSymbol { BackendType: "void" }:
                 return "Void";
             case VariantTypeSymbol variant:
-                throw new NotSupportedException(
-                    message: $"The Tessera backend does not translate variant types yet ({variant.FullName}).");
+                return VariantRecord(variant: variant);
             case TupleTypeSymbol { ElementTypes.Count: >= 2 and <= 4 } tuple:
                 return $"({string.Join(separator: ", ", values: tuple.ElementTypes.Select(selector: TypeText))})";
             case EntityTypeSymbol:

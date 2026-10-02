@@ -40,7 +40,7 @@ internal static class TesseraTrace
             block entry():
                 %depth : S32         = RF_TRACE_DEPTH.load()
                 %index : USize       = zext<S32, USize>(band<S32>(%depth, 31))
-                %frame : @RfTraceFrame = RF_TRACE_STACK.cast<RfTraceFrame>().stride(%index)
+                %frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(%index)
                 %frame.routine.store(%routine)
                 %frame.file.store(%file)
                 %frame.line.store(%line)
@@ -61,7 +61,7 @@ internal static class TesseraTrace
 
             block update(%depth: S32):
                 %index : USize = zext<S32, USize>(band<S32>(sub<S32>(%depth, 1), 31))
-                %frame : @RfTraceFrame = RF_TRACE_STACK.cast<RfTraceFrame>().stride(%index)
+                %frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(%index)
                 %frame.line.store(%line)
                 %frame.column.store(%column)
                 return()

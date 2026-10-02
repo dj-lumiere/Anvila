@@ -482,7 +482,7 @@ internal sealed class TesseraRoutineWriter
             return from == to
                 ? inner with { Type = target }
                 : to is ['@', .. var pointee]
-                    ? new Operand(Text: Temp(type: target, expression: $"{Value(operand: inner)}.cast<{pointee}>()"),
+                    ? new Operand(Text: Temp(type: target, expression: $"{Value(operand: inner)}.to<@{pointee}>()"),
                         Type: target, IsPlace: false)
                     : new Operand(Text: Temp(type: target, expression: $"bitcast<{from}, {to}>({Value(operand: inner)})"),
                         Type: target, IsPlace: false);
@@ -523,7 +523,7 @@ internal sealed class TesseraRoutineWriter
     private string Typed(string value, TypeSymbol? from, TypeSymbol? to)
     {
         return TypeText(type: from) == "Addr" && TypeText(type: to) is ['@', .. var pointee]
-            ? $"{value}.cast<{pointee}>()"
+            ? $"{value}.to<@{pointee}>()"
             : value;
     }
 
@@ -585,7 +585,7 @@ internal sealed class TesseraRoutineWriter
                 string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "%size: U64",
                     returnType: "Addr");
                 string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
-                Emit(line: $"{block}.cast<{_module.EntityRecord(entity: entity)}>().zeroinit(1)");
+                Emit(line: $"{block}.to<@{_module.EntityRecord(entity: entity)}>().zeroinit(1)");
                 return new Operand(Text: block, Type: entity, IsPlace: false);
             }
             case ZeroValueExpression { ResolvedType: { } zeroType }:
@@ -662,6 +662,16 @@ internal sealed class TesseraRoutineWriter
             case BinaryExpression { Operator: BinaryOperator.Assign } assign:
                 return new Operand(Text: WriteAssignment(target: assign.Left, value: assign.Right),
                     Type: assign.Right.ResolvedType, IsPlace: false);
+            case TagOfExpression { Value: { ResolvedType: VariantTypeSymbol } tagged } tagOf:
+            {
+                // The live case's type id: a variant's first field.
+                Operand variant = Evaluate(expression: tagged);
+                string tag = variant.IsPlace
+                    ? $"{variant.Text}.tag.load()"
+                    : $"{Receiver(operand: variant)}.tag";
+                return new Operand(Text: Temp(type: tagOf.ResolvedType, expression: tag), Type: tagOf.ResolvedType,
+                    IsPlace: false);
+            }
             case BackendCastExpression cast:
             {
                 Operand inner = Evaluate(expression: cast.Value);
@@ -742,7 +752,7 @@ internal sealed class TesseraRoutineWriter
             StartBlock(label: label);
             string callable = _module.CallableText(routineType: type, withBound: withBound);
             string target = $"%callee{_temps++}";
-            Emit(line: $"{target} : {callable} = {fn.Place}.cast<{callable}>().load()");
+            Emit(line: $"{target} : {callable} = {fn.Place}.to<@{callable}>().load()");
             IEnumerable<string> values = arguments.Select(selector: a => Temp(type: a.Type, expression: $"{a.Place}.load()"));
             if (withBound)
             {
@@ -822,7 +832,7 @@ internal sealed class TesseraRoutineWriter
                 string pointer = Receiver(operand: wrapper);
                 return new Operand(Text: TypeText(type: wrapper.Type).StartsWith(value: '@')
                         ? pointer
-                        : $"{pointer}.cast<{TypeText(type: inner)}>()",
+                        : $"{pointer}.to<@{TypeText(type: inner)}>()",
                     Type: inner, IsPlace: true);
             }
             case WrapperProjectionKind.ControllerData:
@@ -832,7 +842,7 @@ internal sealed class TesseraRoutineWriter
                 string block = Receiver(operand: wrapper);
                 return new Operand(
                     Text: Temp(type: inner,
-                        expression: $"{block}.cast<{_module.EntityRecord(entity: controller)}>()." +
+                        expression: $"{block}.to<@{_module.EntityRecord(entity: controller)}>()." +
                                     $"{Declaration.RuntimeContract.ControllerData}.load()"),
                     Type: inner, IsPlace: false);
             }
@@ -894,7 +904,7 @@ internal sealed class TesseraRoutineWriter
         if (owner.Type is EntityTypeSymbol entity)
         {
             string block = Receiver(operand: owner);
-            return new Operand(Text: $"{block}.cast<{_module.EntityRecord(entity: entity)}>().{member.MemberName}",
+            return new Operand(Text: $"{block}.to<@{_module.EntityRecord(entity: entity)}>().{member.MemberName}",
                 Type: fieldType, IsPlace: true);
         }
 
@@ -1199,7 +1209,7 @@ internal sealed class TesseraRoutineWriter
         string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
         for (int i = 0; i < values.Count; i++)
         {
-            Emit(line: $"{block}.cast<{_module.EntityRecord(entity: entity)}>()." +
+            Emit(line: $"{block}.to<@{_module.EntityRecord(entity: entity)}>()." +
                        $"{entity.MemberVariables[index: i].Name}.store({values[index: i]})");
         }
 
@@ -1210,21 +1220,26 @@ internal sealed class TesseraRoutineWriter
     /// the payload stored at its own type into the second field's bytes.</summary>
     private Operand EvaluateTaggedCreator(TaggedCreatorExpression tagged)
     {
-        if (tagged.ResolvedType is not RecordTypeSymbol { MemberVariables.Count: 2 } carrier ||
-            carrier is VariantTypeSymbol)
+        // A variant is its type id and payload bytes (TesseraWriter.VariantRecord); a Check/Lookup carrier
+        // names its own two fields.
+        (TypeSymbol carrier, string tagField, string payloadField) = tagged.ResolvedType switch
         {
-            throw Unsupported(what: $"a tagged construction of {tagged.ResolvedType?.FullName ?? "an untyped value"}");
-        }
+            VariantTypeSymbol variant => ((TypeSymbol)variant, "tag", "payload"),
+            RecordTypeSymbol { MemberVariables.Count: 2 } record => (record, record.MemberVariables[index: 0].Name,
+                record.MemberVariables[index: 1].Name),
+            var other => throw Unsupported(what: $"a tagged construction of {other?.FullName ?? "an untyped value"}")
+        };
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
         string slot = $"%carrier{_temps++}";
         Emit(line: $"claim {slot} : @{TypeText(type: carrier)} <- uninit");
+        // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
-        Emit(line: $"{slot}.{carrier.MemberVariables[index: 0].Name}.store({tag})");
+        Emit(line: $"{slot}.{tagField}.store({tag})");
         if (tagged.Payload is { } payload)
         {
             string value = Value(operand: Evaluate(expression: payload));
-            Emit(line: $"{slot}.{carrier.MemberVariables[index: 1].Name}.cast<{TypeText(type: payload.ResolvedType)}>()" +
+            Emit(line: $"{slot}.{payloadField}.to<@{TypeText(type: payload.ResolvedType)}>()" +
                        $".store({value})");
         }
 
@@ -1235,16 +1250,16 @@ internal sealed class TesseraRoutineWriter
     private Operand EvaluatePayload(CarrierPayloadExpression payload)
     {
         Operand carrier = Evaluate(expression: payload.Carrier);
-        if (carrier.Type is not RecordTypeSymbol { MemberVariables.Count: >= 2 } record ||
-            carrier.Type is VariantTypeSymbol)
+        string payloadField = carrier.Type switch
         {
-            throw Unsupported(what: $"a payload read from {carrier.Type?.FullName ?? "an untyped value"}");
-        }
+            VariantTypeSymbol => "payload",
+            RecordTypeSymbol { MemberVariables.Count: >= 2 } record => record.MemberVariables[index: 1].Name,
+            var other => throw Unsupported(what: $"a payload read from {other?.FullName ?? "an untyped value"}")
+        };
 
         TypeSymbol valueType = payload.ResolvedType ?? payload.ConcreteType.ResolvedType ??
                                throw Unsupported(what: "a payload read of an unresolved type");
-        return new Operand(Text: $"{Place(operand: carrier)}.{record.MemberVariables[index: 1].Name}" +
-                                 $".cast<{TypeText(type: valueType)}>()",
+        return new Operand(Text: $"{Place(operand: carrier)}.{payloadField}.to<@{TypeText(type: valueType)}>()",
             Type: valueType, IsPlace: true);
     }
 

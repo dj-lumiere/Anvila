@@ -119,19 +119,19 @@ internal sealed class TesseraIntrinsics
             "float_to_unsigned" => Conversion(operation: "fptoui"),
             "float_extend" => Conversion(operation: "fpext"),
             "float_narrow" => Conversion(operation: "fptrunc"),
-            "load" => $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().load()",
-            "load_unaligned" => $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().load_unaligned()",
-            "store" => $"{Argument(index: 0)}.cast<{Type(index: 1)}>().store({Argument(index: 1)})",
+            "load" => $"{Argument(index: 0)}.to<@{_typeText(arg: _resultType)}>().load()",
+            "load_unaligned" => $"{Argument(index: 0)}.to<@{_typeText(arg: _resultType)}>().load_unaligned()",
+            "store" => $"{Argument(index: 0)}.to<@{Type(index: 1)}>().store({Argument(index: 1)})",
             // zero_value is zeroed under an older name: every byte of a T zero.
             "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"{Argument(index: 0)}.ptr_eq({Argument(index: 1)})",
             // The crash trace the routines keep (TesseraTrace), read by Core's crash_report.
             "trace_depth" => "RF_TRACE_DEPTH.load()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
-                ? $"RF_TRACE_STACK.cast<{pointee}>()"
+                ? $"RF_TRACE_STACK.to<@{pointee}>()"
                 : "RF_TRACE_STACK",
             "element_pointer" => ElementPointer(),
-            "atomic_load" => $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().atomic_load()",
+            "atomic_load" => $"{Argument(index: 0)}.to<@{_typeText(arg: _resultType)}>().atomic_load()",
             "atomic_store" => Atomic(method: "atomic_store"),
             "atomic_add" => Atomic(method: "atomic_fetch_add"),
             "atomic_sub" => Atomic(method: "atomic_fetch_sub"),
@@ -141,11 +141,11 @@ internal sealed class TesseraIntrinsics
             "atomic_exchange" => Atomic(method: "atomic_swap"),
             "atomic_compare_and_exchange" => CompareExchange(),
             "load_element_ref" =>
-                $"{Argument(index: 0)}.cast<{_typeText(arg: _resultType)}>().stride({Index(index: 1)}).load()",
+                $"{Argument(index: 0)}.to<@{_typeText(arg: _resultType)}>().stride({Index(index: 1)}).load()",
             "store_element_ref" =>
-                $"{Argument(index: 0)}.cast<{Type(index: 2)}>().stride({Index(index: 1)}).store({Argument(index: 2)})",
+                $"{Argument(index: 0)}.to<@{Type(index: 2)}>().stride({Index(index: 1)}).store({Argument(index: 2)})",
             "element_at" or "byte_at" =>
-                $"{_spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type)}.cast<{_typeText(arg: _resultType)}>()" +
+                $"{_spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type)}.to<@{_typeText(arg: _resultType)}>()" +
                 $".stride({Index(index: 1)}).load()",
             "set_byte_at" => SetElement(),
             "entity_from_hijacked" => Argument(index: 0),
@@ -169,7 +169,7 @@ internal sealed class TesseraIntrinsics
                     message: "The Tessera backend found an LLVM::element_pointer without an element type.");
         string count = Type(index: 1);
         string size = count.StartsWith(value: 'S') ? "SSize" : "USize";
-        return $"{Argument(index: 0)}.cast<{_typeText(arg: element)}>().stride(bitcast<{count}, {size}>({Argument(index: 1)}))";
+        return $"{Argument(index: 0)}.to<@{_typeText(arg: element)}>().stride(bitcast<{count}, {size}>({Argument(index: 1)}))";
     }
 
     /// <summary>
@@ -186,7 +186,7 @@ internal sealed class TesseraIntrinsics
         {
             // A typed pointer @T is reached from another pointer by casting it, an untyped Addr takes any pointer.
             ('p', 'p') => to is ['@', .. var pointee] && from != to
-                ? $"{Argument(index: 0)}.cast<{pointee}>()"
+                ? $"{Argument(index: 0)}.to<@{pointee}>()"
                 : Argument(index: 0),
             ('p', 'i') => $"ptrtoint<{from}, {to}>({Argument(index: 0)})",
             ('i', 'p') => $"inttoptr<{from}, {to}>({Argument(index: 0)})",
@@ -224,7 +224,7 @@ internal sealed class TesseraIntrinsics
     {
         string type = Type(index: 1);
         string previous = _spill(arg1: Argument(index: 1), arg2: _arguments[index: 1].Type);
-        _emit(obj: $"{previous}_swapped : Bool = {Argument(index: 0)}.cast<{type}>()" +
+        _emit(obj: $"{previous}_swapped : Bool = {Argument(index: 0)}.to<@{type}>()" +
                    $".atomic_compare_exchange_raw({Argument(index: 1)}, {Argument(index: 2)}, {previous})");
         _emit(obj: $"{previous}_held : {type} = {previous}.load()");
         return $"{{ {previous}_held, {previous}_swapped }}";
@@ -233,7 +233,7 @@ internal sealed class TesseraIntrinsics
     /// <summary>A sequentially consistent atomic operation on the value at the address, of the value's type.</summary>
     private string Atomic(string method)
     {
-        return $"{Argument(index: 0)}.cast<{Type(index: 1)}>().{method}({Argument(index: 1)})";
+        return $"{Argument(index: 0)}.to<@{Type(index: 1)}>().{method}({Argument(index: 1)})";
     }
 
     /// <summary>An index argument as the pointer-width integer <c>stride</c> takes, bit for bit.</summary>
@@ -249,7 +249,7 @@ internal sealed class TesseraIntrinsics
     private string SetElement()
     {
         string slot = _spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type);
-        _emit(obj: $"{slot}.cast<{Type(index: 2)}>().stride({Index(index: 1)}).store({Argument(index: 2)})");
+        _emit(obj: $"{slot}.to<@{Type(index: 2)}>().stride({Index(index: 1)}).store({Argument(index: 2)})");
         return $"{slot}.load()";
     }
 
