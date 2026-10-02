@@ -1,3 +1,4 @@
+using System.Globalization;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
@@ -102,6 +103,7 @@ internal sealed class TesseraIntrinsics
             "unsigned_sub_checked" => Checked(operation: "sub", overflows: "usub_overflows"),
             "signed_mul_checked" => Checked(operation: "mul", overflows: "smul_overflows"),
             "unsigned_mul_checked" => Checked(operation: "mul", overflows: "umul_overflows"),
+            "int_abs" => IntAbs(),
             "count_ones" => Generic(operation: "popcount"),
             "leading_zeros" => $"clz<{Type(index: 0)}>({Argument(index: 0)}, false)",
             "trailing_zeros" => $"ctz<{Type(index: 0)}>({Argument(index: 0)}, false)",
@@ -272,6 +274,20 @@ internal sealed class TesseraIntrinsics
     private string Generic(string operation)
     {
         return $"{operation}<{Type(index: 0)}>({string.Join(separator: ", ", values: _arguments.Select(selector: a => a.Value))})";
+    }
+
+    /// <summary>
+    /// The absolute value with the minimum wrapping to itself, as <c>llvm.abs</c> with a defined minimum: the sign
+    /// mask <c>m = v &gt;&gt; (W - 1)</c> (all ones when negative) gives <c>(v ^ m) - m</c>. Tessera has no abs
+    /// operation (its <c>abs_wrap</c> is a library routine), so it is built from raw operations.
+    /// </summary>
+    private string IntAbs()
+    {
+        string type = Type(index: 0);
+        string value = Argument(index: 0);
+        int bits = int.Parse(s: type[1..], provider: CultureInfo.InvariantCulture);
+        string mask = $"ashr<{type}>({value}, {bits - 1})";
+        return $"sub<{type}>(bxor<{type}>({value}, {mask}), {mask})";
     }
 
     /// <summary>A conversion between the operand's type and the result type: <c>sext&lt;S32, S64&gt;(%v)</c>.</summary>

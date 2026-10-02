@@ -287,6 +287,9 @@ internal sealed class TesseraRoutineWriter
                 WriteCall(call: crash.Report, asStatement: true);
                 Terminate(line: "unreachable");
                 break;
+            case PassStatement:
+                // `pass` holds a place where a statement is required, and does nothing.
+                break;
             case BreakStatement:
                 Terminate(line: $"jump {Target(label: CurrentLoop.Break)}");
                 break;
