@@ -155,7 +155,7 @@ internal static class AstComparer
 
             // Generic constraints are a set: the layout lists the kind classifiers first and the bracket
             // constraints as `needs` clauses, which can reorder them.
-            string? difference = property.Name == "GenericConstraints"
+            string? difference = property.Name is "GenericConstraints" or "AssociatedTypes"
                 ? CompareUnordered(expected: property.GetValue(obj: expected) as IList,
                     actual: property.GetValue(obj: actual) as IList,
                     path: $"{path}.{property.Name}",

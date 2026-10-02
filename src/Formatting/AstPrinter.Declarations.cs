@@ -1000,11 +1000,27 @@ internal sealed partial class AstPrinter
             EmitClause(location: constraint.Location!, depth: depth, head: clause);
         }
 
-        foreach (GenericConstraintDeclaration constraint in needs.Where(predicate: c =>
-                     c.ConstraintType == ConstraintKind.Everywhere))
+        // Every `everywhere` gate on one line: `needs P1, P2 everywhere`.
+        List<GenericConstraintDeclaration> everywhere = needs.Where(predicate: c =>
+                                                                 c.ConstraintType == ConstraintKind.Everywhere)
+                                                             .ToList();
+        if (everywhere.Count > 0)
         {
-            EmitClause(location: constraint.Location!, depth: depth,
-                head: Doc.Concat(Doc.Text(text: "needs "), ConstraintDoc(constraint: constraint)));
+            var protocols = new List<Doc>();
+            foreach (GenericConstraintDeclaration gate in everywhere)
+            {
+                if (gate.ParameterName != "Me" || gate.ConstraintTypes is not [var protocol])
+                {
+                    throw Refuse(at: gate.Location, reason: "an everywhere constraint of this shape");
+                }
+
+                protocols.Add(item: TypeDoc(type: protocol));
+            }
+
+            EmitMergedClause(locations: everywhere.Select(selector: c => c.Location!)
+                                                  .ToList(),
+                depth: depth,
+                head: Doc.Concat(ClauseDoc(prefix: "needs ", items: protocols), Doc.Text(text: " everywhere")));
         }
     }
 
@@ -1013,6 +1029,24 @@ internal sealed partial class AstPrinter
     {
         return constraint.ConstraintType is not (ConstraintKind.Obeys or ConstraintKind.TypeEquality
             or ConstraintKind.Everywhere);
+    }
+
+    /// <summary>
+    /// Writes one clause line that stands for several written ones (each <c>relates</c> or <c>everywhere</c>
+    /// line), with the comments written before each of them, in source order.
+    /// </summary>
+    private void EmitMergedClause(List<SourceLocation> locations, int depth, Doc head)
+    {
+        List<int> starts = locations.Select(selector: LineStart)
+                                    .Distinct()
+                                    .Order()
+                                    .ToList();
+        foreach (int start in starts)
+        {
+            EmitPrefix(start: start, depth: depth, first: false, policy: BlankPolicy.None);
+        }
+
+        EmitHead(start: LineStart(location: locations[index: 0]), depth: depth, head: head);
     }
 
     /// <summary>Writes one header clause line, with the comments written before it.</summary>
@@ -1130,18 +1164,29 @@ internal sealed partial class AstPrinter
             text: VisibilityPrefix(visibility: visibility, at: declaration.Location, printer: this) + keyword + " " +
                   name));
 
-        foreach (AssociatedTypeDeclaration associated in relates ?? [])
+        // Every associated type on one `relates` line, filled onto continuation lines past the limit.
+        if (relates is { Count: > 0 })
         {
-            Doc clause = associated switch
+            var items = new List<Doc>();
+            foreach (AssociatedTypeDeclaration associated in relates)
             {
-                { Binding: { } binding, Constraint: null } => Doc.Concat(Doc.Text(text: "relates "),
-                    TypeDoc(type: binding), Doc.Text(text: " as " + associated.Name)),
-                { Binding: null, Constraint: { } constraint } => Doc.Concat(
-                    Doc.Text(text: "relates " + associated.Name + " obeys "), TypeDoc(type: constraint)),
-                { Binding: null, Constraint: null } => Doc.Text(text: "relates " + associated.Name),
-                _ => throw Refuse(at: associated.Location, reason: "a relates clause with both a binding and a bound")
-            };
-            EmitClause(location: associated.Location!, depth: depth, head: clause);
+                items.Add(item: associated switch
+                {
+                    { Binding: { } binding, Constraint: null } => Doc.Concat(TypeDoc(type: binding),
+                        Doc.Text(text: " as " + associated.Name)),
+                    { Binding: null, Constraint: { } constraint } => Doc.Concat(
+                        Doc.Text(text: associated.Name + " obeys "), TypeDoc(type: constraint)),
+                    { Binding: null, Constraint: null } => Doc.Text(text: associated.Name),
+                    _ => throw Refuse(at: associated.Location,
+                        reason: "a relates clause with both a binding and a bound")
+                });
+            }
+
+            // The merged line takes the comments written before each of the lines it replaces, in order.
+            EmitMergedClause(locations: relates.Select(selector: r => r.Location!)
+                                               .ToList(),
+                depth: depth,
+                head: ClauseDoc(prefix: "relates ", items: items));
         }
 
         if (obeys.Count > 0)

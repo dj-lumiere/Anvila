@@ -808,6 +808,23 @@ public partial class Parser
             {
                 SourceLocation location = GetLocation();
 
+                // `needs P1, P2 everywhere`: one gate per protocol of the list.
+                if (IsEverywhereList())
+                {
+                    do
+                    {
+                        SourceLocation protocolLocation = GetLocation();
+                        TypeExpression protocol = ParseType();
+                        constraints.Add(item: new GenericConstraintDeclaration(ParameterName: "Me",
+                            ConstraintType: ConstraintKind.Everywhere,
+                            ConstraintTypes: [protocol],
+                            Location: protocolLocation));
+                    } while (CheckAndAdvance(type: TokenType.Comma));
+
+                    Consume(type: TokenType.Everywhere, errorMessage: "Expected 'everywhere' after the protocols");
+                    continue;
+                }
+
                 // NEW classifier-first form: `needs AnyType T`, `needs ChoiceType T`, `needs U64 N`.
                 // Keep the AnyType constraint here too (unlike the bracket): for a universal template
                 // whose owner IS the param (`routine T.diagnose() needs AnyType T`), the AnyType
@@ -838,6 +855,61 @@ public partial class Parser
         return constraints.Count > 0
             ? constraints
             : null;
+    }
+
+    /// <summary>
+    /// Whether the tokens ahead are a protocol list closed by <c>everywhere</c> (<c>P1, P2[T] everywhere</c>),
+    /// looking past the commas and brackets without consuming them.
+    /// </summary>
+    private bool IsEverywhereList()
+    {
+        int offset = 0;
+        while (true)
+        {
+            if (PeekToken(offset: offset)
+                   .Type != TokenType.Identifier)
+            {
+                return false;
+            }
+
+            offset++;
+            if (PeekToken(offset: offset)
+                   .Type == TokenType.LeftBracket)
+            {
+                int depth = 0;
+                do
+                {
+                    TokenType type = PeekToken(offset: offset)
+                       .Type;
+                    if (type == TokenType.LeftBracket)
+                    {
+                        depth++;
+                    }
+                    else if (type == TokenType.RightBracket)
+                    {
+                        depth--;
+                    }
+                    else if (type is TokenType.Eof or TokenType.Newline)
+                    {
+                        return false;
+                    }
+
+                    offset++;
+                } while (depth > 0);
+            }
+
+            switch (PeekToken(offset: offset)
+                       .Type)
+            {
+                case TokenType.Everywhere:
+                    return true;
+                case TokenType.Comma:
+                    offset++;
+                    continue;
+                default:
+                    return false;
+            }
+        }
     }
 
     /// <summary>
@@ -985,44 +1057,56 @@ public partial class Parser
 
             CheckAndAdvance(type: TokenType.Relates);
 
-            SourceLocation location = GetLocation();
-
-            // Parse the first token group as a type. For a slot declaration it is a bare
-            // identifier (the slot name); for a binding it is the concrete type.
-            TypeExpression first = ParseType();
-
-            if (CheckAndAdvance(type: TokenType.Obeys))
+            // `relates A as T/X, B as T/Y`: one clause may relate several associated types.
+            do
             {
-                // Constrained slot declaration: `relates Iter obeys Iterator[T]`.
-                TypeExpression constraint = ParseType();
-                related.Add(item: new AssociatedTypeDeclaration(Name: first.Name,
-                    Constraint: constraint,
-                    Binding: null,
-                    Location: location));
-            }
-            else if (CheckAndAdvance(type: TokenType.As))
-            {
-                // Implementer binding: `relates ListEmitter[T] as Iter`.
-                string slotName = ConsumeIdentifier(
-                    errorMessage: "Expected associated-type name after 'as' in 'relates' clause");
-                related.Add(item: new AssociatedTypeDeclaration(Name: slotName,
-                    Constraint: null,
-                    Binding: first,
-                    Location: location));
-            }
-            else
-            {
-                // Bare slot declaration: `relates Key` — an associated type with no
-                // constraint and no binding (the implementer supplies it via `relates ... as`).
-                related.Add(item: new AssociatedTypeDeclaration(Name: first.Name,
-                    Constraint: null,
-                    Binding: null,
-                    Location: location));
-            }
+                related.Add(item: ParseOneRelates());
+            } while (CheckAndAdvance(type: TokenType.Comma));
         }
 
         return related.Count > 0
             ? related
             : null;
+    }
+
+    /// <summary>
+    /// Parses one item of a <c>relates</c> clause: a slot declaration (<c>Iter obeys Iterator[T]</c>, <c>Key</c>)
+    /// or an implementer binding (<c>ListEmitter[T] as Iter</c>).
+    /// </summary>
+    private AssociatedTypeDeclaration ParseOneRelates()
+    {
+        SourceLocation location = GetLocation();
+
+        // Parse the first token group as a type. For a slot declaration it is a bare
+        // identifier (the slot name); for a binding it is the concrete type.
+        TypeExpression first = ParseType();
+
+        if (CheckAndAdvance(type: TokenType.Obeys))
+        {
+            // Constrained slot declaration: `relates Iter obeys Iterator[T]`.
+            TypeExpression constraint = ParseType();
+            return new AssociatedTypeDeclaration(Name: first.Name,
+                Constraint: constraint,
+                Binding: null,
+                Location: location);
+        }
+
+        if (CheckAndAdvance(type: TokenType.As))
+        {
+            // Implementer binding: `relates ListEmitter[T] as Iter`.
+            string slotName = ConsumeIdentifier(
+                errorMessage: "Expected associated-type name after 'as' in 'relates' clause");
+            return new AssociatedTypeDeclaration(Name: slotName,
+                Constraint: null,
+                Binding: first,
+                Location: location);
+        }
+
+        // Bare slot declaration: `relates Key` — an associated type with no
+        // constraint and no binding (the implementer supplies it via `relates ... as`).
+        return new AssociatedTypeDeclaration(Name: first.Name,
+            Constraint: null,
+            Binding: null,
+            Location: location);
     }
 }

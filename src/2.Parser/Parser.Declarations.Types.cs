@@ -746,7 +746,10 @@ public partial class Parser
         if (CheckAndAdvance(type: TokenType.Relates))
         {
             associatedTypes ??= [];
-            associatedTypes.Add(item: ParseProtocolRelatesSlot());
+            do
+            {
+                associatedTypes.Add(item: ParseProtocolRelatesSlot());
+            } while (CheckAndAdvance(type: TokenType.Comma));
             CheckAndAdvance(type: TokenType.Newline);
             return;
         }
