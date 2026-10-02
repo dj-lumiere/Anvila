@@ -633,6 +633,8 @@ internal sealed class TesseraRoutineWriter
                 return EvaluatePayload(payload: payload);
             case TaggedCreatorExpression tagged:
                 return EvaluateTaggedCreator(tagged: tagged);
+            case CrashableDispatchExpression dispatch:
+                return EvaluateCrashableDispatch(dispatch: dispatch);
             case WrapperProjectionExpression projection:
                 return EvaluateProjection(projection: projection);
             case NativeRoutineExpression { Routine: IdentifierExpression { ResolvedRoutine: { } native } } address:
@@ -1319,6 +1321,30 @@ internal sealed class TesseraRoutineWriter
                                throw Unsupported(what: "a payload read of an unresolved type");
         return new Operand(Text: $"{Place(operand: carrier)}.{payloadField}.to<@{TypeText(type: valueType)}>()",
             Type: valueType, IsPlace: true);
+    }
+
+    /// <summary>
+    /// A Crashable member (<c>represent</c>, <c>diagnose</c>, …) called on the error a Check/Lookup carrier holds:
+    /// a call to the module's dispatch routine for that member (<c>TesseraWriter.CrashableDispatch</c>) with the
+    /// carrier's type id and the error's entity address, which an error keeps in the payload's first bytes.
+    /// </summary>
+    private Operand EvaluateCrashableDispatch(CrashableDispatchExpression dispatch)
+    {
+        Operand carrier = Evaluate(expression: dispatch.Carrier);
+        if (carrier.Type is not RecordTypeSymbol { MemberVariables.Count: 2 } record)
+        {
+            throw Unsupported(what: $"a crashable dispatch on {carrier.Type?.FullName ?? "an untyped value"}");
+        }
+
+        string place = Place(operand: carrier);
+        TypeSymbol typeIdType = record.MemberVariables[index: 0].Type;
+        string typeId = Temp(type: typeIdType, expression: $"{place}.{record.MemberVariables[index: 0].Name}.load()");
+        string address = $"%t{_temps++}";
+        Emit(line: $"{address} : Addr = {place}.{record.MemberVariables[index: 1].Name}.to<@Addr>().load()");
+        (string routine, TypeSymbol result) = _module.CrashableDispatch(member: dispatch.MemberName,
+            typeIdType: typeIdType);
+        return new Operand(Text: Temp(type: result, expression: $"{routine}({typeId}, {address})"), Type: result,
+            IsPlace: false);
     }
 
     private static string DescribeCall(CallExpression call)

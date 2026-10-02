@@ -209,6 +209,59 @@ internal sealed class TesseraWriter
 
     private IReadOnlyCollection<string> LiveKeys => _input.LiveRoutineKeys ?? [];
 
+    private HashSet<string>? _liveKeySet;
+
+    private readonly Dictionary<string, (string Name, TypeSymbol Result)> _crashableDispatches =
+        new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The routine that calls a Crashable member (<c>represent</c>, <c>diagnose</c>, …) on a type-erased error:
+    /// given the carrier's type id and the error's entity address, it compares the id with each live crashable's
+    /// (<c>CrashableDispatchArms</c>, the set the LLVM emitter switches over) and returns that crashable's member.
+    /// An id no crashable has cannot reach it, so the chain ends unreachable. Written once per member, so the
+    /// expression calling it stays one operation in its routine.
+    /// </summary>
+    public (string Name, TypeSymbol Result) CrashableDispatch(string member, TypeSymbol typeIdType)
+    {
+        if (_crashableDispatches.TryGetValue(key: member, value: out (string, TypeSymbol) existing))
+        {
+            return existing;
+        }
+
+        _liveKeySet ??= new HashSet<string>(collection: LiveKeys, comparer: StringComparer.Ordinal);
+        List<(ulong TypeId, RoutineInfo Member)> arms = Collection.CrashableDispatchArms.For(memberName: member,
+            registry: _input.Registry, liveRoutineKeys: _liveKeySet);
+        if (arms is not [{ Member.ReturnType: { } result }, ..])
+        {
+            throw new NotSupportedException(
+                message: $"The Tessera backend found no live crashable with a '{member}' to dispatch to.");
+        }
+
+        string name = VerbatimName(text: $"crashable dispatch {member}");
+        _crashableDispatches[key: member] = (name, result);
+        string idType = TypeText(type: typeIdType);
+        string resultType = TypeText(type: result);
+        var text = new StringBuilder();
+        text.Append(value: $"routine {name}(%type_id: {idType}, %error: Addr) -> {resultType}\n");
+        for (int i = 0; i < arms.Count; i++)
+        {
+            (ulong id, RoutineInfo routine) = arms[index: i];
+            string receiver = TypeText(type: routine.OwnerType) is ['@', .. var pointee]
+                ? $"%error.to<@{pointee}>()"
+                : "%error";
+            text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}():\n")
+                .Append(value: $"        %is_{i} : Bool = ieq<{idType}>(%type_id, 0x{id:X})\n")
+                .Append(value: $"        branch %is_{i} ? case_{i}() : next_{i + 1}()\n\n")
+                .Append(value: $"    block case_{i}():\n")
+                .Append(value: $"        %r_{i} : {resultType} = {RoutineName(routine: routine)}({receiver})\n")
+                .Append(value: $"        return(%r_{i})\n\n");
+        }
+
+        text.Append(value: $"    block next_{arms.Count}():\n        unreachable\n\n");
+        _definitions.Append(value: text);
+        return (name, result);
+    }
+
     /// <summary>A declaration's body, or the body the builder wrote for a declaration without one.</summary>
     private Statement? BodyOf(RoutineDeclaration routine, RoutineInfo info)
     {
