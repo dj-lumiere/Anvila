@@ -191,6 +191,14 @@ public partial class Parser
         {
             Expression condition = ParseNoneCoalesce();
 
+            if (Check(type: TokenType.Newline) || Check(type: TokenType.Indent))
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.UnexpectedToken,
+                    message: "An 'if' that gives a value is written on one line: 'if condition then a else b'. " +
+                             "It takes no indented block. For a choice of several values, or one that needs " +
+                             "statements, use 'when'.");
+            }
+
             Consume(type: TokenType.Then,
                 errorMessage: "Expected 'then' after condition in inline if");
             Expression

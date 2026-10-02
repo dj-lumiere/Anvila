@@ -33,20 +33,15 @@ public partial class Parser
                 errorMessage: ExpectedRightBracketAfterGenericParameters);
         }
 
-        // Parse generic constraints (where clause) - merge with inline constraints
-        // Supports needs before or after obeys
-        List<GenericConstraintDeclaration>? constraints =
-            ParseGenericConstraints(genericParams: genericParams,
-                existingConstraints: inlineConstraints);
-
-        List<TypeExpression> interfaces = ParseObeysProtocolList();
-
-        // Try constraints again after obeys (supports needs on next line)
-        constraints = ParseGenericConstraints(genericParams: genericParams,
-            existingConstraints: constraints);
-
-        // Associated-type bindings: `relates ConcreteType as Iter` (needs-sibling clause).
-        List<AssociatedTypeDeclaration>? associatedTypes = ParseRelatesClauses();
+        // The header clauses (`relates`, `obeys`, `needs`), each on its own line, in any order.
+        List<GenericConstraintDeclaration>? constraints = inlineConstraints;
+        List<AssociatedTypeDeclaration>? associatedTypes = null;
+        var interfaces = new List<TypeExpression>();
+        ParseHeaderClauses(genericParams: genericParams,
+            constraints: ref constraints,
+            protocols: interfaces,
+            relates: ref associatedTypes,
+            allowOnlyIf: true);
 
         var members = new List<SyntaxTree.Declaration>();
 
@@ -101,19 +96,15 @@ public partial class Parser
                 errorMessage: ExpectedRightBracketAfterGenericParameters);
         }
 
-        // Parse generic constraints (where clause) - merge with inline constraints
-        List<GenericConstraintDeclaration>? constraints =
-            ParseGenericConstraints(genericParams: genericParams,
-                existingConstraints: inlineConstraints);
-
-        List<TypeExpression> interfaces = ParseObeysProtocolList();
-
-        // Try constraints again after obeys (supports needs on next line)
-        constraints = ParseGenericConstraints(genericParams: genericParams,
-            existingConstraints: constraints);
-
-        // Associated-type bindings: `relates ConcreteType as Iter` (needs-sibling clause).
-        List<AssociatedTypeDeclaration>? associatedTypes = ParseRelatesClauses();
+        // The header clauses (`relates`, `obeys`, `needs`), each on its own line, in any order.
+        List<GenericConstraintDeclaration>? constraints = inlineConstraints;
+        List<AssociatedTypeDeclaration>? associatedTypes = null;
+        var interfaces = new List<TypeExpression>();
+        ParseHeaderClauses(genericParams: genericParams,
+            constraints: ref constraints,
+            protocols: interfaces,
+            relates: ref associatedTypes,
+            allowOnlyIf: true);
 
         var members = new List<SyntaxTree.Declaration>();
 
@@ -354,6 +345,54 @@ public partial class Parser
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedDedentAfterBody,
                 message: "Expected dedent after crashable body");
+        }
+    }
+
+    /// <summary>
+    /// Parses a type header's clauses, each on its own line after the header and in any order: <c>relates</c>
+    /// (associated types), <c>obeys</c> (the protocols, accumulated over several clauses) and <c>needs</c>
+    /// (generic constraints, appended after the bracket ones).
+    /// </summary>
+    private void ParseHeaderClauses(List<string>? genericParams,
+        ref List<GenericConstraintDeclaration>? constraints, List<TypeExpression> protocols,
+        ref List<AssociatedTypeDeclaration>? relates, bool allowOnlyIf)
+    {
+        while (true)
+        {
+            int offset = 0;
+            while (PeekToken(offset: offset)
+                      .Type == TokenType.Newline)
+            {
+                offset++;
+            }
+
+            int docOffset = offset;
+            while (PeekToken(offset: docOffset)
+                      .Type is TokenType.Newline or TokenType.DocComment)
+            {
+                docOffset++;
+            }
+
+            switch (PeekToken(offset: offset)
+                       .Type)
+            {
+                case TokenType.Needs:
+                    constraints = ParseGenericConstraints(genericParams: genericParams,
+                        existingConstraints: constraints);
+                    continue;
+                case TokenType.Obeys:
+                    protocols.AddRange(collection: ParseObeysProtocolList(allowOnlyIf: allowOnlyIf));
+                    continue;
+            }
+
+            if (PeekToken(offset: docOffset)
+                   .Type == TokenType.Relates)
+            {
+                relates = ParseRelatesClauses(existing: relates);
+                continue;
+            }
+
+            return;
         }
     }
 
@@ -603,21 +642,16 @@ public partial class Parser
                 errorMessage: ExpectedRightBracketAfterGenericParameters);
         }
 
-        // Parse generic constraints (where clause) - merge with inline constraints
-        List<GenericConstraintDeclaration>? constraints =
-            ParseGenericConstraints(genericParams: genericParams,
-                existingConstraints: inlineConstraints);
-
-        // Parse parent protocols (protocol X obeys Y, Z) using shared helper.
-        // Protocol parent-protocol items are plain types (no onlyif conditions here).
-        List<TypeExpression> parentProtocols = ParseObeysProtocolList(allowOnlyIf: false);
-
-        // Try constraints again after obeys (supports needs on next line)
-        constraints = ParseGenericConstraints(genericParams: genericParams,
-            existingConstraints: constraints);
-
-        // Associated-type slot declarations: `relates Iter obeys Iterator[T]` (needs-sibling clause).
-        List<AssociatedTypeDeclaration>? associatedTypes = ParseRelatesClauses();
+        // The header clauses (`relates`, `obeys`, `needs`), each on its own line, in any order. A protocol's
+        // parent protocols are plain types (no onlyif conditions).
+        List<GenericConstraintDeclaration>? constraints = inlineConstraints;
+        List<AssociatedTypeDeclaration>? associatedTypes = null;
+        var parentProtocols = new List<TypeExpression>();
+        ParseHeaderClauses(genericParams: genericParams,
+            constraints: ref constraints,
+            protocols: parentProtocols,
+            relates: ref associatedTypes,
+            allowOnlyIf: false);
 
         var memberRoutines = new List<RoutineSignature>();
 

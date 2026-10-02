@@ -777,6 +777,13 @@ public partial class Parser
             return ParseTypeOrVariantPattern(location: location);
         }
 
+        // Tuple pattern: `(0, 0) => …`, `(x, y) => …`. Without this, `(x, y) => …` reads as a lambda and
+        // `(0, 0)` as a tuple value compared whole.
+        if (Check(type: TokenType.LeftParen) && TryParseTuplePattern(location: location) is { } tuple)
+        {
+            return TryParseAndGuard(innerPattern: tuple, guardAllowed: true, location: location);
+        }
+
         // Literal pattern: constants like 42, "hello", true, etc. No flags collision → guard allowed.
         Expression expr = ParsePrimary();
         if (expr is LiteralExpression literal)
@@ -794,6 +801,95 @@ public partial class Parser
     }
 
     /// <summary>
+    /// Tries to parse a tuple pattern in a <c>when</c> arm: parenthesized elements, each a binding name, <c>_</c>,
+    /// a literal or a nested tuple pattern, with at least two elements (or one and a comma), followed by the arm's
+    /// <c>=&gt;</c> or an <c>and</c> guard. Each element matches the tuple member at its position. Returns null,
+    /// with the position restored, when the parentheses hold something else (a parenthesized value pattern).
+    /// </summary>
+    private DestructuringPattern? TryParseTuplePattern(SourceLocation location)
+    {
+        int saved = _position;
+        try
+        {
+            DestructuringPattern pattern = ParseTuplePatternElements(location: location);
+            if (Check(type: TokenType.FatArrow) || Check(type: TokenType.And))
+            {
+                return pattern;
+            }
+        }
+        catch (GrammarException)
+        {
+            // Not a tuple pattern: fall back to a value pattern.
+        }
+
+        _position = saved;
+        return null;
+    }
+
+    private DestructuringPattern ParseTuplePatternElements(SourceLocation location)
+    {
+        Consume(type: TokenType.LeftParen, errorMessage: "Expected '(' for a tuple pattern");
+        var bindings = new List<DestructuringBinding>();
+        bool trailingComma = false;
+        do
+        {
+            if (Check(type: TokenType.RightParen))
+            {
+                trailingComma = true;
+                break;
+            }
+
+            SourceLocation elementLocation = GetLocation();
+            if (Check(type: TokenType.LeftParen))
+            {
+                bindings.Add(item: new DestructuringBinding(MemberVariableName: null,
+                    BindingName: null,
+                    NestedPattern: ParseTuplePatternElements(location: elementLocation),
+                    Location: elementLocation));
+            }
+            else if (Check(type: TokenType.Identifier) &&
+                     PeekToken(offset: 1)
+                        .Type is TokenType.Comma or TokenType.RightParen)
+            {
+                string name = Advance()
+                   .Text;
+                bindings.Add(item: name == "_"
+                    ? new DestructuringBinding(MemberVariableName: null,
+                        BindingName: "_",
+                        NestedPattern: null,
+                        Location: elementLocation)
+                    : new DestructuringBinding(MemberVariableName: name,
+                        BindingName: name,
+                        NestedPattern: null,
+                        Location: elementLocation));
+            }
+            else if (ParseUnary() is LiteralExpression literal)
+            {
+                bindings.Add(item: new DestructuringBinding(MemberVariableName: null,
+                    BindingName: null,
+                    NestedPattern: new LiteralPattern(Value: literal.Value,
+                        LiteralType: literal.LiteralType,
+                        Location: elementLocation),
+                    Location: elementLocation));
+            }
+            else
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
+                    message: "A tuple pattern element is a name, '_', a literal or a nested tuple pattern.");
+            }
+        } while (CheckAndAdvance(type: TokenType.Comma));
+
+        Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after a tuple pattern");
+        if (bindings.Count < 2 && !trailingComma)
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
+                message: "A tuple pattern has at least two elements.");
+        }
+
+        return new DestructuringPattern(Bindings: bindings, Location: location);
+    }
+
+    /// <summary>
     /// Parses a bare type/variant pattern that starts with an identifier (not the <c>is</c>-prefixed
     /// form): <c>Type</c>, <c>Type varName</c>, <c>Choice.CASE</c>, <c>Variant.CASE varName</c>,
     /// <c>CASE</c>, or <c>CASE (a, b)</c>, with an optional trailing <c>and</c>-guard.
@@ -801,6 +897,20 @@ public partial class Parser
     private Pattern ParseTypeOrVariantPattern(SourceLocation location)
     {
         string name = CurrentToken.Text;
+
+        // A bare lowercase name followed by a guard or the arrow (`n and 0 <= n => …`, `n => …`) is an untyped
+        // binding, which RazorForge and Suflae do not have: it would read as an unknown type. Type and case names
+        // are capitalized, so this shape is never a valid pattern.
+        if (name.Length > 0 && char.IsLower(c: name[index: 0]) &&
+            PeekToken(offset: 1)
+               .Type is TokenType.And or TokenType.If or TokenType.FatArrow)
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
+                message: $"This arm binds '{name}' without a type, and a 'when' arm needs one. Write " +
+                         $"'is <Type> {name} and …' to bind a value of that type, or 'else {name} =>' to catch " +
+                         "everything else.");
+        }
+
         Advance();
 
         // Check for qualified name: Type.CASE or Type.CASE.SubCase

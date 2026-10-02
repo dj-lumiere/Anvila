@@ -471,6 +471,10 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             // `isnot T`: lowerable wherever `is T` is (the condition is its negation).
             NegatedTypePattern neg => IsLowerablePattern(pattern: AsTypePattern(negated: neg), subjectType: subjectType),
 
+            // A tuple pattern (`(0, y) => …`) matches the tuple's members by position.
+            DestructuringPattern tuplePattern when subjectType is TupleTypeSymbol tupleType =>
+                AreTupleBindingsLowerable(bindings: tuplePattern.Bindings, tuple: tupleType),
+
             DestructuringPattern dp when subjectType is RecordTypeSymbol or EntityTypeSymbol &&
                                          AreDestructuringBindingsLowerable(bindings: dp.Bindings,
                                              subjectType: subjectType) => true,
@@ -655,6 +659,12 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             }
 
             // -----------------------------------------------------------------------------
+
+            case DestructuringPattern tuplePattern when subjectType is TupleTypeSymbol tupleType:
+                return GetTupleCondition(bindings: tuplePattern.Bindings,
+                    subject: subject,
+                    tuple: tupleType,
+                    loc: loc);
 
             case DestructuringPattern dp when subjectType is RecordTypeSymbol rec:
                 return GetDestructuringCondition(bindings: dp.Bindings,
@@ -1230,6 +1240,71 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// pattern) always is; a NESTED binding is lowerable when its sub-pattern is lowerable on the member's
     /// type (recursively). Positional bindings (no member name) are left for codegen.
     /// </summary>
+    /// <summary>
+    /// Whether a tuple pattern lowers: one element per tuple member, each a binding, <c>_</c> or a lowerable
+    /// pattern on that member.
+    /// </summary>
+    private static bool AreTupleBindingsLowerable(List<DestructuringBinding> bindings, TupleTypeSymbol tuple)
+    {
+        if (bindings.Count != tuple.ElementTypes.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < bindings.Count; i++)
+        {
+            DestructuringBinding binding = bindings[index: i];
+            if (binding.NestedPattern != null &&
+                !IsLowerablePattern(pattern: binding.NestedPattern, subjectType: tuple.ElementTypes[index: i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The condition and bindings of a tuple pattern: each element tests or binds the tuple member at its
+    /// position (<c>item0</c>, <c>item1</c>, …).
+    /// </summary>
+    private (Expression? Cond, Statement? Binding) GetTupleCondition(List<DestructuringBinding> bindings,
+        Expression subject, TupleTypeSymbol tuple, SourceLocation loc)
+    {
+        TypeSymbol? boolType = ctx.Registry.LookupType(name: "Bool");
+        Expression? cond = null;
+        var stmts = new List<Statement>(capacity: bindings.Count);
+        for (int i = 0; i < bindings.Count; i++)
+        {
+            DestructuringBinding b = bindings[index: i];
+            TypeSymbol elementType = tuple.ElementTypes[index: i];
+            Expression element = MakeMemberAccess(subject: subject, field: $"item{i}", fieldType: elementType, loc: loc);
+            if (b.NestedPattern is { } nested)
+            {
+                (Expression? subCond, Statement? subBinding) = GetPatternCondition(pattern: nested,
+                    subject: element,
+                    subjectType: elementType);
+                cond = CombineConditions(left: cond, right: subCond, loc: loc, boolType: boolType);
+                if (subBinding != null)
+                {
+                    stmts.Add(item: subBinding);
+                }
+            }
+            else if (b.BindingName is { } name && name != "_")
+            {
+                stmts.Add(item: MakeBinding(name: name, value: element, loc: loc));
+            }
+        }
+
+        Statement? binding = stmts.Count switch
+        {
+            0 => null,
+            1 => stmts[index: 0],
+            _ => new BlockStatement(Statements: stmts, Location: loc)
+        };
+        return (cond, binding);
+    }
+
     private static bool AreDestructuringBindingsLowerable(List<DestructuringBinding> bindings,
         TypeSymbol? subjectType)
     {

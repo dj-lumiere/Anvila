@@ -597,6 +597,14 @@ public partial class Parser
                     language: _language);
             }
 
+            // `var (a, b) = pair` at the top of a script: a destructuring statement, which the script wrap
+            // carries into the synthesized start() with the other loose statements.
+            if (Check(type: TokenType.LeftParen) && !declLateInit && annotations.Count == 0 &&
+                visibility == VisibilityModifier.Open)
+            {
+                return ParseDestructuringDeclaration();
+            }
+
             return ParseVariableDeclaration(visibility: visibility,
                 annotations: annotations,
                 isLateInit: declLateInit);

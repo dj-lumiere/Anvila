@@ -154,25 +154,35 @@ public partial class Parser
             return "false";
         }
 
-        // Numeric literals
-        if (Check(TokenType.UndecidedInteger,
-                TokenType.IntegerLiteral,
-                TokenType.S8Literal,
-                TokenType.S16Literal,
-                TokenType.S32Literal,
-                TokenType.S64Literal,
-                TokenType.S128Literal,
-                TokenType.S256Literal,
-                TokenType.U8Literal,
-                TokenType.U16Literal,
-                TokenType.U32Literal,
-                TokenType.U64Literal,
-                TokenType.U128Literal,
-                TokenType.U256Literal,
-                TokenType.AddressLiteral))
+        // Tuple of values: `@case(input: (1, 2), output: 3)`, stored as `(1, 2)`.
+        if (CheckAndAdvance(type: TokenType.LeftParen))
         {
-            return Advance()
-               .Text;
+            var items = new List<string>();
+            if (!Check(type: TokenType.RightParen))
+            {
+                do
+                {
+                    items.Add(item: ParseAnnotationValue());
+                } while (CommaContinuesList(close: TokenType.RightParen));
+            }
+
+            Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after the tuple in an annotation argument");
+            return "(" + string.Join(separator: ", ", values: items) + ")";
+        }
+
+        // A negative number: `@case(input: (-1, 5))`.
+        if (Check(type: TokenType.Minus) && IsAnnotationLiteral(type: PeekToken(offset: 1)
+               .Type))
+        {
+            Advance();
+            return "-" + AnnotationLiteralText(token: Advance());
+        }
+
+        // Any other literal the lexer knows, as written: numbers of every type, durations (`5s`), memory sizes
+        // (`1mib`) and characters.
+        if (IsAnnotationLiteral(type: CurrentToken.Type))
+        {
+            return AnnotationLiteralText(token: Advance());
         }
 
         // Identifier (for choice values or constant references)
@@ -184,5 +194,46 @@ public partial class Parser
 
         throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedAnnotationValue,
             message: $"Expected annotation value, got {CurrentToken.Type}");
+    }
+
+    /// <summary>Whether a token is a number, duration, memory-size or character literal.</summary>
+    private static bool IsAnnotationLiteral(TokenType type)
+    {
+        return type is TokenType.UndecidedInteger or TokenType.UndecidedDecimal or TokenType.IntegerLiteral
+            or TokenType.DecimalLiteral or TokenType.S8Literal or TokenType.S16Literal or TokenType.S32Literal
+            or TokenType.S64Literal or TokenType.S128Literal or TokenType.S256Literal or TokenType.U8Literal
+            or TokenType.U16Literal or TokenType.U32Literal or TokenType.U64Literal or TokenType.U128Literal
+            or TokenType.U256Literal or TokenType.AddressLiteral or TokenType.B16Literal or TokenType.B32Literal
+            or TokenType.B64Literal or TokenType.B128Literal or TokenType.D32Literal or TokenType.D64Literal
+            or TokenType.D128Literal or TokenType.ImaginaryLiteral or TokenType.ByteLiteral
+            or TokenType.KilobyteLiteral or TokenType.KibibyteLiteral or TokenType.MegabyteLiteral
+            or TokenType.MebibyteLiteral or TokenType.GigabyteLiteral or TokenType.GibibyteLiteral
+            or TokenType.WeekLiteral or TokenType.DayLiteral or TokenType.HourLiteral or TokenType.MinuteLiteral
+            or TokenType.SecondLiteral or TokenType.MillisecondLiteral or TokenType.MicrosecondLiteral
+            or TokenType.NanosecondLiteral or TokenType.CharacterLiteral or TokenType.ByteLetterLiteral;
+    }
+
+    /// <summary>
+    /// A literal's text as written. The lexer keeps only the word of <c>inf_b64</c> / <c>nan_b64</c> and puts the
+    /// width in the token type, so the suffix is spelled back on.
+    /// </summary>
+    private static string AnnotationLiteralText(Token token)
+    {
+        if (token.Text is not ("inf" or "nan"))
+        {
+            return token.Text;
+        }
+
+        string suffix = token.Type switch
+        {
+            TokenType.B16Literal => "b16",
+            TokenType.B32Literal => "b32",
+            TokenType.B64Literal => "b64",
+            TokenType.B128Literal => "b128",
+            TokenType.D32Literal => "d32",
+            TokenType.D64Literal => "d64",
+            _ => "d128"
+        };
+        return token.Text + "_" + suffix;
     }
 }
