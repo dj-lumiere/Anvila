@@ -136,14 +136,10 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Suflae unsafe-call gate: whatever overload a call finally resolved to, a <c>dangerous</c> routine is
-    /// not part of Suflae's safe surface. Entity wrappers already hide their dangerous members (the
-    /// auto-forwarder denylist), but dangerous FREE routines auto-preluded from Core (<c>hollow[T]()</c>,
-    /// <c>roamed_from_addr</c>, …) and any dangerous method on a SHARED record slip past wrapping — this is
-    /// the one unified choke point (called from both the plain- and generic-call analyzers) that closes them.
-    /// Runs only for user Suflae source: stdlib <c>.rf</c> bodies analyze in RF mode, and SF stdlib wrappers
-    /// are exempt (a forwarder may still chain a builder-internal). Suflae has no <c>danger</c> block, so
-    /// there is no in-Suflae opt-in — the surface is simply unavailable.
+    /// Unsafe-call gate for a language without unsafe code (<c>LanguageRules.AllowsUnsafeCode</c> false):
+    /// whatever overload a call finally resolved to, a <c>dangerous</c> routine is outside its surface. This is
+    /// the one choke point (called from both the plain- and generic-call analyzers). Stdlib files are exempt.
+    /// RazorForge and Suflae both allow unsafe code, so for them the <c>danger</c>-block rule applies instead.
     /// </summary>
     private void EnforceUnsafeCallAllowed(RoutineInfo? resolved, SourceLocation location)
     {
