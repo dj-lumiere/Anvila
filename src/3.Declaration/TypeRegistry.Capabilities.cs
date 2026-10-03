@@ -406,6 +406,37 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// The first of the record's type parameters that <paramref name="type"/> holds by value and that is not kept to
+    /// values by a kind constraint, or null. A parameter is held by value directly, or through a tuple, a variant or a
+    /// bundle (whose kind follows its arguments); behind a handle (<c>Retained[T]</c>, …) or inside a record it is not.
+    /// </summary>
+    public static string? EntityParameterIn(TypeSymbol type, IReadOnlyList<SyntaxTree.GenericConstraintDeclaration>? constraints)
+    {
+        switch (type)
+        {
+            case GenericParameterTypeSymbol parameter:
+                return constraints?.Any(predicate: c => c.ParameterName == parameter.Name && c.ConstraintType is
+                    SyntaxTree.ConstraintKind.RecordType or SyntaxTree.ConstraintKind.ChoiceType or SyntaxTree.ConstraintKind.FlagsType or
+                    SyntaxTree.ConstraintKind.RoutineType or SyntaxTree.ConstraintKind.ConstGeneric) == true
+                    ? null
+                    : parameter.Name;
+            case TupleTypeSymbol tuple:
+                return tuple.ElementTypes.Select(selector: e => EntityParameterIn(type: e, constraints: constraints))
+                            .FirstOrDefault(predicate: p => p != null);
+            case VariantTypeSymbol variant:
+                return variant.Members.Where(predicate: m => m.Type != null)
+                              .Select(selector: m => EntityParameterIn(type: m.Type!, constraints: constraints))
+                              .FirstOrDefault(predicate: p => p != null);
+            case RecordTypeSymbol { IsBundle: true } or RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None }:
+                return (type.TypeArguments ?? [])
+                      .Select(selector: a => EntityParameterIn(type: a, constraints: constraints))
+                      .FirstOrDefault(predicate: p => p != null);
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
     /// ④ standard-impl eligibility evaluator (<c>needs P everywhere</c>): the CONCRETE type
     /// <paramref name="type"/> obeys <paramref name="protocol"/> structurally IFF EVERY member
     /// (allmemvarof per kind) obeys it — ∀-only, concrete-only. Per-member verdict uses the declared

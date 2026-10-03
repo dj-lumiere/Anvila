@@ -477,6 +477,7 @@ public partial class Parser
         {
             TokenType.Entity => true,
             TokenType.Record => true,
+            TokenType.Bundle => true,
             TokenType.Choice => true,
             TokenType.Flags => true,
             TokenType.Variant => true,

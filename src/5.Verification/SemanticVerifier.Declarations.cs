@@ -594,7 +594,8 @@ public sealed partial class SemanticVerifier
             Location = record.Location,
             Module = GetCurrentModuleName(),
             Annotations = record.Annotations,
-            BackendType = ExtractLlvmAnnotation(annotations: record.Annotations)
+            BackendType = ExtractLlvmAnnotation(annotations: record.Annotations),
+            IsBundle = record.IsBundle
         };
 
         // @llvm("typename") IS the layout — fields would be silently discarded by codegen.

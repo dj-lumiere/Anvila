@@ -1429,7 +1429,8 @@ public sealed partial class StdlibLoader
             GenericConstraints = record.GenericConstraints,
             Annotations = record.Annotations,
             BackendType = ExtractLlvmAnnotation(annotations: record.Annotations),
-            CarrierKind = inheritedCarrierKind
+            CarrierKind = inheritedCarrierKind,
+            IsBundle = record.IsBundle
         };
         if (expandTemplates.Count > 0)
         {

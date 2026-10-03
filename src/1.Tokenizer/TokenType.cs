@@ -248,6 +248,13 @@ public enum TokenType
     Record,
 
     /// <summary>
+    /// Bundle declaration keyword: a generic aggregate whose kind each instantiation decides. An instance whose
+    /// member variables are all values is a value (like a record); one that holds an entity is single-owner (like
+    /// an entity).
+    /// </summary>
+    Bundle,
+
+    /// <summary>
     /// Choice declaration keyword.
     /// Simple enumeration of discrete, stateless options (type-safe enum).
     /// Perfect for pattern matching with 'when'.

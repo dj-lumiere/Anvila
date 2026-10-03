@@ -441,6 +441,10 @@ public enum SemanticDiagnosticCode
     /// <summary>Type defines an operator memberRoutine but does not follow the required protocol.</summary>
     OperatorWithoutProtocol = 411,
 
+    /// <summary>A record holds an entity, or a type parameter that may be one, by value: a record is copied, and a
+    /// copy would make two of the one entity. A bundle (or an entity) is the declaration that may.</summary>
+    RecordHoldsEntity = 409,
+
     /// <summary>Record member variable has a type that is not a value type (entities, wrappers, tokens cannot be stored in records).</summary>
     RecordContainsNonValueType = 412,
 

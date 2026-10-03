@@ -134,9 +134,11 @@ internal sealed class TypeBodyResolver
 
             if (member is VariableDeclaration memberVariable)
             {
-                memberVariables.Add(item: ResolveRecordMemberVariable(
+                MemberVariableInfo resolved = ResolveRecordMemberVariable(
                     memberVariable: memberVariable,
-                    memberVariableIndex: memberVariableIndex++));
+                    memberVariableIndex: memberVariableIndex++);
+                memberVariables.Add(item: resolved);
+                CheckRecordHoldsNoEntity(record: record, memberVariable: memberVariable, type: resolved.Type);
             }
 
             // Still call CollectDeclaration for validation and other member types
@@ -159,6 +161,38 @@ internal sealed class TypeBodyResolver
 
         _sa._currentType = previousType;
         _sa._currentTypeMemberVariableNames = previousMemberVariableNames;
+    }
+
+    /// <summary>
+    /// A <c>record</c> is a value: it is copied, and a copy of one that held an entity would make two of the one
+    /// entity. So a record may hold neither an entity nor a type parameter that could be one (RF-S409). A
+    /// <c>bundle</c>, whose instances holding an entity are single-owner, may. Ownership is RazorForge's, so the
+    /// rule is RazorForge's (in Suflae an entity is shared, and a record holding one copies the handle).
+    /// </summary>
+    private void CheckRecordHoldsNoEntity(RecordDeclaration record, VariableDeclaration memberVariable, TypeSymbol type)
+    {
+        if (record.IsBundle || !_sa._registry.Rules.ChecksOwnership ||
+            _sa._currentType is RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None })
+        {
+            return;
+        }
+
+        string? parameter = TypeRegistry.EntityParameterIn(type: type, constraints: record.GenericConstraints);
+        if (parameter == null && (type is GenericParameterTypeSymbol || !_sa._registry.IsEntityKind(type: type)))
+        {
+            return;
+        }
+
+        _sa.ReportError(code: SemanticDiagnosticCode.RecordHoldsEntity,
+            message: parameter != null
+                ? $"'{record.Name}' is a record, which is copied, and its member variable '{memberVariable.Name}' holds " +
+                  $"'{parameter}', which may be an entity: a copy would make two of the one entity. Declare it " +
+                  $"'bundle {record.Name}' (an instance holding an entity is then single-owner), or keep '{parameter}' " +
+                  $"to values with 'needs RecordType {parameter}'."
+                : $"'{record.Name}' is a record, which is copied, and its member variable '{memberVariable.Name}' holds " +
+                  $"the entity '{type.Name}': a copy would make two of it. Declare '{record.Name}' as an entity, or " +
+                  $"hold a handle that can be copied, such as 'Retained[{type.Name}]'.",
+            location: memberVariable.Location);
     }
 
     /// <summary>

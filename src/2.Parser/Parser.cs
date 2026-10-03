@@ -672,6 +672,11 @@ public partial class Parser
             return ParseRecordDeclaration(visibility: visibility, annotations: annotations);
         }
 
+        if (CheckAndAdvance(type: TokenType.Bundle))
+        {
+            return ParseRecordDeclaration(visibility: visibility, annotations: annotations) with { IsBundle = true };
+        }
+
         if (CheckAndAdvance(type: TokenType.Choice))
         {
             return ParseChoiceDeclaration(visibility: visibility);
@@ -859,6 +864,7 @@ public partial class Parser
             TokenType.Variant => "a variant",
             TokenType.Protocol => "a protocol",
             TokenType.Record => "a record",
+            TokenType.Bundle => "a bundle",
             _ => null
         };
         if (kind == null)
@@ -866,7 +872,8 @@ public partial class Parser
             return;
         }
 
-        RejectNoEffect(when: annotations.Count > 0 && CurrentToken.Type != TokenType.Record, at: CurrentToken,
+        RejectNoEffect(when: annotations.Count > 0 && CurrentToken.Type is not (TokenType.Record or TokenType.Bundle),
+            at: CurrentToken,
             message: $"An annotation ({string.Join(separator: ", ", values: annotations.Select(selector: a => "@" + a))}) " +
                      $"has no effect on {kind}. Remove it.");
         RejectNoEffect(when: isDangerous, at: CurrentToken,
@@ -932,6 +939,7 @@ public partial class Parser
 
         bool isTypeKeyword = Check(TokenType.Entity,
             TokenType.Record,
+            TokenType.Bundle,
             TokenType.Choice,
             TokenType.Flags,
             TokenType.Crashable,

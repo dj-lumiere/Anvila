@@ -1155,7 +1155,7 @@ public static class LspServer
         for (int i = 1; i < tokens.Count; i++)
         {
             if (tokens[index: i].Type == TokenType.Identifier && tokens[index: i].Text == name &&
-                tokens[index: i - 1].Type is TokenType.Record or TokenType.Entity or TokenType.Choice or
+                tokens[index: i - 1].Type is TokenType.Record or TokenType.Bundle or TokenType.Entity or TokenType.Choice or
                     TokenType.Flags or TokenType.Variant or TokenType.Protocol or TokenType.Crashable)
             {
                 return new SourceLocation(FileName: file, Line: tokens[index: i - 1].Line,
