@@ -1542,7 +1542,8 @@ public static class LspServer
         "entityType", // 12
         "interface", // 13: a protocol
         "typeParameter", // 14
-        "constant" // 15: a preset or a global
+        "constant", // 15: a preset or a global
+        "decorator" // 16: an annotation, its `@` and its name
     };
 
     private static int SemTok(string name)
@@ -3036,9 +3037,16 @@ public static class LspServer
                 modulePathLine = t.Line;
             }
 
-            int type = t.Type == TokenType.Identifier
-                ? ClassifyIdentifierToken(doc: doc, toks: toks, at: i, roles: roles, modulePathLine: modulePathLine)
-                : ClassifyNonIdentifierToken(t: t);
+            // `@` only opens an annotation, and the word right after it (a keyword too, `@inline`) is its name.
+            bool annotation = t.Type == TokenType.At ||
+                              i > 0 && toks[index: i - 1].Type == TokenType.At &&
+                              toks[index: i - 1].Line == t.Line && toks[index: i - 1].Column + 1 == t.Column;
+            int type = annotation
+                ? SemTok(name: "decorator")
+                : t.Type == TokenType.Identifier
+                    ? ClassifyIdentifierToken(doc: doc, toks: toks, at: i, roles: roles,
+                        modulePathLine: modulePathLine)
+                    : ClassifyNonIdentifierToken(t: t);
             if (type < 0)
             {
                 continue; // punctuation, text, comments — left to the TextMate grammar
