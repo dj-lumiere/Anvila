@@ -67,7 +67,7 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "parse" or "tokenize" or "codegen" or BuildCommand
-            or "buildandrun" or "check" or "validate-stdlib" or "emit-pbrf" or "emit-ingrid" or "help" or "fmt";
+            or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt";
 
         if (!isCommand && !TryRewriteBareRunArgs(args: ref args, command: ref command))
         {
@@ -189,8 +189,8 @@ internal partial class Program
             case "validate-stdlib":
                 return RunValidateStdlibCommand(args: args);
 
-            case "emit-pbrf":
-                return EmitPbrf(args: args);
+            case "emit-prebuilt":
+                return EmitPrebuilt(args: args);
 
             case "emit-ingrid":
                 return EmitIngrid();
@@ -330,13 +330,14 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Emits the modular (per-module) compiled-stdlib <c>.pbrf</c> artifacts as a BUILD BYPRODUCT — the
+    /// Emits the modular (per-module) compiled-stdlib prebuilt files (<c>.pbrf</c> / <c>.pbsf</c>, see
+    /// <see cref="Builder.Serialization.PrebuiltFormat"/>) as a BUILD BYPRODUCT — the
     /// daemon / cold path then LOADS them instead of paying a ~8 s capture on first run. Invoked by the
-    /// MSBuild post-build target (and manually). Writes to <c>&lt;Standard&gt;/.pbrf/&lt;Language&gt;/</c>.
+    /// MSBuild post-build target (and manually). Writes to <c>&lt;Standard&gt;/.prebuilt/&lt;Language&gt;/</c>.
     /// Incremental: a <c>stamp.txt</c> holds the stdlib content hash — if it matches and an index exists, the
     /// (re)capture is SKIPPED, so a no-stdlib-change rebuild is near-instant. Each language is best-effort:
     /// one failing does not fail the others (or the build — the caller uses ContinueOnError).
-    /// Usage: <c>emit-pbrf [outDir] [--all|--sf]</c>. Default outDir = the resolved stdlib root's <c>.pbrf</c>.
+    /// Usage: <c>emit-prebuilt [outDir] [--all|--sf]</c>. Default outDir = the resolved stdlib root's <c>.prebuilt</c>.
     /// </summary>
     /// <summary>
     /// Writes Ingrid's Tessera library as LLVM IR next to the executable (<see cref="IngridTessera.IrFileName"/>), where
@@ -358,12 +359,13 @@ internal partial class Program
         }
     }
 
-    private static int EmitPbrf(string[] args)
+    private static int EmitPrebuilt(string[] args)
     {
         string? outDir = args.Length > 1 && !args[1]
            .StartsWith(value: "--")
             ? args[1]
-            : Path.Combine(path1: StdlibLoader.GetDefaultStdlibPath(), path2: ".pbrf");
+            : Path.Combine(path1: StdlibLoader.GetDefaultStdlibPath(),
+                path2: Builder.Serialization.PrebuiltFormat.FolderName);
 
         // RazorForge's library is shared by every build, so it is always emitted, then the running
         // command's language (or every registered language under --all).
@@ -391,9 +393,10 @@ internal partial class Program
                 if (hash != null && File.Exists(path: stampPath) && File
                        .ReadAllText(path: stampPath)
                        .Trim() == hash &&
-                    File.Exists(path: Path.Combine(path1: langDir, path2: "index.pbrf")))
+                    File.Exists(path: Path.Combine(path1: langDir,
+                        path2: Builder.Serialization.PrebuiltFormat.IndexFileName(language: lang))))
                 {
-                    Console.WriteLine(value: $"[emit-pbrf] {lang}: up to date");
+                    Console.WriteLine(value: $"[emit-prebuilt] {lang}: up to date");
                     continue;
                 }
 
@@ -415,12 +418,12 @@ internal partial class Program
 
                 Console.WriteLine(
                     value:
-                    $"[emit-pbrf] {lang}: {labels.Count} modules ({sw.ElapsedMilliseconds} ms) -> {langDir}");
+                    $"[emit-prebuilt] {lang}: {labels.Count} modules ({sw.ElapsedMilliseconds} ms) -> {langDir}");
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine(
-                    value: $"[emit-pbrf] {lang} FAILED (non-fatal): {ex.Message}");
+                    value: $"[emit-prebuilt] {lang} FAILED (non-fatal): {ex.Message}");
             }
         }
 

@@ -6,11 +6,12 @@ using Builder.Verification;
 namespace Builder.Serialization;
 
 /// <summary>
-/// On-disk cache of the compiled-stdlib snapshot as a <c>.pbrf</c> ("prebuilt razorforge") file. This is
+/// On-disk cache of the compiled-stdlib snapshot as a prebuilt file (<c>.pbrf</c> "prebuilt razorforge",
+/// <c>.pbsf</c> "prebuilt suflae" — see <see cref="PrebuiltFormat"/>). This is
 /// the "cold under 1 s" foundation: instead of re-analyzing the whole stdlib (~5–8 s) on every daemon
 /// startup / cold build, we deserialize a previously-captured snapshot (~1–2 s). The cache is keyed by a
 /// content hash of (all stdlib source files' path+size+mtime) + (the builder assembly's mtime) +
-/// (the .pbrf format version), so editing the stdlib OR rebuilding the builder transparently invalidates
+/// (the prebuilt format version), so editing the stdlib OR rebuilding the builder transparently invalidates
 /// it — a stale snapshot can never be loaded against a changed semantic model.
 /// </summary>
 public static class StdlibSnapshotCache
@@ -21,7 +22,7 @@ public static class StdlibSnapshotCache
     private static readonly Dictionary<Language, SemanticVerifier.CompiledStdlibState> _memo =
         new();
 
-    /// <summary>Returns a compiled-stdlib snapshot, loading it from the on-disk <c>.pbrf</c> cache when the
+    /// <summary>Returns a compiled-stdlib snapshot, loading it from the on-disk prebuilt cache when the
     /// hash matches, else capturing it fresh and writing the cache for next time. Any load/save failure
     /// falls back to a fresh capture (the cache is an optimization, never a correctness dependency).</summary>
     public static SemanticVerifier.CompiledStdlibState LoadOrCapture(Language language,
@@ -49,7 +50,7 @@ public static class StdlibSnapshotCache
     private static SemanticVerifier.CompiledStdlibState LoadOrCaptureUncached(Language language,
         Action<string>? log)
     {
-        // Prefer the MODULAR build-output artifacts (emitted by `emit-pbrf` as a dotnet-build byproduct) —
+        // Prefer the MODULAR build-output artifacts (emitted by `emit-prebuilt` as a dotnet-build byproduct) —
         // reassembled via the shell two-phase loader, guarded by a source-hash stamp so a stale set is never
         // loaded. This is the "cold under 1 s" path: no capture, no monolithic 40 MB read.
         if (TryLoadModular(language: language, log: log) is { } modular)
@@ -72,7 +73,7 @@ public static class StdlibSnapshotCache
         return fresh;
     }
 
-    /// <summary>Loads the monolithic <c>.pbrf</c> snapshot from <paramref name="path"/> when it exists; returns
+    /// <summary>Loads the monolithic prebuilt snapshot from <paramref name="path"/> when it exists; returns
     /// null on absence or any read/deserialize error (→ caller recaptures). The whole file is read into memory
     /// first, then deserialized: deserializing straight off a FileStream does many tiny reads (syscall per
     /// BinaryReader call) and is ~1.7× slower than a MemoryStream. (Deflate compression was tried and REMOVED
@@ -98,13 +99,13 @@ public static class StdlibSnapshotCache
         }
         catch (Exception ex)
         {
-            log?.Invoke(obj: $"pbrf load failed ({ex.Message}); recapturing");
+            log?.Invoke(obj: $"prebuilt load failed ({ex.Message}); recapturing");
         }
 
         return null;
     }
 
-    /// <summary>Writes <paramref name="fresh"/> to the monolithic <c>.pbrf</c> at <paramref name="path"/>
+    /// <summary>Writes <paramref name="fresh"/> to the monolithic prebuilt file at <paramref name="path"/>
     /// (via a temp file + atomic move). Best-effort: any failure is logged and swallowed (the cache is an
     /// optimization, never a correctness dependency). No-op when <paramref name="path"/> is null.</summary>
     private static void SaveMonolithic(string? path, SemanticVerifier.CompiledStdlibState fresh,
@@ -130,15 +131,15 @@ public static class StdlibSnapshotCache
         }
         catch (Exception ex)
         {
-            log?.Invoke(obj: $"pbrf save failed ({ex.Message})");
+            log?.Invoke(obj: $"prebuilt save failed ({ex.Message})");
         }
     }
 
-    /// <summary>The build-output modular-artifact directory for a language: <c>&lt;stdlib&gt;/.pbrf/&lt;Lang&gt;/</c>.</summary>
+    /// <summary>The build-output modular-artifact directory for a language: <c>&lt;stdlib&gt;/.prebuilt/&lt;Lang&gt;/</c>.</summary>
     private static string ModularDir(Language language)
     {
         return Path.Combine(path1: Declaration.StdlibLoader.GetDefaultStdlibPath(),
-            path2: ".pbrf",
+            path2: PrebuiltFormat.FolderName,
             path3: language.ToString());
     }
 
@@ -151,7 +152,7 @@ public static class StdlibSnapshotCache
         {
             string dir = ModularDir(language: language);
             string stampPath = Path.Combine(path1: dir, path2: "stamp.txt");
-            string indexPath = Path.Combine(path1: dir, path2: "index.pbrf");
+            string indexPath = Path.Combine(path1: dir, path2: PrebuiltFormat.IndexFileName(language: language));
             if (!File.Exists(path: stampPath) || !File.Exists(path: indexPath))
             {
                 return null;
@@ -161,23 +162,23 @@ public static class StdlibSnapshotCache
             if (hash == null || File.ReadAllText(path: stampPath)
                                     .Trim() != hash)
             {
-                log?.Invoke(obj: $"modular .pbrf stamp mismatch for {language}; falling back");
+                log?.Invoke(obj: $"modular prebuilt stamp mismatch for {language}; falling back");
                 return null;
             }
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            SemanticVerifier.CompiledStdlibState state = ModularStdlibCache.Deserialize(dir: dir);
+            SemanticVerifier.CompiledStdlibState state = ModularStdlibCache.Deserialize(dir: dir, language: language);
             log?.Invoke(obj: $"loaded {language} modular stdlib ({sw.ElapsedMilliseconds} ms)");
             return state;
         }
         catch (Exception ex)
         {
-            log?.Invoke(obj: $"modular .pbrf load failed ({ex.Message}); falling back");
+            log?.Invoke(obj: $"modular prebuilt load failed ({ex.Message}); falling back");
             return null;
         }
     }
 
-    /// <summary>Full path to the <c>.pbrf</c> for this language+content-hash, or null if the stdlib root
+    /// <summary>Full path to the prebuilt file for this language+content-hash, or null if the stdlib root
     /// can't be resolved. The hash is embedded in the filename, so a changed stdlib/builder simply targets
     /// a different file (miss → recapture); stale files are harmless leftovers.</summary>
     private static string? CachePath(Language language)
@@ -191,16 +192,17 @@ public static class StdlibSnapshotCache
         string dir = Path.Combine(
             path1: Environment.GetFolderPath(
                 folder: Environment.SpecialFolder.LocalApplicationData),
-            path2: "razorforge",
-            path3: "pbrf");
-        return Path.Combine(path1: dir, path2: $"stdlib-{language}-{hash}.pbrf");
+            path2: "lumifoundry",
+            path3: "prebuilt");
+        return Path.Combine(path1: dir,
+            path2: $"stdlib-{language}-{hash}{PrebuiltFormat.Extension(language: language)}");
     }
 
     /// <summary>Hashes the stdlib source file set (path+size+mtime) + the builder assembly mtime + the
     /// format version. Uses file metadata (not contents) so it's fast — a dev editing a stdlib file bumps
     /// its mtime, and a builder rebuild bumps the assembly mtime, either of which invalidates the cache.</summary>
     /// <summary>Public entry to the stdlib content hash (source files' path+size+mtime + builder asm mtime
-    /// + format version). Used by the <c>emit-pbrf</c> build step to skip regeneration when nothing changed.</summary>
+    /// + format version). Used by the <c>emit-prebuilt</c> build step to skip regeneration when nothing changed.</summary>
     public static string? ComputeStdlibHash(Language language)
     {
         return ComputeHash(language: language);
@@ -224,7 +226,7 @@ public static class StdlibSnapshotCache
         AppendSourceFileMetadata(sb: sb, root: root, language: language);
 
         // The builder assembly: a rebuild may change the serialized semantic-model classes, so a stale
-        // .pbrf must not be loaded against them.
+        // prebuilt file must not be loaded against them.
         try
         {
             string asm = typeof(PbrfSerializer).Assembly.Location;

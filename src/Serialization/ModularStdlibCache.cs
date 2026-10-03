@@ -13,7 +13,8 @@ namespace Builder.Serialization;
 
 /// <summary>
 /// Modular (per-module) compiled-stdlib artifacts — the separate-compilation layer. Partitions one
-/// <see cref="SemanticVerifier.CompiledStdlibState"/> into N per-module <c>.pbrf</c> files plus a small
+/// <see cref="SemanticVerifier.CompiledStdlibState"/> into N per-module files (<c>.pbrf</c> / <c>.pbsf</c>, by
+/// language — see <see cref="PrebuiltFormat"/>) plus a small
 /// index, and reassembles them via the shell two-phase loader so that editing one stdlib module only
 /// rewrites that module's artifact.
 ///
@@ -34,8 +35,6 @@ public static class ModularStdlibCache
     /// <summary>Pseudo-module label for body entries whose routine key cannot be attributed to any known module.</summary>
     public const string
         Misc = "«misc»"; // body entries whose routine key resolves to no known module
-
-    private const string IndexFile = "index.pbrf";
 
     // ---- ownership + key oracles (must match the extern idOf used at serialize time) ----------------
 
@@ -234,11 +233,12 @@ public static class ModularStdlibCache
         /// <summary>Absolute path to the stdlib root directory used when these artifacts were produced.</summary>
         public string? StdlibRootPath { get; set; }
 
-        /// <summary>Artifact labels present in this cache directory (each maps to a &lt;label&gt;.pbrf file).</summary>
-        public List<string> Modules { get; set; } = new(); // artifact labels (each → <label>.pbrf)
+        /// <summary>Artifact labels present in this cache directory (each maps to a &lt;label&gt; file with the
+        /// language's prebuilt extension).</summary>
+        public List<string> Modules { get; set; } = new();
     }
 
-    private static string ArtifactFileName(string moduleLabel)
+    private static string ArtifactFileName(string moduleLabel, Language language)
     {
         // Sanitize the label into a filename ('/' in IO/File, '«»' sentinels).
         var sb = new System.Text.StringBuilder();
@@ -249,7 +249,7 @@ public static class ModularStdlibCache
                 : '_');
         }
 
-        return sb.ToString() + ".pbrf";
+        return sb.ToString() + PrebuiltFormat.Extension(language: language);
     }
 
     // ---- serialize -------------------------------------------------------------------------------
@@ -293,6 +293,7 @@ public static class ModularStdlibCache
             : ((string, string)?)null;
 
         WriteArtifacts(dir: dir,
+            language: reg.Language,
             labels: labels,
             symbolsByModule: symbolsByModule,
             slices: slices,
@@ -311,7 +312,8 @@ public static class ModularStdlibCache
             StdlibRootPath = reg.StdlibRootPath,
             Modules = labels.ToList()
         };
-        using (FileStream fs = File.Create(path: Path.Combine(path1: dir, path2: IndexFile)))
+        using (FileStream fs = File.Create(path: Path.Combine(path1: dir,
+                   path2: PrebuiltFormat.IndexFileName(language: reg.Language))))
         {
             PbrfSerializer.Serialize(stream: fs, root: index);
         }
@@ -492,9 +494,9 @@ public static class ModularStdlibCache
         }
     }
 
-    /// <summary>Writes one <c>.pbrf</c> artifact per module label under <paramref name="dir"/>: each holds the
+    /// <summary>Writes one artifact per module label under <paramref name="dir"/>: each holds the
     /// module's owned symbols (bodies) + its dict slice, with cross-module symbol refs written as externs.</summary>
-    private static void WriteArtifacts(string dir, HashSet<string> labels,
+    private static void WriteArtifacts(string dir, Language language, HashSet<string> labels,
         Dictionary<string, List<object>> symbolsByModule, Dictionary<string, ModuleSlice> slices,
         PbrfSerializer.SymbolIdentity idOf)
     {
@@ -503,7 +505,8 @@ public static class ModularStdlibCache
             List<object> owned =
                 symbolsByModule.GetValueOrDefault(key: label) ?? new List<object>();
             ModuleSlice slice = slices.GetValueOrDefault(key: label) ?? new ModuleSlice();
-            string path = Path.Combine(path1: dir, path2: ArtifactFileName(moduleLabel: label));
+            string path = Path.Combine(path1: dir,
+                path2: ArtifactFileName(moduleLabel: label, language: language));
             using FileStream fs = File.Create(path: path);
             using var buf = new BufferedStream(stream: fs, bufferSize: 1 << 20);
             PbrfSerializer.SerializeModule(stream: buf,
@@ -516,11 +519,13 @@ public static class ModularStdlibCache
     // ---- deserialize -----------------------------------------------------------------------------
 
     /// <summary>Reassemble a <see cref="SemanticVerifier.CompiledStdlibState"/> from per-module artifacts in
-    /// <paramref name="dir"/> via the shell two-phase loader (cycle-safe).</summary>
-    public static SemanticVerifier.CompiledStdlibState Deserialize(string dir)
+    /// <paramref name="dir"/> via the shell two-phase loader (cycle-safe). The files carry
+    /// <paramref name="language"/>'s prebuilt extension.</summary>
+    public static SemanticVerifier.CompiledStdlibState Deserialize(string dir, Language language)
     {
         Index index;
-        using (FileStream fs = File.OpenRead(path: Path.Combine(path1: dir, path2: IndexFile)))
+        using (FileStream fs = File.OpenRead(path: Path.Combine(path1: dir,
+                   path2: PrebuiltFormat.IndexFileName(language: language))))
         {
             index = PbrfSerializer.Deserialize<Index>(stream: fs);
         }
@@ -530,7 +535,7 @@ public static class ModularStdlibCache
         foreach (string label in index.Modules)
         {
             bytes[key: label] = File.ReadAllBytes(path: Path.Combine(path1: dir,
-                path2: ArtifactFileName(moduleLabel: label)));
+                path2: ArtifactFileName(moduleLabel: label, language: language)));
         }
 
         // Phase A: create a shell per exported symbol across ALL artifacts, keyed (module,key).

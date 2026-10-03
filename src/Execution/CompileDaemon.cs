@@ -188,19 +188,26 @@ internal partial class Program
 
         // ---- pipe naming / opt-in ------------------------------------------------------------------
 
-        /// <summary>Per-user pipe name so two users on one machine don't collide. Overridable via
-        /// <c>RAZORFORGE_DAEMON_PIPE</c> (e.g. to run more than one daemon).</summary>
+        /// <summary>The daemon's name for the running language's tool (<c>razorforge-daemon</c>,
+        /// <c>suflae-daemon</c>). Each language runs its own daemon: the daemon builds with the language of the
+        /// executable that started it, so RazorForge and Suflae must never connect to each other's.</summary>
+        private static string DaemonName()
+        {
+            return $"{Builder.Frontends.Languages.For(language: CliLanguage).ToolName}-daemon";
+        }
+
+        /// <summary>Per-language, per-user pipe name so two users on one machine don't collide. Overridable
+        /// via <c>RAZORFORGE_DAEMON_PIPE</c> / <c>SUFLAE_DAEMON_PIPE</c> (e.g. to run more than one daemon).</summary>
         private static string PipeName()
         {
-            string? overridden =
-                Environment.GetEnvironmentVariable(variable: "RAZORFORGE_DAEMON_PIPE");
+            string? overridden = Environment.GetEnvironmentVariable(
+                variable: $"{DaemonName().Replace(oldValue: "-", newValue: "_").ToUpperInvariant()}_PIPE");
             if (!string.IsNullOrWhiteSpace(value: overridden))
             {
                 return overridden;
             }
 
-            string user = Environment.UserName;
-            return $"razorforge-daemon-{user}";
+            return $"{DaemonName()}-{Environment.UserName}";
         }
 
         // Client daemon-routing (manifest <c>[target] use-daemon</c>) and JIT (mode <c>debug-jit</c>) are read
@@ -235,7 +242,7 @@ internal partial class Program
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             Console.Error.WriteLine(value: $"[daemon] loading {language} stdlib snapshot...");
-            // Load from the on-disk .pbrf cache when the stdlib+builder hash matches (~1–2 s), else capture
+            // Load from the on-disk prebuilt cache when the stdlib+builder hash matches (~1–2 s), else capture
             // fresh (~5–8 s) and write the cache for next startup.
             SemanticVerifier.CompiledStdlibState state =
                 Builder.Serialization.StdlibSnapshotCache.LoadOrCapture(language: language,
@@ -404,7 +411,7 @@ internal partial class Program
             // e.g. an unlowered GMCE at codegen) and restarts it instead of reusing it.
             string daemonStamp = CompilerVersionStamp();
             Console.Error.WriteLine(
-                value: $"[daemon] razorforge warm-compile daemon on pipe '{pipe}'");
+                value: $"[daemon] {DaemonName()} warm-compile daemon on pipe '{pipe}'");
             Console.Error.WriteLine(
                 value:
                 "[daemon] routed builds arrive from clients with [target] use-daemon = true.");
@@ -875,7 +882,7 @@ internal partial class Program
             string entryFull = Path.GetFullPath(path: resolved.EntryFile!);
 
             // Resident-JIT (A) split-at-IR: prefer the WARM DAEMON. It holds the analyzed stdlib snapshot in
-            // RAM (captured once at startup), so routing the analysis THERE removes the ~840 ms per-run `.pbrf`
+            // RAM (captured once at startup), so routing the analysis THERE removes the ~840 ms per-run prebuilt
             // reload the in-process path below pays in this disposable client. The daemon compiles warm and
             // ships IR; THIS throwaway client only JITs+runs it, so a user crash (rf_crash_text → exit(RF_EXIT_CRASH)) kills only
             // the client and never the warm daemon (§3 crash isolation preserved). Falls through to the
@@ -904,7 +911,7 @@ internal partial class Program
             var predicateCache =
                 new RoutineIrCache(fingerprint: fingerprint, userModuleSegments: Array.Empty<string>());
 
-            // Use the WARM stdlib (GetWarm loads the .pbrf snapshot in ~1-2 s, or captures once), so the
+            // Use the WARM stdlib (GetWarm loads the prebuilt snapshot in ~1-2 s, or captures once), so the
             // in-process analysis is constructed WARM (IsWarm=true) — PreRegisterStdlibVariants + the stdlib
             // program repr in PostDesugarChecks are skipped (already in the restored snapshot), instead of the
             // cold path re-doing that stdlib-invariant work every run.
@@ -1355,7 +1362,7 @@ internal partial class Program
 
             // (2) Serialize concurrent first-invocations so only one client spawns the daemon.
             using var mutex = new Mutex(initiallyOwned: false,
-                name: $"Global\\razorforge-daemon-spawn-{Environment.UserName}");
+                name: $"Global\\{DaemonName()}-spawn-{Environment.UserName}");
             bool held;
             try
             {
@@ -1411,7 +1418,7 @@ internal partial class Program
             }
 
             string logPath = Path.Combine(path1: Path.GetTempPath(),
-                path2: $"razorforge-daemon-{Environment.UserName}.log");
+                path2: $"{DaemonName()}-{Environment.UserName}.log");
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = host, UseShellExecute = false, CreateNoWindow = true

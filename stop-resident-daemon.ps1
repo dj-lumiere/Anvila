@@ -1,4 +1,4 @@
-# Kills any lingering RazorForge resident compile-daemon before a build.
+# Kills any lingering RazorForge or Suflae resident compile-daemon before a build.
 #
 # A daemon (spawned by a non-jit `build`/`buildandrun`) runs the OLD RazorForge.dll and holds an open
 # handle to it, so a subsequent `dotnet build` cannot overwrite bin\...\RazorForge.dll (MSB3021 "being
@@ -8,13 +8,13 @@
 # Invoked from Anvila.csproj's StopResidentDaemonBeforeBuild target. Always exits 0 (best-effort).
 
 $ErrorActionPreference = 'SilentlyContinue'
-# Match ONLY the daemon invocation: the `daemon` verb as the token right after RazorForge.exe /
-# RazorForge.dll (e.g. `RazorForge.exe daemon` or `dotnet "…\RazorForge.dll" daemon`). A loose
+# Match ONLY the daemon invocation: the `daemon` verb as the token right after RazorForge/Suflae .exe or
+# .dll (e.g. `RazorForge.exe daemon` or `dotnet "…\Suflae.dll" daemon`). A loose
 # `RazorForge.*daemon` would also match THIS script's own launcher command line
 # (…\RazorForge\build-support\stop-resident-daemon.ps1) and make it kill itself. Also skip our own PID.
 try {
     Get-CimInstance Win32_Process |
-        Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match 'RazorForge\.(exe|dll)"?\s+daemon(\s|$)' } |
+        Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match '(RazorForge|Suflae)\.(exe|dll)"?\s+daemon(\s|$)' } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 } catch { }
 exit 0
