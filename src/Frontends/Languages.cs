@@ -78,7 +78,7 @@ public static class Languages
     /// <summary>
     /// The standard library directories a <paramref name="language"/> build reads under
     /// <paramref name="stdlibRoot"/>, each with its search pattern: RazorForge's always (every build shares
-    /// it), then the language's own when it has one.
+    /// it), then the language's own when it has one: its sources, and the RazorForge-written modules kept with them.
     /// </summary>
     public static List<(string Dir, string Glob)> StandardLibraryRoots(string stdlibRoot, Language language)
     {
@@ -90,7 +90,14 @@ public static class Languages
         LanguageRules rules = For(language: language);
         if (rules.HasOwnStandardLibrary)
         {
-            roots.Add(item: (Path.Combine(path1: stdlibRoot, path2: rules.Name), "*" + rules.FileExtension));
+            string own = Path.Combine(path1: stdlibRoot, path2: rules.Name);
+            roots.Add(item: (own, "*" + rules.FileExtension));
+            // A module of the language's own library that needs RazorForge's buildtime features (`expand`) is
+            // written in RazorForge and still belongs to the language: only its builds read this directory.
+            if (rules.Language != Language.RazorForge)
+            {
+                roots.Add(item: (own, "*" + razorForge.FileExtension));
+            }
         }
 
         return roots;
