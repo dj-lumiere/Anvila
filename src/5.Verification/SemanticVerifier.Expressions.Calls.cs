@@ -379,6 +379,25 @@ public sealed partial class SemanticVerifier
                    _registry.LookupType(name: NoneTypeName) ?? ErrorTypeSymbol.Instance;
         }
 
+        // Only a routine value can be called. Anything else (`count()()`, a number in a variable) is a mistake;
+        // an unknown or still-generic callee is left to where its type is known.
+        if (calleeType is not (ErrorTypeSymbol or GenericParameterTypeSymbol or ProtocolTypeSymbol))
+        {
+            string what = call.Callee switch
+            {
+                IdentifierExpression id => $"'{id.Name}'",
+                CallExpression { Callee: MemberExpression { MemberName: var produced } } => $"the result of '{produced}()'",
+                CallExpression { Callee: IdentifierExpression { Name: var producedBy } } => $"the result of '{producedBy}()'",
+                _ => "this value"
+            };
+            ReportError(code: SemanticDiagnosticCode.TypeNotCallable,
+                message:
+                $"You are calling {what}, but it is a '{calleeType.Name}', not a routine. Only a routine value can be " +
+                "called: remove the extra parentheses, or call the routine you meant.",
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         return calleeType;
     }
 
