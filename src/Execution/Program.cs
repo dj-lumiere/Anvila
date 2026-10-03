@@ -20,6 +20,7 @@ namespace Builder.Execution;
 internal partial class Program
 {
     private const string BuildCommand = "build";
+    private const string RunCommand = "run";
     private const string BuildAndRunCommand = "buildandrun";
     /// <summary>The language of the command that is running (<c>razorforge</c> or <c>suflae</c>). Selects
     /// the branding (version/usage) and is the DEFAULT language when a source's extension does not decide
@@ -67,12 +68,15 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "parse" or "tokenize" or "codegen" or BuildCommand
-            or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt";
+            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt";
 
-        if (!isCommand && !TryRewriteBareRunArgs(args: ref args, command: ref command))
+        if (!isCommand)
         {
-            // Default behavior for a bare source file: parse and show AST summary
-            return ParseFile(sourceFile: args[0]);
+            // Every action has its command, so a bare file does nothing on its own: running it is `run`.
+            Console.Error.WriteLine(value: File.Exists(path: args[0])
+                ? $"error: '{args[0]}' is a file, not a command. To build and run it: {CliRules.ToolName} run {args[0]}"
+                : $"error: unknown command '{args[0]}'. See {CliRules.ToolName} help.");
+            return 1;
         }
 
         return DispatchCommand(command: command, args: args);
@@ -115,35 +119,6 @@ internal partial class Program
     }
 
     /// <summary>
-    /// When the first arg is a bare source file (not a known command) of a language whose bare sources
-    /// run, rewrites <paramref name="args"/> to prepend the <c>buildandrun</c> command so the script runs
-    /// directly. Returns false otherwise (caller falls back to the parse default).
-    /// </summary>
-    private static bool TryRewriteBareRunArgs(ref string[] args, ref string command)
-    {
-        // A bare source file RUNS (build + execute) when its language (or the running command's) says so,
-        // so `suflae hello.sf` behaves like `python hello.py`. A bare `.rf` under `razorforge` keeps the
-        // dev default of parse-and-dump (the explicit `parse`/`tokenize`/`codegen` verbs inspect a file
-        // without running it).
-        if (!CliRules.BareSourceRuns &&
-            !Builder.Frontends.Languages.For(language: SourceLanguage(path: args[0])).BareSourceRuns)
-        {
-            return false;
-        }
-
-        string[] forwarded = new string[args.Length + 1];
-        forwarded[0] = BuildAndRunCommand;
-        Array.Copy(sourceArray: args,
-            sourceIndex: 0,
-            destinationArray: forwarded,
-            destinationIndex: 1,
-            length: args.Length);
-        args = forwarded;
-        command = BuildAndRunCommand;
-        return true;
-    }
-
-    /// <summary>
     /// Dispatches a known command to its handler. Called after early-command and bare-file handling.
     /// </summary>
     private static int DispatchCommand(string command, string[] args)
@@ -180,11 +155,18 @@ internal partial class Program
             case BuildCommand:
                 return RunBuildCommand(args: args);
 
+            case RunCommand:
             case "buildandrun":
                 return RunBuildAndRunCommand(args: args);
 
             case "check":
                 return RunCheckCommand(args: args);
+
+            case "test":
+                return RunTestCommand(args: args);
+
+            case "lint":
+                return RunLintCommand(args: args);
 
             case "validate-stdlib":
                 return RunValidateStdlibCommand(args: args);
@@ -861,36 +843,23 @@ internal partial class Program
 
         Console.WriteLine(value: header);
         Console.WriteLine();
+        // The commands every Lumi language's tool shares (RazorForge, Suflae, Tessera). The others (parse,
+        // tokenize, codegen, validate-stdlib, daemon, ...) still work for the builder's own development, but are
+        // not part of the tool's face.
         Console.WriteLine(value: "Usage:");
-        Console.WriteLine(value: CliRules.BareSourceRuns
-            ? $"  {tool} <source-file>                        - Build and run the script"
-            : $"  {tool} <source-file>                        - Parse file and show AST summary");
-        Console.WriteLine(
-            value:
-            $"  {tool} parse <source-file>                  - Parse file and show AST summary");
-        Console.WriteLine(
-            value:
-            $"  {tool} tokenize <source-file>               - Tokenize file and show tokens");
-        Console.WriteLine(
-            value:
-            $"  {tool} codegen [entry-file] [out.ll]        - Build up to LLVM IR only (no opt/link)");
-        Console.WriteLine(
-            value:
-            $"  {tool} build [entry-file]                   - Build a native executable (host OS, no run)");
-        Console.WriteLine(
-            value: $"  {tool} buildandrun [entry-file]             - Build and execute");
-        Console.WriteLine(
-            value:
-            $"  {tool} check [entry-file]                   - Type-check only (no codegen)");
-        Console.WriteLine(
-            value:
-            $"  {tool} validate-stdlib [language]           - Validate stdlib routine bodies");
-        Console.WriteLine(
-            value: $"  {tool} fmt [--check] [--keep-order] <files or dirs...> - Format sources in place (--check: only list, --keep-order: keep declaration order)");
-        Console.WriteLine(
-            value: $"  {tool} help                                 - Show this help");
-        Console.WriteLine(
-            value: $"  {tool} version                              - Show builder version");
+        Console.WriteLine(value: $"  {tool} check [entry-file]               - Check the program without building it");
+        Console.WriteLine(value: $"  {tool} build [entry-file]               - Build a native executable");
+        Console.WriteLine(value: $"  {tool} run [entry-file]                 - Build the program and run it");
+        Console.WriteLine(value: $"  {tool} test <dir-or-file>...            - Run test programs against their expected output");
+        Console.WriteLine(value: $"  {tool} fmt [--check] <file-or-dir>...   - Format sources in place (--check: only list)");
+        Console.WriteLine(value: $"  {tool} lint <file-or-dir>...            - Report code that is not in the canonical style");
+        Console.WriteLine(value: $"  {tool} lsp                              - Run the language server (for an editor)");
+        Console.WriteLine(value: $"  {tool} help                             - Show this help");
+        Console.WriteLine(value: $"  {tool} version                          - Show the version");
+        Console.WriteLine();
+        Console.WriteLine(value: "  test: every source in each directory is built and run. Its standard output must equal");
+        Console.WriteLine(value: "        <name>.expected (if present), its exit code <name>.exit (default 0); if <name>.error");
+        Console.WriteLine(value: "        exists the build must fail with that text. <name>.input is its standard input.");
         Console.WriteLine();
         string kinds = string.Join(separator: ", ",
             values: Builder.Frontends.Languages.All.Select(selector: rules => $"{rules.FileExtension} for {rules.Name}"));

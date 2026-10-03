@@ -50,10 +50,6 @@ public abstract class LanguageRules
     /// <summary>The language's own Language Server profile (its keywords, names, and formatter).</summary>
     public abstract LanguageServerProfile LanguageServer { get; }
 
-    /// <summary>True when a bare source file given to the tool runs it (build and execute) rather than
-    /// printing its syntax tree.</summary>
-    public virtual bool BareSourceRuns => false;
-
     /// <summary>True when the language reads standard library sources of its own (under
     /// <c>Standard/&lt;Name&gt;</c>) on top of the RazorForge standard library every build reads.</summary>
     public virtual bool HasOwnStandardLibrary => false;
