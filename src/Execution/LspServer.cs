@@ -479,6 +479,37 @@ public static class LspServer
             return;
         }
 
+        if (DocReferenceAt(doc: doc, uri: uri, line0: line0, char0: char0) is { } reference)
+        {
+            string referenceValue = $"```{_profile.CodeBlockLanguage}\n{Surface(text: reference.Label)}\n```";
+            if (!string.IsNullOrWhiteSpace(value: reference.Documentation))
+            {
+                referenceValue += $"\n\n{Surface(text: RenderDoc(doc: reference.Documentation))}";
+            }
+
+            WriteResult(stdout: stdout,
+                id: id,
+                result: new Dictionary<string, object?>
+                {
+                    [key: "contents"] = new Dictionary<string, object?>
+                    {
+                        [key: "kind"] = PropMarkdown, [key: PropValue] = referenceValue
+                    },
+                    [key: PropRange] = new Dictionary<string, object?>
+                    {
+                        [key: PropStart] = new Dictionary<string, object?>
+                        {
+                            [key: "line"] = reference.Line, [key: PropCharacter] = reference.Start
+                        },
+                        [key: "end"] = new Dictionary<string, object?>
+                        {
+                            [key: "line"] = reference.Line, [key: PropCharacter] = reference.End
+                        }
+                    }
+                });
+            return;
+        }
+
         Token? hit = TokenAt(doc: doc, line0: line0, char0: char0);
         if (hit == null)
         {
@@ -515,16 +546,8 @@ public static class LspServer
 
         int endCol0 = hit.Column - 1 + hit.Text.Length;
         string hoverValue = $"```{_profile.CodeBlockLanguage}\n{Surface(text: label)}\n```";
-        if (!string.IsNullOrWhiteSpace(value: documentation))
-        {
-            hoverValue += $"\n\n{Surface(text: RenderDoc(doc: documentation))}";
-        }
 
-        if (!string.IsNullOrWhiteSpace(value: notes))
-        {
-            hoverValue += $"\n\n{Surface(text: notes)}";
-        }
-
+        // What each generic parameter stands for belongs with the signature, before the doc that explains it.
         List<(string Parameter, TypeSymbol Argument)> bindings = GenericBindingsAt(doc: doc, hit: hit, best: best)
                                                                 .Where(predicate: b => !(b.Argument is GenericParameterTypeSymbol self &&
                                                                     self.Name == b.Parameter))
@@ -534,6 +557,16 @@ public static class LspServer
             hoverValue += "\n\n" + string.Join(separator: "  \n",
                 values: bindings.Select(selector: b =>
                     Surface(text: $"`{b.Parameter}` is `{TypeText(type: b.Argument)}`")));
+        }
+
+        if (!string.IsNullOrWhiteSpace(value: documentation))
+        {
+            hoverValue += $"\n\n{Surface(text: RenderDoc(doc: documentation))}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(value: notes))
+        {
+            hoverValue += $"\n\n{Surface(text: notes)}";
         }
 
         WriteResult(stdout: stdout,
@@ -645,16 +678,8 @@ public static class LspServer
 
         if (roles.Symbols.TryGetValue(key: key, value: out TypeSymbol? type))
         {
-            TypeSymbol shown = Rules.SurfaceType(type: type);
-            TypeSymbol definition = DefinitionOf(type: shown);
-            string? kind = KindWord(type: definition);
-            string name = HeaderText(type: definition);
-            SourceLocation? declaredAt = DeclarationOf(type: definition);
-            return (SourceHeader(location: declaredAt) ??
-                    (kind != null
-                        ? $"{kind} {name}"
-                        : name) + DeclarationClauses(type: definition),
-                DocAbove(location: declaredAt), null);
+            (string typeLabel, string? typeDoc, _) = TypeHoverLabel(type: type);
+            return (typeLabel, typeDoc, null);
         }
 
         if (FieldAtToken(doc: doc, hit: hit) is { } field)
@@ -729,6 +754,152 @@ public static class LspServer
                 : null);
     }
 
+    /// <summary>A type's hover: its declaration's header as written (or its kind and name), the doc above it, and
+    /// where it is declared.</summary>
+    private static (string Label, string? Documentation, SourceLocation? Location) TypeHoverLabel(TypeSymbol type)
+    {
+        TypeSymbol shown = Rules.SurfaceType(type: type);
+        TypeSymbol definition = DefinitionOf(type: shown);
+        string? kind = KindWord(type: definition);
+        string name = HeaderText(type: definition);
+        SourceLocation? declaredAt = DeclarationOf(type: definition);
+        return (SourceHeader(location: declaredAt) ??
+                (kind != null
+                    ? $"{kind} {name}"
+                    : name) + DeclarationClauses(type: definition),
+            DocAbove(location: declaredAt), declaredAt);
+    }
+
+    /// <summary>What a <c>{Name}</c> or <c>{Owner.member}</c> reference in a <c>###</c> doc comment names: the hover
+    /// label and doc of the declaration, where it is, and the reference's span on its line (0-based).</summary>
+    private sealed record DocReferenceTarget(
+        string Label,
+        string? Documentation,
+        SourceLocation? Location,
+        int Line,
+        int Start,
+        int End);
+
+    /// <summary>The doc reference under the cursor, resolved as the document's module sees its names.</summary>
+    private static DocReferenceTarget? DocReferenceAt(DocState doc, string uri, int line0, int char0)
+    {
+        if (!Texts.TryGetValue(key: uri, value: out string? text))
+        {
+            return null;
+        }
+
+        string[] lines = text.ReplaceLineEndings(replacementText: "\n")
+                             .Split(separator: '\n');
+        if (line0 >= lines.Length)
+        {
+            return null;
+        }
+
+        string line = lines[line0];
+        int marker = line.IndexOf(value: "###", comparisonType: StringComparison.Ordinal);
+        if (marker < 0 || line[..marker].Trim().Length > 0)
+        {
+            return null;
+        }
+
+        foreach (System.Text.RegularExpressions.Match m in DocReference.Matches(input: line, startat: marker + 3))
+        {
+            if (m.Index <= char0 && char0 < m.Index + m.Length)
+            {
+                return ResolveDocReference(doc: doc, reference: m.Value[1..^1].Trim()) is { } found
+                    ? found with { Line = line0, Start = m.Index, End = m.Index + m.Length }
+                    : null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary><c>Name</c> (a type or a free routine) or <c>Owner.member</c> (a member routine, a case, or a field
+    /// of the owner type; <c>List[T].add_last</c>).</summary>
+    private static DocReferenceTarget? ResolveDocReference(DocState doc, string reference)
+    {
+        int dot = -1;
+        int depth = 0;
+        for (int i = reference.Length - 1; i >= 0 && dot < 0; i--)
+        {
+            depth += reference[index: i] switch
+            {
+                ']' => 1,
+                '[' => -1,
+                _ => 0
+            };
+            if (reference[index: i] == '.' && depth == 0)
+            {
+                dot = i;
+            }
+        }
+
+        string ownerText = dot < 0
+            ? reference
+            : reference[..dot];
+        string ownerName = ownerText.Split(separator: '[')[0]
+                                    .Trim();
+        string? module = AllNodes(program: doc.Program)
+                        .OfType<ModuleDeclaration>()
+                        .FirstOrDefault()
+                       ?.Path;
+        TypeSymbol? owner = StdlibLoader.ResolveWrittenType(registry: doc.Registry,
+            typeExpr: new TypeExpression(Name: ownerName, GenericArguments: null,
+                Location: new SourceLocation(FileName: "", Line: 0, Column: 0, Position: 0)),
+            genericParams: null, moduleName: module) is { } resolved and not ErrorTypeSymbol
+            ? resolved
+            : null;
+
+        if (dot < 0)
+        {
+            if (owner != null)
+            {
+                (string label, string? documentation, SourceLocation? location) = TypeHoverLabel(type: owner);
+                return new DocReferenceTarget(Label: label, Documentation: documentation, Location: location, Line: 0,
+                    Start: 0, End: 0);
+            }
+
+            return doc.Registry.LookupRoutineByName(name: ownerName) is { } routine
+                ? new DocReferenceTarget(Label: RoutineHeader(routine: routine),
+                    Documentation: routine.Documentation ?? DocAbove(location: routine.Location),
+                    Location: routine.Location, Line: 0, Start: 0, End: 0)
+                : null;
+        }
+
+        if (owner == null)
+        {
+            return null;
+        }
+
+        string member = reference[(dot + 1)..]
+                       .Split(separator: '(')[0]
+                       .Trim();
+        TypeSymbol definition = DefinitionOf(type: Rules.SurfaceType(type: owner));
+        if (doc.Registry.GetMemberRoutinesForType(type: definition)
+               .FirstOrDefault(predicate: r => r.Name == member) is { } method)
+        {
+            return new DocReferenceTarget(Label: RoutineHeader(routine: method),
+                Documentation: method.Documentation ?? DocAbove(location: method.Location), Location: method.Location,
+                Line: 0, Start: 0, End: 0);
+        }
+
+        if (CaseNames(type: definition)
+              ?.Contains(value: member) == true)
+        {
+            return new DocReferenceTarget(
+                Label: $"{member}: {TypeText(type: definition)}{CaseValue(owner: definition, name: member)}",
+                Documentation: CaseDoc(owner: definition, name: member), Location: DeclarationOf(type: definition),
+                Line: 0, Start: 0, End: 0);
+        }
+
+        return MemberVariableSignatures(type: definition, includeSecret: true)
+              .FirstOrDefault(predicate: f => f.Name == member) is { Name: not null } field
+            ? new DocReferenceTarget(Label: $"{field.Name}: {field.Type}", Documentation: DocAbove(location: field.Location),
+                Location: field.Location, Line: 0, Start: 0, End: 0)
+            : null;
+    }
+
     /// <summary>
     /// A routine as its declaration reads: the type it belongs to (<c>routine Account.deposit</c>, a generic owner
     /// with its parameters, <c>Array[T, N].getitem</c>), its own generic parameters, its signature, and the
@@ -751,8 +922,37 @@ public static class LspServer
         string generics = own.Count > 0
             ? $"[{string.Join(separator: ", ", values: own)}]"
             : "";
-        return $"routine {owner}{routine.Name}{generics}{RoutineDetail(r: routine)}" +
+        return $"{RoutineModifiers(routine: shown)}routine {owner}{routine.Name}{generics}{RoutineDetail(r: routine)}" +
                NeedsClauses(constraints: shown.GenericConstraints);
+    }
+
+    /// <summary>The words a routine's declaration puts before <c>routine</c> to say what kind it is, in source order:
+    /// <c>dangerous</c>, <c>common</c>, <c>suspended</c> or <c>threaded</c>.</summary>
+    private static string RoutineModifiers(RoutineInfo routine)
+    {
+        var words = new List<string>();
+        if (routine.IsDangerous)
+        {
+            words.Add(item: "dangerous");
+        }
+
+        if (routine.IsCommon)
+        {
+            words.Add(item: "common");
+        }
+
+        if (routine.IsSuspended)
+        {
+            words.Add(item: "suspended");
+        }
+        else if (routine.IsThreaded)
+        {
+            words.Add(item: "threaded");
+        }
+
+        return words.Count > 0
+            ? string.Join(separator: " ", values: words) + " "
+            : "";
     }
 
     /// <summary>A type's name with its own generic parameters when it is a definition (<c>Array[T, N]</c>), else the
@@ -1427,6 +1627,12 @@ public static class LspServer
             return;
         }
 
+        if (DocReferenceAt(doc: doc, uri: uri, line0: line0, char0: char0) is { Location: { } referenced })
+        {
+            WriteResult(stdout: stdout, id: id, result: LocationToLsp(loc: referenced));
+            return;
+        }
+
         Token? hit = TokenAt(doc: doc, line0: line0, char0: char0);
         if (hit == null || !IsIdentifierText(text: hit.Text))
         {
@@ -1543,7 +1749,10 @@ public static class LspServer
         "interface", // 13: a protocol
         "typeParameter", // 14
         "constant", // 15: a preset or a global
-        "decorator" // 16: an annotation, its `@` and its name
+        "decorator", // 16: an annotation, its `@` and its name
+        // The structure of a `###` doc comment: a field (`:param`, `:returns:`) and a field's name or a `{Reference}`.
+        "docTag", // 17
+        "docValue" // 18
     };
 
     private static int SemTok(string name)
@@ -2321,7 +2530,8 @@ public static class LspServer
 
         SemanticRoles roles = BuildSemanticRoles(nodes: AllNodes(program: doc.Program), tokens: doc.Tokens,
             registry: doc.Registry);
-        List<object?> data = BuildDeltaEncodedTokens(doc: doc, roles: roles);
+        List<object?> data = BuildDeltaEncodedTokens(doc: doc, roles: roles,
+            text: Texts.GetValueOrDefault(key: uriEl.GetString() ?? ""));
 
         WriteResult(stdout: stdout,
             id: id,
@@ -2734,6 +2944,12 @@ public static class LspServer
         {
             foreach (TypeExpression protocol in obeyedProtocols)
             {
+                // The protocol as the resolver reads it from here, for hover; an opt-in one (`obeys Equatable`) is
+                // not among the protocols the type's symbol lists.
+                PairWrittenType(written: protocol,
+                    resolved: StdlibLoader.ResolveWrittenType(registry: registry, typeExpr: protocol,
+                        genericParams: null, moduleName: module),
+                    roles: roles);
                 roles.Types.TryAdd(key: (protocol.Location.Line, protocol.Location.Column), value: "interface");
             }
         }
@@ -2782,7 +2998,9 @@ public static class LspServer
             {
                 PairWrittenType(written: protocol,
                     resolved: protocols.FirstOrDefault(predicate: p =>
-                        ShortName(name: p.BareName) == ShortName(name: protocol.Name)),
+                                  ShortName(name: p.BareName) == ShortName(name: protocol.Name)) ??
+                              StdlibLoader.ResolveWrittenType(registry: registry, typeExpr: protocol,
+                                  genericParams: symbol.GenericParameters, moduleName: module),
                     roles: roles);
                 roles.Types.TryAdd(key: (protocol.Location.Line, protocol.Location.Column), value: "interface");
             }
@@ -3015,7 +3233,7 @@ public static class LspServer
 
     /// <summary>Encodes the document's tokens as a delta-encoded LSP semantic token data array
     /// (deltaLine, deltaChar, length, tokenType, modifiers per token).</summary>
-    private static List<object?> BuildDeltaEncodedTokens(DocState doc, SemanticRoles roles)
+    private static List<object?> BuildDeltaEncodedTokens(DocState doc, SemanticRoles roles, string? text)
     {
         var toks = doc.Tokens
                       .Where(predicate: t =>
@@ -3025,9 +3243,7 @@ public static class LspServer
                       .ThenBy(keySelector: t => t.Column)
                       .ToList();
 
-        var data = new List<object?>();
-        int prevLine = 0;
-        int prevChar = 0;
+        var spans = new List<(int Line, int Column, int Length, int Type, int Mods)>();
         int modulePathLine = -1; // the line of an `import` / `module` header: its names are a module path
         for (int i = 0; i < toks.Count; i++)
         {
@@ -3052,18 +3268,33 @@ public static class LspServer
                 continue; // punctuation, text, comments — left to the TextMate grammar
             }
 
-            int line0 = t.Line - 1;
-            int char0 = t.Column - 1;
+            int mods = roles.Dead.Contains(item: (t.Line, t.Column))
+                ? ModDeprecated
+                : 0;
+            spans.Add(item: (t.Line, t.Column, t.Text.Length, type, mods));
+        }
+
+        if (text != null)
+        {
+            spans.AddRange(collection: DocCommentSpans(text: text)
+               .Select(selector: d => (d.Line, d.Column, d.Length, SemTok(name: d.Kind), 0)));
+        }
+
+        var data = new List<object?>();
+        int prevLine = 0;
+        int prevChar = 0;
+        foreach ((int line, int column, int length, int type, int mods) in spans.OrderBy(keySelector: x => x.Line)
+                                                                                .ThenBy(keySelector: x => x.Column))
+        {
+            int line0 = line - 1;
+            int char0 = column - 1;
             int deltaLine = line0 - prevLine;
             int deltaChar = deltaLine == 0
                 ? char0 - prevChar
                 : char0;
-            int mods = roles.Dead.Contains(item: (t.Line, t.Column))
-                ? ModDeprecated
-                : 0;
             data.Add(item: deltaLine);
             data.Add(item: deltaChar);
-            data.Add(item: t.Text.Length);
+            data.Add(item: length);
             data.Add(item: type);
             data.Add(item: mods);
             prevLine = line0;
@@ -3071,6 +3302,51 @@ public static class LspServer
         }
 
         return data;
+    }
+
+    // A field: `:param name:` and `:typeparam Name:` name what they describe, the others (`:returns:`) don't.
+    private static readonly System.Text.RegularExpressions.Regex DocField =
+        new(pattern: @"^\s*(:(?:param|typeparam)(?=\s)|:(?:returns|throws|absent|note|see)(?=:))(?:\s+(\S+?))?(:)");
+
+    private static readonly System.Text.RegularExpressions.Regex DocReference = new(pattern: @"\{[^{}\s][^{}]*\}");
+
+    /// <summary>
+    /// The parts of a <c>###</c> doc comment that are its structure rather than its prose: a field
+    /// (<c>:param name:</c>, <c>:returns:</c>) and a reference in braces (<c>{List[T].add_last}</c>). The comment's
+    /// token holds its text without the marker, so they are found in the document's lines.
+    /// </summary>
+    private static IEnumerable<(int Line, int Column, int Length, string Kind)> DocCommentSpans(string text)
+    {
+        string[] lines = text.ReplaceLineEndings(replacementText: "\n")
+                             .Split(separator: '\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i];
+            int at = line.IndexOf(value: "###", comparisonType: StringComparison.Ordinal);
+            if (at < 0 || line[..at].Trim().Length > 0)
+            {
+                continue;
+            }
+
+            int start = at + 3;
+            string content = line[start..];
+            if (DocField.Match(input: content) is { Success: true } field)
+            {
+                yield return (i + 1, start + field.Groups[groupnum: 1].Index + 1, field.Groups[groupnum: 1].Length, "docTag");
+                if (field.Groups[groupnum: 2].Success)
+                {
+                    yield return (i + 1, start + field.Groups[groupnum: 2].Index + 1, field.Groups[groupnum: 2].Length,
+                        "docValue");
+                }
+
+                yield return (i + 1, start + field.Groups[groupnum: 3].Index + 1, 1, "docTag");
+            }
+
+            foreach (System.Text.RegularExpressions.Match reference in DocReference.Matches(input: content))
+            {
+                yield return (i + 1, start + reference.Index + 1, reference.Length, "docValue");
+            }
+        }
     }
 
     /// <summary>
@@ -4073,6 +4349,48 @@ public static class LspServer
         };
     }
 
+    /// <summary>
+    /// The source a standard library file was copied from. The build lays the stdlib out next to the executable
+    /// (<c>bin/.../Standard/RazorForge/Core/X.rf</c>), and the editor runs the server from a copy of that folder
+    /// (whose build folder it names in <c>ANVILA_BUILD_DIR</c>). A location in either copy is shown in the project's
+    /// <c>Standard/Core/X.rf</c>, so go-to-definition opens the file that is edited, not one a build overwrites. Any
+    /// other file, or one whose source isn't there, is itself.
+    /// </summary>
+    private static string SourceFileOf(string fileName)
+    {
+        string here = Path.GetFullPath(path: AppContext.BaseDirectory);
+        string copied = Path.Combine(path1: here, path2: "Standard") + Path.DirectorySeparatorChar;
+        if (!fileName.StartsWith(value: copied, comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return fileName;
+        }
+
+        // Past `Standard/<Language>/`: the file's path inside the language's own Standard folder.
+        string inStandard = fileName[copied.Length..];
+        int languageEnd = inStandard.IndexOf(value: Path.DirectorySeparatorChar);
+        if (languageEnd < 0)
+        {
+            return fileName;
+        }
+
+        string build = Environment.GetEnvironmentVariable(variable: "ANVILA_BUILD_DIR") is { Length: > 0 } named
+            ? Path.GetFullPath(path: named)
+            : here;
+        for (DirectoryInfo? dir = new(path: build); dir != null; dir = dir.Parent)
+        {
+            if (dir.Name.Equals(value: "bin", comparisonType: StringComparison.OrdinalIgnoreCase) && dir.Parent != null)
+            {
+                string source = Path.Combine(path1: dir.Parent.FullName, path2: "Standard",
+                    path3: inStandard[(languageEnd + 1)..]);
+                return File.Exists(path: source)
+                    ? source
+                    : fileName;
+            }
+        }
+
+        return fileName;
+    }
+
     private static string FileNameToUri(string fileName)
     {
         try
@@ -4083,7 +4401,7 @@ public static class LspServer
                 return fileName;
             }
 
-            return new Uri(uriString: Path.GetFullPath(path: fileName)).AbsoluteUri;
+            return new Uri(uriString: SourceFileOf(fileName: Path.GetFullPath(path: fileName))).AbsoluteUri;
         }
         catch
         {
