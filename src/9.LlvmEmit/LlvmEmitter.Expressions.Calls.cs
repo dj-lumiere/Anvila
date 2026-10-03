@@ -1253,13 +1253,6 @@ public partial class LlvmEmitter
                     ? (-1, null, null)
                     : (recIdx, EnsureRecordTypeDeclared(record: recordParent),
                         EmitLvalueAddress(sb: sb, expr: member.Object));
-            case CrashableTypeSymbol crashableParent:
-                int crIdx = IndexOfMemberVariable(memberVariables: crashableParent.MemberVariables,
-                    name: member.MemberName);
-                return crIdx < 0
-                    ? (-1, null, null)
-                    : (crIdx, GetCrashableTypeName(crashable: crashableParent),
-                        EmitExpression(sb: sb, expr: member.Object));
             case EntityTypeSymbol entityParent:
                 int enIdx = IndexOfMemberVariable(memberVariables: entityParent.MemberVariables,
                     name: member.MemberName);

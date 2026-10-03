@@ -96,7 +96,6 @@ public partial class LlvmEmitter
 
     private readonly SortedDictionary<string, string> _typeDeclarationsVariant = new();
     private readonly SortedDictionary<string, string> _typeDeclarationsEntity = new();
-    private readonly SortedDictionary<string, string> _typeDeclarationsCrashable = new();
 
     /// <summary>Output buffer for global declarations (constants, presets).</summary>
     private readonly StringBuilder _globalDeclarations = new();
@@ -469,12 +468,12 @@ public partial class LlvmEmitter
 
         GenerateEntityTypeDeclarations();
 
-        // Generate crashable types (always entity semantics — heap-allocated error types)
+        // A crashable is a record (its own category, so the record sweep below does not reach it).
         foreach (TypeSymbol type in _registry.GetTypesByCategory(category: TypeCategory.Crashable))
         {
             if (type is CrashableTypeSymbol crashable)
             {
-                GenerateCrashableType(crashable: crashable);
+                GenerateRecordType(record: crashable);
             }
         }
 
@@ -950,14 +949,13 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Appends the type-declaration block (record -> variant -> entity -> crashable -> closure, each
+    /// Appends the type-declaration block (record -> variant -> entity -> closure, each
     /// bucket already name-sorted), skipping empty buckets and the header when no types exist.
     /// </summary>
     private void AppendTypeDeclarations(StringBuilder output)
     {
         bool anyTypes = _typeDeclarationsRecord.Count > 0 || _typeDeclarationsVariant.Count > 0 ||
-                        _typeDeclarationsEntity.Count > 0 ||
-                        _typeDeclarationsCrashable.Count > 0;
+                        _typeDeclarationsEntity.Count > 0;
         if (!anyTypes)
         {
             return;
@@ -982,7 +980,6 @@ public partial class LlvmEmitter
         EmitTypeSection(header: "records", bucket: _typeDeclarationsRecord);
         EmitTypeSection(header: "variants", bucket: _typeDeclarationsVariant);
         EmitTypeSection(header: "entities", bucket: _typeDeclarationsEntity);
-        EmitTypeSection(header: "crashables", bucket: _typeDeclarationsCrashable);
         output.AppendLine();
     }
 

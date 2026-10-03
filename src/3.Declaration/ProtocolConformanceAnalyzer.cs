@@ -412,11 +412,11 @@ internal sealed class ProtocolConformanceAnalyzer
             case FlagsTypeSymbol:
                 _sa._registry.UpdateFlagsProtocols(flagsName: key, protocols: protocols);
                 break;
-            case RecordTypeSymbol:
-                _sa._registry.UpdateRecordProtocols(recordName: key, protocols: protocols);
-                break;
             case CrashableTypeSymbol:
                 _sa._registry.UpdateCrashableProtocols(typeName: key, protocols: protocols);
+                break;
+            case RecordTypeSymbol:
+                _sa._registry.UpdateRecordProtocols(recordName: key, protocols: protocols);
                 break;
             case EntityTypeSymbol:
                 _sa._registry.UpdateEntityProtocols(entityName: key, protocols: protocols);

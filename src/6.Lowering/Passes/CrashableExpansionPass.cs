@@ -341,9 +341,10 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// The zero-arg Crashable protocol members that can be dispatched at runtime off a type-erased error
-    /// (all <c>-&gt; Text</c>). A binding used ONLY via these can take the runtime-dispatch path; any other
-    /// use (as a value) forces the per-type fan-out.
+    /// The zero-arg members that can be dispatched at runtime off a type-erased error: the Crashable protocol's
+    /// <c>-&gt; Text</c> members, and <c>destroy</c>, which also frees the object the error lives in. A binding
+    /// used ONLY via these can take the runtime-dispatch path; any other use (as a value) forces the per-type
+    /// fan-out.
     /// </summary>
     private static readonly HashSet<string> DispatchableCrashableMembers =
         new(comparer: StringComparer.Ordinal)
@@ -351,7 +352,8 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
             Declaration.RuntimeContract.Display.Represent,
             Declaration.RuntimeContract.Display.Diagnose,
             Declaration.RuntimeContract.CrashMessage,
-            Declaration.RuntimeContract.CrashTitle
+            Declaration.RuntimeContract.CrashTitle,
+            Declaration.RuntimeContract.Destroy
         };
 
     /// <summary>

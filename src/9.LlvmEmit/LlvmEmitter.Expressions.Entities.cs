@@ -81,18 +81,14 @@ public partial class LlvmEmitter
                          $"[{_currentRoutineDiagName}].");
         }
 
-        // Ordered most-derived-first: Variant/Crashable must precede their bases (Record/Entity),
-        // since a base arm would otherwise capture them.
+        // Ordered most-derived-first: a Variant must precede its base (Record), since the base arm would
+        // otherwise capture it. A crashable is a record.
         return type switch
         {
             // A variant or Check/Lookup carrier is a TaggedCreatorExpression (ConstructionLoweringPass).
             VariantTypeSymbol or RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup } =>
                 throw new InvalidOperationException(
                     message: $"A creator of '{type.FullName}' reached the LLVM emitter in [{_currentRoutineDiagName}]."),
-            // Crashable types are entity-like (heap-allocated, ptr semantics).
-            CrashableTypeSymbol crashable => EmitCrashableConstruction(sb: sb,
-                crashable: crashable,
-                expr: expr),
             EntityTypeSymbol entity => EmitEntityConstruction(sb: sb, entity: entity, expr: expr),
             RecordTypeSymbol record => EmitRecordConstruction(sb: sb, record: record, expr: expr),
             _ => throw new InvalidOperationException(
@@ -123,7 +119,7 @@ public partial class LlvmEmitter
             ? EnsureRecordTypeDeclared(record: (RecordTypeSymbol)type)
             : GetLlvmType(type: type);
         string slot = NextTemp();
-        EmitLine(sb: sb, line: $"  {slot} = alloca {llvmType}");
+        EmitEntryAlloca(llvmName: slot, llvmType: llvmType);
         EmitLine(sb: sb, line: $"  store {llvmType} zeroinitializer, ptr {slot}");
 
         string tag = EmitExpression(sb: sb, expr: tagged.Tag);
@@ -139,12 +135,46 @@ public partial class LlvmEmitter
                                          message: $"The payload of a tagged creator at {tagged.Location} has no type.");
             string payloadPtr = NextTemp();
             EmitLine(sb: sb, line: $"  {payloadPtr} = getelementptr {llvmType}, ptr {slot}, i32 0, i32 1");
-            EmitLine(sb: sb, line: $"  store {GetLlvmType(type: payloadType)} {value}, ptr {payloadPtr}");
+            if (payloadType is CrashableTypeSymbol crashable && HoldsErrorObject(carrier: type))
+            {
+                EmitLine(sb: sb,
+                    line: $"  store ptr {EmitCrashObject(sb: sb, crashable: crashable, value: value)}, ptr {payloadPtr}");
+            }
+            else
+            {
+                EmitLine(sb: sb, line: $"  store {GetLlvmType(type: payloadType)} {value}, ptr {payloadPtr}");
+            }
         }
 
         string result = NextTemp();
         EmitLine(sb: sb, line: $"  {result} = load {llvmType}, ptr {slot}");
         return result;
+    }
+
+    /// <summary>
+    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot
+    /// holds the address of the caught crashable's object rather than the crashable itself.
+    /// </summary>
+    private static bool HoldsErrorObject(TypeSymbol carrier)
+    {
+        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup };
+    }
+
+    /// <summary>
+    /// Moves a caught crashable into the heap object a carrier's error slot holds: allocates the crashable's size
+    /// and stores the value there. Returns the object's address.
+    /// </summary>
+    private string EmitCrashObject(StringBuilder sb, CrashableTypeSymbol crashable, string value)
+    {
+        string typeName = EnsureRecordTypeDeclared(record: crashable);
+        string sizePtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {sizePtr} = getelementptr {typeName}, ptr null, i32 1");
+        string size = NextTemp();
+        EmitLine(sb: sb, line: $"  {size} = ptrtoint ptr {sizePtr} to i64");
+        string objectPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {objectPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
+        EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {objectPtr}");
+        return objectPtr;
     }
 
     /// <summary>
@@ -264,36 +294,6 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits crashable type construction: heap-allocate and initialize fields. Mirrors entity construction —
-    /// crashable types have entity (ptr) semantics. The creator carries one value per member variable in
-    /// declaration order.
-    /// </summary>
-    private string EmitCrashableConstruction(StringBuilder sb, CrashableTypeSymbol crashable,
-        CreatorExpression expr)
-    {
-        string typeName = GetCrashableTypeName(crashable: crashable);
-        string sizeTemp = NextTemp();
-        EmitLine(sb: sb, line: $"  {sizeTemp} = getelementptr {typeName}, ptr null, i32 1");
-        string size = NextTemp();
-        EmitLine(sb: sb, line: $"  {size} = ptrtoint ptr {sizeTemp} to i64");
-        string crashablePtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {crashablePtr} = call ptr @rf_allocate_dynamic(i64 {size})");
-
-        for (int i = 0; i < expr.MemberVariables.Count && i < crashable.MemberVariables.Count; i++)
-        {
-            string value = EmitExpression(sb: sb, expr: expr.MemberVariables[index: i].Value);
-            string fieldType = GetLlvmType(type: crashable.MemberVariables[index: i].Type);
-            string fieldPtr = NextTemp();
-            EmitLine(sb: sb,
-                line:
-                $"  {fieldPtr} = getelementptr {typeName}, ptr {crashablePtr}, i32 0, i32 {i}");
-            EmitLine(sb: sb, line: $"  store {fieldType} {value}, ptr {fieldPtr}");
-        }
-
-        return crashablePtr;
-    }
-
-    /// <summary>
     /// Generates code to read a member variable from an entity/record.
     /// For entities: GEP + load
     /// For records: extractvalue
@@ -330,13 +330,9 @@ public partial class LlvmEmitter
                 $"Member variable '{memberName}' is read through '{unprojected.Name}' without a wrapper projection, in routine: {_currentEmittingRoutine?.RegistryKey ?? "<unknown>"}");
         }
 
-        // Most-derived-first: Crashable (an Entity) and Variant (a Record) precede their bases.
+        // Most-derived-first: a Variant (a Record) precedes its base.
         return targetType switch
         {
-            CrashableTypeSymbol crashable => EmitCrashableMemberVariableRead(sb: sb,
-                crashablePtr: target,
-                crashable: crashable,
-                memberVariableName: memberName),
             EntityTypeSymbol entity => EmitEntityMemberVariableRead(sb: sb,
                 entityPtr: target,
                 entity: entity,
@@ -447,46 +443,6 @@ public partial class LlvmEmitter
             $"  {memberVariablePtr} = getelementptr {typeName}, ptr {entityPtr}, i32 0, i32 {memberVariableIndex}");
 
         // Load the member variable value
-        string value = NextTemp();
-        EmitLine(sb: sb, line: $"  {value} = load {memberVariableType}, ptr {memberVariablePtr}");
-
-        return value;
-    }
-
-    /// <summary>
-    /// Generates code to read a member variable from a crashable type (heap-allocated, pointer).
-    /// Uses GEP + load, same structural pattern as entities.
-    /// </summary>
-    private string EmitCrashableMemberVariableRead(StringBuilder sb, string crashablePtr,
-        CrashableTypeSymbol crashable, string memberVariableName)
-    {
-        int memberVariableIndex = -1;
-        MemberVariableInfo? memberVariable = null;
-        for (int i = 0; i < crashable.MemberVariables.Count; i++)
-        {
-            if (crashable.MemberVariables[index: i].Name == memberVariableName)
-            {
-                memberVariableIndex = i;
-                memberVariable = crashable.MemberVariables[index: i];
-                break;
-            }
-        }
-
-        if (memberVariableIndex < 0 || memberVariable == null)
-        {
-            throw new InvalidOperationException(
-                message:
-                $"Member variable '{memberVariableName}' not found on crashable '{crashable.Name}'");
-        }
-
-        string typeName = GetCrashableTypeName(crashable: crashable);
-        string memberVariableType = GetLlvmType(type: memberVariable.Type);
-
-        string memberVariablePtr = NextTemp();
-        EmitLine(sb: sb,
-            line:
-            $"  {memberVariablePtr} = getelementptr {typeName}, ptr {crashablePtr}, i32 0, i32 {memberVariableIndex}");
-
         string value = NextTemp();
         EmitLine(sb: sb, line: $"  {value} = load {memberVariableType}, ptr {memberVariablePtr}");
 

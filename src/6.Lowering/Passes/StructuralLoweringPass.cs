@@ -128,16 +128,16 @@ internal sealed class StructuralLoweringPass(PostprocessingContext _)
     }
 
     /// <summary>
-    /// crashable Name { ... } -> entity Name obeys Crashable { ... }
+    /// crashable Name { ... } -> record Name obeys Crashable { ... }: a crashable is a value.
     /// Members are carried over unchanged.
     /// </summary>
-    private static EntityDeclaration LowerCrashable(CrashableDeclaration crashable)
+    private static RecordDeclaration LowerCrashable(CrashableDeclaration crashable)
     {
         var crashableProtocol = new TypeExpression(Name: "Crashable",
             GenericArguments: null,
             Location: crashable.Location);
 
-        return new EntityDeclaration(Name: crashable.Name,
+        return new RecordDeclaration(Name: crashable.Name,
             GenericParameters: null,
             Protocols: [crashableProtocol],
             Members: crashable.Members,

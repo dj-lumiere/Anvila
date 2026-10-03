@@ -84,43 +84,6 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Generates the LLVM struct type for a crashable type.
-    /// Crashable types have entity semantics (heap-allocated, pointer at usage sites).
-    /// </summary>
-    private void GenerateCrashableType(CrashableTypeSymbol crashable)
-    {
-        string typeName = RawCrashableTypeName(crashable: crashable);
-
-        if (_generatedTypes.Contains(item: typeName))
-        {
-            return;
-        }
-
-        _generatedTypes.Add(item: typeName);
-
-        EnsureMemberVariableTypesGenerated(memberVariables: crashable.MemberVariables);
-
-        var memberVariableTypes = new List<string>();
-        foreach (MemberVariableInfo memberVariable in crashable.MemberVariables)
-        {
-            memberVariableTypes.Add(item: GetLlvmType(type: memberVariable.Type));
-        }
-
-        var decl = new StringBuilder();
-        if (memberVariableTypes.Count == 0)
-        {
-            decl.AppendLine(value: $"{typeName} = type {{ i8 }}");
-        }
-        else
-        {
-            string memberVars = string.Join(separator: ", ", values: memberVariableTypes);
-            decl.AppendLine(value: $"{typeName} = type {{ {memberVars} }}");
-        }
-
-        _typeDeclarationsCrashable[key: typeName] = decl.ToString();
-    }
-
-    /// <summary>
     /// Generates the LLVM struct type for a record.
     /// Record = value type, stack-allocated, copy semantics.
     /// Single-member-variable wrappers are unwrapped to their underlying intrinsic.

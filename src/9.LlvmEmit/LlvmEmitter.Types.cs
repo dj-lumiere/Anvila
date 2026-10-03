@@ -263,12 +263,6 @@ public partial class LlvmEmitter
         return $"%{Q(name: $"Entity.{RealmMangleBase(t: entity)}")}";
     }
 
-    /// <summary>The bare LLVM struct name for a crashable — no generation side effect.</summary>
-    private static string RawCrashableTypeName(CrashableTypeSymbol crashable)
-    {
-        return $"%{Q(name: $"Crashable.{RealmMangleBase(t: crashable)}")}";
-    }
-
     /// <summary>
     /// Gets the LLVM struct type name for an entity, ensuring its struct definition is emitted on
     /// first use. Entity structs are referenced only at use sites (alloc / field-access / size GEP),
@@ -283,23 +277,6 @@ public partial class LlvmEmitter
               a.Any(predicate: ContainsGenericParameter)))
         {
             GenerateEntityType(entity: entity);
-        }
-
-        return name;
-    }
-
-    /// <summary>
-    /// Gets the LLVM struct type name for a crashable type, ensuring its struct definition is emitted
-    /// on first use (crashables are referenced opaquely in size GEPs and field access).
-    /// </summary>
-    private string GetCrashableTypeName(CrashableTypeSymbol crashable)
-    {
-        string name = RawCrashableTypeName(crashable: crashable);
-        if (!_generatedTypes.Contains(item: name) && !crashable.IsGenericDefinition &&
-            !(crashable.TypeArguments is { Count: > 0 } a &&
-              a.Any(predicate: ContainsGenericParameter)))
-        {
-            GenerateCrashableType(crashable: crashable);
         }
 
         return name;

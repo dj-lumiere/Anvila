@@ -247,9 +247,7 @@ internal sealed class TesseraWriter
         for (int i = 0; i < arms.Count; i++)
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
-            string receiver = TypeText(type: routine.OwnerType) is ['@', .. var pointee]
-                ? $"error.to<@{pointee}>()"
-                : "error";
+            string receiver = CrashObjectReceiver(routine: routine);
             text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
                 .Append(value: $"        is_{i} : Bool = ieq<{idType}>(type_id, 0x{id:X})\n")
                 .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
@@ -261,6 +259,58 @@ internal sealed class TesseraWriter
         text.Append(value: $"    block next_{arms.Count}()\n        unreachable\n\n");
         _definitions.Append(value: text);
         return (name, result);
+    }
+
+    /// <summary>The receiver a crash-object dispatch passes a crashable's member: the object, as the crashable's
+    /// storage (a crashable is a record, whose member takes it by reference).</summary>
+    private string CrashObjectReceiver(RoutineInfo routine)
+    {
+        string owner = TypeText(type: routine.OwnerType);
+        return owner is ['@', .. var pointee]
+            ? $"error.to<@{pointee}>()"
+            : Declaration.ReceiverFacts.MeByReference(ownerType: routine.OwnerType)
+                ? $"error.to<@{owner}>()"
+                : $"error.to<@{owner}>().load()";
+    }
+
+    private string? _crashObjectDestroy;
+
+    /// <summary>
+    /// The routine that frees a caught crashable: given the carrier's type id and the address of the object the
+    /// error lives in, it calls that crashable's <c>destroy</c> (a crashable whose type has none live has nothing
+    /// to free in its fields), then frees the object. Written once.
+    /// </summary>
+    public string CrashObjectDestroy(TypeSymbol typeIdType)
+    {
+        if (_crashObjectDestroy != null)
+        {
+            return _crashObjectDestroy;
+        }
+
+        _liveKeySet ??= new HashSet<string>(collection: LiveKeys, comparer: StringComparer.Ordinal);
+        List<(ulong TypeId, RoutineInfo Member)> arms = Collection.CrashableDispatchArms.For(
+            memberName: Declaration.RuntimeContract.Destroy, registry: _input.Registry, liveRoutineKeys: _liveKeySet);
+        string free = RuntimeRoutine(symbol: "rf_invalidate", parameters: "ptr: Addr", returnType: "Void");
+        string name = VerbatimName(text: "crash object destroy");
+        _crashObjectDestroy = name;
+        string idType = TypeText(type: typeIdType);
+        var text = new StringBuilder();
+        text.Append(value: $"routine {name}(type_id: {idType}, error: Addr) -> Void\n");
+        for (int i = 0; i < arms.Count; i++)
+        {
+            (ulong id, RoutineInfo routine) = arms[index: i];
+            text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
+                .Append(value: $"        is_{i} : Bool = ieq<{idType}>(type_id, 0x{id:X})\n")
+                .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
+                .Append(value: $"    block case_{i}()\n")
+                .Append(value: $"        {RoutineName(routine: routine)}({CrashObjectReceiver(routine: routine)})\n")
+                .Append(value: "        jump free()\n\n");
+        }
+
+        text.Append(value: $"    block {(arms.Count == 0 ? "entry" : $"next_{arms.Count}")}()\n        jump free()\n\n")
+            .Append(value: $"    block free()\n        {free}(error)\n        return()\n\n");
+        _definitions.Append(value: text);
+        return name;
     }
 
     /// <summary>A declaration's body, or the body the builder wrote for a declaration without one.</summary>

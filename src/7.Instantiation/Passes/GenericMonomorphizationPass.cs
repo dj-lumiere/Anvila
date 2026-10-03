@@ -528,6 +528,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             changed |= ctx.LiveRoutineKeys.Add(item: rep.RegistryKey);
         }
 
+        // A carrier that catches the error frees it through a dispatch on its type id, which reaches the type's
+        // destroy only when that is live.
+        if (ctx.Registry.LookupMemberRoutine(type: errorType,
+                memberRoutineName: RuntimeContract.Destroy) is { IsGenericDefinition: false } destroy)
+        {
+            changed |= ctx.LiveRoutineKeys.Add(item: destroy.RegistryKey);
+        }
+
         return changed;
     }
 
@@ -1045,6 +1053,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             AstWalker.Walk(root: body,
                 visit: n =>
                 {
+                    // A recovery variant's throw lands in its carrier: no crash_report, but the caught error's
+                    // type is a reached crashable, so the carrier's dispatches (crash_message, destroy) reach it.
+                    if (n is VariantReturnStatement { SiteKind: VariantSiteKind.FromThrow, Value: { } caught })
+                    {
+                        MarkOwner(t: caught.ResolvedType);
+                        return;
+                    }
+
                     if (!MayBecomeCrash(node: n))
                     {
                         return;

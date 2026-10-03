@@ -4,12 +4,13 @@ using TypeModel.Enums;
 namespace TypeModel.Types;
 
 /// <summary>
-/// Type information for crashable types — throwable error entities.
-/// Always heap-allocated (entity semantics). Automatically conforms to the Crashable protocol.
+/// Type information for crashable types: the errors a <c>throw</c> raises. A crashable is a value, a record with
+/// no identity, so nothing about ownership or sharing applies to it. When a recovery carrier (<c>Check</c>,
+/// <c>Lookup</c>) catches one, the value is copied into a heap object the carrier owns, because the carrier's
+/// error slot holds one pointer whatever the crashable's size. Automatically conforms to the Crashable protocol.
 /// Must provide crash_message() -> Text; crash_title() is synthesized from the type name.
 /// </summary>
-// Crashable is an entity (reference type, heap-allocated) — extends EntityTypeSymbol (shared members).
-public sealed class CrashableTypeSymbol : EntityTypeSymbol
+public sealed class CrashableTypeSymbol : RecordTypeSymbol
 {
     /// <inheritdoc/>
     public override TypeCategory Category => TypeCategory.Crashable;

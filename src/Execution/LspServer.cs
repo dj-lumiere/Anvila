@@ -3435,7 +3435,7 @@ public static class LspServer
             CrashableTypeSymbol => "recordType",
             EntityTypeSymbol => "entityType",
             VariantTypeSymbol variant => variant.Members.Any(predicate: m =>
-                m.Type != null && Rules.SurfaceType(type: m.Type) is EntityTypeSymbol and not CrashableTypeSymbol)
+                m.Type != null && Rules.SurfaceType(type: m.Type) is EntityTypeSymbol)
                 ? "entityType"
                 : "recordType",
             RecordTypeSymbol or RoutineTypeSymbol => "recordType",

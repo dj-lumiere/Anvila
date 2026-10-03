@@ -951,15 +951,13 @@ public sealed partial class TypeRegistry
                     _ => false
                 },
             ConstraintKind.EntityType =>
-                // `is EntityType` — an entity. A crashable IS an entity subtype (heap-allocated), so it
-                // satisfies this directly: it reuses the entity derives (notably `destroy` = field-walk +
-                // `hijack().invalidate()`) rather than needing a duplicate CrashableType template. Its
-                // crashable-specific members (represent/diagnose/crash_message) still come from
-                // HandleCrashable via DispatchByOwnerType, which routes by owner type before any template.
+                // `is EntityType` — an entity.
                 implementer is EntityTypeSymbol,
             ConstraintKind.RecordType =>
-                // `is RecordType` — a plain value record; exclude the sum/enum/tuple record
-                // subtypes, which have their own more-specific kind gates.
+                // `is RecordType` — a value record. A crashable is one, so it takes the record derives
+                // (copy, field-walk `destroy`); its crashable-specific members (represent/diagnose/
+                // crash_message) still come from HandleCrashable via DispatchByOwnerType, which routes by
+                // owner type before any template.
                 implementer is RecordTypeSymbol,
             ConstraintKind.Obeys =>
                 // TypeObeysProtocol folds in the reflexive marker-protocol rule, so no separate check here.

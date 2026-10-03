@@ -1260,7 +1260,22 @@ internal sealed class TesseraRoutineWriter
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
         Emit(line: $"{slot}.{tagField}.store({tag})");
-        if (tagged.Payload is { } payload)
+        if (tagged.Payload is { ResolvedType: CrashableTypeSymbol crashable } error && HoldsErrorObject(carrier: carrier))
+        {
+            // A caught crashable moves into a heap object of its own: the error slot holds one address, whatever
+            // the crashable's size.
+            string value = Value(operand: Evaluate(expression: error));
+            string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
+                returnType: "Addr");
+            string crashableType = TypeText(type: crashable);
+            string size = $"t{_temps++}";
+            Emit(line: $"{size} : U64 = sizeof<{crashableType}>().to<U64>()");
+            string errorObject = $"t{_temps++}";
+            Emit(line: $"{errorObject} : Addr = {allocate}({size})");
+            Emit(line: $"{errorObject}.to<@{crashableType}>().store({value})");
+            Emit(line: $"{slot}.{payloadField}.to<@Addr>().store({errorObject})");
+        }
+        else if (tagged.Payload is { } payload)
         {
             string value = Value(operand: Evaluate(expression: payload));
             Emit(line: $"{slot}.{payloadField}.to<@{TypeText(type: payload.ResolvedType)}>()" +
@@ -1268,6 +1283,15 @@ internal sealed class TesseraRoutineWriter
         }
 
         return new Operand(Text: slot, Type: carrier, IsPlace: true);
+    }
+
+    /// <summary>
+    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot
+    /// holds the address of the caught crashable's object rather than the crashable itself.
+    /// </summary>
+    private static bool HoldsErrorObject(TypeSymbol? carrier)
+    {
+        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup };
     }
 
     /// <summary>The value a carrier (or variant) holds in its payload, read at the type the arm matched.</summary>
@@ -1283,6 +1307,15 @@ internal sealed class TesseraRoutineWriter
 
         TypeSymbol valueType = payload.ResolvedType ?? payload.ConcreteType.ResolvedType ??
                                throw Unsupported(what: "a payload read of an unresolved type");
+        if (valueType is CrashableTypeSymbol && HoldsErrorObject(carrier: carrier.Type))
+        {
+            // The error slot holds the address of the object the caught crashable lives in.
+            string errorObject = $"t{_temps++}";
+            Emit(line: $"{errorObject} : Addr = {Place(operand: carrier)}.{payloadField}.to<@Addr>().load()");
+            return new Operand(Text: $"{errorObject}.to<@{TypeText(type: valueType)}>()", Type: valueType,
+                IsPlace: true);
+        }
+
         return new Operand(Text: $"{Place(operand: carrier)}.{payloadField}.to<@{TypeText(type: valueType)}>()",
             Type: valueType, IsPlace: true);
     }
@@ -1305,6 +1338,12 @@ internal sealed class TesseraRoutineWriter
         string typeId = Temp(type: typeIdType, expression: $"{place}.{record.MemberVariables[index: 0].Name}.load()");
         string address = $"t{_temps++}";
         Emit(line: $"{address} : Addr = {place}.{record.MemberVariables[index: 1].Name}.to<@Addr>().load()");
+        if (dispatch.MemberName == Declaration.RuntimeContract.Destroy)
+        {
+            Emit(line: $"{_module.CrashObjectDestroy(typeIdType: typeIdType)}({typeId}, {address})");
+            return new Operand(Text: string.Empty, Type: null, IsPlace: false);
+        }
+
         (string routine, TypeSymbol result) = _module.CrashableDispatch(member: dispatch.MemberName,
             typeIdType: typeIdType);
         return new Operand(Text: Temp(type: result, expression: $"{routine}({typeId}, {address})"), Type: result,

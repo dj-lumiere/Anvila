@@ -321,7 +321,7 @@ public partial class LlvmEmitter
         if (cast.Conversion == RepresentationConversion.SpillToAddress)
         {
             string slot = NextTemp();
-            EmitLine(sb: sb, line: $"  {slot} = alloca {source}");
+            EmitEntryAlloca(llvmName: slot, llvmType: source);
             EmitLine(sb: sb, line: $"  store {source} {value}, ptr {slot}");
             return slot;
         }
@@ -504,7 +504,9 @@ public partial class LlvmEmitter
     /// as the concrete type.
     ///
     /// <list type="bullet">
-    /// <item>Entity / crashable types: payload slot holds a ptr — <c>load ptr</c>.</item>
+    /// <item>Entity types: payload slot holds a ptr — <c>load ptr</c>.</item>
+    /// <item>A crashable in a recovery carrier: the slot holds its object's address — <c>load ptr</c>, then the
+    /// crashable from the object.</item>
     /// <item>Record / primitive types: payload slot holds the value inline — <c>load &lt;type&gt;</c>.</item>
     /// </list>
     /// </summary>
@@ -523,7 +525,7 @@ public partial class LlvmEmitter
                 : GetCarrierLlvmType(type: carrierType);
 
         string spillAddr = NextTemp();
-        EmitLine(sb: sb, line: $"  {spillAddr} = alloca {carrierLlvmType}");
+        EmitEntryAlloca(llvmName: spillAddr, llvmType: carrierLlvmType);
         EmitLine(sb: sb, line: $"  store {carrierLlvmType} {carrierVal}, ptr {spillAddr}");
 
         TypeSymbol? concreteType = payload.ResolvedType ?? payload.ConcreteType.ResolvedType ??
@@ -534,8 +536,18 @@ public partial class LlvmEmitter
             line:
             $"  {payloadPtr} = getelementptr {carrierLlvmType}, ptr {spillAddr}, i32 0, i32 1");
 
+        if (concreteType is CrashableTypeSymbol crashable && HoldsErrorObject(carrier: carrierType))
+        {
+            string objectPtr = NextTemp();
+            EmitLine(sb: sb, line: $"  {objectPtr} = load ptr, ptr {payloadPtr}");
+            string crashableType = EnsureRecordTypeDeclared(record: crashable);
+            string error = NextTemp();
+            EmitLine(sb: sb, line: $"  {error} = load {crashableType}, ptr {objectPtr}");
+            return error;
+        }
+
         string loadType;
-        if (concreteType is EntityTypeSymbol or CrashableTypeSymbol)
+        if (concreteType is EntityTypeSymbol)
         {
             loadType = "ptr";
         }
@@ -573,7 +585,7 @@ public partial class LlvmEmitter
         string carrierLlvmType = GetCarrierLlvmType(type: carrierType);
 
         string spillAddr = NextTemp();
-        EmitLine(sb: sb, line: $"  {spillAddr} = alloca {carrierLlvmType}");
+        EmitEntryAlloca(llvmName: spillAddr, llvmType: carrierLlvmType);
         EmitLine(sb: sb, line: $"  store {carrierLlvmType} {carrierVal}, ptr {spillAddr}");
 
         string typeIdPtr = NextTemp();
@@ -589,6 +601,12 @@ public partial class LlvmEmitter
             $"  {payloadPtr} = getelementptr {carrierLlvmType}, ptr {spillAddr}, i32 0, i32 1");
         string entity = NextTemp();
         EmitLine(sb: sb, line: $"  {entity} = load ptr, ptr {payloadPtr}");
+
+        if (dispatch.MemberName == Declaration.RuntimeContract.Destroy)
+        {
+            EmitCrashObjectDestroy(sb: sb, typeId: typeId, errorObject: entity);
+            return string.Empty;
+        }
 
         // The arms this build dispatches to (CrashableDispatchArms).
         var arms = new List<(long id, RoutineInfo routine, string mangled, string label)>();
@@ -653,6 +671,38 @@ public partial class LlvmEmitter
         string phiResult = NextTemp();
         EmitLine(sb: sb, line: $"  {phiResult} = load {retLlvm}, ptr {resultSlot}");
         return phiResult;
+    }
+
+    /// <summary>
+    /// Frees a caught crashable: its type's <c>destroy</c> (a crashable whose type has none has nothing to free
+    /// in its fields), then the object it lives in.
+    /// </summary>
+    private void EmitCrashObjectDestroy(StringBuilder sb, string typeId, string errorObject)
+    {
+        string mergeLabel = NextLabel(prefix: "crd.merge");
+        var switchArms = new StringBuilder();
+        var arms = new List<(string mangled, string label)>();
+        foreach ((ulong armTypeId, RoutineInfo routine) in Builder.Collection.CrashableDispatchArms.For(
+                     memberName: Declaration.RuntimeContract.Destroy,
+                     registry: _registry,
+                     liveRoutineKeys: _liveRoutineKeys))
+        {
+            GenerateRoutineDeclaration(routine: routine);
+            string label = NextLabel(prefix: "crd.case");
+            arms.Add(item: (MangleRoutineName(routine: routine), label));
+            switchArms.Append(value: $"    i64 {unchecked((long)armTypeId)}, label %{label}\n");
+        }
+
+        EmitLine(sb: sb, line: $"  switch i64 {typeId}, label %{mergeLabel} [\n{switchArms}  ]");
+        foreach ((string mangled, string label) in arms)
+        {
+            EmitLine(sb: sb, line: $"{label}:");
+            EmitLine(sb: sb, line: $"  call void @{mangled}(ptr {errorObject})");
+            EmitLine(sb: sb, line: $"  br label %{mergeLabel}");
+        }
+
+        EmitLine(sb: sb, line: $"{mergeLabel}:");
+        EmitLine(sb: sb, line: $"  call void @rf_invalidate(ptr {errorObject})");
     }
 
     /// <summary>
