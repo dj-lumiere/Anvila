@@ -2551,12 +2551,16 @@ public sealed partial class SemanticVerifier
 
         RestoreImportScopeForCompilerGeneratedBody(routineInfo: routineInfo);
 
-        // The body is analyzed in its routine's own language: a stdlib routine is RazorForge even in a Suflae
-        // build, so its builder-written variants keep their `danger` blocks and dangerous calls.
-        TypeRegistry.StdlibSourceScope? stdlibSource =
-            routineInfo.Location?.FileName is { } routineFile && IsStdlibFile(filePath: routineFile)
-                ? _registry.AnalyzingStdlibSource()
-                : null;
+        // The body is analyzed in the language it is written in: a stdlib routine is RazorForge even in a Suflae
+        // build, so its builder-written variants keep their `danger` blocks and dangerous calls. So is a body
+        // the builder took from a stdlib template for a user type (a derive such as `serialize` on a Suflae
+        // record): the routine sits at the user type, but its body is RazorForge source, whose entity types are
+        // bare, not Suflae's Roamed handles.
+        bool stdlibRoutine = routineInfo.Location?.FileName is { } routineFile && IsStdlibFile(filePath: routineFile);
+        bool stdlibBody = body.Location.FileName is { } bodyFile && IsStdlibFile(filePath: bodyFile);
+        TypeRegistry.StdlibSourceScope? stdlibSource = stdlibRoutine || stdlibBody
+            ? _registry.AnalyzingStdlibSource()
+            : null;
 
         // BuilderQuery per-type entity-list routines (member_variable_info / protocol_info / routine_info)
         // synthesize bodies that construct FieldInfo/ProtocolInfo/RoutineInfo/Visibility values — all in
