@@ -51,17 +51,13 @@ jobs:
       - name: Install LLVM 22 toolchain
         run: |
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
-          # LLVMSharp talks to the in-process LLVM C library, but the builder shells out to `clang` and `opt`
-          # for the final codegen/link step. Make the version-suffixed binaries resolvable without the suffix.
-          sudo ln -sf /usr/bin/clang-22 /usr/local/bin/clang
-          sudo ln -sf /usr/bin/clang++-22 /usr/local/bin/clang++
-          sudo ln -sf /usr/bin/opt-22 /usr/local/bin/opt
-          sudo ln -sf /usr/bin/llc-22 /usr/local/bin/llc
-          sudo ln -sf /usr/bin/llvm-ar-22 /usr/local/bin/llvm-ar
-          sudo ln -sf /usr/bin/lld-22 /usr/local/bin/lld
-          sudo ln -sf /usr/bin/ld.lld-22 /usr/local/bin/ld.lld
-          clang --version
-          opt --version
+          # LLVMSharp talks to the in-process LLVM C library, but the builder shells out to LLVM's tools
+          # (clang, opt, llvm-link) by their bare names. apt.llvm.org puts the unsuffixed set in
+          # /usr/lib/llvm-22/bin, so that directory goes first on PATH and every tool comes from the one install.
+          echo /usr/lib/llvm-22/bin >> "$GITHUB_PATH"
+          /usr/lib/llvm-22/bin/clang --version
+          /usr/lib/llvm-22/bin/opt --version
+          /usr/lib/llvm-22/bin/llvm-link --version
 
       - name: Build native libraries
         run: |
