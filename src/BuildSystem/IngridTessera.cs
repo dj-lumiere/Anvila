@@ -9,7 +9,7 @@ namespace Builder;
 /// the module being optimized, where LLVM can inline them (<c>#inline</c> routines are <c>alwaysinline</c>).
 /// <para>
 /// The library is compiled in-process by the Tessera builder, for the host, and cached as LLVM IR next to the
-/// executable; it is rebuilt when a source or the Tessera builder is newer. An installed layout ships the cached IR
+/// executable. It is rebuilt when a source or the Tessera builder is newer. An installed layout ships the cached IR
 /// and no sources.
 /// </para>
 /// </summary>
