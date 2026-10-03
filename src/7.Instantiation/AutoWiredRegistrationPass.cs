@@ -846,7 +846,9 @@ internal sealed class AutoWiredRegistrationPass
         //                                   is not this one). The `from:` param type (not the
         //                                   arm name) carries the overload, so no RF-S770 clash
         //                                   with a same-named type (e.g. the `List` arm).
-        if (!type.IsGenericDefinition && type is VariantTypeSymbol variantForCtor)
+        // A generic variant registers them on its definition, so each instance (`Pick[S64]`) gets them substituted
+        // like any generic type's creators.
+        if (type is VariantTypeSymbol variantForCtor)
         {
             RegisterVariantArmConstructors(variant: variantForCtor);
         }
@@ -1261,7 +1263,13 @@ internal sealed class AutoWiredRegistrationPass
             }
 
             // Arm.create!(from: V) -> Arm  (name "create" + IsFailable; a `.create!(…)` call resolves
-            // against "create" and the `from: V` param type disambiguates from numeric conversions).
+            // against "create" and the `from: V` param type disambiguates from numeric conversions). Not for an arm
+            // of a generic definition: its owner would be the definition's own parameter.
+            if (variant.IsGenericDefinition)
+            {
+                continue;
+            }
+
             bool extractExists = _registry.GetMemberRoutinesForType(type: armType)
                                           .Any(predicate: m =>
                                                m is

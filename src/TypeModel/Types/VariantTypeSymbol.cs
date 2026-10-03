@@ -120,40 +120,15 @@ public sealed class VariantTypeSymbol : RecordTypeSymbol
             return memberInfo; // None state has no type to substitute
         }
 
+        // The shared substitution reaches into any generic member (`List[T]`, a routine type, a tuple), not only a
+        // nested variant.
         TypeSymbol substitutedType =
-            SubstituteType(type: memberInfo.Type!, substitution: substitution);
+            RecordTypeSymbol.SubstituteType(type: memberInfo.Type!, substitution: substitution);
         if (substitutedType == memberInfo.Type)
         {
             return memberInfo;
         }
 
         return memberInfo.WithSubstitutedType(newType: substitutedType);
-    }
-
-    /// <summary>
-    /// Recursively substitutes type parameters in a type.
-    /// </summary>
-    private static new TypeSymbol SubstituteType(TypeSymbol type,
-        Dictionary<string, TypeSymbol> substitution)
-    {
-        if (substitution.TryGetValue(key: type.Name, value: out TypeSymbol? substituted))
-        {
-            return substituted;
-        }
-
-        if (type is { IsGenericResolution: true, TypeArguments: not null })
-        {
-            var newArgs = type.TypeArguments
-                              .Select(selector: arg =>
-                                   SubstituteType(type: arg, substitution: substitution))
-                              .ToList();
-
-            if (type is VariantTypeSymbol { GenericDefinition: not null } variantType)
-            {
-                return variantType.GenericDefinition.CreateInstance(typeArguments: newArgs);
-            }
-        }
-
-        return type;
     }
 }

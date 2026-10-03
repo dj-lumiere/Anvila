@@ -587,11 +587,15 @@ internal sealed class TypeBodyResolver
             return;
         }
 
-        // Resolve each member type and build VariantMemberInfo list
+        // Resolve each member type and build VariantMemberInfo list. The variant is the current type while its
+        // members resolve, so a generic variant's own parameters (`variant Pick[T]` with a `T` member) resolve as
+        // its parameters.
         var members = new List<VariantMemberInfo>();
         var seenTypeNames = new HashSet<string>();
         bool hasNone = false;
 
+        TypeSymbol? previousType = _sa._currentType;
+        _sa._currentType = LookupTypeInCurrentModule(name: variant.Name);
         foreach (VariantMember member in variant.Members)
         {
             ResolveVariantMember(variant: variant,
@@ -600,6 +604,8 @@ internal sealed class TypeBodyResolver
                 seenTypeNames: seenTypeNames,
                 hasNone: ref hasNone);
         }
+
+        _sa._currentType = previousType;
 
         foreach (VariantMemberInfo m in members)
         {

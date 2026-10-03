@@ -780,8 +780,17 @@ public sealed partial class SemanticVerifier
                                              typeName: typeName))
                                     .OfType<string>()
                                     .ToHashSet();
+        // A type pattern resolved to a type covers the member of that type: a generic arm (`List[S64]`) is
+        // spelled with its arguments, which the bare pattern name leaves out.
+        var coveredTypes = clauses.Select(selector: clause => clause.Pattern is GuardPattern
+                                       ? null
+                                       : (clause.Pattern as TypePattern)?.Type.ResolvedType?.FullName)
+                                  .OfType<string>()
+                                  .ToHashSet();
 
-        var missingMembers = members.Where(predicate: m => !coveredMembers.Contains(item: m.Name))
+        var missingMembers = members.Where(predicate: m => !coveredMembers.Contains(item: m.Name) &&
+                                                           !(m.Type != null &&
+                                                             coveredTypes.Contains(item: m.Type.FullName)))
                                     .Select(selector: m => m.Name)
                                     .ToList();
 
