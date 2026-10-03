@@ -66,6 +66,20 @@ internal static class TesseraTrace
                 frame.column.store(column)
                 return()
 
+        /// The trace's depth, under the name the LLVM emitter exports it by: Ingrid's panic handler reads it.
+        #export("_rf_trace_get_depth_shared")
+        routine rf_trace_get_depth() -> S32
+            block entry()
+                depth : S32 = RF_TRACE_DEPTH.load()
+                return(depth)
+
+        /// The trace's 32 frames, under the name the LLVM emitter exports them by.
+        #export("_rf_trace_get_frames_shared")
+        routine rf_trace_get_frames() -> @RfTraceFrame
+            block entry()
+                frames : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>()
+                return(frames)
+
 
         """;
 

@@ -40,7 +40,8 @@ internal sealed class TesseraWriter
         foreach (string name in new[]
                  {
                      TesseraTrace.Push, TesseraTrace.Pop, TesseraTrace.UpdateLocation, "rf_runtime_init", "main",
-                     "c_rf_set_trace_mode", "RfTraceFrame", "RF_TRACE_STACK", "RF_TRACE_DEPTH"
+                     "c_rf_set_trace_mode", "RfTraceFrame", "RF_TRACE_STACK", "RF_TRACE_DEPTH", "rf_trace_get_depth",
+                     "rf_trace_get_frames"
                  })
         {
             _usedNames.Add(item: name);
