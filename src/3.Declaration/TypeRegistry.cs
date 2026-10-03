@@ -820,11 +820,13 @@ public sealed partial class TypeRegistry
         {
             GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Maybe
         });
-        RegisterType(type: new RecordTypeSymbol(name: "Check")
+        // Check and Lookup are variants (`T | Crashables`, `None | T | Crashables`): their arms come from the stdlib
+        // declarations the same way.
+        RegisterType(type: new VariantTypeSymbol(name: "Check")
         {
             GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Result
         });
-        RegisterType(type: new RecordTypeSymbol(name: "Lookup")
+        RegisterType(type: new VariantTypeSymbol(name: "Lookup")
         {
             GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Lookup
         });

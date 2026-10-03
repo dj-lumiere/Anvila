@@ -669,13 +669,13 @@ internal sealed class TesseraRoutineWriter
                     Type: assign.Right.ResolvedType, IsPlace: false);
             case TagOfExpression { Value: { ResolvedType: VariantTypeSymbol } tagged } tagOf:
             {
-                // The live case's type id: a variant's first field.
+                // The live case's type id: a variant's first field (a place when the variant has storage, so a
+                // carrier's tag can be cleared).
                 Operand variant = Evaluate(expression: tagged);
-                string tag = variant.IsPlace
-                    ? $"{variant.Text}.tag.load()"
-                    : $"{Receiver(operand: variant)}.tag";
-                return new Operand(Text: Temp(type: tagOf.ResolvedType, expression: tag), Type: tagOf.ResolvedType,
-                    IsPlace: false);
+                return variant.IsPlace
+                    ? new Operand(Text: $"{variant.Text}.tag", Type: tagOf.ResolvedType, IsPlace: true)
+                    : new Operand(Text: Temp(type: tagOf.ResolvedType, expression: $"{Receiver(operand: variant)}.tag"),
+                        Type: tagOf.ResolvedType, IsPlace: false);
             }
             case BackendCastExpression cast:
             {
@@ -1240,19 +1240,17 @@ internal sealed class TesseraRoutineWriter
         return new Operand(Text: block, Type: entity, IsPlace: false);
     }
 
-    /// <summary>A Check/Lookup carrier built from its tag and payload: zeroed storage, the tag in the first field,
-    /// the payload stored at its own type into the second field's bytes.</summary>
+    /// <summary>A variant (Check and Lookup among them) built from its tag and payload: zeroed storage, the tag,
+    /// then the payload stored at its own type into the payload bytes (TesseraWriter.VariantRecord).</summary>
     private Operand EvaluateTaggedCreator(TaggedCreatorExpression tagged)
     {
-        // A variant is its type id and payload bytes (TesseraWriter.VariantRecord); a Check/Lookup carrier
-        // names its own two fields.
-        (TypeSymbol carrier, string tagField, string payloadField) = tagged.ResolvedType switch
+        if (tagged.ResolvedType is not VariantTypeSymbol carrier)
         {
-            VariantTypeSymbol variant => ((TypeSymbol)variant, "tag", "payload"),
-            RecordTypeSymbol { MemberVariables.Count: 2 } record => (record, record.MemberVariables[index: 0].Name,
-                record.MemberVariables[index: 1].Name),
-            var other => throw Unsupported(what: $"a tagged construction of {other?.FullName ?? "an untyped value"}")
-        };
+            throw Unsupported(what: $"a tagged construction of {tagged.ResolvedType?.FullName ?? "an untyped value"}");
+        }
+
+        const string tagField = "tag";
+        const string payloadField = "payload";
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
         string slot = $"carrier{_temps++}";
@@ -1262,8 +1260,8 @@ internal sealed class TesseraRoutineWriter
         Emit(line: $"{slot}.{tagField}.store({tag})");
         if (tagged.Payload is { ResolvedType: CrashableTypeSymbol crashable } error && HoldsErrorObject(carrier: carrier))
         {
-            // A caught crashable moves into a heap object of its own: the error slot holds one address, whatever
-            // the crashable's size.
+            // A thrown crashable moves into a heap object of its own, and the error arm holds its address (the
+            // `Crashables`), whatever the crashable's size.
             string value = Value(operand: Evaluate(expression: error));
             string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
                 returnType: "Addr");
@@ -1301,12 +1299,12 @@ internal sealed class TesseraRoutineWriter
     private Operand EvaluatePayload(CarrierPayloadExpression payload)
     {
         Operand carrier = Evaluate(expression: payload.Carrier);
-        string payloadField = carrier.Type switch
+        if (carrier.Type is not VariantTypeSymbol)
         {
-            VariantTypeSymbol => "payload",
-            RecordTypeSymbol { MemberVariables.Count: >= 2 } record => record.MemberVariables[index: 1].Name,
-            var other => throw Unsupported(what: $"a payload read from {other?.FullName ?? "an untyped value"}")
-        };
+            throw Unsupported(what: $"a payload read from {carrier.Type?.FullName ?? "an untyped value"}");
+        }
+
+        const string payloadField = "payload";
 
         TypeSymbol valueType = payload.ResolvedType ?? payload.ConcreteType.ResolvedType ??
                                throw Unsupported(what: "a payload read of an unresolved type");

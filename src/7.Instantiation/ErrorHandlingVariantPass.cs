@@ -1256,9 +1256,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         ErrorHandlingVariantKind kind = caps.Kind;
         bool innerCanNone = caps.InnerCanNone;
         bool innerCanError = caps.InnerCanError;
-        // Bind the subject carrier to a temp so the Crashable arm can read its RUNTIME type_id — the outer
-        // carrier must re-wrap the failure preserving the concrete crashable identity, which the caught,
-        // erased `Crashable` value alone does not carry (only the source carrier's type_id field does).
+        // Bind the subject carrier to a temp: the error arm moves the caught error out of it.
         string subjName = $"__rc_carrier_{Interlocked.Increment(location: ref _propTemp)}";
         TypeSymbol? subjType = subject.ResolvedType;
         var subjDecl = new DeclarationStatement(
@@ -1301,39 +1299,20 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         if (innerCanError)
         {
-            // The caught error MOVES to the outer carrier: its type id comes from its mold, and the inner carrier's
-            // tag is cleared so the inner carrier's teardown does not free the object the outer one now holds.
+            // The caught error MOVES to the outer carrier (PatternLoweringPass clears the inner carrier's tag, so its
+            // teardown does not free the object the outer one now holds).
             const string errName = "__rf_prop_err";
-            TypeSymbol? u64 = registry.LookupType(name: "U64");
-            var typeIdSource = new CrashableDispatchExpression(
-                Carrier: new IdentifierExpression(Name: errName, Location: loc)
-                {
-                    ResolvedType = registry.LookupType(name: RuntimeContract.Crashables)
-                },
-                MemberName: RuntimeContract.CrashTypeId,
-                Location: loc) { ResolvedType = u64 };
-            var clearInnerTag = new AssignmentStatement(
-                Target: new MemberExpression(Object: SubjRef(), MemberName: "type_id", Location: loc)
-                {
-                    ResolvedType = u64
-                },
-                Value: new LiteralExpression(Value: 0UL, LiteralType: Builder.Tokenizer.TokenType.U64Literal, Location: loc)
-                {
-                    ResolvedType = u64
-                },
-                Location: loc);
             clauses.Add(item: new WhenClause(
                 Pattern: new CrashablePattern(ErrorType: null,
                     VariableName: errName,
                     Location: loc),
-                Body: new BlockStatement(Statements:
-                [
-                    clearInnerTag,
-                    new VariantReturnStatement(VariantKind: kind,
-                        SiteKind: VariantSiteKind.FromThrow,
-                        Value: new IdentifierExpression(Name: errName, Location: loc),
-                        Location: loc) { CrashableTypeIdSource = typeIdSource }
-                ], Location: loc),
+                Body: new VariantReturnStatement(VariantKind: kind,
+                    SiteKind: VariantSiteKind.FromThrow,
+                    Value: new IdentifierExpression(Name: errName, Location: loc)
+                    {
+                        ResolvedType = registry.LookupType(name: RuntimeContract.Crashables)
+                    },
+                    Location: loc),
                 Location: loc));
         }
 

@@ -209,7 +209,8 @@ public sealed partial class SemanticVerifier
     {
         bool allowsNone = matchedType is ErrorTypeSymbol || IsMaybeType(type: matchedType) ||
                           GetCarrierBaseName(type: matchedType) == "Lookup" ||
-                          matchedType is VariantTypeSymbol
+                          // A Check is a variant without an absent arm.
+                          matchedType is VariantTypeSymbol && GetCarrierBaseName(type: matchedType) != "Check"
                           // A `Result[None]` (void-success crashable) is matched on its None success arm
                           // by `is None` — Ok(None) | Crashable. None is the void success value.
                           // Only valid when the success type argument is itself None — `Result[S32]`'s

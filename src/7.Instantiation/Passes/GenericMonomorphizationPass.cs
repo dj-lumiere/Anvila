@@ -480,8 +480,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             TaggedCreatorExpression { Payload: { } tagged } => tagged,
             CreatorExpression
             {
-                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup }
-            } carrier => carrier.MemberVariables.FirstOrDefault(predicate: m => m.Name == "payload").Value,
+                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup },
+                MemberVariables: [(_, var arm)]
+            } => arm,
             _ => null
         };
         return (payload?.ResolvedType ?? (payload as CreatorExpression)?.ConstructedType) as CrashableTypeSymbol;

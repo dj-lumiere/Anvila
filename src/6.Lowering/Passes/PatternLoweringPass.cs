@@ -196,6 +196,20 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             };
         }
 
+        if (IsResultOrLookup(type: subjectType))
+        {
+            for (int i = 0; i < loweredClauses.Count; i++)
+            {
+                if (CaughtErrorName(pattern: loweredClauses[index: i].Pattern) is { } errorName)
+                {
+                    Statement body = new RethrowMover(errorName: errorName, carrier: subject,
+                        crashables: CrashablesType, u64: ctx.Registry.LookupType(name: "U64")).VisitStatement(
+                        stmt: loweredClauses[index: i].Body);
+                    loweredClauses[index: i] = loweredClauses[index: i] with { Body = body };
+                }
+            }
+        }
+
         bool isElseNarrowed = DetermineElseNarrowed(loweredClauses: loweredClauses,
             subjectType: subjectType);
 
@@ -218,23 +232,14 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
     /// <summary>
     /// Determines whether a carrier's <c>else</c> arm is narrowed to the inner type — i.e. ALL non-T
-    /// alternatives are covered by prior clauses. CrashableExpansionPass has already fanned
-    /// <c>is Crashable</c> into one TypePattern per concrete crashable type, so coverage is counted.
+    /// alternatives are covered by prior clauses: the error arm (<c>is Crashables</c>, a
+    /// <see cref="CrashablePattern"/> by now) and, on a Lookup, <c>is None</c>.
     /// </summary>
-    private bool DetermineElseNarrowed(List<WhenClause> loweredClauses, TypeSymbol? subjectType)
+    private static bool DetermineElseNarrowed(List<WhenClause> loweredClauses, TypeSymbol? subjectType)
     {
         if (IsResultOrLookup(type: subjectType) && subjectType!.TypeArguments?.Count > 0)
         {
-            int totalCrashable = ctx.Registry
-                                    .GetAllTypes()
-                                    .OfType<CrashableTypeSymbol>()
-                                    .Count();
-            int seenCrashablePatterns = loweredClauses.Count(predicate: c =>
-                c.Pattern is TypePattern { Type.ResolvedType: CrashableTypeSymbol });
-            // A single un-fanned `is Crashable` arm (CrashablePattern) covers EVERY crashable at once.
-            bool crashableCovered =
-                loweredClauses.Any(predicate: c => c.Pattern is CrashablePattern) ||
-                seenCrashablePatterns >= totalCrashable;
+            bool crashableCovered = loweredClauses.Any(predicate: c => c.Pattern is CrashablePattern);
             // Lookup has a None state; Result does not. Result narrows on crashable coverage
             // alone; Lookup additionally requires the None arm.
             if (IsResultType(type: subjectType))
@@ -583,7 +588,6 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
             case CrashablePattern cp when IsResultOrLookup(type: subjectType):
                 return GetCrashableArmCondition(subject: subject,
-                    subjectType: subjectType,
                     bindName: cp.VariableName,
                     loc: loc,
                     boolType: boolType);
@@ -828,6 +832,13 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
         TypeSymbol? targetType = tp.Type.ResolvedType ?? ctx.Registry.LookupType(name: tp.Type.Name);
 
+        // `is NopeError e` on a Check/Lookup: the error arm, then the caught error's own type.
+        if (targetType is CrashableTypeSymbol crashable && IsResultOrLookup(type: subject.ResolvedType))
+        {
+            return GetCaughtCrashableCondition(subject: subject, crashable: crashable, bindName: tp.VariableName,
+                loc: loc, boolType: boolType);
+        }
+
         // `is None`  on Lookup/Variant carriers tests type_id == 0.
         if (tp.Type.Name is "None")
         {
@@ -914,92 +925,70 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Lowers a carrier's single un-fanned <c>is Crashable</c> arm to the "holds an error" condition
-    /// <c>subject.type_id != 0 &amp;&amp; subject.type_id != &lt;T&gt;.type_id()</c> (T = the carrier's success type
-    /// argument). No binding: CrashableExpansionPass has already rewritten the arm body's member calls to
-    /// <see cref="CrashableDispatchExpression"/>, which reads the erased error straight off the carrier.
-    /// The <c>&lt;T&gt;.type_id()</c> form (rather than a baked FNV literal) folds correctly after
-    /// monomorphization — the success arm stores the FNV of the concrete T — keeping the generic-def
-    /// carrier body crashable-set-independent and therefore snapshot-freeze-safe.
+    /// Lowers a carrier's error arm (<c>is Crashables e</c>): the carrier's tag is the <c>Crashables</c> arm's, and
+    /// <c>e</c> is the caught error read out of the arm (the carrier keeps owning it).
     /// </summary>
-    private (Expression? Cond, Statement? Binding) GetCrashableArmCondition(Expression subject,
-        TypeSymbol? subjectType, string? bindName, SourceLocation loc, TypeSymbol? boolType)
+    private (Expression? Cond, Statement? Binding) GetCrashableArmCondition(Expression subject, string? bindName,
+        SourceLocation loc, TypeSymbol? boolType)
     {
-        TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
-
-        // The success arm's type is the carrier's element type. On a CONCRETE carrier it is
-        // TypeArguments[0]; on the generic-DEF (this pass runs on the stdlib Result[T].represent before
-        // monomorphization) TypeArguments is empty and the parameter name lives in GenericParameters[0].
-        // In both param cases emit `<param>.type_id()` — a builder query that folds to the concrete FNV
-        // after GenericAstRewriter substitutes the identifier — matching exactly how the sibling `is T`
-        // arm derives its type_id, and keeping this generic-def body crashable-set-independent.
-        string? successParamName = null;
-        TypeSymbol? successConcrete = null;
-        if (subjectType?.TypeArguments is { Count: > 0 } args)
-        {
-            if (args[index: 0] is GenericParameterTypeSymbol gp0)
-            {
-                successParamName = gp0.Name;
-            }
-            else
-            {
-                successConcrete = args[index: 0];
-            }
-        }
-        else if (subjectType is
-                 { IsGenericDefinition: true, GenericParameters: { Count: > 0 } gps })
-        {
-            successParamName = gps[index: 0];
-        }
-
-        Expression successTypeIdRhs = successParamName != null
-            ? new CallExpression(
-                Callee: new MemberExpression(
-                    Object: new IdentifierExpression(Name: successParamName, Location: loc),
-                    MemberName: TypeIdFieldName,
-                    Location: loc),
-                Arguments: [],
-                Location: loc) { ResolvedType = u64Type }
-            : new LiteralExpression(
-                Value: TypeIdHelper.ComputeTypeId(fullName: successConcrete?.FullName ?? ""),
-                LiteralType: TokenType.U64Literal,
-                Location: loc) { ResolvedType = u64Type };
-
-        Expression notNone = new BinaryExpression(
-            Left: MakeMemberAccess(subject: subject,
-                field: TypeIdFieldName,
-                fieldType: u64Type,
-                loc: loc),
-            Operator: BinaryOperator.NotEqual,
-            Right: new LiteralExpression(Value: 0UL,
-                LiteralType: TokenType.U64Literal,
-                Location: loc) { ResolvedType = u64Type },
-            Location: loc) { ResolvedType = boolType };
-
-        Expression notSuccess = new BinaryExpression(
-            Left: MakeMemberAccess(subject: subject,
-                field: TypeIdFieldName,
-                fieldType: u64Type,
-                loc: loc),
-            Operator: BinaryOperator.NotEqual,
-            Right: successTypeIdRhs,
-            Location: loc) { ResolvedType = boolType };
-
-        Expression cond = new BinaryExpression(
-            Left: notNone,
-            Operator: BinaryOperator.And,
-            Right: notSuccess,
-            Location: loc) { ResolvedType = boolType };
-
-        // `is Crashables e`: e is the caught error, read out of the carrier's error slot (the carrier keeps it).
-        Statement? binding = bindName != null &&
-                             ctx.Registry.LookupType(name: Builder.Declaration.RuntimeContract.Crashables) is { } crashables
+        TypeSymbol crashables = CrashablesType;
+        Statement? binding = bindName != null
             ? MakeBinding(name: bindName,
                 value: MakeCarrierPayload(subject: subject, innerType: crashables, loc: loc),
                 loc: loc)
             : null;
+        return (MakeTagIs(subject: subject, typeId: TypeIdHelper.ComputeTypeId(fullName: crashables.FullName),
+            loc: loc, boolType: boolType), binding);
+    }
+
+    /// <summary><c>subject.type_id == typeId</c>.</summary>
+    private BinaryExpression MakeTagIs(Expression subject, ulong typeId, SourceLocation loc, TypeSymbol? boolType)
+    {
+        TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
+        return new BinaryExpression(
+            Left: MakeMemberAccess(subject: subject, field: TypeIdFieldName, fieldType: u64Type, loc: loc),
+            Operator: BinaryOperator.Equal,
+            Right: new LiteralExpression(Value: typeId, LiteralType: TokenType.U64Literal, Location: loc)
+            {
+                ResolvedType = u64Type
+            },
+            Location: loc) { ResolvedType = boolType };
+    }
+
+    /// <summary>
+    /// <c>is NopeError e</c> straight on a <c>Check</c>/<c>Lookup</c>: the carrier holds an error, and the error's type
+    /// id (from its mold) is <c>NopeError</c>'s. <c>e</c> is the crashable inside the error's object.
+    /// </summary>
+    private (Expression? Cond, Statement? Binding) GetCaughtCrashableCondition(Expression subject,
+        CrashableTypeSymbol crashable, string? bindName, SourceLocation loc, TypeSymbol? boolType)
+    {
+        TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
+        (Expression? holdsError, _) = GetCrashableArmCondition(subject: subject, bindName: null, loc: loc,
+            boolType: boolType);
+        var typeId = new CrashableDispatchExpression(
+            Carrier: MakeCarrierPayload(subject: subject, innerType: CrashablesType, loc: loc),
+            MemberName: Builder.Declaration.RuntimeContract.CrashTypeId,
+            Location: loc) { ResolvedType = u64Type };
+        var isThatType = new BinaryExpression(Left: typeId,
+            Operator: BinaryOperator.Equal,
+            Right: new LiteralExpression(Value: TypeIdHelper.ComputeTypeId(fullName: crashable.FullName),
+                LiteralType: TokenType.U64Literal,
+                Location: loc) { ResolvedType = u64Type },
+            Location: loc) { ResolvedType = boolType };
+        Expression cond = new BinaryExpression(Left: holdsError!,
+            Operator: BinaryOperator.And,
+            Right: isThatType,
+            Location: loc) { ResolvedType = boolType };
+        Statement? binding = bindName != null
+            ? MakeBinding(name: bindName, value: MakeCarrierPayload(subject: subject, innerType: crashable, loc: loc),
+                loc: loc)
+            : null;
         return (cond, binding);
     }
+
+    private TypeSymbol CrashablesType =>
+        ctx.Registry.LookupType(name: Builder.Declaration.RuntimeContract.Crashables) ??
+        throw new InvalidOperationException(message: "Core.Crashables is not registered.");
 
     /// <summary>Builds <c>subject.type_id == 0_u64</c> for a None/absent check on Result/Lookup.</summary>
     private static BinaryExpression MakeTypeIdIsZero(Expression subject, SourceLocation loc,
@@ -1457,6 +1446,77 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             TokenType.GreaterEqual => BinaryOperator.GreaterEqual,
             _ => BinaryOperator.Equal
         };
+    }
+
+    /// <summary>The name an error arm of a carrier binds the caught error to: <c>is Crashables e</c> or
+    /// <c>is NopeError e</c>.</summary>
+    private static string? CaughtErrorName(Pattern pattern)
+    {
+        return pattern switch
+        {
+            CrashablePattern { VariableName: { } name } => name,
+            TypePattern { Type.ResolvedType: CrashableTypeSymbol, VariableName: { } name } => name,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Rethrowing a carrier's caught error (<c>throw e</c> in a <c>grab</c>/<c>lookup</c> variant, which returns it in
+    /// the routine's own carrier) MOVES the error's object out: the return carries the <c>Crashables</c> read out of
+    /// the carrier, and the carrier's tag is cleared first so its teardown does not free the object the returned
+    /// carrier now holds.
+    /// </summary>
+    private sealed class RethrowMover(string errorName, Expression carrier, TypeSymbol crashables, TypeSymbol? u64)
+        : AstRewriter
+    {
+        public override Statement VisitStatement(Statement stmt)
+        {
+            // The rethrow as VariantReturnLoweringPass leaves it: `return Carrier(Crashables: e)`.
+            if (stmt is ReturnStatement
+                {
+                    Value: CreatorExpression
+                    {
+                        ResolvedType: RecordTypeSymbol
+                        {
+                            CarrierKind: TypeModel.Enums.CarrierKind.Result or TypeModel.Enums.CarrierKind.Lookup
+                        },
+                        MemberVariables: [(Builder.Declaration.RuntimeContract.Crashables, IdentifierExpression id)]
+                    } creator
+                } ret && id.Name == errorName)
+            {
+                return Moved(location: ret.Location, rethrow: moved => ret with
+                {
+                    Value = creator with { MemberVariables = [(Builder.Declaration.RuntimeContract.Crashables, moved)] }
+                });
+            }
+
+            return base.VisitStatement(stmt: stmt);
+        }
+
+        protected override Statement VisitVariantReturn(VariantReturnStatement s)
+        {
+            return s is
+                   {
+                       SiteKind: VariantSiteKind.FromThrow,
+                       VariantKind: Builder.Instantiation.ErrorHandlingVariantKind.Check or Builder.Instantiation.ErrorHandlingVariantKind.Lookup,
+                       Value: IdentifierExpression id
+                   } && id.Name == errorName
+                ? Moved(location: s.Location, rethrow: moved => s with { Value = moved })
+                : s;
+        }
+
+        private BlockStatement Moved(SourceLocation location, Func<Expression, Statement> rethrow)
+        {
+            var clearTag = new AssignmentStatement(
+                Target: new TagOfExpression(Value: carrier, Location: location) { ResolvedType = u64 },
+                Value: new LiteralExpression(Value: 0UL, LiteralType: TokenType.U64Literal, Location: location)
+                {
+                    ResolvedType = u64
+                },
+                Location: location);
+            Expression moved = MakeCarrierPayload(subject: carrier, innerType: crashables, loc: location);
+            return new BlockStatement(Statements: [clearTag, rethrow(arg: moved)], Location: location);
+        }
     }
 }
 

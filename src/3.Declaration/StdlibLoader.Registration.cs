@@ -1855,9 +1855,14 @@ public sealed partial class StdlibLoader
         string qualifiedVariantName = string.IsNullOrEmpty(value: moduleName)
             ? variant.Name
             : $"{moduleName}.{variant.Name}";
-        if (registry.LookupType(name: qualifiedVariantName, realm: realm) !=
-            null)
+        if (registry.LookupType(name: qualifiedVariantName, realm: realm) is { } existing)
         {
+            // A shell registered ahead of the stdlib (Check, Lookup) gets its arms from the declaration.
+            if (existing is VariantTypeSymbol { Members.Count: 0 } shell)
+            {
+                shell.Members = BuildVariantMembers(registry: registry, variant: variant, moduleName: moduleName);
+            }
+
             return;
         }
 

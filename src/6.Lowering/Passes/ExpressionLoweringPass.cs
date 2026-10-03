@@ -2157,6 +2157,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 return (leftH, bin with { Left = loweredLeft });
             }
 
+            if (targetType is CrashableTypeSymbol crashable && IsResultOrLookup(type: loweredLeft.ResolvedType))
+            {
+                return CaughtCrashableTest(carrier: loweredLeft, crashable: crashable, negated: isNot, loc: loc,
+                    hoisted: leftH);
+            }
+
             typeId = TypeIdHelper.ComputeTypeId(fullName: targetType.FullName);
         }
 
@@ -2655,6 +2661,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return (true, (hoisted, cmp0));
         }
 
+        if (targetType is CrashableTypeSymbol crashable && IsResultOrLookup(type: loweredExpr.ResolvedType))
+        {
+            return (true, CaughtCrashableTest(carrier: loweredExpr, crashable: crashable, negated: ipe.IsNegated,
+                loc: ipe.Location, hoisted: hoisted));
+        }
+
         // Specific member type: type_id == FNV-1a(fullName)
         if (targetType != null)
         {
@@ -2943,6 +2955,61 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         result.AddRange(collection: a);
         result.AddRange(collection: b);
         return result;
+    }
+
+    /// <summary>
+    /// <c>x is NopeError</c> on a <c>Check</c>/<c>Lookup</c>: x holds an error (its tag is the <c>Crashables</c> arm's),
+    /// and that error's type id, read from its mold, is <c>NopeError</c>'s. A carrier that is not a plain name is
+    /// read once, into a temp.
+    /// </summary>
+    private (List<Statement> Hoisted, Expression Expr) CaughtCrashableTest(Expression carrier,
+        CrashableTypeSymbol crashable, bool negated, SourceLocation loc, List<Statement> hoisted)
+    {
+        TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
+        TypeSymbol? boolType = ctx.Registry.LookupType(name: "Bool");
+        TypeSymbol crashables = ctx.Registry.LookupType(name: Builder.Declaration.RuntimeContract.Crashables) ??
+                                throw new InvalidOperationException(message: "Core.Crashables is not registered.");
+        if (carrier is not IdentifierExpression)
+        {
+            string name = NextTempName(prefix: "carrier");
+            AddTempVar(hoisted: hoisted, name: name, typeHint: carrier.ResolvedType, initializer: carrier, loc: loc);
+            carrier = new IdentifierExpression(Name: name, Location: loc) { ResolvedType = carrier.ResolvedType };
+        }
+
+        LiteralExpression U64(ulong value)
+        {
+            return new LiteralExpression(Value: value, LiteralType: TokenType.U64Literal, Location: loc)
+            {
+                ResolvedType = u64Type
+            };
+        }
+
+        var holdsError = new BinaryExpression(
+            Left: new MemberExpression(Object: carrier, MemberName: TypeIdFieldName, Location: loc)
+            {
+                ResolvedType = u64Type
+            },
+            Operator: BinaryOperator.Equal,
+            Right: U64(value: TypeIdHelper.ComputeTypeId(fullName: crashables.FullName)),
+            Location: loc) { ResolvedType = boolType };
+        var errorTypeId = new CrashableDispatchExpression(
+            Carrier: new CarrierPayloadExpression(Carrier: carrier,
+                ConcreteType: TypeInfoToExpr(type: crashables, loc: loc),
+                Location: loc) { ResolvedType = crashables },
+            MemberName: Builder.Declaration.RuntimeContract.CrashTypeId,
+            Location: loc) { ResolvedType = u64Type };
+        var isThatType = new BinaryExpression(Left: errorTypeId,
+            Operator: BinaryOperator.Equal,
+            Right: U64(value: TypeIdHelper.ComputeTypeId(fullName: crashable.FullName)),
+            Location: loc) { ResolvedType = boolType };
+        (List<Statement> andHoisted, Expression test) = LowerBooleanAnd(bin: new BinaryExpression(Left: holdsError,
+            Operator: BinaryOperator.And,
+            Right: isThatType,
+            Location: loc) { ResolvedType = boolType });
+        hoisted.AddRange(collection: andHoisted);
+        return (hoisted, negated
+            ? new UnaryExpression(Operator: UnaryOperator.Not, Operand: test, Location: loc) { ResolvedType = boolType }
+            : test);
     }
 
     /// <summary>Adds <c>var name = initializer</c> to <paramref name="hoisted"/>.</summary>

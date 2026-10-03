@@ -637,7 +637,12 @@ internal sealed class TypeBodyResolver
         }
 
         // Update the registered type with resolved members
-        if (LookupTypeInCurrentModule(name: variant.Name) is VariantTypeSymbol variantType)
+        if (LookupTypeInCurrentModule(name: variant.Name) is VariantTypeSymbol { CarrierKind: not CarrierKind.None } carrier)
+        {
+            // Check / Lookup: the builder's own shell, which everything already holds, gets the arms in place.
+            carrier.Members = finalMembers;
+        }
+        else if (LookupTypeInCurrentModule(name: variant.Name) is VariantTypeSymbol variantType)
         {
             var updated = new VariantTypeSymbol(name: variant.Name)
             {

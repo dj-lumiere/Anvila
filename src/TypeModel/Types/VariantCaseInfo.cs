@@ -54,10 +54,13 @@ public sealed class VariantMemberInfo
     }
 
     /// <summary>
-    /// Creates a copy with substituted type for generic resolution.
+    /// Creates a copy with substituted type for generic resolution. An arm whose type becomes <c>None</c> (a
+    /// <c>Check[None]</c>'s <c>T</c>) is the None state.
     /// </summary>
     public VariantMemberInfo WithSubstitutedType(TypeSymbol newType)
     {
-        return new VariantMemberInfo(type: newType) { Ordinal = Ordinal, Location = Location };
+        return newType.IsNone
+            ? CreateNone(ordinal: Ordinal, location: Location)
+            : new VariantMemberInfo(type: newType) { Ordinal = Ordinal, Location = Location };
     }
 }

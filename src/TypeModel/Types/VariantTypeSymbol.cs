@@ -42,24 +42,22 @@ public sealed class VariantTypeSymbol : RecordTypeSymbol
     }
 
     /// <inheritdoc/>
+    /// <remarks>The layout both backends write: <c>{ U64 tag, [N x Byte] payload }</c>, N the largest arm, so the
+    /// payload sits right after the tag and the whole is aligned to the tag.</remarks>
     public override int SizeBytes(int pointerSize)
     {
-        // Layout: { i64 type_id, [max-payload bytes] }, aligned to max(tag, payload).
-        int maxPayloadSize = 0;
-        int maxPayloadAlignment = 1;
-        foreach (VariantMemberInfo member in Members.Where(predicate: m =>
-                     m is { IsNone: false, Type: not null }))
-        {
-            int payloadSize = member.Type!.SizeBytes(pointerSize: pointerSize);
-            int payloadAlignment = Math.Max(val1: Math.Min(val1: payloadSize, val2: 16), val2: 1);
-            maxPayloadSize = Math.Max(val1: maxPayloadSize, val2: payloadSize);
-            maxPayloadAlignment = Math.Max(val1: maxPayloadAlignment, val2: payloadAlignment);
-        }
-
+        int maxPayloadSize = Members.Where(predicate: m => m is { IsNone: false, Type: not null })
+                                    .Select(selector: m => m.Type!.SizeBytes(pointerSize: pointerSize))
+                                    .DefaultIfEmpty(defaultValue: 0)
+                                    .Max();
         const int tagSize = 8;
-        int structAlignment = Math.Max(val1: tagSize, val2: maxPayloadAlignment);
-        int size = AlignTo(size: tagSize, alignment: maxPayloadAlignment) + maxPayloadSize;
-        return AlignTo(size: size, alignment: structAlignment);
+        return AlignTo(size: tagSize + maxPayloadSize, alignment: tagSize);
+    }
+
+    /// <inheritdoc/>
+    public override int Alignment(int pointerSize)
+    {
+        return 8;
     }
 
     /// <inheritdoc/>
@@ -105,7 +103,8 @@ public sealed class VariantTypeSymbol : RecordTypeSymbol
             Visibility = Visibility,
             Location = Location,
             Module = Module,
-            Realm = Realm
+            Realm = Realm,
+            CarrierKind = CarrierKind
         };
     }
 

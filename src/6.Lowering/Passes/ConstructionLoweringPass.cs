@@ -120,8 +120,6 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
         return creator.ConstructedType switch
         {
             VariantTypeSymbol variant => VariantCreator(creator: creator, variant: variant),
-            RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup } carrier =>
-                CarrierCreator(creator: creator, carrier: carrier),
             RecordTypeSymbol { BackendType: not null } target when creator is { MemberVariables: [(_, var value)] } =>
                 Cast(value: value, target: target, location: creator.Location),
             RecordTypeSymbol { BackendType: null } or EntityTypeSymbol => WithEveryField(creator: creator),
@@ -156,14 +154,16 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
     /// arm without a value (<c>None</c>) has tag 0 and no payload.</summary>
     private TaggedCreatorExpression VariantCreator(CreatorExpression creator, VariantTypeSymbol variant)
     {
-        if (creator.MemberVariables is not [(string armName, Expression value)])
+        if (creator.MemberVariables is not [(string armName, var value)])
         {
             throw new InvalidOperationException(
                 message: $"A creator of variant '{variant.Name}' at {creator.Location} gives " +
                          $"{creator.MemberVariables.Count} values, not one arm.");
         }
 
-        VariantMemberInfo arm = variant.Members.FirstOrDefault(predicate: m => m.Name == armName) ??
+        VariantMemberInfo arm = (variant.CarrierKind is CarrierKind.Result or CarrierKind.Lookup
+                                    ? CarrierArm(carrier: variant, armName: armName)
+                                    : variant.Members.FirstOrDefault(predicate: m => m.Name == armName)) ??
                                 throw new InvalidOperationException(
                                     message: $"Variant '{variant.Name}' has no arm '{armName}'.");
         bool empty = arm.Type is null or { IsNone: true };
@@ -178,24 +178,27 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
             Location: creator.Location) { ResolvedType = variant };
     }
 
-    /// <summary>A <c>Check</c>/<c>Lookup</c> carrier built from its fields, given in field order: the
-    /// <c>type_id</c> and, when present, the payload.</summary>
-    private static TaggedCreatorExpression CarrierCreator(CreatorExpression creator, RecordTypeSymbol carrier)
+    /// <summary>
+    /// The arm of a <c>Check</c>/<c>Lookup</c> a carrier return names (<c>VariantReturnLoweringPass</c>), told apart by
+    /// type: <c>Crashables</c> is the error arm (a thrown crashable goes in it boxed, see the backends), a
+    /// <c>Lookup</c>'s <c>None</c> its absent arm, and the remaining one the success arm, whatever the carrier's
+    /// <c>T</c> is (a <c>Check[None]</c>'s is a None, which is also what its <c>return none</c> names).
+    /// </summary>
+    private static VariantMemberInfo? CarrierArm(VariantTypeSymbol carrier, string armName)
     {
-        Expression? FieldValue(string name)
+        VariantMemberInfo? error = carrier.Members.FirstOrDefault(predicate: m =>
+            m.Type?.Name == RuntimeContract.Crashables);
+        VariantMemberInfo? absent = carrier.CarrierKind == CarrierKind.Lookup
+            ? carrier.Members.FirstOrDefault(predicate: m => m.IsNone)
+            : null;
+        VariantMemberInfo? success = carrier.Members.FirstOrDefault(predicate: m => m != error && m != absent);
+        return armName switch
         {
-            int index = carrier.MemberVariables.FindIndex(match: f => f.Name == name);
-            return index >= 0 && index < creator.MemberVariables.Count
-                ? creator.MemberVariables[index: index].Value
-                : null;
-        }
-
-        return new TaggedCreatorExpression(
-            Tag: FieldValue(name: RuntimeContract.Carrier.TypeIdField) ??
-                 throw new InvalidOperationException(
-                     message: $"A creator of '{carrier.FullName}' at {creator.Location} has no type_id."),
-            Payload: FieldValue(name: RuntimeContract.Carrier.PayloadField),
-            Location: creator.Location) { ResolvedType = carrier };
+            "None" => absent ?? success,
+            RuntimeContract.Crashables => error,
+            VariantReturnLoweringPass.SuccessArm => success,
+            _ => carrier.Members.FirstOrDefault(predicate: m => m.Name == armName)
+        };
     }
 
     private LiteralExpression Tag(ulong value, SourceLocation location)

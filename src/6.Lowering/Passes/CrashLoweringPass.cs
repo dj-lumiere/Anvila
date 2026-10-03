@@ -69,6 +69,13 @@ internal sealed class CrashLoweringPass : AstRewriter
     {
         return stmt switch
         {
+            ThrowStatement { Error.ResolvedType.Name: RuntimeContract.Crashables } throwStmt =>
+                new CrashStatement(
+                    Report: Report(crashReport: _crashReport, text: _text, s32: _s32,
+                        typeName: CaughtError(error: throwStmt.Error, member: RuntimeContract.CrashTitle),
+                        message: CaughtError(error: throwStmt.Error, member: RuntimeContract.CrashMessage),
+                        location: throwStmt.Location),
+                    Location: throwStmt.Location),
             ThrowStatement { Error.ResolvedType: { } errorType } throwStmt
                 when errorType is not (ErrorTypeSymbol or GenericParameterTypeSymbol) =>
                 Crash(typeName: errorType.Name,
@@ -84,6 +91,15 @@ internal sealed class CrashLoweringPass : AstRewriter
                     message: Text(value: $"Routine '{_routine.BaseName}' signaled absent.", location: absent.Location),
                     location: absent.Location),
             _ => base.VisitStatement(stmt: stmt)
+        };
+    }
+
+    /// <summary>A member of a caught error (a <c>Crashables</c>), called through its mold.</summary>
+    private CrashableDispatchExpression CaughtError(Expression error, string member)
+    {
+        return new CrashableDispatchExpression(Carrier: error, MemberName: member, Location: error.Location)
+        {
+            ResolvedType = _text
         };
     }
 
@@ -111,8 +127,8 @@ internal sealed class CrashLoweringPass : AstRewriter
     private CrashStatement Crash(string typeName, Expression message, SourceLocation location)
     {
         return new CrashStatement(
-            Report: Report(crashReport: _crashReport, text: _text, s32: _s32, typeName: typeName, message: message,
-                location: location),
+            Report: Report(crashReport: _crashReport, text: _text, s32: _s32,
+                typeName: Text(value: typeName, location: location), message: message, location: location),
             Location: location);
     }
 
@@ -125,11 +141,12 @@ internal sealed class CrashLoweringPass : AstRewriter
         SourceLocation location)
     {
         (TypeSymbol text, TypeSymbol s32, RoutineInfo crashReport) = CrashReportParts(registry: registry);
-        return Report(crashReport: crashReport, text: text, s32: s32, typeName: typeName,
+        return Report(crashReport: crashReport, text: text, s32: s32,
+            typeName: Text(value: typeName, text: text, location: location),
             message: Text(value: message, text: text, location: location), location: location);
     }
 
-    private static CallExpression Report(RoutineInfo crashReport, TypeSymbol text, TypeSymbol s32, string typeName,
+    private static CallExpression Report(RoutineInfo crashReport, TypeSymbol text, TypeSymbol s32, Expression typeName,
         Expression message, SourceLocation location)
     {
         return new CallExpression(
@@ -139,7 +156,7 @@ internal sealed class CrashLoweringPass : AstRewriter
             },
             Arguments:
             [
-                Named(name: "type_name", value: Text(value: typeName, text: text, location: location)),
+                Named(name: "type_name", value: typeName),
                 Named(name: "message", value: message),
                 Named(name: "file", value: Text(value: location.FileName, text: text, location: location)),
                 Named(name: "line", value: S32(value: location.Line, s32: s32, location: location)),

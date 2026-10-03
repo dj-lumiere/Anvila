@@ -38,9 +38,6 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     private TypeSymbol? _boolType;
     private TypeSymbol? BoolType => _boolType ??= ctx.Registry.LookupType(name: "Bool");
 
-    private TypeSymbol? _u64Type;
-    private TypeSymbol? U64Type => _u64Type ??= ctx.Registry.LookupType(name: "U64");
-
     /// <summary>A <c>Bool</c>-typed literal for a carrier's <c>present</c> flag.</summary>
     private LiteralExpression BoolLiteral(bool value, SourceLocation loc)
     {
@@ -51,54 +48,28 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             Location: loc) { ResolvedType = BoolType };
     }
 
-    /// <summary>A <c>U64</c>-typed literal (used for a carrier's <c>type_id</c> tag).</summary>
-    private LiteralExpression U64Literal(ulong value, SourceLocation loc)
+    /// <summary>Builds `return Carrier(arm: value)` for a Check/Lookup carrier: no value is the absent arm, a thrown
+    /// error (a crashable, or a caught <c>Crashables</c> thrown again) the error arm, anything else the success arm
+    /// (<see cref="ConstructionLoweringPass"/> finds each in the carrier).</summary>
+    private static ReturnStatement MakeCarrierReturn(RecordTypeSymbol carrier, Expression? payload, bool thrown,
+        SourceLocation loc)
     {
-        return new LiteralExpression(Value: value,
-            LiteralType: TokenType.U64Literal,
-            Location: loc) { ResolvedType = U64Type };
-    }
-
-    /// <summary>Builds `return Carrier(type_id: …, payload: …)` for a Result/Lookup carrier.
-    /// A null payload is omitted so the record's memberwise builder zero-fills it (the absent state).</summary>
-    private ReturnStatement MakeCarrierReturn(RecordTypeSymbol carrier, ulong typeId,
-        Expression? payload, SourceLocation loc)
-    {
-        var members =
-            new List<(string Name, Expression Value)>
-            {
-                ("type_id", U64Literal(value: typeId, loc: loc))
-            };
-        if (payload != null)
+        string arm = payload switch
         {
-            members.Add(item: ("payload", payload));
-        }
-
+            null => "None",
+            _ when thrown || payload.ResolvedType is CrashableTypeSymbol => Builder.Declaration.RuntimeContract.Crashables,
+            _ => SuccessArm
+        };
         return new ReturnStatement(Value: new CreatorExpression(TypeName: carrier.Name,
                 TypeArguments: null,
-                MemberVariables: members,
+                MemberVariables: [(arm, payload!)],
                 Location: loc) { ResolvedType = carrier },
             Location: loc);
     }
 
-    /// <summary>Like <see cref="MakeCarrierReturn"/> but tags the carrier with a RUNTIME <c>type_id</c>
-    /// expression (the caught carrier's own <c>type_id</c>) rather than a buildtime constant — used when
-    /// re-throwing an already-erased <c>Crashable</c> whose concrete type is unknown until run time.</summary>
-    private static ReturnStatement MakeCarrierReturnDynamic(RecordTypeSymbol carrier,
-        Expression typeIdExpr, Expression? payload, SourceLocation loc)
-    {
-        var members = new List<(string Name, Expression Value)> { ("type_id", typeIdExpr) };
-        if (payload != null)
-        {
-            members.Add(item: ("payload", payload));
-        }
-
-        return new ReturnStatement(Value: new CreatorExpression(TypeName: carrier.Name,
-                TypeArguments: null,
-                MemberVariables: members,
-                Location: loc) { ResolvedType = carrier },
-            Location: loc);
-    }
+    /// <summary>The arm name a carrier return gives its success value (the arm is the carrier's <c>T</c>, whatever it
+    /// is once the carrier is concrete).</summary>
+    internal const string SuccessArm = "T";
 
     /// <summary>Lowers routine bodies in a single program (user file or stdlib file).</summary>
     public void Run(Program program)
@@ -196,10 +167,8 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             Location: vr.Location);
     }
 
-    // Check → Result[T] / Lookup → Lookup[T] (record { type_id: U64, payload: CPtr }): build the
-    // record directly. type_id = FNV of the payload type (matches the reader); the payload is the
-    // entity/error POINTER stored straight into the CPtr slot. Absent = type_id 0, payload zeroed.
-    // Scalar payloads still need a reinterpret-to-CPtr, so those fall through to codegen for now.
+    // Check / Lookup: build the variant from the arm the value goes in. Absent (and a `none` return) is the
+    // None arm, a thrown crashable or a rethrown Crashables the error arm, a returned value the success arm.
     private Statement LowerCheckLookupVariant(Statement statement, VariantReturnStatement vr,
         RecordTypeSymbol carrier)
     {
@@ -212,32 +181,13 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             vr.SiteKind == VariantSiteKind.FromReturn &&
             vr.Value is null or IdentifierExpression { Name: "None" })
         {
-            return MakeCarrierReturn(carrier: carrier,
-                typeId: 0,
-                payload: null,
-                loc: vr.Location);
+            return MakeCarrierReturn(carrier: carrier, payload: null, thrown: false, loc: vr.Location);
         }
 
-        // Re-throwing an already-erased Crashable (a composition propagating an inner carrier's failure):
-        // the concrete crashable type — hence its type_id — is unknown at build time, so tag the re-wrapped
-        // carrier with the RUNTIME type_id read off the source carrier (CrashableTypeIdSource) instead of a
-        // constant computed from the erased Crashable static type (which would mis-tag the payload).
-        if (vr.CrashableTypeIdSource is { } runtimeTypeId && vr.Value != null)
+        if (vr.Value is { ResolvedType: not null } || vr is { SiteKind: VariantSiteKind.FromThrow, Value: not null })
         {
-            return MakeCarrierReturnDynamic(carrier: carrier,
-                typeIdExpr: runtimeTypeId,
-                payload: vr.Value,
-                loc: vr.Location);
-        }
-
-        // Any success/error payload: type_id = FNV of the payload type; the value is stored into
-        // the CPtr slot (codegen reinterprets a scalar via inttoptr, an entity is already a ptr).
-        if (vr.Value is { ResolvedType: { } payloadType })
-        {
-            return MakeCarrierReturn(carrier: carrier,
-                typeId: TypeIdHelper.ComputeTypeId(fullName: payloadType.FullName),
-                payload: vr.Value,
-                loc: vr.Location);
+            return MakeCarrierReturn(carrier: carrier, payload: vr.Value,
+                thrown: vr.SiteKind == VariantSiteKind.FromThrow, loc: vr.Location);
         }
 
         // No resolved type on the value — leave for codegen.
@@ -260,10 +210,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             // CreatorExpression: present carries the value; throw / absent / return-a-crashable = absent.
             { VariantKind: ErrorHandlingVariantKind.Try } when
                 _carrierReturn is RecordTypeSymbol maybe => LowerTryVariant(vr: s, maybe: maybe),
-            // Check → Result[T] / Lookup → Lookup[T] (record { type_id: U64, payload: CPtr }): build the
-            // record directly. type_id = FNV of the payload type (matches the reader); the payload is the
-            // entity/error POINTER stored straight into the CPtr slot. Absent = type_id 0, payload zeroed.
-            // Scalar payloads still need a reinterpret-to-CPtr, so those fall through to codegen for now.
+            // Check / Lookup: a variant built from the arm the value goes in.
             { VariantKind: ErrorHandlingVariantKind.Check or ErrorHandlingVariantKind.Lookup } when
                 _carrierReturn is RecordTypeSymbol carrier => LowerCheckLookupVariant(statement: s,
                     vr: s,

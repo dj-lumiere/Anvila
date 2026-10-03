@@ -379,6 +379,8 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        AddImplicitErrorArm(whenStmt: whenStmt, matchedType: matchedType);
+
         // #161: Mark Lookup variable as dismantled when targeted by 'when'.
         if (whenStmt.Expression is IdentifierExpression whenTarget)
         {
@@ -426,6 +428,36 @@ public sealed partial class SemanticVerifier
         {
             CheckWhenExhaustiveness(whenStmt: whenStmt, matchedType: matchedType);
         }
+    }
+
+    /// <summary>
+    /// A <c>when</c> on a <c>Check</c>/<c>Lookup</c> that does not handle the caught error passes it on: it gets the
+    /// arm <c>is Crashables e => throw e</c> (propagating, in a failable routine) or <c>is Crashables e => pierce e</c>
+    /// (crashing loudly, anywhere else). An arm for one crashable (<c>is NopeError e</c>) handles only that one.
+    /// </summary>
+    private void AddImplicitErrorArm(WhenStatement whenStmt, TypeSymbol matchedType)
+    {
+        if (!IsCarrierType(type: matchedType) || IsMaybeType(type: matchedType) ||
+            whenStmt.Clauses.Any(predicate: c => c.Pattern is CrashablePattern or WildcardPattern or ElsePattern
+                or IdentifierPattern or TypePattern { Type.Name: Builder.Declaration.RuntimeContract.Crashables }))
+        {
+            return;
+        }
+
+        const string errorName = "__rf_unhandled_error";
+        SourceLocation loc = whenStmt.Location;
+        whenStmt.Clauses.Add(item: new WhenClause(
+            Pattern: new TypePattern(
+                Type: new TypeExpression(Name: Builder.Declaration.RuntimeContract.Crashables,
+                    GenericArguments: null,
+                    Location: loc),
+                VariableName: errorName,
+                Bindings: null,
+                Location: loc),
+            Body: new ThrowStatement(Error: new IdentifierExpression(Name: errorName, Location: loc),
+                Location: loc,
+                IsFatal: _currentRoutine is not { IsFailable: true }),
+            Location: loc));
     }
 
     /// <summary>
@@ -714,13 +746,14 @@ public sealed partial class SemanticVerifier
             ? $" Missing cases: {string.Join(separator: ", ", values: exhaustiveness.MissingCases)}."
             : "";
 
-        // #89: Result/Lookup missing Crashables catch-all is an error, not a warning
+        // A `when` on a Check/Lookup must take the success value (the error arm is added when it is left out).
         if (IsCarrierType(type: matchedType) && !IsMaybeType(type: matchedType) &&
-            exhaustiveness.MissingCases.Contains(item: Builder.Declaration.RuntimeContract.Crashables))
+            exhaustiveness.MissingCases.Any(predicate: m => m != "None"))
         {
             ReportError(code: SemanticDiagnosticCode.NonExhaustiveMatch,
                 message:
-                $"Pattern match on '{matchedType.Name}' requires a 'Crashables' catch-all arm.{missing}",
+                $"This `when` on '{matchedType.Name}' never takes the success value. Add an arm for it " +
+                $"(`is {matchedType.TypeArguments?.FirstOrDefault()?.Name ?? "T"} v`).{missing}",
                 location: whenStmt.Location);
         }
         else
@@ -829,6 +862,7 @@ public sealed partial class SemanticVerifier
         // explicit-`obeys Crashable` path for records/entities. `Error`/ErrorTypeSymbol are the
         // catch-all error references used by generic error handling.
         bool isCrashable = errorType.Category == TypeCategory.Crashable ||
+                           errorType.Name == Builder.Declaration.RuntimeContract.Crashables ||
                            errorType is ErrorTypeSymbol || errorType.Name == "Error";
         if (!isCrashable)
         {

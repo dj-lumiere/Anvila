@@ -297,6 +297,14 @@ public partial class LlvmEmitter
                 EmitIndexAssignment(sb: sb, index: index, rhs: assign.Value);
                 break;
 
+            case TagOfExpression tag:
+            {
+                // A variant's tag is its first field (a carrier's is cleared when its caught error moves out).
+                string address = EmitLvalueAddress(sb: sb, expr: tag.Value);
+                EmitLine(sb: sb, line: $"  store i64 {value}, ptr {address}");
+                break;
+            }
+
             default:
                 throw new NotImplementedException(
                     message: $"Assignment target not implemented: {assign.Target.GetType().Name}");
