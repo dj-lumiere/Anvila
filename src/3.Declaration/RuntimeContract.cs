@@ -73,13 +73,13 @@ public static class RuntimeContract
         public const string Share = "share";
     }
 
-    /// <summary>Container shape use (the IterGuard): while an `each` loop over a container or a call on one
-    /// of its elements runs, the container's shape (its element count and positions) must stay as it is.
-    /// The builder brackets such a use with <see cref="Begin"/>/<see cref="End"/>, and every `@reshaping`
-    /// routine of the container starts with <see cref="RequireFree"/>, which crashes with
-    /// ReshapingWhileInUseError while any use is open.</summary>
-    /// <remarks>Sites: ShapeUseLoweringPass (begin/end), SemanticVerifier.InjectReshapingGuard
-    /// (require_shape_free).</remarks>
+    /// <summary>Container shape use (the IterGuard), Suflae only: while an `each` loop over a shared entity or a
+    /// call on one of its elements runs, its shape (element count and positions) must stay as it is. The
+    /// counter lives on the entity's `Roamed` controller, so every name of the entity sees it. The builder
+    /// brackets a use with <see cref="Begin"/>/<see cref="End"/> on the handle, and puts <see cref="RequireFree"/>
+    /// before every `@reshaping` call through a handle, which crashes with ReshapingWhileInUseError while a use
+    /// is open. RazorForge rejects the same changes at build time and pays nothing.</summary>
+    /// <remarks>Site: Suflae's ShapeUseLoweringPass.</remarks>
     public static class ShapeUse
     {
         /// <summary>Opens one more use of the container's shape.</summary>
