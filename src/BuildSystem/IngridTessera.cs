@@ -96,7 +96,7 @@ internal static class IngridTessera
 
         try
         {
-            // The standard library's own exports (its panic handler, the half and bfloat conversions) stay out: the
+            // The standard library's own exports (its crash handler, the half and bfloat conversions) stay out: the
             // RazorForge program brings its runtime, and a stray copy would pull in POSIX calls the JIT can't resolve.
             return new Tessera.Compiler(target: Tessera.BuildTarget.Host(), decls: decls) { EmitLibraryExports = false }
                 .Generate();
