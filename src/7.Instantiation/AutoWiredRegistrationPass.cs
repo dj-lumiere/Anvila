@@ -628,17 +628,9 @@ internal sealed class AutoWiredRegistrationPass
         // crash_title() is @generated — synthesized from type name, overridable
         if (textType != null)
         {
+            // crash_message has no default: every crashable writes its own (RF-S704).
             MaybeRegisterWired(owner: type,
                 name: "crash_title",
-                returnType: textType,
-                existingMemberRoutines: existingMemberRoutines);
-            // crash_message() has a default too — a crashable that declares no explicit
-            // crash_message (e.g. `crashable BareErr`) still needs a concrete body, or the
-            // throw path resolves to the abstract `Crashable.crash_message()` protocol
-            // requirement and codegen over-prunes it ("declared and called but never
-            // defined"). Default body is `return me.crash_title()` (synthesized below).
-            MaybeRegisterWired(owner: type,
-                name: RuntimeContract.CrashMessage,
                 returnType: textType,
                 existingMemberRoutines: existingMemberRoutines);
         }

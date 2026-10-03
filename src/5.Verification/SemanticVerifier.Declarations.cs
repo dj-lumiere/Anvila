@@ -1090,7 +1090,28 @@ public sealed partial class SemanticVerifier
         foreach (TypeSymbol type in _registry.GetAllTypes())
         {
             ValidateTypeProtocolImplementation(type: type);
+            ValidateCrashMessage(type: type);
         }
+    }
+
+    /// <summary>
+    /// A crashable says what went wrong in its own words: it must declare <c>crash_message</c> (RF-S704). Its
+    /// <c>crash_title</c> comes from its name.
+    /// </summary>
+    private void ValidateCrashMessage(TypeSymbol type)
+    {
+        if (type is not CrashableTypeSymbol crashable || crashable.Location is not { FileName.Length: > 0 } ||
+            _registry.GetMemberRoutinesForType(type: crashable)
+                     .Any(predicate: m => m is { Name: RuntimeContract.CrashMessage, IsSynthesized: false }))
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.CrashMessageNotImplemented,
+            message:
+            $"The crashable '{crashable.Name}' has no 'crash_message'. Write the message it reports when it " +
+            $"crashes: 'routine {crashable.Name}.crash_message() -> Text'.",
+            location: crashable.Location);
     }
 
     /// <summary>
