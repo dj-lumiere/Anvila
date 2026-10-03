@@ -343,9 +343,8 @@ public sealed partial class SemanticVerifier
     private bool ImplementsProtocolStructurally(TypeSymbol type, ProtocolTypeSymbol protoType,
         string protocolName, List<TypeSymbol> implementedProtocols)
     {
-        // Entity T implicitly satisfies Accessing[T] and Controlling[T]
-        if (type.Category == TypeCategory.Entity && protoType.TypeArguments is { Count: 1 } args &&
-            args[index: 0].Name == type.Name)
+        // Any T, an entity or a record alike, implicitly satisfies Accessing[T] and Controlling[T]
+        if (protoType.TypeArguments is { Count: 1 } args && args[index: 0].Name == type.Name)
         {
             string baseProto = (protoType.GenericDefinition ?? protoType).BareName;
             if (Declaration.RuntimeContract.IsMarkerProtocol(baseName: baseProto))

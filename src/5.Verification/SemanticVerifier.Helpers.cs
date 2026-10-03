@@ -1234,10 +1234,9 @@ public sealed partial class SemanticVerifier
             }
         }
 
-        // Bare entity T: accepted by both Accessing[T] and Controlling[T].
-        if (source.Category == TypeCategory.Entity && (source.FullName == borrowInner.FullName ||
-                                                       source.Name == borrowInner.Name ||
-                                                       source.BareName == borrowInner.BareName))
+        // A bare T, an entity or a record alike: accepted by both Accessing[T] and Controlling[T].
+        if (source.FullName == borrowInner.FullName || source.Name == borrowInner.Name ||
+            source.BareName == borrowInner.BareName)
         {
             return true;
         }
