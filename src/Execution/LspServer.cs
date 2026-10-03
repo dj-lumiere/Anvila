@@ -517,6 +517,25 @@ public static class LspServer
             return;
         }
 
+        // `Node?` written as a type is one type, `Maybe[Node]`: its `?` hovers as the name before it, and the hover
+        // covers both.
+        Token? optionalMark = null;
+        int at = doc.Tokens.IndexOf(item: hit);
+        Token? before = at > 0 ? doc.Tokens[index: at - 1] : null;
+        Token? after = at >= 0 && at + 1 < doc.Tokens.Count ? doc.Tokens[index: at + 1] : null;
+        if (hit.Type == TokenType.Question && before != null && IsIdentifierText(text: before.Text) &&
+            before.Line == hit.Line && before.Column + before.Text.Length == hit.Column &&
+            IsOptionalTypeName(doc: doc, token: before))
+        {
+            optionalMark = hit;
+            hit = before;
+        }
+        else if (after is { Type: TokenType.Question } && after.Line == hit.Line &&
+                 after.Column == hit.Column + hit.Text.Length && IsOptionalTypeName(doc: doc, token: hit))
+        {
+            optionalMark = after;
+        }
+
         Expression? best = BestTypedExpression(program: doc.Program,
             line1: line0 + 1,
             col1: char0 + 1,
@@ -544,7 +563,9 @@ public static class LspServer
             label = resolved;
         }
 
-        int endCol0 = hit.Column - 1 + hit.Text.Length;
+        int endCol0 = optionalMark != null
+            ? optionalMark.Column
+            : hit.Column - 1 + hit.Text.Length;
         string hoverValue = $"```{_profile.CodeBlockLanguage}\n{Surface(text: label)}\n```";
 
         // What each generic parameter stands for belongs with the signature, before the doc that explains it.
@@ -552,11 +573,22 @@ public static class LspServer
                                                                 .Where(predicate: b => !(b.Argument is GenericParameterTypeSymbol self &&
                                                                     self.Name == b.Parameter))
                                                                 .ToList();
-        if (bindings.Count > 0)
+        List<string> bindingLines = bindings.Select(selector: b => $"`{b.Parameter}` is `{TypeText(type: b.Argument)}`")
+                                            .ToList();
+        if (DecidedKindAt(doc: doc, hit: hit, best: best) is { } decided)
         {
-            hoverValue += "\n\n" + string.Join(separator: "  \n",
-                values: bindings.Select(selector: b =>
-                    Surface(text: $"`{b.Parameter}` is `{TypeText(type: b.Argument)}`")));
+            // "a"/"an": the line classifies Me by its kind, where the lines above it say what a parameter stands for.
+            string article = decided.StartsWith(value: 'E')
+                ? "an"
+                : "a";
+            bindingLines.Add(item: $"`Me` is {article} `{decided}`");
+        }
+
+        if (bindingLines.Count > 0)
+        {
+            // One paragraph each: an editor drops a trailing-space line break, which would run them into one line.
+            hoverValue += "\n\n" + string.Join(separator: "\n\n",
+                values: bindingLines.Select(selector: line => Surface(text: line)));
         }
 
         if (!string.IsNullOrWhiteSpace(value: documentation))
@@ -907,10 +939,12 @@ public static class LspServer
     /// </summary>
     private static string RoutineHeader(RoutineInfo routine)
     {
+        // The declaration as written: the generic owner and parameters (`List[T].add_last(value: T)`), whatever
+        // instance the call reached; what each parameter stands for there is the hover's bindings.
         RoutineInfo shown = routine.GenericDefinition ?? routine;
-        TypeSymbol? ownerType = routine.OwnerType ?? shown.OwnerType;
+        TypeSymbol? ownerType = shown.OwnerType ?? routine.OwnerType;
         string owner = ownerType != null
-            ? HeaderText(type: Rules.SurfaceType(type: ownerType)) + "."
+            ? HeaderText(type: DefinitionOf(type: Rules.SurfaceType(type: ownerType))) + "."
             : "";
         List<string> ownerParameters = ownerType != null
             ? DefinitionOf(type: Rules.SurfaceType(type: ownerType)).GenericParameters ?? []
@@ -922,7 +956,7 @@ public static class LspServer
         string generics = own.Count > 0
             ? $"[{string.Join(separator: ", ", values: own)}]"
             : "";
-        return $"{RoutineModifiers(routine: shown)}routine {owner}{routine.Name}{generics}{RoutineDetail(r: routine)}" +
+        return $"{RoutineModifiers(routine: shown)}routine {owner}{routine.Name}{generics}{RoutineDetail(r: shown)}" +
                NeedsClauses(constraints: shown.GenericConstraints);
     }
 
@@ -1217,6 +1251,7 @@ public static class LspServer
             ChoiceTypeSymbol => "choice",
             FlagsTypeSymbol => "flags",
             TupleTypeSymbol => null,
+            RecordTypeSymbol { IsBundle: true } => "bundle",
             RecordTypeSymbol => "record",
             ProtocolTypeSymbol => "protocol",
             GenericParameterTypeSymbol or AssociatedProjectionTypeSymbol or ProtocolSelfTypeSymbol => "type parameter",
@@ -1422,12 +1457,82 @@ public static class LspServer
                 : CallBindings(call: call);
         }
 
-        TypeSymbol? type = IsIdentifierText(text: hit.Text)
-            ? VariableBoundAtToken(doc: doc, hit: hit)?.Type ?? best?.ResolvedType
-            : best?.ResolvedType;
+        TypeSymbol? type = SubjectTypeAt(doc: doc, hit: hit, best: best);
         return type != null
             ? TypeBindings(type: Rules.SurfaceType(type: type))
             : [];
+    }
+
+    /// <summary>Whether a name is the written part of an optional type (<c>Node</c> in <c>Node?</c>): the analysis
+    /// paired it with the <c>Maybe[Node]</c> it makes.</summary>
+    private static bool IsOptionalTypeName(DocState doc, Token token)
+    {
+        SemanticRoles roles = BuildSemanticRoles(nodes: AllNodes(program: doc.Program), tokens: doc.Tokens,
+            registry: doc.Registry);
+        return roles.Symbols.TryGetValue(key: (token.Line, token.Column), value: out TypeSymbol? type) &&
+               Rules.SurfaceType(type: type) is RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None };
+    }
+
+    /// <summary>
+    /// The type a hover's bindings are read from when the token is no call. A type name stands for the type it names
+    /// (<c>Node</c> in <c>Array[Node, 4]</c> is <c>Node</c>, not the array around it), and one the analysis could not
+    /// pair with a type stands for nothing. Any other name is its variable's type, else the expression's.
+    /// </summary>
+    private static TypeSymbol? SubjectTypeAt(DocState doc, Token hit, Expression? best)
+    {
+        if (!IsIdentifierText(text: hit.Text))
+        {
+            return best?.ResolvedType;
+        }
+
+        SemanticRoles roles = BuildSemanticRoles(nodes: AllNodes(program: doc.Program), tokens: doc.Tokens,
+            registry: doc.Registry);
+        (int, int) key = (hit.Line, hit.Column);
+        if (roles.Symbols.TryGetValue(key: key, value: out TypeSymbol? named))
+        {
+            return named;
+        }
+
+        if (roles.Types.ContainsKey(key: key))
+        {
+            return null;
+        }
+
+        return VariableBoundAtToken(doc: doc, hit: hit)?.Type ?? best?.ResolvedType;
+    }
+
+    /// <summary>
+    /// What a bundle instance or a variant turned out to be, for the hovered token: <c>RecordType</c> when it holds
+    /// only values, <c>EntityType</c> when it holds an entity, the kinds a <c>needs</c> clause names. The type is the
+    /// one the generic bindings are read from: a call's receiver or the type it makes, else the variable's or
+    /// expression's type. Null for any other type, or one whose kind its type parameters still leave open.
+    /// </summary>
+    private static string? DecidedKindAt(DocState doc, Token hit, Expression? best)
+    {
+        TypeSymbol? subject;
+        if (IsIdentifierText(text: hit.Text) && CallReferencedByToken(doc: doc, hit: hit) is { } call)
+        {
+            subject = call.ResolvedRoutine is { Kind: RoutineKind.Creator }
+                ? call.ResolvedType
+                : (call.Callee as MemberExpression)?.Object.ResolvedType;
+        }
+        else
+        {
+            subject = SubjectTypeAt(doc: doc, hit: hit, best: best);
+        }
+
+        TypeSymbol? decides = subject == null
+            ? null
+            : Rules.SurfaceType(type: subject);
+        if (decides is not (RecordTypeSymbol { IsBundle: true } or RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None } or
+                VariantTypeSymbol))
+        {
+            return null;
+        }
+
+        return HoldsEntity(type: decides) ? "EntityType"
+            : MayHoldEntity(type: decides) ? null
+            : "RecordType";
     }
 
     /// <summary>The generic parameters of a call: the receiver's (<c>List[T].add_last</c> called on a
@@ -1752,7 +1857,8 @@ public static class LspServer
         "decorator", // 16: an annotation, its `@` and its name
         // The structure of a `###` doc comment: a field (`:param`, `:returns:`) and a field's name or a `{Reference}`.
         "docTag", // 17
-        "docValue" // 18
+        "docValue", // 18
+        "bundleType" // 19: a bundle whose kind is not decided yet (its declaration, or an instance over a parameter)
     };
 
     private static int SemTok(string name)
@@ -2882,6 +2988,13 @@ public static class LspServer
             PairWrittenType(written: wrapped,
                 resolved: shown.TypeArguments is [var wrappedType, ..] ? wrappedType : null,
                 roles: roles);
+
+            // `Node?` is colored as the `Node` written there, but it means the whole `Maybe[Node]`: hover shows that.
+            if (written.Name == "Maybe")
+            {
+                roles.Symbols[key: (written.Location.Line, written.Location.Column)] = shown;
+            }
+
             return;
         }
 
@@ -3104,6 +3217,8 @@ public static class LspServer
         }
         string? kind = declaration switch
         {
+            // A bundle's declaration is every instantiation at once: its kind is not decided there.
+            RecordDeclaration { IsBundle: true } => "bundleType",
             RecordDeclaration or ChoiceDeclaration or FlagsDeclaration or CrashableDeclaration => "recordType",
             EntityDeclaration => "entityType",
             ProtocolDeclaration => "interface",
@@ -3425,7 +3540,7 @@ public static class LspServer
 
     /// <summary>
     /// The token kind of a type, as the served language's user knows it. A crashable reads as a record (it is
-    /// checked before entity, which it extends), a variant is an entity when one of its members is, a routine type
+    /// checked before entity, which it extends), a variant or a bundle is an entity when it holds one, a routine type
     /// is a value like a record, and <c>Me</c> or an associated type stands for a type the way a generic
     /// parameter does.
     /// </summary>
@@ -3435,14 +3550,58 @@ public static class LspServer
         {
             CrashableTypeSymbol => "recordType",
             EntityTypeSymbol => "entityType",
-            VariantTypeSymbol variant => variant.Members.Any(predicate: m =>
-                m.Type != null && Rules.SurfaceType(type: m.Type) is EntityTypeSymbol)
+            VariantTypeSymbol variant => HoldsEntity(type: variant)
                 ? "entityType"
+                : "recordType",
+            // A bundle is what its instantiation makes it: single-owner when it holds an entity, a value when it holds
+            // none. Its declaration, and an instance over a type parameter, decide nothing yet.
+            RecordTypeSymbol bundle when IsBundleLike(record: bundle) => HoldsEntity(type: bundle) ? "entityType"
+                : MayHoldEntity(type: bundle) ? "bundleType"
                 : "recordType",
             RecordTypeSymbol or RoutineTypeSymbol => "recordType",
             ProtocolTypeSymbol => "interface",
             GenericParameterTypeSymbol or ProtocolSelfTypeSymbol or AssociatedProjectionTypeSymbol => "typeParameter",
             _ => "type"
+        };
+    }
+
+    /// <summary>A record whose kind follows its type arguments: a declared <c>bundle</c>, or a carrier
+    /// (<c>Maybe</c>, <c>Check</c>, <c>Lookup</c>), which the builder treats the same way.</summary>
+    private static bool IsBundleLike(RecordTypeSymbol record)
+    {
+        return record.IsBundle || record.CarrierKind != TypeModel.Enums.CarrierKind.None;
+    }
+
+    /// <summary>Whether a bundle's kind is still open: it is the declaration itself, or a type argument it holds by value
+    /// is a type parameter (which may stand for an entity).</summary>
+    private static bool MayHoldEntity(TypeSymbol type)
+    {
+        return Rules.SurfaceType(type: type) switch
+        {
+            GenericParameterTypeSymbol => true,
+            VariantTypeSymbol variant => variant.Members.Any(predicate: m => m.Type != null && MayHoldEntity(type: m.Type)),
+            TupleTypeSymbol tuple => tuple.ElementTypes.Any(predicate: MayHoldEntity),
+            RecordTypeSymbol bundle when IsBundleLike(record: bundle) => bundle.TypeArguments is not { Count: > 0 } arguments ||
+                                                          arguments.Any(predicate: MayHoldEntity),
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Whether a value of this type holds an entity by value: it is one, or a variant member, a tuple element, or a
+    /// bundle's type argument does (a bundle's kind follows its arguments). Behind a handle or inside a record it
+    /// does not.
+    /// </summary>
+    private static bool HoldsEntity(TypeSymbol type)
+    {
+        return Rules.SurfaceType(type: type) switch
+        {
+            CrashableTypeSymbol => false,
+            EntityTypeSymbol => true,
+            VariantTypeSymbol variant => variant.Members.Any(predicate: m => m.Type != null && HoldsEntity(type: m.Type)),
+            TupleTypeSymbol tuple => tuple.ElementTypes.Any(predicate: HoldsEntity),
+            RecordTypeSymbol bundle when IsBundleLike(record: bundle) => (bundle.TypeArguments ?? []).Any(predicate: HoldsEntity),
+            _ => false
         };
     }
 
