@@ -1147,21 +1147,6 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            // Crashable (being a throwable error) is conferred ONLY by the `crashable` type kind —
-            // the keyword implicitly satisfies the protocol, so it is never written explicitly. Any
-            // OTHER type declaring `obeys Crashable` on ITSELF is illegal. (A generic CONSTRAINT
-            // `needs T obeys Crashable` is a bound on the type parameter, not a conformance on this
-            // type, so it lives on T's constraints — not in ImplementedProtocols — and is unaffected.)
-            if (protoInfo.Name == "Crashable" && type.Category != TypeCategory.Crashable)
-            {
-                ReportError(code: SemanticDiagnosticCode.CrashableObeyedByNonCrashableKind,
-                    message:
-                    $"Type '{type.Name}' cannot declare 'obeys Crashable' — only `crashable`-kind " +
-                    $"types are throwable errors. Declare it as `crashable {type.Name}` instead.",
-                    location: type.Location);
-                continue;
-            }
-
             if (!_implicitProtocolConformances.Contains(item: (type.FullName, protoInfo.Name)))
             {
                 ValidateProtocolMemberRoutines(type: type, protocol: protoInfo);

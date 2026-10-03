@@ -570,25 +570,29 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Emits a <see cref="CrashableDispatchExpression"/>: a member of a caught error of unknown type, called through the
-    /// mold the error's heap object points at (<see cref="EnsureCrashMold"/>). <c>destroy</c> also frees the object.
+    /// mold the error's heap object points at (<see cref="EnsureCrashMold"/>). The receiver is a <c>Crashables</c>.
+    /// <c>crash_type_id</c> reads the mold's type id, and <c>destroy</c> also frees the object.
     /// </summary>
     private string EmitCrashableDispatchExpression(StringBuilder sb,
         CrashableDispatchExpression dispatch)
     {
-        // Spill the carrier so its payload slot, which holds the error object's address, can be read.
-        string carrierVal = EmitExpression(sb: sb, expr: dispatch.Carrier);
-        TypeSymbol carrierType = dispatch.Carrier.ResolvedType!;
-        string carrierLlvmType = GetCarrierLlvmType(type: carrierType);
-
+        // The receiver is a `Crashables`: the address of the error's heap object, in its first (only) word.
+        string crashablesVal = EmitExpression(sb: sb, expr: dispatch.Carrier);
+        string crashablesLlvmType = GetLlvmType(type: dispatch.Carrier.ResolvedType!);
         string spillAddr = NextTemp();
-        EmitEntryAlloca(llvmName: spillAddr, llvmType: carrierLlvmType);
-        EmitLine(sb: sb, line: $"  store {carrierLlvmType} {carrierVal}, ptr {spillAddr}");
-        string payloadPtr = NextTemp();
-        EmitLine(sb: sb,
-            line:
-            $"  {payloadPtr} = getelementptr {carrierLlvmType}, ptr {spillAddr}, i32 0, i32 1");
+        EmitEntryAlloca(llvmName: spillAddr, llvmType: crashablesLlvmType);
+        EmitLine(sb: sb, line: $"  store {crashablesLlvmType} {crashablesVal}, ptr {spillAddr}");
         string errorObject = NextTemp();
-        EmitLine(sb: sb, line: $"  {errorObject} = load ptr, ptr {payloadPtr}");
+        EmitLine(sb: sb, line: $"  {errorObject} = load ptr, ptr {spillAddr}");
+
+        if (dispatch.MemberName == Declaration.RuntimeContract.CrashTypeId)
+        {
+            string mold = NextTemp();
+            EmitLine(sb: sb, line: $"  {mold} = load ptr, ptr {errorObject}");
+            string typeId = NextTemp();
+            EmitLine(sb: sb, line: $"  {typeId} = load i64, ptr {mold}");
+            return typeId;
+        }
 
         int slot = Array.IndexOf(array: Declaration.RuntimeContract.CrashMoldMembers, value: dispatch.MemberName);
         if (slot < 0)

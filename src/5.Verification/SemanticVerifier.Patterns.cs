@@ -896,7 +896,7 @@ public sealed partial class SemanticVerifier
             case "Check":
                 if (!hasCrashableCatchAll)
                 {
-                    missing.Add(item: "Crashable");
+                    missing.Add(item: Builder.Declaration.RuntimeContract.Crashables);
                 }
 
                 if (!hasValue)
@@ -913,7 +913,7 @@ public sealed partial class SemanticVerifier
 
                 if (!hasCrashableCatchAll)
                 {
-                    missing.Add(item: "Crashable");
+                    missing.Add(item: Builder.Declaration.RuntimeContract.Crashables);
                 }
 
                 if (!hasValue)

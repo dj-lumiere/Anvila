@@ -302,7 +302,6 @@ public sealed partial class SemanticVerifier
             "ChoiceType" => type.Category == TypeCategory.Choice,
             "VariantType" => type.Category == TypeCategory.Variant,
             "FlagsType" => type.Category == TypeCategory.Flags,
-            "Crashable" => type.Category == TypeCategory.Crashable,
             _ => false
         };
     }

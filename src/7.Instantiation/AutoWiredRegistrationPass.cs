@@ -656,16 +656,6 @@ internal sealed class AutoWiredRegistrationPass
                 IsSynthesized = true
             });
         }
-
-        // Auto-add Crashable protocol conformance (implicit from the crashable keyword)
-        TypeSymbol? crashableProto = _registry.LookupType(name: "Crashable");
-        if (crashableProto != null && type is CrashableTypeSymbol crashableInfo &&
-            crashableInfo.ImplementedProtocols.All(predicate: p => p.Name != "Crashable"))
-        {
-            var protocols = crashableInfo.ImplementedProtocols.ToList();
-            protocols.Add(item: crashableProto);
-            _registry.UpdateCrashableProtocols(typeName: type.FullName, protocols: protocols);
-        }
     }
 
     /// <summary>

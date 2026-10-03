@@ -779,6 +779,10 @@ internal sealed class TesseraWriter
         }
     }
 
+    /// <summary>The builder's <c>U64</c> type.</summary>
+    public TypeSymbol U64Type => _input.Registry.LookupType(name: "U64") ??
+                                 throw new NotSupportedException(message: "The Tessera backend found no U64 type.");
+
     /// <summary>The builder's <c>Bool</c> type.</summary>
     public TypeSymbol BoolType => _input.Registry.LookupType(name: "Bool") ??
                                   throw new NotSupportedException(message: "The Tessera backend found no Bool type.");

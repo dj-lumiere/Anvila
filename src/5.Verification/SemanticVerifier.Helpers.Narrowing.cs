@@ -246,21 +246,21 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Checks if a pattern represents a Crashable check.
-    /// The parser creates TypePattern(type: "Crashable") rather than CrashablePattern.
+    /// The parser creates TypePattern(type: "Crashables") rather than CrashablePattern.
     /// </summary>
     private static bool IsCrashablePattern(Pattern pattern)
     {
-        return pattern is CrashablePattern or TypePattern { Type.Name: "Crashable" };
+        return pattern is CrashablePattern or TypePattern { Type.Name: Builder.Declaration.RuntimeContract.Crashables };
     }
 
     /// <summary>
     /// Checks if a pattern is a generic Crashable catch-all (not a specific error type).
-    /// 'is Crashable e' is a catch-all; 'is FileNotFoundError e' is not.
+    /// 'is Crashables e' is a catch-all; 'is FileNotFoundError e' is not.
     /// </summary>
     private static bool IsCrashableCatchAll(Pattern pattern)
     {
         return pattern is CrashablePattern { ErrorType: null }
-            or TypePattern { Type.Name: "Crashable" };
+            or TypePattern { Type.Name: Builder.Declaration.RuntimeContract.Crashables };
     }
 
     /// <summary>

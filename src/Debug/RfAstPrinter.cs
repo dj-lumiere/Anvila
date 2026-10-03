@@ -410,7 +410,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             case CrashablePattern cp:
                 string cpErrorType = cp.ErrorType != null
                     ? cp.ErrorType.Accept(visitor: this)
-                    : "Crashable";
+                    : "Crashables";
                 string cpVarSuffix = cp.VariableName != null
                     ? " " + cp.VariableName
                     : "";

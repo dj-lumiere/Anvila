@@ -128,18 +128,13 @@ internal sealed class StructuralLoweringPass(PostprocessingContext _)
     }
 
     /// <summary>
-    /// crashable Name { ... } -> record Name obeys Crashable { ... }: a crashable is a value.
-    /// Members are carried over unchanged.
+    /// crashable Name { ... } -> record Name { ... }: a crashable is a value. Members are carried over unchanged.
     /// </summary>
     private static RecordDeclaration LowerCrashable(CrashableDeclaration crashable)
     {
-        var crashableProtocol = new TypeExpression(Name: "Crashable",
-            GenericArguments: null,
-            Location: crashable.Location);
-
         return new RecordDeclaration(Name: crashable.Name,
             GenericParameters: null,
-            Protocols: [crashableProtocol],
+            Protocols: [],
             Members: crashable.Members,
             Visibility: crashable.Visibility,
             Location: crashable.Location);

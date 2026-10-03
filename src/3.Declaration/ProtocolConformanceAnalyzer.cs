@@ -70,7 +70,6 @@ internal sealed class ProtocolConformanceAnalyzer
             TypeCategory.Entity => "EntityType",
             TypeCategory.Choice => "ChoiceType",
             TypeCategory.Flags => "FlagsType",
-            TypeCategory.Crashable => "Crashable",
             _ => null
         };
 

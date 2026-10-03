@@ -472,7 +472,7 @@ public sealed partial class SemanticVerifier
         if (clause.Pattern is ElsePattern elsePat && IsCarrierType(type: matchedType))
         {
             // Every earlier arm already covers the value (and None for a Lookup), so the only case
-            // left is the caught error: bind it as `is Crashable e` would, not the carrier itself.
+            // left is the caught error: bind it as `is Crashables e` would, not the carrier itself.
             string? carrierBase = GetCarrierBaseName(type: matchedType);
             bool onlyErrorLeft = handledValue && !handledCrashable &&
                                  (carrierBase == "Check" || carrierBase == "Lookup" && handledNone);
@@ -480,7 +480,7 @@ public sealed partial class SemanticVerifier
             {
                 elsePat.BindsCarrierError = true;
                 DeclarePatternVariable(name: elsePat.VariableName,
-                    type: ResolveType(typeExpr: new TypeExpression(Name: "Crashable",
+                    type: ResolveType(typeExpr: new TypeExpression(Name: Builder.Declaration.RuntimeContract.Crashables,
                         GenericArguments: null,
                         Location: elsePat.Location)),
                     location: elsePat.Location);
@@ -714,13 +714,13 @@ public sealed partial class SemanticVerifier
             ? $" Missing cases: {string.Join(separator: ", ", values: exhaustiveness.MissingCases)}."
             : "";
 
-        // #89: Result/Lookup missing Crashable catch-all is an error, not a warning
+        // #89: Result/Lookup missing Crashables catch-all is an error, not a warning
         if (IsCarrierType(type: matchedType) && !IsMaybeType(type: matchedType) &&
-            exhaustiveness.MissingCases.Contains(item: "Crashable"))
+            exhaustiveness.MissingCases.Contains(item: Builder.Declaration.RuntimeContract.Crashables))
         {
             ReportError(code: SemanticDiagnosticCode.NonExhaustiveMatch,
                 message:
-                $"Pattern match on '{matchedType.Name}' requires a 'Crashable' catch-all arm.{missing}",
+                $"Pattern match on '{matchedType.Name}' requires a 'Crashables' catch-all arm.{missing}",
                 location: whenStmt.Location);
         }
         else

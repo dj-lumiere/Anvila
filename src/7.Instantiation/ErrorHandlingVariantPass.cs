@@ -1301,18 +1301,39 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         if (innerCanError)
         {
+            // The caught error MOVES to the outer carrier: its type id comes from its mold, and the inner carrier's
+            // tag is cleared so the inner carrier's teardown does not free the object the outer one now holds.
             const string errName = "__rf_prop_err";
-            var typeIdSource = new MemberExpression(Object: SubjRef(),
-                MemberName: "type_id",
-                Location: loc) { ResolvedType = registry.LookupType(name: "U64") };
+            TypeSymbol? u64 = registry.LookupType(name: "U64");
+            var typeIdSource = new CrashableDispatchExpression(
+                Carrier: new IdentifierExpression(Name: errName, Location: loc)
+                {
+                    ResolvedType = registry.LookupType(name: RuntimeContract.Crashables)
+                },
+                MemberName: RuntimeContract.CrashTypeId,
+                Location: loc) { ResolvedType = u64 };
+            var clearInnerTag = new AssignmentStatement(
+                Target: new MemberExpression(Object: SubjRef(), MemberName: "type_id", Location: loc)
+                {
+                    ResolvedType = u64
+                },
+                Value: new LiteralExpression(Value: 0UL, LiteralType: Builder.Tokenizer.TokenType.U64Literal, Location: loc)
+                {
+                    ResolvedType = u64
+                },
+                Location: loc);
             clauses.Add(item: new WhenClause(
                 Pattern: new CrashablePattern(ErrorType: null,
                     VariableName: errName,
                     Location: loc),
-                Body: new VariantReturnStatement(VariantKind: kind,
-                    SiteKind: VariantSiteKind.FromThrow,
-                    Value: new IdentifierExpression(Name: errName, Location: loc),
-                    Location: loc) { CrashableTypeIdSource = typeIdSource },
+                Body: new BlockStatement(Statements:
+                [
+                    clearInnerTag,
+                    new VariantReturnStatement(VariantKind: kind,
+                        SiteKind: VariantSiteKind.FromThrow,
+                        Value: new IdentifierExpression(Name: errName, Location: loc),
+                        Location: loc) { CrashableTypeIdSource = typeIdSource }
+                ], Location: loc),
                 Location: loc));
         }
 

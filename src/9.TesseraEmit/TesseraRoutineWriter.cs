@@ -1330,17 +1330,22 @@ internal sealed class TesseraRoutineWriter
     /// </summary>
     private Operand EvaluateCrashableDispatch(CrashableDispatchExpression dispatch)
     {
-        Operand carrier = Evaluate(expression: dispatch.Carrier);
-        if (carrier.Type is not RecordTypeSymbol { MemberVariables.Count: 2 } record)
+        // The receiver is a `Crashables`: the address of the error's heap object, whose first field is the type id.
+        Operand crashables = Evaluate(expression: dispatch.Carrier);
+        if (crashables.Type is not RecordTypeSymbol { MemberVariables.Count: 1 } record)
         {
-            throw Unsupported(what: $"a crashable dispatch on {carrier.Type?.FullName ?? "an untyped value"}");
+            throw Unsupported(what: $"a crashable dispatch on {crashables.Type?.FullName ?? "an untyped value"}");
         }
 
-        string place = Place(operand: carrier);
-        TypeSymbol typeIdType = record.MemberVariables[index: 0].Type;
-        string typeId = Temp(type: typeIdType, expression: $"{place}.{record.MemberVariables[index: 0].Name}.load()");
         string address = $"t{_temps++}";
-        Emit(line: $"{address} : Addr = {place}.{record.MemberVariables[index: 1].Name}.to<@Addr>().load()");
+        Emit(line: $"{address} : Addr = {Place(operand: crashables)}.{record.MemberVariables[index: 0].Name}.to<@Addr>().load()");
+        TypeSymbol typeIdType = _module.U64Type;
+        string typeId = Temp(type: typeIdType, expression: $"{address}.to<@U64>().load()");
+        if (dispatch.MemberName == Declaration.RuntimeContract.CrashTypeId)
+        {
+            return new Operand(Text: typeId, Type: typeIdType, IsPlace: false);
+        }
+
         if (dispatch.MemberName == Declaration.RuntimeContract.Destroy)
         {
             Emit(line: $"{_module.CrashObjectDestroy(typeIdType: typeIdType)}({typeId}, {address})");
