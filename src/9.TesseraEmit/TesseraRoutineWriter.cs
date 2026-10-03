@@ -131,7 +131,7 @@ internal sealed class TesseraRoutineWriter
                            $" -> {ReturnTypeText}\n");
         foreach (Block block in _blocks)
         {
-            text.Append(value: $"    block {block.Header}:\n");
+            text.Append(value: $"    block {block.Header}\n");
             foreach (string line in block.Lines)
             {
                 text.Append(value: $"        {line}\n");

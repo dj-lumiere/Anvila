@@ -37,7 +37,7 @@ internal static class TesseraTrace
 
         /// Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
-            block entry():
+            block entry()
                 depth : S32         = RF_TRACE_DEPTH.load()
                 index : USize       = zext<S32, USize>(band<S32>(depth, 31))
                 frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(index)
@@ -49,17 +49,17 @@ internal static class TesseraTrace
                 return()
 
         routine rf_trace_pop() -> Void
-            block entry():
+            block entry()
                 sub<S32>(RF_TRACE_DEPTH.load(), 1).store_into(RF_TRACE_DEPTH)
                 return()
 
         /// Moves the top frame to the position of the call about to be made.
         routine rf_trace_update_loc(line: S32, column: S32) -> Void
-            block entry():
+            block entry()
                 depth : S32 = RF_TRACE_DEPTH.load()
                 branch depth.gt(0) ? update(depth) : return()
 
-            block update(depth: S32):
+            block update(depth: S32)
                 index : USize = zext<S32, USize>(band<S32>(sub<S32>(depth, 1), 31))
                 frame : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(index)
                 frame.line.store(line)

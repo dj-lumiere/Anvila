@@ -72,7 +72,7 @@ public sealed class TesseraBackend : IBuilderBackend
                          searchOption: SearchOption.AllDirectories)
                     .Order(comparer: StringComparer.Ordinal))
         {
-            string shown = Path.Combine(path1: "stdlib",
+            string shown = Path.Combine(path1: "Standard",
                 path2: Path.GetRelativePath(relativeTo: stdlib, path: file));
             decls.AddRange(collection: Parse(file: shown,
                 source: Tessera.SourceText.Read(path: file, shown: shown),

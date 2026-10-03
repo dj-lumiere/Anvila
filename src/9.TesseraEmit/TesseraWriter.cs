@@ -249,15 +249,15 @@ internal sealed class TesseraWriter
             string receiver = TypeText(type: routine.OwnerType) is ['@', .. var pointee]
                 ? $"error.to<@{pointee}>()"
                 : "error";
-            text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}():\n")
+            text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
                 .Append(value: $"        is_{i} : Bool = ieq<{idType}>(type_id, 0x{id:X})\n")
                 .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
-                .Append(value: $"    block case_{i}():\n")
+                .Append(value: $"    block case_{i}()\n")
                 .Append(value: $"        r_{i} : {resultType} = {RoutineName(routine: routine)}({receiver})\n")
                 .Append(value: $"        return(r_{i})\n\n");
         }
 
-        text.Append(value: $"    block next_{arms.Count}():\n        unreachable\n\n");
+        text.Append(value: $"    block next_{arms.Count}()\n        unreachable\n\n");
         _definitions.Append(value: text);
         return (name, result);
     }
@@ -422,7 +422,7 @@ internal sealed class TesseraWriter
 
         var text = new StringBuilder();
         text.Append(value: $"routine {name}(value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
-            .Append(value: "    block entry():\n")
+            .Append(value: "    block entry()\n")
             .Append(value: "        fn : Addr = value.fn\n")
             .Append(value: "        bound : Addr = value.bound\n")
             .Append(value: "        address : U64 = ptrtoint<Addr, U64>(bound)\n")
@@ -443,7 +443,7 @@ internal sealed class TesseraWriter
             }
 
             // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
-            text.Append(value: $"    block {block}(code: Addr{extra}{Parameters(prefix: prefix)}):\n")
+            text.Append(value: $"    block {block}(code: Addr{extra}{Parameters(prefix: prefix)})\n")
                 .Append(value: "        claim slot : @Addr <- code\n")
                 .Append(value: $"        callee : {callable} = slot.to<@{callable}>().load()\n");
             if (returns)
@@ -826,7 +826,7 @@ internal sealed class TesseraWriter
                "#[external(\"c\"), symbol(\"__rf_set_trace_mode\")]\n" +
                "routine c_rf_set_trace_mode(mode: S32) -> Void\n\n" +
                "routine main() -> S32\n" +
-               "    block entry():\n" +
+               "    block entry()\n" +
                "        rf_runtime_init()\n" +
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
                $"        c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +

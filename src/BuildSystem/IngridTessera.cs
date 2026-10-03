@@ -88,7 +88,7 @@ internal static class IngridTessera
                          searchOption: SearchOption.AllDirectories)
                      .Order(comparer: StringComparer.Ordinal))
         {
-            string shown = Path.Combine(path1: "stdlib", path2: Path.GetRelativePath(relativeTo: stdlib, path: file));
+            string shown = Path.Combine(path1: "Standard", path2: Path.GetRelativePath(relativeTo: stdlib, path: file));
             decls.AddRange(collection: TesseraBackend.Parse(file: shown,
                 source: Tessera.SourceText.Read(path: file, shown: shown),
                 isLibrary: true));
