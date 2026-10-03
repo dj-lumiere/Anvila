@@ -66,6 +66,6 @@
        library next to the builder, where TesseraBackend looks for it (tessera-stdlib/). -->
   <ItemGroup>
     <ProjectReference Include="..\Tessera\Tessera.csproj"/>
-    <Content Include="..\Tessera\stdlib\**\*.tess" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
+    <Content Include="..\Tessera\Standard\**\*.tess" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 </Project>
