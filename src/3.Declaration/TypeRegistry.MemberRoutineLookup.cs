@@ -953,6 +953,9 @@ public sealed partial class TypeRegistry
             ConstraintKind.EntityType =>
                 // `is EntityType` — an entity.
                 implementer is EntityTypeSymbol,
+            ConstraintKind.OwningValueType =>
+                // A value aggregate that holds an entity: copied never, so its derives walk its members.
+                implementer is RecordTypeSymbol and not VariantTypeSymbol && IsEntityKind(type: implementer),
             ConstraintKind.RecordType =>
                 // `is RecordType` — a value record. A crashable is one, so it takes the record derives
                 // (copy, field-walk `destroy`); its crashable-specific members (represent/diagnose/
@@ -1324,6 +1327,7 @@ public sealed partial class TypeRegistry
                                            or ConstraintKind.ChoiceType or ConstraintKind.FlagsType
                                            or ConstraintKind.TupleType or ConstraintKind.RecordType
                                            or ConstraintKind.EntityType
+                                           or ConstraintKind.OwningValueType
                                            or ConstraintKind.RoutineType
                                            or ConstraintKind.Crashable
                                            or ConstraintKind.RedirectType)

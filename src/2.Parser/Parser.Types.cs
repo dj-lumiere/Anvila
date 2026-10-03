@@ -37,6 +37,7 @@ public partial class Parser
             [key: "FlagsType"] = ConstraintKind.FlagsType,
             [key: "VariantType"] = ConstraintKind.VariantType,
             [key: "EntityType"] = ConstraintKind.EntityType,
+            [key: "OwningValueType"] = ConstraintKind.OwningValueType,
             [key: "CrashableType"] = ConstraintKind.Crashable,
             // `RedirectType` = an `@llvm("…")` primitive that redirects to its raw LLVM repr.
             [key: "RedirectType"] = ConstraintKind.RedirectType,

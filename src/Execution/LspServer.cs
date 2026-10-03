@@ -3220,6 +3220,7 @@ public static class LspServer
     private static readonly Dictionary<ConstraintKind, (string Spelling, string Kind)> ConstraintKindTokens = new()
     {
         [key: ConstraintKind.RecordType] = ("RecordType", "recordType"),
+        [key: ConstraintKind.OwningValueType] = ("OwningValueType", "owningValueType"),
         [key: ConstraintKind.ChoiceType] = ("ChoiceType", "recordType"),
         [key: ConstraintKind.FlagsType] = ("FlagsType", "recordType"),
         [key: ConstraintKind.Crashable] = ("CrashableType", "recordType"),

@@ -445,6 +445,12 @@ public enum SemanticDiagnosticCode
     /// copy would make two of the one entity. A bundle (or an entity) is the declaration that may.</summary>
     RecordHoldsEntity = 409,
 
+    /// <summary>A bundle without type parameters: its kind never varies, so it is a record or an entity.</summary>
+    BundleWithoutParameters = 445,
+
+    /// <summary>A bundle that contains itself: a bundle is an inline value, so a recursive one has no finite size.</summary>
+    RecursiveBundle = 446,
+
     /// <summary>Record member variable has a type that is not a value type (entities, wrappers, tokens cannot be stored in records).</summary>
     RecordContainsNonValueType = 412,
 

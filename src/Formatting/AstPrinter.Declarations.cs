@@ -1107,6 +1107,7 @@ internal sealed partial class AstPrinter
             ConstraintKind.RoutineType => "RoutineType",
             ConstraintKind.TupleType => "TupleType",
             ConstraintKind.RecordType => "RecordType",
+            ConstraintKind.OwningValueType => "OwningValueType",
             ConstraintKind.ChoiceType => "ChoiceType",
             ConstraintKind.FlagsType => "FlagsType",
             ConstraintKind.VariantType => "VariantType",

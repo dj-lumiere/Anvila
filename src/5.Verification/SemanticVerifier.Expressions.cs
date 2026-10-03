@@ -1510,7 +1510,7 @@ public sealed partial class SemanticVerifier
         // entity inside. Move it (`steal`) or hold a shareable handle.
         if (_registry.Rules.ChecksOwnership &&
             ReadsKeptEntity(value: value, includeVariables: true) &&
-            _registry.IsEntityKind(type: valueType))
+            MayHoldEntity(type: valueType))
         {
             ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                 message: KeptEntityMessage(action: "You are storing", value: value, type: valueType),

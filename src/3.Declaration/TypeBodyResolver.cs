@@ -94,6 +94,14 @@ internal sealed class TypeBodyResolver
 
     private void ResolveRecordBody(RecordDeclaration record)
     {
+        if (record.IsBundle && record.GenericParameters is not { Count: > 0 })
+        {
+            _sa.ReportError(code: SemanticDiagnosticCode.BundleWithoutParameters,
+                message: $"'{record.Name}' is a bundle with no type parameters, so its kind never varies. Declare it " +
+                         $"'record {record.Name}' if it holds only values, or 'entity {record.Name}' if it holds an entity.",
+                location: record.Location);
+        }
+
         if (record.Members.Count == 0 && !record.HasPassBody)
         {
             _sa.ReportError(code: SemanticDiagnosticCode.EmptyBlockWithoutPass,

@@ -766,6 +766,8 @@ public sealed partial class SemanticVerifier
                 memberRoutine: _registry.SelectKindVariant(routine: memberRoutine, owner: dispatchType),
                 ownerType: dispatchType,
                 location: member.Location);
+            ValidateOwningValueDuplicate(memberRoutine: memberRoutine, ownerType: dispatchType,
+                location: member.Location);
         }
 
         if (AnalyzeResolvedMemberCall(call: call,

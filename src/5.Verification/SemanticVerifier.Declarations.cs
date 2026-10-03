@@ -519,7 +519,7 @@ public sealed partial class SemanticVerifier
     /// <returns><c>true</c> if any self-containing value record was found (and reported).</returns>
     internal bool ValidateNoRecursiveValueRecords()
     {
-        bool found = false;
+        bool found = ValidateNoRecursiveBundles();
         foreach (TypeSymbol t in _registry.GetAllTypes()
                                         .ToList())
         {
@@ -552,6 +552,60 @@ public sealed partial class SemanticVerifier
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// Rejects a bundle that contains itself (RF-S446): a bundle is an inline value, whatever its arguments, so a
+    /// recursive one has no finite size. A recursive structure is an entity, whose self-reference is a pointer.
+    /// </summary>
+    private bool ValidateNoRecursiveBundles()
+    {
+        bool found = false;
+        foreach (RecordTypeSymbol bundle in _registry.GetAllTypes()
+                                                     .OfType<RecordTypeSymbol>()
+                                                     .Where(predicate: r => r is { IsBundle: true, IsGenericDefinition: true })
+                                                     .ToList())
+        {
+            if (!bundle.MemberVariables.Any(predicate: m => BundleReaches(bundle: bundle, current: m.Type,
+                    seen: new HashSet<TypeSymbol>(comparer: ReferenceEqualityComparer.Instance))))
+            {
+                continue;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.RecursiveBundle,
+                message: $"Bundle '{bundle.Name}' contains itself. A bundle is a value held in place, so one that holds " +
+                         $"itself would have no end. Make '{bundle.Name}' an entity: its reference to itself is then a " +
+                         "pointer, and the structure is a tree its owner tears down.",
+                location: bundle.Location ?? new SourceLocation(FileName: "", Line: 0, Column: 0, Position: 0));
+            found = true;
+        }
+
+        return found;
+    }
+
+    /// <summary>Whether <paramref name="current"/> holds <paramref name="bundle"/> in place: directly, or through the
+    /// arguments of a tuple, variant or bundle. An entity or a handle wrapper holds what it points at elsewhere.</summary>
+    private static bool BundleReaches(RecordTypeSymbol bundle, TypeSymbol current, HashSet<TypeSymbol> seen)
+    {
+        if (current is EntityTypeSymbol || !seen.Add(item: current))
+        {
+            return false;
+        }
+
+        if (current is RecordTypeSymbol r && ReferenceEquals(objA: r.GenericDefinition ?? r, objB: bundle))
+        {
+            return true;
+        }
+
+        return current switch
+        {
+            TupleTypeSymbol t => t.ElementTypes.Any(predicate: e => BundleReaches(bundle: bundle, current: e, seen: seen)),
+            VariantTypeSymbol v => v.Members.Any(predicate: m =>
+                m.Type != null && BundleReaches(bundle: bundle, current: m.Type, seen: seen)),
+            RecordTypeSymbol { IsBundle: true } or RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None } =>
+                (current.TypeArguments ?? []).Any(predicate: a => BundleReaches(bundle: bundle, current: a, seen: seen)),
+            _ => false
+        };
     }
 
     /// <summary>

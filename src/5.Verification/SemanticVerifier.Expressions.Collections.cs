@@ -640,7 +640,7 @@ public sealed partial class SemanticVerifier
             // without `steal` would have two owners (both tear it down).
             if (_registry.Rules.ChecksOwnership &&
                 ReadsKeptEntity(value: tuple.Elements[i], includeVariables: true) &&
-                _registry.IsEntityKind(type: elementType))
+                MayHoldEntity(type: elementType))
             {
                 ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                     message: KeptEntityMessage(action: "You are putting into a tuple",

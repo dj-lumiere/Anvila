@@ -312,6 +312,13 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool CanMemberVariableWalkAssignable(TypeSymbol type)
     {
+        // An aggregate that holds an entity (a bundle instance, a tuple, an Array of entities) is single-owner:
+        // a shallow store would make two owners. It is never Assignable, whatever protocols its entity obeys.
+        if (IsEntityKind(type: type))
+        {
+            return false;
+        }
+
         string? wrapperBase = type switch
         {
             RecordTypeSymbol { GenericDefinition: { } gd } => gd.Name,
@@ -415,9 +422,13 @@ public sealed partial class TypeRegistry
         switch (type)
         {
             case GenericParameterTypeSymbol parameter:
-                return constraints?.Any(predicate: c => c.ParameterName == parameter.Name && c.ConstraintType is
+                // A kind constraint that excludes entities keeps it to values, and so does `obeys Assignable` (an
+                // entity is never Assignable: a shallow copy would make two owners).
+                return constraints?.Any(predicate: c => c.ParameterName == parameter.Name && (c.ConstraintType is
                     SyntaxTree.ConstraintKind.RecordType or SyntaxTree.ConstraintKind.ChoiceType or SyntaxTree.ConstraintKind.FlagsType or
-                    SyntaxTree.ConstraintKind.RoutineType or SyntaxTree.ConstraintKind.ConstGeneric) == true
+                    SyntaxTree.ConstraintKind.RoutineType or SyntaxTree.ConstraintKind.ConstGeneric ||
+                    c is { ConstraintType: SyntaxTree.ConstraintKind.Obeys, ConstraintTypes: { } protocols } &&
+                    protocols.Any(predicate: p => p.Name == "Assignable"))) == true
                     ? null
                     : parameter.Name;
             case TupleTypeSymbol tuple:
@@ -608,6 +619,11 @@ public sealed partial class TypeRegistry
             return false;
         }
 
+        // A conditional conformance (`obeys P onlyif T obeys Q`) that does not hold for this instance confers
+        // neither P nor P's parents (Assignable's parent Copyable included), so it is left out before the walk.
+        implemented = implemented.Where(predicate: p => ConditionalConformanceHolds(type: type, protocolName: p.Name))
+                                 .ToList();
+
         // Reduce the target to the registry's ONE canonical protocol object, then match every implemented
         // protocol (+ its parent chain) by reference IDENTITY against it — no name-string equality anywhere.
         // Canonicalizing both sides through the registry (rather than trusting the object a type happened to
@@ -726,7 +742,13 @@ public sealed partial class TypeRegistry
             return true;
         }
 
-        TypeSymbol? def = LookupType(name: type.BareName);
+        // The instance's own generic definition: a bare-name lookup misses a definition in a user module.
+        TypeSymbol? def = type switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } recordDef } => (TypeSymbol)recordDef,
+            EntityTypeSymbol { GenericDefinition: { } entityDef } => entityDef,
+            _ => null
+        } ?? LookupType(name: type.BareName);
         Dictionary<string, List<(string ParamName, string ProtocolName)>>? map = def switch
         {
             EntityTypeSymbol e => e.ConditionalObeys,

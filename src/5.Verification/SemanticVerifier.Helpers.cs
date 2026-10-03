@@ -759,8 +759,46 @@ public sealed partial class SemanticVerifier
     /// form: an element comes out of its container through a removing routine or is worked on where it
     /// sits, anything else is moved with <c>steal</c>. An explicit copy is offered only when the type has one.
     /// </summary>
+    /// <summary>
+    /// Whether a value of <paramref name="type"/> may be (or hold) a single-owner entity: an entity-kind type, or, in
+    /// a generic body, one that holds a type parameter not kept to values (<c>needs RecordType T</c>), which an
+    /// instantiation may make an entity. Checked on the generic body itself, so the error points at the template's
+    /// own line, not at an instantiation of it.
+    /// </summary>
+    private bool MayHoldEntity(TypeSymbol type)
+    {
+        if (_registry.IsEntityKind(type: type))
+        {
+            return true;
+        }
+
+        if (type is not GenericParameterTypeSymbol && type.TypeArguments is not { Count: > 0 } && type is not TupleTypeSymbol)
+        {
+            return false;
+        }
+
+        List<GenericConstraintDeclaration> constraints =
+        [
+            .. _currentRoutine?.GenericConstraints ?? [],
+            .. _currentRoutine?.OwnerType?.GenericConstraints ?? [],
+            .. (_currentRoutine?.OwnerType as RecordTypeSymbol)?.GenericDefinition?.GenericConstraints ?? []
+        ];
+        return Builder.Declaration.TypeRegistry.EntityParameterIn(type: type, constraints: constraints) != null;
+    }
+
     private string KeptEntityMessage(string action, Expression value, TypeSymbol type)
     {
+        if (!_registry.IsEntityKind(type: type) &&
+            Builder.Declaration.TypeRegistry.EntityParameterIn(type: type, constraints: []) is { } parameter)
+        {
+            string from = value is IdentifierExpression id
+                ? $"'{id.Name}'"
+                : "the value it belongs to";
+            return $"{action} a '{type.Name}' that {from} still owns. '{parameter}' may be an entity, and then this " +
+                   $"would make two owners of it. Move it with 'steal', or keep '{parameter}' to values with " +
+                   $"'needs RecordType {parameter}'.";
+        }
+
         string owner = value switch
         {
             IdentifierExpression id => $"'{id.Name}'",

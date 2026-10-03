@@ -14,6 +14,10 @@ public enum ConstraintKind
     /// <summary>Reference type constraint (where T is EntityType)</summary>
     EntityType,
 
+    /// <summary>A value aggregate that holds an entity (a bundle instance, a tuple, an Array of entities): copied
+    /// never, moved like an entity. Gates the field-walk <c>duplicate</c> derive.</summary>
+    OwningValueType,
+
     /// <summary>Routine/function type constraint (where T is RoutineType)</summary>
     RoutineType,
 

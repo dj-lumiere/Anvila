@@ -168,6 +168,31 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// A value aggregate that holds an entity (a bundle instance, a tuple, an Array of entities) is duplicated
+    /// member by member, so it has a <c>duplicate</c> only when every member is Copyable (RF-S150 otherwise). Its
+    /// derive's <c>needs T obeys Copyable</c> is about the receiver itself, which the owner-argument check above
+    /// does not see.
+    /// </summary>
+    private void ValidateOwningValueDuplicate(RoutineInfo memberRoutine, TypeSymbol ownerType, SourceLocation location)
+    {
+        if (memberRoutine.Name != "duplicate" || ownerType is not RecordTypeSymbol record ||
+            ownerType is VariantTypeSymbol || !_registry.IsEntityKind(type: ownerType))
+        {
+            return;
+        }
+
+        if (record.MemberVariables.FirstOrDefault(predicate: m =>
+                !ImplementsProtocol(type: m.Type, protocolName: "Copyable")) is { } held)
+        {
+            ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
+                message: $"'{ownerType.Name}' cannot be duplicated: it is copied member by member, and its member " +
+                         $"'{held.Name}' is '{held.Type.Name}', which is not Copyable. Declare '{held.Type.Name}' " +
+                         "'obeys Copyable', or move the value with 'steal' instead of duplicating it.",
+                location: location);
+        }
+    }
+
+    /// <summary>
     /// Resolves the effective generic constraints for a member routine call: returns the routine's own
     /// constraints when present, or looks them up on the generic definition of the owner type.
     /// </summary>

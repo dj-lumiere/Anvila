@@ -1036,7 +1036,7 @@ public sealed partial class SemanticVerifier
         // (Object is a TupleTypeSymbol) so channel/pair destructuring of entity elements stays a legal move.
         if (_registry.Rules.ChecksOwnership && varDecl.Initializer != null &&
             ReadsKeptEntity(value: varDecl.Initializer, includeVariables: true) &&
-            _registry.IsEntityKind(type: varType))
+            MayHoldEntity(type: varType))
         {
             ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                 message: KeptEntityMessage(action: $"You are keeping in '{varDecl.Name}'",

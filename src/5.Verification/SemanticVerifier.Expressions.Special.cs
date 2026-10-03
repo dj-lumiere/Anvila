@@ -367,6 +367,10 @@ public sealed partial class SemanticVerifier
         // record (e.g. Text after the refcounted-record migration).
         bool isRecord = operandType is RecordTypeSymbol;
 
+        // A value of a type parameter may be an entity, so a generic body moves one with `steal` (a no-op for a
+        // value instantiation, a move for an entity one).
+        bool isParameter = operandType is GenericParameterTypeSymbol;
+
         // The operand already reported its own error (a second `steal` of the same variable, say).
         if (operandType is ErrorTypeSymbol)
         {
@@ -374,11 +378,12 @@ public sealed partial class SemanticVerifier
             return operandType;
         }
 
-        if (!isOwned && !isRecord && !IsRawEntityType(type: operandType))
+        if (!isOwned && !isRecord && !isParameter && !IsRawEntityType(type: operandType))
         {
             ReportError(code: SemanticDiagnosticCode.StealScopeBoundToken,
                 message:
-                $"Cannot steal '{operandType.Name}' - only raw entities and T can be stolen.",
+                $"Cannot steal '{operandType.Name}': only an entity, a value, or a value of a type parameter can be " +
+                "moved with 'steal'.",
                 location: steal.Location);
             steal.ResolvedType = operandType;
             return operandType;

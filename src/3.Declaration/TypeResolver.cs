@@ -930,7 +930,7 @@ internal sealed class TypeResolver
     private void ValidateValueTypeConstraint(TypeSymbol typeArg,
         GenericConstraintDeclaration constraint, SourceLocation location)
     {
-        if (typeArg.Category != TypeCategory.Record)
+        if (typeArg.Category != TypeCategory.Record || _sa._registry.IsEntityKind(type: typeArg))
         {
             _sa.ReportError(code: SemanticDiagnosticCode.ValueTypeConstraintViolation,
                 message:

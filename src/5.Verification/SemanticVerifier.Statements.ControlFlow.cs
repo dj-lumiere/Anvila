@@ -795,7 +795,7 @@ public sealed partial class SemanticVerifier
             // still keeps. A returned local is a move, so a bare variable is not flagged here.
             if (_registry.Rules.ChecksOwnership &&
                 ReadsKeptEntity(value: ret.Value, includeVariables: false) &&
-                _registry.IsEntityKind(type: returnType))
+                MayHoldEntity(type: returnType))
             {
                 ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                     message: KeptEntityMessage(action: "You are returning", value: ret.Value,
