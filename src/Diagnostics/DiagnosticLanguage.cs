@@ -16,7 +16,7 @@ public static class DiagnosticLanguage
     {
         return Languages.IsRegistered(language: language)
             ? Languages.For(language: language).ShortName
-            : "RF";
+            : TypeModel.Realms.Shared;
     }
 
     /// <summary>The language of a source file, by extension (see <see cref="Languages.OfFile"/>).</summary>

@@ -3494,7 +3494,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         if (expectedOwnerRealm != null)
         {
             var realmMatched = candidates.Where(predicate: d =>
-                                              (d.ResolvedInfo?.OwnerType?.Realm ?? "RF") ==
+                                              (d.ResolvedInfo?.OwnerType?.Realm ?? TypeModel.Realms.Shared) ==
                                               expectedOwnerRealm)
                                          .ToList();
             if (realmMatched.Count > 0)

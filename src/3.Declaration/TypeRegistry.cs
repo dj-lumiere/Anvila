@@ -86,7 +86,7 @@ public sealed partial class TypeRegistry
     /// <see cref="TypeSymbol.RealmQualifiedName"/> registry key. Settable so stdlib bodies of each realm are
     /// analyzed under their own realm — see SemanticVerifier.AnalyzeStdlibBodies. Defaults to <c>"RF"</c>.
     /// </summary>
-    public string AmbientRealm { get; set; } = "RF";
+    public string AmbientRealm { get; set; } = TypeModel.Realms.Shared;
 
     /// <summary>The rules of <see cref="AnalysisLanguage"/>, the language of the code being analyzed now.</summary>
     public Frontends.LanguageRules Rules => Frontends.Languages.For(language: AnalysisLanguage);
@@ -103,7 +103,7 @@ public sealed partial class TypeRegistry
     /// (bridged, keyed <c>SF::Core.List</c>) yet still falls back to the RF-realm type for anything the SF
     /// surface has not (re)declared. Defaults to <c>"RF"</c> ⇒ equal to the ambient ⇒ zero effect on RF.
     /// </summary>
-    public string ResolutionRealm { get; set; } = "RF";
+    public string ResolutionRealm { get; set; } = TypeModel.Realms.Shared;
 
     /// <summary>
     /// The imported-module namespaces of the stdlib file whose declarations are CURRENTLY being

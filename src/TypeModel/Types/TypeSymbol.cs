@@ -70,7 +70,7 @@ public abstract class TypeSymbol
     /// overrides it. Both realms are rendered explicitly in <see cref="FullName"/> (and therefore in LLVM
     /// symbols) so the two world-lines never collide when they coexist in one binary.
     /// </summary>
-    public string Realm { get; init; } = "RF";
+    public string Realm { get; init; } = Realms.Shared;
 
     /// <summary>
     /// The fully qualified name of this type (module + name + generic args), e.g.

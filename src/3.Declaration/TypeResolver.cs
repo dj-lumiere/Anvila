@@ -186,7 +186,7 @@ internal sealed class TypeResolver
         // of Suflae's `entity -> Roamed[entity]` lowering (that is the whole point: an SF wrapper entity
         // holds a BARE `RF::Core.List` inside, without re-roaming it into an infinite `Roamed[List]`). Any
         // other realm (null = ambient) gets the normal Suflae lowering.
-        if (typeExpr.Realm != "RF")
+        if (typeExpr.Realm != TypeModel.Realms.Shared)
         {
             resolved = RoamSharedEntitySlot(resolved: resolved);
         }

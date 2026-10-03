@@ -238,7 +238,7 @@ public partial class LlvmEmitter
     /// </summary>
     private static string RealmMangleBase(TypeSymbol t)
     {
-        return t.Realm == "RF"
+        return t.Realm == TypeModel.Realms.Shared
             ? t.FullName
             : $"{t.Realm}::{t.FullName}";
     }

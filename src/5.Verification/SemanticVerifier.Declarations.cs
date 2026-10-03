@@ -841,7 +841,7 @@ public sealed partial class SemanticVerifier
 
         foreach (Parameter p in routine.Parameters)
         {
-            if (p.Type is { Realm: "RF" } pType &&
+            if (p.Type is { Realm: TypeModel.Realms.Shared } pType &&
                 ResolveType(typeExpr: pType) is EntityTypeSymbol pe)
             {
                 ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
@@ -854,7 +854,7 @@ public sealed partial class SemanticVerifier
 
         // A constructor's return is the freshly-built entity the CALLER takes ownership of, not a
         // by-value hand-off of an already-live object, so it is exempt (mirrors the invariant's carve-out).
-        if (kind != RoutineKind.Creator && routine.ReturnType is { Realm: "RF" } rType &&
+        if (kind != RoutineKind.Creator && routine.ReturnType is { Realm: TypeModel.Realms.Shared } rType &&
             ResolveType(typeExpr: rType) is EntityTypeSymbol re)
         {
             ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,

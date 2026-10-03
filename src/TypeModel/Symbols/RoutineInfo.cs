@@ -119,7 +119,7 @@ public sealed class RoutineInfo
                 : $"{baseName}#{string.Join(separator: ",", values: Parameters.Select(selector: p => GetTypeIdentity(type: p.Type)))}";
 
             // Bridged-realm owner → realm-prefixed key (ambient realm "RF" stays bare = RF byte-identical).
-            if (OwnerType is { Realm: not "RF" and { } r })
+            if (OwnerType is { Realm: not Realms.Shared and { } r })
             {
                 return $"{r}::{key}";
             }

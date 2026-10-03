@@ -52,7 +52,7 @@ public sealed partial class StdlibLoader
     /// helper takes its realm as a parameter, stamped onto the type-definition shells it builds and used to
     /// scope its lookups, so an RF program's lookups never reach a coexisting SF wrapper's shell.
     /// </summary>
-    internal const string UnstampedRealm = "RF";
+    internal const string UnstampedRealm = TypeModel.Realms.Shared;
 
     /// <summary>The realm a stdlib file belongs to: the short name of the language it is written in
     /// (<c>"SF"</c> for a Suflae source, <c>"RF"</c> for a RazorForge one).</summary>

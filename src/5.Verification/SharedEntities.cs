@@ -114,7 +114,7 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
         // entity, not a re-roamed `Roamed[List]`). Do NOT re-roam it here — this is the SA twin of
         // TypeResolver.ResolveType's `Realm != "RF"` gate; the realm tag lives on the TypeExpression,
         // not on the already-resolved TypeSymbol, so it must be threaded in explicitly.
-        if (typeExpr?.Realm == "RF")
+        if (typeExpr?.Realm == TypeModel.Realms.Shared)
         {
             return (annotated, false, false);
         }

@@ -72,7 +72,7 @@ public static class Languages
         Language language = OfFile(fileName: fileName);
         return IsRegistered(language: language)
             ? For(language: language).ShortName
-            : "RF";
+            : TypeModel.Realms.Shared;
     }
 
     /// <summary>

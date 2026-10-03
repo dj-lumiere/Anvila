@@ -219,7 +219,7 @@ public class EntityTypeSymbol : TypeSymbol
         string moduleQualified = string.IsNullOrEmpty(value: Module)
             ? resolvedName
             : $"{Module}.{resolvedName}";
-        return Realm == "RF"
+        return Realm == Realms.Shared
             ? moduleQualified
             : $"{Realm}::{moduleQualified}";
     }
