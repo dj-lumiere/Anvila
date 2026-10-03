@@ -63,9 +63,12 @@
   </ItemGroup>
 
   <!-- The Tessera backend (src/9.TesseraEmit) builds through the Tessera builder and ships its standard
-       library next to the builder, where TesseraBackend looks for it (tessera-stdlib/). -->
+       library next to the builder, where TesseraBackend looks for it (tessera-stdlib/). The reference does not flow
+       on to the executables (PrivateAssets): Tessera is an executable project, and a second, runtime-specific build
+       of it through a self-contained publish would put two copies of its apphost, deps.json and runtimeconfig.json
+       in the package (NETSDK1152). tessera.dll still reaches the executables as Anvila's dependency. -->
   <ItemGroup>
-    <ProjectReference Include="..\Tessera\Tessera.csproj"/>
+    <ProjectReference Include="..\Tessera\Tessera.csproj" PrivateAssets="all"/>
     <Content Include="..\Tessera\Standard\**\*.tess" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 </Project>
