@@ -1783,12 +1783,17 @@ public sealed partial class SemanticVerifier
         // Collect all resolved arg types for better overload disambiguation, in the bound routine's parameter
         // order: a named argument stands at its parameter's position.
         var resolvedArgTypes = new List<TypeSymbol>();
-        foreach (Expression arg in OrderByParameters(arguments: call.Arguments, routine: routine))
+        List<Expression> ordered = OrderByParameters(arguments: call.Arguments, routine: routine);
+        for (int i = 0; i < ordered.Count; i++)
         {
-            Expression actualArg = arg is NamedArgumentExpression nai
+            Expression actualArg = ordered[index: i] is NamedArgumentExpression nai
                 ? nai.Value
-                : arg;
-            TypeSymbol argType = AnalyzeExpression(expression: actualArg);
+                : ordered[index: i];
+            // A lambda's untyped parameters take their types from the parameter it is bound to: without one it
+            // has nothing to infer them from.
+            TypeSymbol argType = actualArg is LambdaExpression
+                ? AnalyzeExpression(expression: actualArg, expectedType: routine.Parameters[index: i].Type)
+                : AnalyzeExpression(expression: actualArg);
             if (argType != ErrorTypeSymbol.Instance)
             {
                 resolvedArgTypes.Add(item: argType);
@@ -1842,13 +1847,19 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
+        // In the routine's parameter order, as the default-types lookup and the comparison below read them.
         var defaultArgTypes = new List<TypeSymbol>(capacity: call.Arguments.Count);
-        foreach (Expression arg in call.Arguments)
+        List<Expression> ordered = OrderByParameters(arguments: call.Arguments, routine: routine);
+        for (int i = 0; i < ordered.Count; i++)
         {
-            Expression actualArg = arg is NamedArgumentExpression na
+            Expression actualArg = ordered[index: i] is NamedArgumentExpression na
                 ? na.Value
-                : arg;
-            TypeSymbol argType = AnalyzeExpression(expression: actualArg);
+                : ordered[index: i];
+            // A lambda's untyped parameters take their types from the parameter it is bound to: without one it
+            // has nothing to infer them from.
+            TypeSymbol argType = actualArg is LambdaExpression && i < routine.Parameters.Count
+                ? AnalyzeExpression(expression: actualArg, expectedType: routine.Parameters[index: i].Type)
+                : AnalyzeExpression(expression: actualArg);
             if (argType == ErrorTypeSymbol.Instance)
             {
                 return false;
