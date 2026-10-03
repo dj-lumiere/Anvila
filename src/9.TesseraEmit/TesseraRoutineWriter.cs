@@ -12,12 +12,13 @@ using TypeModel.Types;
 namespace Builder.TesseraEmit;
 
 /// <summary>
-/// Writes one routine as Tessera. Every local lives in a claimed stack slot, as in the LLVM emitter's
+/// Writes one routine as Tessera. Every local lives in a stack slot, as in the LLVM emitter's
 /// alloca-per-local output (LLVM promotes the slots to registers): a read is a <c>load</c>, a write a
-/// <c>store</c>. A slot is claimed where its local is declared, with the value it starts with
-/// (<c>claim x : @T &lt;- value</c>). A Tessera block sees only its own parameters and the routine's, so a
-/// block takes the slots visible where the statement that makes it stands, and every jump to it passes them.
-/// Each value a statement computes is bound to a temporary, in evaluation order.
+/// <c>store</c>. Each slot is shared in the routine's head (<c>shared x : @T &lt;- uninit</c>), so every block
+/// sees it without taking it as a parameter, and the local's first value is stored where it is declared
+/// (<c>x.store(value)</c>). A parameter's slot starts with the parameter in the head itself. Slot names are
+/// unique in the routine, so a local of an inner scope never meets another of its name. Each value a statement
+/// computes is bound to a temporary, in evaluation order.
 /// </summary>
 internal sealed class TesseraRoutineWriter
 {
@@ -25,11 +26,8 @@ internal sealed class TesseraRoutineWriter
     private readonly RoutineInfo _routine;
     private readonly Statement _body;
 
-    /// <summary>The slots visible here, in claim order: the parameters a block made here takes.</summary>
-    private List<Local> _visible = [];
-
-    /// <summary>The slots each block takes, fixed when its label is made.</summary>
-    private readonly Dictionary<string, List<Local>> _labelSlots = new(comparer: StringComparer.Ordinal);
+    /// <summary>The routine's head: a <c>shared</c> line for every slot, in the order the slots are made.</summary>
+    private readonly List<string> _head = [];
 
     private int _slotCount;
 
@@ -94,7 +92,7 @@ internal sealed class TesseraRoutineWriter
             else
             {
                 parameters.Add(item: $"arg_me: {TypeText(type: owner)}");
-                scope[key: "me"] = ClaimLocal(name: "me", type: owner, initial: "arg_me");
+                scope[key: "me"] = ClaimLocal(name: "me", type: owner, initial: "arg_me", inHead: true);
             }
         }
 
@@ -108,7 +106,7 @@ internal sealed class TesseraRoutineWriter
             else
             {
                 parameters.Add(item: $"arg_{param.Name}: {TypeText(type: param.Type)}");
-                scope[key: param.Name] = ClaimLocal(name: param.Name, type: param.Type, initial: $"arg_{param.Name}");
+                scope[key: param.Name] = ClaimLocal(name: param.Name, type: param.Type, initial: $"arg_{param.Name}", inHead: true);
             }
         }
 
@@ -129,6 +127,16 @@ internal sealed class TesseraRoutineWriter
         var text = new StringBuilder();
         text.Append(value: $"routine {_module.RoutineName(routine: _routine)}({string.Join(separator: ", ", values: parameters)})" +
                            $" -> {ReturnTypeText}\n");
+        foreach (string line in _head)
+        {
+            text.Append(value: $"    {line}\n");
+        }
+
+        if (_head.Count > 0)
+        {
+            text.Append(value: '\n');
+        }
+
         foreach (Block block in _blocks)
         {
             text.Append(value: $"    block {block.Header}\n");
@@ -157,40 +165,49 @@ internal sealed class TesseraRoutineWriter
     // ── Slots and blocks ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Claims a slot for a local where it is declared, starting with <paramref name="initial"/>, or
-    /// <c>uninit</c> for a local declared without a value (a <c>lateinit</c>, or one the builder fills on every
-    /// path before reading it).
+    /// Shares a slot for a local in the routine's head and stores <paramref name="initial"/> in it where the local
+    /// is declared, or nothing for a local declared without a value (a <c>lateinit</c>, or one the builder fills
+    /// on every path before reading it). A parameter's slot (<paramref name="inHead"/>), and one made before entry
+    /// has done anything, starts with its value in the head, which runs before anything else the routine does.
     /// </summary>
-    private Local ClaimLocal(string name, TypeSymbol type, string? initial)
+    private Local ClaimLocal(string name, TypeSymbol type, string? initial, bool inHead = false)
     {
         var local = new Local(Place: $"{name}_{_slotCount++}", Type: type);
-        Emit(line: $"claim {local.Place} : @{TypeText(type: type)} <- {initial ?? "uninit"}");
-        _visible.Add(item: local);
+        string slotType = $"@{TypeText(type: type)}";
+        // Before entry has done anything, the value can only name a parameter or be a literal: it goes in the head.
+        if (initial is not null && (inHead || (_current == _blocks[0] && _current.Lines.Count == 0)))
+        {
+            _head.Add(item: $"shared {local.Place} : {slotType} <- {initial}");
+            return local;
+        }
+
+        _head.Add(item: $"shared {local.Place} : {slotType} <- uninit");
+        if (initial is not null)
+        {
+            Emit(line: $"{local.Place}.store({initial})");
+        }
+
         return local;
     }
 
-    /// <summary>A label for a block made at this point: it takes the slots visible here.</summary>
+    /// <summary>A label for a block made at this point.</summary>
     private string NewLabel(string kind)
     {
-        string label = $"{kind}_{_labels++}";
-        _labelSlots[key: label] = [.. _visible];
-        return label;
+        return $"{kind}_{_labels++}";
     }
 
-    /// <summary>A jump target: the block name with the slots it takes.</summary>
-    private string Target(string label)
+    /// <summary>A jump target. Blocks take no parameters: every slot is shared in the head.</summary>
+    private static string Target(string label)
     {
-        return $"{label}({string.Join(separator: ", ", values: _labelSlots[key: label].Select(selector: s => s.Place))})";
+        return $"{label}()";
     }
 
-    /// <summary>Starts writing into a new block named <paramref name="label"/>, which sees the slots it takes.</summary>
+    /// <summary>Starts writing into a new block named <paramref name="label"/>.</summary>
     private void StartBlock(string label)
     {
-        List<Local> slots = _labelSlots[key: label];
-        var block = new Block(header: $"{label}({string.Join(separator: ", ", values: slots.Select(selector: s => $"{s.Place}: @{TypeText(type: s.Type)}"))})");
+        var block = new Block(header: $"{label}()");
         _blocks.Add(item: block);
         _current = block;
-        _visible = [.. slots];
     }
 
     private void Emit(string line)
@@ -238,20 +255,15 @@ internal sealed class TesseraRoutineWriter
                 break;
             case BlockStatement block:
             {
-                // A scope's locals stop being visible (and stop being passed to blocks) where the scope ends.
+                // A scope's locals stop being visible where the scope ends. Their slots stay shared under names no
+                // other local has.
                 _scopes.Add(item: new Dictionary<string, Local>(comparer: StringComparer.Ordinal));
-                int visibleBefore = _visible.Count;
                 foreach (Statement s in block.Statements)
                 {
                     WriteStatement(statement: s);
                 }
 
                 _scopes.RemoveAt(index: _scopes.Count - 1);
-                if (_visible.Count > visibleBefore)
-                {
-                    _visible.RemoveRange(index: visibleBefore, count: _visible.Count - visibleBefore);
-                }
-
                 break;
             }
             case DeclarationStatement { Declaration: VariableDeclaration v }:
