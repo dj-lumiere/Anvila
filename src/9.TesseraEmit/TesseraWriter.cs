@@ -261,16 +261,39 @@ internal sealed class TesseraWriter
         return (name, result);
     }
 
-    /// <summary>The receiver a crash-object dispatch passes a crashable's member: the object, as the crashable's
-    /// storage (a crashable is a record, whose member takes it by reference).</summary>
+    /// <summary>The receiver a crash-object dispatch passes a crashable's member: the crashable inside the object (a
+    /// crashable is a record, whose member takes it by reference).</summary>
     private string CrashObjectReceiver(RoutineInfo routine)
     {
-        string owner = TypeText(type: routine.OwnerType);
-        return owner is ['@', .. var pointee]
-            ? $"error.to<@{pointee}>()"
-            : Declaration.ReceiverFacts.MeByReference(ownerType: routine.OwnerType)
-                ? $"error.to<@{owner}>()"
-                : $"error.to<@{owner}>().load()";
+        if (routine.OwnerType is not CrashableTypeSymbol crashable)
+        {
+            throw new NotSupportedException(
+                message: $"The Tessera backend dispatches a caught error's members only on crashables, not on {routine.OwnerType?.FullName}.");
+        }
+
+        string error = $"error.to<@{CrashObjectRecord(crashable: crashable)}>().error";
+        return Declaration.ReceiverFacts.MeByReference(ownerType: crashable)
+            ? error
+            : $"{error}.load()";
+    }
+
+    private readonly Dictionary<string, string> _crashObjectRecords = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The record a caught crashable lives in on the heap: its type id, so the object says what it holds, then the
+    /// crashable. A carrier's error slot holds the address of one. Declared on first use.
+    /// </summary>
+    public string CrashObjectRecord(CrashableTypeSymbol crashable)
+    {
+        if (_crashObjectRecords.TryGetValue(key: crashable.FullName, value: out string? existing))
+        {
+            return existing;
+        }
+
+        string name = VerbatimName(text: $"crash object {crashable.FullName}");
+        _crashObjectRecords[key: crashable.FullName] = name;
+        _records.Append(value: $"record {name}\n    type_id : U64\n    error : {TypeText(type: crashable)}\n\n");
+        return name;
     }
 
     private string? _crashObjectDestroy;

@@ -541,8 +541,11 @@ public partial class LlvmEmitter
             string objectPtr = NextTemp();
             EmitLine(sb: sb, line: $"  {objectPtr} = load ptr, ptr {payloadPtr}");
             string crashableType = EnsureRecordTypeDeclared(record: crashable);
+            string errorPtr = NextTemp();
+            EmitLine(sb: sb,
+                line: $"  {errorPtr} = getelementptr {CrashObjectType(crashableType: crashableType)}, ptr {objectPtr}, i32 0, i32 1");
             string error = NextTemp();
-            EmitLine(sb: sb, line: $"  {error} = load {crashableType}, ptr {objectPtr}");
+            EmitLine(sb: sb, line: $"  {error} = load {crashableType}, ptr {errorPtr}");
             return error;
         }
 
@@ -566,20 +569,13 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a <see cref="CrashableDispatchExpression"/>: runtime dispatch of a zero-arg Crashable member
-    /// (represent/diagnose/crash_message/crash_title, all <c>-&gt; Text</c>) on a type-erased error stored
-    /// in a Result/Lookup carrier. Reads <c>type_id</c> (field 0) and the entity pointer (field 1) from the
-    /// carrier, then <c>switch</c>es on <c>type_id</c> to the concrete crashable's member.
-    ///
-    /// <para>This replaces the old build-time <c>is Crashable</c> fan-out (one clause per registered
-    /// crashable baked into the carrier body). The switch is emitted per-build over the CURRENTLY registered
-    /// crashable set, so a warm daemon compile includes user-defined crashables registered after the stdlib
-    /// snapshot — the fan-out freeze bug that made a warm carrier fall through to its type-name else arm.</para>
+    /// Emits a <see cref="CrashableDispatchExpression"/>: a member of a caught error of unknown type, called through the
+    /// mold the error's heap object points at (<see cref="EnsureCrashMold"/>). <c>destroy</c> also frees the object.
     /// </summary>
     private string EmitCrashableDispatchExpression(StringBuilder sb,
         CrashableDispatchExpression dispatch)
     {
-        // Spill the carrier value so we can GEP its type_id (field 0) and payload entity ptr (field 1).
+        // Spill the carrier so its payload slot, which holds the error object's address, can be read.
         string carrierVal = EmitExpression(sb: sb, expr: dispatch.Carrier);
         TypeSymbol carrierType = dispatch.Carrier.ResolvedType!;
         string carrierLlvmType = GetCarrierLlvmType(type: carrierType);
@@ -587,138 +583,83 @@ public partial class LlvmEmitter
         string spillAddr = NextTemp();
         EmitEntryAlloca(llvmName: spillAddr, llvmType: carrierLlvmType);
         EmitLine(sb: sb, line: $"  store {carrierLlvmType} {carrierVal}, ptr {spillAddr}");
-
-        string typeIdPtr = NextTemp();
-        EmitLine(sb: sb,
-            line:
-            $"  {typeIdPtr} = getelementptr {carrierLlvmType}, ptr {spillAddr}, i32 0, i32 0");
-        string typeId = NextTemp();
-        EmitLine(sb: sb, line: $"  {typeId} = load i64, ptr {typeIdPtr}");
-
         string payloadPtr = NextTemp();
         EmitLine(sb: sb,
             line:
             $"  {payloadPtr} = getelementptr {carrierLlvmType}, ptr {spillAddr}, i32 0, i32 1");
-        string entity = NextTemp();
-        EmitLine(sb: sb, line: $"  {entity} = load ptr, ptr {payloadPtr}");
+        string errorObject = NextTemp();
+        EmitLine(sb: sb, line: $"  {errorObject} = load ptr, ptr {payloadPtr}");
 
+        int slot = Array.IndexOf(array: Declaration.RuntimeContract.CrashMoldMembers, value: dispatch.MemberName);
+        if (slot < 0)
+        {
+            throw new InvalidOperationException(
+                message: $"'{dispatch.MemberName}' is not a member a caught error's mold names.");
+        }
+
+        (string member, string data) = EmitCrashMoldLookup(sb: sb, errorObject: errorObject, slot: slot);
         if (dispatch.MemberName == Declaration.RuntimeContract.Destroy)
         {
-            EmitCrashObjectDestroy(sb: sb, typeId: typeId, errorObject: entity);
+            EmitLine(sb: sb, line: $"  call void {member}(ptr {data})");
+            EmitLine(sb: sb, line: $"  call void @rf_invalidate(ptr {errorObject})");
             return string.Empty;
         }
 
-        // The arms this build dispatches to (CrashableDispatchArms).
-        var arms = new List<(long id, RoutineInfo routine, string mangled, string label)>();
-        string? retLlvm = null;
-        foreach ((ulong armTypeId, RoutineInfo routine) in Builder.Collection.CrashableDispatchArms.For(
-                     memberName: dispatch.MemberName,
-                     registry: _registry,
-                     liveRoutineKeys: _liveRoutineKeys))
-        {
-            GenerateRoutineDeclaration(routine: routine);
-            retLlvm ??= routine.ReturnType != null
-                ? GetLlvmType(type: routine.ReturnType)
-                : "ptr";
-            arms.Add(item: (unchecked((long)armTypeId), routine, MangleRoutineName(routine: routine),
-                NextLabel(prefix: "crd.case")));
-        }
-
-        retLlvm ??= "ptr";
-
-        // No registered crashables (shouldn't happen where a Crashable arm exists) — yield a zero result.
-        if (arms.Count == 0)
-        {
-            return retLlvm == "ptr"
-                ? "null"
-                : "zeroinitializer";
-        }
-
-        // Shared result slot: every arm writes its Text here, and we load it ONCE after the merge. This
-        // sidesteps a phi over values whose call ABI differs (sret vs coerced vs direct) — each arm just
-        // materializes into the slot per its own ABI.
+        // Every mold member that returns is a `-> Text` routine taking the crashable by reference, so one return ABI
+        // fits them all.
+        TypeSymbol text = _registry.LookupType(name: "Text") ??
+                          throw new InvalidOperationException(message: "Core.Text is not registered.");
+        var shape = new RoutineInfo(name: dispatch.MemberName) { ReturnType = text };
+        string retLlvm = GetLlvmType(type: text);
         string resultSlot = NextTemp();
         EmitEntryAlloca(llvmName: resultSlot, llvmType: retLlvm);
-
-        string mergeLabel = NextLabel(prefix: "crd.merge");
-        string defaultLabel = NextLabel(prefix: "crd.default");
-
-        var switchArms = new StringBuilder();
-        foreach ((long id, _, _, string label) in arms)
-        {
-            switchArms.Append(value: $"    i64 {id}, label %{label}\n");
-        }
-
-        EmitLine(sb: sb, line: $"  switch i64 {typeId}, label %{defaultLabel} [\n{switchArms}  ]");
-
-        foreach ((_, RoutineInfo routine, string mangled, string label) in arms)
-        {
-            EmitLine(sb: sb, line: $"{label}:");
-            EmitCrashableMemberCallIntoSlot(sb: sb,
-                routine: routine,
-                mangled: mangled,
-                entity: entity,
-                retLlvm: retLlvm,
-                resultSlot: resultSlot);
-            EmitLine(sb: sb, line: $"  br label %{mergeLabel}");
-        }
-
-        // The Crashable arm only fires for a real crashable type_id, so the default is unreachable.
-        EmitLine(sb: sb, line: $"{defaultLabel}:");
-        EmitLine(sb: sb, line: "  unreachable");
-
-        EmitLine(sb: sb, line: $"{mergeLabel}:");
-        string phiResult = NextTemp();
-        EmitLine(sb: sb, line: $"  {phiResult} = load {retLlvm}, ptr {resultSlot}");
-        return phiResult;
+        EmitCrashableMemberCallIntoSlot(sb: sb,
+            routine: shape,
+            callee: member,
+            entity: data,
+            retLlvm: retLlvm,
+            resultSlot: resultSlot);
+        string result = NextTemp();
+        EmitLine(sb: sb, line: $"  {result} = load {retLlvm}, ptr {resultSlot}");
+        return result;
     }
 
     /// <summary>
-    /// Frees a caught crashable: its type's <c>destroy</c> (a crashable whose type has none has nothing to free
-    /// in its fields), then the object it lives in.
+    /// Reads mold slot <paramref name="slot"/> (an index into <c>CrashMoldMembers</c>) of a caught error's heap object:
+    /// returns the routine it names and the address of the error inside the object.
     /// </summary>
-    private void EmitCrashObjectDestroy(StringBuilder sb, string typeId, string errorObject)
+    private (string Member, string Data) EmitCrashMoldLookup(StringBuilder sb, string errorObject, int slot)
     {
-        string mergeLabel = NextLabel(prefix: "crd.merge");
-        var switchArms = new StringBuilder();
-        var arms = new List<(string mangled, string label)>();
-        foreach ((ulong armTypeId, RoutineInfo routine) in Builder.Collection.CrashableDispatchArms.For(
-                     memberName: Declaration.RuntimeContract.Destroy,
-                     registry: _registry,
-                     liveRoutineKeys: _liveRoutineKeys))
-        {
-            GenerateRoutineDeclaration(routine: routine);
-            string label = NextLabel(prefix: "crd.case");
-            arms.Add(item: (MangleRoutineName(routine: routine), label));
-            switchArms.Append(value: $"    i64 {unchecked((long)armTypeId)}, label %{label}\n");
-        }
-
-        EmitLine(sb: sb, line: $"  switch i64 {typeId}, label %{mergeLabel} [\n{switchArms}  ]");
-        foreach ((string mangled, string label) in arms)
-        {
-            EmitLine(sb: sb, line: $"{label}:");
-            EmitLine(sb: sb, line: $"  call void @{mangled}(ptr {errorObject})");
-            EmitLine(sb: sb, line: $"  br label %{mergeLabel}");
-        }
-
-        EmitLine(sb: sb, line: $"{mergeLabel}:");
-        EmitLine(sb: sb, line: $"  call void @rf_invalidate(ptr {errorObject})");
+        string mold = NextTemp();
+        EmitLine(sb: sb, line: $"  {mold} = load ptr, ptr {errorObject}");
+        string offsetPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {offsetPtr} = getelementptr {CrashMoldType}, ptr {mold}, i32 0, i32 1");
+        string offset = NextTemp();
+        EmitLine(sb: sb, line: $"  {offset} = load i64, ptr {offsetPtr}");
+        string data = NextTemp();
+        EmitLine(sb: sb, line: $"  {data} = getelementptr i8, ptr {errorObject}, i64 {offset}");
+        string memberPtr = NextTemp();
+        EmitLine(sb: sb,
+            line: $"  {memberPtr} = getelementptr {CrashMoldType}, ptr {mold}, i32 0, i32 {slot + CrashMoldFirstMember}");
+        string member = NextTemp();
+        EmitLine(sb: sb, line: $"  {member} = load ptr, ptr {memberPtr}");
+        return (member, data);
     }
 
     /// <summary>
-    /// Emits one crashable-dispatch arm's call to a concrete crashable member, materializing its
+    /// Emits a call of a crashable member (<paramref name="callee"/>, a routine or a routine address), materializing its
     /// <c>Text</c> result into <paramref name="resultSlot"/> per the member's return ABI (sret / coerced /
     /// direct). Mirrors the return-ABI handling in <c>EmitCall</c> so the type_id switch respects the same
     /// contract the callee's declaration/definition were emitted under.
     /// </summary>
     private void EmitCrashableMemberCallIntoSlot(StringBuilder sb, RoutineInfo routine,
-        string mangled, string entity, string retLlvm,
+        string callee, string entity, string retLlvm,
         string resultSlot)
     {
         if (ReturnsViaSret(routine: routine))
         {
             EmitLine(sb: sb,
-                line: $"  call void @{mangled}(ptr sret({retLlvm}) {resultSlot}, ptr {entity})");
+                line: $"  call void {callee}(ptr sret({retLlvm}) {resultSlot}, ptr {entity})");
             return;
         }
 
@@ -726,14 +667,14 @@ public partial class LlvmEmitter
         if (coerce != null)
         {
             string c = NextTemp();
-            EmitLine(sb: sb, line: $"  {c} = call {coerce} @{mangled}(ptr {entity})");
+            EmitLine(sb: sb, line: $"  {c} = call {coerce} {callee}(ptr {entity})");
             // Store the coerced integer form; the later `load {retLlvm}` reinterprets it (opaque ptr).
             EmitLine(sb: sb, line: $"  store {coerce} {c}, ptr {resultSlot}");
             return;
         }
 
         string r = NextTemp();
-        EmitLine(sb: sb, line: $"  {r} = call {retLlvm} @{mangled}(ptr {entity})");
+        EmitLine(sb: sb, line: $"  {r} = call {retLlvm} {callee}(ptr {entity})");
         EmitLine(sb: sb, line: $"  store {retLlvm} {r}, ptr {resultSlot}");
     }
 }

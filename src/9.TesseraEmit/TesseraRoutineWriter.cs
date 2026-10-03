@@ -1267,12 +1267,15 @@ internal sealed class TesseraRoutineWriter
             string value = Value(operand: Evaluate(expression: error));
             string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
                 returnType: "Addr");
-            string crashableType = TypeText(type: crashable);
+            string objectRecord = _module.CrashObjectRecord(crashable: crashable);
             string size = $"t{_temps++}";
-            Emit(line: $"{size} : U64 = sizeof<{crashableType}>().to<U64>()");
+            Emit(line: $"{size} : U64 = sizeof<{objectRecord}>().to<U64>()");
             string errorObject = $"t{_temps++}";
             Emit(line: $"{errorObject} : Addr = {allocate}({size})");
-            Emit(line: $"{errorObject}.to<@{crashableType}>().store({value})");
+            string typeId = $"t{_temps++}";
+            Emit(line: $"{typeId} : U64 = 0x{TypeIdHelper.ComputeTypeId(fullName: crashable.FullName):X}");
+            Emit(line: $"{errorObject}.to<@{objectRecord}>().type_id.store({typeId})");
+            Emit(line: $"{errorObject}.to<@{objectRecord}>().error.store({value})");
             Emit(line: $"{slot}.{payloadField}.to<@Addr>().store({errorObject})");
         }
         else if (tagged.Payload is { } payload)
@@ -1312,8 +1315,8 @@ internal sealed class TesseraRoutineWriter
             // The error slot holds the address of the object the caught crashable lives in.
             string errorObject = $"t{_temps++}";
             Emit(line: $"{errorObject} : Addr = {Place(operand: carrier)}.{payloadField}.to<@Addr>().load()");
-            return new Operand(Text: $"{errorObject}.to<@{TypeText(type: valueType)}>()", Type: valueType,
-                IsPlace: true);
+            string objectRecord = _module.CrashObjectRecord(crashable: (CrashableTypeSymbol)valueType);
+            return new Operand(Text: $"{errorObject}.to<@{objectRecord}>().error", Type: valueType, IsPlace: true);
         }
 
         return new Operand(Text: $"{Place(operand: carrier)}.{payloadField}.to<@{TypeText(type: valueType)}>()",

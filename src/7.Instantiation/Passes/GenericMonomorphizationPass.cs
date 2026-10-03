@@ -3,6 +3,7 @@ using Builder.Desugaring;
 using Builder.Declaration;
 using Builder.Tokenizer;
 using SyntaxTree;
+using TypeModel.Enums;
 using TypeModel.Symbols;
 using TypeModel.Types;
 using Builder.Verification;
@@ -468,6 +469,24 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             argTypes: [text, text, text, s32, s32]);
     }
 
+    /// <summary>
+    /// The crashable a recovery carrier is built around (a <c>Check</c> or <c>Lookup</c> whose payload is a caught
+    /// crashable), before or after the carrier's construction is lowered to a tagged creator. Null for anything else.
+    /// </summary>
+    internal static CrashableTypeSymbol? CaughtCrashable(Expression expr)
+    {
+        Expression? payload = expr switch
+        {
+            TaggedCreatorExpression { Payload: { } tagged } => tagged,
+            CreatorExpression
+            {
+                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup }
+            } carrier => carrier.MemberVariables.FirstOrDefault(predicate: m => m.Name == "payload").Value,
+            _ => null
+        };
+        return (payload?.ResolvedType ?? (payload as CreatorExpression)?.ConstructedType) as CrashableTypeSymbol;
+    }
+
     /// <summary>Whether a node leads to a <c>crash_report</c> call at Phase 9: a throw, an absent, or a
     /// returned crashable (the absent and the return only in a failable routine, which over-approximates
     /// here), or a <c>steal</c>, whose moved-out binding gets use-after-steal guards.</summary>
@@ -485,6 +504,26 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// </summary>
     private bool EnliveThrowCrashMessage(object? node)
     {
+        // A throw a recovery variant turns into its carrier: the heap object the carrier holds points at the error
+        // type's mold, which names these routines.
+        if (node is VariantReturnStatement
+            {
+                SiteKind: VariantSiteKind.FromThrow, Value.ResolvedType: CrashableTypeSymbol caught
+            } && ctx.LiveRoutineKeys.Count > 0)
+        {
+            bool moldChanged = false;
+            foreach (string member in RuntimeContract.CrashMoldMembers)
+            {
+                if (ctx.Registry.LookupMemberRoutine(type: caught, memberRoutineName: member) is
+                    { IsGenericDefinition: false } routine)
+                {
+                    moldChanged |= ctx.LiveRoutineKeys.Add(item: routine.RegistryKey);
+                }
+            }
+
+            return moldChanged;
+        }
+
         if (!MayBecomeCrash(node: node) || ctx.LiveRoutineKeys.Count == 0)
         {
             return false;
@@ -547,6 +586,20 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         Dictionary<string, TypeSymbol> newOwners, ref bool registeredRoutine)
     {
         bool changed = false;
+        // A carrier built around a caught crashable: its heap object points at the crashable's mold, which names
+        // these routines.
+        if (CaughtCrashable(expr: expr) is { } caughtType && ctx.LiveRoutineKeys.Count > 0)
+        {
+            foreach (string member in RuntimeContract.CrashMoldMembers)
+            {
+                if (ctx.Registry.LookupMemberRoutine(type: caughtType, memberRoutineName: member) is
+                    { IsGenericDefinition: false } moldMember)
+                {
+                    changed |= ctx.LiveRoutineKeys.Add(item: moldMember.RegistryKey);
+                }
+            }
+        }
+
         CollectConcreteOwnerTypes(t: expr.ResolvedType, sink: newOwners);
         if (expr is CreatorExpression creator)
         {
@@ -1058,6 +1111,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     if (n is VariantReturnStatement { SiteKind: VariantSiteKind.FromThrow, Value: { } caught })
                     {
                         MarkOwner(t: caught.ResolvedType);
+                        // The heap object the carrier holds points at its type's mold, which names these routines.
+                        if (caught.ResolvedType is CrashableTypeSymbol crashable)
+                        {
+                            foreach (string member in RuntimeContract.CrashMoldMembers)
+                            {
+                                Discover(r: _ctx.Registry.LookupMemberRoutine(type: crashable,
+                                    memberRoutineName: member));
+                            }
+                        }
+
                         return;
                     }
 
@@ -1078,6 +1141,18 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             AstWalker.WalkExpressions(root: body,
                 visit: expr =>
                 {
+                    // A carrier built around a caught crashable: its heap object points at the crashable's mold,
+                    // which names these routines.
+                    if (CaughtCrashable(expr: expr) is { } caughtType)
+                    {
+                        MarkOwner(t: caughtType);
+                        foreach (string member in RuntimeContract.CrashMoldMembers)
+                        {
+                            Discover(r: _ctx.Registry.LookupMemberRoutine(type: caughtType,
+                                memberRoutineName: member));
+                        }
+                    }
+
                     switch (expr)
                     {
                         case CallExpression { ResolvedRoutine: { } cr }: Discover(r: cr); break;

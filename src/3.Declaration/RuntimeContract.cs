@@ -230,6 +230,14 @@ public static class RuntimeContract
     /// <remarks>Sites: CrashableExpansionPass (dispatchable-member set), ImplicitCallContract (reachability seed).</remarks>
     public const string CrashTitle = "crash_title";
 
+    /// <summary>
+    /// The routines a crashable's mold names, in the mold's slot order after its type id: the heap object a carrier
+    /// holds a caught crashable in points at its type's mold, and a call on a caught error of unknown type goes
+    /// through it.
+    /// </summary>
+    public static readonly string[] CrashMoldMembers =
+        [CrashTitle, CrashMessage, Display.Represent, Display.Diagnose, Destroy];
+
     // =====================================================================================
     // Marker-protocol verbs — builder-generated $-names that are NOT in WiredRoutineCatalog
     // but are matched by literal at teardown/lowering sites (grouped with the view-verb sets).

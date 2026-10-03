@@ -161,20 +161,78 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Moves a caught crashable into the heap object a carrier's error slot holds: allocates the crashable's size
-    /// and stores the value there. Returns the object's address.
+    /// Moves a caught crashable into the heap object a carrier's error slot holds: <c>{ mold, crashable }</c>, the mold
+    /// naming the crashable's routines (<see cref="EnsureCrashMold"/>) so a call on the error needs no knowledge of
+    /// its type. Returns the object's address.
     /// </summary>
     private string EmitCrashObject(StringBuilder sb, CrashableTypeSymbol crashable, string value)
     {
         string typeName = EnsureRecordTypeDeclared(record: crashable);
+        string objectType = CrashObjectType(crashableType: typeName);
         string sizePtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {sizePtr} = getelementptr {typeName}, ptr null, i32 1");
+        EmitLine(sb: sb, line: $"  {sizePtr} = getelementptr {objectType}, ptr null, i32 1");
         string size = NextTemp();
         EmitLine(sb: sb, line: $"  {size} = ptrtoint ptr {sizePtr} to i64");
         string objectPtr = NextTemp();
         EmitLine(sb: sb, line: $"  {objectPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
-        EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {objectPtr}");
+        EmitLine(sb: sb, line: $"  store ptr {EnsureCrashMold(crashable: crashable)}, ptr {objectPtr}");
+        string errorPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {errorPtr} = getelementptr {objectType}, ptr {objectPtr}, i32 0, i32 1");
+        EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {errorPtr}");
         return objectPtr;
+    }
+
+    /// <summary>The heap object a caught crashable lives in: its mold's address, then the crashable.</summary>
+    private static string CrashObjectType(string crashableType)
+    {
+        return $"{{ ptr, {crashableType} }}";
+    }
+
+    /// <summary>
+    /// A mold: <c>{ type id, the crashable's offset in its object, then one routine per <c>CrashMoldMembers</c> }</c>.
+    /// </summary>
+    private static readonly string CrashMoldType =
+        "{ i64, i64" + string.Concat(Enumerable.Repeat(element: ", ptr",
+            count: Declaration.RuntimeContract.CrashMoldMembers.Length)) + " }";
+
+    /// <summary>The field of <see cref="CrashMoldType"/> holding the first routine.</summary>
+    private const int CrashMoldFirstMember = 2;
+
+    private readonly HashSet<string> _crashMolds = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The mold of <paramref name="crashable"/>, a constant written once: its type id, where the crashable sits in
+    /// its heap object, and the routines a call on a caught error of unknown type reaches (crash_title,
+    /// crash_message, represent, diagnose, destroy). The demand collector makes them live for every crashable a
+    /// carrier can catch.
+    /// </summary>
+    private string EnsureCrashMold(CrashableTypeSymbol crashable)
+    {
+        string name = $"@{Q(name: $"crash.mold.{RealmMangleBase(t: crashable)}")}";
+        if (!_crashMolds.Add(item: name))
+        {
+            return name;
+        }
+
+        string typeName = EnsureRecordTypeDeclared(record: crashable);
+        long typeId = unchecked((long)TypeIdHelper.ComputeTypeId(fullName: crashable.FullName));
+        var fields = new List<string>
+        {
+            $"i64 {typeId}",
+            $"i64 ptrtoint (ptr getelementptr ({CrashObjectType(crashableType: typeName)}, ptr null, i32 0, i32 1) to i64)"
+        };
+        foreach (string member in Declaration.RuntimeContract.CrashMoldMembers)
+        {
+            RoutineInfo routine = _registry.LookupMemberRoutine(type: crashable, memberRoutineName: member) ??
+                                  throw new InvalidOperationException(
+                                      message: $"The crashable '{crashable.FullName}' has no '{member}' for its mold.");
+            GenerateRoutineDeclaration(routine: routine);
+            fields.Add(item: $"ptr @{MangleRoutineName(routine: routine)}");
+        }
+
+        EmitLine(sb: _globalDeclarations,
+            line: $"{name} = internal constant {CrashMoldType} {{ {string.Join(separator: ", ", values: fields)} }}");
+        return name;
     }
 
     /// <summary>
