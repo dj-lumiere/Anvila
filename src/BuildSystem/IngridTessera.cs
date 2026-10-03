@@ -98,7 +98,10 @@ internal static class IngridTessera
         {
             // The standard library's own exports (its crash handler, the half and bfloat conversions) stay out: the
             // RazorForge program brings its runtime, and a stray copy would pull in POSIX calls the JIT can't resolve.
-            return new Tessera.Compiler(target: Tessera.BuildTarget.Host(), decls: decls) { EmitLibraryExports = false }
+            // Tessera's own crash trace stays out too: Ingrid's routines (ingrid_roam_hold and the like) sit on hot
+            // paths of every RazorForge program, and RazorForge keeps its own trace.
+            return new Tessera.Compiler(target: Tessera.BuildTarget.Host(), decls: decls, trace: false)
+                    { EmitLibraryExports = false }
                 .Generate();
         }
         catch (Tessera.CompileError ex)

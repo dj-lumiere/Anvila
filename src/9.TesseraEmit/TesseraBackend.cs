@@ -82,7 +82,9 @@ public sealed class TesseraBackend : IBuilderBackend
         string ir;
         try
         {
-            ir = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls).Generate();
+            // RazorForge keeps its own crash trace in the generated routines (TesseraTrace), so Tessera's stays out.
+            ir = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false)
+                .Generate();
         }
         catch (Tessera.CompileError ex)
         {
