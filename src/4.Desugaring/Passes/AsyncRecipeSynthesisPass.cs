@@ -282,7 +282,7 @@ internal static class AsyncRecipeSynthesisPass
                new TypeExpression(Name: "None", GenericArguments: null, Location: routine.Location);
     }
 
-    private static Expression Call(string name, List<TypeExpression>? typeArguments, List<Expression> arguments,
+    internal static Expression Call(string name, List<TypeExpression>? typeArguments, List<Expression> arguments,
         SourceLocation loc)
     {
         return typeArguments is { Count: > 0 }
@@ -295,17 +295,17 @@ internal static class AsyncRecipeSynthesisPass
             : new CallExpression(Callee: Id(name: name, loc: loc), Arguments: arguments, Location: loc);
     }
 
-    private static NamedArgumentExpression Named(string name, Expression value)
+    internal static NamedArgumentExpression Named(string name, Expression value)
     {
         return new NamedArgumentExpression(Name: name, Value: value, Location: value.Location);
     }
 
-    private static IdentifierExpression Id(string name, SourceLocation loc)
+    internal static IdentifierExpression Id(string name, SourceLocation loc)
     {
         return new IdentifierExpression(Name: name, Location: loc);
     }
 
-    private static LiteralExpression U64(int value, SourceLocation loc)
+    internal static LiteralExpression U64(int value, SourceLocation loc)
     {
         return new LiteralExpression(Value: (ulong)value, LiteralType: TokenType.U64Literal, Location: loc);
     }

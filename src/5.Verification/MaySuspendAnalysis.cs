@@ -127,7 +127,9 @@ public static class SuspendPrimitives
         "rf_channel_feed",
         "rf_channel_next",
         "rf_signal_wait",
-        "rf_signal_wait_deadline"
+        "rf_signal_wait_deadline",
+        // A call of a foreign routine marked @blocking: the calling coroutine parks while an I/O thread runs it.
+        "rf_blocking_call"
     };
 
     /// <summary>
