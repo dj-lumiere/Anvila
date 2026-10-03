@@ -50,8 +50,11 @@ public sealed partial class SemanticVerifier
         // evaluation order) into `var __rc_tN = <call>`, replacing the call with a reference to the temp.
         // Referenced identifiers are collected in the SAME walk so we can pass the outer locals the body
         // reads as parameters of the synthesized routine.
+        // A call written with explicit type arguments (`f[T](x)`, `o.m[T](x)`) is still its generic-call node
+        // here (it becomes a plain call in a later lowering): take it as the plain call it is bound to.
+        Expression inner = AsPlainCall(expr: recovery.Inner);
         var hoister = new RecoveryFailableHoister(seed: 0, registry: _registry);
-        Expression residual = hoister.VisitExpression(expr: recovery.Inner);
+        Expression residual = hoister.VisitExpression(expr: inner);
 
         // SINGLE failable call (the overwhelmingly common case): bind its recovery variant DIRECTLY by
         // reference (TypeRegistry.LookupRecoveryVariant) — the variant is the base routine's, never found by
@@ -69,7 +72,7 @@ public sealed partial class SemanticVerifier
                     }
                 ] &&
             residual is IdentifierExpression &&
-            recovery.Inner is CallExpression { ResolvedRoutine: { } singleBase } singleCall &&
+            inner is CallExpression { ResolvedRoutine: { } singleBase } singleCall &&
             _registry.LookupRecoveryVariant(recovered: singleBase, kind: recovery.Kind) is { } singleVariant &&
             BindResolvedVariantCall(call: singleCall, variant: singleVariant) is { } boundCall)
         {
@@ -237,6 +240,36 @@ public sealed partial class SemanticVerifier
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// The plain call an analyzed explicit-type-argument call (<c>f[T](x)</c>, <c>o.m[T](x)</c>) is bound to,
+    /// with the same binding, arguments and type. Any other expression, a construction (<c>List[T]()</c>), or
+    /// an unbound call is returned unchanged.
+    /// </summary>
+    private static Expression AsPlainCall(Expression expr)
+    {
+        if (expr is not GenericMemberRoutineCallExpression
+            {
+                ResolvedRoutine: { } routine, ConstructedType: null
+            } generic)
+        {
+            return expr;
+        }
+
+        Expression callee = routine.OwnerType == null &&
+                            generic.Object is IdentifierExpression id && id.Name == generic.MemberRoutineName
+            ? id with { ResolvedRoutine = routine }
+            : new MemberExpression(Object: generic.Object,
+                MemberName: generic.MemberRoutineName,
+                Location: generic.Location) { ResolvedType = generic.ResolvedType };
+        return new CallExpression(Callee: callee, Arguments: generic.Arguments, Location: generic.Location)
+        {
+            ResolvedRoutine = routine,
+            ResolvedType = generic.ResolvedType,
+            LoweringKind = generic.LoweringKind,
+            TypeArguments = generic.TypeArguments
+        };
     }
 
     /// <summary>The surface keyword for a <see cref="RecoveryKind"/>, for diagnostics.</summary>

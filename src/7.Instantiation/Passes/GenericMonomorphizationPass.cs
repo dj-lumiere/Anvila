@@ -2315,16 +2315,17 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private bool TryBuildAndStoreVariantBody(RoutineInfo resolvedRoutine,
         Dictionary<string, TypeSymbol> typeSubs)
     {
-        if (resolvedRoutine.GenericDefinition is not { IsRecoveryVariant: true } ||
-            resolvedRoutine.GenericDefinition.OwnerType is not { } variantGenDefOwner)
+        // A free generic routine's variant has no owner: its body still comes from the variant bodies the
+        // ErrorHandlingVariantPass built, never from the failable routine's own AST (which throws).
+        if (resolvedRoutine.GenericDefinition is not { IsRecoveryVariant: true } variantDefinition)
         {
             return false;
         }
 
         MonomorphizedBody? variantBodyBuilt = BuildVariantBody(
-            genMemberRoutine: resolvedRoutine.GenericDefinition,
+            genMemberRoutine: variantDefinition,
             concreteInfo: resolvedRoutine,
-            genDef: variantGenDefOwner,
+            genDef: variantDefinition.OwnerType,
             typeSubs: typeSubs,
             stringSubs: typeSubs.ToDictionary(keySelector: kv => kv.Key,
                 elementSelector: kv => kv.Value.FullName));
@@ -2776,7 +2777,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     private MonomorphizedBody? BuildVariantBody(RoutineInfo genMemberRoutine,
-        RoutineInfo concreteInfo, TypeSymbol genDef, Dictionary<string, TypeSymbol> typeSubs,
+        RoutineInfo concreteInfo, TypeSymbol? genDef, Dictionary<string, TypeSymbol> typeSubs,
         Dictionary<string, string> stringSubs)
     {
         // Compute carrier-unwrapping metadata for instantiated variant bodies.
@@ -2829,9 +2830,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 IsSynthesized: false);
         }
 
-        // Fallback: search for the original failable routine's AST and compile it as a variant
-        string fallbackAstName =
-            BuildAstName(genDef: genDef, routineName: genMemberRoutine.Name);
+        // Fallback: search for the original failable routine's AST and compile it as a variant. A member
+        // routine's AST is named by its owner, a free generic routine's by its name alone.
+        string fallbackAstName = genDef != null
+            ? BuildAstName(genDef: genDef, routineName: genMemberRoutine.Name)
+            : genMemberRoutine.Name + "[generic]";
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: fallbackAstName,
             expectedParamCount: genMemberRoutine.Parameters.Count,
             typeSubs: typeSubs);
