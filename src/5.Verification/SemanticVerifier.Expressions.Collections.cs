@@ -1045,6 +1045,7 @@ public sealed partial class SemanticVerifier
             }
 
             argType = MarkerTokenArgumentType(routine: genericRoutine, paramType: paramType, argType: argType);
+            argType = SharedEntities.AsHandleForInference(argType: argType, paramType: paramType);
 
             // Recurse into TypeArguments so const- and type-generics inside a parameterized
             // pattern (e.g. array: Array[Byte, N]) bind from the matching position in argType.

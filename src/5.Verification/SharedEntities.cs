@@ -97,6 +97,22 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
     }
 
     /// <summary>
+    /// The type an argument stands for when a generic parameter spelled <c>Roamed[T]</c> is inferred from it.
+    /// Where entities are shared, an entity value IS its <c>Roamed[E]</c> handle (the handle type is given to
+    /// it only by a later lowering), so <c>T</c> binds to <c>E</c>. Any other argument is returned unchanged.
+    /// </summary>
+    internal TypeSymbol AsHandleForInference(TypeSymbol argType, TypeSymbol paramType)
+    {
+        if (paramType is not RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed } ||
+            argType is not EntityTypeSymbol)
+        {
+            return argType;
+        }
+
+        return ResolveAnnotation(annotated: argType).Type;
+    }
+
+    /// <summary>
     /// Suflae: resolves an entity-reference variable/parameter type annotation into its <c>Roamed[E]</c>
     /// storage representation, mirroring the field substitution in <c>TypeBodyResolver</c>. A bare
     /// <c>E</c> annotation is a NON-NULL <c>Roamed[E]</c>; an optional <c>E?</c> (parsed as

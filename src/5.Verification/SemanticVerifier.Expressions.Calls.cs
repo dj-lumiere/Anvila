@@ -3393,7 +3393,8 @@ public sealed partial class SemanticVerifier
         // choose among generic overloads that differ only in PARAMETER TYPE (e.g.
         // `when_interrupted[T, P](Guarded[T, P])` vs `when_interrupted[T](Roamed[T])`).
         // If the first pick does not unify, try the sibling overloads of matching arity.
-        RoutineInfo? genericImport = _registry.LookupGenericOverload(name: callName);
+        RoutineInfo? genericImport = _registry.LookupGenericOverload(name: callName,
+            preferredArity: call.Arguments.Count);
         if (genericImport == null)
         {
             return;
