@@ -903,11 +903,18 @@ internal sealed class TesseraWriter
                "routine rf_runtime_init() -> Void\n\n" +
                "#[external(\"c\"), symbol(\"__rf_set_trace_mode\")]\n" +
                "routine c_rf_set_trace_mode(mode: S32) -> Void\n\n" +
+               "#[external(\"c\"), symbol(\"rf_set_stack_overflow_report\")]\n" +
+               "routine c_rf_set_stack_overflow_report(report: Addr) -> Void\n\n" +
+               // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
+               $"#[external(\"c\"), symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Suflae ? "tessera_deep_calls_report" : "tessera_stack_overflow_report")}\")]\n" +
+               "routine c_tessera_stack_overflow_report(stack_size: U64) -> Void\n\n" +
                "routine main() -> S32\n" +
                "    block entry()\n" +
                "        rf_runtime_init()\n" +
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
                $"        c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +
+               // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
+               "        c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
                $"        {RoutineName(routine: start)}()\n" +
                "        return(0)\n";
     }

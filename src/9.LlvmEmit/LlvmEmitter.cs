@@ -1198,6 +1198,12 @@ public partial class LlvmEmitter
         };
 
         output.AppendLine(value: "declare void @__rf_set_trace_mode(i32)");
+        output.AppendLine(value: "declare void @rf_set_stack_overflow_report(ptr)");
+        // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
+        string overflowReport = _registry.Language == Language.Suflae
+            ? "tessera_deep_calls_report"
+            : "tessera_stack_overflow_report";
+        output.AppendLine(handler: $"declare void @{overflowReport}(i64)");
 
         output.AppendLine();
         output.AppendLine(value: "; Entry point");
@@ -1205,6 +1211,8 @@ public partial class LlvmEmitter
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  call void @rf_runtime_init()");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
+        // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace.
+        output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
 
         output.AppendLine(handler: $"  call void @{startFunc}()");
         output.AppendLine(value: "  ret i32 0");
