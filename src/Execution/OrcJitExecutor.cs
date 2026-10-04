@@ -96,6 +96,9 @@ internal static unsafe class OrcJitExecutor
 
                 LLVM.InitializeNativeTarget();
                 LLVM.InitializeNativeAsmPrinter();
+                // Ingrid's library has inline assembly (the hardware word division), which the JIT's object
+                // streamer can only lower with the target's assembly parser.
+                LLVM.InitializeNativeAsmParser();
 
                 _initialized = true;
                 error = null;
