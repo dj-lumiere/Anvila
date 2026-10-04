@@ -779,7 +779,7 @@ internal sealed class TesseraRoutineWriter
     {
         string record = _module.RoutineValueRecord;
         string name = $"t{_temps++}";
-        Emit(line: $"{name} : {record} = {record} {{ fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound} }}");
+        Emit(line: $"{name} : {record} = {record} {{ fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: null }}");
         return new Operand(Text: name, Type: null, IsPlace: false);
     }
 
@@ -1123,6 +1123,11 @@ internal sealed class TesseraRoutineWriter
         if (_traced && call.Location is { } at && (at.Line > 0 || at.Column > 0))
         {
             Emit(line: $"{TesseraTrace.UpdateLocation}({at.Line}, {at.Column})");
+        }
+
+        if (call.RecoversThroughValue)
+        {
+            throw Unsupported(what: "a call through a routine value beneath try, grab or lookup");
         }
 
         if (IndirectCallee(call: call) is var (callee, routineType))

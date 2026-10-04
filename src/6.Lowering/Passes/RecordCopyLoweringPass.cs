@@ -207,7 +207,12 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
                 // GetLifecycle.Store, that bare `return me` would otherwise re-inject `me.copy()` → infinite
                 // recursion. Treat the copy body like `store`: its `return me` is the identity primitive.
                 _inCopyRoutine = IsCopyVerbRoutine(nameOrKey: key);
-                _inRcCopyVerb = OwnerNameIsRcWrapper(nameOrKey: key);
+                // The owner of the routine the key names, structurally when it is registered: the key's text
+                // also holds the parameter types, so a free routine taking a `Roamed[...]` handle would read as
+                // a member of the RC wrapper and lose every retaining copy in its variants.
+                _inRcCopyVerb = ctx.Registry.GetRoutineByExactKey(registryKey: key) is { } variantRoutine
+                    ? OwnerTypeIsRcWrapper(owner: variantRoutine.OwnerType)
+                    : OwnerNameIsRcWrapper(nameOrKey: key);
                 SetBorrowParams(
                     parameters: null); // variant/synthesized bodies carry no parameter list here
                 return LowerStatement(stmt: body);

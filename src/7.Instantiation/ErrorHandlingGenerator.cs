@@ -86,8 +86,11 @@ public sealed class ErrorHandlingGenerator
     /// accept a routine that is not failable. A user routine gets every kind: what can fail beneath it (a
     /// checked operator, a subscript, a call of a routine that is not failable but fails beneath its own call)
     /// is only known once its body is built, and each keyword must keep that failure's error.</param>
+    /// <param name="withLookup">Generate the lookup variant as well whatever the body says: an iterator's
+    /// <c>emit</c> needs it for an <c>each</c> loop beneath a recovery keyword, whose step must tell the end of the
+    /// iteration (absent) apart from a failure beneath it (an error).</param>
     public ErrorHandlingResult GenerateVariants(RoutineInfo routine, Statement body,
-        bool pessimistic, bool everyKind = false)
+        bool pessimistic, bool everyKind = false, bool withLookup = false)
     {
         if (!routine.IsFailable && !everyKind)
         {
@@ -110,7 +113,8 @@ public sealed class ErrorHandlingGenerator
         }
 
         // Phase 2: Variant Generation
-        List<GeneratedVariant> variants = BuildVariants(routine: routine, analysis: analysis, everyKind: everyKind);
+        List<GeneratedVariant> variants =
+            BuildVariants(routine: routine, analysis: analysis, everyKind: everyKind, withLookup: withLookup);
 
         return new ErrorHandlingResult
         {
@@ -172,7 +176,7 @@ public sealed class ErrorHandlingGenerator
     /// body is built) all three are generated: its grab turns an absence beneath it into AbsentValueError.
     /// </summary>
     private List<GeneratedVariant> BuildVariants(RoutineInfo routine,
-        ErrorHandlingAnalysis analysis, bool everyKind = false)
+        ErrorHandlingAnalysis analysis, bool everyKind = false, bool withLookup = false)
     {
         var variants = new List<GeneratedVariant>();
 
@@ -190,7 +194,7 @@ public sealed class ErrorHandlingGenerator
         }
 
         // lookup variant if both throw and absent
-        if (analysis is { HasThrow: true, HasAbsent: true } || everyKind)
+        if (analysis is { HasThrow: true, HasAbsent: true } || everyKind || withLookup)
         {
             RoutineInfo lookupVariant = GenerateLookupVariant(original: routine);
             // Lookup[None] degenerates to grab (Result[None]) when the return type is None:
@@ -315,6 +319,16 @@ public sealed class ErrorHandlingGenerator
     public RoutineInfo GenerateTryVariantStub(RoutineInfo original)
     {
         return GenerateTryVariant(original: original);
+    }
+
+    /// <summary>
+    /// Generates only a lookup variant for a bodyless protocol <c>emit</c>: the step of an <c>each</c> loop in a
+    /// recovery variant of a generic routine, over an iterator typed as the bare protocol, takes it (its absent
+    /// state ends the loop, its error state is a failure beneath the step).
+    /// </summary>
+    public RoutineInfo GenerateLookupVariantStub(RoutineInfo original)
+    {
+        return GenerateLookupVariant(original: original);
     }
 
     private RoutineInfo GenerateTryVariant(RoutineInfo original)

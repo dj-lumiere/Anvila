@@ -12,16 +12,15 @@ public sealed class RoutineTypeSymbol : TypeSymbol
     public override TypeCategory Category => TypeCategory.Routine;
 
     /// <summary>
-    /// A Routine value is the fat pair <c>{ ptr fn, ptr bound }</c> (v0.4.1) = TWO pointers, so its
-    /// size is <c>2 × pointerSize</c> and its alignment is pointer-alignment. The base default
-    /// (<c>pointerSize</c>) was correct only for the old 1-word representation — leaving it stale
-    /// under-allocates any entity/record that stores a Routine field (the LLVM struct type is
-    /// <c>{ ptr, ptr }</c> via GetLlvmType, so the store overruns an under-sized heap block).
-    /// See [[cabi-callback-ffi]].
+    /// A Routine value is <c>{ ptr fn, ptr bound, ptr recover }</c> = THREE pointers: the routine, its
+    /// bound payload (null when it captures nothing) and its recovering entry (the lookup-shaped
+    /// recovery variant a call beneath <c>try</c>/<c>grab</c>/<c>lookup</c> goes through, null when the
+    /// routine cannot fail beneath its call). Its alignment is pointer-alignment. A stale size here
+    /// under-allocates any entity/record that stores a Routine field (the store overruns the heap block).
     /// </summary>
     public override int SizeBytes(int pointerSize)
     {
-        return 2 * pointerSize;
+        return 3 * pointerSize;
     }
 
     /// <inheritdoc/>

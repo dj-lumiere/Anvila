@@ -341,6 +341,13 @@ public sealed partial class SemanticVerifier
             // HasThrow/HasAbsent but not yet IsFailable: CanFailUnderRecovery checks all three, and also takes
             // a user routine that is not failable but can fail beneath its call (a checked operator or a bare
             // failable call in its body), which is recovered through its own variant.
+            // A call through a routine value is hoisted too: the lambda may fail, and the variant built from the
+            // hoisted body calls the value's recovering entry (RoutineValueCalls).
+            if (rewritten is CallExpression valueCall && RoutineValueCalls.ValueType(call: valueCall) != null)
+            {
+                return HoistFailable(call: valueCall);
+            }
+
             if (rewritten is not CallExpression { ResolvedRoutine: { } rr } call ||
                 !registry.CanFailUnderRecovery(routine: rr))
             {

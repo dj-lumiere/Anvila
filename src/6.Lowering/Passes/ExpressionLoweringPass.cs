@@ -2788,42 +2788,38 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         SourceLocation loc = chain.Location;
         var hoisted = new List<Statement>();
 
-        // Lower all operands, accumulating any of their own hoisted stmts.
-        var operands = new List<Expression>(capacity: chain.Operands.Count);
-        foreach (Expression op in chain.Operands)
-        {
-            (List<Statement> h, Expression lowered) = LowerExpr(expr: op);
-            hoisted.AddRange(collection: h);
-            operands.Add(item: lowered);
-        }
+        // Lower all operands, keeping each one's own hoisted statements with it.
+        var lowered = chain.Operands.Select(selector: op => LowerExpr(expr: op)).ToList();
+        bool anyComputed = lowered.Any(predicate: l =>
+            l.Hoisted.Count > 0 || l.Expr is not (IdentifierExpression or LiteralExpression));
 
-        // Hoist middle operands (index 1 ... n-2) that are not trivially pure,
-        // to prevent double-evaluation.
-        for (int i = 1; i < operands.Count - 1; i++)
+        // In order: an operand's own statements, then (when the chain computes anything) its binding.
+        var operands = new List<Expression>(capacity: lowered.Count);
+        foreach ((List<Statement> own, Expression operand) in lowered)
         {
-            Expression mid = operands[index: i];
-            if (mid is IdentifierExpression or LiteralExpression)
+            hoisted.AddRange(collection: own);
+            // An entity named in place is read through its owner (a temporary would be a second owner).
+            if (!anyComputed || operand is LiteralExpression ||
+                operand is IdentifierExpression { ResolvedType.Category: TypeModel.Enums.TypeCategory.Entity })
             {
+                operands.Add(item: operand);
                 continue;
             }
 
-            string tempName = NextTempName(prefix: "cmp_mid");
-            TypeSymbol? midType = mid.ResolvedType;
-
-            var varDecl = new VariableDeclaration(Name: tempName,
-                Type: midType != null
-                    ? TypeInfoToExpr(type: midType, loc: loc)
-                    : null,
-                Initializer: mid,
-                Visibility: VisibilityModifier.Secret,
-                Location: loc);
-            hoisted.Add(item: new DeclarationStatement(Declaration: varDecl, Location: loc));
-
-            var tempRef = new IdentifierExpression(Name: tempName, Location: loc)
+            string tempName = NextTempName(prefix: "cmp_op");
+            TypeSymbol? operandType = operand.ResolvedType;
+            hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
+                    Type: operandType != null
+                        ? TypeInfoToExpr(type: operandType, loc: loc)
+                        : null,
+                    Initializer: operand,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: loc),
+                Location: loc));
+            operands.Add(item: new IdentifierExpression(Name: tempName, Location: loc)
             {
-                ResolvedType = midType
-            };
-            operands[index: i] = tempRef;
+                ResolvedType = operandType
+            });
         }
 
         // Build pairwise comparisons, chained with 'and'.

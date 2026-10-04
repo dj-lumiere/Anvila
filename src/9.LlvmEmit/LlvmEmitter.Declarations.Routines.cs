@@ -846,7 +846,11 @@ public partial class LlvmEmitter
             int col = routine.Location?.Column ?? 0;
             string paramTypes = string.Join(separator: ",",
                 values: routine.Parameters.Select(selector: p => p.Type.Name));
-            string lambdaName = Bang(name: $"[lambda]{fileName}:{line}:{col}");
+            // A lambda's recovery variant (the recovering entry of its routine value) is named apart from it.
+            string recovery = routine.Recovery is { } recoveryKind
+                ? $", {RoutineInfo.RecoveryKeyword(kind: recoveryKind)}"
+                : "";
+            string lambdaName = Bang(name: $"[lambda{recovery}]{fileName}:{line}:{col}");
             return Q(name: $"{lambdaName}({paramTypes})");
         }
 

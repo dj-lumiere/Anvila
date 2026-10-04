@@ -524,6 +524,13 @@ public record EachStatement(
     {
         return visitor.VisitEachStatement(node: this);
     }
+
+    /// <summary>
+    /// Set on a loop in a recovery variant body whose iterator may call a routine value (an adapter holding a
+    /// lambda): the loop steps with the iterator's lookup variant, so its end stays the absent state, and a
+    /// failure beneath a step (inside the lambda) returns as this variant kind's failure instead of crashing.
+    /// </summary>
+    public Builder.Instantiation.ErrorHandlingVariantKind? StepFailureKind { get; init; }
 }
 
 /// <summary>The buildtime source an <see cref="ExpandStatement"/> iterates over.</summary>

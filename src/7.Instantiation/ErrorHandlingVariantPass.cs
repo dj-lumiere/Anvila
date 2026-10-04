@@ -256,7 +256,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             return;
         }
 
-        ErrorHandlingResult result = generator.GenerateVariants(routine: routine, body: body);
+        // The lookup variant is the step of an `each` loop beneath a recovery keyword (RoutineValueCalls).
+        ErrorHandlingResult result =
+            generator.GenerateVariants(routine: routine, body: body, pessimistic: false, withLookup: true);
         if (result.Error != null)
         {
             return;
@@ -290,10 +292,20 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Statement variantSourceBody = GenericAstRewriter.RewriteStatement(
                     stmt: body,
                     subs: new Dictionary<string, string>());
-                Statement variantBody = TransformBody(body: variantSourceBody,
-                    kind: kind,
-                    rewriter: TryRewriteToVariantCall,
-                    registry: ctx.Registry);
+                // The try variant is every `each` loop's step: a lambda the iterator calls stays a plain call there.
+                _valueCallsStayPlain = kind is ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool;
+                Statement variantBody;
+                try
+                {
+                    variantBody = TransformBody(body: variantSourceBody,
+                        kind: kind,
+                        rewriter: TryRewriteToVariantCall,
+                        registry: ctx.Registry);
+                }
+                finally
+                {
+                    _valueCallsStayPlain = false;
+                }
                 // Memo content: a variant body RESTORED from the captured stdlib is already lowered +
                 // analyzed — keep it instead of overwriting with a fresh un-analyzed regeneration (the
                 // restored ones are what AnalyzeVariantBodies skips; overwriting would leave them
@@ -333,14 +345,18 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// variant transitively.
     /// </summary>
     public static Statement GenerateVariantBody(Statement baseBody, GeneratedVariant variant,
-        TypeRegistry registry)
+        TypeRegistry registry, bool resolveFailurePoints = true)
     {
         ErrorHandlingVariantKind kind = DetermineVariantKind(variant: variant);
         // Checked operators and subscripts in the body are failable calls too: spell them out before the
-        // propagation below, so their failures become this variant's carrier instead of a crash.
-        Statement variantSourceBody = FailurePointCalls.Resolve(
-            body: GenericAstRewriter.RewriteStatement(stmt: baseBody, subs: new Dictionary<string, string>()),
-            registry: registry);
+        // propagation below, so their failures become this variant's carrier instead of a crash. A library
+        // routine recovered only for the routine values it reaches keeps its own operators as they are.
+        Statement variantSourceBody =
+            GenericAstRewriter.RewriteStatement(stmt: baseBody, subs: new Dictionary<string, string>());
+        if (resolveFailurePoints)
+        {
+            variantSourceBody = FailurePointCalls.Resolve(body: variantSourceBody, registry: registry);
+        }
         // A grab carrier has no absent state: an `absent` in the body is caught as AbsentValueError, the same
         // error an absence beneath a grab becomes.
         if (variant.Routine.Recovery == RecoveryKind.Grab &&
@@ -534,6 +550,30 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     registry: registry,
                     nextOnly: nextOnly),
 
+            // `return f(x)` through a routine value: split like a tail call, so the statement propagation below
+            // calls the value's recovering entry and maps its failure onto this carrier.
+            ReturnStatement { Value: CallExpression valueCall } ret when registry != null &&
+                                                                     ValueCallsRecover(kind: kind, nextOnly: nextOnly) &&
+                                                                     RoutineValueCalls.ValueType(call: valueCall) !=
+                                                                     null =>
+                TransformBodyCore(body: SplitTailCall(ret: ret, call: valueCall),
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly),
+
+            // The step of an `each` loop over an iterator that may call a routine value (an adapter holding a
+            // lambda): it takes the iterator's lookup variant, whose absent state still ends the loop and whose
+            // error state, a failure inside the lambda, becomes this variant's failure instead of a crash.
+            WhenStatement ws when registry != null && ValueCallsRecover(kind: kind, nextOnly: nextOnly) &&
+                                  RoutineValueCalls.LookupIterationStep(subject: ws.Expression, registry: registry) is
+                                      { } lookupStep =>
+                TransformRecoverableIteration(ws: ws,
+                    lookupStep: lookupStep,
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry),
+
             ReturnStatement ret => new VariantReturnStatement(VariantKind: kind,
                 SiteKind: VariantSiteKind.FromReturn,
                 Value: ret.Value,
@@ -607,12 +647,72 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         };
     }
 
+    /// <summary>
+    /// Set while the try variant of an iterator's <c>emit</c> is built: that variant is the step of every
+    /// <c>each</c> loop, whose absent state ENDS the loop, so a call through a routine value inside it (an
+    /// adapter's lambda) stays a plain call and its failure crashes instead of quietly ending the loop. A loop
+    /// beneath a recovery keyword takes the iterator's lookup variant instead, which keeps the failure apart
+    /// from the end (<see cref="TransformRecoverableIteration"/>).
+    /// </summary>
+    [ThreadStatic] private static bool _valueCallsStayPlain;
+
+    /// <summary>
+    /// Whether a variant of <paramref name="kind"/> calls the recovering entry of the routine values it calls.
+    /// Not inside the try variant of an iterator's <c>emit</c> (<see cref="_valueCallsStayPlain"/>). A variant
+    /// built from a monomorphized body (<paramref name="nextOnly"/>) does it only for grab and lookup, whose
+    /// carrier keeps a failure beneath apart from the absent end of an iteration: such a body is an iterator's
+    /// <c>emit</c>, whose try variant is the plain step of an <c>each</c> loop. The recovering call reaches no
+    /// routine of its own (the entry travels in the value), so it needs nothing marked live.
+    /// </summary>
+    private static bool ValueCallsRecover(ErrorHandlingVariantKind kind, bool nextOnly)
+    {
+        return !_valueCallsStayPlain &&
+               (!nextOnly || kind is ErrorHandlingVariantKind.Check or ErrorHandlingVariantKind.Lookup);
+    }
+
+    /// <summary>Whether <paramref name="call"/> can fail beneath a recovery keyword: a routine that can fail
+    /// under recovery, or a call through a routine value (whose lambda may fail).</summary>
+    private static bool CallCanFail(CallExpression call, TypeRegistry registry)
+    {
+        return registry.CanFailUnderRecovery(routine: call.ResolvedRoutine) ||
+               !_valueCallsStayPlain && RoutineValueCalls.ValueType(call: call) != null;
+    }
+
+    /// <summary>
+    /// The <c>when</c> of an <c>each</c> loop over an iterator that may call a routine value, stepping with the
+    /// iterator's lookup variant (<paramref name="lookupStep"/>): its absent arm still ends the loop, and an arm
+    /// for the error state, a failure beneath the step, returns it as this variant's failure.
+    /// </summary>
+    private static Statement TransformRecoverableIteration(WhenStatement ws, Expression lookupStep,
+        ErrorHandlingVariantKind kind, VariantCallRewriter? rewriter, TypeRegistry registry)
+    {
+        var clauses = ws.Clauses
+                        .Select(selector: c => c with
+                         {
+                             Body = TransformBodyCore(body: c.Body,
+                                 kind: kind,
+                                 rewriter: rewriter,
+                                 registry: registry,
+                                 nextOnly: false)
+                         })
+                        .ToList();
+        SourceLocation loc = ws.Location;
+        return ws with
+        {
+            Expression = lookupStep,
+            Clauses = RoutineValueCalls.WithStepFailureClause(clauses: clauses,
+                kind: kind,
+                registry: registry,
+                loc: loc)
+        };
+    }
+
     /// <summary>Whether an always-evaluated part of <paramref name="expr"/> calls something that can fail
     /// under recovery.</summary>
     private static bool HasPropagatableFailure(Expression expr, TypeRegistry registry)
     {
         var scan = new NestedFailableHoister(
-            propagates: call => registry.CanFailUnderRecovery(routine: call.ResolvedRoutine),
+            propagates: call => CallCanFail(call: call, registry: registry),
             hoistUpTo: -1,
             skipIndex: -1);
         scan.VisitExpression(expr: expr);
@@ -638,6 +738,17 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// result is moved out of the temp with <c>steal</c>).</summary>
     private static BlockStatement SplitTailCall(ReturnStatement ret, CallExpression call)
     {
+        // A call that returns nothing has no value to keep: it runs as a statement, then the routine returns.
+        if (call.ResolvedType is null or { IsNone: true })
+        {
+            return new BlockStatement(Statements:
+                [
+                    new ExpressionStatement(Expression: call, Location: ret.Location),
+                    ret with { Value = null }
+                ],
+                Location: ret.Location);
+        }
+
         string tempName = $"__rf_tail_{Interlocked.Increment(location: ref _hoistTemp)}";
         var decl = new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
                 Type: null,
@@ -699,8 +810,14 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     private static EachStatement TransformEach(EachStatement fs, ErrorHandlingVariantKind kind,
         VariantCallRewriter? rewriter, TypeRegistry? registry, bool nextOnly)
     {
+        // A loop not lowered yet (a library body) over an iterator that may call a routine value is lowered with a
+        // lookup-shaped step (ControlFlowLoweringPass), like the lowered loops TransformRecoverableIteration takes.
+        bool recoverSteps = registry != null && ValueCallsRecover(kind: kind, nextOnly: nextOnly) &&
+                            (fs.Iterable.ResolvedType is not { } iterableType ||
+                             RoutineValueCalls.MayHoldRoutineValue(type: iterableType));
         return fs with
         {
+            StepFailureKind = recoverSteps ? kind : fs.StepFailureKind,
             Body = TransformBodyCore(body: fs.Body,
                 kind: kind,
                 rewriter: rewriter,
@@ -792,6 +909,32 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 return result;
             }
 
+            // A call through a routine value: its recovering entry's carrier is matched like an inner variant's,
+            // whatever this variant's kind.
+            if (registry != null && ValueCallsRecover(kind: kind, nextOnly: nextOnly) &&
+                TryBuildRoutineValuePropagation(stmt: s,
+                    registry: registry,
+                    safeCall: out CallExpression? valueCall,
+                    bindName: out string? valueBind,
+                    canBeAbsent: out bool valueCanBeAbsent))
+            {
+                List<Statement> remainder = TransformBlockStatements(stmts: stmts,
+                    start: i + 1,
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly);
+                result.Add(item: BuildCarrierPropagationWhen(subject: valueCall!,
+                    bindName: valueBind,
+                    caps: new CarrierCapabilities(Kind: kind,
+                        InnerCanNone: valueCanBeAbsent,
+                        InnerCanError: true),
+                    remainder: remainder,
+                    registry: registry,
+                    loc: s.Location));
+                return result; // remainder consumed into the when's success arm
+            }
+
             if (kind is ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool && registry != null &&
                 TryBuildTryPropagation(
                     stmt: s,
@@ -799,7 +942,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     nextOnly: nextOnly,
                     tempDecl: out Statement? tempDecl,
                     presentCondition: out Expression? presentCondition,
-                    bindStmt: out Statement? bindStmt))
+                    bindStmt: out Statement? bindStmt,
+                    moveOutStmt: out Statement? moveOutStmt))
             {
                 List<Statement> remainder = TransformBlockStatements(stmts: stmts,
                     start: i + 1,
@@ -812,6 +956,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 if (bindStmt != null)
                 {
                     thenStmts.Add(item: bindStmt);
+                }
+
+                if (moveOutStmt != null)
+                {
+                    thenStmts.Add(item: moveOutStmt);
                 }
 
                 thenStmts.AddRange(collection: remainder);
@@ -829,11 +978,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
             // Check/Lookup variants: Result/Lookup carriers are tag-based (not the flat {present,value}
             // of Maybe), so propagate a non-tail failable call through a `when` over the inner's
-            // same-kind variant. Only in the global path-1 (`!nextOnly`): the synthesized `when`
-            // (incl. `is Crashable`) is lowered by CrashableExpansionPass + PatternLoweringPass which
-            // run on path-1 variant bodies but NOT on path-2 monomorphized bodies.
+            // same-kind variant. A variant built from a monomorphized body (nextOnly) does it for an inner `emit`
+            // only, as for try (see TryBuildTryPropagation).
             if (kind is ErrorHandlingVariantKind.Check or ErrorHandlingVariantKind.Lookup &&
-                registry != null && !nextOnly && TryBuildCarrierSafeCall(stmt: s,
+                registry != null && TryBuildCarrierSafeCall(stmt: s,
+                    nextOnly: nextOnly,
                     registry: registry,
                     kind: kind,
                     safeCall: out Expression? carrierCall,
@@ -882,7 +1031,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// is split out inside the branch. The fallback of <c>??</c> is lowered the same way, to a <c>when</c> over
     /// the carrier that evaluates it only in the arm without a value. The branches of a conditional return and
     /// a loop condition (which re-runs every iteration) are reshaped by <see cref="TransformBodyCore"/> instead.
-    /// The third and later operands of a chained comparison are left as they are.
+    /// Every operand of a chained comparison is evaluated eagerly, left to right, so each is split like any other.
     ///
     /// Evaluation order is preserved: every call evaluated up to the LAST nested failable call is hoisted in
     /// evaluation order, failable or not, so a plain call that ran before the failable one still does. A
@@ -895,14 +1044,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     {
         hoisted = null;
         residual = null;
-
-        // Split only when a propagation path will consume the hoisted declarations: Try and TryBool always
-        // (with a registry), Check/Lookup only on the global path-1 (see TransformBlockStatements).
-        bool propagationAvailable = registry != null && (kind is ErrorHandlingVariantKind.Try
-                                                             or ErrorHandlingVariantKind.TryBool ||
-                                                         (kind is ErrorHandlingVariantKind.Check
-                                                              or ErrorHandlingVariantKind.Lookup &&
-                                                          !nextOnly));
+        // Split only when a propagation path will consume the hoisted declarations: any kind, with a registry
+        // (a monomorphized body propagates only an inner `emit` and a routine value, see Propagates).
+        bool propagationAvailable = registry != null;
         if (!propagationAvailable)
         {
             return false;
@@ -915,7 +1059,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             RoutineInfo? rr = call.ResolvedRoutine;
             if (!registry!.CanFailUnderRecovery(routine: rr))
             {
-                return false;
+                // A call through a routine value is split out too (its recovering entry is called on its own).
+                return ValueCallsRecover(kind: kind, nextOnly: nextOnly) && CallCanFail(call: call, registry: registry);
             }
 
             return !nextOnly || rr!.Name == "emit";
@@ -1170,10 +1315,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         protected override Expression VisitChainedComparison(ChainedComparisonExpression e)
         {
-            // `a < b < c` stops after the first false link, so only the first two operands always run.
+            // Every operand of `a < b < c` runs, once, left to right, before any comparison (only the
+            // comparisons stop at the first false link), so a failure in any operand is a failure point.
             var operands = new List<Expression>(collection: e.Operands);
             bool changed = false;
-            for (int i = 0; i < operands.Count && i < 2; i++)
+            for (int i = 0; i < operands.Count; i++)
             {
                 Expression visited = VisitExpression(expr: operands[index: i]);
                 changed |= !ReferenceEquals(objA: visited, objB: operands[index: i]);
@@ -1190,6 +1336,14 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
     }
 
+    /// <summary>Whether <paramref name="type"/> is a token on a value where it is stored (<c>Viewing[T]</c>,
+    /// <c>Modifying[T]</c>).</summary>
+    private static bool IsAccessToken(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol token &&
+               (token.GenericDefinition ?? token).BareName is RuntimeContract.Viewing or RuntimeContract.Modifying;
+    }
+
     /// <summary>
     /// If <paramref name="stmt"/> uses a failable call in non-tail position (a <c>var x = F!(...)</c>
     /// declaration or a bare <c>F!(...)</c> expression statement) and the callee has a <c>try</c>
@@ -1198,17 +1352,21 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <item><paramref name="tempDecl"/>: <c>var __rf_prop_N = recv.try_X(...)</c></item>
     /// <item><paramref name="presentCondition"/>: <c>__rf_prop_N.present</c> (the <c>if</c> condition)</item>
     /// <item><paramref name="bindStmt"/>: <c>var x = __rf_prop_N.value</c> (null when the result was discarded)</item>
+    /// <item><paramref name="moveOutStmt"/>: <c>__rf_prop_N.present = false</c> when the value moves out to
+    /// <c>x</c> (a payload with no <c>assign</c>, such as an entity): the carrier no longer owns it, so its
+    /// teardown does not free what <c>x</c> now holds</item>
     /// </list>
     /// Returns false — leaving the original crash-on-absence statement untouched — when no matching
     /// Maybe-returning <c>try</c> variant resolves.
     /// </summary>
     private static bool TryBuildTryPropagation(Statement stmt, TypeRegistry registry,
         bool nextOnly, out Statement? tempDecl, out Expression? presentCondition,
-        out Statement? bindStmt)
+        out Statement? bindStmt, out Statement? moveOutStmt)
     {
         tempDecl = null;
         presentCondition = null;
         bindStmt = null;
+        moveOutStmt = null;
 
         CallExpression failCall;
         string? bindName;
@@ -1310,7 +1468,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             // copy, which balances the two destroys. A MOVE-ONLY entity payload has no Assign derive because
             // it is single-owner. Leave that extract as a plain passthrough and let the ownership checker
             // treat it as the move it is. Trying to assign it would reach codegen unresolved.
-            bool payloadAssignable = valueType != null && registry.LookupMemberRoutine(
+            // A token payload (an iterator's `Modifying[T]`) is an address with nothing to own: it is read as it is.
+            // Looking `assign` up on it would reach the value's own `assign` through the token.
+            bool payloadAssignable = valueType != null && !IsAccessToken(type: valueType) && registry.LookupMemberRoutine(
                 type: valueType,
                 memberRoutineName: RuntimeContract.Duplication.Assign,
                 isFailable: false) != null;
@@ -1330,8 +1490,66 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     Visibility: VisibilityModifier.Secret,
                     Location: loc),
                 Location: loc);
+
+            // A payload with no `assign` (an entity) moves out: the carrier gives it up, as `strip_out` does.
+            if (!payloadAssignable && valueType != null && !IsAccessToken(type: valueType))
+            {
+                moveOutStmt = new AssignmentStatement(
+                    Target: new MemberExpression(
+                        Object: new IdentifierExpression(Name: tempName, Location: loc) { ResolvedType = carrier },
+                        MemberName: RuntimeContract.Carrier.PresentField,
+                        Location: loc) { ResolvedType = registry.LookupType(name: "Bool") },
+                    Value: new LiteralExpression(Value: false,
+                        LiteralType: Tokenizer.TokenType.False,
+                        Location: loc) { ResolvedType = registry.LookupType(name: "Bool") },
+                    Location: loc);
+            }
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// <c>var x = f(a)</c> or a bare <c>f(a)</c> where <c>f</c> is a routine value: the call of its recovering
+    /// entry (<see cref="RoutineValueCalls.Recovering"/>), the name its value binds, and whether its carrier can
+    /// come back absent (it can always come back with an error). False for any other statement, and inside the
+    /// try variant of an iterator's <c>emit</c> (see <see cref="_valueCallsStayPlain"/>).
+    /// </summary>
+    private static bool TryBuildRoutineValuePropagation(Statement stmt, TypeRegistry registry,
+        out CallExpression? safeCall, out string? bindName, out bool canBeAbsent)
+    {
+        safeCall = null;
+        bindName = null;
+        canBeAbsent = false;
+        if (_valueCallsStayPlain)
+        {
+            return false;
+        }
+
+        CallExpression call;
+        switch (stmt)
+        {
+            case DeclarationStatement { Declaration: VariableDeclaration { Initializer: CallExpression ce } vd }:
+                call = ce;
+                bindName = vd.Name;
+                break;
+            case ExpressionStatement { Expression: CallExpression ce2 }:
+                call = ce2;
+                break;
+            default:
+                return false;
+        }
+
+        if (RoutineValueCalls.ValueType(call: call) is not { } routineType ||
+            RoutineValueCalls.Recovering(call: call, routineType: routineType, registry: registry) is not
+                { } recovering)
+        {
+            bindName = null;
+            return false;
+        }
+
+        safeCall = recovering;
+        canBeAbsent = RoutineValueCalls.CanBeAbsent(routineType: routineType);
         return true;
     }
 
@@ -1346,7 +1564,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// arm would apply (e.g. a Check outer over an absent-only inner — an inconsistent combination),
     /// leaving the original statement untouched.
     /// </summary>
-    private static bool TryBuildCarrierSafeCall(Statement stmt, TypeRegistry registry,
+    private static bool TryBuildCarrierSafeCall(Statement stmt, TypeRegistry registry, bool nextOnly,
         ErrorHandlingVariantKind kind, out Expression? safeCall, out string? bindName,
         out bool innerCanNone, out bool innerCanError)
     {
@@ -1375,6 +1593,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         RoutineInfo failRoutine = failCall.ResolvedRoutine;
+        if (nextOnly && failRoutine.Name != "emit")
+        {
+            return false;
+        }
 
         // Prefer the outer kind's variant, then fall back to the most-informative available (free or member
         // bases: a whole-expression `grab`/`lookup` composition body — SemanticVerifier.Recovery — hoists FREE
@@ -1468,7 +1690,31 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         var clauses = new List<WhenClause>();
 
-        if (innerCanNone && kind == ErrorHandlingVariantKind.Lookup)
+        // A try carrier keeps no error: an absent and an error beneath both make it absent.
+        if (kind is ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool)
+        {
+            if (innerCanNone)
+            {
+                clauses.Add(item: new WhenClause(Pattern: new NonePattern(Location: loc),
+                    Body: new VariantReturnStatement(VariantKind: kind,
+                        SiteKind: VariantSiteKind.FromAbsent,
+                        Value: null,
+                        Location: loc),
+                    Location: loc));
+            }
+
+            if (innerCanError)
+            {
+                clauses.Add(item: new WhenClause(
+                    Pattern: new CrashablePattern(ErrorType: null, VariableName: null, Location: loc),
+                    Body: new VariantReturnStatement(VariantKind: kind,
+                        SiteKind: VariantSiteKind.FromAbsent,
+                        Value: null,
+                        Location: loc),
+                    Location: loc));
+            }
+        }
+        else if (innerCanNone && kind == ErrorHandlingVariantKind.Lookup)
         {
             // Lookup natively carries an absent state.
             clauses.Add(item: new WhenClause(Pattern: new NonePattern(Location: loc),
@@ -1494,7 +1740,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Location: loc));
         }
 
-        if (innerCanError)
+        if (innerCanError && kind is not (ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool))
         {
             // The caught error MOVES to the outer carrier (PatternLoweringPass clears the inner carrier's tag, so its
             // teardown does not free the object the outer one now holds).

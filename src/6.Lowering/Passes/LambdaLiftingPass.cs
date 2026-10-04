@@ -1,3 +1,4 @@
+using Builder.Instantiation;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -493,6 +494,12 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
     {
         return expression switch
         {
+            // A routine named as a value carries its recovering entry too.
+            IdentifierExpression
+            {
+                ResolvedRoutine: { } named, ResolvedType: RoutineTypeSymbol, RecoverRoutine: null
+            } reference when RecoverEntryForNamed(named: named) is { } namedEntry =>
+                reference with { RecoverRoutine = namedEntry },
             LambdaExpression lambda => LiftLambda(lambda: lambda,
                 scope: scope,
                 inheritedGenericParameters: inheritedGenericParameters,
@@ -530,11 +537,14 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     includeMe: includeMe),
             CallExpression call => CopyResolvedType(rewritten: call with
                 {
-                    Callee = RewriteExpression(expression: call.Callee,
-                        scope: scope,
-                        inheritedGenericParameters: inheritedGenericParameters,
-                        inheritedGenericConstraints: inheritedGenericConstraints,
-                        includeMe: includeMe),
+                    // A routine called by its name is no routine value.
+                    Callee = call.Callee is IdentifierExpression
+                        ? call.Callee
+                        : RewriteExpression(expression: call.Callee,
+                            scope: scope,
+                            inheritedGenericParameters: inheritedGenericParameters,
+                            inheritedGenericConstraints: inheritedGenericConstraints,
+                            includeMe: includeMe),
                     Arguments = call.Arguments
                                     .Select(selector: arg => RewriteExpression(expression: arg,
                                          scope: scope,
@@ -1042,7 +1052,8 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         var function = new IdentifierExpression(Name: liftedName, Location: lambda.Location)
         {
             ResolvedType = lambda.ResolvedType,
-            ResolvedRoutine = liftedInfo
+            ResolvedRoutine = liftedInfo,
+            RecoverRoutine = RecoverEntryFor(lifted: liftedInfo, body: liftedRoutine.Body)
         };
         if (closure == null)
         {
@@ -1052,6 +1063,53 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         return new ClosureValueExpression(Function: function,
             Bound: closure.BuildPayload(captures: closureCaptures),
             Location: lambda.Location) { ResolvedType = lambda.ResolvedType };
+    }
+
+    /// <summary>
+    /// The recovering entry of a lifted lambda's routine value: the lookup-shaped recovery variant of the lifted
+    /// routine (<c>Check[None]</c>-returning for a lambda that returns nothing), built from its body like a user
+    /// routine's, when the body can fail beneath its call. A call of the value beneath <c>try</c>/<c>grab</c>/
+    /// <c>lookup</c> goes through it (see <c>RoutineValueCalls</c>). A lambda inside a generic routine has none:
+    /// its value is built per instance, from a template routine.
+    /// </summary>
+    private RoutineInfo? RecoverEntryFor(RoutineInfo lifted, Statement body)
+    {
+        if (lifted.GenericParameters is { Count: > 0 } || ctx.Registry.RecordRecoverableBody is not { } record)
+        {
+            return null;
+        }
+
+        // A copy of the body as it is now, before the passes below lower the lifted routine's own body.
+        record(arg1: lifted, arg2: GenericAstRewriter.RewriteStatement(stmt: body,
+            subs: new Dictionary<string, string>()));
+        if (!ctx.Registry.CanFailUnderRecovery(routine: lifted))
+        {
+            return null;
+        }
+
+        RecoveryKind kind = lifted.ReturnType is { IsNone: false }
+            ? RecoveryKind.Lookup
+            : RecoveryKind.Grab;
+        return ctx.Registry.LookupRecoveryVariant(recovered: lifted, kind: kind);
+    }
+
+    /// <summary>
+    /// The recovering entry of a routine named as a value (<c>xs.select(transform: halve)</c>): its own
+    /// lookup-shaped recovery variant when it can fail beneath its call. A lifted lambda already has its own
+    /// (<see cref="RecoverEntryFor"/>), and a generic or member routine taken as a value keeps none.
+    /// </summary>
+    private RoutineInfo? RecoverEntryForNamed(RoutineInfo named)
+    {
+        if (named.IsLambda || named.IsRecoveryVariant || named.OwnerType != null ||
+            named.GenericParameters is { Count: > 0 } || !ctx.Registry.CanFailUnderRecovery(routine: named))
+        {
+            return null;
+        }
+
+        RecoveryKind kind = named.ReturnType is { IsNone: false }
+            ? RecoveryKind.Lookup
+            : RecoveryKind.Grab;
+        return ctx.Registry.LookupRecoveryVariant(recovered: named, kind: kind);
     }
 
     private Expression LiftCapturingLambdaIife(CallExpression call, LambdaExpression lambda,

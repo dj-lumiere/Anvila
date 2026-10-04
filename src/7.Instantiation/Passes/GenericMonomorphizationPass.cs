@@ -1184,8 +1184,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                         // Two forms: pre-resolved (ResolvedRoutine set) or a bare name whose ResolvedType is a
                         // RoutineTypeSymbol (codegen resolves it by name+param-types via TryResolveRoutineReference,
                         // e.g. a routine passed to a C function pointer like `rf_coro_create(entry: coro_body)`).
-                        case IdentifierExpression { ResolvedRoutine: { } ir }:
-                            Discover(r: ir); break;
+                        // A routine value also carries its recovering entry (the routine's recovery variant).
+                        case IdentifierExpression { ResolvedRoutine: { } ir } routineValue:
+                            Discover(r: ir);
+                            Discover(r: routineValue.RecoverRoutine);
+                            break;
                         case IdentifierExpression { ResolvedType: RoutineTypeSymbol rvt } rid:
                             Discover(
                                 r: gmp.ResolveRoutineValueByName(name: rid.Name,

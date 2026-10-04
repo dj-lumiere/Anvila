@@ -1216,6 +1216,13 @@ public sealed partial class SemanticVerifier
            .Run(program: program);
         new PostprocessingPipeline(ctx: ctx).Run(program: program);
 
+        // A lambda lifted above that can fail beneath its call got a recovery variant its routine value carries
+        // (LambdaLiftingPass.RecoverEntryFor): build, analyze and lower its body now.
+        if (_variantBodyGenQueue.Count > 0)
+        {
+            FinalizeLateVariantBodies();
+        }
+
         // Owned rvalue-temporary teardown for user code, now that Phase 8 has lowered when→if so the
         // producing calls sit in real statements. ScopeTeardownLoweringPass already ran (pre-lowering,
         // step 4) and will not revisit this program, so the temps' bindings are freed exactly once by
@@ -1223,6 +1230,63 @@ public sealed partial class SemanticVerifier
         new TemporaryTeardownPass(ctx: ctx).Run(program: program);
     }
 
+
+    /// <summary>
+    /// Builds, analyzes and lowers the variant bodies queued while a user program was lowered (the recovering
+    /// entries of the lambdas it lifted), and only those: every other variant body is lowered already, and the
+    /// global variant pipelines are not safe to run over a lowered body twice.
+    /// </summary>
+    private void FinalizeLateVariantBodies()
+    {
+        var priorKeys = new HashSet<string>(collection: _variantBodies.Keys, comparer: StringComparer.Ordinal);
+        DrainVariantBodyGenQueue();
+        Dictionary<string, Statement> fresh = _variantBodies
+                                              .Where(predicate: kv => !priorKeys.Contains(item: kv.Key) &&
+                                                                      !_memo.RestoredVariantKeys.Contains(
+                                                                          item: kv.Key))
+                                              .ToDictionary(keySelector: kv => kv.Key,
+                                                   elementSelector: kv => kv.Value,
+                                                   comparer: StringComparer.Ordinal);
+        if (fresh.Count == 0)
+        {
+            return;
+        }
+
+        foreach ((string key, Statement body) in fresh)
+        {
+            if (_registry.GetRoutineByExactKey(registryKey: key) is { } variantInfo)
+            {
+                AnalyzeCompilerGeneratedBody(routineInfo: variantInfo, body: body);
+            }
+        }
+
+        var dctx = new DesugaringContext(registry: _registry,
+            routineBodies: _routineBodies,
+            target: _target,
+            buildMode: _buildMode)
+        {
+            VariantBodies = fresh,
+            RestoredVariantKeys = _memo.RestoredVariantKeys
+        };
+        // The variant-body steps of DesugaringPipeline.RunGlobal, without its eager variant generation.
+        new PresetInliningPass(ctx: dctx).RunOnVariantBodies();
+        new ControlFlowLoweringPass(ctx: dctx).RunOnVariantBodies();
+        new GenericCallLoweringPass(ctx: dctx).RunOnVariantBodies();
+        var pctx = new PostprocessingContext(registry: _registry,
+            variantBodies: dctx.VariantBodies,
+            synthesizedBodies: new Dictionary<string, Statement>(),
+            target: _target,
+            buildMode: _buildMode,
+            monomorphizedBodies: _instantiatedGenericBodies);
+        new PostprocessingPipeline(ctx: pctx).RunGlobal();
+        // The teardown the other variant bodies got before instantiation.
+        new ScopeTeardownLoweringPass(ctx: pctx).RunOnVariantBodies();
+        new TemporaryTeardownPass(ctx: pctx).RunOnBodies(bodies: pctx.VariantBodies);
+        foreach ((string key, Statement body) in pctx.VariantBodies)
+        {
+            _variantBodies[key: key] = body;
+        }
+    }
 
     /// <summary>Stamps the last emitter-facing decisions on every routine body of a program: how each
     /// construction is built (<see cref="ConstructionLoweringPass"/>), the use-after-steal guards (<see cref="StealGuardLoweringPass"/>), each crash as a <c>crash_report</c>

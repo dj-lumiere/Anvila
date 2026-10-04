@@ -1,3 +1,4 @@
+using Builder.Instantiation;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -523,6 +524,11 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             ? LowerStatement(stmt: eachStmt.ElseBranch)
             : null;
 
+        // In a recovery variant, a failure beneath a lookup-shaped step returns as the variant's failure.
+        WhenClause? failureClause = eachStmt.StepFailureKind is { } failureKind
+            ? RoutineValueCalls.StepFailureClause(kind: failureKind, registry: ctx.Registry, loc: loc)
+            : null;
+
         return elseBranchLowered != null
             ? BuildForElse(elseBranchLowered: elseBranchLowered,
                 tryNextCall: tryNextCall,
@@ -532,18 +538,29 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 names: new ForElseNames(ElseVarName: elseVarName,
                     ExhaustedName: $"_lf_exhausted_{n}",
                     IterationSourceName: iterationSourceName,
-                    IterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable)))
+                    IterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable)),
+                failureClause: failureClause)
             : BuildPlainFor(tryNextCall: tryNextCall,
                 elseBody: elseBody,
                 elseVarName: elseVarName,
                 iterVarStmt: iterVarStmt,
                 iterationSourceName: iterationSourceName,
                 iterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable),
-                loc: loc);
+                loc: loc,
+                failureClause: failureClause);
     }
 
     /// <summary>The iterator step an <c>each</c> loop recovers with <c>try</c>.</summary>
     private const string EmitRoutineName = "emit";
+
+    /// <summary>The recovery an <c>each</c> loop's step takes: <c>try</c>, or <c>lookup</c> in a recovery variant
+    /// whose loop may reach a routine value (<see cref="EachStatement.StepFailureKind"/>).</summary>
+    private static RecoveryKind StepKind(EachStatement eachStmt)
+    {
+        return eachStmt.StepFailureKind != null
+            ? RecoveryKind.Lookup
+            : RecoveryKind.Try;
+    }
 
     /// <summary>
     /// The step of an <c>each</c> loop: <c>try _lf_iter_N.emit()</c>. Before analysis it is that recovery
@@ -572,7 +589,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             if (ctx.Registry.LookupMemberRoutine(type: iteratorType,
                     memberRoutineName: EmitRoutineName,
                     isFailable: true) is { } emit &&
-                ctx.Registry.LookupRecoveryVariant(recovered: emit, kind: RecoveryKind.Try) is { } step)
+                ctx.Registry.LookupRecoveryVariant(recovered: emit, kind: StepKind(eachStmt: eachStmt)) is { } step)
             {
                 return emitCall with
                 {
@@ -584,7 +601,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             }
         }
 
-        return new RecoveryExpression(Kind: RecoveryKind.Try, Inner: emitCall, Location: emitCall.Location);
+        return new RecoveryExpression(Kind: StepKind(eachStmt: eachStmt),
+            Inner: emitCall,
+            Location: emitCall.Location);
     }
 
     /// <summary>
@@ -653,7 +672,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 
     private static BlockStatement BuildForElse(Statement elseBranchLowered, Expression tryNextCall,
         Statement elseBody, Statement iterVarStmt, ForElseNames names,
-        SourceLocation loc)
+        SourceLocation loc, WhenClause? failureClause)
     {
         string? elseVarName = names.ElseVarName;
         string exhaustedName = names.ExhaustedName;
@@ -681,7 +700,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Location: loc);
 
         var whenStmt = new WhenStatement(Expression: tryNextCall,
-            Clauses: [noneClause, elseClause],
+            Clauses: failureClause != null
+                ? [noneClause, failureClause, elseClause]
+                : [noneClause, elseClause],
             Location: loc);
         var loopStmt =
             new LoopStatement(Body: new BlockStatement(Statements: [whenStmt], Location: loc),
@@ -741,7 +762,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     private static BlockStatement BuildPlainFor(Expression tryNextCall, Statement elseBody,
         string? elseVarName, Statement iterVarStmt, string? iterationSourceName,
         string? iterationSourcePath,
-        SourceLocation loc)
+        SourceLocation loc, WhenClause? failureClause)
     {
         // Plain for (no else branch)
         Statement noneBody = new BlockStatement(Statements:
@@ -757,7 +778,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Location: loc);
 
         var whenStmt = new WhenStatement(Expression: tryNextCall,
-            Clauses: [noneClause, elseClause],
+            Clauses: failureClause != null
+                ? [noneClause, failureClause, elseClause]
+                : [noneClause, elseClause],
             Location: loc);
         var loopStmt =
             new LoopStatement(Body: new BlockStatement(Statements: [whenStmt], Location: loc),

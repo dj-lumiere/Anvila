@@ -147,8 +147,9 @@ internal static class FailurePointCalls
 
     /// <summary>
     /// Whether an analyzed body can fail where it stands: a <c>throw</c> or <c>absent</c>, a checked
-    /// operator or subscript whose routine is failable, or a call that can fail under recovery
-    /// (<see cref="TypeRegistry.CanFailUnderRecovery"/>, which follows the user routines it calls). A
+    /// operator or subscript whose routine is failable, a call that can fail under recovery
+    /// (<see cref="TypeRegistry.CanFailUnderRecovery"/>, which follows the user routines it calls), a call
+    /// through a routine value, or the step of an <c>each</c> loop over an iterator that may call one. A
     /// lambda body and a nested recovery keyword do not count, for the same reasons as in
     /// <see cref="Resolve"/>.
     /// </summary>
@@ -200,6 +201,10 @@ internal static class FailurePointCalls
 
             Found = expr switch
             {
+                // A call through a routine value (the lambda may fail), and the step of an `each` loop over an
+                // iterator that may call one.
+                CallExpression call when RoutineValueCalls.ValueType(call: call) != null => true,
+                _ when RoutineValueCalls.IsRecoverableIterationStep(expr: expr) => true,
                 CallExpression call => registry.CanFailUnderRecovery(routine: call.ResolvedRoutine),
                 GenericMemberRoutineCallExpression generic =>
                     registry.CanFailUnderRecovery(routine: generic.ResolvedRoutine),

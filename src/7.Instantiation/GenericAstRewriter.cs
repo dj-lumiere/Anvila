@@ -276,12 +276,32 @@ internal static class GenericAstRewriter
             return null;
         }
 
+        /// <summary>
+        /// The implementer a protocol's own routine is instantiated for: the <c>Me</c> binding, or, for a recovery
+        /// variant of such a routine (instantiated with the implementer as its owner but no <c>Me</c> binding),
+        /// the type of its receiver.
+        /// </summary>
+        private TypeSymbol? ImplementerOfMe()
+        {
+            if (TypeSubs!.TryGetValue(key: "Me", value: out TypeSymbol? implementer))
+            {
+                return implementer;
+            }
+
+            return ParamTypes.TryGetValue(key: "me", value: out implementer) &&
+                   implementer is RecordTypeSymbol or EntityTypeSymbol
+                ? implementer
+                : null;
+        }
+
         private TypeSymbol? ResolveAssociatedType(AssociatedProjectionTypeSymbol proj)
         {
             TypeSymbol newBase = ResolveType(original: proj.Base) ?? proj.Base;
             // In a protocol's own routine `me` is typed as the protocol, so `me.iter()` is `Iterable/Iter`: the
             // implementer this body is instantiated for (Me) is the type whose binding it means.
-            if (newBase is ProtocolTypeSymbol && TypeSubs!.TryGetValue(key: "Me", value: out TypeSymbol? implementer))
+            // A recovery variant of such a routine is instantiated with the implementer as its owner but no `Me`
+            // binding, so the receiver's type names the implementer then.
+            if (newBase is ProtocolTypeSymbol && ImplementerOfMe() is { } implementer)
             {
                 newBase = implementer;
             }

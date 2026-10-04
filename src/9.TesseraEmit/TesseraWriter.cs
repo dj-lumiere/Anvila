@@ -674,7 +674,7 @@ internal sealed class TesseraWriter
             }
 
             _routineValueRecord = VerbatimName(text: "Routine value");
-            _records.Append(value: $"{Private}record {_routineValueRecord}\n    fn : Addr\n    bound : Addr\n\n");
+            _records.Append(value: $"{Private}record {_routineValueRecord}\n    fn : Addr\n    bound : Addr\n    recover : Addr\n\n");
             return _routineValueRecord;
         }
     }

@@ -98,10 +98,11 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     /// </summary>
     public void RunOnVariantBodies()
     {
-        // Synthesized variant bodies are builder-generated and not tied to a source file. They never
-        // reference file-private secret presets, so an empty own-set is correct (public presets still
-        // inline via the registry).
-        _ownPresets = new Dictionary<string, PresetDeclaration>(comparer: StringComparer.Ordinal);
+        // A variant body is built from the body of the routine it recovers, so it may name a file-private
+        // secret preset of the file that routine is written in (a library routine recovered for the routine
+        // values it reaches keeps its body as written). Public presets inline via the registry.
+        var empty = new Dictionary<string, PresetDeclaration>(comparer: StringComparer.Ordinal);
+        Dictionary<string, Dictionary<string, PresetDeclaration>>? presetsByFile = null;
         foreach (string key in ctx.VariantBodies.Keys.ToList())
         {
             if (ctx.RestoredVariantKeys.Contains(item: key))
@@ -109,6 +110,11 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
                 continue; // already inlined at snapshot capture
             }
 
+            string? file = ctx.Registry.GetRoutineByExactKey(registryKey: key)?.Location?.FileName;
+            presetsByFile ??= StdlibPresetsByFile();
+            _ownPresets = file != null && presetsByFile.TryGetValue(key: file, value: out var own)
+                ? own
+                : empty;
             Statement body = ctx.VariantBodies[key: key];
             Statement lowered = VisitStatement(stmt: body);
             if (!ReferenceEquals(objA: lowered, objB: body))
@@ -116,6 +122,28 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
                 ctx.VariantBodies[key: key] = lowered;
             }
         }
+    }
+
+    /// <summary>The presets each library file declares, by file.</summary>
+    private Dictionary<string, Dictionary<string, PresetDeclaration>> StdlibPresetsByFile()
+    {
+        var byFile = new Dictionary<string, Dictionary<string, PresetDeclaration>>(comparer: StringComparer.Ordinal);
+        foreach ((Program program, _, _) in ctx.Registry.StdlibPrograms)
+        {
+            foreach (PresetDeclaration preset in program.Declarations.OfType<PresetDeclaration>())
+            {
+                string file = preset.Location.FileName;
+                if (!byFile.TryGetValue(key: file, value: out Dictionary<string, PresetDeclaration>? presets))
+                {
+                    presets = new Dictionary<string, PresetDeclaration>(comparer: StringComparer.Ordinal);
+                    byFile[key: file] = presets;
+                }
+
+                presets[key: preset.Name] = preset;
+            }
+        }
+
+        return byFile;
     }
 
     /// <summary>

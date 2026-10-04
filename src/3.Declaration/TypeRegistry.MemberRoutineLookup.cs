@@ -1597,6 +1597,12 @@ public sealed partial class TypeRegistry
     public Func<RoutineInfo, bool>? MayFailBeneath { get; set; }
 
     /// <summary>
+    /// Verifier-installed hook: records the analyzed body of a routine the builder made after analysis (a
+    /// lambda lifted into a routine) as one a recovery variant can be built from, as a user routine's body is.
+    /// </summary>
+    public Action<RoutineInfo, SyntaxTree.Statement>? RecordRecoverableBody { get; set; }
+
+    /// <summary>
     /// Whether a call of <paramref name="routine"/> made beneath a recovery keyword has a failure to
     /// recover: the routine is failable (declared or inferred), or it can fail beneath its call
     /// (<see cref="MayFailBeneath"/>).

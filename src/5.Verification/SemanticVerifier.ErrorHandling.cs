@@ -56,6 +56,7 @@ public sealed partial class SemanticVerifier
         // A user routine that is not failable is recovered through its own variant when it can fail beneath
         // its call (see _recoverableUserBodies).
         _registry.MayFailBeneath = MayFailBeneathForRecovery;
+        _registry.RecordRecoverableBody = RecordRecoverableBody;
         var generator = new ErrorHandlingGenerator(registry: _registry);
         string? currentModule = GetCurrentModuleName();
 
@@ -150,7 +151,8 @@ public sealed partial class SemanticVerifier
 
         ErrorHandlingResult result = generator.GenerateVariants(routine: routineInfo,
             body: decl.Body,
-            pessimistic: !hasDirect);
+            pessimistic: !hasDirect,
+            withLookup: true);
         if (result.Error != null)
         {
             return;
@@ -196,6 +198,13 @@ public sealed partial class SemanticVerifier
                 _registry.RegisterRoutine(
                     routine: new ErrorHandlingGenerator(registry: _registry).GenerateTryVariantStub(
                         original: baseRoutine));
+                // An iterator's step in a recovery variant takes the lookup variant (RoutineValueCalls).
+                if (baseRoutine.Name == EmitRoutineName)
+                {
+                    _registry.RegisterRoutine(
+                        routine: new ErrorHandlingGenerator(registry: _registry).GenerateLookupVariantStub(
+                            original: baseRoutine));
+                }
             }
 
             return true;
@@ -325,27 +334,107 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>The recorded body of a user routine that is not failable (a concrete instance of a generic
-    /// one finds its definition's), or null.</summary>
+    /// one finds its definition's), or else the body of a library routine that reaches a routine value
+    /// (<see cref="RecoverableLibraryBody"/>), or null.</summary>
     private Statement? RecoverableUserBody(RoutineInfo routine)
     {
         return DeclarationKey(routine: routine) is { } key &&
                _recoverableUserBodies.TryGetValue(key: key, value: out Statement? body)
             ? body
+            : RecoverableLibraryBody(routine: routine);
+    }
+
+    /// <summary>
+    /// Records the body of a routine the builder made after analysis (a lambda lifted into a routine) as a
+    /// recoverable body, like a user routine's (<c>TypeRegistry.RecordRecoverableBody</c>).
+    /// </summary>
+    private void RecordRecoverableBody(RoutineInfo routine, Statement body)
+    {
+        if (DeclarationKey(routine: routine) is { } key)
+        {
+            _recoverableUserBodies[key: key] = body;
+        }
+    }
+
+    /// <summary>
+    /// The library routines that are not failable but reach a routine value, by declaration (the bodies their
+    /// recovery variants are built from), and the base routines whose variants were built from one. A library
+    /// routine that calls a routine it was handed (<c>any</c>, <c>sort_by</c>), hands one on, or steps an
+    /// iterator that may call one (<c>List()</c> over a <c>select</c>) passes the failure of that routine on: a
+    /// call of it beneath a recovery keyword goes through its own recovery variant. Its own failures (a checked
+    /// operator in its body) are not recovered: a library routine that can fail by itself is declared failable.
+    /// </summary>
+    private readonly Dictionary<string, Statement> _recoverableLibraryBodies = new(comparer: StringComparer.Ordinal);
+
+    private readonly HashSet<string> _libraryVariantBases = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The body of a library routine that is not failable and reaches a routine value (see
+    /// <see cref="_recoverableLibraryBodies"/>), or null.</summary>
+    private Statement? RecoverableLibraryBody(RoutineInfo routine)
+    {
+        if (routine.IsFailable || routine.HasThrow || routine.HasAbsent || routine.IsRecoveryVariant ||
+            routine.Annotations.Contains(item: "crash_only") || DeclarationKey(routine: routine) is not { } key)
+        {
+            return null;
+        }
+
+        if (_recoverableLibraryBodies.TryGetValue(key: key, value: out Statement? known))
+        {
+            return known;
+        }
+
+        for (RoutineInfo? source = routine;
+             source != null;
+             source = ReferenceEquals(objA: source.GenericDefinition, objB: source) ? null : source.GenericDefinition)
+        {
+            if (LibraryBody(key: source.RegistryKey) is not { } body)
+            {
+                continue;
+            }
+
+            if (!RoutineValueReach.Reaches(routine: routine, body: body))
+            {
+                return null;
+            }
+
+            _recoverableLibraryBodies[key: key] = body;
+            return body;
+        }
+
+        return null;
+    }
+
+    /// <summary>A library routine's body by registry key: collected for variant generation on a cold build,
+    /// restored on a warm one.</summary>
+    private Statement? LibraryBody(string key)
+    {
+        if (_routineBodies.TryGetValue(key: key, value: out Statement? body))
+        {
+            return body;
+        }
+
+        return _memo.WarmStdlibRoutineBodies != null &&
+               _memo.WarmStdlibRoutineBodies.TryGetValue(key: key, value: out body)
+            ? body
             : null;
     }
 
     /// <summary>
-    /// <c>TypeRegistry.MayFailBeneath</c>: whether a user routine that is not failable can fail beneath
-    /// its call. Before the user bodies are analyzed (a <c>try</c> written in a body analyzed before the
-    /// routine it calls) every user routine counts, and its variant then recovers whatever its analyzed body
-    /// turns out to hold. Afterwards the body is scanned: a checked operator, a failable subscript or a call
-    /// that can fail (at any depth) makes it count.
+    /// <c>TypeRegistry.MayFailBeneath</c>: whether a routine that is not failable can fail beneath its call.
+    /// A library routine can when it calls a routine value or hands one on, or steps an iterator whose type may
+    /// hold one (<see cref="RoutineValueReach"/>). A user routine: before the user bodies are analyzed (a
+    /// <c>try</c> written in a body analyzed before the routine it calls) every user routine counts, and its
+    /// variant then recovers whatever its analyzed body turns out to hold. Afterwards the body is scanned: a
+    /// checked operator, a failable subscript, a call that can fail (at any depth) or a call through a routine
+    /// value makes it count.
     /// </summary>
     private bool MayFailBeneathForRecovery(RoutineInfo routine)
     {
-        if (RecoverableUserBody(routine: routine) is not { } body)
+        string? key = DeclarationKey(routine: routine);
+        if (key == null || !_recoverableUserBodies.TryGetValue(key: key, value: out Statement? body))
         {
-            return false;
+            return RecoverableLibraryBody(routine: routine) is { } libraryBody &&
+                   RoutineValueReach.MayFail(routine: routine, body: libraryBody);
         }
 
         if (!_recoverableBodiesAnalyzed)
@@ -353,7 +442,6 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        string key = DeclarationKey(routine: routine)!;
         if (_mayFailBeneath.TryGetValue(key: key, value: out bool known))
         {
             return known;
@@ -366,9 +454,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Registers the recovery variants of a user routine that is not failable (see
-    /// <see cref="_recoverableUserBodies"/>) and queues their bodies, with the pessimistic shape (try and
-    /// lookup): what can fail beneath it is only known once its body is built.
+    /// Registers the recovery variants of a routine that is not failable but can fail beneath its call (see
+    /// <see cref="_recoverableUserBodies"/> and <see cref="_recoverableLibraryBodies"/>) and queues their bodies,
+    /// with the pessimistic shape: what can fail beneath it is only known once its body is built.
     /// </summary>
     private bool EnsureVariantsForRecoverableBody(RoutineInfo routine, Statement body)
     {
@@ -387,6 +475,11 @@ public sealed partial class SemanticVerifier
             foreach (GeneratedVariant variant in result.Variants)
             {
                 _registry.RegisterRoutine(routine: variant.Routine);
+            }
+
+            if (DeclarationKey(routine: routine) is { } key && !_recoverableUserBodies.ContainsKey(key: key))
+            {
+                _libraryVariantBases.Add(item: routine.RegistryKey);
             }
 
             _variantBodyGenQueue.Enqueue(item: (routine, body, result.Variants));
@@ -451,7 +544,8 @@ public sealed partial class SemanticVerifier
                 _variantBodies[key: key] = ErrorHandlingVariantPass.GenerateVariantBody(
                     baseBody: baseBody,
                     variant: variant,
-                    registry: _registry);
+                    registry: _registry,
+                    resolveFailurePoints: !_libraryVariantBases.Contains(item: baseRoutine.RegistryKey));
             }
         }
     }

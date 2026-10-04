@@ -45,7 +45,7 @@ public partial class LlvmEmitter
                 _localVarLlvmNames.GetValueOrDefault(key: functionName,
                     defaultValue: functionName);
             string fatVal = NextTemp();
-            EmitLine(sb: sb, line: $"  {fatVal} = load {{ ptr, ptr }}, ptr %{llvmName}.addr");
+            EmitLine(sb: sb, line: $"  {fatVal} = load {RoutineValueLlvmType}, ptr %{llvmName}.addr");
             return EmitFatRoutineIndirectCall(sb: sb,
                 fatVal: fatVal,
                 routineType: routineTypeInfo,
@@ -843,7 +843,7 @@ public partial class LlvmEmitter
                          $"(owner: {_currentEmittingRoutine?.OwnerType?.Name ?? "none"}).");
         }
 
-        // The field holds the fat Routine value `{ ptr fn, ptr bound }` (v0.4.1). Load it and dispatch
+        // The field holds the fat Routine value `{ ptr fn, ptr bound, ptr recover }`. Load it and dispatch
         // through EmitFatRoutineIndirectCall (branch on `bound == null`).
         string fatVal = EmitMemberVariableAccess(sb: sb, expr: member);
         return EmitFatRoutineIndirectCall(sb: sb,
@@ -863,9 +863,9 @@ public partial class LlvmEmitter
     {
         string val = EmitExpression(sb: sb, expr: valueExpr);
         string fn = NextTemp();
-        EmitLine(sb: sb, line: $"  {fn} = extractvalue {{ ptr, ptr }} {val}, 0");
+        EmitLine(sb: sb, line: $"  {fn} = extractvalue {RoutineValueLlvmType} {val}, 0");
         string bnd = NextTemp();
-        EmitLine(sb: sb, line: $"  {bnd} = extractvalue {{ ptr, ptr }} {val}, 1");
+        EmitLine(sb: sb, line: $"  {bnd} = extractvalue {RoutineValueLlvmType} {val}, 1");
         string isCap = NextTemp();
         EmitLine(sb: sb, line: $"  {isCap} = icmp ne ptr {bnd}, null");
         string lcap = NextLabel(prefix: "cbound.cap");
@@ -886,7 +886,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits an indirect call through a fat Routine value <c>{ ptr fn, ptr bound }</c> (v0.4.1).
+    /// Emits an indirect call through a fat Routine value <c>{ ptr fn, ptr bound, ptr recover }</c>.
     /// Extracts <c>fn</c> and <c>bound</c>, evaluates the explicit args once, then branches on
     /// <c>bound == null</c>: captureless calls <c>fn(args)</c>, capturing calls <c>fn(args, ptr bound)</c>
     /// (bound = C userdata, passed TRAILING). The call follows the same platform ABI as the routine's
@@ -898,20 +898,110 @@ public partial class LlvmEmitter
         RoutineTypeSymbol routineType, List<Expression> arguments)
     {
         string fn = NextTemp();
-        EmitLine(sb: sb, line: $"  {fn} = extractvalue {{ ptr, ptr }} {fatVal}, 0");
+        EmitLine(sb: sb, line: $"  {fn} = extractvalue {RoutineValueLlvmType} {fatVal}, 0");
         string bound = NextTemp();
-        EmitLine(sb: sb, line: $"  {bound} = extractvalue {{ ptr, ptr }} {fatVal}, 1");
+        EmitLine(sb: sb, line: $"  {bound} = extractvalue {RoutineValueLlvmType} {fatVal}, 1");
+        (List<string> argValues, List<string> argTypes) = EmitRoutineValueArguments(sb: sb,
+            routineType: routineType,
+            arguments: arguments);
+        return EmitRoutineValueTargetCall(sb: sb,
+            fn: fn,
+            bound: bound,
+            parameterTypes: routineType.ParameterTypes,
+            returnType: routineType.ReturnType,
+            argValues: argValues,
+            argTypes: argTypes);
+    }
 
-        // The signature the definition was emitted with, for the ABI decisions shared with direct calls.
-        var signature = new RoutineInfo(name: "<routine value>")
+    /// <summary>The LLVM type of a Routine value: <c>{ ptr fn, ptr bound, ptr recover }</c>.</summary>
+    internal const string RoutineValueLlvmType = "{ ptr, ptr, ptr }";
+
+    /// <summary>
+    /// Emits a call through a routine value made beneath a recovery keyword
+    /// (<see cref="CallExpression.RecoversThroughValue"/>), which yields <paramref name="carrier"/>. When the
+    /// value carries a recovering entry (its third word) the call goes through it, with the same arguments and
+    /// bound payload, and returns the carrier the entry built. Otherwise the routine itself runs (it cannot fail
+    /// beneath its call) and its result is stored as the carrier's value arm.
+    /// </summary>
+    private string EmitRecoveringRoutineValueCall(StringBuilder sb, string fatVal,
+        RoutineTypeSymbol routineType, List<Expression> arguments, TypeSymbol carrier)
+    {
+        string fn = NextTemp();
+        EmitLine(sb: sb, line: $"  {fn} = extractvalue {RoutineValueLlvmType} {fatVal}, 0");
+        string bound = NextTemp();
+        EmitLine(sb: sb, line: $"  {bound} = extractvalue {RoutineValueLlvmType} {fatVal}, 1");
+        string recover = NextTemp();
+        EmitLine(sb: sb, line: $"  {recover} = extractvalue {RoutineValueLlvmType} {fatVal}, 2");
+        (List<string> argValues, List<string> argTypes) = EmitRoutineValueArguments(sb: sb,
+            routineType: routineType,
+            arguments: arguments);
+
+        string carrierLlvm = carrier is RecordTypeSymbol and not VariantTypeSymbol
+            ? EnsureRecordTypeDeclared(record: (RecordTypeSymbol)carrier)
+            : GetLlvmType(type: carrier);
+        string slot = NextTemp();
+        EmitEntryAlloca(llvmName: slot, llvmType: carrierLlvm);
+        string noEntry = NextTemp();
+        EmitLine(sb: sb, line: $"  {noEntry} = icmp eq ptr {recover}, null");
+        string lplain = NextLabel(prefix: "rv.plain");
+        string lrecover = NextLabel(prefix: "rv.recover");
+        string ldone = NextLabel(prefix: "rv.done");
+        EmitLine(sb: sb, line: $"  br i1 {noEntry}, label %{lplain}, label %{lrecover}");
+
+        // No recovering entry: the value arm holds the routine's own result (a routine that returns nothing
+        // leaves the success arm empty, tag 0).
+        EmitLine(sb: sb, line: $"{lplain}:");
+        string value = EmitRoutineValueTargetCall(sb: sb,
+            fn: fn,
+            bound: bound,
+            parameterTypes: routineType.ParameterTypes,
+            returnType: routineType.ReturnType,
+            argValues: argValues,
+            argTypes: argTypes);
+        EmitLine(sb: sb, line: $"  store {carrierLlvm} zeroinitializer, ptr {slot}");
+        TypeSymbol? payloadType = routineType.ReturnType is { IsNone: false } returned
+            ? returned
+            : null;
+        ulong tag = payloadType != null
+            ? TypeIdHelper.ComputeTypeId(fullName: payloadType.FullName)
+            : 0UL;
+        string tagPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {tagPtr} = getelementptr {carrierLlvm}, ptr {slot}, i32 0, i32 0");
+        EmitLine(sb: sb, line: $"  store i64 {tag}, ptr {tagPtr}");
+        if (payloadType != null)
         {
-            Parameters = routineType.ParameterTypes
-                                    .Select(selector: (t, i) => new ParamInfo(name: $"p{i}", type: t))
-                                    .ToList(),
-            ReturnType = routineType.ReturnType
-        };
+            string payloadPtr = NextTemp();
+            EmitLine(sb: sb, line: $"  {payloadPtr} = getelementptr {carrierLlvm}, ptr {slot}, i32 0, i32 1");
+            EmitLine(sb: sb, line: $"  store {GetLlvmType(type: payloadType)} {value}, ptr {payloadPtr}");
+        }
 
-        // Evaluate the explicit arguments once; both branches reuse them.
+        EmitLine(sb: sb, line: $"  br label %{ldone}");
+
+        // The recovering entry builds the carrier itself.
+        EmitLine(sb: sb, line: $"{lrecover}:");
+        string recovered = EmitRoutineValueTargetCall(sb: sb,
+            fn: recover,
+            bound: bound,
+            parameterTypes: routineType.ParameterTypes,
+            returnType: carrier,
+            argValues: argValues,
+            argTypes: argTypes);
+        EmitLine(sb: sb, line: $"  store {carrierLlvm} {recovered}, ptr {slot}");
+        EmitLine(sb: sb, line: $"  br label %{ldone}");
+
+        EmitLine(sb: sb, line: $"{ldone}:");
+        string result = NextTemp();
+        EmitLine(sb: sb, line: $"  {result} = load {carrierLlvm}, ptr {slot}");
+        return result;
+    }
+
+    /// <summary>Evaluates the explicit arguments of a call through a routine value once, coerced to its
+    /// parameters the way the routine's definition takes them.</summary>
+    private (List<string> Values, List<string> Types) EmitRoutineValueArguments(StringBuilder sb,
+        RoutineTypeSymbol routineType, List<Expression> arguments)
+    {
+        RoutineInfo signature = RoutineValueSignature(parameterTypes: routineType.ParameterTypes,
+            returnType: routineType.ReturnType);
         var argValues = new List<string>();
         var argTypes = new List<string>();
         for (int i = 0; i < arguments.Count; i++)
@@ -937,27 +1027,54 @@ public partial class LlvmEmitter
                 : GetExpressionLlvmType(expr: arg));
         }
 
-        string retLlvm = routineType.ReturnType != null
-            ? GetLlvmType(type: routineType.ReturnType)
+        return (argValues, argTypes);
+    }
+
+    /// <summary>The signature a routine value's target was emitted with, for the ABI decisions shared with
+    /// direct calls.</summary>
+    private static RoutineInfo RoutineValueSignature(List<TypeSymbol> parameterTypes, TypeSymbol? returnType)
+    {
+        return new RoutineInfo(name: "<routine value>")
+        {
+            Parameters = parameterTypes
+                        .Select(selector: (t, i) => new ParamInfo(name: $"p{i}", type: t))
+                        .ToList(),
+            ReturnType = returnType
+        };
+    }
+
+    /// <summary>
+    /// Calls <paramref name="fn"/> with already evaluated arguments, adding the bound payload as the trailing
+    /// argument when it is not null (see <see cref="EmitFatRoutineIndirectCall"/>). Returns the result SSA, or
+    /// <c>"undef"</c> for a void return.
+    /// </summary>
+    private string EmitRoutineValueTargetCall(StringBuilder sb, string fn, string bound,
+        List<TypeSymbol> parameterTypes, TypeSymbol? returnType, List<string> argValues, List<string> argTypes)
+    {
+        RoutineInfo signature = RoutineValueSignature(parameterTypes: parameterTypes, returnType: returnType);
+        var types = new List<string>(collection: argTypes);
+        var values = new List<string>(collection: argValues);
+        string retLlvm = returnType != null
+            ? GetLlvmType(type: returnType)
             : "void";
         string? sretSlot = null;
-        if (routineType.ReturnType != null && ReturnsViaSret(routine: signature))
+        if (returnType != null && ReturnsViaSret(routine: signature))
         {
             sretSlot = NextTemp();
             EmitEntryAlloca(llvmName: sretSlot, llvmType: retLlvm);
-            argTypes.Insert(index: 0, item: $"ptr sret({retLlvm})");
-            argValues.Insert(index: 0, item: sretSlot);
+            types.Insert(index: 0, item: $"ptr sret({retLlvm})");
+            values.Insert(index: 0, item: sretSlot);
         }
 
-        string? retCoerce = sretSlot == null && routineType.ReturnType != null
+        string? retCoerce = sretSlot == null && returnType != null
             ? ReturnCoerceType(routine: signature)
             : null;
         string callRet = sretSlot != null
             ? "void"
             : retCoerce ?? retLlvm;
 
-        string baseArgs = BuildCallArgs(types: argTypes, values: argValues);
-        string capArgs = argTypes.Count > 0
+        string baseArgs = BuildCallArgs(types: types, values: values);
+        string capArgs = types.Count > 0
             ? $"{baseArgs}, ptr {bound}"
             : $"ptr {bound}";
 

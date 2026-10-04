@@ -82,7 +82,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a <see cref="ClosureValueExpression"/>: the fat Routine value <c>{ ptr fn, ptr bound }</c> pairing
+    /// Emits a <see cref="ClosureValueExpression"/>: the fat Routine value <c>{ ptr fn, ptr bound, ptr recover }</c> pairing
     /// the lifted routine's symbol with the bound payload the expression builds. Indirect calls pass
     /// <c>bound</c> as the trailing argument when it is not null. See [[cabi-callback-ffi]].
     /// </summary>
@@ -95,9 +95,25 @@ public partial class LlvmEmitter
         string bound = EmitExpression(sb: sb, expr: closure.Bound);
         string t0 = NextTemp();
         EmitLine(sb: sb,
-            line: $"  {t0} = insertvalue {{ ptr, ptr }} undef, ptr @{MangleRoutineName(routine: lifted)}, 0");
+            line: $"  {t0} = insertvalue {RoutineValueLlvmType} undef, ptr @{MangleRoutineName(routine: lifted)}, 0");
+        string t1 = NextTemp();
+        EmitLine(sb: sb, line: $"  {t1} = insertvalue {RoutineValueLlvmType} {t0}, ptr {bound}, 1");
+        return InsertRecoverEntry(sb: sb, partial: t1, recover: closure.Function.RecoverRoutine);
+    }
+
+    /// <summary>Stores the recovering entry of a routine value (its third word): the routine's lookup-shaped
+    /// recovery variant, or null when it has none.</summary>
+    private string InsertRecoverEntry(StringBuilder sb, string partial, RoutineInfo? recover)
+    {
+        string entry = "null";
+        if (recover != null)
+        {
+            GenerateRoutineDeclaration(routine: recover);
+            entry = $"@{MangleRoutineName(routine: recover)}";
+        }
+
         string fat = NextTemp();
-        EmitLine(sb: sb, line: $"  {fat} = insertvalue {{ ptr, ptr }} {t0}, ptr {bound}, 1");
+        EmitLine(sb: sb, line: $"  {fat} = insertvalue {RoutineValueLlvmType} {partial}, ptr {entry}, 2");
         return fat;
     }
 
@@ -106,7 +122,7 @@ public partial class LlvmEmitter
     /// <c>{ fn_ptr }</c> whose function slot holds a closure-ABI adapter thunk. This lets a bare
     /// routine name flow through the same indirect-call path as a lambda value.
     /// </summary>
-    private string EmitRoutineValueClosure(StringBuilder sb, RoutineInfo routine)
+    private string EmitRoutineValueClosure(StringBuilder sb, RoutineInfo routine, RoutineInfo? recover)
     {
         // v0.4.1: a plain (non-lambda) routine taken as a VALUE is CAPTURELESS — the fat Routine value
         // is `{ @sym, null }` where @sym is the callee's bare C-ABI symbol and bound is null. No heap
@@ -118,10 +134,10 @@ public partial class LlvmEmitter
         GenerateRoutineDeclaration(routine: routine);
         string sym = $"@{MangleRoutineName(routine: routine)}";
         string t0 = NextTemp();
-        EmitLine(sb: sb, line: $"  {t0} = insertvalue {{ ptr, ptr }} undef, ptr {sym}, 0");
-        string fat = NextTemp();
-        EmitLine(sb: sb, line: $"  {fat} = insertvalue {{ ptr, ptr }} {t0}, ptr null, 1");
-        return fat;
+        EmitLine(sb: sb, line: $"  {t0} = insertvalue {RoutineValueLlvmType} undef, ptr {sym}, 0");
+        string t1 = NextTemp();
+        EmitLine(sb: sb, line: $"  {t1} = insertvalue {RoutineValueLlvmType} {t0}, ptr null, 1");
+        return InsertRecoverEntry(sb: sb, partial: t1, recover: recover);
     }
 
     /// <summary>
@@ -164,7 +180,7 @@ public partial class LlvmEmitter
         // resolved routine alone rather than its ResolvedType label.
         if (identifier.ResolvedRoutine is { } preResolved)
         {
-            return EmitPreResolvedRoutineValue(sb: sb, preResolved: preResolved);
+            return EmitPreResolvedRoutineValue(sb: sb, preResolved: preResolved, recover: identifier.RecoverRoutine);
         }
 
         // Look up the variable in local variables first
@@ -217,10 +233,10 @@ public partial class LlvmEmitter
     /// Materializes a value for an identifier whose routine was pre-resolved by a lowering pass: the
     /// closure-materialization path (lambda vs plain routine).
     /// </summary>
-    private string EmitPreResolvedRoutineValue(StringBuilder sb, RoutineInfo preResolved)
+    private string EmitPreResolvedRoutineValue(StringBuilder sb, RoutineInfo preResolved, RoutineInfo? recover)
     {
         // A captureless lambda or plain routine: `{ @fn, null }` (a capturing lambda is a ClosureValueExpression).
-        return EmitRoutineValueClosure(sb: sb, routine: preResolved);
+        return EmitRoutineValueClosure(sb: sb, routine: preResolved, recover: recover);
     }
 
     /// <summary>
@@ -270,6 +286,11 @@ public partial class LlvmEmitter
     {
         EmitTraceLocUpdate(sb: sb, location: call.Location);
 
+        if (call.RecoversThroughValue)
+        {
+            return EmitRecoveringValueCall(sb: sb, call: call);
+        }
+
         // Module-qualified call `Module.routine(...)`: SA resolved it to a module-level routine
         // (OwnerType == null) even though the callee is syntactically a member access. There is no
         // receiver, so emit it as a free call rather than a memberRoutine call.
@@ -302,6 +323,50 @@ public partial class LlvmEmitter
             _ => throw new NotImplementedException(
                 message: $"Cannot emit call for callee type: {call.Callee.GetType().Name}")
         };
+    }
+
+    /// <summary>
+    /// A call through a routine value (a local or parameter, or a routine-typed field) made beneath a recovery
+    /// keyword (<see cref="CallExpression.RecoversThroughValue"/>): loads the value and calls its recovering
+    /// entry, yielding the call's carrier.
+    /// </summary>
+    private string EmitRecoveringValueCall(StringBuilder sb, CallExpression call)
+    {
+        TypeSymbol carrier = call.ResolvedType ??
+                             throw new InvalidOperationException(
+                                 message: $"A recovering routine-value call at {call.Location} has no carrier type.");
+        string fatVal;
+        TypeSymbol? valueType;
+        switch (call.Callee)
+        {
+            case IdentifierExpression id when _localVariables.TryGetValue(key: id.Name, value: out TypeSymbol? localType):
+                string llvmName = _localVarLlvmNames.GetValueOrDefault(key: id.Name, defaultValue: id.Name);
+                fatVal = NextTemp();
+                EmitLine(sb: sb, line: $"  {fatVal} = load {RoutineValueLlvmType}, ptr %{llvmName}.addr");
+                valueType = localType;
+                break;
+            case MemberExpression member:
+                valueType = member.ResolvedType ?? GetMemberType(member: member);
+                fatVal = EmitMemberVariableAccess(sb: sb, expr: member);
+                break;
+            default:
+                valueType = call.Callee.ResolvedType;
+                fatVal = EmitExpression(sb: sb, expr: call.Callee);
+                break;
+        }
+
+        if (valueType is not RoutineTypeSymbol routineType)
+        {
+            throw new InvalidOperationException(
+                message: $"A recovering routine-value call at {call.Location} calls a '{valueType?.Name}', not a " +
+                         "routine value.");
+        }
+
+        return EmitRecoveringRoutineValueCall(sb: sb,
+            fatVal: fatVal,
+            routineType: routineType,
+            arguments: call.Arguments,
+            carrier: carrier);
     }
 
     /// <summary>

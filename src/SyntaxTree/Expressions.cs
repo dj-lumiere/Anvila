@@ -279,6 +279,15 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
     public RoutineInfo? ResolvedRoutine { get; set; }
 
     /// <summary>
+    /// For a routine-value reference (<see cref="ResolvedRoutine"/> set): the routine the value carries as its
+    /// recovering entry, the lookup-shaped recovery variant of <see cref="ResolvedRoutine"/> (same parameters,
+    /// returns <c>Lookup[T]</c>, or <c>Check[None]</c> for a routine that returns nothing). A call of the value
+    /// made beneath <c>try</c>/<c>grab</c>/<c>lookup</c> goes through it, so a failure inside the routine is
+    /// recovered. Null when the routine cannot fail beneath its call.
+    /// </summary>
+    public RoutineInfo? RecoverRoutine { get; set; }
+
+    /// <summary>
     /// Set by semantic analysis when this identifier resolved to a Suflae module-level <c>global</c>
     /// (its <see cref="TypeModel.Symbols.VariableInfo.IsGlobal"/> is true). Because <c>LookupVariable</c>
     /// checks local scopes BEFORE the global table, a local that shadows a global resolves to the local
@@ -503,6 +512,14 @@ public record CallExpression(
     /// recipe (AsyncRecipeSynthesisPass): it invokes the routine itself instead of building another recipe.
     /// </summary>
     public bool IsDirectAsyncInvoke { get; init; }
+
+    /// <summary>
+    /// True for a call through a routine VALUE made beneath a recovery keyword: it calls the value's recovering
+    /// entry instead of its routine and yields that entry's carrier (<see cref="Expression.ResolvedType"/>,
+    /// <c>Lookup[T]</c> or <c>Check[None]</c>). A value with no recovering entry (its routine cannot fail beneath
+    /// its call) runs its routine and its result becomes the carrier's value.
+    /// </summary>
+    public bool RecoversThroughValue { get; set; }
 }
 
 /// <summary>
@@ -1430,7 +1447,9 @@ public record AddressOfExpression(Expression Target, SourceLocation Location) : 
 /// A capturing lambda's value, produced by lowering (never parsed): <c>LambdaLiftingPass</c> lifts the lambda
 /// into a routine that takes its bound payload as a trailing <c>__bound: CPtr</c> parameter, and builds the
 /// payload as <see cref="Bound"/> (a chain of Core's <c>closure_new</c>/<c>closure_put</c> calls). The emitter
-/// pairs the lifted routine's symbol with the payload into the two-word Routine value <c>{ fn, bound }</c>.
+/// pairs the lifted routine's symbol with the payload into the Routine value <c>{ fn, bound, recover }</c>, whose
+/// recovering entry is the lifted routine's lookup-shaped recovery variant when the lambda can fail beneath its
+/// call (<c>Function.RecoverRoutine</c>).
 /// </summary>
 /// <param name="Function">The lifted routine (its <c>ResolvedRoutine</c>).</param>
 /// <param name="Bound">The expression that builds the bound payload (a <c>CPtr</c>).</param>

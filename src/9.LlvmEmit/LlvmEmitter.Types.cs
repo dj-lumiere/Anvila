@@ -177,7 +177,7 @@ public partial class LlvmEmitter
             // C-ABI symbol; `bound` is null (captureless) or a heap payload of pre-bound captures
             // (= C userdata). A captureless value is effectively the 1-word `fn`; the pair maps onto
             // C's (callback, userdata) convention. See [[cabi-callback-ffi]].
-            RoutineTypeSymbol => "{ ptr, ptr }",
+            RoutineTypeSymbol => RoutineValueLlvmType,
 
             // Const generic value -> the LLVM form of its DECLARED type (e.g. a `N: U32` const is `i32`,
             // not a blanket `i64`). ResolveConstGenericUnderlyingType maps it to the underlying primitive
