@@ -413,21 +413,15 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         VariantCallRewriter? rewriter = null, TypeRegistry? registry = null,
         bool nextOnlyPropagation = false)
     {
-        // Pass the registry through for every carrier kind that has non-tail propagation: Try (the flat
-        // Maybe {present,value} unwrap) AND Check/Lookup (the tag-based `when` over the inner's same-kind
-        // variant — TryBuildCarrierSafeCall/BuildCarrierPropagationWhen). Previously gated to Try only,
-        // which left the Check/Lookup propagation branch unreachable (its `registry != null` guard never
-        // held), so a `grab`/`lookup` composition body left inner failable calls raw and crashed. TryBool
-        // has no carrier to thread through.
-        TypeRegistry? propRegistry =
-            kind is ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.Check
-                or ErrorHandlingVariantKind.Lookup
-                ? registry
-                : null;
+        // Every variant kind propagates its non-tail failable calls: Try (the flat Maybe {present,value}
+        // unwrap), TryBool (the same unwrap, its failure branch returning false) and Check/Lookup (the
+        // tag-based `when` over the inner's variant, TryBuildCarrierSafeCall/BuildCarrierPropagationWhen).
+        // A kind left without the registry keeps its inner failable calls raw, and their failure then
+        // crashes through the recovery the caller asked for.
         return TransformBodyCore(body: body,
             kind: kind,
             rewriter: rewriter,
-            registry: propRegistry,
+            registry: registry,
             nextOnly: nextOnlyPropagation);
     }
 
@@ -686,7 +680,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 return result;
             }
 
-            if (kind == ErrorHandlingVariantKind.Try && registry != null && TryBuildTryPropagation(
+            if (kind is ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool && registry != null &&
+                TryBuildTryPropagation(
                     stmt: s,
                     registry: registry,
                     nextOnly: nextOnly,
@@ -788,9 +783,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         hoisted = null;
         residual = null;
 
-        // Split only when a propagation path will consume the hoisted declarations: Try always (with a
-        // registry), Check/Lookup only on the global path-1 (see TransformBlockStatements).
-        bool propagationAvailable = registry != null && (kind == ErrorHandlingVariantKind.Try ||
+        // Split only when a propagation path will consume the hoisted declarations: Try and TryBool always
+        // (with a registry), Check/Lookup only on the global path-1 (see TransformBlockStatements).
+        bool propagationAvailable = registry != null && (kind is ErrorHandlingVariantKind.Try
+                                                             or ErrorHandlingVariantKind.TryBool ||
                                                          (kind is ErrorHandlingVariantKind.Check
                                                               or ErrorHandlingVariantKind.Lookup &&
                                                           !nextOnly));
@@ -1067,9 +1063,16 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         // SemanticVerifier.Recovery — hoists FREE failable calls, which have no OwnerType).
         RoutineInfo? variant = registry.LookupRecoveryVariant(recovered: failRoutine, kind: RecoveryKind.Try);
 
-        // Need a Maybe carrier (flat {present,value}) to unwrap with field access. The TryBool
-        // variant returns Bool (no type args) and is rejected here.
-        if (variant?.ReturnType is not { TypeArguments.Count: > 0 } carrier)
+        if (variant?.ReturnType is not { } carrier)
+        {
+            return false;
+        }
+
+        // A failable routine that returns nothing has the TryBool try variant: its Bool result is the
+        // success flag itself, and there is no payload to bind. A statement that binds the result of
+        // such a call has nothing to unwrap, so it is left as it is.
+        bool flagOnly = variant.FailableVariant == FailableVariant.TryBool;
+        if (flagOnly ? bindName != null : carrier.TypeArguments is not { Count: > 0 })
         {
             return false;
         }
@@ -1086,6 +1089,15 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Visibility: VisibilityModifier.Secret,
                 Location: loc),
             Location: loc);
+
+        if (flagOnly)
+        {
+            presentCondition = new IdentifierExpression(Name: tempName, Location: loc)
+            {
+                ResolvedType = carrier
+            };
+            return true;
+        }
 
         presentCondition = new MemberExpression(
             Object: new IdentifierExpression(Name: tempName, Location: loc)
