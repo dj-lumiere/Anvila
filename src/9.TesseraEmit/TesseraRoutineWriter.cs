@@ -125,7 +125,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         var text = new StringBuilder();
-        text.Append(value: $"routine {_module.RoutineName(routine: _routine)}({string.Join(separator: ", ", values: parameters)})" +
+        text.Append(value: $"{_module.RoutinePrefix(routine: _routine)}routine {_module.RoutineName(routine: _routine)}({string.Join(separator: ", ", values: parameters)})" +
                            $" -> {ReturnTypeText}\n");
         foreach (string line in _head)
         {
@@ -294,6 +294,9 @@ internal sealed class TesseraRoutineWriter
                 // `danger` only lifts the build's safety checks: its body runs like any block.
                 WriteStatement(statement: danger.Body);
                 break;
+            case CrashStatement crash when _module.IsLibrary:
+                WriteLibraryCrash(crash: crash);
+                break;
             case CrashStatement crash:
                 // The report never returns: it prints the crash and ends the program.
                 WriteCall(call: crash.Report, asStatement: true);
@@ -336,6 +339,49 @@ internal sealed class TesseraRoutineWriter
         string runtime = _module.RuntimeRoutine(symbol: Declaration.RuntimeContract.Runtime.CoroCfPush,
             parameters: "node: Addr, value: Addr, destroy: Addr", returnType: "Void");
         Emit(line: $"{runtime}({node.Place}, {value}, {_module.RoutineName(routine: push.Destroy)}.addr())");
+    }
+
+    /// <summary>
+    /// A crash in a library: Tessera's <c>crash</c> with the crash's name and message, which Ingrid's crash handler
+    /// reports the way RazorForge's crash report does. The report call's text arguments become Bytes (a literal as
+    /// it is, a computed text through <see cref="TesseraWriter.TextBytes"/>), and a <c>#source</c> line gives the
+    /// crash the RazorForge place the report would have named.
+    /// </summary>
+    private void WriteLibraryCrash(CrashStatement crash)
+    {
+        CallExpression report = crash.Report;
+        RoutineInfo reporter = report.ResolvedRoutine ?? throw Unsupported(what: "a crash without its report routine");
+        List<Expression?> arguments = OrderedArguments(call: report, routine: reporter);
+        string Text(string parameter)
+        {
+            int slot = reporter.Parameters.FindIndex(match: p => p.Name == parameter);
+            Expression value = slot >= 0 && arguments[index: slot] is { } argument
+                ? argument
+                : throw Unsupported(what: $"a crash report without its {parameter}");
+            if (value is NamedArgumentExpression named)
+            {
+                value = named.Value;
+            }
+
+            // A text literal (TextLiteralLoweringPass wrote it as its code points) is the same text as a Bytes literal.
+            if (value is CreatorExpression { MemberVariables: [("data", ConstantDataExpression codePoints), ..] })
+            {
+                return TesseraTrace.CString(text: string.Concat(
+                    values: codePoints.Elements.Select(selector: c => char.ConvertFromUtf32(utf32: (int)c))));
+            }
+
+            string text = Value(operand: Evaluate(expression: value));
+            string bytes = $"t{_temps++}";
+            Emit(line: $"{bytes} : Bytes = {_module.TextBytes()}({text})");
+            return bytes;
+        }
+
+        string name = Text(parameter: "type_name");
+        string message = Text(parameter: "message");
+        SourceLocation at = crash.Location;
+        Emit(line: $"#source({TesseraTrace.CString(text: _module.SourceName(file: at.FileName))}, {at.Line}, {at.Column})");
+        // `crash` never returns, so it ends the block.
+        Terminate(line: $"crash({name}, {message})");
     }
 
     /// <summary>The slot name of a local's cancellation node.</summary>

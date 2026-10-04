@@ -34,9 +34,26 @@ internal sealed class TesseraWriter
     /// <summary>Which routines can crash, so only their frames go on the crash trace.</summary>
     private readonly Collection.CrashReachability _crashReachability = new();
 
-    public TesseraWriter(BackendInput input)
+    /// <summary>The library this writer exports for Ingrid, or null for a program.</summary>
+    private readonly TesseraLibrary? _library;
+
+    /// <summary>A library's routines still to write: each is written once something written before calls it.</summary>
+    private readonly Queue<(RoutineInfo Info, Statement Body)> _pending = new();
+
+    /// <summary>The routine symbols a library has written or queued.</summary>
+    private readonly HashSet<string> _demanded = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>A library's routine bodies by symbol, so a call can queue its callee.</summary>
+    private readonly Dictionary<string, (RoutineInfo Info, Statement Body)> _bodies =
+        new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The C symbol of each routine a library exports, by the routine's mangled symbol.</summary>
+    private readonly Dictionary<string, string> _exports = new(comparer: StringComparer.Ordinal);
+
+    public TesseraWriter(BackendInput input, TesseraLibrary? library = null)
     {
         _input = input;
+        _library = library;
         foreach (string name in new[]
                  {
                      TesseraTrace.Push, TesseraTrace.Pop, TesseraTrace.UpdateLocation, "rf_runtime_init", "main",
@@ -48,8 +65,25 @@ internal sealed class TesseraWriter
         }
     }
 
-    /// <summary>Whether the build keeps a crash trace: the debug and release modes, as in the LLVM emitter.</summary>
-    public bool Traces => Collection.TraceFrames.Enabled(mode: _input.BuildMode);
+    /// <summary>Whether the build keeps a crash trace: the debug and release modes, as in the LLVM emitter. A library
+    /// keeps none (Ingrid's code has no RazorForge trace).</summary>
+    public bool Traces => _library is null && Collection.TraceFrames.Enabled(mode: _input.BuildMode);
+
+    /// <summary>Whether this writes an Ingrid library rather than a program.</summary>
+    public bool IsLibrary => _library is not null;
+
+    /// <summary>What a declaration that is not exported starts with: <c>private</c> in a library, whose only
+    /// public names are its exports.</summary>
+    public string Private => _library is null ? "" : "private ";
+
+    /// <summary>What starts the declaration of <paramref name="routine"/>: its export attribute when a library
+    /// exports it, <see cref="Private"/> otherwise.</summary>
+    public string RoutinePrefix(RoutineInfo routine)
+    {
+        return _exports.TryGetValue(key: LlvmEmitter.MangleRoutineName(routine: routine), value: out string? symbol)
+            ? $"#export(\"{symbol}\")\n"
+            : Private;
+    }
 
     /// <summary>Whether <paramref name="routine"/> pushes a trace frame: a routine of the program (not one the
     /// builder wrote), not <c>@inline</c> or <c>@untraced</c>, that can crash.</summary>
@@ -64,6 +98,11 @@ internal sealed class TesseraWriter
     /// <summary>Writes the module.</summary>
     public string Write()
     {
+        if (_library is not null)
+        {
+            return WriteLibrary(library: _library);
+        }
+
         List<(RoutineInfo Info, Statement Body)> routines = CollectRoutines();
         RegisterCrashReachability();
         foreach ((RoutineInfo info, Statement _) in routines)
@@ -91,6 +130,132 @@ internal sealed class TesseraWriter
 
         string main = WriteMain(routines: routines);
         return Assemble(main: main);
+    }
+
+    /// <summary>
+    /// Writes an Ingrid library: each export under its C symbol, then every routine the written ones call, private to
+    /// the file, so the file holds exactly the exports' closure. An export is a routine without <c>me</c>, with the C
+    /// ABI's shapes in its signature.
+    /// </summary>
+    private string WriteLibrary(TesseraLibrary library)
+    {
+        foreach ((RoutineInfo info, Statement body) in CollectRoutines())
+        {
+            _bodies[key: LlvmEmitter.MangleRoutineName(routine: info)] = (info, body);
+        }
+
+        foreach ((RoutineInfo export, string exportSymbol) in library.Exports)
+        {
+            string symbol = LlvmEmitter.MangleRoutineName(routine: export);
+            if (export is { OwnerType: not null, IsCommon: false } || export.Parameters.Any(predicate: p => p.IsByReference) ||
+                !_bodies.ContainsKey(key: symbol))
+            {
+                throw new NotSupportedException(
+                    message: $"The Ingrid export {exportSymbol} must be a routine without `me`, with a body, that " +
+                             "takes its parameters by value.");
+            }
+
+            _exports[key: symbol] = exportSymbol;
+            _usedNames.Add(item: exportSymbol);
+            _routineNames[key: symbol] = exportSymbol;
+        }
+
+        foreach (string symbol in _bodies.Keys.Where(predicate: s => !_exports.ContainsKey(key: s)))
+        {
+            _routineNames[key: symbol] = VerbatimName(text: symbol);
+        }
+
+        foreach ((RoutineInfo export, string _) in library.Exports)
+        {
+            Demand(symbol: LlvmEmitter.MangleRoutineName(routine: export));
+        }
+
+        while (_pending.TryDequeue(result: out (RoutineInfo Info, Statement Body) next))
+        {
+            try
+            {
+                _definitions.Append(value: new TesseraRoutineWriter(module: this, routine: next.Info, body: next.Body)
+                   .Write());
+            }
+            catch (NotSupportedException ex) when (!ex.Message.Contains(value: " (in ",
+                                                       comparisonType: StringComparison.Ordinal))
+            {
+                throw new NotSupportedException(
+                    message: $"{ex.Message} (in {LlvmEmitter.MangleRoutineName(routine: next.Info)})",
+                    innerException: ex);
+            }
+
+            _definitions.Append(value: '\n');
+        }
+
+        var module = new StringBuilder();
+        module.Append(value: library.Header);
+        if (_textBytes != null)
+        {
+            module.Append(value: "import Standard::Collections\nimport Standard::Format\nimport Standard::Os\n\n");
+        }
+
+        module.Append(value: _records);
+        module.Append(value: _globals);
+        module.Append(value: _externs);
+        module.Append(value: _definitions);
+        return module.ToString();
+    }
+
+    /// <summary>Queues a library routine for writing the first time something calls it.</summary>
+    private void Demand(string symbol)
+    {
+        if (_library is not null && _demanded.Add(item: symbol) && _bodies.TryGetValue(key: symbol,
+                value: out (RoutineInfo, Statement) routine))
+        {
+            _pending.Enqueue(item: routine);
+        }
+    }
+
+    private string? _textBytes;
+
+    /// <summary>
+    /// The library routine that turns a builder Text (one U32 code point per character) into the UTF-8 Bytes
+    /// Tessera's <c>crash</c> takes, for a crash message the program computes. Written once, on first use. The
+    /// memory stays allocated: the crash ends the program.
+    /// </summary>
+    public string TextBytes()
+    {
+        if (_textBytes != null)
+        {
+            return _textBytes;
+        }
+
+        _textBytes = VerbatimName(text: "text bytes");
+        _definitions.Append(value: $$"""
+            /// A crash message as UTF-8.
+            private routine {{_textBytes}}(text: {{TypeText(type: TextType)}}) -> Bytes
+                shared data  : @U32        = text.data
+                shared count : U64         = text.count
+                shared utf8  : @List<Byte> <- .construct()
+
+                block entry()
+                    jump each(0)
+
+                block each(i: U64)
+                    done : Bool = i.ge(count)
+                    branch done
+                        ? return(utf8.to<Bytes>())
+                        : continue
+                    code      : U32  = data.stride(i.to<USize>()).load()
+                    character : Char = code.to<Char>()
+                    utf8.write("{character}")
+                    jump each(i.add(1))
+
+
+            """);
+        return _textBytes;
+    }
+
+    /// <summary>A source file as a library's <c>#source</c> names it (<see cref="TesseraLibrary.SourceFile"/>).</summary>
+    public string SourceName(string file)
+    {
+        return _library?.SourceFile(arg: file) ?? file;
     }
 
     /// <summary>The routines translated so far.</summary>
@@ -243,7 +408,7 @@ internal sealed class TesseraWriter
         string idType = TypeText(type: typeIdType);
         string resultType = TypeText(type: result);
         var text = new StringBuilder();
-        text.Append(value: $"routine {name}(type_id: {idType}, error: Addr) -> {resultType}\n");
+        text.Append(value: $"{Private}routine {name}(type_id: {idType}, error: Addr) -> {resultType}\n");
         for (int i = 0; i < arms.Count; i++)
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
@@ -292,7 +457,7 @@ internal sealed class TesseraWriter
 
         string name = VerbatimName(text: $"crash object {crashable.FullName}");
         _crashObjectRecords[key: crashable.FullName] = name;
-        _records.Append(value: $"record {name}\n    type_id : U64\n    error : {TypeText(type: crashable)}\n\n");
+        _records.Append(value: $"{Private}record {name}\n    type_id : U64\n    error : {TypeText(type: crashable)}\n\n");
         return name;
     }
 
@@ -318,7 +483,7 @@ internal sealed class TesseraWriter
         _crashObjectDestroy = name;
         string idType = TypeText(type: typeIdType);
         var text = new StringBuilder();
-        text.Append(value: $"routine {name}(type_id: {idType}, error: Addr) -> Void\n");
+        text.Append(value: $"{Private}routine {name}(type_id: {idType}, error: Addr) -> Void\n");
         for (int i = 0; i < arms.Count; i++)
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
@@ -358,10 +523,14 @@ internal sealed class TesseraWriter
         }
 
         string symbol = LlvmEmitter.MangleRoutineName(routine: routine);
-        return _routineNames.TryGetValue(key: symbol, value: out string? name)
-            ? name
-            : throw new NotSupportedException(
+        if (!_routineNames.TryGetValue(key: symbol, value: out string? name))
+        {
+            throw new NotSupportedException(
                 message: $"The Tessera backend found a call to {symbol}, which has no body in this build.");
+        }
+
+        Demand(symbol: symbol);
+        return name;
     }
 
     private string ExternName(RoutineInfo routine)
@@ -379,7 +548,7 @@ internal sealed class TesseraWriter
             values: routine.Parameters.Select(selector: p =>
                 $"{(p.Name == "self" ? "self_" : ValueName(name: p.Name))}: {TypeText(type: p.Type)}"));
         _externs.Append(value: $"#[external(\"c\"), symbol(\"{symbol}\")]\n" +
-                               $"routine {name}({parameters}) -> {TypeText(type: routine.ReturnType)}\n\n");
+                               $"{Private}routine {name}({parameters}) -> {TypeText(type: routine.ReturnType)}\n\n");
         return name;
     }
 
@@ -412,7 +581,7 @@ internal sealed class TesseraWriter
             text.Append(value: "#aggregate\n");
         }
 
-        text.Append(value: $"record {name}\n    tag : U64\n");
+        text.Append(value: $"{Private}record {name}\n    tag : U64\n");
         if (payloads.Count > 0)
         {
             text.Append(value: $"    payload : Array<Byte, max({string.Join(separator: ", ", values: payloads)})>\n");
@@ -440,7 +609,7 @@ internal sealed class TesseraWriter
             }
 
             _routineValueRecord = VerbatimName(text: "Routine value");
-            _records.Append(value: $"record {_routineValueRecord}\n    fn : Addr\n    bound : Addr\n\n");
+            _records.Append(value: $"{Private}record {_routineValueRecord}\n    fn : Addr\n    bound : Addr\n\n");
             return _routineValueRecord;
         }
     }
@@ -495,7 +664,7 @@ internal sealed class TesseraWriter
             values: types.Select(selector: (_, i) => $"{prefix}{i}"));
 
         var text = new StringBuilder();
-        text.Append(value: $"routine {name}(value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
+        text.Append(value: $"{Private}routine {name}(value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
             .Append(value: "    block entry()\n")
             .Append(value: "        fn : Addr = value.fn\n")
             .Append(value: "        bound : Addr = value.bound\n")
@@ -546,7 +715,7 @@ internal sealed class TesseraWriter
         name = UniqueName(wanted: "c_" + Sanitize(text: symbol));
         _externNames[key: symbol] = name;
         _externs.Append(value: $"#[external(\"c\"), symbol(\"{symbol}\")]\n" +
-                               $"routine {name}({parameters}) -> {returnType}\n\n");
+                               $"{Private}routine {name}({parameters}) -> {returnType}\n\n");
         return name;
     }
 
@@ -570,7 +739,7 @@ internal sealed class TesseraWriter
 
         name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
         _texts[key: initial] = name;
-        _globals.Append(value: $"global {name}: @{type} <- {initial}\n\n");
+        _globals.Append(value: $"{Private}global {name}: @{type} <- {initial}\n\n");
         // The value is a pointer to the first element.
         name = $"{name}.to<@{TypeText(type: data.ElementType)}>()";
         _texts[key: initial] = name;
@@ -611,7 +780,7 @@ internal sealed class TesseraWriter
             ? TesseraRoutineWriter.ConstantText(literal: literal)
             : throw new NotSupportedException(
                 message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
-        _globals.Append(value: $"global {global}: @{type} <- {type} {{ {string.Join(separator: ", ", values: values)} }}\n\n");
+        _globals.Append(value: $"{Private}global {global}: @{type} <- {type} {{ {string.Join(separator: ", ", values: values)} }}\n\n");
         return (global, preset.Type);
     }
 
@@ -632,7 +801,7 @@ internal sealed class TesseraWriter
             text.Append(value: "#aggregate\n");
         }
 
-        text.Append(value: $"record {name}\n");
+        text.Append(value: $"{Private}record {name}\n");
         foreach (MemberVariableInfo field in entity.MemberVariables)
         {
             text.Append(value: $"    {field.Name} : {TypeText(type: field.Type)}\n");
@@ -679,6 +848,14 @@ internal sealed class TesseraWriter
     {
         // The attribute prefix stays: a recovery variant (`[member, try] f()`) shares the bare name of its routine.
         text = text.Trim(trimChar: '"');
+        if (_library is not null)
+        {
+            // A library is formatted (and checked against the formatter), which breaks a long line after a comma
+            // inside its first bracketed list, a name's own brackets included. Its names keep their words but not
+            // their commas.
+            text = text.Replace(oldValue: ", ", newValue: " ").Replace(oldChar: ',', newChar: ' ');
+        }
+
         if (text.Length == 0 || text.IndexOfAny(anyOf: ['`', '\n', '\r']) >= 0)
         {
             throw new NotSupportedException(message: $"The Tessera backend can't name '{text}' between backticks.");
@@ -870,7 +1047,7 @@ internal sealed class TesseraWriter
         name = VerbatimName(text: record.FullName);
         _recordNames[key: record.FullName] = name;
         var text = new StringBuilder();
-        text.Append(value: $"record {name}\n");
+        text.Append(value: $"{Private}record {name}\n");
         if (record.MemberVariables.Count < 2)
         {
             // Tessera gives a one-field record the field's own representation unless it is #aggregate. The

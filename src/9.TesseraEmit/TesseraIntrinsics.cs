@@ -159,7 +159,7 @@ internal sealed class TesseraIntrinsics
 
     /// <summary>
     /// The address <c>count</c> elements past <c>ptr</c>, the element being the result's pointee: a Tessera
-    /// <c>stride</c>, whose count is the pointer-width integer of the same signedness.
+    /// <c>stride</c>, whose count is the pointer-width integer of the same signedness (the index wraps to its width).
     /// </summary>
     private string ElementPointer()
     {
@@ -171,7 +171,7 @@ internal sealed class TesseraIntrinsics
                     message: "The Tessera backend found an LLVM::element_pointer without an element type.");
         string count = Type(index: 1);
         string size = count.StartsWith(value: 'S') ? "SSize" : "USize";
-        return $"{Argument(index: 0)}.to<@{_typeText(arg: element)}>().stride(bitcast<{count}, {size}>({Argument(index: 1)}))";
+        return $"{Argument(index: 0)}.to<@{_typeText(arg: element)}>().stride({Argument(index: 1)}.to_wrap<{size}>())";
     }
 
     /// <summary>
@@ -239,12 +239,13 @@ internal sealed class TesseraIntrinsics
         return $"{Argument(index: 0)}.to<@{Type(index: 1)}>().{method}({Argument(index: 1)})";
     }
 
-    /// <summary>An index argument as the pointer-width integer <c>stride</c> takes, bit for bit.</summary>
+    /// <summary>An index argument as the pointer-width integer <c>stride</c> takes: the same bits on a 64-bit target,
+    /// the low half on a 32-bit one (no index there reaches past it).</summary>
     private string Index(int index)
     {
         string type = Type(index: index);
         string size = type.StartsWith(value: 'S') ? "SSize" : "USize";
-        return $"bitcast<{type}, {size}>({Argument(index: index)})";
+        return $"{Argument(index: index)}.to_wrap<{size}>()";
     }
 
     /// <summary>The array with one byte replaced: the array goes to a slot, the byte is stored, and the
