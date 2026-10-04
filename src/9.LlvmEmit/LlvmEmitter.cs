@@ -1178,8 +1178,9 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Appends the <c>main()</c> entry point that inits the runtime, sets the trace mode, and calls
-    /// the entry module's <c>start()</c>. No-op when no start symbol is found.
+    /// Appends the <c>main()</c> entry point that inits the runtime, sets the trace mode, calls
+    /// the entry module's <c>start()</c>, and returns the exit status <c>set_exit_code</c> stored
+    /// (the runtime's <c>rf_exit_code</c>, 0 when nothing set one). No-op when no start symbol is found.
     /// </summary>
     private void AppendMainEntryPoint(StringBuilder output)
     {
@@ -1199,6 +1200,7 @@ public partial class LlvmEmitter
 
         output.AppendLine(value: "declare void @__rf_set_trace_mode(i32)");
         output.AppendLine(value: "declare void @rf_set_stack_overflow_report(ptr)");
+        output.AppendLine(value: "declare i32 @rf_exit_code()");
         // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
         string overflowReport = _registry.Language == Language.Suflae
             ? "tessera_deep_calls_report"
@@ -1215,7 +1217,8 @@ public partial class LlvmEmitter
         output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
 
         output.AppendLine(handler: $"  call void @{startFunc}()");
-        output.AppendLine(value: "  ret i32 0");
+        output.AppendLine(value: "  %status = call i32 @rf_exit_code()");
+        output.AppendLine(value: "  ret i32 %status");
         output.AppendLine(value: "}");
     }
 

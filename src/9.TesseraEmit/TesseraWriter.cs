@@ -11,8 +11,9 @@ namespace Builder.TesseraEmit;
 
 /// <summary>
 /// Writes the Phase 9 program as one Tessera module: a record per struct record, an external declaration per C
-/// routine called, a routine per routine body, and <c>main</c>. It translates and decides nothing about the
-/// language: what to emit is the set the demand collector materialized, and every call is already resolved.
+/// routine called, a routine per routine body, and Tessera's entry point <c>start</c>. It translates and decides
+/// nothing about the language: what to emit is the set the demand collector materialized, and every call is already
+/// resolved.
 /// </summary>
 internal sealed class TesseraWriter
 {
@@ -50,7 +51,7 @@ internal sealed class TesseraWriter
     /// <summary>The C symbol of each routine a library exports, by the routine's mangled symbol.</summary>
     private readonly Dictionary<string, string> _exports = new(comparer: StringComparer.Ordinal);
 
-    /// <summary>Whether this writes the compile daemon's resident base: every routine, no <c>main</c>.</summary>
+    /// <summary>Whether this writes the compile daemon's resident base: every routine, no <c>start</c>.</summary>
     private readonly bool _residentBase;
 
     /// <summary>The routine symbols the resident base defines, when this writes a delta against it: such a routine is
@@ -67,7 +68,7 @@ internal sealed class TesseraWriter
             : new HashSet<string>();
         foreach (string name in new[]
                  {
-                     TesseraTrace.Push, TesseraTrace.Pop, TesseraTrace.UpdateLocation, "rf_runtime_init", "main",
+                     TesseraTrace.Push, TesseraTrace.Pop, TesseraTrace.UpdateLocation, "rf_runtime_init", "start", "c_rf_exit_code",
                      "c_rf_set_trace_mode", "RfTraceFrame", "RF_TRACE_STACK", "RF_TRACE_DEPTH", "rf_trace_get_depth",
                      "rf_trace_get_frames"
                  })
@@ -152,8 +153,8 @@ internal sealed class TesseraWriter
             definitions.Append(value: '\n');
         }
 
-        string main = _residentBase ? "" : WriteMain(routines: routines);
-        return Assemble(main: main);
+        string entry = _residentBase ? "" : WriteStart(routines: routines);
+        return Assemble(main: entry);
     }
 
     /// <summary>
@@ -1133,8 +1134,10 @@ internal sealed class TesseraWriter
 
     // ── Entry ─────────────────────────────────────────────────────────────────
 
-    /// <summary><c>main</c>: initializes the runtime, then runs the entry module's <c>start</c>.</summary>
-    private string WriteMain(List<(RoutineInfo Info, Statement Body)> routines)
+    /// <summary>Tessera's entry point <c>start</c>: initializes the runtime, runs the entry module's <c>start</c>, and
+    /// hands the exit status the program set (the runtime's <c>rf_exit_code</c>) to Tessera's <c>set_exit_code</c>,
+    /// which the <c>main</c> Tessera writes returns.</summary>
+    private string WriteStart(List<(RoutineInfo Info, Statement Body)> routines)
     {
         string? entry = _input.EntryModule;
         RoutineInfo start = Collection.EntryPoint.StartOf(defined: routines.Select(selector: r => r.Info),
@@ -1151,7 +1154,9 @@ internal sealed class TesseraWriter
                // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
                $"#[external(\"c\"), symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Suflae ? "tessera_deep_calls_report" : "tessera_stack_overflow_report")}\")]\n" +
                "routine c_tessera_stack_overflow_report(stack_size: U64) -> Void\n\n" +
-               "routine main() -> S32\n" +
+               "#[external(\"c\"), symbol(\"rf_exit_code\")]\n" +
+               "routine c_rf_exit_code() -> S32\n\n" +
+               "routine start() -> Void\n" +
                "    block entry()\n" +
                "        rf_runtime_init()\n" +
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
@@ -1159,6 +1164,7 @@ internal sealed class TesseraWriter
                // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
                "        c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
                $"        {RoutineName(routine: start)}()\n" +
-               "        return(0)\n";
+               "        Standard::Os::set_exit_code(c_rf_exit_code())\n" +
+               "        return()\n";
     }
 }
