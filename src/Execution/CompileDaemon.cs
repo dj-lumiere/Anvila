@@ -288,23 +288,24 @@ internal partial class Program
 
         /// <summary>Daemon-lifetime cache of the resident-JIT BASE artifact (AOT'd stdlib object path, the
         /// base's DEFINED-symbol set for codegen extern-declaration, and the base's collected RegistryKey set
-        /// for demand-collector skip) per (language, build mode).</summary>
+        /// for demand-collector skip) per (language, build mode, backend).</summary>
         private static readonly Dictionary<string, (string ObjPath, IReadOnlyCollection<string> Syms,
                 IReadOnlySet<string> InstanceKeys)>
             BaseArtifactCache = new();
 
         /// <summary>
-        /// Builds (ONCE per language+mode, then daemon- and disk-cached) the resident-JIT base: a full
-        /// <c>SeedAllStdlibRoutines</c> analysis → <c>GenerateBase</c> (non-pruned stdlib IR, no <c>@main</c>)
-        /// → AOT-compiled <c>.o</c> via <see cref="BaseObjectCache"/>. Returns the object path plus the base's
-        /// DEFINED-symbol set — the <c>residentSymbols</c> the per-run DELTA emission extern-declares instead
-        /// of re-defining. Returns null on failure so the caller falls back to shipping the full IR.
+        /// Builds (ONCE per language+mode+backend, then daemon- and disk-cached) the resident-JIT base: the seed
+        /// program's analysis → the backend's <see cref="Builder.Backends.IBuilderBackend.EmitResidentBase"/>
+        /// (its stdlib routines, no <c>@main</c>) → AOT-compiled <c>.o</c> via <see cref="BaseObjectCache"/>.
+        /// Returns the object path plus the base's symbols — the <c>residentSymbols</c> the per-run DELTA
+        /// emission declares instead of re-defining — and its instance keys. Returns null on failure so the caller
+        /// falls back to shipping the full IR.
         /// </summary>
         private static (string ObjPath, IReadOnlyCollection<string> Syms,
             IReadOnlySet<string> InstanceKeys)? EnsureBaseArtifact(
-            Language language, RfBuildMode buildMode)
+            Language language, RfBuildMode buildMode, Builder.Backends.IBuilderBackend backend)
         {
-            string key = language + "\u0001" + (int)buildMode;
+            string key = language + "\u0001" + (int)buildMode + "\u0001" + backend.Name;
             if (BaseArtifactCache.TryGetValue(key: key,
                     value: out (string ObjPath, IReadOnlyCollection<string> Syms,
                         IReadOnlySet<string> InstanceKeys) cached))
@@ -318,9 +319,8 @@ internal partial class Program
                 return null;
             }
 
-            fp = fp + "-" + (int)buildMode + "-seed" + BaseObjectCache.SeedProgramSource.Length;
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            Console.Error.WriteLine(value: $"[daemon] building resident-JIT base ({language})...");
+            Console.Error.WriteLine(value: $"[daemon] building resident-JIT base ({language}, {backend.Name})...");
             try
             {
                 // REALISTIC-SEED base (NOT SeedAll): analyze a representative program that exercises the common
@@ -348,24 +348,31 @@ internal partial class Program
                     instantiatedBodies: baseR.InstantiatedGenericBodies,
                     maySuspendKeys: baseR.MaySuspendRoutineKeys);
 
-                var baseGen = new Builder.LlvmEmit.LlvmEmitter(
-                    userPrograms: new System.Collections.Generic.List<(SyntaxTree.Program, string,
-                        string)>(),
-                    registry: baseR.Registry,
-                    options: new Builder.LlvmEmit.LlvmEmitterOptions
+                Builder.Backends.ResidentBase residentBase = backend.EmitResidentBase(
+                    input: new Builder.Backends.BackendInput
                     {
+                        UserPrograms = [],
                         StdlibPrograms = baseR.Registry.StdlibPrograms,
+                        Registry = baseR.Registry,
+                        // MUST match the delta's mode+target: the mode decides whether the base DEFINES the shared
+                        // trace globals the delta references, and the target fixes the triple/datalayout the delta
+                        // is JIT-linked against.
+                        Target = TargetConfig.ForCurrentHost(),
+                        BuildMode = buildMode,
                         SynthesizedBodies = baseR.SynthesizedBodies,
                         InstantiatedGenericBodies = baseR.InstantiatedGenericBodies,
-                        // MUST match the delta's mode+target: ShouldEmitTrace (Debug/Release) gates whether the
-                        // base DEFINES the shared trace TLS globals the delta extern-references, and the target
-                        // fixes the triple/datalayout the delta is JIT-linked against.
-                        BuildMode = buildMode,
-                        Target = TargetConfig.ForCurrentHost()
+                        LiveRoutineKeys = baseR.LiveRoutineKeys,
+                        MaySuspendRoutineKeys = baseR.MaySuspendRoutineKeys
                     });
-                (string baseIr, IReadOnlyCollection<string> baseSyms) = baseGen.GenerateBase();
+                string baseIr = residentBase.LlvmIr;
+                IReadOnlyCollection<string> baseSyms = residentBase.Symbols;
 
-                string? obj = new BaseObjectCache().GetOrBuild(fingerprint: fp,
+                // The object is keyed by the IR it is compiled from, so a change anywhere that reaches the base
+                // (the builder, either standard library) builds a new one.
+                string irHash = Convert.ToHexString(inArray: System.Security.Cryptography.SHA256.HashData(
+                    source: System.Text.Encoding.UTF8.GetBytes(s: baseIr)));
+                string? obj = new BaseObjectCache().GetOrBuild(
+                    fingerprint: $"{fp}-{(int)buildMode}-{backend.Name}-{irHash}",
                     baseIr: baseIr,
                     buildMode: buildMode,
                     wasCached: out bool wasCached);
@@ -378,9 +385,7 @@ internal partial class Program
 
                 // The base's COLLECTED instance set (RegistryKeys) — the delta collector skips re-building these
                 // (they are defined in the base object; the base's own collect already expanded their callees).
-                IReadOnlySet<string> instanceKeys =
-                    new HashSet<string>(collection: baseR.InstantiatedGenericBodies.Keys,
-                        comparer: StringComparer.Ordinal);
+                IReadOnlySet<string> instanceKeys = residentBase.InstanceKeys;
                 Console.Error.WriteLine(
                     value:
                     $"[daemon] resident-JIT base ready: {baseSyms.Count} syms, {instanceKeys.Count} instance keys, obj-cached={wasCached} ({sw.ElapsedMilliseconds} ms)");
@@ -662,15 +667,25 @@ internal partial class Program
                 IReadOnlyCollection<string>? residentSymbols = null;
                 IReadOnlySet<string>? residentInstanceKeys = null;
                 ResidentLayer? layer = null;
-                // Only a backend that serves the resident JIT has a base to split off. A client asks for the split
-                // only on the incremental path, which such a backend alone takes.
-                if (req.BaseDelta && Builder.Backends.BuilderBackends.Get(name: req.Backend).SupportsResidentJit)
+                // Only a backend with a resident base has one to split off. A client asks for the split only on the
+                // incremental path, which such a backend alone takes.
+                Builder.Backends.IBuilderBackend backend = Builder.Backends.BuilderBackends.Get(name: req.Backend);
+                if (req.BaseDelta && backend.SupportsResidentBase)
                 {
                     Language lang = CliLanguage;
                     (string ObjPath, IReadOnlyCollection<string> Syms,
                         IReadOnlySet<string> InstanceKeys)? baseArtifact =
-                            EnsureBaseArtifact(language: lang, buildMode: (RfBuildMode)req.BuildMode);
-                    if (baseArtifact is { } ba)
+                            EnsureBaseArtifact(language: lang, buildMode: (RfBuildMode)req.BuildMode,
+                                backend: backend);
+                    // The resident layers are LLVM emitter modules: another backend links its delta to the base
+                    // alone.
+                    if (baseArtifact is { } baseOnly && backend is not Builder.LlvmEmit.LlvmBackend)
+                    {
+                        residentSymbols = baseOnly.Syms;
+                        residentInstanceKeys = baseOnly.InstanceKeys;
+                        baseObjectPath = baseOnly.ObjPath;
+                    }
+                    else if (baseArtifact is { } ba)
                     {
                         layer = LayerFor(language: lang, buildMode: (RfBuildMode)req.BuildMode);
                         layer.AdoptFinished();
@@ -851,15 +866,30 @@ internal partial class Program
             // each pure-stdlib routine is served from / written to the cross-run cache. Analysis is still
             // in-process here (the cross-run analysis-reuse is a separate Phase-2 concern); the win is skipping
             // codegen + JIT of routines already cached from a previous run.
+            bool daemonTried = false;
             if (resolved.Incremental)
             {
-                return TryClientJitRunIncremental(resolved: resolved, exitCode: out exitCode);
+                if (Builder.Backends.BuilderBackends.Get(name: resolved.Backend).SupportsLazyJit)
+                {
+                    return TryClientJitRunIncremental(resolved: resolved, exitCode: out exitCode);
+                }
+
+                // A backend without the lazy JIT takes the daemon's base/delta, else runs one whole module below.
+                if (resolved.UseDaemon)
+                {
+                    daemonTried = true;
+                    if (TryRunDaemonBaseDelta(resolved: resolved,
+                            entryFull: Path.GetFullPath(path: resolved.EntryFile), exitCode: out exitCode))
+                    {
+                        return true;
+                    }
+                }
             }
 
             // Obtain IR: warm via the daemon when opted-in and reachable, else a cold in-process compile.
             string ir = "";
             int rc = 0;
-            bool haveIr = resolved.UseDaemon &&
+            bool haveIr = resolved.UseDaemon && !daemonTried &&
                           TryGetWarmDaemonIr(resolved: resolved, ir: out ir, exitCode: out rc,
                               baseObjectPath: out _, layerObjectPaths: out _);
             if (!haveIr)
@@ -918,13 +948,7 @@ internal partial class Program
             // the client and never the warm daemon (§3 crash isolation preserved). Falls through to the
             // in-process lazy path when no daemon is reachable.
             if (resolved.UseDaemon &&
-                TryGetWarmDaemonIr(resolved: resolved, ir: out string daemonIr,
-                    exitCode: out int daemonRc, baseObjectPath: out string? daemonBaseObj,
-                    layerObjectPaths: out List<string> daemonLayerObjs,
-                    allowBaseDelta: true) &&
-                TryRunWarmDaemonIr(daemonRc: daemonRc, daemonIr: daemonIr,
-                    daemonBaseObj: daemonBaseObj, daemonLayerObjs: daemonLayerObjs,
-                    entryFull: entryFull, exitCode: out exitCode))
+                TryRunDaemonBaseDelta(resolved: resolved, entryFull: entryFull, exitCode: out exitCode))
             {
                 return true;
             }
@@ -990,6 +1014,21 @@ internal partial class Program
                 exitCode = 1;
                 return true;
             }
+        }
+
+        /// <summary>Runs the program through the warm daemon's base/delta split: the daemon builds the delta against
+        /// its resident base, and this client links the base object and JITs the delta. False when no daemon could
+        /// be reached, so the caller builds in-process.</summary>
+        private static bool TryRunDaemonBaseDelta(ResolvedEntry resolved, string entryFull, out int exitCode)
+        {
+            exitCode = 0;
+            return TryGetWarmDaemonIr(resolved: resolved, ir: out string daemonIr,
+                       exitCode: out int daemonRc, baseObjectPath: out string? daemonBaseObj,
+                       layerObjectPaths: out List<string> daemonLayerObjs,
+                       allowBaseDelta: true) &&
+                   TryRunWarmDaemonIr(daemonRc: daemonRc, daemonIr: daemonIr,
+                       daemonBaseObj: daemonBaseObj, daemonLayerObjs: daemonLayerObjs,
+                       entryFull: entryFull, exitCode: out exitCode);
         }
 
         /// <summary>JITs + runs the IR shipped by a warm daemon (base/delta split when a base object was
@@ -1449,8 +1488,9 @@ internal partial class Program
                 return null;
             }
 
-            string logPath = Path.Combine(path1: Path.GetTempPath(),
-                path2: $"{DaemonName()}-{Environment.UserName}.log");
+            // Named after the pipe, so daemons started on overridden pipes (several at once) keep separate logs.
+            // The default pipe gives the usual `<tool>-daemon-<user>.log`.
+            string logPath = Path.Combine(path1: Path.GetTempPath(), path2: $"{PipeName()}.log");
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = host, UseShellExecute = false, CreateNoWindow = true

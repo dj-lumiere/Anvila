@@ -664,7 +664,7 @@ internal partial class Program
             }
 
             ApplyDiagnosticFlags(manifest: manifest);
-            bool residentJit = BuilderBackends.Get(name: target.Backend).SupportsResidentJit;
+            bool residentBase = BuilderBackends.Get(name: target.Backend).SupportsResidentBase;
             return new ResolvedEntry
             {
                 EntryFile = explicitEntry,
@@ -681,7 +681,7 @@ internal partial class Program
                 LibraryConfigs = target.LibraryConfigs,
                 UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
                 Jit = ModeUsesJit(mode: target.Mode),
-                Incremental = target.Incremental && residentJit,
+                Incremental = target.Incremental && residentBase,
                 Backend = target.Backend
             };
         }
@@ -749,7 +749,7 @@ internal partial class Program
             }
 
             ApplyDiagnosticFlags(manifest: manifest);
-            bool residentJit = BuilderBackends.Get(name: target.Backend).SupportsResidentJit;
+            bool residentBase = BuilderBackends.Get(name: target.Backend).SupportsResidentBase;
             return new ResolvedEntry
             {
                 EntryFile = target.Executable,
@@ -766,7 +766,7 @@ internal partial class Program
                 LibraryConfigs = target.LibraryConfigs,
                 UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
                 Jit = ModeUsesJit(mode: target.Mode),
-                Incremental = target.Incremental && residentJit,
+                Incremental = target.Incremental && residentBase,
                 Backend = target.Backend
             };
         }

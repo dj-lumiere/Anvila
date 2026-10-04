@@ -20,7 +20,55 @@ public sealed class TesseraBackend : IBuilderBackend
     public string Name => BackendName;
 
     /// <inheritdoc/>
-    public bool SupportsResidentJit => false;
+    public bool SupportsResidentBase => true;
+
+    /// <inheritdoc/>
+    public bool SupportsLazyJit => false;
+
+    /// <inheritdoc/>
+    /// <remarks>The base defines every routine the writer writes and every instance Tessera makes for them, external
+    /// for the delta to link to (<c>Tessera.Compiler.ExposeDefinitions</c>). Its symbols are both kinds of name: the
+    /// routine symbols, which the delta's writer declares instead of writing (<see cref="TesseraWriter"/>), and
+    /// Tessera's own instance and global symbols, which the delta's Tessera build declares instead of defining. The
+    /// two never meet: Tessera's are its mangled names, the routine symbols are the builder's.</remarks>
+    public ResidentBase EmitResidentBase(BackendInput input)
+    {
+        var writer = new TesseraWriter(input: input, residentBase: true);
+        string source = writer.Write();
+        var decls = new List<Tessera.Decl>();
+        decls.AddRange(collection: Parse(file: ModuleFileName, source: source, isLibrary: false));
+        decls.AddRange(collection: Tessera.StandardLibrary.Load(directory: StdlibDirectory()));
+        var compiler = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false)
+        {
+            ExposeDefinitions = true
+        };
+        string ir;
+        try
+        {
+            ir = compiler.Generate();
+        }
+        catch (Tessera.CompileError ex)
+        {
+            throw new InvalidOperationException(
+                message: $"The Tessera builder rejected the generated base module: {ex.Message}", innerException: ex);
+        }
+
+        var symbols = new HashSet<string>(collection: writer.DefinedRoutineSymbols, comparer: StringComparer.Ordinal);
+        symbols.UnionWith(other: compiler.ExposedSymbols);
+        // The delta's collector skips only the instances whose routines the base wrote: an instance outside the
+        // seed's live set has no definition here, and the delta builds it.
+        var instanceKeys = new HashSet<string>(comparer: StringComparer.Ordinal);
+        foreach ((string key, Instantiation.MonomorphizedBody body) in input.InstantiatedGenericBodies ??
+                                                                      new Dictionary<string, Instantiation.MonomorphizedBody>())
+        {
+            if (writer.DefinesRoutine(symbol: LlvmEmit.LlvmEmitter.MangleRoutineName(routine: body.Info)))
+            {
+                instanceKeys.Add(item: key);
+            }
+        }
+
+        return new ResidentBase(LlvmIr: ir, Symbols: symbols, InstanceKeys: instanceKeys);
+    }
 
     /// <summary>
     /// Writes the Tessera translation of a build another backend emits (<c>[debug] dump-tessera</c> with the LLVM
@@ -90,7 +138,13 @@ public sealed class TesseraBackend : IBuilderBackend
         try
         {
             // RazorForge keeps its own crash trace in the generated routines (TesseraTrace), so Tessera's stays out.
-            var compiler = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false);
+            // A delta declares what the resident base defines (EmitResidentBase).
+            var compiler = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false)
+            {
+                ProvidedSymbols = input.ResidentSymbols is { Count: > 0 } resident
+                    ? resident as IReadOnlySet<string> ?? new HashSet<string>(collection: resident, comparer: StringComparer.Ordinal)
+                    : new HashSet<string>()
+            };
             Step(name: "compiler");
             ir = compiler.Generate();
             Step(name: "generate");

@@ -84,30 +84,18 @@ internal sealed class TesseraRoutineWriter
         if (HasMe)
         {
             TypeSymbol owner = _routine.OwnerType!;
-            if (MeByReference)
-            {
-                parameters.Add(item: $"me: @{TypeText(type: owner)}");
-                scope[key: "me"] = new Local(Place: "me", Type: owner);
-            }
-            else
-            {
-                parameters.Add(item: $"arg_me: {TypeText(type: owner)}");
-                scope[key: "me"] = ClaimLocal(name: "me", type: owner, initial: "arg_me", inHead: true);
-            }
+            parameters.Add(item: MeParameter());
+            scope[key: "me"] = MeByReference
+                ? new Local(Place: "me", Type: owner)
+                : ClaimLocal(name: "me", type: owner, initial: "arg_me", inHead: true);
         }
 
         foreach (ParamInfo param in _routine.Parameters)
         {
-            if (param.IsByReference)
-            {
-                parameters.Add(item: $"arg_{param.Name}: @{TypeText(type: param.Type)}");
-                scope[key: param.Name] = new Local(Place: $"arg_{param.Name}", Type: param.Type);
-            }
-            else
-            {
-                parameters.Add(item: $"arg_{param.Name}: {TypeText(type: param.Type)}");
-                scope[key: param.Name] = ClaimLocal(name: param.Name, type: param.Type, initial: $"arg_{param.Name}", inHead: true);
-            }
+            parameters.Add(item: ParameterText(param: param));
+            scope[key: param.Name] = param.IsByReference
+                ? new Local(Place: $"arg_{param.Name}", Type: param.Type)
+                : ClaimLocal(name: param.Name, type: param.Type, initial: $"arg_{param.Name}", inHead: true);
         }
 
         _traced = _module.TracesRoutine(routine: _routine);
@@ -149,6 +137,41 @@ internal sealed class TesseraRoutineWriter
         }
 
         return text.ToString();
+    }
+
+    /// <summary>
+    /// Writes the routine's signature, the same as <see cref="Write"/> gives it, over a body that only ends: the
+    /// declaration of a routine another module defines (a resident base's), which Tessera declares rather than builds.
+    /// </summary>
+    public string WriteDeclarationOnly()
+    {
+        var parameters = new List<string>();
+        if (HasMe)
+        {
+            parameters.Add(item: MeParameter());
+        }
+
+        parameters.AddRange(collection: _routine.Parameters.Select(selector: ParameterText));
+        return $"{_module.RoutinePrefix(routine: _routine)}routine {_module.RoutineName(routine: _routine)}" +
+               $"({string.Join(separator: ", ", values: parameters)}) -> {ReturnTypeText}\n" +
+               "    block entry()\n        unreachable\n\n";
+    }
+
+    /// <summary>The receiver parameter: <c>me</c> by reference, or <c>arg_me</c> by value.</summary>
+    private string MeParameter()
+    {
+        TypeSymbol owner = _routine.OwnerType!;
+        return MeByReference
+            ? $"me: @{TypeText(type: owner)}"
+            : $"arg_me: {TypeText(type: owner)}";
+    }
+
+    /// <summary>A parameter as the signature lists it: <c>arg_name</c>, a pointer when passed by reference.</summary>
+    private string ParameterText(ParamInfo param)
+    {
+        return param.IsByReference
+            ? $"arg_{param.Name}: @{TypeText(type: param.Type)}"
+            : $"arg_{param.Name}: {TypeText(type: param.Type)}";
     }
 
     private bool IsVoidReturn => TesseraWriter.IsVoid(type: _routine.ReturnType);

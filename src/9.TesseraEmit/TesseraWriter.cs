@@ -50,10 +50,21 @@ internal sealed class TesseraWriter
     /// <summary>The C symbol of each routine a library exports, by the routine's mangled symbol.</summary>
     private readonly Dictionary<string, string> _exports = new(comparer: StringComparer.Ordinal);
 
-    public TesseraWriter(BackendInput input, TesseraLibrary? library = null)
+    /// <summary>Whether this writes the compile daemon's resident base: every routine, no <c>main</c>.</summary>
+    private readonly bool _residentBase;
+
+    /// <summary>The routine symbols the resident base defines, when this writes a delta against it: such a routine is
+    /// declared, not written (<see cref="ResidentDeclaration"/>).</summary>
+    private readonly IReadOnlySet<string> _resident;
+
+    public TesseraWriter(BackendInput input, TesseraLibrary? library = null, bool residentBase = false)
     {
         _input = input;
         _library = library;
+        _residentBase = residentBase;
+        _resident = input.ResidentSymbols is { Count: > 0 } resident
+            ? resident as IReadOnlySet<string> ?? new HashSet<string>(collection: resident, comparer: StringComparer.Ordinal)
+            : new HashSet<string>();
         foreach (string name in new[]
                  {
                      TesseraTrace.Push, TesseraTrace.Pop, TesseraTrace.UpdateLocation, "rf_runtime_init", "main",
@@ -93,7 +104,18 @@ internal sealed class TesseraWriter
     }
 
     /// <summary>The Tessera names of the routines the module defines.</summary>
-    public IReadOnlyCollection<string> DefinedRoutineNames => _routineNames.Values;
+    public IReadOnlyCollection<string> DefinedRoutineNames =>
+        _routineNames.Where(predicate: r => !_residentDeclarations.Contains(item: r.Key))
+                     .Select(selector: r => r.Value)
+                     .ToList();
+
+    /// <summary>The routine symbols of the routines the module defines (the builder's names, not Tessera's).</summary>
+    public IReadOnlyCollection<string> DefinedRoutineSymbols =>
+        _routineNames.Keys.Where(predicate: s => !_residentDeclarations.Contains(item: s)).ToList();
+
+    /// <summary>Whether the module defines the routine of this symbol.</summary>
+    public bool DefinesRoutine(string symbol) =>
+        _routineNames.ContainsKey(key: symbol) && !_residentDeclarations.Contains(item: symbol);
 
     /// <summary>Writes the module.</summary>
     public string Write()
@@ -105,6 +127,8 @@ internal sealed class TesseraWriter
 
         List<(RoutineInfo Info, Statement Body)> routines = CollectRoutines();
         RegisterCrashReachability();
+        // A delta writes no routine the resident base defines: each one it calls is declared on first call.
+        routines.RemoveAll(match: r => _resident.Contains(item: LlvmEmitter.MangleRoutineName(routine: r.Info)));
         foreach ((RoutineInfo info, Statement _) in routines)
         {
             string symbol = LlvmEmitter.MangleRoutineName(routine: info);
@@ -128,7 +152,7 @@ internal sealed class TesseraWriter
             definitions.Append(value: '\n');
         }
 
-        string main = WriteMain(routines: routines);
+        string main = _residentBase ? "" : WriteMain(routines: routines);
         return Assemble(main: main);
     }
 
@@ -403,7 +427,7 @@ internal sealed class TesseraWriter
                 message: $"The Tessera backend found no live crashable with a '{member}' to dispatch to.");
         }
 
-        string name = VerbatimName(text: $"crashable dispatch {member}");
+        string name = VerbatimName(text: $"crashable dispatch {member} {ArmsTag(arms: arms)}");
         _crashableDispatches[key: member] = (name, result);
         string idType = TypeText(type: typeIdType);
         string resultType = TypeText(type: result);
@@ -424,6 +448,19 @@ internal sealed class TesseraWriter
         text.Append(value: $"    block next_{arms.Count}()\n        unreachable\n\n");
         _definitions.Append(value: text);
         return (name, result);
+    }
+
+    /// <summary>
+    /// What a dispatch over <paramref name="arms"/> is named by besides its member: a hash of the arms, since its body
+    /// is the build's live crashables. A resident base and a delta (or two deltas) with other crashables then name
+    /// two routines, and ones with the same arms one routine, which the delta can take from the base.
+    /// </summary>
+    private static string ArmsTag(List<(ulong TypeId, RoutineInfo Member)> arms)
+    {
+        string text = string.Join(separator: "\n",
+            values: arms.Select(selector: a => $"{a.TypeId:X} {LlvmEmitter.MangleRoutineName(routine: a.Member)}"));
+        return Convert.ToHexString(inArray: System.Security.Cryptography.SHA256.HashData(
+            source: Encoding.UTF8.GetBytes(s: text)))[..16];
     }
 
     /// <summary>The receiver a crash-object dispatch passes a crashable's member: the crashable inside the object (a
@@ -479,7 +516,7 @@ internal sealed class TesseraWriter
         List<(ulong TypeId, RoutineInfo Member)> arms = Collection.CrashableDispatchArms.For(
             memberName: Declaration.RuntimeContract.Destroy, registry: _input.Registry, liveRoutineKeys: _liveKeySet);
         string free = RuntimeRoutine(symbol: "rf_invalidate", parameters: "ptr: Addr", returnType: "Void");
-        string name = VerbatimName(text: "crash object destroy");
+        string name = VerbatimName(text: $"crash object destroy {ArmsTag(arms: arms)}");
         _crashObjectDestroy = name;
         string idType = TypeText(type: typeIdType);
         var text = new StringBuilder();
@@ -525,6 +562,11 @@ internal sealed class TesseraWriter
         string symbol = LlvmEmitter.MangleRoutineName(routine: routine);
         if (!_routineNames.TryGetValue(key: symbol, value: out string? name))
         {
+            if (_resident.Contains(item: symbol))
+            {
+                return ResidentDeclaration(routine: routine, symbol: symbol);
+            }
+
             throw new NotSupportedException(
                 message: $"The Tessera backend found a call to {symbol}, which has no body in this build.");
         }
@@ -532,6 +574,28 @@ internal sealed class TesseraWriter
         Demand(symbol: symbol);
         return name;
     }
+
+    /// <summary>
+    /// A routine of the resident base, which a delta calls but does not define: written with its signature and a body
+    /// that is never built, since its Tessera symbol is one the base provides (<c>Tessera.Compiler.ProvidedSymbols</c>),
+    /// so Tessera declares it and the call links to the base's definition. The signature is the one the base's routine
+    /// has (<see cref="TesseraRoutineWriter.WriteDeclarationOnly"/>), so the two symbols are one. Written once, on the
+    /// first call.
+    /// </summary>
+    private string ResidentDeclaration(RoutineInfo routine, string symbol)
+    {
+        string name = VerbatimName(text: symbol);
+        _routineNames[key: symbol] = name;
+        _residentDeclarations.Add(item: symbol);
+        _definitions.Append(value: new TesseraRoutineWriter(module: this, routine: routine, body: new BlockStatement(
+                Statements: [], Location: routine.Location ?? new SourceLocation(FileName: "", Line: 0, Column: 0, Position: 0)))
+           .WriteDeclarationOnly());
+        _definitions.Append(value: '\n');
+        return name;
+    }
+
+    /// <summary>The routines of the resident base this delta declared.</summary>
+    private readonly HashSet<string> _residentDeclarations = new(comparer: StringComparer.Ordinal);
 
     private string ExternName(RoutineInfo routine)
     {
@@ -720,7 +784,8 @@ internal sealed class TesseraWriter
     }
 
     /// <summary>
-    /// The global holding <paramref name="data"/>'s elements, laid down once per distinct content; its name is the
+    /// The read-only memory holding <paramref name="data"/>'s elements (a Tessera preset in memory, a private constant
+    /// as in the LLVM emitter, so each module keeps its own), laid down once per distinct content; its name is the
     /// address. Empty data is the null address.
     /// </summary>
     public string ConstantData(ConstantDataExpression data)
@@ -739,7 +804,7 @@ internal sealed class TesseraWriter
 
         name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
         _texts[key: initial] = name;
-        _globals.Append(value: $"{Private}global {name}: @{type} <- {initial}\n\n");
+        _globals.Append(value: $"{Private}preset {name}: @{type} <- {initial}\n\n");
         // The value is a pointer to the first element.
         name = $"{name}.to<@{TypeText(type: data.ElementType)}>()";
         _texts[key: initial] = name;
@@ -749,7 +814,8 @@ internal sealed class TesseraWriter
     /// <summary>
     /// The aggregate preset (an <c>Array[T, N]</c> or <c>BitArray[N]</c> table) <paramref name="name"/> names,
     /// seen from <paramref name="routine"/>: the bare name, then qualified by the routine's module, as in the LLVM
-    /// emitter. Its table is a global, declared once; the global's name is the table's address. Null when the
+    /// emitter. Its table is read-only memory (a Tessera preset in memory), declared once; the preset's name is the
+    /// table's address. Null when the
     /// name is not an aggregate preset.
     /// </summary>
     public (string Global, TypeSymbol Type)? AggregatePreset(string name, RoutineInfo routine)
@@ -780,7 +846,7 @@ internal sealed class TesseraWriter
             ? TesseraRoutineWriter.ConstantText(literal: literal)
             : throw new NotSupportedException(
                 message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
-        _globals.Append(value: $"{Private}global {global}: @{type} <- {type} {{ {string.Join(separator: ", ", values: values)} }}\n\n");
+        _globals.Append(value: $"{Private}preset {global}: @{type} <- {type} {{ {string.Join(separator: ", ", values: values)} }}\n\n");
         return (global, preset.Type);
     }
 
