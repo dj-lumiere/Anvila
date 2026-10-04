@@ -658,7 +658,10 @@ internal static class NativeToolchain
     /// llvm-links the emitted RF module (<paramref name="llFile"/>) with Ingrid's Tessera library
     /// (<see cref="IngridTessera"/>) into <paramref name="linkedFile"/>. Unlike the hot-runtime LTO below this isn't
     /// optional: the library's routines are not in the runtime DLL, so a module that calls one links only with it.
-    /// Returns false, with the reason in <paramref name="error"/>, when the library can't be built or linked.
+    /// Only what the module reaches is linked (<c>--only-needed</c>): the library holds every export, generated
+    /// engines included, and a hello world would otherwise compile all of them in a debug build (about 400 ms of
+    /// -O0 code generation). Returns false, with the reason in <paramref name="error"/>, when the library can't be
+    /// built or linked.
     /// </summary>
     internal static bool TryLinkIngridTessera(string exeDir, string llFile, out string linkedFile, out string error)
     {
@@ -676,7 +679,7 @@ internal static class NativeToolchain
 
         string linked = Path.ChangeExtension(path: llFile, extension: ".ingrid.ll");
         int rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-            args: $"-S \"{llFile}\" \"{ingrid}\" -o \"{linked}\"",
+            args: $"-S \"{llFile}\" --only-needed \"{ingrid}\" -o \"{linked}\"",
             stderr: out string err);
         if (rc != 0)
         {
