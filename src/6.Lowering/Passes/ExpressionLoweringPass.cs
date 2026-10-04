@@ -95,7 +95,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 LowerCompoundAssignmentStatement(es: es),
             ExpressionStatement es => LowerExpressionStatement(es: es, stmt: stmt),
             DiscardStatement ds => LowerDiscardStatement(ds: ds, stmt: stmt),
-            BecomesStatement bs => LowerBecomesStatement(bs: bs, stmt: stmt),
             ThrowStatement t => LowerThrowStatement(t: t, stmt: stmt),
             // D-AST-7: recurse into variant return value expressions.
             VariantReturnStatement { Value: not null } vrs => LowerVariantReturnStatement(vrs: vrs,
@@ -317,18 +316,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         }
 
         return (hoisted, ds with { Expression = loweredExpr });
-    }
-
-    private (List<Statement> Hoisted, Statement Lowered) LowerBecomesStatement(BecomesStatement bs,
-        Statement stmt)
-    {
-        (List<Statement> hoisted, Expression loweredVal) = LowerExpr(expr: bs.Value);
-        if (hoisted.Count == 0 && ReferenceEquals(objA: loweredVal, objB: bs.Value))
-        {
-            return ([], stmt);
-        }
-
-        return (hoisted, bs with { Value = loweredVal });
     }
 
     private (List<Statement> Hoisted, Statement Lowered) LowerThrowStatement(ThrowStatement t,
@@ -2921,14 +2908,19 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             item: new AssignmentStatement(Target: qqRef, Value: loweredRight, Location: loc));
 
         ProducedWhenStatement = true;
+        // The value arm is the only one that keeps the carrier's content: every other arm (`None`, a caught
+        // error, both for a `Lookup`) takes the fallback.
         var whenStmt = new WhenStatement(Expression: carRef,
             Clauses:
             [
-                new WhenClause(Pattern: MakeAbsencePattern(carrierType: carrierType, loc: loc),
-                    Body: new BlockStatement(Statements: noneBody, Location: loc),
-                    Location: loc),
-                new WhenClause(Pattern: new ElsePattern(VariableName: valName, Location: loc),
+                new WhenClause(Pattern: new TypePattern(Type: TypeInfoToExpr(type: valueType, loc: loc),
+                        VariableName: valName,
+                        Bindings: null,
+                        Location: loc),
                     Body: new AssignmentStatement(Target: qqRef, Value: valRef, Location: loc),
+                    Location: loc),
+                new WhenClause(Pattern: new ElsePattern(VariableName: null, Location: loc),
+                    Body: new BlockStatement(Statements: noneBody, Location: loc),
                     Location: loc)
             ],
             Location: loc);
@@ -3159,32 +3151,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             _ => type.Name
         };
         return baseName is "Check" or "Lookup";
-    }
-
-    /// <summary>
-    /// Returns the appropriate absence pattern for the carrier:
-    /// <c>NonePattern</c> for Maybe[T], <c>TypePattern("None")</c> for Result/Lookup.
-    /// </summary>
-    private static Pattern MakeAbsencePattern(TypeSymbol? carrierType, SourceLocation loc)
-    {
-        // Maybe is identified by name prefix
-        string? baseName = carrierType switch
-        {
-            RecordTypeSymbol { GenericDefinition: not null } r => r.GenericDefinition.Name,
-            _ => carrierType?.Name
-        };
-
-        if (baseName == MaybeTypeName)
-        {
-            return new NonePattern(Location: loc);
-        }
-
-        // Result, Lookup, or unknown -- use None type pattern
-        return new TypePattern(
-            Type: new TypeExpression(Name: NoneTypeName, GenericArguments: null, Location: loc),
-            VariableName: null,
-            Bindings: null,
-            Location: loc);
     }
 
     /// <summary>

@@ -1106,9 +1106,6 @@ public partial class Parser
             case TokenType.Return:
                 Advance();
                 return ParseReturnStatement();
-            case TokenType.Becomes:
-                Advance();
-                return ParseBecomesStatement();
             case TokenType.Break:
                 Advance();
                 return ParseBreakStatement();

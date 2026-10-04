@@ -152,7 +152,6 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                 break;
             case ReturnStatement { Value: not null } s: yield return s.Value; break;
             case VariantReturnStatement { Value: not null } s: yield return s.Value; break;
-            case BecomesStatement s: yield return s.Value; break;
             case ThrowStatement s: yield return s.Error; break;
             case AssignmentStatement s:
                 yield return s.Target;

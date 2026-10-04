@@ -91,13 +91,16 @@ public static class Languages
         if (rules.HasOwnStandardLibrary)
         {
             string own = Path.Combine(path1: stdlibRoot, path2: rules.Name);
-            roots.Add(item: (own, "*" + rules.FileExtension));
             // A module of the language's own library that needs RazorForge's buildtime features (`expand`) is
-            // written in RazorForge and still belongs to the language: only its builds read this directory.
+            // written in RazorForge and still belongs to the language: only its builds read this directory. It
+            // is shared code, read before the language's own files, so a surface routine the language writes
+            // over one of its routines finds it already there.
             if (rules.Language != Language.RazorForge)
             {
                 roots.Add(item: (own, "*" + razorForge.FileExtension));
             }
+
+            roots.Add(item: (own, "*" + rules.FileExtension));
         }
 
         return roots;

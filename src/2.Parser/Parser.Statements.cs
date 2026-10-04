@@ -993,8 +993,14 @@ public partial class Parser
         string name = CurrentToken.Text;
         Advance();
 
+        // A type of a named realm: `is RF::Core.List[SerialValue] items` in a Suflae file.
+        string? realm = ReadRealmQualifier(name: ref name);
+
         // Check for qualified name: Type.CASE or Type.CASE.SubCase
-        name = ReadQualifiedPatternName(head: name);
+        if (realm == null)
+        {
+            name = ReadQualifiedPatternName(head: name);
+        }
 
         // Generic-instance arm: `is Dict[Text, SerialValue] inner` / `is List[SerialValue] xs`.
         // Parse the type arguments so the pattern resolves to the concrete instance (and the binding
@@ -1032,7 +1038,8 @@ public partial class Parser
 
         var type = new TypeExpression(Name: name,
             GenericArguments: genericArguments,
-            Location: location);
+            Location: location,
+            Realm: realm);
         Pattern typePattern = new TypePattern(Type: type,
             VariableName: variableName,
             Bindings: bindings,
@@ -1176,24 +1183,6 @@ public partial class Parser
         ConsumeStatementTerminator();
 
         return new ReturnStatement(Value: value, Location: location);
-    }
-
-    /// <summary>
-    /// Parses a becomes statement (block result value).
-    /// Syntax: <c>becomes expression</c>
-    /// Used in multi-statement when/if branches to explicitly indicate the branch's result.
-    /// </summary>
-    /// <returns>A <see cref="BecomesStatement"/> AST node.</returns>
-    private BecomesStatement ParseBecomesStatement()
-    {
-        SourceLocation location = GetLocation(token: PeekToken(offset: -1));
-
-        // becomes requires an expression (unlike return which can be valueless)
-        Expression value = ParseExpression();
-
-        ConsumeStatementTerminator();
-
-        return new BecomesStatement(Value: value, Location: location);
     }
 
     /// <summary>

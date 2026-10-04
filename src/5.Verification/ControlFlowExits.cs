@@ -22,7 +22,6 @@ internal static class ControlFlowExits
             ReturnStatement => true,
             ThrowStatement => true,
             AbsentStatement => true,
-            BecomesStatement => true,
             BlockStatement block => block.Statements.Any(predicate: s =>
                 AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: s)),
             IfStatement { ElseStatement: not null } ifStmt =>

@@ -40,7 +40,6 @@ public abstract class AstRewriter
             DangerStatement s => VisitDanger(s: s),
             UsingStatement s => VisitUsing(s: s),
             ReturnStatement s => VisitReturn(s: s),
-            BecomesStatement s => VisitBecomes(s: s),
             ThrowStatement s => VisitThrow(s: s),
             CrashStatement s => VisitCrash(s: s),
             VariantReturnStatement s => VisitVariantReturn(s: s),
@@ -253,20 +252,6 @@ public abstract class AstRewriter
             return s;
         }
 
-        Expression v = VisitExpression(expr: s.Value);
-        return ReferenceEquals(objA: v, objB: s.Value)
-            ? s
-            : s with { Value = v };
-    }
-
-    /// <summary>
-    /// Rewrites a <see cref="BecomesStatement"/> (a coroutine-yield-like value hand-off) by visiting
-    /// its value expression. Returns the original node when the value is unchanged.
-    /// </summary>
-    /// <param name="s">The becomes statement to rewrite.</param>
-    /// <returns>The rewritten becomes statement, or the original reference if nothing changed.</returns>
-    protected virtual Statement VisitBecomes(BecomesStatement s)
-    {
         Expression v = VisitExpression(expr: s.Value);
         return ReferenceEquals(objA: v, objB: s.Value)
             ? s

@@ -386,7 +386,7 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.NonPresettableCollectionPreset,
                     message:
                     $"Preset '{preset.Name}' has type '{presetType.Name}': a collection-literal preset must be " +
-                    "a fixed-size 'Array[T, N]' or 'BitArray[N]'. Other collection types would rebuild the whole " +
+                    "a fixed-size 'Array[T, COUNT]' or 'BitArray[BITS]'. Other collection types would rebuild the whole " +
                     "collection on every use.",
                     location: preset.Location);
             }

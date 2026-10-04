@@ -282,7 +282,6 @@ public sealed class BackendEntryValidator
             InsertedTextExpression => "FStringLoweringPass",
             RangeExpression => "ExpressionLoweringPass",
             UsingStatement => "UsingLoweringPass",
-            BecomesStatement => "BecomesLoweringPass",
             _ => null
         };
 

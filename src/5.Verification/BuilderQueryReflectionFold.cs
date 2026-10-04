@@ -110,7 +110,6 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
             ExpressionStatement es => FoldExpressionStmt(stmt: stmt, es: es),
             DiscardStatement dsc => FoldDiscardStmt(stmt: stmt, dsc: dsc),
             ThrowStatement ts => FoldThrowStmt(stmt: stmt, ts: ts),
-            BecomesStatement bs => FoldBecomesStmt(stmt: stmt, bs: bs),
             UsingStatement us => FoldUsingStmt(stmt: stmt, us: us),
             DangerStatement dg => FoldDangerStmt(stmt: stmt, dg: dg),
             _ => stmt
@@ -250,14 +249,6 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
         return ReferenceEquals(objA: e, objB: ts.Error)
             ? stmt
             : ts with { Error = e };
-    }
-
-    private Statement FoldBecomesStmt(Statement stmt, BecomesStatement bs)
-    {
-        Expression v = FoldReflectionExpr(expr: bs.Value);
-        return ReferenceEquals(objA: v, objB: bs.Value)
-            ? stmt
-            : bs with { Value = v };
     }
 
     private Statement FoldUsingStmt(Statement stmt, UsingStatement us)

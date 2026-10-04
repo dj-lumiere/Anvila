@@ -134,7 +134,7 @@ public partial class LlvmEmitter
 
     #endregion
 
-    #region Throw / Absent / Becomes
+    #region Throw / Absent
 
     private void EmitAbsent(StringBuilder sb, AbsentStatement absentStmt)
     {

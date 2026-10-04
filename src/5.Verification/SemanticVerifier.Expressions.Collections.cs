@@ -914,54 +914,21 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Analyzes a block-statement body inside a <c>when</c> expression clause: validates <c>becomes</c>
-    /// usage and extracts the result type. A block with only <c>becomes</c> should have used
-    /// <c>=&gt;</c> syntax; a block without any <c>becomes</c> is an error.
+    /// A block body inside a <c>when</c> that gives a value: an arm there is one expression after <c>=&gt;</c>, so a
+    /// block is an error. Its statements are still checked, so their own mistakes are reported too.
     /// </summary>
     private TypeSymbol? AnalyzeWhenBlockClauseBody(BlockStatement block, TypeSymbol? resultType)
     {
-        BecomesStatement? becomesStmt = null;
-        int statementCount = 0;
-
         foreach (Statement stmt in block.Statements)
         {
             AnalyzeStatement(statement: stmt);
-            statementCount++;
-
-            if (stmt is BecomesStatement becomes)
-            {
-                becomesStmt = becomes;
-            }
         }
 
-        if (becomesStmt != null)
-        {
-            // Found a becomes statement — check if it's a single-statement block.
-            if (statementCount == 1)
-            {
-                // Block contains only 'becomes expr' — should use => syntax instead.
-                ReportError(code: SemanticDiagnosticCode.SingleExpressionBranchUsesBecomes,
-                    message:
-                    "Single-expression when branch should use '=>' syntax instead of block with 'becomes'.",
-                    location: becomesStmt.Location);
-            }
-
-            // Extract the result type from the becomes expression (already analyzed via AnalyzeStatement).
-            TypeSymbol branchType = becomesStmt.Value.ResolvedType ?? ErrorTypeSymbol.Instance;
-            return FoldWhenBranchType(resultType: resultType,
-                branchType: branchType,
-                errorLocation: becomesStmt.Location);
-        }
-
-        if (statementCount > 0)
-        {
-            // Multi-statement block without 'becomes' in a when expression.
-            ReportError(code: SemanticDiagnosticCode.WhenExpressionBlockMissingBecomes,
-                message:
-                "Multi-statement block in when expression requires 'becomes' to specify the result value.",
-                location: block.Location);
-        }
-
+        ReportError(code: SemanticDiagnosticCode.WhenExpressionArmIsBlock,
+            message:
+            "You wrote several statements in an arm of a 'when' that gives a value, but such an arm is one " +
+            "expression after '=>'. Compute the value first, or write a 'when' statement that sets a variable.",
+            location: block.Location);
         return resultType;
     }
 

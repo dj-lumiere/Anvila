@@ -398,11 +398,6 @@ public interface ISyntaxTreeVisitor<out T>
     /// <param name="node">The return statement to visit</param>
     /// <returns>Result of visiting the return statement</returns>
     T VisitReturnStatement(ReturnStatement node);
-    /// <summary>Visits a becomes statement node (block result in multi-statement branches)</summary>
-    /// <param name="node">The becomes statement to visit</param>
-    /// <returns>Result of visiting the becomes statement</returns>
-    T VisitBecomesStatement(BecomesStatement node);
-
     /// <summary>Visits a synthesized variant return statement (replaces throw/absent/return in variant bodies)</summary>
     /// <param name="node">The variant return statement to visit</param>
     /// <returns>Result of visiting the variant return statement</returns>

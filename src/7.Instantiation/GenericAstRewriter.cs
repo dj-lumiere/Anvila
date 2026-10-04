@@ -1132,6 +1132,36 @@ internal static class GenericAstRewriter
     #endregion
 
     #region Expression Rewriting
+    /// <summary>
+    /// A <c>try</c>/<c>grab</c>/<c>lookup</c> over one member call that could not be bound while its receiver was
+    /// still generic (the step of an <c>each</c> loop over <c>List[Agent[V]]</c>, lowered after analysis): with
+    /// the receiver concrete, bind the call to the recovery variant of that receiver's failable routine.
+    /// Anything else is left as it is.
+    /// </summary>
+    private static Expression BindRecoveryOnConcreteReceiver(RecoveryExpression recovery, RewriteContext ctx)
+    {
+        if (ctx.Registry is not { } registry ||
+            recovery.Inner is not CallExpression
+            {
+                Callee: MemberExpression { Object.ResolvedType: { } receiverType, MemberName: { } name }
+            } call ||
+            receiverType is ErrorTypeSymbol || receiverType.IsGenericDefinition ||
+            registry.LookupMemberRoutine(type: receiverType, memberRoutineName: name, isFailable: true) is not
+                { } failable ||
+            registry.LookupRecoveryVariant(recovered: failable, kind: recovery.Kind) is not { } variant)
+        {
+            return recovery;
+        }
+
+        return call with
+        {
+            ResolvedRoutine = variant,
+            LoweringKind = CallLoweringKind.DirectMemberRoutine,
+            ResolvedType = variant.ReturnType,
+            IsPreAnalyzed = true
+        };
+    }
+
 
     private static Expression RewriteExpression(Expression expr, RewriteContext ctx)
     {
@@ -1562,7 +1592,9 @@ internal static class GenericAstRewriter
             // on the concrete owner) in its place, as AstRewriter splices it. Unanalyzed, rewrite the inner.
             RecoveryExpression recovery => recovery.LoweredCall is { } lowered
                 ? RewriteExpression(expr: lowered, ctx: ctx)
-                : recovery with { Inner = RewriteExpression(expr: recovery.Inner, ctx: ctx) },
+                : BindRecoveryOnConcreteReceiver(
+                    recovery: recovery with { Inner = RewriteExpression(expr: recovery.Inner, ctx: ctx) },
+                    ctx: ctx),
 
             IdentifierExpression identifier => identifier with { },
 
@@ -2309,11 +2341,6 @@ internal static class GenericAstRewriter
                 Value = ret.Value != null
                     ? RewriteExpression(expr: ret.Value, ctx: ctx)
                     : null
-            },
-
-            BecomesStatement becomes => becomes with
-            {
-                Value = RewriteExpression(expr: becomes.Value, ctx: ctx)
             },
 
             IfStatement ifs => RewriteIf(ifs: ifs, ctx: ctx),

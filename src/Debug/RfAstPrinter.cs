@@ -1308,13 +1308,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
 
     /// <inheritdoc/>
-    public string VisitBecomesStatement(BecomesStatement node)
-    {
-        return $"{I}becomes {node.Value.Accept(visitor: this)}";
-    }
-
-
-    /// <inheritdoc/>
     public string VisitThrowStatement(ThrowStatement node)
     {
         return $"{I}throw {node.Error.Accept(visitor: this)}";

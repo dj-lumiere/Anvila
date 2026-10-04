@@ -240,9 +240,11 @@ public partial class Parser
     /// </summary>
     private Expression ParseParenthesizedPrimary(SourceLocation location)
     {
-        // Parentheses re-enable bare lambdas inside a when-arm condition.
+        // Parentheses re-enable bare lambdas inside a when-arm condition, and `is` / `in` inside a when-arm body.
         bool savedConditionContext = _inWhenConditionContext;
+        bool savedClauseBody = _inWhenClauseBody;
         _inWhenConditionContext = false;
+        _inWhenClauseBody = false;
         try
         {
             if (IsArrowLambdaParameters())
@@ -266,6 +268,7 @@ public partial class Parser
         finally
         {
             _inWhenConditionContext = savedConditionContext;
+            _inWhenClauseBody = savedClauseBody;
         }
     }
 

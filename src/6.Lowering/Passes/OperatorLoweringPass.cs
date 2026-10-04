@@ -97,11 +97,19 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                 return LowerElementPath(expr: member.Object, write: write) is { } owner
                     ? member with { Object = owner }
                     : null;
-            case IndexExpression { ResolvedType: EntityTypeSymbol } element:
+            // A range index is a slice (`xs[1 til 3]`): a new collection, not an element of this one.
+            case IndexExpression { ResolvedType: EntityTypeSymbol } element when !IsRangeIndex(index: element.Index):
                 return MintElementToken(element: element, write: write);
             default:
                 return null;
         }
+    }
+
+    /// <summary>Whether a subscript's index is a range, which makes the subscript a slice.</summary>
+    private static bool IsRangeIndex(Expression index)
+    {
+        return index is RangeExpression ||
+               index.ResolvedType is RecordTypeSymbol { GenericDefinition.Name: "Range" };
     }
 
     /// <summary>

@@ -700,9 +700,6 @@ internal sealed class IteratorInlineLoweringPass
             case DiscardStatement disc:
                 return disc with { Expression = CloneExpression(expr: disc.Expression, ctx: ctx) };
 
-            case BecomesStatement bc:
-                return bc with { Value = CloneExpression(expr: bc.Value, ctx: ctx) };
-
             case IfStatement ifs:
                 return ifs with
                 {
@@ -1001,7 +998,6 @@ internal sealed class IteratorInlineLoweringPass
                         break;
                     case ReturnStatement { Value: { } rv }: WalkExpr(e: rv, visit: visit); break;
                     case ThrowStatement th: WalkExpr(e: th.Error, visit: visit); break;
-                    case BecomesStatement bc: WalkExpr(e: bc.Value, visit: visit); break;
                     case DiscardStatement disc: WalkExpr(e: disc.Expression, visit: visit); break;
                     case IfStatement ifs: WalkExpr(e: ifs.Condition, visit: visit); break;
                     case WhileStatement w: WalkExpr(e: w.Condition, visit: visit); break;

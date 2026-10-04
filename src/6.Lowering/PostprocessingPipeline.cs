@@ -84,7 +84,6 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // statement that touches a Roamed field. Runs after the other Roamed passes so field accesses
         // are in final form.
         new RoamedLockBracketLoweringPass(ctx: ctx).Run(program: program);
-        new BecomesLoweringPass(_: ctx).Run(program: program);
         new UsingLoweringPass(ctx: ctx).Run(program: program);
     }
 

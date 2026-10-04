@@ -249,6 +249,26 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static Expression AsPlainCall(Expression expr)
     {
+        // A construction with explicit type arguments (`List[S64](from: v)`) is the same creator call a
+        // construction without them is (`Integer(text: t)`): the type it builds, called with its arguments.
+        if (expr is GenericMemberRoutineCallExpression
+            {
+                ResolvedRoutine: { } creator, ConstructedType: { } constructed,
+                Object: IdentifierExpression typeName
+            } construction)
+        {
+            return new CallExpression(Callee: typeName with { ResolvedRoutine = creator },
+                Arguments: construction.Arguments,
+                Location: construction.Location)
+            {
+                ResolvedRoutine = creator,
+                ResolvedType = construction.ResolvedType,
+                ConstructedType = constructed,
+                LoweringKind = construction.LoweringKind,
+                TypeArguments = construction.TypeArguments
+            };
+        }
+
         if (expr is not GenericMemberRoutineCallExpression
             {
                 ResolvedRoutine: { } routine, ConstructedType: null

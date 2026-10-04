@@ -386,7 +386,6 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
             DiscardStatement s => [s.Expression],
             ReturnStatement { Value: { } v } => [v],
             ThrowStatement s => [s.Error],
-            BecomesStatement s => [s.Value],
             AssignmentStatement s => [s.Target, s.Value],
             DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } init } } => [init],
             _ => []

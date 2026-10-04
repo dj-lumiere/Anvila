@@ -4023,9 +4023,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             case VariantReturnStatement { Value: { } vv }:
                 ScanExprForMemberRoutineGenericCalls(expr: vv);
                 break;
-            case BecomesStatement bst:
-                ScanExprForMemberRoutineGenericCalls(expr: bst.Value);
-                break;
             case DangerStatement danger:
                 ScanStatementForMemberRoutineGenericCalls(stmt: danger.Body);
                 break;

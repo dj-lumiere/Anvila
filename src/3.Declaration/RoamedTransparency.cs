@@ -50,11 +50,14 @@ internal static class RoamedTransparency
 
         RoutineInfo? effective = memberRoutine;
 
-        // Display transparency: a `represent`/`diagnose` still bound to the WRAPPER (its own
+        // Display transparency: a `represent`/`diagnose`/`serialize` still bound to the WRAPPER (its own
         // hand-written/auto-derived one shadows the inner) re-resolves to the inner value's, so
-        // `f"{d}"` / `d.diagnose()` render the contents, not the wrapper type.
+        // `f"{d}"` / `d.diagnose()` render the contents and `d.serialize()` serializes them, not the wrapper.
         if (memberRoutine is
-                { Name: RuntimeContract.Display.Represent or RuntimeContract.Display.Diagnose } &&
+                {
+                    Name: RuntimeContract.Display.Represent or RuntimeContract.Display.Diagnose
+                    or RuntimeContract.Serialize
+                } &&
             memberRoutine.OwnerType?.FullName != inner.FullName &&
             registry.LookupMemberRoutine(type: inner, memberRoutineName: memberName) is
                 { OwnerType: { } innerDisplayOwner } innerDisplay &&

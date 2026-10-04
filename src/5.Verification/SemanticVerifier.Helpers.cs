@@ -2177,6 +2177,22 @@ public sealed partial class SemanticVerifier
             return elementType;
         }
 
+        // An instance's protocols are already its own (`List[Agent[T]]` obeys `Iterable[Agent[T]]`); only the
+        // definition's (`Iterable[T]`) still name the definition's parameters. Substituting an instance's again
+        // would read the `T` inside `Agent[T]` as the list's slot and give `Agent[Agent[T]]`.
+        List<TypeSymbol>? definitionProtocols = genericDef switch
+        {
+            RecordTypeSymbol r => r.ImplementedProtocols,
+            EntityTypeSymbol e => e.ImplementedProtocols,
+            _ => null
+        };
+        if (definitionProtocols == null ||
+            !definitionProtocols.Any(predicate: p => ReferenceEquals(objA: p.TypeArguments?.FirstOrDefault(),
+                objB: elementType)))
+        {
+            return elementType;
+        }
+
         var substitution = new Dictionary<string, TypeSymbol>();
         for (int i = 0;
              i < genericDef.GenericParameters.Count && i < iterableType.TypeArguments.Count;

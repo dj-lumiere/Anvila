@@ -949,9 +949,14 @@ public sealed partial class StdlibLoader
             // surface: `Text.count() -> Integer` in a Suflae file is what Suflae programs call. So is a free
             // routine of a name the shared library already declares in the module (`ask_lines`). A free routine
             // only the realm has (`position_of`) is an ordinary one.
+            // So is a derive template (`@overridable routine T.all_cases()`) a non-shared realm writes for its own
+            // types: it stands next to the shared template of the same name, not over it.
             SurfaceRealm = realm != UnstampedRealm &&
                            (ownerType is { } surfaceOwner && surfaceOwner is not GenericParameterTypeSymbol &&
                             surfaceOwner.Realm != realm ||
+                            ownerType is GenericParameterTypeSymbol && realm != registry.AmbientRealm &&
+                            (routine.Annotations.Contains(item: "overridable") ||
+                             routine.Annotations.Contains(item: "override")) ||
                             ownerType == null &&
                             registry.HasSharedFreeRoutine(baseName: string.IsNullOrEmpty(value: moduleName)
                                 ? memberRoutineName

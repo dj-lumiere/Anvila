@@ -131,9 +131,30 @@ public partial class Parser
                 Token braceToken = PeekToken(offset: -1);
                 SourceLocation partLocation = GetLocation(token: braceToken);
 
-                // Parse the expression inside the braces
+                // Parse the expression inside the braces. A hole is closed off by its braces, so nothing of a
+                // surrounding when arm or range operand reaches into it: `f"{v is None}"` in an arm body reads `is`.
                 int exprStart = _position;
-                Expression expr = ParseExpression();
+                bool savedPattern = _inWhenPatternContext;
+                bool savedCondition = _inWhenConditionContext;
+                bool savedClauseBody = _inWhenClauseBody;
+                bool savedRangeOperand = _inRangeOperand;
+                _inWhenPatternContext = false;
+                _inWhenConditionContext = false;
+                _inWhenClauseBody = false;
+                _inRangeOperand = false;
+                Expression expr;
+                try
+                {
+                    expr = ParseExpression();
+                }
+                finally
+                {
+                    _inWhenPatternContext = savedPattern;
+                    _inWhenConditionContext = savedCondition;
+                    _inWhenClauseBody = savedClauseBody;
+                    _inRangeOperand = savedRangeOperand;
+                }
+
                 string sourceText = SourceTextOf(first: exprStart, end: _position);
 
                 // Check for optional format specifier

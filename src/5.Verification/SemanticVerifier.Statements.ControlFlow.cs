@@ -825,22 +825,6 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>
-    /// Analyzes a becomes statement (block result value).
-    /// Becomes is used in multi-statement when/if branches to explicitly indicate the branch's result.
-    /// </summary>
-    private void AnalyzeBecomesStatement(BecomesStatement becomesStmt)
-    {
-        // Analyze the becomes expression
-        // For now, we just validate the expression type - context validation
-        // (checking that becomes appears in an appropriate block context) can be
-        // added in a future phase when we track block expression contexts
-        TypeSymbol becomesType = AnalyzeExpression(expression: becomesStmt.Value);
-
-        // Validate that tokens cannot be block results (RazorForge only)
-        ValidateNotTokenReturnType(type: becomesType, location: becomesStmt.Location);
-    }
-
     private void AnalyzeThrowStatement(ThrowStatement throwStmt)
     {
         if (_currentRoutine == null)

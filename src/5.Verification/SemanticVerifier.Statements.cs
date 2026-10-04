@@ -641,10 +641,6 @@ public sealed partial class SemanticVerifier
                 AnalyzeVariantReturnStatement(variantReturn: variantReturn);
                 break;
 
-            case BecomesStatement becomesStmt:
-                AnalyzeBecomesStatement(becomesStmt: becomesStmt);
-                break;
-
             case ThrowStatement throwStmt:
                 AnalyzeThrowStatement(throwStmt: throwStmt);
                 break;

@@ -256,9 +256,6 @@ internal sealed class CallOverloadResolutionPass
             case VariantReturnStatement { Value: not null } vrs:
                 WalkExpression(expr: vrs.Value);
                 break;
-            case BecomesStatement bs:
-                WalkExpression(expr: bs.Value);
-                break;
             case UsingStatement us:
                 WalkStatement(stmt: us.Body);
                 if (us.FallbackBody != null)

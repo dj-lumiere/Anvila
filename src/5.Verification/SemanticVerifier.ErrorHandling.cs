@@ -562,11 +562,18 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
+        string? writtenIn = decl.Location.FileName is { } file &&
+                            Builder.Frontends.Languages.HasSourceExtension(fileName: file)
+            ? Builder.Frontends.Languages.RealmOf(fileName: file)
+            : null;
         _registry.RegisterDeriveTemplate(memberRoutine: deriveMember,
             ownerParam: deriveOwner,
             arity: decl.Parameters.Count,
             constraints: decl.GenericConstraints,
-            body: decl.Body);
+            body: decl.Body,
+            realm: writtenIn == _registry.AmbientRealm
+                ? null
+                : writtenIn);
         return true;
     }
 
@@ -714,6 +721,13 @@ public sealed partial class SemanticVerifier
                                              own.OwnerType is { } ownOwner && ownOwner.Realm != _registry.AmbientRealm))
         {
             return _registry.GetRoutineByExactKey(registryKey: own.RegistryKey) ?? own;
+        }
+
+        // A creator (`routine Integer!(text: Text)`) has no member name to look up by: the info registered for
+        // the declaration is its own.
+        if (decl.ResolvedInfo is { IsCreator: true } creator)
+        {
+            return _registry.GetRoutineByExactKey(registryKey: creator.RegistryKey) ?? creator;
         }
 
         // Any other declaration is a shared routine, whichever program asks: the lookups below must not find

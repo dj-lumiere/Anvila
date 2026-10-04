@@ -433,8 +433,42 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     /// <summary>
     /// Lower for as part of this builder phase.
     /// </summary>
+    /// <summary>Whether <paramref name="expr"/> names a value something already holds: a variable, <c>me</c>, or a
+    /// member variable or element reached through one.</summary>
+    private static bool IsHeldPlace(Expression expr)
+    {
+        return expr switch
+        {
+            IdentifierExpression => true,
+            MemberExpression member => IsHeldPlace(expr: member.Object),
+            IndexExpression index => IsHeldPlace(expr: index.Object),
+            _ => false
+        };
+    }
+
     private BlockStatement LowerEach(EachStatement eachStmt)
     {
+        // A loop over a value nothing holds (`each w in make()`, `each w in text.words()`) walks a temporary
+        // the iterator only borrows: name it in a block around the loop, so it lives until the loop is done
+        // and is released when the block ends. (Before analysis only: afterwards the name would carry no type.)
+        if (eachStmt.Iterable.ResolvedType == null && !IsHeldPlace(expr: eachStmt.Iterable))
+        {
+            SourceLocation srcLoc = eachStmt.Location;
+            string sourceName = $"_lf_src_{_iterCount}";
+            var sourceDecl = new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: sourceName,
+                    Type: null,
+                    Initializer: eachStmt.Iterable,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: srcLoc),
+                Location: srcLoc);
+            BlockStatement loop = LowerEach(eachStmt: eachStmt with
+            {
+                Iterable = new IdentifierExpression(Name: sourceName, Location: eachStmt.Iterable.Location)
+            });
+            return new BlockStatement(Statements: [sourceDecl, loop], Location: srcLoc);
+        }
+
         SourceLocation loc = eachStmt.Location;
         int n = _iterCount++;
         string iterName = $"_lf_iter_{n}";

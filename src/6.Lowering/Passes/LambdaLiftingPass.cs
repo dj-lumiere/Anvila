@@ -257,14 +257,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     inheritedGenericConstraints: inheritedGenericConstraints,
                     includeMe: includeMe)
             },
-            BecomesStatement becomes => becomes with
-            {
-                Value = RewriteExpression(expression: becomes.Value,
-                    scope: scope,
-                    inheritedGenericParameters: inheritedGenericParameters,
-                    inheritedGenericConstraints: inheritedGenericConstraints,
-                    includeMe: includeMe)
-            },
             ThrowStatement throwStmt => throwStmt with
             {
                 Error = RewriteExpression(expression: throwStmt.Error,
@@ -2057,12 +2049,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                 break;
             case DiscardStatement discard:
                 CollectLocalCapturesRecursive(expression: discard.Expression,
-                    outerScope: outerScope,
-                    parameterNames: parameterNames,
-                    captures: captures);
-                break;
-            case BecomesStatement becomes:
-                CollectLocalCapturesRecursive(expression: becomes.Value,
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);

@@ -1902,9 +1902,14 @@ public sealed partial class SemanticVerifier
             Expression actualArg = ordered[index: i] is NamedArgumentExpression na
                 ? na.Value
                 : ordered[index: i];
-            // A lambda's untyped parameters take their types from the parameter it is bound to: without one it
-            // has nothing to infer them from.
-            TypeSymbol argType = actualArg is LambdaExpression && i < routine.Parameters.Count
+            // Only a bare literal is read at its default type here: that is what picks the overload. Anything
+            // else takes the type of the parameter it is bound to, as it will when the call is checked: a lambda
+            // needs it to type its parameters, and a `none` has no type without it.
+            bool bareLiteral = actualArg is LiteralExpression
+            {
+                LiteralType: TokenType.UndecidedInteger or TokenType.UndecidedDecimal
+            };
+            TypeSymbol argType = !bareLiteral && i < routine.Parameters.Count
                 ? AnalyzeExpression(expression: actualArg, expectedType: routine.Parameters[index: i].Type)
                 : AnalyzeExpression(expression: actualArg);
             if (argType == ErrorTypeSymbol.Instance)
@@ -3627,6 +3632,10 @@ public sealed partial class SemanticVerifier
                     $"with {argTypes.Count} argument(s).",
                     location: call.Location);
             }
+            else
+            {
+                ReportUnknownMemberVariableArguments(call: call, type: type);
+            }
         }
 
         ValidateConstructorArgumentNaming(call: call, id: id, type: type);
@@ -3634,6 +3643,38 @@ public sealed partial class SemanticVerifier
         call.IsInFlight = type.ImplicitConstructorReturnsInFlight;
 
         return type;
+    }
+
+    /// <summary>
+    /// A construction no creator takes, naming an argument after no member variable of the type
+    /// (`InvalidValueError(message: m)` where the member variables are `input` and `target`): reports each
+    /// such name (RF-S505), since the memberwise construction cannot bind it either.
+    /// </summary>
+    private void ReportUnknownMemberVariableArguments(CallExpression call, TypeSymbol type)
+    {
+        List<MemberVariableInfo>? fields = type switch
+        {
+            RecordTypeSymbol r => r.MemberVariables,
+            _ => null
+        };
+        if (fields is not { Count: > 0 } || type.IsGenericDefinition)
+        {
+            return;
+        }
+
+        foreach (NamedArgumentExpression named in call.Arguments.OfType<NamedArgumentExpression>())
+        {
+            if (fields.Any(predicate: f => f.Name == named.Name))
+            {
+                continue;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.UnknownNamedArgument,
+                message: $"You name the argument '{named.Name}', but '{type.Name}' has no member variable or " +
+                         $"creator parameter called that. Its member variables are " +
+                         $"{string.Join(separator: ", ", values: fields.Select(selector: f => $"'{f.Name}'"))}.",
+                location: named.Location);
+        }
     }
 
     /// <summary>

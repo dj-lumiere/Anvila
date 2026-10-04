@@ -449,11 +449,6 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(e: node.Value);
         return false;
     }
-    public bool VisitBecomesStatement(BecomesStatement node)
-    {
-        Visit(e: node.Value);
-        return false;
-    }
     public bool VisitVariantReturnStatement(VariantReturnStatement node)
     {
         Visit(e: node.Value);

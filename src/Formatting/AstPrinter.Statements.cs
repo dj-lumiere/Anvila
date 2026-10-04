@@ -87,10 +87,6 @@ internal sealed partial class AstPrinter
                     : Doc.Concat(prefix, Doc.Text(text: "return "),
                         Expr(expression: ret.Value, context: ExprContext.Statement)));
                 break;
-            case BecomesStatement becomes:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "becomes "),
-                    Expr(expression: becomes.Value, context: ExprContext.Statement)));
-                break;
             case ThrowStatement thrown:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: thrown.IsFatal
                         ? "pierce "

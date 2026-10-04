@@ -583,9 +583,29 @@ public sealed partial class TypeRegistry
             return null;
         }
 
+        routine = SurfaceStandIn(routine: routine);
         return isFailable != null && routine.IsFailable != isFailable.Value
             ? null
             : routine;
+    }
+
+    /// <summary>
+    /// The routine the code being analyzed calls in place of a shared free routine found by its name: its
+    /// realm's surface routine called the same way (Suflae's generic <c>memvars</c> handing back its own list),
+    /// when there is one, else the routine itself.
+    /// </summary>
+    private RoutineInfo SurfaceStandIn(RoutineInfo routine)
+    {
+        if (routine.SurfaceRealm != null || routine.OwnerType != null ||
+            FreeOverloads(baseName: routine.BaseName) is not { } visible ||
+            visible.Contains(item: routine))
+        {
+            return routine;
+        }
+
+        string shape = CallShape(routine: routine);
+        return visible.FirstOrDefault(predicate: r => r.SurfaceRealm != null && CallShape(routine: r) == shape) ??
+               routine;
     }
 
     /// <summary>
@@ -1138,8 +1158,11 @@ public sealed partial class TypeRegistry
     /// <param name="constraints">Generic constraints; kind gates are extracted for per-type selection.</param>
     /// <param name="body">The template AST body to splice at synthesis time.</param>
     public void RegisterDeriveTemplate(string memberRoutine, string ownerParam, int arity,
-        List<GenericConstraintDeclaration>? constraints, Statement body)
+        List<GenericConstraintDeclaration>? constraints, Statement body, string? realm = null)
     {
+        // A realm's own derive (Suflae's `all_cases` giving its own `List`) is kept apart from the shared one,
+        // under the realm's key, and serves only that realm's types.
+        memberRoutine = DeriveTemplateKey(name: memberRoutine, realm: realm);
         if (!_deriveTemplates.TryGetValue(key: memberRoutine,
                 value: out
                 List<(string, int, List<GenericConstraintDeclaration>, Statement)>? list))
@@ -1159,6 +1182,21 @@ public sealed partial class TypeRegistry
         }
 
         list.Add(item: (ownerParam, arity, gates, body));
+    }
+
+    private const char RealmDeriveSeparator = '~';
+
+    private static string DeriveTemplateKey(string name, string? realm)
+    {
+        return realm == null
+            ? name
+            : $"{realm}{RealmDeriveSeparator}{name}";
+    }
+
+    /// <summary>Whether <paramref name="realm"/> writes its own derive called <paramref name="name"/>.</summary>
+    public bool HasRealmDeriveTemplate(string name, string realm)
+    {
+        return _deriveTemplates.ContainsKey(key: DeriveTemplateKey(name: name, realm: realm));
     }
 
     /// <summary>True when a universal auto-derive template (<c>@overridable routine T.&lt;name&gt;()</c>) is
@@ -1181,6 +1219,15 @@ public sealed partial class TypeRegistry
     public (string OwnerParam, Statement Body)? GetDeriveTemplate(string name, int arity,
         TypeSymbol forType)
     {
+        // A type of a realm with its own derive of this name takes that one.
+        if (forType.Realm != AmbientRealm &&
+            !name.Contains(value: RealmDeriveSeparator) &&
+            GetDeriveTemplate(name: DeriveTemplateKey(name: name, realm: forType.Realm), arity: arity,
+                forType: forType) is { } own)
+        {
+            return own;
+        }
+
         if (!_deriveTemplates.TryGetValue(key: name,
                 value: out
                 List<(string, int, List<GenericConstraintDeclaration>, Statement)>? list))
@@ -1595,6 +1642,21 @@ public sealed partial class TypeRegistry
                (type?.TypeArguments?.Any(predicate: ContainsGenericParameter) ?? false);
     }
 
+    /// <summary>The names of the generic parameters <paramref name="type"/> mentions, at any depth.</summary>
+    private static void CollectGenericParameterNames(TypeSymbol? type, HashSet<string> into)
+    {
+        if (type is GenericParameterTypeSymbol parameter)
+        {
+            into.Add(item: parameter.Name);
+            return;
+        }
+
+        foreach (TypeSymbol argument in type?.TypeArguments ?? [])
+        {
+            CollectGenericParameterNames(type: argument, into: into);
+        }
+    }
+
     public RoutineInfo? FindRecoveryVariant(RoutineInfo recovered, RecoveryKind kind)
     {
         string recoveredKey = RealmRoutineKey(routine: recovered);
@@ -1618,12 +1680,25 @@ public sealed partial class TypeRegistry
                 ? GetOrCreateRoutineResolution(genericDef: definitionVariant, typeArguments: typeArguments)
                 : null;
         // A definition whose parameters do not follow the owner's (a protocol's default routine re-homed
-        // onto an implementer: the protocol's `V` is not the owner's) cannot be substituted this way.
-        if (substituted != null && (ContainsGenericParameter(type: substituted.ReturnType) ||
-                                    substituted.Parameters.Any(predicate: p => ContainsGenericParameter(type: p.Type))) &&
-            !recovered.IsGenericDefinition && recovered.OwnerType is not { IsGenericDefinition: true })
+        // onto an implementer: the protocol's `V` is not the owner's) cannot be substituted this way. A
+        // parameter the owner itself still carries (`ListEmittable[Agent[V]]` inside a routine of
+        // `List[Agent[V]]`) is not that: it is bound when the enclosing routine is made concrete.
+        if (substituted != null && !recovered.IsGenericDefinition &&
+            recovered.OwnerType is not { IsGenericDefinition: true })
         {
-            return null;
+            var ownerParameters = new HashSet<string>(comparer: StringComparer.Ordinal);
+            CollectGenericParameterNames(type: recovered.OwnerType, into: ownerParameters);
+            var leftover = new HashSet<string>(comparer: StringComparer.Ordinal);
+            CollectGenericParameterNames(type: substituted.ReturnType, into: leftover);
+            foreach (ParamInfo parameter in substituted.Parameters)
+            {
+                CollectGenericParameterNames(type: parameter.Type, into: leftover);
+            }
+
+            if (!leftover.IsSubsetOf(other: ownerParameters))
+            {
+                return null;
+            }
         }
 
         if (substituted != null)
@@ -2313,6 +2388,14 @@ public sealed partial class TypeRegistry
         // codegen all key on the same name — `Core.List[Agent[S64]].gather`.
         if (memberRoutine.MeType is { } mePattern)
         {
+            // The routine's own parameters shadow the owner's of the same name: in `routine List[Box[T]].items()
+            // -> List[T]` the `T` is the pattern's (bound to `S64` for a `List[Box[S64]]`), not the list's slot
+            // (bound to `Box[S64]`). Identity is the slot, so the owner's binding does not reach the routine.
+            foreach (string own in memberRoutine.GenericParameters ?? [])
+            {
+                substitution2.Remove(key: own);
+            }
+
             UnifyReceiverGenerics(pattern: mePattern,
                 concrete: resolvedOwner,
                 genericParams: memberRoutine.GenericParameters,

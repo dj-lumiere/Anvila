@@ -559,8 +559,11 @@ internal sealed class SignatureResolver
             TypeExpression? recvExpr = SemanticVerifier.ParseTypeExpressionString(
                 text: recvText,
                 location: routine.Location);
+            // Specialized when an argument is not just one of the routine's own type parameters: a nested
+            // pattern (`List[Box[TItem]]`) or a type (`List[Text]`).
             bool isSpecialized = recvExpr?.GenericArguments is { Count: > 0 } args && args.Any(
                 predicate: a =>
+                    a.GenericArguments is { Count: > 0 } ||
                     a.Name != null && !(filteredGenericParams?.Contains(item: a.Name) ?? false) &&
                     _sa._registry.LookupType(name: a.Name) is not null);
             if (isSpecialized)

@@ -110,7 +110,9 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 continue;
             }
 
-            List<Expression> handles = FieldAccessHandles(stmt: stmt);
+            List<Expression> handles = FieldAccessHandles(stmt: stmt)
+                                       .Where(predicate: IsHeldPlace)
+                                       .ToList();
             foreach (Expression h in handles)
             {
                 AddBracket(into: rewritten,
@@ -129,6 +131,22 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
 
         block.Statements.Clear();
         block.Statements.AddRange(collection: rewritten);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="handle"/> names a handle someone already holds (a local, a parameter, <c>me</c>, or a
+    /// member variable reached through them), which the brackets read again as they are. A handle a call has
+    /// just produced (`jobs.gather()` returning a new list) is not shared with anyone yet, so it needs no lock,
+    /// and naming it again in the brackets would run the call again.
+    /// </summary>
+    private static bool IsHeldPlace(Expression handle)
+    {
+        return handle switch
+        {
+            IdentifierExpression => true,
+            MemberExpression member => IsHeldPlace(handle: member.Object),
+            _ => false
+        };
     }
 
     private void AddBracket(List<Statement> into, Expression handle, string memberRoutine)
@@ -311,7 +329,6 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 break;
             case ReturnStatement { Value: not null } s: yield return s.Value; break;
             case VariantReturnStatement { Value: not null } s: yield return s.Value; break;
-            case BecomesStatement s: yield return s.Value; break;
             case ThrowStatement s: yield return s.Error; break;
             case AssignmentStatement s:
                 yield return s.Target;

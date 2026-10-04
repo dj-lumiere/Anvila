@@ -449,8 +449,6 @@ public enum TokenType
     Lookup,
 
     /// <summary>Becomes statement keyword (block result value)</summary>
-    Becomes,
-
     #endregion
 
     #region Keywords - Module System

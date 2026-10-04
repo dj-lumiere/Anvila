@@ -111,10 +111,6 @@ public static class AstWalker
                     s.Value
                 }
                 : Enumerable.Empty<object>(),
-            BecomesStatement s => new object[]
-            {
-                s.Value
-            },
             ThrowStatement s => new object[]
             {
                 s.Error

@@ -400,6 +400,7 @@ public sealed partial class SemanticVerifier
         {
             CheckIntrinsicConversionTypes(template: template,
                 typeSubs: typeSubs,
+                genericParameters: (routine.GenericDefinition ?? routine).GenericParameters,
                 routineName: funcId.Realm != null ? $"{funcId.Realm}::{funcId.Name}" : funcId.Name,
                 location: generic.Location);
         }
@@ -1009,14 +1010,21 @@ public sealed partial class SemanticVerifier
     /// Rejects an <c>LLVM::</c> conversion whose concrete type arguments its cast cannot take:
     /// <c>int_truncate[U32, U64]</c> would otherwise reach the emitter as <c>trunc i32 ... to i64</c>,
     /// which opt refuses long after the call was written. Only templates of the shape
-    /// <c>{result} = OPCODE {From} {value} to {To}</c> are checked, and only when both sides are
-    /// scalar LLVM types; <c>bitcast</c> needs equal widths.
+    /// <c>{result} = OPCODE {source} {value} to {target}</c> are checked, where the source and target are the
+    /// routine's first and second type parameters (by position, whatever they are called), and only when both
+    /// sides are scalar LLVM types; <c>bitcast</c> needs equal widths.
     /// </summary>
     private void CheckIntrinsicConversionTypes(string template, Dictionary<string, TypeSymbol> typeSubs,
-        string routineName, SourceLocation location)
+        List<string>? genericParameters, string routineName, SourceLocation location)
     {
+        if (genericParameters is not { Count: 2 } || genericParameters[0] is not { } sourceName ||
+            genericParameters[1] is not { } targetName)
+        {
+            return;
+        }
+
         const string prefix = "{result} = ";
-        const string middle = " {From} {value} to {To}";
+        string middle = $" {{{sourceName}}} {{value}} to {{{targetName}}}";
         string body = template.Trim();
         if (!body.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal) ||
             !body.EndsWith(value: middle, comparisonType: StringComparison.Ordinal))
@@ -1025,8 +1033,8 @@ public sealed partial class SemanticVerifier
         }
 
         string opcode = body[prefix.Length..^middle.Length];
-        if (!typeSubs.TryGetValue(key: "From", value: out TypeSymbol? from) ||
-            !typeSubs.TryGetValue(key: "To", value: out TypeSymbol? to) ||
+        if (!typeSubs.TryGetValue(key: sourceName, value: out TypeSymbol? from) ||
+            !typeSubs.TryGetValue(key: targetName, value: out TypeSymbol? to) ||
             from is not RecordTypeSymbol fromRecord || to is not RecordTypeSymbol toRecord ||
             !TryGetScalarLlvmWidth(llvmType: fromRecord.LlvmType, width: out int fromWidth, isFloat: out bool fromFloat) ||
             !TryGetScalarLlvmWidth(llvmType: toRecord.LlvmType, width: out int toWidth, isFloat: out bool toFloat))

@@ -269,9 +269,11 @@ public partial class Parser
         var args = new List<Expression>();
 
         // Argument lists re-enable bare lambdas inside a when-arm condition
-        // (e.g. `items.any(pred: x => x > 0) => ...`).
+        // (e.g. `items.any(pred: x => x > 0) => ...`), and `is` / `in` inside a when-arm body.
         bool savedConditionContext = _inWhenConditionContext;
+        bool savedClauseBody = _inWhenClauseBody;
         _inWhenConditionContext = false;
+        _inWhenClauseBody = false;
         try
         {
             // Skip leading newlines
@@ -299,6 +301,7 @@ public partial class Parser
         finally
         {
             _inWhenConditionContext = savedConditionContext;
+            _inWhenClauseBody = savedClauseBody;
         }
     }
 

@@ -498,6 +498,32 @@ internal sealed class AutoWiredRegistrationPass
         }
     }
 
+    /// <summary>Whether the realm of <paramref name="type"/> writes its own derive called <paramref name="name"/>
+    /// (Suflae's choices and flags hand their cases back in Suflae's own list, counted with `Integer`).</summary>
+    private bool HasOwnRealmDerive(TypeSymbol type, string name)
+    {
+        return type.Realm != _registry.AmbientRealm &&
+               _registry.HasRealmDeriveTemplate(name: name, realm: type.Realm);
+    }
+
+    /// <summary>The list a choice or flags hands its cases back in: its realm's own, when the realm writes its
+    /// own <c>all_cases</c>.</summary>
+    private TypeSymbol? CaseListDef(TypeSymbol type, TypeSymbol? listDef)
+    {
+        return HasOwnRealmDerive(type: type, name: "all_cases")
+            ? _registry.LookupType(name: "List", realm: type.Realm) ?? listDef
+            : listDef;
+    }
+
+    /// <summary>The type a choice or flags counts its cases with: <c>Integer</c> when its realm writes its own
+    /// <c>count</c>.</summary>
+    private TypeSymbol? CaseCountType(TypeSymbol type, TypeSymbol? u64Type)
+    {
+        return HasOwnRealmDerive(type: type, name: "count")
+            ? _registry.LookupType(name: "Numerics.Integer") ?? u64Type
+            : u64Type;
+    }
+
     /// <summary>
     /// Registers the auto-derived member routines for a <see cref="TypeCategory.Choice"/> type.
     /// </summary>
@@ -578,10 +604,10 @@ internal sealed class AutoWiredRegistrationPass
                 kind: RoutineKind.Creator);
         }
 
-        if (listDef != null)
+        if (CaseListDef(type: type, listDef: listDef) is { } caseListDef)
         {
             TypeSymbol listMeType = _registry.GetOrCreateResolution(
-                genericDef: listDef,
+                genericDef: caseListDef,
                 typeArguments: [type]);
             MaybeRegisterWired(owner: type,
                 name: "all_cases",
@@ -590,11 +616,11 @@ internal sealed class AutoWiredRegistrationPass
         }
 
         // count() — number of declared cases.
-        if (u64Type != null)
+        if (CaseCountType(type: type, u64Type: u64Type) is { } caseCountType)
         {
             MaybeRegisterWired(owner: type,
                 name: "count",
-                returnType: u64Type,
+                returnType: caseCountType,
                 existingMemberRoutines: existingMemberRoutines);
         }
 
@@ -730,10 +756,10 @@ internal sealed class AutoWiredRegistrationPass
             name: "all_off",
             returnType: type,
             existingMemberRoutines: existingMemberRoutines);
-        if (listDef != null)
+        if (CaseListDef(type: type, listDef: listDef) is { } caseListDef)
         {
             TypeSymbol listMeType = _registry.GetOrCreateResolution(
-                genericDef: listDef,
+                genericDef: caseListDef,
                 typeArguments: [type]);
             MaybeRegisterWired(owner: type,
                 name: "all_cases",
@@ -747,7 +773,7 @@ internal sealed class AutoWiredRegistrationPass
         {
             MaybeRegisterWired(owner: type,
                 name: "count",
-                returnType: u64Type,
+                returnType: CaseCountType(type: type, u64Type: u64Type) ?? u64Type,
                 existingMemberRoutines: existingMemberRoutines);
             if (!type.IsGenericDefinition &&
                 _registry.LookupCreatorOverload(type: type, argTypes: [u64Type]) == null)
