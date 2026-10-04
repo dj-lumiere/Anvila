@@ -93,7 +93,7 @@ public sealed class VariantTypeSymbol : RecordTypeSymbol
 
         // Build resolved type name
         string resolvedName = $"{Name}[{string.Join(separator: ", ",
-            values: typeArguments.Select(selector: t => t.Name))}]";
+            values: typeArguments.Select(selector: t => t.InstanceArgumentShortName))}]";
 
         return new VariantTypeSymbol(name: resolvedName)
         {

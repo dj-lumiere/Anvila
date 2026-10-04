@@ -87,7 +87,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// </summary>
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => VisitStatement(stmt: r.Body));
     }
 
     /// <summary>
@@ -101,7 +101,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     public void RunOnInstantiatedGenericBodies(
         Dictionary<string, Instantiation.MonomorphizedBody> instantiatedGenericBodies)
     {
-        BodyDispatch.RunOnInstantiatedGenericBodies(bodies: instantiatedGenericBodies,
+        BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: instantiatedGenericBodies,
             lower: (_, entry) => VisitStatement(stmt: entry.Ast.Body));
     }
 
@@ -110,7 +110,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// </summary>
     public void RunOnVariantBodies()
     {
-        BodyDispatch.RunOnVariantBodies(bodies: ctx.VariantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: ctx.VariantBodies,
             lower: (_, body) => VisitStatement(stmt: body));
     }
 

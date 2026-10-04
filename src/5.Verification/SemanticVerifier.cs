@@ -1351,9 +1351,18 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            AnnotateBodyForBackend(body: mono.Ast.Body,
-                everStolen: mono.Ast.EverStolenVariableNames,
-                routine: mono.Info);
+            try
+            {
+                AnnotateBodyForBackend(body: mono.Ast.Body,
+                    everStolen: mono.Ast.EverStolenVariableNames,
+                    routine: mono.Info);
+            }
+            catch (InvalidOperationException e)
+            {
+                // Name the instance: the lowering passes only see the body.
+                throw new InvalidOperationException(message: $"{e.Message} (in {key})", innerException: e);
+            }
+
             if (!mono.IsSynthesized)
             {
                 reprPass.Run(statement: mono.Ast.Body);
@@ -2593,6 +2602,15 @@ public sealed partial class SemanticVerifier
         _currentRoutine = routineInfo;
         _currentType = routineInfo.OwnerType;
 
+        // Names in the body prefer the realm the body was written in, whichever file asked for it: a
+        // RazorForge body reached through Suflae's own list still means RazorForge's types.
+        string prevResolutionRealm = _registry.ResolutionRealm;
+        if (body.Location.FileName is { } writtenIn &&
+            Builder.Frontends.Languages.HasSourceExtension(fileName: writtenIn))
+        {
+            _registry.ResolutionRealm = Builder.Frontends.Languages.RealmOf(fileName: writtenIn);
+        }
+
         _registry.EnterScope(kind: ScopeKind.Function, name: routineInfo.Name);
 
         foreach (ParamInfo param in routineInfo.Parameters)
@@ -2636,6 +2654,7 @@ public sealed partial class SemanticVerifier
         _compilerGeneratedTypeParamBindings = prevTypeParamBindings;
 
         _registry.ExitScope();
+        _registry.ResolutionRealm = prevResolutionRealm;
         stdlibSource?.Dispose();
         _currentRoutine = prevRoutine;
         _currentType = prevType;

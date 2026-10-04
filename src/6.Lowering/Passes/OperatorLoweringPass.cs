@@ -44,7 +44,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => VisitStatement(stmt: r.Body));
     }
 
     //  Statement lowering
@@ -1399,7 +1399,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// </summary>
     public void RunOnVariantBodies()
     {
-        BodyDispatch.RunOnVariantBodies(bodies: ctx.VariantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: ctx.VariantBodies,
             lower: (_, body) => VisitStatement(stmt: body));
     }
 
@@ -1415,7 +1415,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     public void RunOnInstantiatedGenericBodies(
         Dictionary<string, MonomorphizedBody> instantiatedGenericBodies)
     {
-        BodyDispatch.RunOnInstantiatedGenericBodies(bodies: instantiatedGenericBodies,
+        BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: instantiatedGenericBodies,
             lower: (_, entry) => VisitStatement(stmt: entry.Ast.Body));
     }
 
@@ -1589,15 +1589,23 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // is registered (signature/return-type resolved) but not yet marked failable — an `isFailable:true`
         // filter would spuriously reject it and the unresolved call would trip RF-S959 at codegen. The name
         // is a unique builtin (no failable/non-failable overload pair), so failability is not a disambiguator.
-        RoutineInfo? resolveRoutine =
-            ctx.Registry.LookupRoutine(
-                fullName: $"Core.{Declaration.RuntimeContract.BackResolve}") ??
-            ctx.Registry.LookupRoutine(fullName: Declaration.RuntimeContract.BackResolve);
+        // A Suflae collection counts with `Integer`: its position is resolved by the `back_resolve` taking
+        // `Integer`, picked by the count's type.
+        TypeSymbol? countType = countRoutine?.ReturnType;
+        RoutineInfo? resolveRoutine = countType != null
+            ? ctx.Registry.LookupRoutineOverload(
+                baseName: $"Core.{Declaration.RuntimeContract.BackResolve}",
+                argTypes: [countType, countType])
+            : null;
+        resolveRoutine ??= ctx.Registry.LookupRoutine(
+                               fullName: $"Core.{Declaration.RuntimeContract.BackResolve}") ??
+                           ctx.Registry.LookupRoutine(fullName: Declaration.RuntimeContract.BackResolve);
 
         // The offset must be a scalar U64. An untyped/signed integer-literal operand (e.g. ^1) is retagged
         // to U64Literal so codegen never treats it as an arbitrary-precision Integer (the Text-backed big-int type).
-        // Any other operand (a U64 variable or arbitrary expression) already carries its type and passes through.
-        Expression offset = backIndex.Operand is LiteralExpression
+        // Any other operand (a U64 variable or arbitrary expression) already carries its type and passes through,
+        // and so does an `Integer` position.
+        Expression offset = countType?.Name != "Integer" && backIndex.Operand is LiteralExpression
         {
             LiteralType: TokenType.UndecidedInteger or TokenType.IntegerLiteral
             or TokenType.S64Literal or TokenType.U64Literal

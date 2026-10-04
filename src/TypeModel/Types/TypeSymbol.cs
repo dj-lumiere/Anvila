@@ -104,6 +104,22 @@ public abstract class TypeSymbol
     }
 
     /// <summary>
+    /// This type as a generic instance's name writes it among its type arguments: its <see cref="FullName"/>,
+    /// marked with its realm when that is not the shared one. Suflae's own <c>Core.List</c> and RazorForge's
+    /// share a full name, and an instance over one (<c>Roamed[SF::Core.List[Integer]]</c>) is a different type
+    /// from the same instance over the other, so its name, and every key and symbol made from it, differ.
+    /// </summary>
+    public string InstanceArgumentName => Realm == Realms.Shared
+        ? FullName
+        : $"{Realm}::{FullName}";
+
+    /// <summary>The short form of <see cref="InstanceArgumentName"/>: <see cref="Name"/>, realm-marked the same
+    /// way.</summary>
+    public string InstanceArgumentShortName => Realm == Realms.Shared
+        ? Name
+        : $"{Realm}::{Name}";
+
+    /// <summary>
     /// <see cref="FullName"/> with the structured <see cref="Realm"/> rendered as an explicit
     /// <c>RF::</c>/<c>SF::</c> prefix (recursively over generic args), e.g. <c>RF::Core.List[RF::Core.S64]</c>.
     /// This is the SYMMETRIC identity used for LLVM symbol mangling (both world-lines always marked) and as

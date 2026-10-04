@@ -1284,7 +1284,8 @@ public sealed partial class SemanticVerifier
         // overload matcher returns null. Fall back to the def's creator selected by arity — the
         // type args are inferred from it right below (callableType → the concrete instance).
         creator ??= FallbackGenericDefCreatorByArity(callableType: callableType,
-            creatorArgTypes: creatorArgTypes);
+            creatorArgTypes: creatorArgTypes,
+            arguments: call.Arguments);
 
         // Field-init recovery: the by-TYPE overload lookup above misses when an argument's type failed
         // to resolve (e.g. a generic-call arg `hijacked_none[U64]()` left un-lowered by the reduced
@@ -1312,6 +1313,7 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
+        CheckCreatorArgumentNames(arguments: call.Arguments, creator: creator, type: callableType);
         ValidateCreatorEntityOwnershipArgs(call: call,
             creator: creator,
             creatorArgTypes: creatorArgTypes);
@@ -1547,19 +1549,62 @@ public sealed partial class SemanticVerifier
     /// fallback seeds the creator before type-arg inference specializes the callableType.
     /// </summary>
     private RoutineInfo? FallbackGenericDefCreatorByArity(TypeSymbol callableType,
-        List<TypeSymbol> creatorArgTypes)
+        List<TypeSymbol> creatorArgTypes, List<Expression> arguments)
     {
-        if (!callableType.IsGenericDefinition)
+        if (!callableType.IsGenericDefinition ||
+            callableType.GenericParameters is not { Count: > 0 } defParams)
         {
             return null;
         }
 
+        // A candidate takes as many arguments as the call gives, and has a parameter for each name the call
+        // gives: `Set(from: xs)` is not `Set(key: k)`.
+        var named = arguments.OfType<NamedArgumentExpression>()
+                             .Select(selector: a => a.Name)
+                             .ToList();
         var defCreators = _registry.GetMemberRoutinesForType(type: callableType)
                                    .Where(predicate: m =>
-                                        m.IsCreator && m.Parameters.Count ==
-                                        creatorArgTypes.Count)
+                                        m.IsCreator && m.Parameters.Count == creatorArgTypes.Count &&
+                                        named.All(predicate: n => m.Parameters.Any(predicate: p => p.Name == n)))
                                    .ToList();
-        return defCreators.Count == 1 ? defCreators[index: 0] : null;
+        if (defCreators.Count <= 1)
+        {
+            return defCreators.Count == 1 ? defCreators[index: 0] : null;
+        }
+
+        // Several creators take the same names (`List(from: Set[T])`, `List(from: RF::List[T])`). Bind the
+        // type arguments through each and ask the concrete type for a creator taking these arguments: the call
+        // means the one creator they all lead to.
+        var reached = new List<(RoutineInfo Candidate, RoutineInfo Concrete)>();
+        foreach (RoutineInfo candidate in defCreators)
+        {
+            var inferred = new TypeSymbol?[defParams.Count];
+            for (int i = 0; i < creatorArgTypes.Count; i++)
+            {
+                InferMemberRoutineTypeArgumentsFromTypes(paramType: candidate.Parameters[index: i].Type,
+                    argType: creatorArgTypes[index: i],
+                    genericParameters: defParams,
+                    inferred: inferred);
+            }
+
+            if (inferred.All(predicate: t => t is not null) &&
+                _registry.GetOrCreateResolution(genericDef: callableType,
+                    typeArguments: inferred.Select(selector: t => t!).ToList()) is { } concrete &&
+                _registry.LookupCreatorOverload(type: concrete, argTypes: creatorArgTypes) is
+                    { } concreteCreator)
+            {
+                reached.Add(item: (candidate, concreteCreator));
+            }
+        }
+
+        if (reached.Select(selector: r => r.Concrete.RegistryKey).Distinct().Count() != 1)
+        {
+            return null;
+        }
+
+        return reached.FirstOrDefault(predicate: r => ReferenceEquals(objA: r.Concrete.GenericDefinition,
+                           objB: r.Candidate))
+                      .Candidate ?? reached[index: 0].Candidate;
     }
 
     /// <summary>
@@ -3503,6 +3548,46 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>
+    /// A creator is chosen by the types of its arguments, so a named argument may still name a parameter the
+    /// chosen creator does not have (`Set(from: xs)` reaching `Set(key: SecureHashKey)`). Reports each such
+    /// name (RF-S505).
+    /// </summary>
+    private void CheckCreatorArgumentNames(List<Expression> arguments, RoutineInfo creator, TypeSymbol type)
+    {
+        // Naming every member variable is the memberwise field-init, which a written creator taking the same
+        // types (`Atomic[T](initial: T)` next to `Atomic[T](value: initial)`) does not replace.
+        List<MemberVariableInfo>? fields = type switch
+        {
+            EntityTypeSymbol e => e.MemberVariables,
+            RecordTypeSymbol r => r.MemberVariables,
+            _ => null
+        };
+        if (fields != null && arguments.Count == fields.Count &&
+            arguments.All(predicate: a => a is NamedArgumentExpression named &&
+                                          fields.Any(predicate: f => f.Name == named.Name)))
+        {
+            return;
+        }
+
+        for (int i = 0; i < arguments.Count; i++)
+        {
+            if (arguments[index: i] is not NamedArgumentExpression named ||
+                creator.Parameters.Any(predicate: p => p.Name == named.Name))
+            {
+                continue;
+            }
+
+            string expected = i < creator.Parameters.Count
+                ? $", and the one taking this argument calls it '{creator.Parameters[index: i].Name}'"
+                : "";
+            ReportError(code: SemanticDiagnosticCode.UnknownNamedArgument,
+                message: $"You name the argument '{named.Name}', but no creator of '{type.Name}' has a " +
+                         $"parameter called that{expected}.",
+                location: named.Location);
+        }
+    }
+
     private TypeSymbol? AnalyzeNamedTypeConstruction(CallExpression call, IdentifierExpression id,
         TypeSymbol? type)
     {
@@ -3526,6 +3611,7 @@ public sealed partial class SemanticVerifier
             if (creator != null && creator.Parameters.Count == argTypes.Count &&
                 !creator.Parameters.Any(predicate: p => p.IsVariadicParam))
             {
+                CheckCreatorArgumentNames(arguments: call.Arguments, creator: creator, type: type);
                 call.ResolvedRoutine = creator;
                 call.LoweringKind = ClassifyConstruction(type: type);
                 call.IsInFlight = creator.IsInFlightReturn;

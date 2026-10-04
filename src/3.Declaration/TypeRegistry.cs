@@ -41,6 +41,61 @@ public sealed partial class TypeRegistry
     /// <summary>How many stdlib-source scopes are open (see <see cref="AnalyzingStdlibSource"/>).</summary>
     private int _stdlibSourceScopes;
 
+    /// <summary>Whether a <see cref="ViewSurface"/> scope fixes the surface routines lookups see.</summary>
+    private bool _surfaceViewSet;
+
+    /// <summary>The realm whose surface routines lookups see inside a <see cref="ViewSurface"/> scope (null: none).
+    /// </summary>
+    private string? _surfaceView;
+
+    /// <summary>
+    /// Fixes, until disposed, which realm's surface routines lookups see. A call found again on a concrete type
+    /// (a generic body made concrete) keeps the routine it was bound to: a surface routine stays one, and a shared
+    /// routine stays shared, whatever code the lookup runs in.
+    /// </summary>
+    public IDisposable ViewSurface(string? realm)
+    {
+        bool savedSet = _surfaceViewSet;
+        string? saved = _surfaceView;
+        _surfaceViewSet = true;
+        _surfaceView = realm;
+        return new SurfaceViewScope(registry: this, savedSet: savedSet, saved: saved);
+    }
+
+    /// <summary>
+    /// Fixes, until disposed, the surface routines the code written in <paramref name="fileName"/> sees: standard
+    /// library source sees the shared routines only, whichever program it is lowered for. Null (no change) for
+    /// any other file.
+    /// </summary>
+    public IDisposable? ViewSurfaceOf(string? fileName)
+    {
+        return IsStandardLibraryFile(filePath: fileName)
+            ? ViewSurface(realm: null)
+            : null;
+    }
+
+    /// <summary>Whether a source file is inside the standard library directory.</summary>
+    public bool IsStandardLibraryFile(string? filePath)
+    {
+        if (string.IsNullOrEmpty(value: _stdlibPath) || string.IsNullOrEmpty(value: filePath))
+        {
+            return false;
+        }
+
+        return Path.GetFullPath(path: filePath)
+                   .StartsWith(value: Path.GetFullPath(path: _stdlibPath),
+                        comparisonType: StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class SurfaceViewScope(TypeRegistry registry, bool savedSet, string? saved) : IDisposable
+    {
+        public void Dispose()
+        {
+            registry._surfaceViewSet = savedSet;
+            registry._surfaceView = saved;
+        }
+    }
+
     /// <summary>
     /// The language of the code being analyzed or lowered now: RazorForge while a stdlib-source scope is
     /// open (the standard library is RazorForge source, even in a Suflae build), else <see cref="Language"/>.
@@ -56,11 +111,17 @@ public sealed partial class TypeRegistry
     public StdlibSourceScope AnalyzingStdlibSource()
     {
         _stdlibSourceScopes++;
-        return new StdlibSourceScope(registry: this);
+        // Standard library source sees the shared routines only, even when a lookup made inside a surface view
+        // (a Suflae surface routine being made concrete) is what asked for the file. Otherwise the shared
+        // declarations in it would bind to the surface routines standing in for them.
+        var scope = new StdlibSourceScope(registry: this, savedViewSet: _surfaceViewSet, savedView: _surfaceView);
+        _surfaceViewSet = false;
+        _surfaceView = null;
+        return scope;
     }
 
     /// <summary>An open stdlib-source scope (see <see cref="AnalyzingStdlibSource"/>); dispose to close it.</summary>
-    public sealed class StdlibSourceScope(TypeRegistry registry) : IDisposable
+    public sealed class StdlibSourceScope(TypeRegistry registry, bool savedViewSet, string? savedView) : IDisposable
     {
         private bool _closed;
 
@@ -74,6 +135,8 @@ public sealed partial class TypeRegistry
 
             _closed = true;
             registry._stdlibSourceScopes--;
+            registry._surfaceViewSet = savedViewSet;
+            registry._surfaceView = savedView;
         }
     }
 
@@ -382,10 +445,44 @@ public sealed partial class TypeRegistry
     internal const string FreeOwnerKey = "$free";
 
     /// <summary>The flattened memberRoutine list for an owner (all overloads across all memberRoutine names), or empty.</summary>
-    private static IEnumerable<RoutineInfo> OwnerMemberRoutines(
+    private IEnumerable<RoutineInfo> OwnerMemberRoutines(
         Dictionary<string, List<RoutineInfo>>? byName)
     {
-        return byName?.Values.SelectMany(selector: l => l) ?? Enumerable.Empty<RoutineInfo>();
+        return byName?.Values.SelectMany(selector: VisibleOverloads) ?? Enumerable.Empty<RoutineInfo>();
+    }
+
+    /// <summary>
+    /// The routines of one name the code being analyzed sees. A program of a realm that writes its own surface
+    /// routines sees each in place of the shared overload called the same way (the same parameter names:
+    /// Suflae's `getitem(index: Integer)` stands in for `getitem(index: U64)`), and the shared overloads it does
+    /// not replace. The standard library, the realm's own files included, works with the shared routines only:
+    /// inside, a collection counts with `U64` even where its Suflae surface counts with `Integer`.
+    /// </summary>
+    internal List<RoutineInfo> VisibleOverloads(List<RoutineInfo> overloads)
+    {
+        if (!overloads.Any(predicate: r => r.SurfaceRealm != null))
+        {
+            return overloads;
+        }
+
+        string? viewer = _surfaceViewSet
+            ? _surfaceView
+            : _stdlibSourceScopes == 0
+                ? ResolutionRealm
+                : null;
+        List<RoutineInfo> surface = overloads.Where(predicate: r => r.SurfaceRealm != null && r.SurfaceRealm == viewer)
+                                             .ToList();
+        var replaced = surface.Select(selector: CallShape).ToHashSet(comparer: StringComparer.Ordinal);
+        surface.AddRange(collection: overloads.Where(predicate: r =>
+            r.SurfaceRealm == null && !replaced.Contains(item: CallShape(routine: r))));
+        return surface;
+    }
+
+    /// <summary>How a call names a routine's arguments: its parameter names, in order, without <c>me</c>.</summary>
+    private static string CallShape(RoutineInfo routine)
+    {
+        return string.Join(separator: ",", values: routine.Parameters.Where(predicate: p => p.Name != "me")
+                                                          .Select(selector: p => p.Name));
     }
 
     /// <summary>Derive memberRoutine NAMES that are OPT-IN (capability-conferred): any `@overridable/@override
@@ -1026,6 +1123,7 @@ public sealed partial class TypeRegistry
 
         var updated = new CrashableTypeSymbol(name: crashable.Name)
         {
+            Realm = crashable.Realm,
             MemberVariables = memberVariables,
             ImplementedProtocols = crashable.ImplementedProtocols,
             Visibility = crashable.Visibility,
@@ -1047,6 +1145,7 @@ public sealed partial class TypeRegistry
 
         var updated = new CrashableTypeSymbol(name: crashable.Name)
         {
+            Realm = crashable.Realm,
             MemberVariables = crashable.MemberVariables,
             ImplementedProtocols = protocols,
             Visibility = crashable.Visibility,
@@ -1076,6 +1175,7 @@ public sealed partial class TypeRegistry
 
         var updatedChoice = new ChoiceTypeSymbol(name: choice.Name)
         {
+            Realm = choice.Realm,
             Cases = choice.Cases,
             ImplementedProtocols = protocols,
             UnderlyingType = choice.UnderlyingType,
@@ -1107,6 +1207,7 @@ public sealed partial class TypeRegistry
 
         var updatedFlags = new FlagsTypeSymbol(name: flags.Name)
         {
+            Realm = flags.Realm,
             Members = flags.Members,
             ImplementedProtocols = protocols,
             Visibility = flags.Visibility,
@@ -1137,6 +1238,7 @@ public sealed partial class TypeRegistry
 
         var updatedProtocol = new ProtocolTypeSymbol(name: protocol.Name)
         {
+            Realm = protocol.Realm,
             MemberRoutines = protocol.MemberRoutines,
             ParentProtocols = parentProtocols,
             GenericParameters = protocol.GenericParameters,
@@ -1172,6 +1274,7 @@ public sealed partial class TypeRegistry
         // Create updated choice with cases
         var updatedChoice = new ChoiceTypeSymbol(name: choice.Name)
         {
+            Realm = choice.Realm,
             Cases = cases,
             UnderlyingType = choice.UnderlyingType,
             GenericParameters = choice.GenericParameters,
@@ -1202,6 +1305,7 @@ public sealed partial class TypeRegistry
 
         var updated = new FlagsTypeSymbol(name: flags.Name)
         {
+            Realm = flags.Realm,
             Members = members,
             Visibility = flags.Visibility,
             Location = flags.Location,
@@ -1273,14 +1377,24 @@ public sealed partial class TypeRegistry
     public TypeSymbol? LookupType(string name)
     {
         TypeSymbol? hit = LookupTypeInAmbient(name: name);
-        if (ResolutionRealm != AmbientRealm && hit != null &&
-            _types.TryGetValue(key: $"{ResolutionRealm}::{hit.FullName}",
-                value: out TypeSymbol? preferred))
+        if (ResolutionRealm == AmbientRealm)
         {
-            return preferred;
+            return hit;
         }
 
-        return hit;
+        if (hit != null)
+        {
+            return _types.TryGetValue(key: $"{ResolutionRealm}::{hit.FullName}", value: out TypeSymbol? preferred)
+                ? preferred
+                : hit;
+        }
+
+        // A type only the file's realm declares (Suflae's `NegativeIndexError`), by its name or Core-prefixed.
+        return _types.TryGetValue(key: $"{ResolutionRealm}::{name}", value: out TypeSymbol? own) ||
+               (!name.Contains(value: '.') &&
+                _types.TryGetValue(key: $"{ResolutionRealm}::Core.{name}", value: out own))
+            ? own
+            : null;
     }
 
     /// <summary>
@@ -1416,7 +1530,6 @@ public sealed partial class TypeRegistry
     /// <returns>The resolved type (cached if already created).</returns>
     public TypeSymbol GetOrCreateResolution(TypeSymbol genericDef, List<TypeSymbol> typeArguments)
     {
-        // Don't create or store instances where SA failed to resolve a type argument.
         // Storing ErrorTypeSymbol-keyed instances produces broken concrete types that crash codegen.
         if (typeArguments.Any(predicate: t => t is ErrorTypeSymbol))
         {
@@ -1438,8 +1551,11 @@ public sealed partial class TypeRegistry
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        string? moduleFullKey = genericDef.FullName != genericDef.Name
-            ? $"{realmPrefix}{genericDef.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.FullName))}]"
+        // An argument of the other realm is marked too: `Accessing[SF::Core.List[T]]` is not
+        // `Accessing[Core.List[T]]`.
+        bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
+        string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument
+            ? $"{realmPrefix}{genericDef.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: ResolutionArgumentKey))}]"
             : null;
 
         // The module-qualified key is DISTINCT across modules/realms (RazorForge `Core.List` vs the
@@ -1479,13 +1595,16 @@ public sealed partial class TypeRegistry
             _resolutions[key: moduleFullKey] = resolved;
         }
 
-        if (!_resolutions.TryGetValue(key: fullKey, value: out TypeSymbol? bareOccupant) ||
-            ResolutionGenericDefMatches(resolved: bareOccupant, genericDef: genericDef))
+        // The bare aliases name the arguments without their realm, so an instance over another realm's
+        // argument leaves them to the ambient one.
+        if (!otherRealmArgument &&
+            (!_resolutions.TryGetValue(key: fullKey, value: out TypeSymbol? bareOccupant) ||
+             ResolutionGenericDefMatches(resolved: bareOccupant, genericDef: genericDef)))
         {
             _resolutions[key: fullKey] = resolved;
         }
 
-        if (fullKey != shortKey &&
+        if (!otherRealmArgument && fullKey != shortKey &&
             (!_resolutions.TryGetValue(key: shortKey, value: out TypeSymbol? shortOccupant) ||
              ResolutionGenericDefMatches(resolved: shortOccupant, genericDef: genericDef)))
         {
@@ -1554,7 +1673,8 @@ public sealed partial class TypeRegistry
         // Bare fullKey: accept only when the cached resolution's generic DEFINITION is the one requested
         // (no-op for single-realm types; rejects a Suflae `List[Core.S32]` for a Core.List request).
         if (_resolutions.TryGetValue(key: fullKey, value: out existing) &&
-            ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef))
+            ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef) &&
+            ResolutionArgumentRealmsMatch(resolved: existing, typeArguments: typeArguments))
         {
             if (!_stdlibAnalysisActive)
             {
@@ -1571,6 +1691,7 @@ public sealed partial class TypeRegistry
         // short-alias hit whose type arguments AND generic definition match the request.
         if (fullKey != shortKey && _resolutions.TryGetValue(key: shortKey, value: out existing) &&
             ResolutionTypeArgsMatch(resolved: existing, typeArguments: typeArguments) &&
+            ResolutionArgumentRealmsMatch(resolved: existing, typeArguments: typeArguments) &&
             ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef))
         {
             if (!_stdlibAnalysisActive)
@@ -1667,6 +1788,46 @@ public sealed partial class TypeRegistry
     /// so a same-short-name type from a DIFFERENT module (e.g. two modules' <c>Counter</c>) is not
     /// mistaken for the requested one.
     /// </summary>
+    /// <summary>Whether <paramref name="type"/> or any type argument inside it belongs to a realm other than the
+    /// ambient one.</summary>
+    private bool HasNonAmbientRealm(TypeSymbol type)
+    {
+        return type.Realm != AmbientRealm || type.TypeArguments?.Any(predicate: HasNonAmbientRealm) == true;
+    }
+
+    /// <summary>A type argument as a resolution key names it: its full name, realm-marked when another realm is
+    /// involved.</summary>
+    private string ResolutionArgumentKey(TypeSymbol type)
+    {
+        return HasNonAmbientRealm(type: type)
+            ? type.RealmQualifiedName
+            : type.FullName;
+    }
+
+    /// <summary>Whether a cached resolution's arguments come from the same realms as the requested ones. The
+    /// bare keys name arguments without their realm, so an instance over Suflae's own <c>List</c> must not be
+    /// handed back for RazorForge's, nor the other way round. Arguments of the ambient realm on both sides
+    /// match as before.</summary>
+    private bool ResolutionArgumentRealmsMatch(TypeSymbol resolved, List<TypeSymbol> typeArguments)
+    {
+        List<TypeSymbol>? actual = resolved.TypeArguments;
+        if (actual == null || actual.Count != typeArguments.Count)
+        {
+            return !typeArguments.Any(predicate: HasNonAmbientRealm);
+        }
+
+        for (int i = 0; i < actual.Count; i++)
+        {
+            if ((HasNonAmbientRealm(type: actual[index: i]) || HasNonAmbientRealm(type: typeArguments[index: i])) &&
+                ResolutionArgumentKey(type: actual[index: i]) != ResolutionArgumentKey(type: typeArguments[index: i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static bool ResolutionTypeArgsMatch(TypeSymbol resolved, List<TypeSymbol> typeArguments)
     {
         List<TypeSymbol>? actual = resolved.TypeArguments;
@@ -1727,8 +1888,11 @@ public sealed partial class TypeRegistry
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        string? moduleFullKey = genericDef.FullName != genericDef.Name
-            ? $"{realmPrefix}{genericDef.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.FullName))}]"
+        // An argument of the other realm is marked too: `Accessing[SF::Core.List[T]]` is not
+        // `Accessing[Core.List[T]]`.
+        bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
+        string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument
+            ? $"{realmPrefix}{genericDef.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: ResolutionArgumentKey))}]"
             : null;
         if (moduleFullKey != null &&
             _resolutions.TryGetValue(key: moduleFullKey, value: out TypeSymbol? existing))
@@ -1737,7 +1901,8 @@ public sealed partial class TypeRegistry
         }
 
         if (_resolutions.TryGetValue(key: fullKey, value: out existing) &&
-            ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef))
+            ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef) &&
+            ResolutionArgumentRealmsMatch(resolved: existing, typeArguments: typeArguments))
         {
             return existing;
         }
@@ -1751,6 +1916,7 @@ public sealed partial class TypeRegistry
         // TryGetCachedResolution (this lookup-only twin was missing the args check).
         if (fullKey != shortKey && _resolutions.TryGetValue(key: shortKey, value: out existing) &&
             ResolutionTypeArgsMatch(resolved: existing, typeArguments: typeArguments) &&
+            ResolutionArgumentRealmsMatch(resolved: existing, typeArguments: typeArguments) &&
             ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef))
         {
             return existing;

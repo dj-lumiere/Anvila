@@ -512,16 +512,32 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The <c>Range[U64]</c> resolution — the type an index-range slice (<c>s[a til b]</c>) is forced
-    /// to, since collection indices are always <c>U64</c>. Returns null if <c>Range</c>/<c>U64</c> are
-    /// not registered (should not happen with the stdlib loaded).
+    /// The types a collection index may have, most preferred first: <c>U64</c>, and before it <c>Integer</c> when
+    /// the build's language counts with arbitrary-precision integers (Suflae's own collections take an
+    /// <c>Integer</c> index; one from RazorForge still takes a <c>U64</c>).
     /// </summary>
-    private TypeSymbol? MakeRangeU64Type()
+    private List<TypeSymbol> IndexTypes()
     {
-        TypeSymbol? rangeDef = _registry.LookupType(name: "Range");
-        TypeSymbol? u64 = _registry.LookupType(name: "U64");
-        return rangeDef != null && u64 != null
-            ? _registry.GetOrCreateResolution(genericDef: rangeDef, typeArguments: [u64])
+        var types = new List<TypeSymbol>();
+        if (_registry.CompilationRules.DefaultsToArbitraryPrecision &&
+            _registry.LookupType(name: "Numerics.Integer") is { } integer)
+        {
+            types.Add(item: integer);
+        }
+
+        if (_registry.LookupType(name: "U64") is { } u64)
+        {
+            types.Add(item: u64);
+        }
+
+        return types;
+    }
+
+    /// <summary>The <c>Range</c> over an index type: the type a slice (<c>s[a til b]</c>) takes.</summary>
+    private TypeSymbol? MakeRangeType(TypeSymbol indexType)
+    {
+        return _registry.LookupType(name: "Range") is { } rangeDef
+            ? _registry.GetOrCreateResolution(genericDef: rangeDef, typeArguments: [indexType])
             : null;
     }
 
@@ -573,36 +589,40 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private RoutineInfo? ResolveIndexGetItem(IndexExpression index, TypeSymbol lookupType)
     {
-        // A slice `text[a til b]` — a RangeExpression index — binds to the `getitem(range: Range[U64])`
-        // overload (returning the sub-collection), NOT the scalar `getitem(index)`. An index range is
-        // ALWAYS U64, so analyze it with `Range[U64]` expected — bare (`s[0 til 5]`) and explicit
-        // (`s[0u64 til 5u64]`) both become Range[U64] — then bind the slice overload by that arg type.
-        // SA's type then matches what OperatorLoweringPass lowers to; otherwise SA types the slice as
-        // the scalar element and codegen emits a Text, tripping an LLVM type mismatch. Falls through
-        // to the scalar lookup below.
+        // A slice `text[a til b]` — a RangeExpression index — binds to the `getitem(range: Range[...])` overload
+        // (returning the sub-collection), NOT the scalar `getitem(index)`; a scalar index `arr[i]` binds the
+        // `getitem(index: ...)` overload. Each is resolved by its argument type, trying each index type in turn,
+        // so a container carrying both overloads picks the right one unambiguously: a name-only lookup can't
+        // tell >1 same-name overload apart (no first-wins). The slice's range is then analyzed with the type
+        // the overload takes, so SA's type matches what OperatorLoweringPass lowers to. Single-overload
+        // containers (e.g. `Dict.getitem(key: K)`) fall through to the name-only lookup below.
         RoutineInfo? getItem = null;
-        if (index.Index is RangeExpression)
+        bool slice = index.Index is RangeExpression;
+        TypeSymbol? sliceRange = null;
+        foreach (TypeSymbol indexType in IndexTypes())
         {
-            TypeSymbol? rangeU64 = MakeRangeU64Type();
-            if (rangeU64 != null)
+            TypeSymbol? argType = slice
+                ? MakeRangeType(indexType: indexType)
+                : indexType;
+            if (argType == null)
             {
-                AnalyzeExpression(expression: index.Index, expectedType: rangeU64);
-                getItem = _registry.LookupMemberRoutineOverload(type: lookupType,
-                    memberRoutineName: GetItemMemberRoutineName,
-                    argTypes: [rangeU64]);
+                continue;
+            }
+
+            sliceRange ??= argType;
+            getItem = _registry.LookupMemberRoutineOverload(type: lookupType,
+                memberRoutineName: GetItemMemberRoutineName,
+                argTypes: [argType]);
+            if (getItem != null)
+            {
+                sliceRange = argType;
+                break;
             }
         }
 
-        // A scalar index `arr[i]` binds the `getitem(index: U64)` overload — an index is ALWAYS U64.
-        // Resolve by that arg type FIRST so a container carrying BOTH a scalar `getitem(index: U64)` and
-        // a slice `getitem(range: Range[U64])` overload picks the scalar unambiguously: a name-only lookup
-        // can't disambiguate >1 same-name overload (no first-wins). Single-overload containers (e.g.
-        // `Dict.getitem(key: K)`) fall through to the name-only lookup below, which stays unique.
-        if (getItem == null && _registry.LookupType(name: "U64") is { } u64IndexType)
+        if (slice && sliceRange != null)
         {
-            getItem = _registry.LookupMemberRoutineOverload(type: lookupType,
-                memberRoutineName: GetItemMemberRoutineName,
-                argTypes: [u64IndexType]);
+            AnalyzeExpression(expression: index.Index, expectedType: sliceRange);
         }
 
         // Look for getitem memberRoutine — LookupMemberRoutine handles generic resolutions

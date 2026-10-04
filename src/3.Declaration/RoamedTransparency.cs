@@ -63,6 +63,17 @@ internal static class RoamedTransparency
             effective = innerDisplay;
         }
 
+        // A forwarder the builder made on the handle (`Roamed[List[T]].eq`) passes its arguments through as
+        // they are, so a handle argument (`zs` in `ys == zs`) would reach the inner routine unprojected. Call
+        // the inner routine itself, with the receiver and the arguments projected.
+        if (memberRoutine is { WrapperForwarderInnerMemberRoutine: not null } &&
+            registry.LookupMemberRoutine(type: inner, memberRoutineName: memberName) is
+                { OwnerType: { } innerOwner } innerRoutine &&
+            innerOwner.FullName == inner.FullName)
+        {
+            effective = innerRoutine;
+        }
+
         // Only an inner-owned memberRoutine is transparent. A bare-`me` inner memberRoutine needs the handle
         // projected to the real inner pointer; a Roamed-`me` inner memberRoutine (an SF entity's own) takes
         // the handle directly.

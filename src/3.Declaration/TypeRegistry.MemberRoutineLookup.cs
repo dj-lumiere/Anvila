@@ -732,6 +732,7 @@ public sealed partial class TypeRegistry
             AsyncStatus = routine.AsyncStatus,
             FailableVariant = routine.FailableVariant,
             RecoveryOf = routine.RecoveryOf,
+            SurfaceRealm = routine.SurfaceRealm,
             Recovery = routine.Recovery
         };
 
@@ -1027,12 +1028,21 @@ public sealed partial class TypeRegistry
 
     /// <summary>The free-function (owner-less) overload list for <paramref name="baseName"/>, or null —
     /// stored under the canonical FreeOwnerKey in _routinesByOwner (replaced the old _routineOverloads).</summary>
+    /// <summary>Whether the shared library (no realm's surface) declares a free routine of this base name.</summary>
+    internal bool HasSharedFreeRoutine(string baseName)
+    {
+        return _routinesByOwner.TryGetValue(key: FreeOwnerKey,
+                   value: out Dictionary<string, List<RoutineInfo>>? byName) &&
+               byName.TryGetValue(key: baseName, value: out List<RoutineInfo>? list) &&
+               list.Any(predicate: r => r.SurfaceRealm == null);
+    }
+
     private List<RoutineInfo>? FreeOverloads(string baseName)
     {
         return _routinesByOwner.TryGetValue(key: FreeOwnerKey,
                    value: out Dictionary<string, List<RoutineInfo>>? byName) &&
                byName.TryGetValue(key: baseName, value: out List<RoutineInfo>? list)
-            ? list
+            ? VisibleOverloads(overloads: list)
             : null;
     }
 
@@ -1692,7 +1702,8 @@ public sealed partial class TypeRegistry
         return _routinesByOwner.TryGetValue(key: RealmRegistryKey(type: type),
                    value: out Dictionary<string, List<RoutineInfo>>? ownByName) &&
                ownByName.TryGetValue(key: memberRoutineName, value: out List<RoutineInfo>? memberRoutines) &&
-               memberRoutines.Count(predicate: m => isFailable == null || m.IsFailable == isFailable) > 1;
+               VisibleOverloads(overloads: memberRoutines)
+                  .Count(predicate: m => isFailable == null || m.IsFailable == isFailable) > 1;
     }
 
     private RoutineInfo? LookupOwnMemberRoutine(TypeSymbol type, string memberRoutineName,
@@ -1706,9 +1717,9 @@ public sealed partial class TypeRegistry
             return null;
         }
 
-        var nameMatches = memberRoutines.Where(predicate: m =>
-                                             isFailable == null || m.IsFailable == isFailable)
-                                        .ToList();
+        var nameMatches = VisibleOverloads(overloads: memberRoutines)
+                         .Where(predicate: m => isFailable == null || m.IsFailable == isFailable)
+                         .ToList();
 
         // A routine's identity is (declaration-name, parameter-types). NAME ALONE cannot pin a
         // unique overload once >1 same-name routine is registered — so a name-only lookup here must
@@ -2185,6 +2196,7 @@ public sealed partial class TypeRegistry
             AsyncStatus = memberRoutine.AsyncStatus,
             FailableVariant = memberRoutine.FailableVariant,
             RecoveryOf = memberRoutine.RecoveryOf,
+            SurfaceRealm = memberRoutine.SurfaceRealm,
             Recovery = memberRoutine.Recovery
         };
 
@@ -2238,6 +2250,7 @@ public sealed partial class TypeRegistry
                 AsyncStatus = memberRoutine.AsyncStatus,
                 FailableVariant = memberRoutine.FailableVariant,
                 RecoveryOf = memberRoutine.RecoveryOf,
+                SurfaceRealm = memberRoutine.SurfaceRealm,
             Recovery = memberRoutine.Recovery,
                 // Propagate memberRoutine-level generic parameters from the concrete inner memberRoutine so
                 // OperatorLoweringPass can monomorphize (e.g. Text.getitem![I] -> [U64]).
@@ -2402,6 +2415,7 @@ public sealed partial class TypeRegistry
             AsyncStatus = memberRoutine.AsyncStatus,
             FailableVariant = memberRoutine.FailableVariant,
             RecoveryOf = memberRoutine.RecoveryOf,
+            SurfaceRealm = memberRoutine.SurfaceRealm,
             Recovery = memberRoutine.Recovery
         };
         return CacheResolvedOwnerMemberRoutine(resolvedMemberRoutine: resolvedOwnerMemberRoutine);
@@ -2540,7 +2554,7 @@ public sealed partial class TypeRegistry
             byName.TryGetValue(key: memberRoutineName,
                 value: out List<RoutineInfo>? memberRoutines))
         {
-            candidates.AddRange(collection: memberRoutines);
+            candidates.AddRange(collection: VisibleOverloads(overloads: memberRoutines));
         }
 
         if (type is ProtocolTypeSymbol proto)
@@ -2807,6 +2821,18 @@ public sealed partial class TypeRegistry
             : [];
     }
 
+    /// <summary>The cache key of a type's own member routines: which surface routines are seen depends on the
+    /// code asking (see <see cref="VisibleOverloads"/>).</summary>
+    private string MemberRoutinesCacheKey(TypeSymbol type)
+    {
+        string? viewer = _surfaceViewSet
+            ? _surfaceView
+            : _stdlibSourceScopes == 0
+                ? ResolutionRealm
+                : null;
+        return $"{viewer}|{type.RealmQualifiedName}";
+    }
+
     private readonly Dictionary<string, List<RoutineInfo>> _memberRoutinesForTypeCache =
         new(comparer: StringComparer.Ordinal);
 
@@ -2841,7 +2867,7 @@ public sealed partial class TypeRegistry
         // Cache key is realm-QUALIFIED: RF and SF resolutions share a realm-free FullName
         // (`Core.List[Core.U64]`), so a FullName key would cross-contaminate — the first-computed realm's
         // member set (e.g. SF List's `inner`-forwarders) would be served for the other realm's instance.
-        if (_memberRoutinesForTypeCache.TryGetValue(key: type.RealmQualifiedName,
+        if (_memberRoutinesForTypeCache.TryGetValue(key: MemberRoutinesCacheKey(type: type),
                 value: out List<RoutineInfo>? cached))
         {
             return cached;
@@ -2862,7 +2888,7 @@ public sealed partial class TypeRegistry
             AddResolvedOwnMemberRoutines(type: type, defByName: defByName, result: result);
         }
 
-        _memberRoutinesForTypeCache[key: type.RealmQualifiedName] = result;
+        _memberRoutinesForTypeCache[key: MemberRoutinesCacheKey(type: type)] = result;
         return result;
     }
 

@@ -708,6 +708,18 @@ public sealed partial class SemanticVerifier
     private RoutineInfo? ResolveRoutineInfoForDeclaration(RoutineDeclaration decl,
         string? moduleName = null)
     {
+        // A routine of another realm's type, or a realm's surface routine, shares its name with the shared
+        // routine the lookups below find: the info registered for the declaration itself is its own.
+        if (decl.ResolvedInfo is { } own && (own.SurfaceRealm != null ||
+                                             own.OwnerType is { } ownOwner && ownOwner.Realm != _registry.AmbientRealm))
+        {
+            return _registry.GetRoutineByExactKey(registryKey: own.RegistryKey) ?? own;
+        }
+
+        // Any other declaration is a shared routine, whichever program asks: the lookups below must not find
+        // a surface routine standing in for it, or its body is stored under the surface routine's key.
+        using IDisposable sharedOnly = _registry.ViewSurface(realm: null);
+
         if (decl.MemberRoutineName is { } memberRoutineName)
         {
             return ResolveRoutineInfoForMemberDeclaration(decl: decl,

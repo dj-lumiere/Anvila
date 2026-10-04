@@ -74,7 +74,7 @@ public sealed partial class SemanticVerifier
             IsPatternExpression isPat => AnalyzeIsPatternExpression(isPat: isPat),
             FlagsTestExpression flagsTest => AnalyzeFlagsTestExpression(flagsTest: flagsTest),
             StealExpression steal => AnalyzeStealExpression(steal: steal),
-            BackIndexExpression back => AnalyzeBackIndexExpression(back: back),
+            BackIndexExpression back => AnalyzeBackIndexExpression(back: back, expectedType: expectedType),
             TypeExpression typeExpr => ResolveType(typeExpr: typeExpr),
             WhenExpression whenExpr => AnalyzeWhenExpression(when: whenExpr),
             InsertedTextExpression insertedText => AnalyzeInsertedTextExpression(

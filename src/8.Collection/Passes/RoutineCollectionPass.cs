@@ -527,7 +527,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
 
             Statement rewritten = GenericAstRewriter.RewriteStatement(stmt: synthBody,
                 subs: subs.ToDictionary(keySelector: kv => kv.Key,
-                    elementSelector: kv => kv.Value.FullName),
+                    elementSelector: kv => kv.Value.InstanceArgumentName),
                 typeSubs: subs,
                 registry: ctx.Registry,
                 enclosingRoutine: resolution);
@@ -661,7 +661,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
 
         Statement rewritten = GenericAstRewriter.RewriteStatement(stmt: synthBody,
             subs: subs.ToDictionary(keySelector: kv => kv.Key,
-                elementSelector: kv => kv.Value.FullName),
+                elementSelector: kv => kv.Value.InstanceArgumentName),
             typeSubs: subs,
             registry: ctx.Registry,
             enclosingRoutine: concreteMemberRoutine);
@@ -720,7 +720,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             };
             Statement rewritten = GenericAstRewriter.RewriteStatement(stmt: synthBody,
                 subs: wfSubs.ToDictionary(keySelector: kv => kv.Key,
-                    elementSelector: kv => kv.Value.FullName),
+                    elementSelector: kv => kv.Value.InstanceArgumentName),
                 typeSubs: wfSubs,
                 registry: ctx.Registry,
                 enclosingRoutine: concreteWf);

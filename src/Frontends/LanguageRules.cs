@@ -54,6 +54,10 @@ public abstract class LanguageRules
     /// <c>Standard/&lt;Name&gt;</c>) on top of the RazorForge standard library every build reads.</summary>
     public virtual bool HasOwnStandardLibrary => false;
 
+    /// <summary>The standard library types (by module-qualified name) a program in the language does not see,
+    /// though the library itself still uses them.</summary>
+    public virtual IReadOnlySet<string> HiddenStandardTypes { get; } = new HashSet<string>();
+
     /// <summary>The imports every user file of the language gets without writing them: (module, the
     /// specific symbols it brings in, or null for the whole module).</summary>
     public virtual IReadOnlyList<(string Module, IReadOnlyList<string>? Symbols)> PreludeImports => [];

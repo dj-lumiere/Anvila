@@ -46,7 +46,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: r => LowerStatementFull(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => LowerStatementFull(stmt: r.Body));
     }
 
     // --- Statement lowering ------------------------------------------------------
@@ -3238,7 +3238,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// </summary>
     public void RunOnVariantBodies()
     {
-        BodyDispatch.RunOnVariantBodies(bodies: ctx.VariantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: ctx.VariantBodies,
             lower: (_, body) => LowerStatementFull(stmt: body));
     }
 
@@ -3252,7 +3252,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     public void RunOnInstantiatedGenericBodies(
         Dictionary<string, Instantiation.MonomorphizedBody> instantiatedGenericBodies)
     {
-        BodyDispatch.RunOnInstantiatedGenericBodies(bodies: instantiatedGenericBodies,
+        BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: instantiatedGenericBodies,
             lower: (_, entry) => LowerStatementFull(stmt: entry.Ast.Body));
     }
 }

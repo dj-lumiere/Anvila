@@ -130,7 +130,7 @@ public class EntityTypeSymbol : TypeSymbol
         // Build resolved type name using FullName for each type argument so the resolved
         // type carries fully-qualified inner names (e.g., "List[Core.S64]").
         string resolvedName = $"{Name}[{string.Join(separator: ", ",
-            values: typeArguments.Select(selector: t => t.FullName))}]";
+            values: typeArguments.Select(selector: t => t.InstanceArgumentName))}]";
 
         string cycleKey = BuildCycleKey(resolvedName: resolvedName);
 

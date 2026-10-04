@@ -74,7 +74,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     /// <summary>Lowers routine bodies in a single program (user file or stdlib file).</summary>
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: LowerRoutineBody);
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: LowerRoutineBody);
     }
 
     /// <summary>Lowers the synthesized try/grab/lookup variant bodies.</summary>
@@ -85,7 +85,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             return;
         }
 
-        BodyDispatch.RunOnVariantBodies(bodies: _variantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: _variantBodies,
             lower: (key, body) =>
             {
                 _carrierReturn = ReturnByKey.GetValueOrDefault(key: key);
@@ -121,7 +121,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     /// and so would otherwise reach codegen with un-lowered <see cref="VariantReturnStatement"/> carriers.</summary>
     public void RunOnInstantiatedGenericBodies(Dictionary<string, MonomorphizedBody> bodies)
     {
-        BodyDispatch.RunOnInstantiatedGenericBodies(bodies: bodies,
+        BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: bodies,
             lower: (_, mono) =>
             {
                 _carrierReturn = mono.Info.ReturnType;

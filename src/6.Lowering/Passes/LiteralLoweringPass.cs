@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -60,6 +61,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     private readonly TypeSymbol? _byteType;
     private readonly TypeSymbol? _byteSizeType;
     private readonly TypeSymbol? _durationType;
+    private readonly TypeRegistry _registry;
 
     /// <summary>
     /// Initializes a new instance with the dependencies required for its builder phase.
@@ -67,6 +69,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     internal LiteralLoweringPass(PostprocessingContext ctx)
     {
         _variantBodies = ctx.VariantBodies;
+        _registry = ctx.Registry;
         // `n`/`dn` arbitrary-precision literals are emitted as malformed scalar IR by codegen
         // (e.g. `store %Record.Integer 42n`); lower them to an infallible constructor call instead.
         // Integer/Complex/Real live in `module Numerics` — qualify (a bare lookup depended on the
@@ -110,7 +113,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     /// </summary>
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: _registry, program: program, lower: r => VisitStatement(stmt: r.Body));
     }
 
     /// <summary>
@@ -123,7 +126,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
             return;
         }
 
-        BodyDispatch.RunOnVariantBodies(bodies: _variantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: _registry, bodies: _variantBodies,
             lower: (_, body) => VisitStatement(stmt: body));
     }
 
@@ -185,12 +188,13 @@ internal sealed class LiteralLoweringPass : AstRewriter
         // OperatorLoweringPass (runs after this pass) rewrites the enclosing subscript/slice to
         // `back_resolve(count: coll.count(), offset: n)`. Retag an untyped/signed integer-literal
         // offset to U64 (the `^n` position is U64) BEFORE lowering, so it stays a scalar i64 and
-        // is not lowered to an arbitrary-precision Integer (which is heap/Text-backed).
+        // is not lowered to an arbitrary-precision Integer (which is heap/Text-backed). A position the
+        // analysis typed `Integer` (a Suflae collection's) stays one.
         Expression operand = e.Operand is LiteralExpression
         {
             LiteralType: TokenType.UndecidedInteger or TokenType.IntegerLiteral
             or TokenType.S64Literal
-        } lit
+        } lit && e.ResolvedType?.Name != "Integer"
             ? lit with { LiteralType = TokenType.U64Literal }
             : e.Operand;
         Expression o = VisitExpression(expr: operand);

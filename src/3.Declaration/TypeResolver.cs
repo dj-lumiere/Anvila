@@ -38,6 +38,34 @@ internal sealed class TypeResolver
     /// </summary>
     internal TypeSymbol? LookupTypeWithImports(string name)
     {
+        TypeSymbol? found = LookupTypeWithImportsInAnyLanguage(name: name);
+        return found != null && IsHiddenFromCurrentFile(type: found)
+            ? null
+            : found;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="type"/> is a standard library type the language of the file being analyzed does
+    /// not show its programs (Suflae's programs do not see the split collections). The library's own files still
+    /// see it.
+    /// </summary>
+    private bool IsHiddenFromCurrentFile(TypeSymbol type)
+    {
+        string file = _sa._currentFilePath;
+        if (string.IsNullOrEmpty(value: file) || _sa.IsStdlibFile(filePath: file) ||
+            !Builder.Frontends.Languages.HasSourceExtension(fileName: file))
+        {
+            return false;
+        }
+
+        IReadOnlySet<string> hidden = Builder.Frontends.Languages
+                                             .For(language: Builder.Frontends.Languages.OfFile(fileName: file))
+                                             .HiddenStandardTypes;
+        return hidden.Count > 0 && hidden.Contains(item: TypeSymbol.StripTypeArgs(name: type.FullName));
+    }
+
+    private TypeSymbol? LookupTypeWithImportsInAnyLanguage(string name)
+    {
         // Already-qualified names (and the resolution cache for generic instances) are handled
         // directly by the registry — no module search needed.
         if (name.Contains(value: '.'))
@@ -170,12 +198,12 @@ internal sealed class TypeResolver
         }
 
         TypeSymbol resolved = ResolveTypeCore(typeExpr: typeExpr);
-        // Effective realm = the explicit `RF::`/`SF::` qualifier, else the compilation's ambient realm.
-        // Name resolution above is realm-blind and yields the ambient-realm type; when an explicit qualifier
-        // names the BRIDGED (non-ambient) realm, swap to that realm's equivalent so `RF::Core.List` in a
-        // `.sf` reaches the RazorForge-realm list. No-op when the effective realm IS the ambient one (the
-        // common case, and every pure-RF/pure-SF bare reference), and null-safe if no bridged type exists.
-        string effectiveRealm = typeExpr.Realm ?? _sa._registry.AmbientRealm;
+        // Effective realm = the explicit `RF::`/`SF::` qualifier, else the realm of the file being analyzed:
+        // a bare `List` in a `.sf` file is Suflae's own list when Suflae declares one. Name resolution above
+        // prefers that realm already; this swap also covers a generic instance resolved through the other
+        // realm's definition, and turns `RF::Core.List` in a `.sf` into the RazorForge list. Null-safe when
+        // the realm declares no such type (the other realm's type stays).
+        string effectiveRealm = typeExpr.Realm ?? _sa._registry.ResolutionRealm;
         if (resolved is TypeSymbol ti && effectiveRealm != ti.Realm &&
             _sa._registry.ReResolveInRealm(type: ti, realm: effectiveRealm) is { } bridged)
         {

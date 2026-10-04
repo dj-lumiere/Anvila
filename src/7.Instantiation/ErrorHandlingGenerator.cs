@@ -347,6 +347,7 @@ public sealed class ErrorHandlingGenerator
                 CallingConvention = original.CallingConvention,
                 FailableVariant = FailableVariant.TryBool,
                 RecoveryOf = original,
+                SurfaceRealm = original.SurfaceRealm,
                 Recovery = RecoveryKind.Try
             };
         }
@@ -380,6 +381,7 @@ public sealed class ErrorHandlingGenerator
             Annotations = original.Annotations,
             CallingConvention = original.CallingConvention,
             RecoveryOf = original,
+            SurfaceRealm = original.SurfaceRealm,
             Recovery = RecoveryKind.Try
         };
     }
@@ -425,6 +427,7 @@ public sealed class ErrorHandlingGenerator
             Annotations = original.Annotations,
             CallingConvention = original.CallingConvention,
             RecoveryOf = original,
+            SurfaceRealm = original.SurfaceRealm,
             Recovery = RecoveryKind.Grab
         };
     }
@@ -475,6 +478,7 @@ public sealed class ErrorHandlingGenerator
                 Annotations = original.Annotations,
                 CallingConvention = original.CallingConvention,
                 RecoveryOf = original,
+                SurfaceRealm = original.SurfaceRealm,
                 Recovery = RecoveryKind.Grab
             };
         }
@@ -508,6 +512,7 @@ public sealed class ErrorHandlingGenerator
             Annotations = original.Annotations,
             CallingConvention = original.CallingConvention,
             RecoveryOf = original,
+            SurfaceRealm = original.SurfaceRealm,
             Recovery = RecoveryKind.Lookup
         };
     }

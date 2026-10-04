@@ -527,16 +527,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     internal bool IsStdlibFile(string filePath)
     {
-        string? stdlibPath = _registry.StdlibPath;
-        if (string.IsNullOrEmpty(value: stdlibPath) || string.IsNullOrEmpty(value: filePath))
-        {
-            return false;
-        }
-
-        string normalizedFile = Path.GetFullPath(path: filePath);
-        string normalizedStdlib = Path.GetFullPath(path: stdlibPath);
-        return normalizedFile.StartsWith(value: normalizedStdlib,
-            comparisonType: StringComparison.OrdinalIgnoreCase);
+        return _registry.IsStandardLibraryFile(filePath: filePath);
     }
 
     /// <summary>Analyzes a call, then applies the inline-token source check (RF-S639).</summary>

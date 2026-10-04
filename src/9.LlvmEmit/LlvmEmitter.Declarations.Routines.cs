@@ -788,6 +788,13 @@ public partial class LlvmEmitter
                 attrs.Add(item: "dangerous");
             }
 
+            // A realm's surface routine has the shared routine's name and parameters: its realm tells them
+            // apart.
+            if (r.SurfaceRealm is { } surface)
+            {
+                attrs.Add(item: surface);
+            }
+
             // A recovery variant has its failable routine's name and parameters: its kind tells them apart.
             if (r.Recovery is { } recovery)
             {

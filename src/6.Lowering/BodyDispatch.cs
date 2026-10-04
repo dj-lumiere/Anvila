@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Instantiation;
 using SyntaxTree;
 
@@ -25,7 +26,7 @@ internal static class BodyDispatch
     /// member routine body. <paramref name="lower"/> receives the routine declaration (so a pass can read
     /// its name/owner/parameters) and returns the new body.
     /// </summary>
-    public static void RunOnProgram(Program program, Func<RoutineDeclaration, Statement> lower)
+    public static void RunOnProgram(TypeRegistry registry, Program program, Func<RoutineDeclaration, Statement> lower)
     {
         for (int i = 0; i < program.Declarations.Count; i++)
         {
@@ -33,7 +34,7 @@ internal static class BodyDispatch
             {
                 case RoutineDeclaration r:
                 {
-                    Statement newBody = lower(arg: r);
+                    Statement newBody = LowerUnderView(registry: registry, routine: r, lower: lower);
                     if (!ReferenceEquals(objA: newBody, objB: r.Body))
                     {
                         program.Declarations[index: i] = r with { Body = newBody };
@@ -43,15 +44,15 @@ internal static class BodyDispatch
                 }
 
                 case EntityDeclaration e:
-                    RunOnMembers(members: e.Members, lower: lower);
+                    RunOnMembers(registry: registry, members: e.Members, lower: lower);
                     break;
 
                 case RecordDeclaration rec:
-                    RunOnMembers(members: rec.Members, lower: lower);
+                    RunOnMembers(registry: registry, members: rec.Members, lower: lower);
                     break;
 
                 case CrashableDeclaration cr:
-                    RunOnMembers(members: cr.Members, lower: lower);
+                    RunOnMembers(registry: registry, members: cr.Members, lower: lower);
                     break;
             }
         }
@@ -61,7 +62,7 @@ internal static class BodyDispatch
     /// Lowers each <see cref="RoutineDeclaration"/> in a type's member list. Same callback contract as
     /// <see cref="RunOnProgram"/> (member routines and top-level routines are lowered identically).
     /// </summary>
-    public static void RunOnMembers(List<SyntaxTree.Declaration> members,
+    public static void RunOnMembers(TypeRegistry registry, List<SyntaxTree.Declaration> members,
         Func<RoutineDeclaration, Statement> lower)
     {
         for (int j = 0; j < members.Count; j++)
@@ -71,7 +72,7 @@ internal static class BodyDispatch
                 continue;
             }
 
-            Statement newBody = lower(arg: m);
+            Statement newBody = LowerUnderView(registry: registry, routine: m, lower: lower);
             if (!ReferenceEquals(objA: newBody, objB: m.Body))
             {
                 members[index: j] = m with { Body = newBody };
@@ -84,13 +85,18 @@ internal static class BodyDispatch
     /// registry key and current body (some passes key their per-body preamble off the name) and returns
     /// the new body.
     /// </summary>
-    public static void RunOnVariantBodies(Dictionary<string, Statement> bodies,
+    public static void RunOnVariantBodies(TypeRegistry registry, Dictionary<string, Statement> bodies,
         Func<string, Statement, Statement> lower)
     {
         foreach (string key in bodies.Keys.ToList())
         {
             Statement body = bodies[key: key];
-            Statement lowered = lower(arg1: key, arg2: body);
+            Statement lowered;
+            using (registry.ViewSurfaceOf(fileName: body.Location.FileName))
+            {
+                lowered = lower(arg1: key, arg2: body);
+            }
+
             if (!ReferenceEquals(objA: lowered, objB: body))
             {
                 bodies[key: key] = lowered;
@@ -105,8 +111,8 @@ internal static class BodyDispatch
     /// it) and returns the new body; the entry is rebuilt via
     /// <c>entry with { Ast = entry.Ast with { Body = ... } }</c>.
     /// </summary>
-    public static void RunOnInstantiatedGenericBodies(Dictionary<string, MonomorphizedBody> bodies,
-        Func<string, MonomorphizedBody, Statement> lower)
+    public static void RunOnInstantiatedGenericBodies(TypeRegistry registry,
+        Dictionary<string, MonomorphizedBody> bodies, Func<string, MonomorphizedBody, Statement> lower)
     {
         foreach (string key in bodies.Keys.ToList())
         {
@@ -116,11 +122,29 @@ internal static class BodyDispatch
                 continue;
             }
 
-            Statement lowered = lower(arg1: key, arg2: entry);
+            Statement lowered;
+            using (registry.ViewSurfaceOf(fileName: entry.Ast.Body.Location.FileName))
+            {
+                lowered = lower(arg1: key, arg2: entry);
+            }
+
             if (!ReferenceEquals(objA: lowered, objB: entry.Ast.Body))
             {
                 bodies[key: key] = entry with { Ast = entry.Ast with { Body = lowered } };
             }
+        }
+    }
+
+    /// <summary>
+    /// Lowers one routine body under the view of the file it is written in: a standard library body sees the
+    /// shared routines only, so an operator or call the pass resolves again binds as the library meant it.
+    /// </summary>
+    private static Statement LowerUnderView(TypeRegistry registry, RoutineDeclaration routine,
+        Func<RoutineDeclaration, Statement> lower)
+    {
+        using (registry.ViewSurfaceOf(fileName: routine.Body.Location.FileName))
+        {
+            return lower(arg: routine);
         }
     }
 }

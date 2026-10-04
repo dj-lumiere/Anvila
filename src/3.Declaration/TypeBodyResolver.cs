@@ -472,7 +472,8 @@ internal sealed class TypeBodyResolver
 
         if (memberVariables.Count > 0)
         {
-            _sa._registry.UpdateCrashableMemberVariables(typeName: _sa._currentType!.FullName,
+            _sa._registry.UpdateCrashableMemberVariables(
+                typeName: _sa._registry.RealmRegistryKey(type: _sa._currentType!),
                 memberVariables: memberVariables);
         }
 
@@ -818,7 +819,8 @@ internal sealed class TypeBodyResolver
         }
 
         // Update the choice with resolved cases
-        _sa._registry.UpdateChoiceCases(choiceName: choiceInfo.FullName, cases: cases);
+        _sa._registry.UpdateChoiceCases(choiceName: _sa._registry.RealmRegistryKey(type: choiceInfo),
+            cases: cases);
     }
 
     /// <summary>
@@ -960,7 +962,8 @@ internal sealed class TypeBodyResolver
             members.Add(item: new FlagsMemberInfo(Name: memberName, BitPosition: i));
         }
 
-        _sa._registry.UpdateFlagsMembers(flagsName: flagsInfo.FullName, members: members);
+        _sa._registry.UpdateFlagsMembers(flagsName: _sa._registry.RealmRegistryKey(type: flagsInfo),
+            members: members);
     }
 
     /// <summary>

@@ -282,7 +282,7 @@ public class RecordTypeSymbol : TypeSymbol
         // type carries fully-qualified inner names (e.g., "Hijacked[Core.Byte]").
         // TypeSymbol.FullName then prepends the module: "Core.Hijacked[Core.Byte]".
         string resolvedName = $"{Name}[{string.Join(separator: ", ",
-            values: typeArguments.Select(selector: t => t.FullName))}]";
+            values: typeArguments.Select(selector: t => t.InstanceArgumentName))}]";
 
         var substitutedProtocols = ImplementedProtocols.Select(selector: p =>
                                                             (TypeSymbol)(ProtocolTypeSymbol)

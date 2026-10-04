@@ -144,17 +144,25 @@ public sealed partial class StdlibLoader
         // Pass 1a.1: Fill in protocol memberRoutine signatures (all protocols are now registered for cross-refs)
         FillCoreProtocolMemberRoutines(registry: registry, corePrograms: corePrograms);
 
+        IReadOnlyCollection<string>? savedImports = registry.ActiveRegistrationImports;
+        string savedRealm = registry.ResolutionRealm;
+
         // Pass 1a.2: Resolve parent protocol hierarchies (now that all protocols are registered)
         foreach ((Program program, string _, string _) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             ResolveProtocolParents(registry: registry, program: program);
         }
 
         // Pass 1b: Register all type shells (record, entity, choice, variant)
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             RegisterProgramTypes(registry: registry, program: program, moduleName: ns, realm: RealmOf(filePath: filePath));
         }
+
+        registry.ActiveRegistrationImports = savedImports;
+        registry.ResolutionRealm = savedRealm;
     }
 
     /// <summary>
@@ -165,11 +173,16 @@ public sealed partial class StdlibLoader
     private static void RunCoreDeferredResolutionPasses(TypeRegistry registry,
         List<(Program Program, string FilePath, string Module)> corePrograms)
     {
+        // Each file's imports are in scope while its signatures resolve: Suflae's own `Core` types name
+        // `Integer` from the imported `Numerics`, loaded by now.
+        IReadOnlyCollection<string>? savedImports = registry.ActiveRegistrationImports;
+        string savedRealm = registry.ResolutionRealm;
         // Pass 1c: Re-resolve member variables now that all types are registered.
         // The initial registration may have empty member lists due to forward references
         // (e.g., Bytes needs List which needs U64, but files are processed alphabetically).
         foreach ((Program program, string filePath, string _) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             ResolveProgramMemberVariables(registry: registry, program: program);
         }
 
@@ -178,6 +191,7 @@ public sealed partial class StdlibLoader
         // (e.g., EnumerateIterator[T] obeys Iterable[Tuple[S64, T]] needs S64).
         foreach ((Program program, string filePath, string _) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             ResolveProgramProtocolConformances(registry: registry, program: program, realm: RealmOf(filePath: filePath));
         }
 
@@ -186,6 +200,7 @@ public sealed partial class StdlibLoader
         // registered when protocols were first processed in pass 1a.1).
         foreach ((Program program, string filePath, string _) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             ResolveProtocolMemberRoutineReturnTypes(registry: registry, program: program);
             ResolveAssociatedTypeBindings(registry: registry, program: program);
         }
@@ -193,6 +208,7 @@ public sealed partial class StdlibLoader
         // Pass 2: Register all routines (now all types are available for return type resolution)
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             RegisterProgramRoutines(registry: registry, program: program, moduleName: ns, realm: RealmOf(filePath: filePath));
         }
 
@@ -200,15 +216,20 @@ public sealed partial class StdlibLoader
         // initial registration and later collapsed to None via semantic finalization.
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             ResolveRoutineSignatures(registry: registry, program: program, moduleName: ns);
         }
 
         // Pass 3: Register all presets (module-level constants accessible across files)
         foreach ((Program program, string filePath, string ns) in corePrograms)
         {
+            InstallProgramImports(registry: registry, program: program);
             RegisterProgramPresets(registry: registry, program: program, moduleName: ns);
         }
 
+        registry.ActiveRegistrationImports = savedImports;
+
+        registry.ResolutionRealm = savedRealm;
     }
 
     /// <summary>
@@ -557,17 +578,19 @@ public sealed partial class StdlibLoader
             // through them. Then re-resolve fields and signatures once every type of the file exists
             // (a forward reference inside the file, or a type from a module reached through a cycle).
             IReadOnlyCollection<string>? savedImports = registry.ActiveRegistrationImports;
+        string savedRealm = registry.ResolutionRealm;
             registry.ActiveRegistrationImports = ImportScopeOf(program: ast);
             try
             {
-                RegisterProgramTypes(registry: registry, program: ast, moduleName: effectiveModule, realm: UnstampedRealm);
+                RegisterProgramTypes(registry: registry, program: ast, moduleName: effectiveModule, realm: RealmOf(filePath: filePath));
                 ResolveProgramMemberVariables(registry: registry, program: ast);
-                RegisterProgramRoutines(registry: registry, program: ast, moduleName: effectiveModule, realm: UnstampedRealm);
+                RegisterProgramRoutines(registry: registry, program: ast, moduleName: effectiveModule, realm: RealmOf(filePath: filePath));
                 ResolveRoutineSignatures(registry: registry, program: ast, moduleName: effectiveModule);
             }
             finally
             {
                 registry.ActiveRegistrationImports = savedImports;
+                registry.ResolutionRealm = savedRealm;
             }
 
             return effectiveModule;
@@ -590,6 +613,7 @@ public sealed partial class StdlibLoader
         List<(Program Program, string FilePath, string Module)> programs)
     {
         IReadOnlyCollection<string>? savedImports = registry.ActiveRegistrationImports;
+        string savedRealm = registry.ResolutionRealm;
 
         // Three-pass registration: protocols first, then other types, then routines
         // Register protocol shells across all files first, then fill in memberRoutines
@@ -598,6 +622,7 @@ public sealed partial class StdlibLoader
 
         foreach ((Program program, string _, string _) in programs)
         {
+            InstallProgramImports(registry: registry, program: program);
             ResolveProtocolParents(registry: registry, program: program);
         }
 
@@ -650,16 +675,24 @@ public sealed partial class StdlibLoader
         }
 
         registry.ActiveRegistrationImports = savedImports;
+
+        registry.ResolutionRealm = savedRealm;
     }
 
     /// <summary>
-    /// Installs the imports of the program about to be registered on
-    /// <see cref="TypeRegistry.ActiveRegistrationImports"/>, so a field or signature naming a type from an
+    /// Installs the imports and the realm of the program about to be registered on
+    /// <see cref="TypeRegistry.ActiveRegistrationImports"/> and <see cref="TypeRegistry.ResolutionRealm"/>, so a field or signature naming a type from an
     /// imported module (Math3D's <c>Vector[B32, 4]</c> from Simd) resolves while the module registers.
     /// </summary>
     private static void InstallProgramImports(TypeRegistry registry, Program program)
     {
         registry.ActiveRegistrationImports = ImportScopeOf(program: program);
+        // Names in the program prefer the types of its own realm: `DictEmittable` in Suflae's `Dict.sf` is
+        // Suflae's iterator, not RazorForge's.
+        if (Builder.Frontends.Languages.HasSourceExtension(fileName: program.Location.FileName))
+        {
+            registry.ResolutionRealm = RealmOf(filePath: program.Location.FileName);
+        }
     }
 
     /// <summary>
@@ -722,6 +755,28 @@ public sealed partial class StdlibLoader
         if (ResolveSpliceType(typeExpr: typeExpr) is { } spliced)
         {
             return spliced;
+        }
+
+        // A name prefers the types of the realm it was written in: `List` in a Suflae library file is Suflae's
+        // list, `RF::Core.List` there is RazorForge's. A type written without a source file keeps the realm
+        // in effect.
+        string realm = typeExpr.Realm ??
+                       (Builder.Frontends.Languages.HasSourceExtension(fileName: typeExpr.Location.FileName)
+                           ? RealmOf(filePath: typeExpr.Location.FileName)
+                           : registry.ResolutionRealm);
+        if (realm != registry.ResolutionRealm)
+        {
+            string saved = registry.ResolutionRealm;
+            registry.ResolutionRealm = realm;
+            try
+            {
+                return ResolveSimpleType(registry: registry, typeExpr: typeExpr, genericParams: genericParams,
+                    moduleName: moduleName);
+            }
+            finally
+            {
+                registry.ResolutionRealm = saved;
+            }
         }
 
         string typeName = typeExpr.Name;

@@ -670,6 +670,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         {
             Kind = protocolRoutine.Kind,
             OwnerType = implementer,
+            // A realm's surface routine stays one on each implementer, keyed and named apart from the shared one.
+            SurfaceRealm = protocolRoutine.SurfaceRealm,
             Parameters = newParams,
             ReturnType = newRet,
             IsFailable = protocolRoutine.IsFailable,
@@ -684,6 +686,15 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     private Statement? CloneProtocolRoutineBody(RoutineInfo protocolRoutine, TypeSymbol implementer,
         RoutineInfo synthesized, Dictionary<string, TypeSymbol> protoSubs)
     {
+        // The default's file may not be analyzed yet when the call that reaches it sits in a library body made
+        // concrete before anything else reached that file (Suflae's `skip(count: Integer)` calls RazorForge's
+        // `skip`): analyze it first, or the clone carries no types.
+        ctx.AnalyzeRoutineOnDemand?.Invoke(arg: protocolRoutine.RegistryKey);
+        if (protocolRoutine.GenericDefinition is { } protocolDefinition)
+        {
+            ctx.AnalyzeRoutineOnDemand?.Invoke(arg: protocolDefinition.RegistryKey);
+        }
+
         Statement? originalBody = GetDefaultImplBody(routine: protocolRoutine);
         if (originalBody == null)
         {
@@ -699,7 +710,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         var typeSubs =
             new Dictionary<string, TypeSymbol>(dictionary: protoSubs) { [key: "Me"] = implementer };
         var stringSubs = typeSubs.ToDictionary(keySelector: kv => kv.Key,
-            elementSelector: kv => kv.Value.FullName);
+            elementSelector: kv => kv.Value.InstanceArgumentName);
         Statement cloned = GenericAstRewriter.RewriteStatement(stmt: originalBody,
             subs: stringSubs,
             typeSubs: typeSubs,

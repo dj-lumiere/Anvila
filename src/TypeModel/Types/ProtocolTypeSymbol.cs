@@ -64,7 +64,7 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
 
         // Build resolved type name
         string resolvedName = $"{Name}[{string.Join(separator: ", ",
-            values: typeArguments.Select(selector: t => t.Name))}]";
+            values: typeArguments.Select(selector: t => t.InstanceArgumentShortName))}]";
 
         var substitutedMemberRoutines = MemberRoutines.Select(selector: m =>
                                                            new ProtocolMemberRoutineInfo(

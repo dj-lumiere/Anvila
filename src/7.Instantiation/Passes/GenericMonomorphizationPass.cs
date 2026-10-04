@@ -1643,6 +1643,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             {
                 gmp.ReindexProgram(program: desugared);
             }
+
+            // A recovery variant (`emit` under `try`) is written nowhere: its body is its failable routine's, so
+            // that routine's file is the one to analyze. Without this a variant reached before any plain call
+            // into the file monomorphizes an unanalyzed template.
+            if (r.RecoveryOf is { } failable && failable.RegistryKey != key)
+            {
+                TriggerOnDemandAnalysis(r: failable, key: failable.RegistryKey);
+            }
         }
 
         // Crash path per LIVE routine: codegen's EmitThrow calls `<E>.crash_message()` (→ `<E>.represent()`)
@@ -2420,7 +2428,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             genDef: variantDefinition.OwnerType,
             typeSubs: typeSubs,
             stringSubs: typeSubs.ToDictionary(keySelector: kv => kv.Key,
-                elementSelector: kv => kv.Value.FullName));
+                elementSelector: kv => kv.Value.InstanceArgumentName));
         if (variantBodyBuilt == null)
         {
             return false;
@@ -2458,7 +2466,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             // `Dict.add` forwarder (`me.inner.add`) gets the RF `Dict.add` body (`me.keys`), which then
             // reaches codegen calling `me.keys` on the fieldless overlay. Pass the owner realm so the SF
             // instance resolves to the SF forwarder decl (mirrors the genDef-realm path above).
-            expectedOwnerRealm: resolvedRoutine.OwnerType?.Realm);
+            expectedOwnerRealm: resolvedRoutine.OwnerType?.Realm,
+            expectedSurfaceRealm: resolvedRoutine.SurfaceRealm);
         if (astDecl == null)
         {
             EmitResolvedRoutineBodyFromVariantFallback(resolvedRoutine: resolvedRoutine,
@@ -2467,7 +2476,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         var stringSubs = typeSubs.ToDictionary(keySelector: kvp => kvp.Key,
-            elementSelector: kvp => kvp.Value.FullName);
+            elementSelector: kvp => kvp.Value.InstanceArgumentName);
 
         RoutineDeclaration rewrittenDecl = GenericAstRewriter.Rewrite(routine: astDecl,
             subs: stringSubs,
@@ -2553,7 +2562,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 value: out Statement? defVariantBody))
         {
             var stringSubs2 = typeSubs.ToDictionary(keySelector: kvp => kvp.Key,
-                elementSelector: kvp => kvp.Value.FullName);
+                elementSelector: kvp => kvp.Value.InstanceArgumentName);
             Statement rewritten = GenericAstRewriter.RewriteStatement(stmt: defVariantBody,
                 subs: stringSubs2,
                 typeSubs: typeSubs,
@@ -2583,7 +2592,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 value: out Statement? genDefGenDefBody))
         {
             var stringSubs3 = typeSubs.ToDictionary(keySelector: kvp => kvp.Key,
-                elementSelector: kvp => kvp.Value.FullName);
+                elementSelector: kvp => kvp.Value.InstanceArgumentName);
             Statement rewritten3 = GenericAstRewriter.RewriteStatement(stmt: genDefGenDefBody,
                 subs: stringSubs3,
                 typeSubs: typeSubs,
@@ -2803,7 +2812,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             expectedOwnerModule: genDef.FullName is { } gdFn
                 ? TypeSymbol.StripTypeArgs(name: gdFn)
                 : null,
-            expectedOwnerRealm: genDef.Realm);
+            expectedOwnerRealm: genDef.Realm,
+            expectedSurfaceRealm: genMemberRoutine.SurfaceRealm);
 
         if (astDecl == null)
         {
@@ -2927,9 +2937,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         string fallbackAstName = genDef != null
             ? BuildAstName(genDef: genDef, routineName: genMemberRoutine.Name)
             : genMemberRoutine.Name + "[generic]";
+        // Scoped by the owner's module and realm like the other lookups: Suflae's `DictEmittable.emit` and
+        // RazorForge's share the name, and RazorForge's body reads constants Suflae's file does not have.
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: fallbackAstName,
             expectedParamCount: genMemberRoutine.Parameters.Count,
-            typeSubs: typeSubs);
+            typeSubs: typeSubs,
+            expectedOwnerModule: genMemberRoutine.OwnerType?.FullName is { } ownerName
+                ? TypeSymbol.StripTypeArgs(name: ownerName)
+                : null,
+            expectedOwnerRealm: genMemberRoutine.OwnerType?.Realm,
+            expectedSurfaceRealm: genMemberRoutine.SurfaceRealm);
 
         if (astDecl == null)
         {
@@ -3036,6 +3053,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     AsyncStatus = genMemberRoutine.AsyncStatus,
                     FailableVariant = genMemberRoutine.FailableVariant,
                     RecoveryOf = genMemberRoutine.RecoveryOf,
+                    SurfaceRealm = genMemberRoutine.SurfaceRealm,
                     Recovery = genMemberRoutine.Recovery
                 };
             }
@@ -3092,6 +3110,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             AsyncStatus = genMemberRoutine.AsyncStatus,
             FailableVariant = genMemberRoutine.FailableVariant,
             RecoveryOf = genMemberRoutine.RecoveryOf,
+            SurfaceRealm = genMemberRoutine.SurfaceRealm,
             Recovery = genMemberRoutine.Recovery,
             // Carry the receiver-handle type through monomorphization: a Suflae entity's `me` is the
             // Roamed[E] handle (MeType), and its owner param must be substituted (Roamed[Box[T]] →
@@ -3532,7 +3551,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private RoutineDeclaration? FindInStdlib(string genericAstName, int expectedParamCount = -1,
         Dictionary<string, TypeSymbol>? typeSubs = null, List<string>? expectedParamNames = null,
         List<string?>? expectedParamTypeNames = null, string? expectedOwnerModule = null,
-        string? expectedOwnerRealm = null)
+        string? expectedOwnerRealm = null, string? expectedSurfaceRealm = null)
     {
         bool requireGenericSuffix = genericAstName.EndsWith(value: "[generic]");
         string baseName = requireGenericSuffix
@@ -3552,6 +3571,13 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         candidates = NarrowCandidatesByModuleAndRealm(candidates: candidates,
             expectedOwnerModule: expectedOwnerModule,
             expectedOwnerRealm: expectedOwnerRealm);
+        // A realm's surface routine and the shared routine it stands in for have the same owner and name: the
+        // routine being built says which of the two it is.
+        if (candidates.Any(predicate: d => d.ResolvedInfo?.SurfaceRealm != null))
+        {
+            candidates = candidates.Where(predicate: d => d.ResolvedInfo?.SurfaceRealm == expectedSurfaceRealm)
+                                   .ToList();
+        }
 
         return FindBestCandidate(candidates: candidates,
             requireGenericSuffix: requireGenericSuffix,
@@ -3595,6 +3621,17 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             if (realmMatched.Count > 0)
             {
                 candidates = realmMatched;
+            }
+            else if (expectedOwnerRealm != TypeModel.Realms.Shared && expectedOwnerModule != null)
+            {
+                // A Suflae type never takes the body of RazorForge's same-named type: Suflae's `List` has no
+                // `destroy` of its own, and RazorForge's reads member variables Suflae's list does not have.
+                // Its routine is then built the way any routine without a written declaration is. A body
+                // written for every type (`hijack`) still applies.
+                candidates = candidates.Where(predicate: d =>
+                                            d.ResolvedInfo?.OwnerType?.FullName is not { } fn ||
+                                            TypeSymbol.StripTypeArgs(name: fn) != expectedOwnerModule)
+                                       .ToList();
             }
         }
 
@@ -3758,7 +3795,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// and the AST's bare <c>SortedSet</c> compare equal.</summary>
     private static string MatchableBaseName(string typeName)
     {
+        // A qualified spelling (`RF::Core.List[T]` is written `Core.List`) matches by its last segment.
         string baseName = StripGenericSuffix(typeName: typeName);
+        baseName = baseName[(baseName.LastIndexOf(value: '.') + 1)..];
         if (BorrowWrapperNames.Contains(item: baseName) &&
             TypeSymbol.ExtractTypeArgsString(name: typeName) is { } inner)
         {

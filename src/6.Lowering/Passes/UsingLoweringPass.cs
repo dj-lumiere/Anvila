@@ -44,12 +44,12 @@ internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
 
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => VisitStatement(stmt: r.Body));
     }
 
     public void RunOnVariantBodies()
     {
-        BodyDispatch.RunOnVariantBodies(bodies: ctx.VariantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: ctx.VariantBodies,
             lower: (_, body) => VisitStatement(stmt: body));
     }
 

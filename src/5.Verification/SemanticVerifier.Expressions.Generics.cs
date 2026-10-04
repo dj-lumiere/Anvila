@@ -540,15 +540,63 @@ public sealed partial class SemanticVerifier
         generic.LoweringKind = ClassifyConstruction(type: resolvedType);
         ZeroFillCheck.Check(constructed: resolvedType, argumentCount: generic.Arguments.Count, location: generic.Location, report: ReportError);
 
-        // For field-init style (named args matching field names), pre-compute a field-name →
-        // field-type map so literals see the field's declared type as their contextual expected type.
+        // Named arguments see the type they will land in as their expected type, so a literal adapts: the
+        // parameters of a written creator called by exactly these names (`List[Text](count: 2, fill_value:
+        // "ab")` takes an `Integer` count even though the list's `count` field is a `U64`), else the fields
+        // of a field-init.
         Dictionary<string, TypeSymbol>? fieldTypeByName =
+            BuildCreatorParameterTypeMap(generic: generic, resolvedType: resolvedType) ??
             BuildFieldTypeMap(resolvedType: resolvedType);
         List<TypeSymbol> argTypes =
             AnalyzeGenericConstructorArgs(generic: generic, fieldTypeByName: fieldTypeByName);
         return ResolveGenericConstructorResult(generic: generic,
             resolvedType: resolvedType,
             argTypes: argTypes);
+    }
+
+    /// <summary>
+    /// The parameter types of the written creators of <paramref name="resolvedType"/> whose parameter names are
+    /// exactly the call's argument names, by name. Null when the arguments are not all named, no written creator
+    /// takes those names, or the creators that do disagree on a parameter's type.
+    /// </summary>
+    private Dictionary<string, TypeSymbol>? BuildCreatorParameterTypeMap(
+        GenericMemberRoutineCallExpression generic, TypeSymbol resolvedType)
+    {
+        if (generic.Arguments.Count == 0 ||
+            !generic.Arguments.All(predicate: a => a is NamedArgumentExpression))
+        {
+            return null;
+        }
+
+        var names = generic.Arguments.Cast<NamedArgumentExpression>()
+                           .Select(selector: a => a.Name)
+                           .ToHashSet(comparer: StringComparer.Ordinal);
+        var candidates = new List<RoutineInfo>();
+        _registry.CollectCreatorCandidates(type: resolvedType, candidates: candidates);
+        candidates.AddRange(collection: _registry.GetMemberRoutinesForType(type: resolvedType)
+                                                 .Where(predicate: m => m.IsCreator));
+        Dictionary<string, TypeSymbol>? map = null;
+        foreach (RoutineInfo creator in candidates.Where(predicate: m =>
+                     !m.IsSynthesized && m.Parameters.Count == names.Count &&
+                     m.Parameters.All(predicate: p => names.Contains(item: p.Name))))
+        {
+            map ??= new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal);
+            foreach (ParamInfo parameter in creator.Parameters)
+            {
+                TypeSymbol type = resolvedType is { IsGenericResolution: true, TypeArguments: not null }
+                    ? SubstituteTypeParameters(type: parameter.Type, genericType: resolvedType)
+                    : parameter.Type;
+                if (map.TryGetValue(key: parameter.Name, value: out TypeSymbol? seen) &&
+                    seen.FullName != type.FullName)
+                {
+                    return null;
+                }
+
+                map[key: parameter.Name] = type;
+            }
+        }
+
+        return map;
     }
 
     /// <summary>
@@ -619,6 +667,7 @@ public sealed partial class SemanticVerifier
         if (creator != null && creator.Parameters.Count == argTypes.Count &&
             !creator.Parameters.Any(predicate: p => p.IsVariadicParam))
         {
+            CheckCreatorArgumentNames(arguments: generic.Arguments, creator: creator, type: resolvedType);
             generic.ResolvedRoutine = creator;
             // A failable variant arm EXTRACTOR (`Dict![Text, SerialValue](from: sv)`) resolves through this
             // generic-construction path — mint its pattern-matching body keyed off the resolved overload,

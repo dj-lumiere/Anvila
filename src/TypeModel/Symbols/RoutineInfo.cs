@@ -118,6 +118,12 @@ public sealed class RoutineInfo
                 ? baseName
                 : $"{baseName}#{string.Join(separator: ",", values: Parameters.Select(selector: p => GetTypeIdentity(type: p.Type)))}";
 
+            // A surface routine of one realm keys apart from the shared routine it stands in for.
+            if (SurfaceRealm is { } surface)
+            {
+                key = $"{surface}~{key}";
+            }
+
             // Bridged-realm owner → realm-prefixed key (ambient realm "RF" stays bare = RF byte-identical).
             if (OwnerType is { Realm: not Realms.Shared and { } r })
             {
@@ -506,6 +512,14 @@ public sealed class RoutineInfo
     /// </summary>
     public RoutineInfo? RecoveryOf { get; init; }
 
+    /// <summary>
+    /// The realm whose programs alone see this routine, or null for every program. A Suflae library file that
+    /// writes a member routine on a type both languages share (<c>routine Text.count() -> Integer</c>) gives
+    /// Suflae its own surface for the type: Suflae code calls it in place of the RazorForge routine of the same
+    /// name, and RazorForge code never sees it.
+    /// </summary>
+    public string? SurfaceRealm { get; init; }
+
     /// <summary>The recovery keyword this variant serves: <c>try</c> (Maybe[T] or Bool), <c>grab</c>
     /// (Check[T]) or <c>lookup</c> (Lookup[T]). Null for every other routine.</summary>
     public RecoveryKind? Recovery { get; init; }
@@ -615,7 +629,8 @@ public sealed class RoutineInfo
             AsyncStatus = AsyncStatus,
             FailableVariant = FailableVariant,
             RecoveryOf = RecoveryOf,
-            Recovery = Recovery
+            Recovery = Recovery,
+            SurfaceRealm = SurfaceRealm
         };
     }
 

@@ -137,7 +137,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         _instantiated = true;
         try
         {
-            BodyDispatch.RunOnInstantiatedGenericBodies(bodies: bodies,
+            BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: bodies,
                 lower: (_, entry) => TransformStatement(stmt: entry.Ast.Body));
         }
         finally

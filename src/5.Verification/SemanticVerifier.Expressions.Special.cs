@@ -511,13 +511,16 @@ public sealed partial class SemanticVerifier
     ///
     /// Used with IndexExpression for end-relative indexing: list[^1], text[^3]
     /// </remarks>
-    private TypeSymbol AnalyzeBackIndexExpression(BackIndexExpression back)
+    private TypeSymbol AnalyzeBackIndexExpression(BackIndexExpression back, TypeSymbol? expectedType)
     {
         // `^n` is pure sugar for the forward position `count - n`; it carries no runtime type of its
-        // own. Analyze the offset as U64 and report the expression's type as U64 (its lowered value).
-        // OperatorLoweringPass rewrites the enclosing subscript/slice to the free routine
-        // `back_resolve(count:, offset:)`; the `BackIndexExpression` node is the only signal it needs.
-        TypeSymbol? u64Type = _registry.LookupType(name: "U64");
+        // own. The offset is a position of the type the subscript takes (`U64`, or `Integer` for a Suflae
+        // collection), and so is the expression (its lowered value). OperatorLoweringPass rewrites the
+        // enclosing subscript/slice to the free routine `back_resolve(count:, offset:)`; the
+        // `BackIndexExpression` node is the only signal it needs.
+        TypeSymbol? u64Type = expectedType is { } position && IsIntegerType(type: position)
+            ? position
+            : _registry.LookupType(name: "U64");
         TypeSymbol operandType =
             AnalyzeExpression(expression: back.Operand, expectedType: u64Type);
 

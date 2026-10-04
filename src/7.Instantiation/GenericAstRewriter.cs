@@ -467,6 +467,15 @@ internal static class GenericAstRewriter
                 return null;
             }
 
+            using IDisposable view = Registry.ViewSurface(realm: original.SurfaceRealm);
+            return ResolveRoutineKeepingSurface(original: original, expressionType: expressionType,
+                callArgTypes: callArgTypes);
+        }
+
+        private RoutineInfo? ResolveRoutineKeepingSurface(RoutineInfo original, TypeSymbol? expressionType,
+            List<TypeSymbol>? callArgTypes)
+        {
+
             TypeSymbol? resolvedOwner = ResolveTypeForLookup(original: original.OwnerType);
             var resolvedParamTypes = original.Parameters
                                              .Select(selector: selector =>
@@ -1602,8 +1611,13 @@ internal static class GenericAstRewriter
     private static void AnnotateRewrittenExpression(Expression result, Expression expr,
         RewriteContext ctx)
     {
+        // A node the rewrite made in place of the original (a buildtime query folded to its value:
+        // `T.data_size()` becomes a `ByteSize` creator) keeps its own type when the original carries none.
+        TypeSymbol? madeType = result.GetType() != expr.GetType()
+            ? result.ResolvedType
+            : null;
         TypeSymbol? resolvedType = RefineResolvedType(
-            initial: ctx.ResolveType(original: expr.ResolvedType) ?? expr.ResolvedType,
+            initial: ctx.ResolveType(original: expr.ResolvedType) ?? expr.ResolvedType ?? madeType,
             result: result,
             expr: expr,
             ctx: ctx);

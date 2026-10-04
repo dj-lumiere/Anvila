@@ -41,7 +41,7 @@ public sealed partial class StdlibLoader
 
         if (parentProtocols.Count > 0)
         {
-            registry.UpdateProtocolParents(protocolName: registeredProto.FullName,
+            registry.UpdateProtocolParents(protocolName: registry.RealmRegistryKey(type: registeredProto),
                 parentProtocols: parentProtocols);
         }
     }
@@ -238,7 +238,7 @@ public sealed partial class StdlibLoader
             moduleName: existing.Module);
         if (members.Count > existing.MemberVariables.Count)
         {
-            registry.UpdateCrashableMemberVariables(typeName: existing.FullName,
+            registry.UpdateCrashableMemberVariables(typeName: registry.RealmRegistryKey(type: existing),
                 memberVariables: members);
         }
     }
@@ -431,6 +431,24 @@ public sealed partial class StdlibLoader
     }
 
     private static void RegisterProgramRoutines(TypeRegistry registry, Program program,
+        string moduleName, string realm)
+    {
+        // Owner and signature names prefer the file's realm: `NegativeIndexError.crash_message` in a Suflae
+        // file belongs to Suflae's `NegativeIndexError`, which RazorForge does not declare.
+        string savedRealm = registry.ResolutionRealm;
+        registry.ResolutionRealm = realm;
+        try
+        {
+            RegisterProgramRoutineDeclarations(registry: registry, program: program, moduleName: moduleName,
+                realm: realm);
+        }
+        finally
+        {
+            registry.ResolutionRealm = savedRealm;
+        }
+    }
+
+    private static void RegisterProgramRoutineDeclarations(TypeRegistry registry, Program program,
         string moduleName, string realm)
     {
         foreach (ISyntaxTreeNode node in program.Declarations)
@@ -927,6 +945,19 @@ public sealed partial class StdlibLoader
         {
             Kind = routineKind,
             OwnerType = ownerType,
+            // A member routine a non-shared realm's library writes on a type it does not own is that realm's
+            // surface: `Text.count() -> Integer` in a Suflae file is what Suflae programs call. So is a free
+            // routine of a name the shared library already declares in the module (`ask_lines`). A free routine
+            // only the realm has (`position_of`) is an ordinary one.
+            SurfaceRealm = realm != UnstampedRealm &&
+                           (ownerType is { } surfaceOwner && surfaceOwner is not GenericParameterTypeSymbol &&
+                            surfaceOwner.Realm != realm ||
+                            ownerType == null &&
+                            registry.HasSharedFreeRoutine(baseName: string.IsNullOrEmpty(value: moduleName)
+                                ? memberRoutineName
+                                : $"{moduleName}.{memberRoutineName}"))
+                ? realm
+                : null,
             MeType = meType,
             Parameters = parameters,
             ReturnType = returnType,

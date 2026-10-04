@@ -260,6 +260,19 @@ public sealed partial class SemanticVerifier
             return pinned;
         }
 
+        // A routine of the other realm's same-named type (Suflae's own `Core.List` next to RazorForge's), or a
+        // realm's surface routine on a shared type (Suflae's `Array.count() -> Integer`), shares its name with
+        // the ambient one, and the name lookups below find the ambient one. The info pinned at registration is
+        // its own.
+        if (routine.ResolvedInfo is { } realmPinned &&
+            (realmPinned.SurfaceRealm != null ||
+             realmPinned.OwnerType is { } pinnedOwner && pinnedOwner.Realm != _registry.AmbientRealm))
+        {
+            // The registry holds the info as later passes completed it (a signature resolved again once every
+            // type was known), under the same key.
+            return _registry.GetRoutineByExactKey(registryKey: realmPinned.RegistryKey) ?? realmPinned;
+        }
+
         RoutineInfo? routineInfo = ResolveRoutineInfoByRegistryKey(routine: routine,
             baseName: baseName,
             routineOwnerType: routineOwnerType,

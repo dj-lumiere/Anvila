@@ -36,13 +36,13 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
     /// <summary>Lowers Roamed receiver projections across a whole program.</summary>
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => VisitStatement(stmt: r.Body));
     }
 
     /// <summary>Lowers Roamed receiver projections in synthesized variant bodies.</summary>
     public void RunOnVariantBodies()
     {
-        BodyDispatch.RunOnVariantBodies(bodies: ctx.VariantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: ctx.VariantBodies,
             lower: (_, body) => VisitStatement(stmt: body));
     }
 
@@ -107,12 +107,62 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
         Expression innerRecv = MakeControlCall(receiver: member.Object,
             receiverType: receiverType,
             innerType: roamProj.InnerType);
-        if (ReferenceEquals(objA: innerRecv, objB: member.Object))
+        CallExpression projected = ReferenceEquals(objA: innerRecv, objB: member.Object)
+            ? call
+            : call with { Callee = member with { Object = innerRecv } };
+        return ProjectRoamedArguments(call: projected, routine: roamProj.MemberRoutine);
+    }
+
+    // The inner routine takes bare entities, so an argument holding a handle (`zs` in `ys == zs`, which
+    // becomes `ys.eq(you: zs)` only now) is projected the same way as the receiver: to the entity itself
+    // when the parameter is that entity or an `Accessing`/`Controlling` token over it.
+    private CallExpression ProjectRoamedArguments(CallExpression call, RoutineInfo routine)
+    {
+        List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
+        bool changed = false;
+        var arguments = new List<Expression>(capacity: call.Arguments.Count);
+        for (int i = 0; i < call.Arguments.Count; i++)
         {
-            return call;
+            Expression argument = call.Arguments[index: i];
+            ParamInfo? parameter = argument is NamedArgumentExpression named
+                ? parameters.FirstOrDefault(predicate: p => p.Name == named.Name)
+                : i < parameters.Count
+                    ? parameters[index: i]
+                    : null;
+            Expression value = argument is NamedArgumentExpression namedValue
+                ? namedValue.Value
+                : argument;
+            if (BareEntityOf(type: parameter?.Type) is not { } entity || value.ResolvedType is not { } handleType ||
+                TypeRegistry.GetRcWrapperBaseName(type: handleType) != RuntimeContract.Roamed)
+            {
+                arguments.Add(item: argument);
+                continue;
+            }
+
+            Expression inner = MakeControlCall(receiver: value, receiverType: handleType, innerType: entity);
+            arguments.Add(item: argument is NamedArgumentExpression wrapped
+                ? wrapped with { Value = inner }
+                : inner);
+            changed |= !ReferenceEquals(objA: inner, objB: value);
         }
 
-        return call with { Callee = member with { Object = innerRecv } };
+        return changed
+            ? call with { Arguments = arguments }
+            : call;
+    }
+
+    // The bare entity a parameter takes: its own type, or the entity an `Accessing`/`Controlling` token over
+    // one stands for.
+    private static EntityTypeSymbol? BareEntityOf(TypeSymbol? type)
+    {
+        return type switch
+        {
+            EntityTypeSymbol entity => entity,
+            ProtocolTypeSymbol { TypeArguments: [EntityTypeSymbol tokenEntity] } token
+                when (token.GenericDefinition ?? token).BareName is RuntimeContract.Accessing
+                    or RuntimeContract.Controlling => tokenEntity,
+            _ => null
+        };
     }
 
     // Build `receiver.control()` : the inner entity, via the Controlling marker-protocol deref (Roamed

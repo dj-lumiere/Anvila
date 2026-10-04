@@ -179,7 +179,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     /// </summary>
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(program: program, lower: LowerCopyRoutineBody);
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: LowerCopyRoutineBody);
     }
 
     /// <summary>
@@ -199,7 +199,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     /// </summary>
     public void RunOnVariantBodies()
     {
-        BodyDispatch.RunOnVariantBodies(bodies: ctx.VariantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: ctx.VariantBodies,
             lower: (key, body) =>
             {
                 // A variant's deep `copy` body (BuildVariantCopyBody) has an `else => return me` arm for
@@ -227,7 +227,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     public void RunOnInstantiatedGenericBodies(
         Dictionary<string, MonomorphizedBody> instantiatedGenericBodies)
     {
-        BodyDispatch.RunOnInstantiatedGenericBodies(bodies: instantiatedGenericBodies,
+        BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: instantiatedGenericBodies,
             lower: (key, entry) =>
             {
                 _inCopyRoutine = IsCopyVerbRoutine(nameOrKey: key);
