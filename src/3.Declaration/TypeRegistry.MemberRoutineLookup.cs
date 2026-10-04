@@ -1588,6 +1588,32 @@ public sealed partial class TypeRegistry
     /// </summary>
     public Func<RoutineInfo, bool>? EnsureRecoveryVariants { get; set; }
 
+    /// <summary>
+    /// Verifier-installed hook: whether a routine that is not failable can still fail beneath a call of it
+    /// (a user routine whose body divides by zero, overflows, indexes out of range or calls a failable
+    /// routine bare). Under <c>try</c>/<c>grab</c>/<c>lookup</c> such a call goes through the routine's own
+    /// recovery variant, so its failure is recovered instead of crashing.
+    /// </summary>
+    public Func<RoutineInfo, bool>? MayFailBeneath { get; set; }
+
+    /// <summary>
+    /// Whether a call of <paramref name="routine"/> made beneath a recovery keyword has a failure to
+    /// recover: the routine is failable (declared or inferred), or it can fail beneath its call
+    /// (<see cref="MayFailBeneath"/>).
+    /// </summary>
+    public bool CanFailUnderRecovery(RoutineInfo? routine)
+    {
+        return routine is { IsFailable: true } or { HasThrow: true } or { HasAbsent: true } ||
+               routine != null && MayFailBeneath?.Invoke(arg: routine) == true;
+    }
+
+    /// <summary>
+    /// Routines lifted from the lambdas of recovery variant bodies, waiting for the program of the file
+    /// they were written in. Variant bodies are lowered before the programs, and a lifted routine is an
+    /// ordinary declaration of its program, so the program's own lambda lifting takes them over.
+    /// </summary>
+    public List<SyntaxTree.RoutineDeclaration> PendingLiftedLambdas { get; } = [];
+
     /// <summary>Recovery variants by the registry key of the failable routine they recover and their
     /// kind. Rebuilt from <see cref="_routines"/> when a snapshot is restored.</summary>
     private readonly Dictionary<(string Recovered, RecoveryKind Kind), RoutineInfo> _recoveryVariants = new();

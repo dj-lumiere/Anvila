@@ -82,10 +82,14 @@ public sealed class ErrorHandlingGenerator
     /// stub variants exist by name for SA resolution. <see cref="ErrorHandlingVariantPass"/>
     /// later refines them after fixpoint propagation.
     /// </summary>
+    /// <param name="everyKind">Generate try, grab and lookup whatever the body's own throw/absent say, and
+    /// accept a routine that is not failable. A user routine gets every kind: what can fail beneath it (a
+    /// checked operator, a subscript, a call of a routine that is not failable but fails beneath its own call)
+    /// is only known once its body is built, and each keyword must keep that failure's error.</param>
     public ErrorHandlingResult GenerateVariants(RoutineInfo routine, Statement body,
-        bool pessimistic)
+        bool pessimistic, bool everyKind = false)
     {
-        if (!routine.IsFailable)
+        if (!routine.IsFailable && !everyKind)
         {
             return ErrorHandlingResult.Empty;
         }
@@ -106,7 +110,7 @@ public sealed class ErrorHandlingGenerator
         }
 
         // Phase 2: Variant Generation
-        List<GeneratedVariant> variants = BuildVariants(routine: routine, analysis: analysis);
+        List<GeneratedVariant> variants = BuildVariants(routine: routine, analysis: analysis, everyKind: everyKind);
 
         return new ErrorHandlingResult
         {
@@ -163,10 +167,12 @@ public sealed class ErrorHandlingGenerator
 
     /// <summary>
     /// Phase 2: builds the list of wrapper variants (try always; grab for throw-only;
-    /// lookup for throw+absent) for a failable routine from its <paramref name="analysis"/>.
+    /// lookup for throw+absent) for a failable routine from its <paramref name="analysis"/>. With
+    /// <paramref name="everyKind"/> (a routine recovered beneath its call, whose failures are only known once its
+    /// body is built) all three are generated: its grab turns an absence beneath it into AbsentValueError.
     /// </summary>
     private List<GeneratedVariant> BuildVariants(RoutineInfo routine,
-        ErrorHandlingAnalysis analysis)
+        ErrorHandlingAnalysis analysis, bool everyKind = false)
     {
         var variants = new List<GeneratedVariant>();
 
@@ -176,7 +182,7 @@ public sealed class ErrorHandlingGenerator
             Routine: tryVariant));
 
         // grab variant if only throw (no absent)
-        if (analysis is { HasThrow: true, HasAbsent: false })
+        if (analysis is { HasThrow: true, HasAbsent: false } || everyKind)
         {
             RoutineInfo checkVariant = GenerateCheckVariant(original: routine);
             variants.Add(item: new GeneratedVariant(Kind: ErrorHandlingVariantKind.Check,
@@ -184,7 +190,7 @@ public sealed class ErrorHandlingGenerator
         }
 
         // lookup variant if both throw and absent
-        if (analysis is { HasThrow: true, HasAbsent: true })
+        if (analysis is { HasThrow: true, HasAbsent: true } || everyKind)
         {
             RoutineInfo lookupVariant = GenerateLookupVariant(original: routine);
             // Lookup[None] degenerates to grab (Result[None]) when the return type is None:

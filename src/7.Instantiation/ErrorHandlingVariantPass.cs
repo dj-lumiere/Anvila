@@ -1,4 +1,5 @@
 using Builder.Desugaring;
+using Builder.Lowering.Passes;
 using Builder.Declaration;
 using SyntaxTree;
 using TypeModel.Enums;
@@ -335,9 +336,19 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         TypeRegistry registry)
     {
         ErrorHandlingVariantKind kind = DetermineVariantKind(variant: variant);
-        Statement variantSourceBody = GenericAstRewriter.RewriteStatement(
-            stmt: baseBody,
-            subs: new Dictionary<string, string>());
+        // Checked operators and subscripts in the body are failable calls too: spell them out before the
+        // propagation below, so their failures become this variant's carrier instead of a crash.
+        Statement variantSourceBody = FailurePointCalls.Resolve(
+            body: GenericAstRewriter.RewriteStatement(stmt: baseBody, subs: new Dictionary<string, string>()),
+            registry: registry);
+        // A grab carrier has no absent state: an `absent` in the body is caught as AbsentValueError, the same
+        // error an absence beneath a grab becomes.
+        if (variant.Routine.Recovery == RecoveryKind.Grab &&
+            registry.LookupType(name: "AbsentValueError") is { } absentError)
+        {
+            variantSourceBody = new AbsentAsThrow(absentError: absentError).VisitStatement(stmt: variantSourceBody);
+        }
+
         return TransformBody(body: variantSourceBody,
             kind: kind,
             rewriter: MakeOnDemandVariantRewriter(registry: registry),
@@ -365,8 +376,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             RecoveryKind recovery = ToRecovery(kind: kind);
             switch (value)
             {
-                case CallExpression { ResolvedRoutine: { IsFailable: true } callee } call
-                    when registry.LookupRecoveryVariant(recovered: callee, kind: recovery) is { } variant:
+                case CallExpression { ResolvedRoutine: { } callee } call
+                    when registry.CanFailUnderRecovery(routine: callee) &&
+                         registry.LookupRecoveryVariant(recovered: callee, kind: recovery) is { } variant:
                     rewritten = BindToVariant(call: call, variant: variant);
                     return true;
                 case CreatorExpression { ResolvedCreatorRoutine: { IsFailable: true } creatorRoutine } creator
@@ -470,6 +482,58 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Value: vcall,
                 Location: ret.Location),
 
+            // `return if c then a else b` with a failure in a branch: each branch returns on its own, so the
+            // failable call is split out only on the path that evaluates it.
+            ReturnStatement { Value: ConditionalExpression conditional } ret when registry != null && !nextOnly &&
+                (HasPropagatableFailure(expr: conditional.TrueExpression, registry: registry) ||
+                 HasPropagatableFailure(expr: conditional.FalseExpression, registry: registry)) =>
+                TransformBodyCore(body: new IfStatement(Condition: conditional.Condition,
+                        ThenStatement: new BlockStatement(
+                            Statements: [ret with { Value = conditional.TrueExpression }],
+                            Location: ret.Location),
+                        ElseStatement: new BlockStatement(
+                            Statements: [ret with { Value = conditional.FalseExpression }],
+                            Location: ret.Location),
+                        Location: ret.Location),
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly),
+
+            // A loop condition re-runs every iteration, so a failure in it cannot be split out ahead of the loop:
+            // `while c` becomes `loop` over `if c then <body> else break`, whose condition is split out like
+            // any other `if` condition, each time it runs. (A `while … else` keeps its form: its `else` runs
+            // only when the condition ends the loop, which `break` would not tell apart.)
+            WhileStatement { ElseBranch: null } ws when registry != null && !nextOnly &&
+                                                        HasPropagatableFailure(expr: ws.Condition,
+                                                            registry: registry) =>
+                TransformBodyCore(body: new LoopStatement(Body: new BlockStatement(Statements:
+                        [
+                            new IfStatement(Condition: ws.Condition,
+                                ThenStatement: ws.Body,
+                                ElseStatement: new BlockStatement(Statements: [new BreakStatement(Location: ws.Location)],
+                                    Location: ws.Location),
+                                Location: ws.Location)
+                        ],
+                        Location: ws.Location),
+                        Location: ws.Location),
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly),
+
+            // A tail call whose callee has no variant of this kind (`return f()` in a grab variant, f able to
+            // go absent but not throw): bind it to a temp so the statement propagation below picks the
+            // callee's best variant and maps its failure onto this carrier.
+            ReturnStatement { Value: CallExpression tailCall } ret when registry != null && !nextOnly &&
+                                                                    registry.CanFailUnderRecovery(
+                                                                        routine: tailCall.ResolvedRoutine) =>
+                TransformBodyCore(body: SplitTailCall(ret: ret, call: tailCall),
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly),
+
             ReturnStatement ret => new VariantReturnStatement(VariantKind: kind,
                 SiteKind: VariantSiteKind.FromReturn,
                 Value: ret.Value,
@@ -541,6 +605,54 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
             _ => body // All other statements pass through unchanged
         };
+    }
+
+    /// <summary>Whether an always-evaluated part of <paramref name="expr"/> calls something that can fail
+    /// under recovery.</summary>
+    private static bool HasPropagatableFailure(Expression expr, TypeRegistry registry)
+    {
+        var scan = new NestedFailableHoister(
+            propagates: call => registry.CanFailUnderRecovery(routine: call.ResolvedRoutine),
+            hoistUpTo: -1,
+            skipIndex: -1);
+        scan.VisitExpression(expr: expr);
+        return scan.CallIsFailable.Contains(item: true);
+    }
+
+    /// <summary>Rewrites each <c>absent</c> into <c>throw AbsentValueError()</c>.</summary>
+    private sealed class AbsentAsThrow(TypeSymbol absentError) : AstRewriter
+    {
+        public override Statement VisitStatement(Statement stmt)
+        {
+            return stmt is AbsentStatement absent
+                ? new ThrowStatement(Error: new CreatorExpression(TypeName: absentError.Name,
+                        TypeArguments: null,
+                        MemberVariables: [],
+                        Location: absent.Location) { ResolvedType = absentError },
+                    Location: absent.Location)
+                : base.VisitStatement(stmt: stmt);
+        }
+    }
+
+    /// <summary><c>return f()</c> as <c>var __rf_tail_N = f()</c> then <c>return __rf_tail_N</c> (an entity
+    /// result is moved out of the temp with <c>steal</c>).</summary>
+    private static BlockStatement SplitTailCall(ReturnStatement ret, CallExpression call)
+    {
+        string tempName = $"__rf_tail_{Interlocked.Increment(location: ref _hoistTemp)}";
+        var decl = new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
+                Type: null,
+                Initializer: call,
+                Visibility: VisibilityModifier.Secret,
+                Location: ret.Location),
+            Location: ret.Location);
+        var reference = new IdentifierExpression(Name: tempName, Location: ret.Location)
+        {
+            ResolvedType = call.ResolvedType
+        };
+        Expression value = call.ResolvedType?.Category == TypeCategory.Entity
+            ? new StealExpression(Operand: reference, Location: ret.Location) { ResolvedType = call.ResolvedType }
+            : reference;
+        return new BlockStatement(Statements: [decl, ret with { Value = value }], Location: ret.Location);
     }
 
     private static IfStatement TransformIf(IfStatement ifs, ErrorHandlingVariantKind kind,
@@ -767,9 +879,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// before either branch). Inside an expression, conditionally evaluated operands are never hoisted
     /// ahead of their condition: an <c>and</c>/<c>or</c> whose right side holds a failable call is lowered to
     /// <c>var t = left</c> plus an <c>if</c> that assigns the right side only when it would run, so that call
-    /// is split out inside the branch. The right side of <c>??</c>, the branches of a conditional
-    /// expression, the third and later operands of a chained comparison, and loop conditions (which re-run
-    /// every iteration) are left as they are.
+    /// is split out inside the branch. The fallback of <c>??</c> is lowered the same way, to a <c>when</c> over
+    /// the carrier that evaluates it only in the arm without a value. The branches of a conditional return and
+    /// a loop condition (which re-runs every iteration) are reshaped by <see cref="TransformBodyCore"/> instead.
+    /// The third and later operands of a chained comparison are left as they are.
     ///
     /// Evaluation order is preserved: every call evaluated up to the LAST nested failable call is hoisted in
     /// evaluation order, failable or not, so a plain call that ran before the failable one still does. A
@@ -800,12 +913,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         bool Propagates(CallExpression call)
         {
             RoutineInfo? rr = call.ResolvedRoutine;
-            if (rr == null || !(rr.IsFailable || rr.HasThrow || rr.HasAbsent))
+            if (!registry!.CanFailUnderRecovery(routine: rr))
             {
                 return false;
             }
 
-            return !nextOnly || rr.Name == "emit";
+            return !nextOnly || rr!.Name == "emit";
         }
 
         (Expression? root, bool keepRootCall) = stmt switch
@@ -928,9 +1041,14 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             // Short-circuit: only the left operand always runs.
             Expression left = VisitExpression(expr: e.Left);
             Expression kept = ReferenceEquals(objA: left, objB: e.Left) ? e : e with { Left = left };
-            if (e.Operator == BinaryOperator.NoneCoalesce || !RightHasFailable(right: e.Right))
+            if (!RightHasFailable(right: e.Right))
             {
                 return kept;
+            }
+
+            if (e.Operator == BinaryOperator.NoneCoalesce)
+            {
+                return HoistCoalesce(e: e, left: left, kept: kept);
             }
 
             // `and` / `or` with a failable call on the right: the right side counts as one failable step in
@@ -966,6 +1084,73 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     ElseStatement: assignRight,
                     Location: loc));
             return Ref();
+        }
+
+        /// <summary>
+        /// <c>carrier ?? fallback</c> with a failable call in the fallback, which runs only when the carrier
+        /// holds no value. Lowered to statements so the fallback's call is split out inside that branch:
+        /// <code>
+        /// var __rf_car_N = carrier
+        /// var __rf_lazy_N: T         (late-initialized)
+        /// when __rf_car_N
+        ///   is T v => __rf_lazy_N = v
+        ///   else => __rf_lazy_N = fallback
+        /// </code>
+        /// </summary>
+        private Expression HoistCoalesce(BinaryExpression e, Expression left, Expression kept)
+        {
+            if (e.ResolvedType is not { } valueType || left.ResolvedType is not { } carrierType)
+            {
+                return kept;
+            }
+
+            int index = _index++;
+            CallIsFailable.Add(item: true);
+            if (index > hoistUpTo || index == skipIndex)
+            {
+                return kept;
+            }
+
+            int n = Interlocked.Increment(location: ref _hoistTemp);
+            string carrierName = $"__rf_car_{n}";
+            string resultName = $"__rf_lazy_{n}";
+            string valueName = $"__rf_val_{n}";
+            SourceLocation loc = e.Location;
+            Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: carrierName,
+                    Type: null,
+                    Initializer: left,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: loc),
+                Location: loc));
+            Hoisted.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: resultName,
+                    Type: ExpressionLoweringPass.TypeInfoToExpr(type: valueType, loc: loc),
+                    Initializer: null,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: loc,
+                    IsLateInit: true),
+                Location: loc));
+            IdentifierExpression Result() => new(Name: resultName, Location: loc) { ResolvedType = valueType };
+            Hoisted.Add(item: new WhenStatement(
+                Expression: new IdentifierExpression(Name: carrierName, Location: loc) { ResolvedType = carrierType },
+                Clauses:
+                [
+                    new WhenClause(Pattern: new TypePattern(
+                            Type: ExpressionLoweringPass.TypeInfoToExpr(type: valueType, loc: loc),
+                            VariableName: valueName,
+                            Bindings: null,
+                            Location: loc),
+                        Body: new AssignmentStatement(Target: Result(),
+                            Value: new IdentifierExpression(Name: valueName, Location: loc) { ResolvedType = valueType },
+                            Location: loc),
+                        Location: loc),
+                    new WhenClause(Pattern: new ElsePattern(VariableName: null, Location: loc),
+                        Body: new BlockStatement(
+                            Statements: [new AssignmentStatement(Target: Result(), Value: e.Right, Location: loc)],
+                            Location: loc),
+                        Location: loc)
+                ],
+                Location: loc));
+            return Result();
         }
 
         // Whether a conditionally evaluated operand holds a propagatable failable call anywhere.
@@ -1032,12 +1217,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             case DeclarationStatement
             {
                 Declaration: VariableDeclaration { Initializer: CallExpression ce } vd
-            } when ce.ResolvedRoutine is { IsFailable: true }:
+            } when registry.CanFailUnderRecovery(routine: ce.ResolvedRoutine):
                 failCall = ce;
                 bindName = vd.Name;
                 break;
             case ExpressionStatement { Expression: CallExpression ce2 }
-                when ce2.ResolvedRoutine is { IsFailable: true }:
+                when registry.CanFailUnderRecovery(routine: ce2.ResolvedRoutine):
                 failCall = ce2;
                 bindName = null;
                 break;
@@ -1176,12 +1361,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             case DeclarationStatement
             {
                 Declaration: VariableDeclaration { Initializer: CallExpression ce } vd
-            } when ce.ResolvedRoutine is { IsFailable: true }:
+            } when registry.CanFailUnderRecovery(routine: ce.ResolvedRoutine):
                 failCall = ce;
                 bindName = vd.Name;
                 break;
             case ExpressionStatement { Expression: CallExpression ce2 }
-                when ce2.ResolvedRoutine is { IsFailable: true }:
+                when registry.CanFailUnderRecovery(routine: ce2.ResolvedRoutine):
                 failCall = ce2;
                 bindName = null;
                 break;
@@ -1328,9 +1513,29 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Location: loc));
         }
 
+        // The success value stays the carrier's (its teardown frees it), so the remainder takes a copy of its own:
+        // the arm binds the payload as read, and `var x = <payload>` is an ordinary initialization the copy pass
+        // gives a share (as the try propagation's `var x = __rf_prop.value`). Binding `x` straight to the payload
+        // left a value the carrier freed under a returned or consumed `x`.
+        string? payloadName = bindName != null
+            ? $"__rc_ok_{Interlocked.Increment(location: ref _propTemp)}"
+            : null;
+        List<Statement> body = bindName == null
+            ? remainder
+            :
+            [
+                new DeclarationStatement(
+                    Declaration: new VariableDeclaration(Name: bindName,
+                        Type: null,
+                        Initializer: new IdentifierExpression(Name: payloadName!, Location: loc),
+                        Visibility: VisibilityModifier.Secret,
+                        Location: loc),
+                    Location: loc),
+                .. remainder
+            ];
         clauses.Add(item: new WhenClause(
-            Pattern: new ElsePattern(VariableName: bindName, Location: loc),
-            Body: new BlockStatement(Statements: remainder, Location: loc),
+            Pattern: new ElsePattern(VariableName: payloadName, Location: loc),
+            Body: new BlockStatement(Statements: body, Location: loc),
             Location: loc));
 
         var when = new WhenStatement(Expression: SubjRef(), Clauses: clauses, Location: loc);

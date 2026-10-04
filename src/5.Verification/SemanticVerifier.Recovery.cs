@@ -1,5 +1,6 @@
 using Builder.Declaration;
 using Builder.Diagnostics;
+using Builder.Instantiation;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -95,7 +96,10 @@ public sealed partial class SemanticVerifier
             VariableInfo? local = _registry.LookupVariable(name: name);
             if (local != null)
             {
-                freeParams.Add(item: new ParamInfo(name: name, type: local.Type));
+                // A parameter is a slot like any written one: in Suflae an entity local is passed as its
+                // Roamed handle (the local itself is retyped to it later), so the slot takes that type too.
+                freeParams.Add(item: new ParamInfo(name: name,
+                    type: _typeResolver.RoamInferredSlot(inferred: local.Type)));
             }
         }
 
@@ -334,9 +338,11 @@ public sealed partial class SemanticVerifier
             // A sub-call is failable when its resolved routine is failable. IsFailable is only DERIVED from
             // HasThrow/HasAbsent by a later pass, so during Phase-5 an INFERRED-failable callee (a body that
             // `throw`/`absent`s with no explicit `!`, already analyzed before this call site) carries
-            // HasThrow/HasAbsent but not yet IsFailable — check all three.
+            // HasThrow/HasAbsent but not yet IsFailable: CanFailUnderRecovery checks all three, and also takes
+            // a user routine that is not failable but can fail beneath its call (a checked operator or a bare
+            // failable call in its body), which is recovered through its own variant.
             if (rewritten is not CallExpression { ResolvedRoutine: { } rr } call ||
-                !(rr.IsFailable || rr.HasThrow || rr.HasAbsent))
+                !registry.CanFailUnderRecovery(routine: rr))
             {
                 return rewritten;
             }
@@ -348,74 +354,38 @@ public sealed partial class SemanticVerifier
         /// A checked-arithmetic operator (<c>+ - * / // % **</c>) dispatches to a failable member routine
         /// (<c>add</c>/<c>sub</c>/… throw on overflow / divide-by-zero), so `try a + b` must recover the
         /// overflow just like `try a.add(b)` would. The operator→member-call lowering normally happens at
-        /// Phase 6 (OperatorLoweringPass), AFTER this Phase-5 hoist — so here we resolve + build the same
-        /// failable member call from the already-analyzed operands and hoist it. Non-arithmetic operators,
-        /// and arithmetic on non-failable types (float add never overflows to a crash; text `+` is
-        /// concatenation), are left as a plain <see cref="BinaryExpression"/> for the normal Phase-6 path.
+        /// Phase 6 (OperatorLoweringPass), AFTER this Phase-5 hoist, so the same failable member call is
+        /// built here from the already-analyzed operands (<see cref="FailurePointCalls"/>) and hoisted.
+        /// An operator whose routine cannot fail (wrapping, float, text concatenation, comparison) is left
+        /// as a plain <see cref="BinaryExpression"/> for the normal Phase-6 path.
         /// </summary>
         protected override Expression VisitBinary(BinaryExpression e)
         {
             // Rewrite operands first (post-order = left→right eval order) so any inner failable calls hoist.
             Expression rewritten = base.VisitBinary(e: e);
-            if (rewritten is not BinaryExpression bin)
-            {
-                return rewritten;
-            }
+            return rewritten is BinaryExpression bin && FailurePointCalls.ForBinary(bin: bin, registry: registry) is
+                { } call
+                ? HoistFailable(call: call)
+                : rewritten;
+        }
 
-            // Only the CHECKED arithmetic operators can throw. Wrapping/clamping/unchecked never do; the
-            // rest (comparison, bitwise, shift, logical, membership, assign) are not arithmetic.
-            if (bin.Operator is not (BinaryOperator.Add or BinaryOperator.Subtract
-                or BinaryOperator.Multiply or BinaryOperator.TrueDivide or BinaryOperator.FloorDivide
-                or BinaryOperator.Modulo or BinaryOperator.Power))
-            {
-                return bin;
-            }
+        /// <summary>A checked negation (<c>-x</c> of the type's minimum) is a failable call, as above.</summary>
+        protected override Expression VisitUnary(UnaryExpression e)
+        {
+            Expression rewritten = base.VisitUnary(e: e);
+            return rewritten is UnaryExpression unary &&
+                   FailurePointCalls.ForUnary(unary: unary, registry: registry) is { } call
+                ? HoistFailable(call: call)
+                : rewritten;
+        }
 
-            if (bin.Operator.GetMemberRoutineName() is not { } opMethod ||
-                bin.Left.ResolvedType is not { } leftType || bin.Right.ResolvedType is not { } rightType)
-            {
-                return bin;
-            }
-
-            // Resolve the operator's member routine on the left operand (mirrors OperatorLoweringPass'
-            // ResolveBinaryOperatorRoutine). Only hoist when it actually fails (throw/absent); a non-failable
-            // arithmetic type keeps the plain binary for the Phase-6 lowering.
-            RoutineInfo? opRoutine =
-                registry.LookupMemberRoutineOverload(type: leftType,
-                    memberRoutineName: opMethod,
-                    argTypes: [rightType]) ??
-                registry.LookupMemberRoutine(type: leftType,
-                    memberRoutineName: opMethod,
-                    isFailable: true);
-            if (opRoutine is null || !(opRoutine.IsFailable || opRoutine.HasThrow || opRoutine.HasAbsent))
-            {
-                return bin;
-            }
-
-            // Build the resolved failable member call `left.<op>(paramName: right)` — the exact shape
-            // OperatorLoweringPass emits — so the composition machinery treats it as an ordinary hoisted
-            // failable call.
-            string paramName = opRoutine.Parameters.Count > 0
-                ? opRoutine.Parameters[index: 0].Name
-                : "you";
-            var callee = new MemberExpression(Object: bin.Left,
-                MemberName: opMethod,
-                Location: bin.Location) { IsFailable = true };
-            var call = new CallExpression(Callee: callee,
-                Arguments:
-                [
-                    new NamedArgumentExpression(Name: paramName,
-                        Value: bin.Right,
-                        Location: bin.Location)
-                ],
-                Location: bin.Location)
-            {
-                ResolvedType = bin.ResolvedType,
-                ResolvedRoutine = opRoutine,
-                LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: opRoutine)
-            };
-
-            return HoistFailable(call: call);
+        /// <summary>An element read (<c>xs[i]</c>) is a failable <c>getitem</c> call, as above.</summary>
+        protected override Expression VisitIndex(IndexExpression e)
+        {
+            Expression rewritten = base.VisitIndex(e: e);
+            return rewritten is IndexExpression idx && FailurePointCalls.ForIndex(idx: idx) is { } call
+                ? HoistFailable(call: call)
+                : rewritten;
         }
 
         /// <summary>Hoists a resolved failable call into a fresh <c>var __rc_tN = call</c> and returns a

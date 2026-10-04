@@ -94,6 +94,9 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
     /// </summary>
     public void RunGlobal()
     {
+        // Lift the lambdas of variant bodies first, as Run does for a program (their routines join their
+        // file's program when it is lowered).
+        new LambdaLiftingPass(ctx: ctx).RunOnVariantBodies();
         ctx.Registry.CompilationRules.LowerFirstInVariantBodies(ctx: ctx);
         new VariantReturnLoweringPass(ctx: ctx).RunOnVariantBodies();
         new LiteralLoweringPass(ctx: ctx).RunOnVariantBodies();

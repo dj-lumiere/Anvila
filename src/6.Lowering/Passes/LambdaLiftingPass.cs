@@ -19,6 +19,12 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
     private readonly List<RoutineDeclaration> _liftedRoutines = [];
     private string? _currentModuleName;
 
+    /// <summary>Set while lifting the lambdas of a recovery variant body, so the routines lifted from it never
+    /// share a name with the ones lifted from the routine's own body (each run numbers from zero).</summary>
+    private string _nameTag = "";
+
+    private static int _variantLiftRuns;
+
     public void Run(Program program)
     {
         _currentModuleName = program.Declarations
@@ -62,6 +68,93 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         foreach (RoutineDeclaration lifted in _liftedRoutines)
         {
             program.Declarations.Add(item: lifted);
+        }
+
+        // The routines lifted earlier from the lambdas of recovery variant bodies (RunOnVariantBodies) join
+        // the program of the file they were written in, so every pass below lowers them like these.
+        AdoptPendingVariantLambdas(program: program);
+    }
+
+    /// <summary>
+    /// Lifts the lambdas of the recovery variant bodies (a variant body is built from its routine's analyzed
+    /// body before any lambda is lifted, so it holds the lambdas itself). The lifted routines wait in
+    /// <see cref="TypeRegistry.PendingLiftedLambdas"/> for their file's program (see <see cref="Run"/>).
+    /// </summary>
+    public void RunOnVariantBodies()
+    {
+        foreach (string key in ctx.VariantBodies.Keys.ToList())
+        {
+            Statement body = ctx.VariantBodies[key: key];
+            if (!LambdaFinder.Contains(body: body) ||
+                ctx.Registry.GetRoutineByExactKey(registryKey: key) is not { } variant)
+            {
+                continue;
+            }
+
+            _liftedRoutines.Clear();
+            _currentModuleName = variant.Module;
+            _nameTag = $"_r{Interlocked.Increment(location: ref _variantLiftRuns)}";
+            bool includeMe = variant.OwnerType != null;
+            var scope = new HashSet<string>(collection: variant.Parameters.Select(selector: p => p.Name),
+                comparer: StringComparer.Ordinal);
+            if (includeMe)
+            {
+                scope.Add(item: "me");
+            }
+
+            ctx.VariantBodies[key: key] = RewriteStatement(statement: body,
+                scope: scope,
+                inheritedGenericParameters: variant.GenericParameters,
+                inheritedGenericConstraints: variant.GenericConstraints,
+                includeMe: includeMe);
+            ctx.Registry.PendingLiftedLambdas.AddRange(collection: _liftedRoutines);
+        }
+
+        _nameTag = "";
+        _liftedRoutines.Clear();
+    }
+
+    /// <summary>Moves the pending lifted routines written in one of this program's files into it.</summary>
+    private void AdoptPendingVariantLambdas(Program program)
+    {
+        List<RoutineDeclaration> pending = ctx.Registry.PendingLiftedLambdas;
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        var files = program.Declarations
+                           .Select(selector: d => d.Location.FileName)
+                           .ToHashSet(comparer: StringComparer.Ordinal);
+        foreach (RoutineDeclaration lifted in pending.Where(predicate: r => files.Contains(item: r.Location.FileName))
+                                                    .ToList())
+        {
+            program.Declarations.Add(item: lifted);
+            pending.Remove(item: lifted);
+        }
+    }
+
+    /// <summary>Whether a body holds a lambda anywhere.</summary>
+    private sealed class LambdaFinder : AstRewriter
+    {
+        private bool _found;
+
+        public static bool Contains(Statement body)
+        {
+            var finder = new LambdaFinder();
+            finder.VisitStatement(stmt: body);
+            return finder._found;
+        }
+
+        public override Expression VisitExpression(Expression expr)
+        {
+            if (_found || expr is LambdaExpression)
+            {
+                _found = true;
+                return expr;
+            }
+
+            return base.VisitExpression(expr: expr);
         }
     }
 
@@ -869,7 +962,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         }
 
         string liftedName =
-            $"__lambda_{lambda.Location.Line}_{lambda.Location.Column}_{_lambdaCounter++}";
+            $"__lambda_{lambda.Location.Line}_{lambda.Location.Column}{_nameTag}_{_lambdaCounter++}";
         var genericParameters = inheritedGenericParameters?.ToList();
         var genericConstraints = inheritedGenericConstraints?.ToList();
 
@@ -977,7 +1070,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             CollectCaptureTypesFromBody(body: lambda.Body, captureNames: captureNames);
 
         string liftedName =
-            $"__lambda_{lambda.Location.Line}_{lambda.Location.Column}_{_lambdaCounter++}";
+            $"__lambda_{lambda.Location.Line}_{lambda.Location.Column}{_nameTag}_{_lambdaCounter++}";
         var genericParameters = inheritedGenericParameters?.ToList();
         var genericConstraints = inheritedGenericConstraints?.ToList();
 

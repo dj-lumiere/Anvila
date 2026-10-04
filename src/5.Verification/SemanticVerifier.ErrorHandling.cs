@@ -53,6 +53,9 @@ public sealed partial class SemanticVerifier
     /// </summary>
     internal void PreRegisterUserVariants(Program program)
     {
+        // A user routine that is not failable is recovered through its own variant when it can fail beneath
+        // its call (see _recoverableUserBodies).
+        _registry.MayFailBeneath = MayFailBeneathForRecovery;
         var generator = new ErrorHandlingGenerator(registry: _registry);
         string? currentModule = GetCurrentModuleName();
 
@@ -63,16 +66,26 @@ public sealed partial class SemanticVerifier
             // routine that is `!`-marked OR whose body directly `throw`/`absent`s, so its recovery variants
             // exist for a `try`/`grab`/`lookup` call resolving during Phase-5. (Purely-propagated failability
             // — no direct throw/absent — is still finalized by the Phase-7 fixpoint.)
-            if (node is not RoutineDeclaration routineDecl || routineDecl.Body == null ||
-                !(routineDecl.IsFailable ||
-                  ErrorHandlingGenerator.BodyHasThrowOrAbsent(body: routineDecl.Body)))
+            if (node is not RoutineDeclaration routineDecl || routineDecl.Body == null)
             {
+                continue;
+            }
+
+            if (!(routineDecl.IsFailable || ErrorHandlingGenerator.BodyHasThrowOrAbsent(body: routineDecl.Body)))
+            {
+                RecordRecoverableUserBody(decl: routineDecl, module: currentModule);
                 continue;
             }
 
             PreRegisterVariantsForDeclaration(generator: generator,
                 decl: routineDecl,
                 module: currentModule);
+            // A user failable routine gets every recovery variant (see _everyKindBases). Keyed by where it
+            // is declared, which holds for the info a later stage re-creates too.
+            if (routineDecl.ResolvedInfo is { } declared && DeclarationKey(routine: declared) is { } key)
+            {
+                _everyKindBases.Add(item: key);
+            }
         }
     }
 
@@ -166,6 +179,16 @@ public sealed partial class SemanticVerifier
     /// </summary>
     internal bool EnsureRecoveryVariantsForBase(RoutineInfo baseRoutine)
     {
+        if (!baseRoutine.IsFailable && !baseRoutine.HasThrow && !baseRoutine.HasAbsent &&
+            RecoverableUserBody(routine: baseRoutine) is { } recoverable)
+        {
+            // A concrete instance of a generic routine takes its definition's variants, substituted (the
+            // registry asks for the definition's next).
+            return !(baseRoutine.GenericDefinition is { } definition &&
+                     !ReferenceEquals(objA: definition, objB: baseRoutine)) &&
+                   EnsureVariantsForRecoverableBody(routine: baseRoutine, body: recoverable);
+        }
+
         if (baseRoutine is { OwnerType: ProtocolTypeSymbol, IsFailable: true })
         {
             if (_synthesizedVariantBases.Add(item: baseRoutine.RegistryKey))
@@ -227,7 +250,9 @@ public sealed partial class SemanticVerifier
             var generator = new ErrorHandlingGenerator(registry: _registry);
             ErrorHandlingResult result = generator.GenerateVariants(routine: deferred.baseRoutine,
                 body: deferred.body,
-                pessimistic: deferred.pessimistic);
+                pessimistic: deferred.pessimistic,
+                everyKind: DeclarationKey(routine: deferred.baseRoutine) is { } declared &&
+                           _everyKindBases.Contains(item: declared));
             if (result.Error == null)
             {
                 foreach (GeneratedVariant variant in result.Variants)
@@ -242,6 +267,129 @@ public sealed partial class SemanticVerifier
                 _variantBodyGenQueue.Enqueue(
                     item: (deferred.baseRoutine, deferred.body, result.Variants));
             }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The bodies of the user's routines that are NOT failable, by registry key. Such a routine can still
+    /// fail beneath its call (a checked operator, a subscript, a bare call of a failable routine), and a
+    /// call of it made under <c>try</c>/<c>grab</c>/<c>lookup</c> must recover that failure too: it goes
+    /// through a recovery variant built from this body, exactly as a failable routine's does. Stdlib
+    /// routines are not recorded: a stdlib routine that can fail is declared failable.
+    /// </summary>
+    private readonly Dictionary<string, Statement> _recoverableUserBodies = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The user's failable routines, by registry key: they get every recovery variant (try, grab and
+    /// lookup), since a failure beneath them (a checked operator, a subscript, a user routine that fails
+    /// beneath its call) may be one their own throw/absent do not show, and each keyword must keep it.
+    /// </summary>
+    private readonly HashSet<string> _everyKindBases = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>Set once every user body is analyzed (the start of Phase 6): from then on
+    /// <see cref="MayFailBeneathForRecovery"/> reads the analyzed bodies instead of answering for any user
+    /// routine.</summary>
+    private bool _recoverableBodiesAnalyzed;
+
+    /// <summary>Memo of <see cref="MayFailBeneathForRecovery"/> once the bodies are analyzed (false while a
+    /// routine is still being scanned, so a recursive routine does not loop).</summary>
+    private readonly Dictionary<string, bool> _mayFailBeneath = new(comparer: StringComparer.Ordinal);
+
+    private void RecordRecoverableUserBody(RoutineDeclaration decl, string? module)
+    {
+        // The info registered for the declaration itself when it has one: matching by parameter types misses a
+        // Suflae routine whose entity parameter already became its Roamed handle.
+        if ((decl.ResolvedInfo ?? ResolveRoutineInfoForDeclaration(decl: decl, moduleName: module)) is not { } routine ||
+            routine.IsFailable || routine.Annotations.Contains(item: "crash_only") ||
+            DeclarationKey(routine: routine) is not { } key)
+        {
+            return;
+        }
+
+        _recoverableUserBodies[key: key] = decl.Body!;
+    }
+
+    /// <summary>
+    /// Where a routine was declared, as the key of the per-declaration sets above. A routine's info can be
+    /// re-created after its declaration was recorded (a Suflae entity parameter becomes its Roamed handle,
+    /// which changes the registry key), but it stays the routine declared there. A recovery variant shares its
+    /// routine's declaration and is never one of them.
+    /// </summary>
+    private static string? DeclarationKey(RoutineInfo routine)
+    {
+        return routine is { IsRecoveryVariant: false, Location: { } at }
+            ? $"{at.FileName}|{at.Line}|{at.Column}|{routine.OwnerType?.Name}.{routine.Name}"
+            : null;
+    }
+
+    /// <summary>The recorded body of a user routine that is not failable (a concrete instance of a generic
+    /// one finds its definition's), or null.</summary>
+    private Statement? RecoverableUserBody(RoutineInfo routine)
+    {
+        return DeclarationKey(routine: routine) is { } key &&
+               _recoverableUserBodies.TryGetValue(key: key, value: out Statement? body)
+            ? body
+            : null;
+    }
+
+    /// <summary>
+    /// <c>TypeRegistry.MayFailBeneath</c>: whether a user routine that is not failable can fail beneath
+    /// its call. Before the user bodies are analyzed (a <c>try</c> written in a body analyzed before the
+    /// routine it calls) every user routine counts, and its variant then recovers whatever its analyzed body
+    /// turns out to hold. Afterwards the body is scanned: a checked operator, a failable subscript or a call
+    /// that can fail (at any depth) makes it count.
+    /// </summary>
+    private bool MayFailBeneathForRecovery(RoutineInfo routine)
+    {
+        if (RecoverableUserBody(routine: routine) is not { } body)
+        {
+            return false;
+        }
+
+        if (!_recoverableBodiesAnalyzed)
+        {
+            return true;
+        }
+
+        string key = DeclarationKey(routine: routine)!;
+        if (_mayFailBeneath.TryGetValue(key: key, value: out bool known))
+        {
+            return known;
+        }
+
+        _mayFailBeneath[key: key] = false;
+        bool result = FailurePointCalls.HasFailurePoint(body: body, registry: _registry);
+        _mayFailBeneath[key: key] = result;
+        return result;
+    }
+
+    /// <summary>
+    /// Registers the recovery variants of a user routine that is not failable (see
+    /// <see cref="_recoverableUserBodies"/>) and queues their bodies, with the pessimistic shape (try and
+    /// lookup): what can fail beneath it is only known once its body is built.
+    /// </summary>
+    private bool EnsureVariantsForRecoverableBody(RoutineInfo routine, Statement body)
+    {
+        if (!MayFailBeneathForRecovery(routine: routine))
+        {
+            return false;
+        }
+
+        if (_synthesizedVariantBases.Add(item: routine.RegistryKey))
+        {
+            ErrorHandlingResult result = new ErrorHandlingGenerator(registry: _registry).GenerateVariants(
+                routine: routine,
+                body: body,
+                pessimistic: true,
+                everyKind: true);
+            foreach (GeneratedVariant variant in result.Variants)
+            {
+                _registry.RegisterRoutine(routine: variant.Routine);
+            }
+
+            _variantBodyGenQueue.Enqueue(item: (routine, body, result.Variants));
         }
 
         return true;
@@ -268,6 +416,9 @@ public sealed partial class SemanticVerifier
     /// </summary>
     internal void DrainVariantBodyGenQueue()
     {
+        // The first drain runs once every user body is analyzed (Phase 6), so from here on what can fail
+        // beneath a user routine is read from its analyzed body.
+        _recoverableBodiesAnalyzed = true;
         while (_variantBodyGenQueue.Count > 0)
         {
             (RoutineInfo baseRoutine, Statement baseBody, List<GeneratedVariant> variants) =
