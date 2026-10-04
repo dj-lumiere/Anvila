@@ -86,7 +86,7 @@ internal sealed class TesseraRoutineWriter
             TypeSymbol owner = _routine.OwnerType!;
             parameters.Add(item: MeParameter());
             scope[key: "me"] = MeByReference
-                ? new Local(Place: "me", Type: owner)
+                ? new Local(Place: "arg_me", Type: owner)
                 : ClaimLocal(name: "me", type: owner, initial: "arg_me", inHead: true);
         }
 
@@ -157,12 +157,13 @@ internal sealed class TesseraRoutineWriter
                "    block entry()\n        unreachable\n\n";
     }
 
-    /// <summary>The receiver parameter: <c>me</c> by reference, or <c>arg_me</c> by value.</summary>
+    /// <summary>The receiver parameter, <c>arg_me</c>: a pointer by reference, the value by value. The emitted routines are
+    /// free routines, so the parameter isn't Tessera's receiver <c>me</c>.</summary>
     private string MeParameter()
     {
         TypeSymbol owner = _routine.OwnerType!;
         return MeByReference
-            ? $"me: @{TypeText(type: owner)}"
+            ? $"arg_me: @{TypeText(type: owner)}"
             : $"arg_me: {TypeText(type: owner)}";
     }
 

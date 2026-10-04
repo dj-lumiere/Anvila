@@ -609,9 +609,9 @@ internal sealed class TesseraWriter
         name = UniqueName(wanted: "c_" + Sanitize(text: symbol));
         _externNames[key: symbol] = name;
         string parameters = string.Join(separator: ", ",
-            // A C parameter's name is only a label; Tessera reserves `self` for a receiver.
+            // A C parameter's name is only a label, and Tessera reserves `me` for a receiver.
             values: routine.Parameters.Select(selector: p =>
-                $"{(p.Name == "self" ? "self_" : ValueName(name: p.Name))}: {TypeText(type: p.Type)}"));
+                $"{(p.Name == "me" ? "me_" : ValueName(name: p.Name))}: {TypeText(type: p.Type)}"));
         _externs.Append(value: $"#[external(\"c\"), symbol(\"{symbol}\")]\n" +
                                $"{Private}routine {name}({parameters}) -> {TypeText(type: routine.ReturnType)}\n\n");
         return name;
@@ -879,13 +879,13 @@ internal sealed class TesseraWriter
         return name;
     }
 
-    /// <summary>The words a Tessera statement, target, or expression starts with: a value of such a name is written
-    /// between backticks.</summary>
+    /// <summary>The words a Tessera statement, target, or expression starts with, plus `Me` (the receiver's type) and
+    /// `self`/`Self` (words Tessera doesn't read as names): a value of such a name is written between backticks.</summary>
     private static readonly HashSet<string> TesseraKeywords =
     [
         "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "uninit",
         "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
-        "define", "private", "internal", "module", "import",
+        "define", "private", "internal", "module", "import", "Me", "self", "Self",
     ];
 
     /// <summary>A value named as the builder's program names it: a Tessera keyword goes between backticks.</summary>
