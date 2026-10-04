@@ -1,3 +1,4 @@
+using Builder.Targeting;
 using Builder.TesseraEmit;
 
 namespace Builder;
@@ -56,6 +57,70 @@ internal static class IngridTessera
             File.WriteAllText(path: tmp, contents: ir);
             File.Move(sourceFileName: tmp, destFileName: cached, overwrite: true);
             return cached;
+        }
+    }
+
+    /// <summary>
+    /// Returns the path of the library compiled to a native object for the in-process JIT, compiling it from the cached IR
+    /// when the object is missing or older than the IR. The JIT loads this object instead of parsing and compiling the
+    /// whole library's IR on every run: the object is only relocated and linked, and only when the program reaches one
+    /// of its symbols. It is compiled once, optimized (the library is shipped code, like a C library a debug build
+    /// links), and with emulated thread-local storage, which the JIT's own code uses. Returns null when the object can't
+    /// be compiled (no clang): the caller then hands the JIT the IR.
+    /// </summary>
+    internal static string? ObjectPath(string exeDir)
+    {
+        string ir = IrPath(exeDir: exeDir);
+        string obj = Path.ChangeExtension(path: ir, extension: ObjectExtension);
+        lock (CacheLock)
+        {
+            if (File.Exists(path: obj) && File.GetLastWriteTimeUtc(path: obj) >= File.GetLastWriteTimeUtc(path: ir))
+            {
+                return obj;
+            }
+
+            // A file of this process's own, so a build in another process can't see it half written.
+            string tmp = $"{obj}.{Environment.ProcessId}.tmp";
+            if (NativeToolchain.CompileIrToObject(optFile: ir, objFile: tmp, buildMode: RfBuildMode.Release) != 0)
+            {
+                TryDelete(path: tmp);
+                return null;
+            }
+
+            try
+            {
+                File.Move(sourceFileName: tmp, destFileName: obj, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Another process put its copy in place first and has it open: that one is just as good.
+                TryDelete(path: tmp);
+                if (!File.Exists(path: obj))
+                {
+                    return null;
+                }
+            }
+
+            return obj;
+        }
+    }
+
+    /// <summary>The extension of the compiled library next to the IR.</summary>
+    private const string ObjectExtension = ".o";
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path: path);
+        }
+        catch (IOException)
+        {
+            // A leftover temporary file is harmless.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A leftover temporary file is harmless.
         }
     }
 

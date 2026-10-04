@@ -179,7 +179,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         LLVMOrcOpaqueLLJIT* jit;
-        CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
+        jit = CreateLljit(builder: builder);
         JitStage(s: "LLJIT created");
 
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
@@ -196,12 +196,34 @@ internal static unsafe class OrcJitExecutor
     }
 
     /// <summary>Adds Ingrid's Tessera library (see <see cref="Builder.IngridTessera"/>) to the dylib: its routines are
-    /// not in the runtime DLL, so the process-search generator can't find them.</summary>
+    /// not in the runtime DLL, so the process-search generator can't find them. It goes in as the object compiled once
+    /// from the library's IR, so a run doesn't parse and compile the whole library: the object is linked only when the
+    /// program reaches one of its symbols. Without an object (no clang to compile it) the JIT compiles the IR.</summary>
     private static void AddIngridTessera(LLVMOrcOpaqueLLJIT* jit, LLVMOrcOpaqueJITDylib* dylib)
     {
+        if (Builder.IngridTessera.ObjectPath(exeDir: AppContext.BaseDirectory) is { } objectPath)
+        {
+            AddObjectFile(jit: jit, dylib: dylib, objectPath: objectPath, what: "ingrid");
+            return;
+        }
+
         string ir = File.ReadAllText(path: Builder.IngridTessera.IrPath(exeDir: AppContext.BaseDirectory));
         CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: ParseToTsm(llvmIr: ir, modName: "ingrid")),
             what: "AddLLVMIRModule(ingrid)");
+    }
+
+    /// <summary>Creates the LLJIT the builder describes. On Windows every object it compiles has its constant-pool
+    /// symbols made local before it is linked (see <see cref="OrcCoffConstantPools"/>).</summary>
+    private static LLVMOrcOpaqueLLJIT* CreateLljit(LLVMOrcOpaqueLLJITBuilder* builder)
+    {
+        LLVMOrcOpaqueLLJIT* jit;
+        CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
+        if (OperatingSystem.IsWindows())
+        {
+            OrcCoffConstantPools.InstallOn(jit: jit);
+        }
+
+        return jit;
     }
 
     /// <summary>Adds the process-search generator to the JIT's main dylib and returns that dylib. The
@@ -438,7 +460,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         LLVMOrcOpaqueLLJIT* jit;
-        CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
+        jit = CreateLljit(builder: builder);
 
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
         AddIngridTessera(jit: jit, dylib: dylib);
@@ -494,7 +516,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         LLVMOrcOpaqueLLJIT* jit;
-        CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
+        jit = CreateLljit(builder: builder);
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
         AddIngridTessera(jit: jit, dylib: dylib);
 
@@ -518,12 +540,20 @@ internal static unsafe class OrcJitExecutor
     }
 
     /// <summary>Loads a native object file from disk into the given JITDylib (relocated + linked, not
-    /// compiled). ORC takes ownership of the memory buffer (a COPY of the file bytes).</summary>
+    /// compiled). ORC takes ownership of the memory buffer (a COPY of the file bytes). <paramref name="what"/> names
+    /// the object in the buffer and in an error.</summary>
     private static void AddObjectFile(LLVMOrcOpaqueLLJIT* jit, LLVMOrcOpaqueJITDylib* dylib,
-        string objectPath)
+        string objectPath, string what = "base")
     {
         byte[] obj = File.ReadAllBytes(path: objectPath);
-        byte[] nm = Encoding.ASCII.GetBytes(s: "rf_base_obj\0");
+        // Before ORC reads the object's symbols: a constant-pool symbol it lists would be a weak definition of the
+        // dylib, which another object's copy of the same constant collides with.
+        if (OperatingSystem.IsWindows())
+        {
+            OrcCoffConstantPools.Localize(obj: obj);
+        }
+
+        byte[] nm = Encoding.ASCII.GetBytes(s: $"rf_{what}_obj\0");
         LLVMOpaqueMemoryBuffer* buf;
         fixed (byte* objp = obj)
         fixed (byte* np = nm)
@@ -534,7 +564,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         CheckErr(err: LLVM.OrcLLJITAddObjectFile(J: jit, JD: dylib, ObjBuffer: buf),
-            what: "OrcLLJITAddObjectFile(base)");
+            what: $"OrcLLJITAddObjectFile({what})");
     }
 
     /// <summary>
@@ -568,7 +598,7 @@ internal static unsafe class OrcJitExecutor
         }
 
         LLVMOrcOpaqueLLJIT* jit;
-        CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
+        jit = CreateLljit(builder: builder);
         _lazyJit = jit;
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
         AddIngridTessera(jit: jit, dylib: dylib);

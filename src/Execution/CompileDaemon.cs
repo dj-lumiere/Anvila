@@ -369,6 +369,8 @@ internal partial class Program
                     return null;
                 }
 
+                PrepareIngridObject();
+
                 // The base's COLLECTED instance set (RegistryKeys) — the delta collector skips re-building these
                 // (they are defined in the base object; the base's own collect already expanded their callees).
                 IReadOnlySet<string> instanceKeys =
@@ -386,6 +388,25 @@ internal partial class Program
             {
                 Console.Error.WriteLine(value: $"[daemon] resident-JIT base build failed: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>Compiles Ingrid's library to the object the client's JIT loads (see
+        /// <see cref="Builder.IngridTessera.ObjectPath"/>) while the base is built, so the first run after a warm-up
+        /// finds it ready. A failure here only costs that first run the compile: the client tries again, and falls
+        /// back to the IR.</summary>
+        private static void PrepareIngridObject()
+        {
+            try
+            {
+                if (Builder.IngridTessera.ObjectPath(exeDir: AppContext.BaseDirectory) == null)
+                {
+                    Console.Error.WriteLine(value: "[daemon] Ingrid's library could not be compiled to an object");
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.Error.WriteLine(value: $"[daemon] Ingrid's library could not be compiled to an object: {ex.Message}");
             }
         }
 
