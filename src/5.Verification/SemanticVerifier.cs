@@ -403,6 +403,13 @@ public sealed partial class SemanticVerifier
     public bool SeedAllStdlibRoutines { get; set; }
 
     /// <summary>
+    /// Set on the verifier that captures the warm stdlib snapshot (<see cref="CaptureCompiledStdlib"/>). Every
+    /// warm build analyzes the snapshot's files again on demand, on its own clone, so the capture leaves the
+    /// stdlib bodies unannotated for the backend: annotation follows that later analysis.
+    /// </summary>
+    private bool CapturingSnapshot { get; init; }
+
+    /// <summary>
     /// Resident-JIT base/delta: <c>RegistryKey</c> values already built into the precompiled base
     /// object (the base's collected instance set). Threaded into
     /// <see cref="InstantiationContext.ResidentInstanceKeys"/> so the demand collector skips re-building /
@@ -1295,15 +1302,42 @@ public sealed partial class SemanticVerifier
 
         Mark(label: $"user-programs repr ({_registry.UserPrograms.Count} prog)");
 
-        // Warm-restore: the stdlib program ASTs are shared read-only across warm compiles and were
-        // already lowered to backend representation at capture time — re-running reprPass on them each
-        // warm run is pure redundant cost (and re-mutating a shared AST is unsafe).
-        if (!_memo.IsWarm)
+        // A stdlib program is annotated for the backend once its bodies were analyzed and lowered in this build,
+        // as a user program is: annotation is the last step, after analysis. A file this build never analyzed
+        // keeps its bodies as parsed, because analysis may still come to it later: a warm build analyzes the
+        // snapshot's files on demand, and a body annotated before that analysis carries lowered nodes the
+        // analyzer has no rule for (a text literal's #constant_data came back typed <error>). Each warm build
+        // works on its own clone of every stdlib program, so annotating one in place is private to the build.
+        // The snapshot capture analyzes no bodies for keeps, so it annotates none.
+        // Only the routines a backend will define are annotated (the live set, when the collector made one), which
+        // keeps this to the few routines a small program reaches instead of every routine of every file it touched.
+        if (!CapturingSnapshot)
         {
-            foreach ((Program stdlibProgram, _, _) in _registry.StdlibPrograms)
+            HashSet<string>? live = _liveRoutineKeys.Count > 0
+                ? new HashSet<string>(collection: _liveRoutineKeys, comparer: StringComparer.Ordinal)
+                : null;
+            foreach ((Program stdlibProgram, string filePath, _) in _registry.StdlibPrograms)
             {
-                AnnotateForBackend(program: stdlibProgram);
-                reprPass.Run(program: stdlibProgram);
+                if (!_eagerStdlibAnalyzed && !_demandAnalyzedFiles.Contains(item: filePath))
+                {
+                    continue;
+                }
+
+                foreach (RoutineDeclaration routine in DeclaredRoutines(program: stdlibProgram))
+                {
+                    if (routine.Body is not { } body ||
+                        routine.ResolvedInfo is { IsGenericDefinition: true } or { OwnerType.IsGenericDefinition: true } ||
+                        live != null && routine.ResolvedInfo is { } info && !info.IsLambda &&
+                        !live.Contains(item: info.RegistryKey))
+                    {
+                        continue;
+                    }
+
+                    AnnotateBodyForBackend(body: body,
+                        everStolen: routine.EverStolenVariableNames,
+                        routine: routine.ResolvedInfo);
+                    reprPass.Run(statement: body);
+                }
             }
         }
 

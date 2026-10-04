@@ -197,7 +197,7 @@ public partial class SemanticVerifier
                   .Append(value: '\n');
         }
 
-        var sa = new SemanticVerifier(language: language);
+        var sa = new SemanticVerifier(language: language) { CapturingSnapshot = true };
         List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: source.ToString(),
             fileName: "__snapshot__",
             language: language);

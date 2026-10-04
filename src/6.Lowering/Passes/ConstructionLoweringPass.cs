@@ -253,16 +253,28 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
                                   constructed is EntityTypeSymbol;
         return constructed switch
         {
-            CrashableTypeSymbol crashable when ArgumentsNameFields(arguments: call.Arguments,
-                fields: crashable.MemberVariables) => Memberwise(call: call, type: crashable),
+            CrashableTypeSymbol crashable when ArgumentsGiveFields(call: call, fields: crashable.MemberVariables) =>
+                Memberwise(call: call, type: crashable),
             EntityTypeSymbol { MemberVariables.Count: > 0 } entity when !routesToUserCreate &&
-                ArgumentsNameFields(arguments: call.Arguments, fields: entity.MemberVariables) =>
+                ArgumentsGiveFields(call: call, fields: entity.MemberVariables) =>
                 Memberwise(call: call, type: entity),
             RecordTypeSymbol { MemberVariables.Count: > 0 } record and not VariantTypeSymbol when
-                ArgumentsNameFields(arguments: call.Arguments, fields: record.MemberVariables) =>
+                ArgumentsGiveFields(call: call, fields: record.MemberVariables) =>
                 Memberwise(call: call, type: record),
             _ => null
         };
+    }
+
+    /// <summary>
+    /// Whether the call's arguments are the type's member variables: each one named, or, when analysis bound no
+    /// creator, one positional value per member variable in declaration order (<c>Point(3, 4)</c>, which analysis
+    /// allows for a type of up to two member variables).
+    /// </summary>
+    private static bool ArgumentsGiveFields(CallExpression call, List<MemberVariableInfo> fields)
+    {
+        return ArgumentsNameFields(arguments: call.Arguments, fields: fields) ||
+               call.ResolvedRoutine == null && call.Arguments.Count == fields.Count &&
+               call.Arguments.All(predicate: argument => argument is not NamedArgumentExpression);
     }
 
     /// <summary>

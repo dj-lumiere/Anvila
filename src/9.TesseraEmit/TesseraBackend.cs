@@ -47,6 +47,18 @@ public sealed class TesseraBackend : IBuilderBackend
     /// <inheritdoc/>
     public BackendOutput Emit(BackendInput input)
     {
+        // [debug] timing splits the backend's time into its steps.
+        System.Diagnostics.Stopwatch? clock = input.Timing ? System.Diagnostics.Stopwatch.StartNew() : null;
+        var steps = new List<string>();
+        void Step(string name)
+        {
+            if (clock != null)
+            {
+                steps.Add(item: $"{name} {clock.ElapsedMilliseconds} ms");
+                clock.Restart();
+            }
+        }
+
         var writer = new TesseraWriter(input: input);
         string source;
         try
@@ -65,26 +77,23 @@ public sealed class TesseraBackend : IBuilderBackend
             File.WriteAllText(path: dumpPath, contents: source);
         }
 
+        Step(name: "write");
         var decls = new List<Tessera.Decl>();
         decls.AddRange(collection: Parse(file: ModuleFileName, source: source, isLibrary: false));
-        string stdlib = StdlibDirectory();
-        foreach (string file in Directory.GetFiles(path: stdlib, searchPattern: "*.tess",
-                         searchOption: SearchOption.AllDirectories)
-                    .Order(comparer: StringComparer.Ordinal))
-        {
-            string shown = Path.Combine(path1: "Standard",
-                path2: Path.GetRelativePath(relativeTo: stdlib, path: file));
-            decls.AddRange(collection: Parse(file: shown,
-                source: Tessera.SourceText.Read(path: file, shown: shown),
-                isLibrary: true));
-        }
+        Step(name: "parse module");
+        // Tessera parses its library in parallel and keeps each file's declarations for the life of the process, so
+        // the compile daemon parses it once for all its builds (a file changed on disk is parsed again).
+        decls.AddRange(collection: Tessera.StandardLibrary.Load(directory: StdlibDirectory()));
+        Step(name: "stdlib");
 
         string ir;
         try
         {
             // RazorForge keeps its own crash trace in the generated routines (TesseraTrace), so Tessera's stays out.
-            ir = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false)
-                .Generate();
+            var compiler = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false);
+            Step(name: "compiler");
+            ir = compiler.Generate();
+            Step(name: "generate");
         }
         catch (Tessera.CompileError ex)
         {
@@ -92,6 +101,11 @@ public sealed class TesseraBackend : IBuilderBackend
                 message: $"The Tessera builder rejected the generated module: {ex.Message}" +
                          " (set [debug] dump-tessera = true in config.toml to keep the module as <entry>.tess).",
                 innerException: ex);
+        }
+
+        if (clock != null)
+        {
+            Console.Error.WriteLine(value: $"[timing] tessera backend: {string.Join(separator: ", ", values: steps)}");
         }
 
         return new BackendOutput(LlvmIr: ir, DefinedRoutineSymbols: writer.DefinedRoutineNames);

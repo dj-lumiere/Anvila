@@ -679,7 +679,7 @@ internal partial class Program
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
-                UseDaemon = target.UseDaemon && residentJit && !DaemonDisabledByEnv(),
+                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
                 Jit = ModeUsesJit(mode: target.Mode),
                 Incremental = target.Incremental && residentJit,
                 Backend = target.Backend
@@ -764,7 +764,7 @@ internal partial class Program
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
-                UseDaemon = target.UseDaemon && residentJit && !DaemonDisabledByEnv(),
+                UseDaemon = target.UseDaemon && !DaemonDisabledByEnv(),
                 Jit = ModeUsesJit(mode: target.Mode),
                 Incremental = target.Incremental && residentJit,
                 Backend = target.Backend

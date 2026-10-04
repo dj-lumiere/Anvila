@@ -68,6 +68,9 @@ internal partial class Program
             /// (<c>[target] incremental</c>); there is no separate <c>base-delta</c> manifest field.</summary>
             public bool BaseDelta { get; set; }
 
+            /// <summary>The backend the client's manifest selects (<c>[target] backend</c>).</summary>
+            public string Backend { get; set; } = Builder.Backends.BuilderBackends.DefaultName;
+
             public void Write(BinaryWriter writer)
             {
                 writer.Write(value: Verb);
@@ -82,6 +85,7 @@ internal partial class Program
                 WriteList(writer: writer, values: CLibraries);
                 WriteList(writer: writer, values: LibraryPaths);
                 writer.Write(value: BaseDelta);
+                writer.Write(value: Backend);
             }
 
             public static DaemonRequest Read(BinaryReader reader)
@@ -99,7 +103,8 @@ internal partial class Program
                     LibraryRoots = ReadList(reader: reader),
                     CLibraries = ReadList(reader: reader),
                     LibraryPaths = ReadList(reader: reader),
-                    BaseDelta = reader.ReadBoolean()
+                    BaseDelta = reader.ReadBoolean(),
+                    Backend = reader.ReadString()
                 };
             }
         }
@@ -601,7 +606,8 @@ internal partial class Program
                         ShowBuildStages = req.ShowBuildStages,
                         LibraryRoots = req.LibraryRoots,
                         CLibraries = req.CLibraries,
-                        LibraryPaths = req.LibraryPaths
+                        LibraryPaths = req.LibraryPaths,
+                        Backend = req.Backend
                     },
                     warmProvider: GetWarm);
             }
@@ -656,7 +662,9 @@ internal partial class Program
                 IReadOnlyCollection<string>? residentSymbols = null;
                 IReadOnlySet<string>? residentInstanceKeys = null;
                 ResidentLayer? layer = null;
-                if (req.BaseDelta)
+                // Only a backend that serves the resident JIT has a base to split off. A client asks for the split
+                // only on the incremental path, which such a backend alone takes.
+                if (req.BaseDelta && Builder.Backends.BuilderBackends.Get(name: req.Backend).SupportsResidentJit)
                 {
                     Language lang = CliLanguage;
                     (string ObjPath, IReadOnlyCollection<string> Syms,
@@ -686,7 +694,8 @@ internal partial class Program
                         ProjectRoot = req.ProjectRoot,
                         BuildMode = (RfBuildMode)req.BuildMode,
                         RequireStartRoutine = req.RequireStart,
-                        LibraryRoots = req.LibraryRoots
+                        LibraryRoots = req.LibraryRoots,
+                        Backend = req.Backend
                     },
                     warm: new WarmProviders(WarmProvider: GetWarm,
                         IrCallback: null,
@@ -1105,7 +1114,8 @@ internal partial class Program
                 // JitAndRun caller must NOT request a delta (it can't resolve the base's extern symbols).
                 // allowBaseDelta is true only from TryClientJitRunIncremental, so base/delta rides on the
                 // incremental JIT path and has no separate manifest opt-in.
-                BaseDelta = allowBaseDelta
+                BaseDelta = allowBaseDelta,
+                Backend = resolved.Backend
             };
             try
             {
@@ -1170,7 +1180,8 @@ internal partial class Program
                 ShowBuildStages = resolved.ShowBuildStages,
                 LibraryRoots = [.. resolved.LibraryRoots],
                 CLibraries = [.. resolved.CLibraries],
-                LibraryPaths = [.. resolved.LibraryPaths]
+                LibraryPaths = [.. resolved.LibraryPaths],
+                Backend = resolved.Backend
             };
 
             try
