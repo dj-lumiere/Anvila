@@ -19,7 +19,7 @@ namespace Builder.Instantiation.Passes;
 /// loop /*IsIteratorEachLoop*/ {
 ///   when try _lf_iter_N.emit() {
 ///     is None -> break                              # plain for
-///        (or:  { _lf_exhausted_N = true; break }    # for-else)
+///     (for-else: the value arm sets _lf_ran_N = true before the body)
 ///     else v -> &lt;bindings + user body&gt;
 ///   }
 /// }
@@ -31,7 +31,7 @@ namespace Builder.Instantiation.Passes;
 ///   &lt;emit! body with:  me -> _lf_iter_N
 ///                        local decls alpha-renamed to _ii{n}_&lt;orig&gt;
 ///                        return v      -> { &lt;bindings&gt; ; &lt;user body&gt; }
-///                        absent        -> break   (or { _lf_exhausted_N = true; break })
+///                        absent        -> break
 ///                        throw         -> unchanged (propagates) &gt;
 /// }
 /// </code>

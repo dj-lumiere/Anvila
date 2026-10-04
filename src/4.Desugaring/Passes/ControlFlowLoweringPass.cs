@@ -39,18 +39,18 @@ namespace Builder.Desugaring.Passes;
 /// }
 /// </code>
 ///
-/// <para><b>for x in iterable else { alt }</b> (for-else) -> exhaustion flag:</para>
+/// <para><b>for x in iterable else { alt }</b> (for-else) -> the else runs only when the body never ran:</para>
 /// <code>
 ///  {
-/// var _lf_exhausted_N: Bool = false
+/// var _lf_ran_N: Bool = false
 /// var _lf_iter_N = iterable.iter()
 /// loop {
 /// when try _lf_iter_N.emit() {
-/// is None -> { _lf_exhausted_N = true; break }
-/// else var x -> body
+/// is None -> break
+/// else var x -> { _lf_ran_N = true; body }
 ///  }
 ///  }
-/// if _lf_exhausted_N { alt }
+/// if not _lf_ran_N { alt }
 /// }
 /// </code>
 ///
@@ -248,11 +248,22 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Lowers <c>while cond { body }</c> to <c>loop { if !cond { break } body }</c>.
-    /// The else branch (if present) is dropped -> while-else is not yet fully implemented.
+    /// Lowers <c>while cond { body }</c> to <c>loop { if !cond { break } body }</c>. A <c>while … else</c> runs its
+    /// <c>else</c> only when the body ran zero times (the condition was false at the very first check), never after
+    /// the body ran, however the loop ended:
+    /// <code>
+    /// var _lf_ran_N = false
+    /// loop { if !cond { break }  _lf_ran_N = true  body }
+    /// if !_lf_ran_N { alt }
+    /// </code>
     /// </summary>
-    private LoopStatement LowerWhile(WhileStatement whileStmt)
+    private Statement LowerWhile(WhileStatement whileStmt)
     {
+        if (whileStmt.ElseBranch is { } elseBranch)
+        {
+            return LowerWhileElse(whileStmt: whileStmt, elseBranch: elseBranch);
+        }
+
         SourceLocation loc = whileStmt.Location;
         Statement loweredBody = LowerStatement(stmt: whileStmt.Body);
 
@@ -273,6 +284,52 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             : new BlockStatement(Statements: [guardBreak, loweredBody], Location: loc);
 
         return new LoopStatement(Body: loopBody, Location: loc);
+    }
+
+    /// <summary>A <c>while … else</c> (see <see cref="LowerWhile"/>): the loop with a flag its body sets, and the
+    /// <c>else</c> run when the flag is still clear.</summary>
+    private BlockStatement LowerWhileElse(WhileStatement whileStmt, Statement elseBranch)
+    {
+        SourceLocation loc = whileStmt.Location;
+        string ranName = $"_lf_ran_{_iterCount++}";
+        Statement markRan = new AssignmentStatement(Target: new IdentifierExpression(Name: ranName, Location: loc),
+            Value: new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: loc),
+            Location: loc);
+        Statement loop = LowerWhile(whileStmt: whileStmt with
+        {
+            Body = new BlockStatement(Statements: [markRan, whileStmt.Body], Location: loc),
+            ElseBranch = null
+        });
+        return new BlockStatement(Statements:
+            [
+                RanFlag(name: ranName, loc: loc),
+                loop,
+                IfNotRan(name: ranName, elseBranch: LowerStatement(stmt: elseBranch), loc: loc)
+            ],
+            Location: loc);
+    }
+
+    /// <summary><c>var name: Bool = false</c>, the flag a loop with an <c>else</c> sets when its body runs.</summary>
+    private static DeclarationStatement RanFlag(string name, SourceLocation loc)
+    {
+        return new DeclarationStatement(Declaration: new VariableDeclaration(Name: name,
+                Type: new TypeExpression(Name: "Bool", GenericArguments: null, Location: loc),
+                Initializer: new LiteralExpression(Value: false, LiteralType: TokenType.False, Location: loc),
+                Visibility: VisibilityModifier.Secret,
+                Location: loc),
+            Location: loc);
+    }
+
+    /// <summary><c>if not name { else }</c>: a loop's <c>else</c>, run when its body never ran.</summary>
+    private static IfStatement IfNotRan(string name, Statement elseBranch, SourceLocation loc)
+    {
+        return new IfStatement(
+            Condition: new UnaryExpression(Operator: UnaryOperator.Not,
+                Operand: new IdentifierExpression(Name: name, Location: loc),
+                Location: loc),
+            ThenStatement: elseBranch,
+            ElseStatement: null,
+            Location: loc);
     }
 
     /// <summary>
@@ -536,7 +593,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 iterVarStmt: iterVarStmt,
                 loc: loc,
                 names: new ForElseNames(ElseVarName: elseVarName,
-                    ExhaustedName: $"_lf_exhausted_{n}",
+                    RanName: $"_lf_ran_{n}",
                     IterationSourceName: iterationSourceName,
                     IterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable)),
                 failureClause: failureClause)
@@ -661,12 +718,13 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Builds the for-else lowering: an exhausted flag set inside the <c>None</c> arm, and an
-    /// <c>if _lf_exhausted_N { alt }</c> check after the loop.
+    /// Builds the for-else lowering. The <c>else</c> runs only when the body ran zero times (the source was
+    /// empty), never after the body ran, however the loop ended: a flag the value arm sets before the body, and
+    /// an <c>if not _lf_ran_N { alt }</c> check after the loop.
     /// </summary>
     private readonly record struct ForElseNames(
         string? ElseVarName,
-        string ExhaustedName,
+        string RanName,
         string? IterationSourceName,
         string? IterationSourcePath);
 
@@ -675,28 +733,19 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         SourceLocation loc, WhenClause? failureClause)
     {
         string? elseVarName = names.ElseVarName;
-        string exhaustedName = names.ExhaustedName;
+        string ranName = names.RanName;
         string? iterationSourceName = names.IterationSourceName;
         string? iterationSourcePath = names.IterationSourcePath;
-        // For-else: set exhausted flag, then break
-        Statement noneBody = new BlockStatement(Statements:
-            [
-                new AssignmentStatement(
-                    Target: new IdentifierExpression(Name: exhaustedName, Location: loc),
-                    Value: new LiteralExpression(Value: true,
-                        LiteralType: TokenType.True,
-                        Location: loc),
-                    Location: loc),
-                new BreakStatement(Location: loc)
-            ],
-            Location: loc);
-
         var noneClause = new WhenClause(Pattern: new NonePattern(Location: loc),
-            Body: noneBody,
+            Body: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
+            Location: loc);
+        // The value arm marks the body as run before it runs.
+        Statement markRan = new AssignmentStatement(Target: new IdentifierExpression(Name: ranName, Location: loc),
+            Value: new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: loc),
             Location: loc);
         var elseClause = new WhenClause(
             Pattern: new ElsePattern(VariableName: elseVarName, Location: loc),
-            Body: elseBody,
+            Body: new BlockStatement(Statements: [markRan, elseBody], Location: loc),
             Location: loc);
 
         var whenStmt = new WhenStatement(Expression: tryNextCall,
@@ -712,26 +761,13 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 IterationSourcePath = iterationSourcePath
             };
 
-        // var _lf_exhausted_N: Bool = false
-        Statement exhaustedVarStmt = new DeclarationStatement(Declaration: new VariableDeclaration(
-                Name: exhaustedName,
-                Type: new TypeExpression(Name: "Bool", GenericArguments: null, Location: loc),
-                Initializer: new LiteralExpression(Value: false,
-                    LiteralType: TokenType.False,
-                    Location: loc),
-                Visibility: VisibilityModifier.Secret,
-                Location: loc),
-            Location: loc);
-
-        // if _lf_exhausted_N { alt }
-        Statement exhaustionCheck = new IfStatement(
-            Condition: new IdentifierExpression(Name: exhaustedName, Location: loc),
-            ThenStatement: elseBranchLowered,
-            ElseStatement: null,
-            Location: loc);
-
         return new BlockStatement(Statements:
-            [exhaustedVarStmt, iterVarStmt, loopStmt, exhaustionCheck],
+            [
+                RanFlag(name: ranName, loc: loc),
+                iterVarStmt,
+                loopStmt,
+                IfNotRan(name: ranName, elseBranch: elseBranchLowered, loc: loc)
+            ],
             Location: loc);
     }
 

@@ -168,7 +168,7 @@ public partial class Parser
     /// <summary>
     /// Parses a while loop statement.
     /// Syntax: <c>while condition</c> followed by indented body
-    /// Optional <c>else</c> block executes if the loop completes without hitting a break.
+    /// Optional <c>else</c> block runs only when the body ran zero times (the condition was false at the first check).
     /// </summary>
     /// <returns>A <see cref="WhileStatement"/> AST node.</returns>
     private WhileStatement ParseWhileStatement()
@@ -178,7 +178,7 @@ public partial class Parser
         Expression condition = ParseExpression();
         Statement body = ParseBody();
 
-        // Check for else clause (runs if loop completes without break)
+        // Check for else clause (runs only when the body never ran)
         Statement? elseBranch = null;
         if (CheckAndAdvance(type: TokenType.Else))
         {
@@ -208,7 +208,7 @@ public partial class Parser
     /// <summary>
     /// Parses a for-in loop statement.
     /// Syntax: <c>for variable in iterable</c> or <c>for (a, b) in iterable</c> followed by body.
-    /// Optional <c>else</c> block executes if loop completes without break.
+    /// Optional <c>else</c> block runs only when the body ran zero times (the source was empty).
     /// </summary>
     /// <returns>A <see cref="EachStatement"/> AST node.</returns>
     private EachStatement ParseEachStatement()
@@ -233,7 +233,7 @@ public partial class Parser
         Expression sequenceable = ParseExpression();
         Statement body = ParseBody();
 
-        // Check for else clause (runs if loop completes without break)
+        // Check for else clause (runs only when the body never ran)
         Statement? elseBranch = null;
         if (CheckAndAdvance(type: TokenType.Else))
         {

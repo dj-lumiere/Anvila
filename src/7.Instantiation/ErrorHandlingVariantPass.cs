@@ -518,21 +518,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
             // A loop condition re-runs every iteration, so a failure in it cannot be split out ahead of the loop:
             // `while c` becomes `loop` over `if c then <body> else break`, whose condition is split out like
-            // any other `if` condition, each time it runs. (A `while … else` keeps its form: its `else` runs
-            // only when the condition ends the loop, which `break` would not tell apart.)
-            WhileStatement { ElseBranch: null } ws when registry != null && !nextOnly &&
-                                                        HasPropagatableFailure(expr: ws.Condition,
-                                                            registry: registry) =>
-                TransformBodyCore(body: new LoopStatement(Body: new BlockStatement(Statements:
-                        [
-                            new IfStatement(Condition: ws.Condition,
-                                ThenStatement: ws.Body,
-                                ElseStatement: new BlockStatement(Statements: [new BreakStatement(Location: ws.Location)],
-                                    Location: ws.Location),
-                                Location: ws.Location)
-                        ],
-                        Location: ws.Location),
-                        Location: ws.Location),
+            // any other `if` condition, each time it runs. A `while … else` gets the flag its body sets, and its
+            // `else` runs after the loop when the flag is still clear (the body never ran).
+            WhileStatement ws when registry != null && !nextOnly &&
+                                   HasPropagatableFailure(expr: ws.Condition, registry: registry) =>
+                TransformBodyCore(body: LoopForRecovery(ws: ws),
                     kind: kind,
                     rewriter: rewriter,
                     registry: registry,
@@ -717,6 +707,65 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             skipIndex: -1);
         scan.VisitExpression(expr: expr);
         return scan.CallIsFailable.Contains(item: true);
+    }
+
+    /// <summary>
+    /// <c>while c</c> as <c>loop { if c { body } else { break } }</c>, so the condition is an <c>if</c> condition the
+    /// statement propagation splits out each time it runs. With an <c>else</c>, the body first sets a flag and the
+    /// <c>else</c> runs after the loop when the flag is still clear (the body ran zero times).
+    /// </summary>
+    private static Statement LoopForRecovery(WhileStatement ws)
+    {
+        SourceLocation loc = ws.Location;
+        string? ranName = ws.ElseBranch != null
+            ? $"__rf_ran_{Interlocked.Increment(location: ref _hoistTemp)}"
+            : null;
+        Statement body = ranName != null
+            ? new BlockStatement(Statements:
+                [
+                    new AssignmentStatement(Target: new IdentifierExpression(Name: ranName, Location: loc),
+                        Value: new LiteralExpression(Value: true,
+                            LiteralType: Builder.Tokenizer.TokenType.True,
+                            Location: loc),
+                        Location: loc),
+                    ws.Body
+                ],
+                Location: loc)
+            : ws.Body;
+        var loop = new LoopStatement(Body: new BlockStatement(Statements:
+                [
+                    new IfStatement(Condition: ws.Condition,
+                        ThenStatement: body,
+                        ElseStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)],
+                            Location: loc),
+                        Location: loc)
+                ],
+                Location: loc),
+            Location: loc);
+        if (ranName == null)
+        {
+            return loop;
+        }
+
+        return new BlockStatement(Statements:
+            [
+                new DeclarationStatement(Declaration: new VariableDeclaration(Name: ranName,
+                        Type: new TypeExpression(Name: "Bool", GenericArguments: null, Location: loc),
+                        Initializer: new LiteralExpression(Value: false,
+                            LiteralType: Builder.Tokenizer.TokenType.False,
+                            Location: loc),
+                        Visibility: VisibilityModifier.Secret,
+                        Location: loc),
+                    Location: loc),
+                loop,
+                new IfStatement(Condition: new UnaryExpression(Operator: UnaryOperator.Not,
+                        Operand: new IdentifierExpression(Name: ranName, Location: loc),
+                        Location: loc),
+                    ThenStatement: ws.ElseBranch!,
+                    ElseStatement: null,
+                    Location: loc)
+            ],
+            Location: loc);
     }
 
     /// <summary>Rewrites each <c>absent</c> into <c>throw AbsentValueError()</c>.</summary>
