@@ -811,6 +811,12 @@ public sealed partial class SemanticVerifier
     private ErrorTypeSymbol? ValidateMemberCallOperandType(CallExpression call, MemberExpression member,
         TypeSymbol objectType)
     {
+        // A call the builder wrote for an operator (`ne` derived as `not me.eq(you: you)`) is how `!=` works.
+        if (call.IsSynthesizedLowering)
+        {
+            return null;
+        }
+
         // Choice types cannot use any operator wired memberRoutines
         if (objectType is ChoiceTypeSymbol && IsOperatorWired(name: member.MemberName))
         {
@@ -895,6 +901,14 @@ public sealed partial class SemanticVerifier
             memberRoutine = TrySynthesizeWrapperForwarder(wrapperType: dispatchType,
                 memberRoutineName: callLookupName,
                 isFailable: isFailableMemberRoutineCall);
+            // A bare call binds a failable inner routine too (`line.find(letter: ' ')` on a `Modifying[Text]`
+            // reaches `Text.find!`), as it does on the inner value itself.
+            if (memberRoutine == null && !isFailableMemberRoutineCall)
+            {
+                memberRoutine = TrySynthesizeWrapperForwarder(wrapperType: dispatchType,
+                    memberRoutineName: callLookupName,
+                    isFailable: true);
+            }
         }
         // A wrapper that obeys a protocol only through its inner type (`Roamed[T] obeys Copyable onlyif T
         // obeys Copyable`) finds the protocol's member or the universal derive (`duplicate` = `assign`), not
@@ -2516,9 +2530,13 @@ public sealed partial class SemanticVerifier
         // #151: Static/instance mismatch — common routine called on instance.
         // Generic type parameters (e.g., `T` inside `Dict[K, V]` body) are not
         // registered as types but ARE valid receivers for common routines.
+        // An instance is a variable: a name with no variable behind it names a type, even one this file cannot
+        // spell (`T` monomorphized to a user's `Point` inside a stdlib body).
         if (memberRoutine.IsCommon && member.Object is IdentifierExpression instanceId &&
+            _registry.LookupVariable(name: instanceId.Name) != null &&
             LookupTypeWithImports(name: instanceId.Name) == null &&
-            !IsGenericParameter(name: instanceId.Name))
+            !IsGenericParameter(name: instanceId.Name) &&
+            _compilerGeneratedTypeParamBindings?.ContainsKey(key: instanceId.Name) != true)
         {
             ReportError(code: SemanticDiagnosticCode.CommonRoutineMismatch,
                 message:
@@ -2663,8 +2681,10 @@ public sealed partial class SemanticVerifier
 
         // @readonly enforcement: cannot call mutating memberRoutines on 'me'. RazorForge-only —
         // Suflae hides @readonly/@reshaping, so a Suflae build never enforces it (even on the
-        // borrowed RF stdlib, whose readonly discipline is RazorForge's own concern).
-        if (_registry.CompilationRules.ChecksReadonly &&
+        // borrowed RF stdlib, whose readonly discipline is RazorForge's own concern). A builder-written body is
+        // left out: its `@readonly` is the builder's own claim, and it calls routines (a user's `crash_message`,
+        // `eq`, `destroy`) nobody is required to mark.
+        if (_registry.CompilationRules.ChecksReadonly && !_isInCompilerGeneratedBody &&
             _currentRoutine is { IsReadOnly: true } &&
             member.Object is IdentifierExpression { Name: "me" } && !memberRoutine.IsReadOnly)
         {
@@ -2947,7 +2967,8 @@ public sealed partial class SemanticVerifier
                 substitutions: substitutions);
         }
 
-        return callReturnType;
+        // `Me` as the base of an associated type (`Emittable.emit!() -> Me/Item`) is the receiver too.
+        return _registry.ReplaceProtocolSelf(type: callReturnType, owner: dispatchType);
     }
 
     /// <summary>
@@ -3254,18 +3275,27 @@ public sealed partial class SemanticVerifier
         bool tokenMint = callLookupName is "view" or ModifyMemberRoutineName &&
                          memberRoutine?.OwnerType is GenericParameterTypeSymbol &&
                          objectType is GenericParameterTypeSymbol;
-        if ((memberRoutine == null || tokenMint) &&
+        // A routine every type has (`a.hijack()` with `a: Accessing[X]`) works on the value the borrow stands
+        // for, so it yields `Hijacked[X]`, not a pointer to the borrow.
+        bool universalOnBorrow = memberRoutine?.OwnerType is GenericParameterTypeSymbol &&
+                                 objectType is ProtocolTypeSymbol;
+        if ((memberRoutine == null || tokenMint || universalOnBorrow) &&
             TryUnwrapMarkerReceiver(type: objectType, innerType: out TypeSymbol target))
         {
-            dispatchType = target;
-            memberRoutine = _registry.LookupMemberRoutine(type: dispatchType,
+            RoutineInfo? onInner = _registry.LookupMemberRoutine(type: target,
                 memberRoutineName: callLookupName,
                 isFailable: isFailableMemberRoutineCall);
-            if (memberRoutine == null && !isFailableMemberRoutineCall)
+            if (onInner == null && !isFailableMemberRoutineCall)
             {
-                memberRoutine = _registry.LookupMemberRoutine(type: dispatchType,
+                onInner = _registry.LookupMemberRoutine(type: target,
                     memberRoutineName: callLookupName,
                     isFailable: true);
+            }
+
+            if (onInner != null || memberRoutine == null)
+            {
+                dispatchType = target;
+                memberRoutine = onInner;
             }
         }
     }

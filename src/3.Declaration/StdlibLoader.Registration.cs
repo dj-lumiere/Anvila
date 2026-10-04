@@ -853,7 +853,8 @@ public sealed partial class StdlibLoader
             registry.LookupType(name: $"{moduleName}.{typeName}",
                 realm: realm) ??
             registry.LookupType(name: $"{moduleName}.{typeName}") ??
-            registry.LookupType(name: typeName);
+            registry.LookupType(name: typeName) ??
+            ResolveViaActiveImports(registry: registry, typeName: typeName);
 
         // If type not found, treat as a generic type parameter (e.g., T in "routine T.view()")
         return ownerType ?? new GenericParameterTypeSymbol(name: typeName);
@@ -2372,7 +2373,8 @@ public sealed partial class StdlibLoader
             ParameterTypes = parameterTypes,
             ParameterNames = parameterNames,
             ReturnType = resolvedReturnType,
-            IsFailable = isFailable
+            IsFailable = isFailable,
+            Location = memberRoutine.Location
         });
     }
 

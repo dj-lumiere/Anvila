@@ -304,7 +304,9 @@ public sealed partial class SemanticVerifier
         switch (id.Name)
         {
             case "me" when _currentType != null:
-                result = _currentType;
+                // A routine on a specialized receiver (`List[Agent[T]].gather`) keeps that receiver as `me` in a
+                // builder-written body too (its recovery variants), not its owner's bare definition.
+                result = _currentRoutine?.MeType ?? MeOfProtocolDefinition(owner: _currentType) ?? _currentType;
                 return true;
             case "me" when _currentRoutine?.OwnerType == null:
                 ReportError(code: SemanticDiagnosticCode.MeOutsideTypeMemberRoutine,
@@ -418,6 +420,20 @@ public sealed partial class SemanticVerifier
     /// receiver (MeType), a generic-parameter owner, or a fresh module-qualified lookup of the owner type.
     /// Returns null when the owner type cannot be re-looked-up (caller falls through).
     /// </summary>
+    /// <summary>
+    /// `me` in a member routine on a generic protocol itself (`routine Iterable[T].List()`): the protocol over
+    /// its own parameters, so iterating or indexing it yields `T`. The bare definition has no arguments to
+    /// read the element from. Null for any other owner.
+    /// </summary>
+    private TypeSymbol? MeOfProtocolDefinition(TypeSymbol owner)
+    {
+        return owner is ProtocolTypeSymbol { IsGenericDefinition: true, GenericParameters: { Count: > 0 } parameters }
+            ? _registry.GetOrCreateResolution(genericDef: owner,
+                typeArguments: parameters.Select(selector: p => (TypeSymbol)new GenericParameterTypeSymbol(name: p))
+                                         .ToList())
+            : null;
+    }
+
     private TypeSymbol? ResolveMeIdentifier()
     {
         // Specialized-receiver member (e.g. `routine List[Agent[V]].gather!()`): `me` is the
@@ -433,6 +449,11 @@ public sealed partial class SemanticVerifier
         if (_currentRoutine.OwnerType is GenericParameterTypeSymbol)
         {
             return _currentRoutine.OwnerType;
+        }
+
+        if (MeOfProtocolDefinition(owner: _currentRoutine.OwnerType!) is { } protocolMe)
+        {
+            return protocolMe;
         }
 
         // Re-lookup to get the updated type with resolved protocols/member variables.
@@ -631,6 +652,14 @@ public sealed partial class SemanticVerifier
         TypeSymbol rightType = binary.Operator == BinaryOperator.Assign
             ? AnalyzeExpression(expression: binary.Right, expectedType: leftType)
             : AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
+
+        // An operand that is a value's token (an iterated element, an element read into a variable) is its value
+        // here: `x + 1` with `x: Viewing[S64]` adds S64s (TokenReadLoweringPass reads it through the token).
+        if (binary.Operator != BinaryOperator.Assign)
+        {
+            leftType = ValueTokenTarget(type: leftType) ?? leftType;
+            rightType = ValueTokenTarget(type: rightType) ?? rightType;
+        }
 
         (leftType, rightType) = ReinferBinaryLiteralOperands(binary: binary,
             leftType: leftType,
@@ -972,11 +1001,8 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol paramType = memberRoutine.Parameters[index: 0].Type;
 
-        // Substitute Me -> leftType for protocol-sourced member routines.
-        if (paramType is ProtocolSelfTypeSymbol)
-        {
-            paramType = leftType;
-        }
+        // Substitute Me -> leftType for protocol-sourced member routines (`Accessing[Me]` too).
+        paramType = _registry.ReplaceProtocolSelf(type: paramType, owner: leftType);
 
         // Contextually infer unsuffixed integer literals against the operator
         // parameter type so stdlib/operator lowering does not inherit a stale S64.
@@ -1840,6 +1866,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeUnaryExpression(UnaryExpression unary)
     {
         TypeSymbol operandType = AnalyzeExpression(expression: unary.Operand);
+        operandType = ValueTokenTarget(type: operandType) ?? operandType;
 
         switch (unary.Operator)
         {

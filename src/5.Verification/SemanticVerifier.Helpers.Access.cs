@@ -339,6 +339,14 @@ public sealed partial class SemanticVerifier
     private void ValidateMemberVariableAccess(MemberVariableInfo memberVariable, bool isWrite,
         SourceLocation accessLocation)
     {
+        // A recovery carrier's layout (`Maybe.present`/`value`, `Check`/`Lookup` `type_id`/`payload`) is what the
+        // builder builds and reads when it lowers `try`/`grab`/`lookup`. Its own bodies reach those secret fields
+        // by construction, whichever module they land in.
+        if (_isInCompilerGeneratedBody && IsCarrierLayoutField(memberVariable: memberVariable))
+        {
+            return;
+        }
+
         // Posted member variables: open read, module-only write
         if (isWrite && memberVariable.Visibility == VisibilityModifier.Posted &&
             !IsAccessingFromSameModule(memberModule: memberVariable.Owner?.Module))
@@ -398,6 +406,17 @@ public sealed partial class SemanticVerifier
                 $"Dangerous routine '{routine.Name}' can only be called inside a 'danger' block.",
                 location: accessLocation);
         }
+    }
+
+    /// <summary>Whether a member variable is one of the recovery carriers' layout fields.</summary>
+    private static bool IsCarrierLayoutField(MemberVariableInfo memberVariable)
+    {
+        string? carrier = memberVariable.Owner?.BareName;
+        return carrier is "Maybe" or "Check" or "Lookup" &&
+               memberVariable.Name is Declaration.RuntimeContract.Carrier.PresentField
+                   or Declaration.RuntimeContract.Carrier.ValueField
+                   or Declaration.RuntimeContract.Carrier.TypeIdField
+                   or Declaration.RuntimeContract.Carrier.PayloadField;
     }
 
     /// <summary>

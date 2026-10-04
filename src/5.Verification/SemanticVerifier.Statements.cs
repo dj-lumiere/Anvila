@@ -320,6 +320,21 @@ public sealed partial class SemanticVerifier
     /// failable-without-failure, stores the body for error-handling variant generation, reports
     /// undismantled Lookup variables, and snapshots stolen variable names for teardown.
     /// </summary>
+    /// <summary>Whether <paramref name="routine"/> implements a failable requirement of a protocol its owner
+    /// obeys (<c>Exposed[T].enter!</c> for <c>Enterable</c>'s <c>enter!</c>).</summary>
+    private bool ImplementsFailableRequirement(RoutineInfo routine)
+    {
+        List<TypeSymbol>? protocols = routine.OwnerType switch
+        {
+            RecordTypeSymbol r => r.ImplementedProtocols,
+            EntityTypeSymbol e => e.ImplementedProtocols,
+            _ => null
+        };
+        return protocols?.Any(predicate: protocol =>
+            _registry.LookupMemberRoutine(type: protocol, memberRoutineName: routine.Name) is
+                { IsFailable: true }) == true;
+    }
+
     private void ValidateRoutineBodyPostAnalysis(RoutineDeclaration routine,
         RoutineInfo routineInfo)
     {
@@ -362,9 +377,12 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // Failable routine with no throw/absent — error: a ! routine that can't fail is misleading.
+        // Failable routine with no throw/absent — error: a ! routine that can't fail is misleading. An
+        // implementation of a protocol's failable requirement (`Enterable.enter!`) keeps the `!` the protocol
+        // asks for even when this implementation never fails.
         if (routineInfo is
-            { IsFailable: true, HasThrow: false, HasAbsent: false, HasFailableCalls: false })
+                { IsFailable: true, HasThrow: false, HasAbsent: false, HasFailableCalls: false } &&
+            !ImplementsFailableRequirement(routine: routineInfo))
         {
             ReportError(code: SemanticDiagnosticCode.FailableWithoutThrowOrAbsent,
                 message:
@@ -702,6 +720,13 @@ public sealed partial class SemanticVerifier
     {
         if (block.Statements.Count == 0)
         {
+            // `pass` is a rule about written source. A builder-written body empties a block legitimately (an
+            // `expand` over a type with no members, a lowered recovery arm with nothing left to do).
+            if (_isInCompilerGeneratedBody)
+            {
+                return;
+            }
+
             ReportError(code: SemanticDiagnosticCode.EmptyBlockWithoutPass,
                 message: "Empty block requires 'pass' keyword.",
                 location: block.Location);

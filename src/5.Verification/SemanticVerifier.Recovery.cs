@@ -77,6 +77,13 @@ public sealed partial class SemanticVerifier
             _registry.LookupRecoveryVariant(recovered: singleBase, kind: recovery.Kind) is { } singleVariant &&
             BindResolvedVariantCall(call: singleCall, variant: singleVariant) is { } boundCall)
         {
+            // A protocol's routine reached through its receiver carries `Me` in its carrier
+            // (`Maybe[Me/Item]` for `try it.emit()`): `Me` is that receiver.
+            if (boundCall is { Callee: MemberExpression { Object.ResolvedType: { } boundReceiver }, ResolvedType: { } carrier })
+            {
+                boundCall.ResolvedType = _registry.ReplaceProtocolSelf(type: carrier, owner: boundReceiver);
+            }
+
             recovery.LoweredCall = boundCall;
             return boundCall.ResolvedType!;
         }
@@ -154,6 +161,18 @@ public sealed partial class SemanticVerifier
                 $"carrier variant for this expression.",
                 location: recovery.Location);
             return ErrorTypeSymbol.Instance;
+        }
+
+        // ONE failable call on a receiver whose type is still a parameter (`try me.first.emit()` with
+        // `first: TFirstIter`) reaches the protocol's routine, which has no variant of its own. The synthesized
+        // base would keep that parameter in a body nothing instantiates. Monomorphization binds the concrete
+        // receiver's own variant (GenericAstRewriter.BindRecoveryOnConcreteReceiver), so leave the call unbound
+        // and give the expression the carrier type.
+        if (hoister.Hoisted.Count == 1 && residual is IdentifierExpression &&
+            inner is CallExpression { Callee: MemberExpression { Object.ResolvedType: { } receiverType } } &&
+            ContainsUnresolvedTypeParameter(type: receiverType))
+        {
+            return variant.ReturnType ?? ErrorTypeSymbol.Instance;
         }
 
         // The LoweredCall is a free call bound to the variant, passing the captured locals as named

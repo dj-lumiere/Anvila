@@ -1173,8 +1173,12 @@ internal static class GenericAstRewriter
             return recovery;
         }
 
+        // Bound like the analyzed single-call case (SemanticVerifier.BindResolvedVariantCall): the call is the
+        // variant now, no longer a failable call a later pass would propagate.
         return call with
         {
+            Callee = call.Callee is MemberExpression member ? member with { IsFailable = false } : call.Callee,
+            IsFailable = false,
             ResolvedRoutine = variant,
             LoweringKind = CallLoweringKind.DirectMemberRoutine,
             ResolvedType = variant.ReturnType,
@@ -2873,10 +2877,13 @@ internal static class GenericAstRewriter
         string? binding = (arm.Template.Pattern as SpliceTypePattern)?.VariableName;
         SourceLocation loc = arm.Template.Location;
 
-        // Explicit clauses written alongside the expand (e.g. `is None => …`) come first.
+        // Explicit clauses written alongside the expand (e.g. `is None => …`, a trailing `else`) keep their
+        // source order, and the generated arms go where the `expand` was written. Appending them after a
+        // trailing `else` would make every generated arm unreachable.
         var clauses = ws.Clauses
                         .Select(selector: c => RewriteWhenClause(clause: c, ctx: ctx))
                         .ToList();
+        int insertAt = ws.Clauses.Count(predicate: c => c.Pattern.Location.Position < loc.Position);
         if (source is VariantTypeSymbol variant)
         {
             string? prevHandle = ctx.ActiveExpandHandle;
@@ -2919,7 +2926,7 @@ internal static class GenericAstRewriter
                     ctx.ActiveBindingTypes.Remove(key: binding);
                 }
 
-                clauses.Add(item: new WhenClause(Pattern: pattern, Body: body, Location: loc));
+                clauses.Insert(index: insertAt++, item: new WhenClause(Pattern: pattern, Body: body, Location: loc));
             }
 
             ctx.ActiveExpandHandle = prevHandle;

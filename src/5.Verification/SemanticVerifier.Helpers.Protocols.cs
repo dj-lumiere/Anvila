@@ -557,8 +557,21 @@ public sealed partial class SemanticVerifier
             TypeSymbol expectedType = protoMemberRoutine.ParameterTypes[index: i];
             TypeSymbol actualType = typeMemberRoutine.Parameters[index: startIndex + i].Type;
 
+            // `Accessing[Me]` (a parameter the routine only reads): `Accessing[Owner]` or the bare owner both fit.
+            // Which one an entity must spell is the signature check's call (RF-S703).
+            if (expectedType is ProtocolTypeSymbol { TypeArguments: [ProtocolSelfTypeSymbol] } &&
+                typeMemberRoutine.OwnerType is { } readOwner)
+            {
+                if (!TypesMatch(actual: actualType, expected: readOwner) &&
+                    !Declaration.SignatureResolver.ReadsOwnerThroughAccessing(routine: typeMemberRoutine,
+                        paramType: actualType,
+                        owner: readOwner))
+                {
+                    return false;
+                }
+            }
             // Handle protocol self type (Me) - should match the implementing type
-            if (expectedType is ProtocolSelfTypeSymbol)
+            else if (expectedType is ProtocolSelfTypeSymbol)
             {
                 // 'Me' in protocol should match the owner type of the memberRoutine
                 if (typeMemberRoutine.OwnerType != null && !TypesMatch(actual: actualType,
@@ -584,6 +597,12 @@ public sealed partial class SemanticVerifier
     private bool MemberRoutineReturnTypeMatches(RoutineInfo typeMemberRoutine,
         ProtocolMemberRoutineInfo protoMemberRoutine)
     {
+        // A return named as the implementer's own associated type (`Me/Item`) is whatever the implementer returns.
+        if (protoMemberRoutine.ReturnType is AssociatedProjectionTypeSymbol { Base: ProtocolSelfTypeSymbol })
+        {
+            return typeMemberRoutine.ReturnType != null;
+        }
+
         // Check return type (if specified)
         if (protoMemberRoutine.ReturnType != null && typeMemberRoutine.ReturnType != null)
         {

@@ -720,7 +720,9 @@ public sealed partial class SemanticVerifier
         // excludes all borrow forms with no name list. Verb-wrapped arguments (steal/copy/share)
         // are Steal/Call expressions, not Identifier/Member, so they are excluded automatically.
         // Safety comes from move tracking; this check makes the destructive transfer visible in source.
-        if (_registry.Rules.ChecksOwnership &&
+        // A builder-written body is analyzed after that strip, so a borrow parameter already reads as the bare
+        // entity there (`eq(you: Accessing[Box])` as `eq(you: Box)`) and the structure says nothing.
+        if (_registry.Rules.ChecksOwnership && !_isInCompilerGeneratedBody &&
             ReadsKeptEntity(value: argValue, includeVariables: true) && argType is EntityTypeSymbol &&
             paramType is EntityTypeSymbol)
         {
@@ -1028,6 +1030,22 @@ public sealed partial class SemanticVerifier
                    ImplementsProtocol(type: source, protocolName: target.Name);
         }
 
+        // A value's token (`Viewing[S64]`) reads the value where an S64 is wanted.
+        if (ValueTokenTarget(type: source) is { } tokenValue && IsAssignableTo(source: tokenValue, target: target))
+        {
+            return true;
+        }
+
+        // A read or write borrow (`Accessing[X]` / `Controlling[X]`) has X's representation and forwards to it, as a
+        // member call or a comparison on it does, so it can be handed where an X value is read. An entity is left
+        // out: handing one over moves ownership, which a borrow cannot give.
+        if (TryGetTransparentProtocolTarget(type: source, targetType: out TypeSymbol borrowed) &&
+            !_registry.IsEntityKind(type: borrowed) &&
+            IsAssignableTo(source: borrowed, target: target))
+        {
+            return true;
+        }
+
         // Const generic: `needs N is U64` — N is a U64 value at runtime.
         if (IsConstGenericAssignable(source: source, target: target))
         {
@@ -1104,7 +1122,10 @@ public sealed partial class SemanticVerifier
         return (source is GenericParameterTypeSymbol srcGen &&
                 ConstGenericMatches(paramName: srcGen.Name, otherTypeName: target.Name)) ||
                (target is GenericParameterTypeSymbol tgtGen &&
-                ConstGenericMatches(paramName: tgtGen.Name, otherTypeName: source.Name));
+                ConstGenericMatches(paramName: tgtGen.Name, otherTypeName: source.Name)) ||
+               // In an instantiated body `N` is its argument (`4`), a value of the integer type it is used as.
+               (source is ConstGenericValueTypeSymbol srcValue && IsIntegerType(type: target) &&
+                (srcValue.ExplicitTypeName == null || srcValue.ExplicitTypeName == target.Name));
     }
 
     /// <summary>
@@ -1457,14 +1478,41 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static TypeSymbol UnwrapBorrowProtocol(TypeSymbol type)
     {
-        if (type.Category == TypeCategory.Protocol &&
-            Declaration.RuntimeContract.IsMarkerProtocol(baseName: type.BareName) &&
+        if ((type.Category == TypeCategory.Protocol &&
+             Declaration.RuntimeContract.IsMarkerProtocol(baseName: type.BareName) || IsAccessToken(type: type)) &&
             type.TypeArguments is { Count: > 0 } args)
         {
             return args[index: 0];
         }
 
         return type;
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a token on a value where it is stored (<c>Viewing[T]</c>,
+    /// <c>Modifying[T]</c>): the address of that place.</summary>
+    private static bool IsAccessToken(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol token &&
+               (token.GenericDefinition ?? token).BareName is Declaration.RuntimeContract.Viewing
+                   or Declaration.RuntimeContract.Modifying;
+    }
+
+    /// <summary>
+    /// The value a value's token reads (<c>Viewing[S64]</c> reads an <c>S64</c>), or null for anything else. Where
+    /// the value itself is wanted (an operator, a comparison, an argument, a declared-type variable, a return) the
+    /// token reads it (TokenReadLoweringPass inserts <c>access()</c>). An entity's token gives none: reading the
+    /// entity out would make a second owner of it.
+    /// </summary>
+    private TypeSymbol? ValueTokenTarget(TypeSymbol type)
+    {
+        if (ProjectionReadTarget(type: type) is { } projected)
+        {
+            return projected;
+        }
+
+        return IsAccessToken(type: type) && type.TypeArguments is [{ } value] && value is not EntityTypeSymbol
+            ? value
+            : null;
     }
 
     private bool SupportsOperator(TypeSymbol type, BinaryOperator op)
@@ -1979,21 +2027,19 @@ public sealed partial class SemanticVerifier
         // protocol that obeys Iterable), trust the dispatch and take the
         // element type from the type-arg. Any concrete value bound will
         // implement Iterable structurally.
-        if (TryGetProtocolIterableElement(type: iterableType) is { } protocolElement)
+        // What its iterator hands out is the iterator's `Item` (`S/Iter/Item`), which reads as the element type
+        // and becomes the concrete iterator's `Item` (a token on a stored element, or a value) once the body is
+        // instantiated.
+        if (TryGetProtocolIterableElement(type: iterableType) is not null)
         {
-            return protocolElement;
+            return IteratorItemOf(iterable: iterableType);
         }
 
-        // Generic-parameter receiver constrained to Iterable[X]: take the element type directly
-        // from the constraint's type argument to avoid leaking the unsubstituted generic param T.
-        if (iterableType is GenericParameterTypeSymbol gp)
+        // Generic-parameter receiver constrained to Iterable[X]: the same `Item` projection, which reads as X.
+        if (iterableType is GenericParameterTypeSymbol gp &&
+            TryGetIterableElementFromGenericConstraint(paramName: gp.Name) is not null)
         {
-            TypeSymbol? fromConstraint =
-                TryGetIterableElementFromGenericConstraint(paramName: gp.Name);
-            if (fromConstraint != null)
-            {
-                return fromConstraint;
-            }
+            return IteratorItemOf(iterable: gp);
         }
 
         // Verify the type follows the Iterable protocol (or has an iter member routine).
@@ -2006,15 +2052,8 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // Strategy 1: Extract element type from Iterable[X] protocol conformance.
-        // This correctly handles chained generics like EnumerateIterator[T] obeys Iterable[Tuple[S64, T]]
-        TypeSymbol? fromProtocols = TryGetElementFromIterableProtocols(iterableType: iterableType);
-        if (fromProtocols != null)
-        {
-            return fromProtocols;
-        }
-
-        // Strategy 1.5 (ground truth): the element is exactly what the iterator's `emit!` returns.
+        // Strategy 1 (ground truth): the element is exactly what the iterator's `emit!` returns: a token on a
+        // stored element (`Modifying[T]`) where the protocol only says `T`.
         // Resolve `iterable.iter()` to the concrete iterator type, then that iterator's `emit!`
         // return type. This mirrors the for-loop lowering (IteratorInlineLoweringPass) and, unlike
         // Strategy 1, does NOT depend on the instance's ImplementedProtocols being populated — so it
@@ -2036,6 +2075,14 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        // Strategy 1.5: the element type from Iterable[X] protocol conformance.
+        // This correctly handles chained generics like EnumerateIterator[T] obeys Iterable[Tuple[S64, T]]
+        TypeSymbol? fromProtocols = TryGetElementFromIterableProtocols(iterableType: iterableType);
+        if (fromProtocols != null)
+        {
+            return fromProtocols;
+        }
+
         // Strategy 2: Look for iter memberRoutine to get element type from Iterator[T] return type
         TypeSymbol? fromIterReturn = TryGetElementFromIterReturnType(iterableType: iterableType);
         if (fromIterReturn != null)
@@ -2054,6 +2101,14 @@ public sealed partial class SemanticVerifier
             $"Cannot determine element type for '{iterableType.Name}'. The iter member routine must return Iterator[T].",
             location: location);
         return ErrorTypeSymbol.Instance;
+    }
+
+    /// <summary>The `Item` of <paramref name="iterable"/>'s iterator: the projection <c>S/Iter/Item</c>.</summary>
+    private static TypeSymbol IteratorItemOf(TypeSymbol iterable)
+    {
+        return new AssociatedProjectionTypeSymbol(
+            baseType: new AssociatedProjectionTypeSymbol(baseType: iterable, slotName: "Iter"),
+            slotName: "Item");
     }
 
     private static TypeSymbol? TryGetProtocolIterableElement(TypeSymbol type)

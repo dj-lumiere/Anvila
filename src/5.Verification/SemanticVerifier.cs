@@ -1671,6 +1671,10 @@ public sealed partial class SemanticVerifier
             _importedModules.Add(item: importModule);
         }
 
+        // Kept so a body the builder later takes from this file (a derive in Derivation.rf instantiated for
+        // some other type) is analyzed with this file's imports.
+        CaptureCurrentImportStateSnapshot(filePath: filePath);
+
         // Repair declarations that reference a LAZILY-loaded imported module's type. A `module Core` file
         // (eagerly registered) whose signature/field names a type from an on-demand module — e.g.
         // FloatConvert's `round_and_pack(num_in: Integer, …)` or a record field `mantissa: Integer`, where
@@ -2623,13 +2627,9 @@ public sealed partial class SemanticVerifier
     /// re-snapshots the live-routine keys so codegen's liveness gate admits the freshly-built bodies.
     /// No-op in normal builds.
     /// </summary>
-    private void RunShadowCollectorIfNeeded()
+    /// <summary>The builder-written bodies and the recovery variant bodies, by routine key.</summary>
+    private Dictionary<string, Statement> SynthesizedBodySources()
     {
-        if (_shadowCtx == null)
-        {
-            return;
-        }
-
         var synthSources = _synthesizedBodies.ToDictionary(keySelector: kvp => kvp.Key,
             elementSelector: kvp => kvp.Value.Body,
             comparer: StringComparer.Ordinal);
@@ -2638,7 +2638,34 @@ public sealed partial class SemanticVerifier
             synthSources[key: key] = variantBody;
         }
 
-        new RoutineCollectionPass(ctx: _shadowCtx).RunCollect(synthesizedBodies: synthSources);
+        return synthSources;
+    }
+
+    private void RunShadowCollectorIfNeeded()
+    {
+        if (_shadowCtx == null)
+        {
+            return;
+        }
+
+        // The bodies as they stand now, plus each wrapper forwarder written later while the walk analyzes a
+        // library file it reaches (an element token's call on a member of the value). Other bodies written then
+        // are finished by the analysis that wrote them and reach the walk on their own.
+        Dictionary<string, Statement> sources = SynthesizedBodySources();
+        IReadOnlyDictionary<string, Statement> Current()
+        {
+            foreach ((string key, (RoutineInfo routine, Statement body)) in _synthesizedBodies)
+            {
+                if (routine.WrapperForwarderInnerMemberRoutine != null)
+                {
+                    sources.TryAdd(key: key, value: body);
+                }
+            }
+
+            return sources;
+        }
+
+        new RoutineCollectionPass(ctx: _shadowCtx).RunCollect(synthesizedBodies: Current);
         _liveRoutineKeys = _shadowCtx.LiveRoutineKeys.ToArray();
         _liveOwnerTypeNames = _shadowCtx.LiveOwnerTypeNames.ToArray();
     }
@@ -2651,6 +2678,14 @@ public sealed partial class SemanticVerifier
     {
         foreach ((string _, (RoutineInfo Routine, Statement Body) pair) in _synthesizedBodies)
         {
+            // A wrapper forwarder on a generic definition (`Viewing[T].getitem`) is a template: it calls `T`'s
+            // member, which `T` alone does not have. Only its instantiations mean anything, and monomorphization
+            // builds and resolves those against the concrete inner type.
+            if (pair.Routine is { WrapperForwarderInnerMemberRoutine: not null, OwnerType.IsGenericDefinition: true })
+            {
+                continue;
+            }
+
             AnalyzeCompilerGeneratedBody(routineInfo: pair.Routine,
                 body: pair.Body,
                 preservePresetTypes: true);
@@ -2704,7 +2739,7 @@ public sealed partial class SemanticVerifier
             comparer: StringComparer.Ordinal);
         string? previousModuleName = _currentModuleName;
 
-        RestoreImportScopeForCompilerGeneratedBody(routineInfo: routineInfo);
+        RestoreImportScopeForCompilerGeneratedBody(routineInfo: routineInfo, body: body);
 
         // The body is analyzed in the language it is written in: a stdlib routine is RazorForge even in a Suflae
         // build, so its builder-written variants keep their `danger` blocks and dangerous calls. So is a body
@@ -2786,7 +2821,15 @@ public sealed partial class SemanticVerifier
         _isInCompilerGeneratedBody = true;
         _preservePresetTypes = preservePresetTypes;
         int errorsBefore = _errors.Count;
+        // A `dangerous` routine's body is a danger context, as it is when the routine is written by hand.
+        int prevDangerDepth = _dangerBlockDepth;
+        if (routineInfo.IsDangerous)
+        {
+            _dangerBlockDepth = 1;
+        }
+
         AnalyzeStatement(statement: body);
+        _dangerBlockDepth = prevDangerDepth;
         if (_errors.Count > errorsBefore)
         {
             TraceDroppedErrors(from: errorsBefore);
@@ -2818,13 +2861,55 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// The modules a file imports: its snapshot when it has been analyzed, otherwise read from its stdlib
+    /// declarations (a stdlib file a builder body is taken from before the file itself is analyzed).
+    /// </summary>
+    private IEnumerable<string> ImportsOfFile(string filePath)
+    {
+        if (_importSnapshots.TryGetValue(key: filePath, value: out HashSet<string>? snapshot))
+        {
+            return snapshot;
+        }
+
+        Program? program = _registry.StdlibPrograms
+                                    .FirstOrDefault(predicate: s => s.FilePath == filePath)
+                                    .Program;
+        if (program == null)
+        {
+            return [];
+        }
+
+        var imports = new List<string>();
+        foreach (ImportDeclaration import in program.Declarations.OfType<ImportDeclaration>())
+        {
+            imports.Add(item: import.ModulePath);
+            int dotIdx = import.ModulePath.IndexOf(value: '.');
+            if (dotIdx > 0)
+            {
+                imports.Add(item: import.ModulePath[..dotIdx]);
+            }
+        }
+
+        return imports;
+    }
+
+    /// <summary>
     /// Restores the import scope for a builder-generated body: from the routine's snapshot when one
     /// exists, otherwise (single-file path, no stdlib snapshot) a minimal Core + own-module scope so SA
     /// can resolve Core type annotations (S128, U32, …) referenced in the body.
     /// </summary>
-    private void RestoreImportScopeForCompilerGeneratedBody(RoutineInfo routineInfo)
+    private void RestoreImportScopeForCompilerGeneratedBody(RoutineInfo routineInfo, Statement? body = null)
     {
-        if (TryRestoreImportStateForRoutine(routineInfo: routineInfo))
+        bool restored = TryRestoreImportStateForRoutine(routineInfo: routineInfo);
+
+        // The body also sees what the file it was written in imports: a derive template from Derivation.rf
+        // instantiated for a type declared elsewhere, or a body whose routine's own file left no snapshot.
+        if (body?.Location.FileName is { Length: > 0 } bodyFile)
+        {
+            _importedModules.UnionWith(other: ImportsOfFile(filePath: bodyFile));
+        }
+
+        if (restored)
         {
             return;
         }
@@ -2870,7 +2955,6 @@ public sealed partial class SemanticVerifier
             ? bindings
             : null;
     }
-
     /// <summary>
     /// Phase 7: Sets ReturnType = None for every routine still carrying null after all analysis.
     /// Null is a transient "not yet inferred" state. Stdlib routines without a return type
@@ -3035,10 +3119,11 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        string? routine = _currentRoutine?.RegistryKey;
         for (int i = from; i < _errors.Count; i++)
         {
-            Console.Error.WriteLine(value: $"[dropped] {_errors[index: i].Location.FileName}:{_errors[index: i].Location.Line}:" +
-                                           $"{_errors[index: i].Location.Column} {_errors[index: i].Message}");
+            Console.Error.WriteLine(value: $"[dropped] {_errors[index: i].Code} {_errors[index: i].Location.FileName}:{_errors[index: i].Location.Line}:" +
+                                           $"{_errors[index: i].Location.Column} {_errors[index: i].Message} [in {routine}]");
         }
     }
 

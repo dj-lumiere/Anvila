@@ -258,6 +258,9 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
             instantiatedGenericBodies: freshBodies);
         new ExpressionLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
             instantiatedGenericBodies: freshBodies);
+        // A token on a `T` element is read once `T` is concrete (a value is read out, an entity's token stays).
+        new TokenReadLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
+            instantiatedGenericBodies: freshBodies);
         new OperatorLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
             instantiatedGenericBodies: freshBodies);
         // Copy lowering for instantiated bodies: at generic-def time a field of generic type T looks

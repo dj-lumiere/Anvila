@@ -340,6 +340,9 @@ public static class RuntimeContract
             RawPointer.AsEntity, Access, Control
         };
 
+    /// <summary>An iterator's step (`Emittable.emit!`): what it returns is the iterator's `Item`.</summary>
+    public const string Emit = "emit";
+
     // =====================================================================================
     // Wrapper TYPE names — genuine type-identity checks (legitimate to keep as checks, but the
     // string should be a symbol reference eventually — Design 2B). One definition per set here.

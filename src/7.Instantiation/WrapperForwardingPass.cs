@@ -223,10 +223,39 @@ internal sealed class WrapperForwardingPass
             return null;
         }
 
-        return SynthesizeForwarder(wrapperType: wrapperType,
+        RoutineInfo? forwarder = SynthesizeForwarder(wrapperType: wrapperType,
             memberRoutineName: memberRoutineName,
             isFailable: isFailable,
             ctx: ctx);
+
+        // The inner type's other overloads of the name (`Text.find!(letter:)` and `Text.find!(other:)`, `getitem`
+        // by index and by range) get their forwarders too, so a call on the wrapper picks among them by its
+        // arguments, as it would on the inner value.
+        var overloads = new List<RoutineInfo>();
+        _registry.CollectMemberRoutineCandidates(type: ctx.InnerType,
+            memberRoutineName: memberRoutineName,
+            candidates: overloads);
+        foreach (RoutineInfo overload in overloads)
+        {
+            // Roamed's own rules above (a representation-unified routine, no failable forwarder) hold for
+            // every overload, so it takes none here.
+            if (wrapperType.BareName == RuntimeContract.Roamed ||
+                ReferenceEquals(objA: overload, objB: ctx.InnerMemberRoutine) ||
+                overload.RegistryKey == ctx.InnerMemberRoutine.RegistryKey ||
+                overload.OwnerType is ProtocolTypeSymbol or GenericParameterTypeSymbol ||
+                IsReadOnlyWrapper(type: wrapperType) && !overload.IsReadOnly)
+            {
+                continue;
+            }
+
+            SynthesizeForwarder(wrapperType: wrapperType,
+                memberRoutineName: memberRoutineName,
+                isFailable: overload.IsFailable,
+                ctx: ctx with { InnerMemberRoutine = overload },
+                overloadOnly: true);
+        }
+
+        return forwarder;
     }
 
     private readonly record struct WrapperResolutionContext(
@@ -283,6 +312,18 @@ internal sealed class WrapperForwardingPass
                 isFailable: isFailable);
         }
 
+        // A name with several overloads (`Text.find!(letter:)` and `Text.find!(other:)`) has no single routine by
+        // name: any one of them seeds the forwarders, and TrySynthesize builds the rest.
+        if (innerMemberRoutine == null)
+        {
+            var overloads = new List<RoutineInfo>();
+            _registry.CollectMemberRoutineCandidates(type: innerType,
+                memberRoutineName: memberRoutineName,
+                candidates: overloads);
+            innerMemberRoutine = overloads.FirstOrDefault(predicate: o =>
+                o.IsFailable == isFailable && o.OwnerType is not (ProtocolTypeSymbol or GenericParameterTypeSymbol));
+        }
+
         // No concrete inner impl → no forwarder. A resolution to the ABSTRACT protocol member does
         // NOT count — forwarding to it would emit a call to an unimplemented abstract symbol.
         if (innerMemberRoutine == null || innerMemberRoutine.OwnerType is ProtocolTypeSymbol)
@@ -303,26 +344,34 @@ internal sealed class WrapperForwardingPass
     /// one when synthesis was previously completed or a source-defined routine takes precedence.
     /// </summary>
     private RoutineInfo? SynthesizeForwarder(TypeSymbol wrapperType, string memberRoutineName,
-        bool isFailable, WrapperResolutionContext ctx)
+        bool isFailable, WrapperResolutionContext ctx, bool overloadOnly = false)
     {
         (TypeSymbol wrapperDef, string genericParamName, TypeSymbol innerType,
             TypeSymbol innerLookupType, RoutineInfo innerMemberRoutine) = ctx;
         string cacheKey = $"{wrapperDef.Name}.{memberRoutineName}#{(isFailable ? "!" : "")}";
-        if (!_synthesizedForwarderKeys.Add(item: cacheKey))
+        // One forwarder per inner overload, whichever request built it first.
+        string overloadKey = $"{wrapperDef.Name}@{innerMemberRoutine.RegistryKey}";
+        bool fresh = overloadOnly
+            ? _synthesizedForwarderKeys.Add(item: overloadKey)
+            : _synthesizedForwarderKeys.Add(item: cacheKey) & _synthesizedForwarderKeys.Add(item: overloadKey);
+        if (!fresh)
         {
             return _registry.LookupMemberRoutine(type: wrapperType,
                 memberRoutineName: memberRoutineName,
                 isFailable: isFailable) ?? _registry.LookupMemberRoutine(type: wrapperDef,
                 memberRoutineName: memberRoutineName,
+                isFailable: isFailable) ?? AnyForwarderOverload(wrapperType: wrapperType,
+                memberRoutineName: memberRoutineName,
                 isFailable: isFailable);
         }
 
         // Don't overwrite a routine already defined on the wrapper's generic def —
-        // source-defined routines like represent, diagnose, destroy take precedence.
+        // source-defined routines like represent, diagnose, destroy take precedence. A forwarder built for
+        // another overload of the name is no such routine.
         RoutineInfo? existingOnDef = _registry.LookupMemberRoutine(type: wrapperDef,
             memberRoutineName: memberRoutineName,
             isFailable: isFailable);
-        if (existingOnDef != null)
+        if (existingOnDef is { WrapperForwarderInnerMemberRoutine: null })
         {
             return _registry.LookupMemberRoutine(type: wrapperType,
                 memberRoutineName: memberRoutineName,
@@ -385,6 +434,20 @@ internal sealed class WrapperForwardingPass
         return _registry.LookupMemberRoutine(type: wrapperType,
             memberRoutineName: memberRoutineName,
             isFailable: isFailable) ?? forwarder;
+    }
+
+    /// <summary>
+    /// One of the forwarders already built for a name with several overloads (no single one by name): the caller
+    /// picks among them by its arguments. One of the asked failability when there is one.
+    /// </summary>
+    private RoutineInfo? AnyForwarderOverload(TypeSymbol wrapperType, string memberRoutineName, bool isFailable)
+    {
+        var overloads = new List<RoutineInfo>();
+        _registry.CollectMemberRoutineCandidates(type: wrapperType,
+            memberRoutineName: memberRoutineName,
+            candidates: overloads);
+        overloads.RemoveAll(match: o => o.OwnerType is ProtocolTypeSymbol or GenericParameterTypeSymbol);
+        return overloads.FirstOrDefault(predicate: o => o.IsFailable == isFailable) ?? overloads.FirstOrDefault();
     }
 
     /// <summary>

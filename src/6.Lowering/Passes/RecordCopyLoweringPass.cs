@@ -562,6 +562,14 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
 
         // (`a[i]` is a `getitem` call, which hands back a holder of its own — no copy injection is needed here.)
 
+        // A recovery variant returns its value wrapped in its carrier (`return x` became `return Maybe(present:
+        // true, value: x)`). The wrapped value is still what the routine returns, so it moves out like a bare
+        // return: copying a returned local here left one share nobody released.
+        if (isReturn && expr is CreatorExpression { ResolvedType.BareName: "Maybe" or "Check" or "Lookup" } carrier)
+        {
+            return StripStealFromCreator(creator: carrier, membersAreReturned: true);
+        }
+
         // For complex expressions in ownership positions (calls, constructors, etc.),
         // recurse into argument positions (which are themselves copy positions).
         return StripStealFromExpr(expr: expr);
@@ -652,7 +660,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
             : call;
     }
 
-    private CreatorExpression StripStealFromCreator(CreatorExpression creator)
+    private CreatorExpression StripStealFromCreator(CreatorExpression creator, bool membersAreReturned = false)
     {
         // A constructor's member-variable initializers are copy positions, exactly like call
         // arguments: each becomes an independent field of the new aggregate, so a borrowed
@@ -663,7 +671,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
             new List<(string Name, Expression Value)>(capacity: creator.MemberVariables.Count);
         foreach ((string Name, Expression Value) mv in creator.MemberVariables)
         {
-            Expression s = LowerOwnership(expr: mv.Value, isReturn: false);
+            Expression s = LowerOwnership(expr: mv.Value, isReturn: membersAreReturned);
             members.Add(item: (mv.Name, s));
             if (!ReferenceEquals(objA: s, objB: mv.Value))
             {

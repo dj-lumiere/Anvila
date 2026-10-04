@@ -45,7 +45,10 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     /// through non-generic bodies like <c>Bytes.create(from_list:)</c>). Always on — the push DCE's over-prune
     /// gap is closed here.
     /// </summary>
-    public void RunCollect(IReadOnlyDictionary<string, Statement>? synthesizedBodies = null)
+    /// <param name="synthesizedBodies">The builder-written bodies by routine key, read afresh each time they are
+    /// materialized: a routine the builder writes while a reached library file is analyzed during the walk (a
+    /// wrapper forwarder an element token's call needs) is among them.</param>
+    public void RunCollect(Func<IReadOnlyDictionary<string, Statement>>? synthesizedBodies = null)
     {
         // ALIAS the real pipeline dicts: freshly-built + lowered bodies land in the real
         // ctx.InstantiatedGenericBodies (== what codegen reads) and their keys in ctx.LiveRoutineKeys.
@@ -131,7 +134,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         {
             if (synthesizedBodies != null)
             {
-                MaterializePerOwnerSynthesizedBodies(synthesizedBodies: synthesizedBodies);
+                MaterializePerOwnerSynthesizedBodies(synthesizedBodies: synthesizedBodies());
             }
 
             MaterializeReachedStdlibBodies(programBodies: idx3);
@@ -189,7 +192,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     /// </summary>
     private bool RunCollectRound(DesugaringContext adapter,
         List<(string Key, Statement Body)> entrySeeds,
-        IReadOnlyDictionary<string, Statement>? synthesizedBodies,
+        Func<IReadOnlyDictionary<string, Statement>>? synthesizedBodies,
         ProtocolDefaultImplLoweringPass pdil, System.Diagnostics.Stopwatch? clk, int round,
         Action<string, Action> meas)
     {
@@ -214,7 +217,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
                .CollectReferencedInIsolation(
                     entrySeeds: entrySeeds,
                     programBodies: idx,
-                    synthesizedBodies: synthesizedBodies));
+                    synthesizedBodies: synthesizedBodies?.Invoke()));
         if (clk != null)
         {
             Console.Error.WriteLine(
@@ -268,7 +271,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         {
             if (synthesizedBodies != null)
             {
-                MaterializePerOwnerSynthesizedBodies(synthesizedBodies: synthesizedBodies);
+                MaterializePerOwnerSynthesizedBodies(synthesizedBodies: synthesizedBodies());
             }
 
             MaterializeReachedStdlibBodies(programBodies: idx2);
@@ -708,7 +711,11 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
                 continue;
             }
 
-            if (ctx.InstantiatedGenericBodies.ContainsKey(key: concreteWf.RegistryKey))
+            // A forwarder written while the walk analyzed a library file was reached before its body was among
+            // the builder-written ones, and monomorphization stood an empty body in for it: replace that.
+            if (ctx.InstantiatedGenericBodies.TryGetValue(key: concreteWf.RegistryKey,
+                    value: out MonomorphizedBody? existing) &&
+                existing.Ast is not RoutineDeclaration { Body: BlockStatement { Statements.Count: 0 } })
             {
                 continue;
             }

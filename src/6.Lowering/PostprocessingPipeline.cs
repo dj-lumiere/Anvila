@@ -57,6 +57,8 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
             new ExpressionLoweringPass(ctx: ctx).Run(program: program);
         }
 
+        // Before operator lowering, so `x + 1` on an element token already adds values.
+        new TokenReadLoweringPass(ctx: ctx).Run(program: program);
         new OperatorLoweringPass(ctx: ctx).Run(program: program);
         // RoamedProjectionLoweringPass runs after OperatorLoweringPass and FStringLoweringPass so it
         // sees the operator/f-string-lowered Roamed receiver calls; it rewrites the codegen-side
@@ -125,6 +127,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         }
 
         new FStringLoweringPass(ctx: ctx).RunOnVariantBodies();
+        new TokenReadLoweringPass(ctx: ctx).RunOnVariantBodies();
         new OperatorLoweringPass(ctx: ctx).RunOnVariantBodies();
         // See the per-program Run(): rewrite the Roamed raw_inner() projection into a real AST call
         // after operator/f-string lowering so it is visible in synthesized variant bodies too.

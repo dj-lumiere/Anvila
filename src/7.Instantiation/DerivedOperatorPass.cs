@@ -241,7 +241,9 @@ internal sealed class DerivedOperatorPass
             ],
             Location: _synthLoc)
         {
-            ResolvedRoutine = delegateMemberRoutine, ResolvedType = boolType
+            // The builder's own spelling of `!=` (or `lack`): it may call `eq` on a choice or flags value, which
+            // written source may not.
+            ResolvedRoutine = delegateMemberRoutine, ResolvedType = boolType, IsSynthesizedLowering = true
         };
 
         var falseVal =

@@ -468,7 +468,13 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             VariantReturnStatement vr => vr.Value,
             _ => null
         };
+        // A recovery carrier around the returned local (`Maybe(present: true, value: x)`) reads only that local,
+        // which `skip` already keeps alive, and literals: nothing it reads is torn down, so it needs no spill.
+        // Spilling would also move `skip` off the local and free the value being returned.
         if (retVal is null or IdentifierExpression ||
+            retVal is CreatorExpression { MemberVariables: var carrierMembers } &&
+            ReturnedName(stmt: exit) is { } carried && carried == skip &&
+            carrierMembers.All(predicate: m => m.Value is IdentifierExpression or LiteralExpression) ||
             !WillDestroyAny(live: live, from: from, skip: skip))
         {
             return exit;
@@ -727,6 +733,19 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             ReturnStatement { Value: IdentifierExpression id } => id.Name,
             VariantReturnStatement { Value: IdentifierExpression id } => id.Name,
+            // A recovery variant's `return x` wrapped in its carrier (`return Maybe(present: true, value: x)`)
+            // still returns `x`: it moves out, as RecordCopyLoweringPass treats it.
+            ReturnStatement
+            {
+                Value: CreatorExpression
+                {
+                    ResolvedType.BareName: "Maybe" or "Check" or "Lookup",
+                    MemberVariables: var members
+                }
+            } => members.Select(selector: m => m.Value)
+                        .OfType<IdentifierExpression>()
+                        .FirstOrDefault()
+                       ?.Name,
             _ => null
         };
     }

@@ -102,8 +102,28 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
+        if (ProjectionReadTarget(type: type) is { } read)
+        {
+            innerType = read;
+            return true;
+        }
+
         innerType = type;
         return false;
+    }
+
+    /// <summary>
+    /// The value an associated type reads as when its slot is bound by a marker: an iterator's `Item`
+    /// (`relates Item obeys Accessing[T]`), so `S/Iter/Item` in a generic body reads as `T`. Null for anything
+    /// else. Monomorphization makes the projection the iterator's concrete `Item` (a token, or the value).
+    /// </summary>
+    private TypeSymbol? ProjectionReadTarget(TypeSymbol type)
+    {
+        return type is AssociatedProjectionTypeSymbol projection &&
+               ProjectionBound(projection: projection) is { TypeArguments: [{ } read] } bound &&
+               Declaration.RuntimeContract.IsMarkerProtocol(baseName: (bound.GenericDefinition ?? bound).BareName)
+            ? read
+            : null;
     }
 
     /// <summary>
@@ -598,6 +618,19 @@ public sealed partial class SemanticVerifier
         // containers (e.g. `Dict.getitem(key: K)`) fall through to the name-only lookup below.
         RoutineInfo? getItem = null;
         bool slice = index.Index is RangeExpression;
+        // A wrapper reads through to its inner value's `getitem` overloads: build their forwarders first, so the
+        // overload by index type below finds the one this index wants (`line[a til b]` on a `Modifying[Text]`).
+        if (Wrappers.IsWrapperType(type: lookupType) && lookupType.BareName != Declaration.RuntimeContract.Roamed &&
+            _registry.LookupMemberRoutine(type: lookupType,
+                memberRoutineName: GetItemMemberRoutineName) == null)
+        {
+            _ = TrySynthesizeWrapperForwarder(wrapperType: lookupType,
+                memberRoutineName: GetItemMemberRoutineName,
+                isFailable: false) ?? TrySynthesizeWrapperForwarder(wrapperType: lookupType,
+                memberRoutineName: GetItemMemberRoutineName,
+                isFailable: true);
+        }
+
         TypeSymbol? sliceRange = null;
         foreach (TypeSymbol indexType in IndexTypes())
         {

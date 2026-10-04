@@ -9,16 +9,16 @@ namespace TypeModel;
 /// defaults or threading a different instance, without hunting down magic literals.
 /// </summary>
 /// <param name="MaxProjectionDepth">
-/// Maximum number of projection segments after the base type. <c>1</c> allows <c>S/Iter</c>
-/// but rejects <c>S/Iter/Inner</c>. Raise to lift the single-level restriction.
+/// Maximum number of projection segments after the base type. <c>2</c> allows <c>S/Iter/Item</c>
+/// (what an iterable's iterator hands out) but rejects a third level.
 /// </param>
 /// <param name="StdlibOnly">
 /// When true, <c>relates</c> clauses and <c>/</c> projections are only permitted in standard
 /// library sources; user programs may consume associated types but not declare/project them.
 /// Set false to allow user-defined associated types.
 /// </param>
-public sealed record AssociatedTypeOptions(int MaxProjectionDepth = 1, bool StdlibOnly = true)
+public sealed record AssociatedTypeOptions(int MaxProjectionDepth = 2, bool StdlibOnly = true)
 {
-    /// <summary>The current default limits: single-level projection, stdlib-only.</summary>
+    /// <summary>The current default limits: two-level projection, stdlib-only.</summary>
     public static readonly AssociatedTypeOptions Default = new();
 }

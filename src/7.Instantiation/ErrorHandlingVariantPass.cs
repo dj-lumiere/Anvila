@@ -1460,6 +1460,13 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             return false;
         }
 
+        // A protocol's routine reached through a receiver whose type is a parameter carries `Me` in its result
+        // (`Emittable.emit!() -> Me/Item`). `Me` is that receiver, not the routine this statement is in.
+        if (failCall.Callee is MemberExpression { Object.ResolvedType: { } receiverType })
+        {
+            carrier = registry.ReplaceProtocolSelf(type: carrier, owner: receiverType);
+        }
+
         // A failable routine that returns nothing has the TryBool try variant: its Bool result is the
         // success flag itself, and there is no payload to bind. A statement that binds the result of
         // such a call has nothing to unwrap, so it is left as it is.
@@ -1474,6 +1481,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         // Retarget the failable call to its try variant, typed as the carrier.
         CallExpression safeCall = BindToVariant(call: failCall, variant: variant);
+        safeCall.ResolvedType = carrier;
 
         tempDecl = new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
                 Type: null,
@@ -1675,6 +1683,21 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         safeCall = BindToVariant(call: failCall, variant: variant);
+        // The carrier holds what the call returns HERE. The variant's own return names its owner's parameter
+        // (`List[T].getitem` gives `Check[T]`), which in a routine on a specialized receiver (`List[Agent[T]]`)
+        // is that routine's `T` by name only, a different slot.
+        if (variant.ReturnType is { TypeArguments: [_] } carrierType &&
+            failCall.ResolvedType is { IsNone: false } payload &&
+            carrierType switch
+            {
+                VariantTypeSymbol v => v.GenericDefinition,
+                RecordTypeSymbol r => r.GenericDefinition,
+                _ => null
+            } is { } carrierDef)
+        {
+            safeCall.ResolvedType = registry.GetOrCreateResolution(genericDef: carrierDef, typeArguments: [payload]);
+        }
+
         return true;
     }
 

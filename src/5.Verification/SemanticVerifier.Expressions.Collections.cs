@@ -1013,6 +1013,14 @@ public sealed partial class SemanticVerifier
 
             argType = MarkerTokenArgumentType(routine: genericRoutine, paramType: paramType, argType: argType);
             argType = SharedEntities.AsHandleForInference(argType: argType, paramType: paramType);
+            // A value's token handed to a parameter of the routine's own type (`nested_repr(value: T)` given an
+            // iterated element) binds the value's type: the call reads the value (TokenReadLoweringPass). A marker
+            // parameter (`you: Accessing[T]`) keeps the token.
+            if (paramType is GenericParameterTypeSymbol ownParam &&
+                !IsMarkerBoundParameter(routine: genericRoutine, parameterName: ownParam.Name))
+            {
+                argType = ValueTokenTarget(type: argType) ?? argType;
+            }
 
             // Recurse into TypeArguments so const- and type-generics inside a parameterized
             // pattern (e.g. array: Array[Byte, N]) bind from the matching position in argType.
@@ -1211,6 +1219,17 @@ public sealed partial class SemanticVerifier
     /// <c>Modifying[Box]</c>. <c>Accessing[T]</c> takes it as <c>c.view()</c> (<c>Viewing[T]</c>). The call site then
     /// writes the token in (see ImplicitTokenArgument). Any other argument keeps its own type.
     /// </summary>
+    /// <summary>Whether <paramref name="parameterName"/> is one of <paramref name="routine"/>'s own parameters bound
+    /// by a marker (`obeys Accessing[X]` / `obeys Controlling[X]`), which takes a token as it is.</summary>
+    private static bool IsMarkerBoundParameter(RoutineInfo routine, string parameterName)
+    {
+        return routine.GenericConstraints?.Any(predicate: c =>
+            c is { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: not null } &&
+            c.ParameterName == parameterName &&
+            c.ConstraintTypes.Any(predicate: t =>
+                Declaration.RuntimeContract.IsMarkerProtocol(baseName: TypeSymbol.StripTypeArgs(name: t.Name)))) == true;
+    }
+
     private TypeSymbol MarkerTokenArgumentType(RoutineInfo routine, TypeSymbol paramType, TypeSymbol argType)
     {
         if (!_registry.Rules.ChecksAccessTokens || argType is not EntityTypeSymbol ||

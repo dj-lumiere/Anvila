@@ -971,6 +971,15 @@ internal sealed class SignatureResolver
         List<string>? inferableParams = ctx.InferableParams;
         SourceLocation? location = ctx.Location;
 
+        // `you: Accessing[Me]`: the routine only reads the other value (`eq`, `cmp`).
+        if (expectedType is ProtocolTypeSymbol { TypeArguments: [ProtocolSelfTypeSymbol] } readsMe &&
+            (readsMe.GenericDefinition ?? readsMe).BareName == RuntimeContract.Accessing)
+        {
+            CheckReadsMeParameter(ctx: ctx, paramName: protoMemberRoutine.ParameterNames[index: paramIndex],
+                actualType: actualType);
+            return;
+        }
+
         // Handle protocol self type (Me) - should match the owner type
         if (expectedType is ProtocolSelfTypeSymbol)
         {
@@ -1015,6 +1024,71 @@ internal sealed class SignatureResolver
     }
 
     /// <summary>
+    /// Checks a parameter the protocol declares <c>Accessing[Me]</c>: the routine reads the other value and
+    /// never takes it. <c>Accessing[Owner]</c> always fits. A bare <c>Owner</c> fits a value type (a read of a
+    /// value is the value) and a Suflae entity (a shared handle). A RazorForge entity must spell the read,
+    /// since a bare entity parameter takes the entity from whoever passes it.
+    /// </summary>
+    private void CheckReadsMeParameter(ProtocolCheckContext ctx, string paramName, TypeSymbol actualType)
+    {
+        RoutineInfo routine = ctx.TypeMemberRoutine;
+        if (routine.OwnerType is not { } owner)
+        {
+            return;
+        }
+
+        if (ReadsOwnerThroughAccessing(routine: routine, paramType: actualType, owner: owner))
+        {
+            return;
+        }
+
+        bool bareFits = !_sa._registry.IsEntityKind(type: owner) || !_sa._registry.CompilationRules.ChecksAccessTokens;
+        if (bareFits && MeTypeMatches(actualType: actualType, ownerType: owner))
+        {
+            return;
+        }
+
+        _sa.ReportError(code: SemanticDiagnosticCode.ProtocolMemberRoutineSignatureMismatch,
+            message: bareFits
+                ? $"Parameter '{paramName}' of '{routine.Name}' has type '{actualType.Name}', but protocol " +
+                  $"'{ctx.Protocol.Name}' expects '{owner.Name}' (Me), read through 'Accessing[{owner.Name}]'."
+                : $"'{routine.Name}' only reads '{paramName}', so declare it '{paramName}: Accessing[{owner.Name}]'. " +
+                  $"As '{actualType.Name}' it would take the entity from whoever passes it.",
+            location: ctx.Location ?? new SourceLocation(FileName: "",
+                Line: 0,
+                Column: 0,
+                Position: 0));
+    }
+
+    /// <summary>
+    /// Whether <paramref name="paramType"/> reads <paramref name="owner"/> through <c>Accessing</c>: written
+    /// <c>Accessing[Owner]</c>, which a routine's signature turns into a parameter of its own bound by
+    /// <c>obeys Accessing[Owner]</c> (<c>you: Accessing[Box]</c> becomes <c>[__T0 obeys Accessing[Box]](you: __T0)</c>).
+    /// </summary>
+    internal static bool ReadsOwnerThroughAccessing(RoutineInfo routine, TypeSymbol paramType, TypeSymbol owner)
+    {
+        if (paramType is ProtocolTypeSymbol { TypeArguments: [{ } read] } readType &&
+            (readType.GenericDefinition ?? readType).BareName == RuntimeContract.Accessing)
+        {
+            return MeTypeMatches(actualType: read, ownerType: owner);
+        }
+
+        if (paramType is not GenericParameterTypeSymbol bound)
+        {
+            return false;
+        }
+
+        string ownerName = TypeSymbol.StripTypeArgs(name: owner.Name);
+        return routine.GenericConstraints?.Any(predicate: c =>
+            c is { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: [{ } constraint] } &&
+            c.ParameterName == bound.Name &&
+            TypeSymbol.StripTypeArgs(name: constraint.Name) == RuntimeContract.Accessing &&
+            constraint.GenericArguments is [{ } readExpr] &&
+            TypeSymbol.StripTypeArgs(name: readExpr.Name) is var readName &&
+            (readName == ownerName || readName == owner.BareName || readName == "Me")) == true;
+    }
+
+    /// <summary>
     /// Validates a type member routine's return type against its protocol requirement, handling the
     /// protocol-self (Me) case and inferable-param substitution binding, reporting a mismatch when the
     /// types disagree.
@@ -1027,6 +1101,13 @@ internal sealed class SignatureResolver
         Dictionary<string, string>? substitution = ctx.Substitution;
         List<string>? inferableParams = ctx.InferableParams;
         SourceLocation? location = ctx.Location;
+
+        // A return the protocol names as one of the implementer's own associated types (`Me/Item`) is whatever
+        // the implementer returns: that is what the slot is bound to.
+        if (expectedReturn is AssociatedProjectionTypeSymbol { Base: ProtocolSelfTypeSymbol })
+        {
+            return;
+        }
 
         // Handle protocol self type (Me)
         if (expectedReturn is ProtocolSelfTypeSymbol)
@@ -1052,14 +1133,21 @@ internal sealed class SignatureResolver
                                         value: out string? substRetName)
             ? substRetName
             : expectedReturn.Name;
+        // A routine may hand out a token on the value the protocol names (`emit!() -> Modifying[T]` for
+        // `Emittable[T]`'s `-> T`): a token reads as its value, so it is the value's own type that conforms.
+        string actualValueName = actualReturn is RecordTypeSymbol { TypeArguments: [{ } read] } token &&
+                                 (token.GenericDefinition ?? token).BareName is RuntimeContract.Viewing
+                                     or RuntimeContract.Modifying
+            ? read.Name
+            : actualReturn.Name;
         if (inferableParams != null && inferableParams.Contains(item: expectedReturn.Name) &&
             !substitution!.ContainsKey(key: expectedReturn.Name))
         {
-            substitution[key: expectedReturn.Name] = actualReturn.Name;
-            expectedReturnName = actualReturn.Name;
+            substitution[key: expectedReturn.Name] = actualValueName;
+            expectedReturnName = actualValueName;
         }
 
-        if (actualReturn.Name != expectedReturnName)
+        if (actualReturn.Name != expectedReturnName && actualValueName != expectedReturnName)
         {
             _sa.ReportError(code: SemanticDiagnosticCode.ProtocolMemberRoutineSignatureMismatch,
                 message:

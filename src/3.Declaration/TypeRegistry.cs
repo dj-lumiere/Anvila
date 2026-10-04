@@ -1523,6 +1523,49 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// A protocol signature type with its self type <c>Me</c> bound to <paramref name="owner"/>, at any depth:
+    /// <c>Me</c> itself, or <c>Me</c> inside type arguments (<c>Accessing[Me]</c> → <c>Accessing[Owner]</c>).
+    /// </summary>
+    public TypeSymbol ReplaceProtocolSelf(TypeSymbol type, TypeSymbol owner)
+    {
+        if (type is ProtocolSelfTypeSymbol)
+        {
+            return owner;
+        }
+
+        // `Me/Item`: the slot of the owner's own associated type.
+        if (type is AssociatedProjectionTypeSymbol projection)
+        {
+            TypeSymbol projectedBase = ReplaceProtocolSelf(type: projection.Base, owner: owner);
+            return ReferenceEquals(objA: projectedBase, objB: projection.Base)
+                ? type
+                : new AssociatedProjectionTypeSymbol(baseType: projectedBase, slotName: projection.SlotName);
+        }
+
+        if (type.TypeArguments is not { Count: > 0 } arguments ||
+            GenericDefinitionOf(type: type) is not { } definition)
+        {
+            return type;
+        }
+
+        List<TypeSymbol> replaced = arguments.Select(selector: a => ReplaceProtocolSelf(type: a, owner: owner)).ToList();
+        return replaced.SequenceEqual(second: arguments)
+            ? type
+            : GetOrCreateResolution(genericDef: definition, typeArguments: replaced);
+    }
+
+    private static TypeSymbol? GenericDefinitionOf(TypeSymbol type)
+    {
+        return type switch
+        {
+            RecordTypeSymbol r => r.GenericDefinition,
+            EntityTypeSymbol e => e.GenericDefinition,
+            ProtocolTypeSymbol p => p.GenericDefinition,
+            _ => null
+        };
+    }
+
+    /// <summary>
     /// Gets or creates a resolved generic type.
     /// </summary>
     /// <param name="genericDef">The generic type definition.</param>

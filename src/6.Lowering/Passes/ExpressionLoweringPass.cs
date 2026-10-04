@@ -397,8 +397,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             // -- Step 1c: force-unwrap (!!) -- handled by OperatorLoweringPass --------
             // !! is desugared to operand.unwrap() in OperatorLoweringPass so that
             // stdlib bodies (which bypass ExpressionLoweringPass) are also covered.
-            // try/grab/lookup recovery: splice in the recovery-variant call SA analyzed and lower that.
-            RecoveryExpression recovery => LowerExpr(expr: recovery.LoweredCall ?? recovery.Inner),
+            // try/grab/lookup recovery: splice in the recovery-variant call SA analyzed and lower that. One SA left
+            // unbound (a call on a receiver whose type is still a parameter) stays a recovery, so monomorphization
+            // binds the concrete receiver's variant. Dropping to the inner call would drop the `try`.
+            RecoveryExpression recovery => recovery.LoweredCall is { } loweredCall
+                ? LowerExpr(expr: loweredCall)
+                : ([], recovery),
             // -- Step 1f: carrier absence checks (is None / is None) -------------
             IsPatternExpression ipe => LowerIsPatternExpression(ipe: ipe),
             // -- Step 1i: logical not -> ConditionalExpression ----------------------
