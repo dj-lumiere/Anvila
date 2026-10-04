@@ -1723,6 +1723,10 @@ public sealed partial class SemanticVerifier
     /// have left behind instead of analyzing it again (see <see cref="ReplayCachedFileAnalysis"/>).</summary>
     private readonly HashSet<string> _warmCachedFiles = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>This build's copies of the cached files' analyzed routine bodies, by registry key
+    /// (<see cref="CachedFileAnalysis.AnalyzedBodies"/>). Empty outside a warm build.</summary>
+    private readonly Dictionary<string, Statement> _warmCachedBodies = new(comparer: StringComparer.Ordinal);
+
     /// <summary>Set once the EAGER <see cref="AnalyzeStdlibBodies"/> sweep has run — while true, the
     /// demand hook is a no-op (the eager pass already analyzed every stdlib file). The Stage-5 flip stops
     /// calling the eager sweep, leaving this false, so <see cref="AnalyzeStdlibProgramOnDemand"/> becomes
@@ -1825,6 +1829,16 @@ public sealed partial class SemanticVerifier
         HashSet<string>? routineBodyKeysBefore = cacheThisFile
             ? new HashSet<string>(collection: _routineBodies.Keys, comparer: StringComparer.Ordinal)
             : null;
+        // The bodies analysis is about to annotate in place, before desugaring and lowering replace them in the
+        // program: this build's templates are these objects, so the cache keeps them too.
+        List<CachedRoutineBody>? analyzedBodies = cacheThisFile
+            ? DeclaredRoutines(program: entry.Program)
+             .Where(predicate: decl => decl.ResolvedInfo != null)
+             .Select(selector: decl => new CachedRoutineBody(Key: decl.ResolvedInfo!.RegistryKey,
+                  Owner: decl,
+                  Body: decl.Body))
+             .ToList()
+            : null;
         // Reset the repair flag so we can tell if THIS file's analysis re-keyed a cross-module-lazy signature
         // (which makes the file uncacheable — the repair is per-build; see StdlibSignatureRepairOccurred).
         if (cacheThisFile)
@@ -1924,13 +1938,15 @@ public sealed partial class SemanticVerifier
         // added (the delta since the pre-analysis snapshot); monomorphized INSTANCES are never cached (they
         // stay per-build demand → no define-set pollution, no eager runaway).
         if (cacheThisFile && variantKeysBefore != null && synthKeysBefore != null &&
-            routineBodyKeysBefore != null && !_registry.StdlibSignatureRepairOccurred)
+            routineBodyKeysBefore != null && analyzedBodies != null &&
+            !_registry.StdlibSignatureRepairOccurred)
         {
             StoreAnalyzedFileInWarmCache(filePath: entry.FilePath,
                 program: entry.Program,
                 variantKeysBefore: variantKeysBefore,
                 synthKeysBefore: synthKeysBefore,
-                routineBodyKeysBefore: routineBodyKeysBefore);
+                routineBodyKeysBefore: routineBodyKeysBefore,
+                analyzedBodies: analyzedBodies);
         }
 
         return entry.Program; // analyzed+desugared a NEW file → collector re-indexes THAT program's decls
@@ -2026,7 +2042,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void StoreAnalyzedFileInWarmCache(string filePath, Program program,
         HashSet<string> variantKeysBefore, HashSet<string> synthKeysBefore,
-        HashSet<string> routineBodyKeysBefore)
+        HashSet<string> routineBodyKeysBefore, List<CachedRoutineBody> analyzedBodies)
     {
         List<KeyValuePair<string, Statement>> variantDelta = _variantBodies
            .Where(predicate: kv => !variantKeysBefore.Contains(item: kv.Key))
@@ -2035,14 +2051,44 @@ public sealed partial class SemanticVerifier
             _synthesizedBodies
                .Where(predicate: kv => !synthKeysBefore.Contains(item: kv.Key))
                .ToList();
+        List<string> routineBodyKeys = _routineBodies.Keys
+                                                     .Where(predicate: key =>
+                                                          !routineBodyKeysBefore.Contains(item: key))
+                                                     .ToList();
+        var addedRoutineBodyKeys = new HashSet<string>(collection: routineBodyKeys, comparer: StringComparer.Ordinal);
+        // Keep the bodies a later build hands out as templates (a key the snapshot carries a routine body for)
+        // or puts in _routineBodies (a key this analysis added there), each as this build holds it now.
+        var keptBodies = new List<CachedRoutineBody>();
+        foreach (CachedRoutineBody body in analyzedBodies)
+        {
+            Statement current;
+            if (addedRoutineBodyKeys.Contains(item: body.Key))
+            {
+                current = _routineBodies[key: body.Key];
+            }
+            else if (_warmState!.RoutineBodies.ContainsKey(key: body.Key))
+            {
+                current = body.Body;
+            }
+            else
+            {
+                continue;
+            }
+
+            keptBodies.Add(item: body with
+            {
+                Body = Builder.Instantiation.StdlibProgramBodyCloner.CloneRoutineBody(owner: body.Owner,
+                    body: current)
+            });
+        }
+
         _warmState!.AnalyzedFileCache[key: filePath] = new CachedFileAnalysis(
             AnalyzedProgram: Builder.Instantiation.StdlibProgramBodyCloner.CloneBodies(
                 program: program),
             VariantBodies: variantDelta,
             SynthBodies: synthDelta,
-            RoutineBodyKeys: _routineBodies.Keys
-                                           .Where(predicate: key => !routineBodyKeysBefore.Contains(item: key))
-                                           .ToList());
+            RoutineBodyKeys: routineBodyKeys,
+            AnalyzedBodies: keptBodies);
         _warmState.AnalyzedFileCacheVersion++;
     }
 
@@ -2051,19 +2097,19 @@ public sealed partial class SemanticVerifier
     /// routine bodies in <c>_routineBodies</c>, where protocol-extension lowering prefers them over the raw
     /// snapshot templates (<c>Iterable[T].min!</c> specialized for <c>List[S64]</c> must clone the ANALYZED body,
     /// whose <c>value &lt; result</c> is already a resolved <c>lt</c> call). A cache hit skipped that analysis, so
-    /// the same keys are pointed at this build's copy of the cached analyzed program, at the moment the file
-    /// is first reached, just as a miss would add them. Returns the program so the collector indexes it like a
+    /// the same keys are pointed at this build's copies of the bodies that analysis left behind (not the lowered
+    /// program's, see <see cref="CachedFileAnalysis.AnalyzedBodies"/>), at the moment the file is first
+    /// reached, just as a miss would add them. Returns the program so the collector indexes it like a
     /// freshly analyzed one.
     /// </summary>
     private Program ReplayCachedFileAnalysis(Program program, string filePath)
     {
         CachedFileAnalysis cached = _warmState!.AnalyzedFileCache[key: filePath];
-        var wanted = new HashSet<string>(collection: cached.RoutineBodyKeys, comparer: StringComparer.Ordinal);
-        foreach (RoutineDeclaration decl in DeclaredRoutines(program: program))
+        foreach (string key in cached.RoutineBodyKeys)
         {
-            if (decl.ResolvedInfo is { } info && wanted.Contains(item: info.RegistryKey))
+            if (_warmCachedBodies.TryGetValue(key: key, value: out Statement? body))
             {
-                _routineBodies[key: info.RegistryKey] = decl.Body;
+                _routineBodies[key: key] = body;
             }
         }
 

@@ -68,6 +68,13 @@ internal static class StdlibProgramBodyCloner
         return outMembers;
     }
 
+    /// <summary>Deep-clones <paramref name="body"/>, a body belonging to <paramref name="owner"/> (not necessarily
+    /// its current <see cref="RoutineDeclaration.Body"/>), the way <see cref="CloneBodies"/> clones that routine's body.</summary>
+    public static Statement CloneRoutineBody(RoutineDeclaration owner, Statement body)
+    {
+        return CloneRoutine(r: owner with { Body = body }).Body;
+    }
+
     private static RoutineDeclaration CloneRoutine(RoutineDeclaration r)
     {
         // A GENERIC-DEFINITION template's body must stay UNFOLDED until monomorphization binds the type params

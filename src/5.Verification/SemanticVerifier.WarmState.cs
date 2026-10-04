@@ -90,13 +90,16 @@ public partial class SemanticVerifier
         internal PreparedRestore? Prepared { get; set; }
     }
 
-    /// <summary>One warm build's private copy of the stdlib programs (see the warm constructor) and the files
-    /// restored already analyzed from the cache, built for <see cref="CacheVersion"/> of the analyzed-file cache.</summary>
+    /// <summary>One warm build's private copy of the stdlib programs (see the warm constructor), the files
+    /// restored already analyzed from the cache and this build's copies of their analyzed routine bodies (see
+    /// <see cref="CachedFileAnalysis.AnalyzedBodies"/>), built for <see cref="CacheVersion"/> of the
+    /// analyzed-file cache.</summary>
     internal sealed record PreparedRestore(
         int CacheVersion,
         List<(Program Program, string FilePath, string Module)> Programs,
         List<string> CachedFiles,
-        Dictionary<string, Statement> TemplateBodies);
+        Dictionary<string, Statement> TemplateBodies,
+        Dictionary<string, Statement> CachedBodies);
 
     /// <summary>
     /// Builds the next warm build's program copies ahead of time. Cloning every stdlib program costs ~60-90 ms
@@ -119,6 +122,7 @@ public partial class SemanticVerifier
     private static PreparedRestore BuildRestore(CompiledStdlibState warm)
     {
         var cachedFiles = new List<string>();
+        var cachedBodies = new Dictionary<string, Statement>(comparer: StringComparer.Ordinal);
         var programs = new List<(Program Program, string FilePath, string Module)>(
             capacity: warm.StdlibPrograms.Count);
         foreach ((Program program, string filePath, string module) in warm.StdlibPrograms)
@@ -129,6 +133,13 @@ public partial class SemanticVerifier
                 cachedFiles.Add(item: filePath);
                 programs.Add(item: (Builder.Instantiation.StdlibProgramBodyCloner.CloneBodies(
                     program: cachedFile.AnalyzedProgram), filePath, module));
+                foreach (CachedRoutineBody body in cachedFile.AnalyzedBodies)
+                {
+                    cachedBodies[key: body.Key] =
+                        Builder.Instantiation.StdlibProgramBodyCloner.CloneRoutineBody(owner: body.Owner,
+                            body: body.Body);
+                }
+
                 continue;
             }
 
@@ -141,6 +152,9 @@ public partial class SemanticVerifier
         // in a cold build. The snapshot's own bodies were captured before anything was reached, so they are
         // raw: cloning `Iterable[T].first_or_default` from one lowered its `when` without analysis and returned
         // 0 instead of the default. A key with no declaration in the programs keeps the snapshot body.
+        // A file restored from the cache was already desugared and lowered, so its program body is no longer
+        // what analysis left behind (an `each` is a `while` whose `when` subject analysis never saw, and a
+        // generic template's body is never analyzed after that): the template is the cached analyzed body.
         var templateBodies = new Dictionary<string, Statement>(dictionary: warm.RoutineBodies,
             comparer: StringComparer.Ordinal);
         foreach ((Program program, string _, string _) in programs)
@@ -149,7 +163,10 @@ public partial class SemanticVerifier
             {
                 if (decl.ResolvedInfo is { } info && templateBodies.ContainsKey(key: info.RegistryKey))
                 {
-                    templateBodies[key: info.RegistryKey] = decl.Body;
+                    templateBodies[key: info.RegistryKey] =
+                        cachedBodies.TryGetValue(key: info.RegistryKey, value: out Statement? analyzed)
+                            ? analyzed
+                            : decl.Body;
                 }
             }
         }
@@ -157,19 +174,29 @@ public partial class SemanticVerifier
         return new PreparedRestore(CacheVersion: warm.AnalyzedFileCacheVersion,
             Programs: programs,
             CachedFiles: cachedFiles,
-            TemplateBodies: templateBodies);
+            TemplateBodies: templateBodies,
+            CachedBodies: cachedBodies);
     }
 
     /// <summary>
     /// One stdlib file's cached on-demand analysis (see <see cref="CompiledStdlibState.AnalyzedFileCache"/>):
     /// the analyzed+lowered program AST plus the variant/synthesized routine bodies that file's analysis added,
     /// so a warm build reusing the file can replay them without re-running Phase-5 SA + desugar + lower.
+    /// <para><see cref="AnalyzedBodies"/> are the routine bodies as analysis left them, before the file was
+    /// desugared and lowered: the ones a build that analyzes the file clones templates from (protocol defaults,
+    /// recovery variants) and keeps in <c>_routineBodies</c> (<see cref="RoutineBodyKeys"/>). A hit must hand out
+    /// the same bodies, not the lowered program's.</para>
     /// </summary>
     public sealed record CachedFileAnalysis(
         Program AnalyzedProgram,
         IReadOnlyList<KeyValuePair<string, Statement>> VariantBodies,
         IReadOnlyList<KeyValuePair<string, (RoutineInfo Routine, Statement Body)>> SynthBodies,
-        IReadOnlyList<string> RoutineBodyKeys);
+        IReadOnlyList<string> RoutineBodyKeys,
+        IReadOnlyList<CachedRoutineBody> AnalyzedBodies);
+
+    /// <summary>One routine body as analysis left it, with the declaration it belongs to (which decides how it is
+    /// cloned, see <see cref="Builder.Instantiation.StdlibProgramBodyCloner.CloneRoutineBody"/>).</summary>
+    public sealed record CachedRoutineBody(string Key, RoutineDeclaration Owner, Statement Body);
 
     /// <summary>
     /// Runs one full compile of a minimal program to fully process the stdlib, then captures the
@@ -287,6 +314,8 @@ public partial class SemanticVerifier
         {
             _warmCachedFiles.Add(item: filePath);
         }
+
+        _warmCachedBodies = restore.CachedBodies;
         // Re-lazy the primed whole-stdlib instance closure so this warm compile re-discovers only what the
         // USER program reaches (like cold), instead of GMP re-processing all ~638 primed instances (cold
         // reaches ~378, codegen keeps ~122). User-reachability un-lazies via MaterializeIfLazy. The lazy set is
