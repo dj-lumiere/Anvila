@@ -23,6 +23,13 @@ public sealed class VariantTypeSymbol : RecordTypeSymbol
     /// self references (e.g. a recursive <c>List[SerialValue]</c>) on the first pass.</summary>
     public List<VariantMemberInfo> Members { get; set; } = [];
 
+    /// <summary>How many 8-byte words hold an arm payload of <paramref name="payloadBytes"/> bytes: the LLVM
+    /// representation keeps the payload as words so a 64-bit arm moves as one value.</summary>
+    public static int PayloadWords(int payloadBytes)
+    {
+        return (payloadBytes + 7) / 8;
+    }
+
     /// <summary>
     /// Initializes a new instance of the <see cref="VariantTypeSymbol"/> class.
     /// </summary>

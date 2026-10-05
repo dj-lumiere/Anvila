@@ -216,7 +216,10 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Generates the LLVM type for a variant (type-based tagged union).
-    /// Variant = { i64 tag, [N x i8] payload } where N = max member size.
+    /// Variant = { i64 tag, [W x i64] payload } where W is the largest member's size in 8-byte words. The payload
+    /// is words, not bytes: LLVM splits a value of the variant into its elements, so a byte array turns reading a
+    /// 64-bit arm into eight byte loads put back together, on every pass of the value. The size is the same either
+    /// way, since the i64 tag already rounds the whole up to 8 bytes.
     /// </summary>
     /// <param name="variant">The variant type info.</param>
     private void GenerateVariantType(VariantTypeSymbol variant)
@@ -243,10 +246,10 @@ public partial class LlvmEmitter
         }
 
         var decl = new StringBuilder();
-        // Variant is { i64 tag, [N x i8] payload }
+        // Variant is { i64 tag, [W x i64] payload }
         if (maxPayloadSize > 0)
         {
-            decl.AppendLine(value: $"{typeName} = type {{ i64, [{maxPayloadSize} x i8] }}");
+            decl.AppendLine(value: $"{typeName} = type {{ i64, [{VariantTypeSymbol.PayloadWords(payloadBytes: maxPayloadSize)} x i64] }}");
         }
         else
         {

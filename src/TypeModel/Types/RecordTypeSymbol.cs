@@ -97,11 +97,11 @@ public class RecordTypeSymbol : TypeSymbol
                 return be;
             }
 
-            // A variant has no member variables: it is the tag and the largest arm's bytes, the layout both
+            // A variant has no member variables: it is the tag and the largest arm's words, the layout both
             // backends write (see VariantTypeSymbol.SizeBytes), so a record holding one can be sized.
             if (this is VariantTypeSymbol variant)
             {
-                return $"{{ i64, [{variant.SizeBytes(pointerSize: 8) - 8} x i8] }}";
+                return $"{{ i64, [{VariantTypeSymbol.PayloadWords(payloadBytes: variant.SizeBytes(pointerSize: 8) - 8)} x i64] }}";
             }
 
             // Multi-member-variable record: struct type. A packed record embeds as an LLVM native packed
