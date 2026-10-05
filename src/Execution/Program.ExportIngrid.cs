@@ -109,15 +109,15 @@ internal partial class Program
             throw new InvalidOperationException(message: $"it declares no common routine of a record {IngridExportOwner}.");
         }
 
-        // The build reaches what start() calls: one call per export, each parameter a zero literal (the ABI's
-        // parameters are numbers and Bools).
+        // The build reaches what start() calls: one call per export, each parameter a zero (the ABI's parameters
+        // are numbers, Bools and pointers), in a danger block for the pointers.
         var driver = new StringBuilder(value: source.TrimEnd());
-        driver.Append(value: "\n\nroutine start()\n");
+        driver.Append(value: "\n\nroutine start()\n    danger\n");
         foreach (RoutineDeclaration export in exports)
         {
             string arguments = string.Join(separator: ", ",
-                values: export.Parameters.Select(selector: p => $"{p.Name}: {ZeroLiteral(type: p.Type?.Name)}"));
-            driver.Append(value: $"    discard {IngridExportOwner}.{export.Name}({arguments})\n");
+                values: export.Parameters.Select(selector: p => $"{p.Name}: {ZeroLiteral(type: p.Type)}"));
+            driver.Append(value: $"        discard {IngridExportOwner}.{export.Name}({arguments})\n");
         }
 
         driver.Append(value: "    return\n");
@@ -242,15 +242,25 @@ internal partial class Program
         return IngridExportPrefix + export.Name;
     }
 
-    /// <summary>A literal of a C ABI parameter type: <c>false</c>, <c>0.0</c> for a float, <c>0</c> otherwise.</summary>
-    private static string ZeroLiteral(string? type)
+    /// <summary>A zero of a C ABI parameter type: <c>false</c>, <c>0.0</c> for a float, the null pointer for a
+    /// <c>Hijacked[T]</c>, <c>0</c> otherwise.</summary>
+    private static string ZeroLiteral(TypeExpression? type)
     {
-        return type switch
+        return type?.Name switch
         {
             "Bool" => "false",
             "B16" or "B32" or "B64" or "B128" => "0.0",
+            "Hijacked" when type.GenericArguments is [var pointee] => $"hijacked_none[{TypeText(type: pointee)}]()",
             _ => "0"
         };
+    }
+
+    /// <summary>A type as it is written: its name, then its type arguments in brackets.</summary>
+    private static string TypeText(TypeExpression type)
+    {
+        return type.GenericArguments is { Count: > 0 } arguments
+            ? $"{type.Name}[{string.Join(separator: ", ", values: arguments.Select(selector: TypeText))}]"
+            : type.Name;
     }
 
     /// <summary>The directory <paramref name="relative"/> names in the nearest directory above the builder or the
