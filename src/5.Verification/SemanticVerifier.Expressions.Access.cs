@@ -1574,7 +1574,19 @@ public sealed partial class SemanticVerifier
                 value: out ParamInfo? p)
                 ? p.Type
                 : null;
-            AnalyzeExpression(expression: val, expectedType: expected);
+            TypeSymbol argType = AnalyzeExpression(expression: val, expectedType: expected);
+
+            // The creator was bound by its parameter NAMES, so the argument types are checked here: a value
+            // the parameter cannot take (an `Integer` for a `Real`) must not reach the emitter as one.
+            if (expected != null && argType.Category != TypeCategory.Error &&
+                expected.Category != TypeCategory.Error && !MentionsGenericParameter(type: expected) &&
+                !IsAssignableTo(source: argType, target: expected))
+            {
+                ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                    message:
+                    $"Argument '{argName}' of '{type.Name}': cannot convert '{argType.Name}' to '{expected.Name}'.",
+                    location: val.Location);
+            }
         }
 
         creator.ResolvedCreatorRoutine = match;
@@ -1799,6 +1811,52 @@ public sealed partial class SemanticVerifier
                     location: location);
             }
         }
+
+        FillMemberVariableDefaults(type: type,
+            typeMemberVariables: typeMemberVariables,
+            memberVariables: memberVariables,
+            provided: providedMemberVariables);
+    }
+
+    /// <summary>
+    /// Gives a field-by-field construction a value for each member variable it leaves out that was written
+    /// with a default (<c>age: Integer = 30</c>), analyzed against the member variable's type, and puts the
+    /// values in declaration order, which is how the construction is built.
+    /// </summary>
+    private void FillMemberVariableDefaults(TypeSymbol type, List<MemberVariableInfo> typeMemberVariables,
+        List<(string Name, Expression Value)> memberVariables, HashSet<string> provided)
+    {
+        if (memberVariables.Any(predicate: mv => mv.Name.Length == 0) ||
+            !typeMemberVariables.Any(predicate: mv => mv.DefaultValue != null && !provided.Contains(item: mv.Name)))
+        {
+            return;
+        }
+
+        var ordered = new List<(string Name, Expression Value)>(capacity: typeMemberVariables.Count);
+        foreach (MemberVariableInfo memberVariable in typeMemberVariables)
+        {
+            int given = memberVariables.FindIndex(match: mv => mv.Name == memberVariable.Name);
+            if (given >= 0)
+            {
+                ordered.Add(item: memberVariables[index: given]);
+                continue;
+            }
+
+            if (memberVariable.DefaultValue is not { } written)
+            {
+                return;
+            }
+
+            TypeSymbol memberVariableType = type is { IsGenericResolution: true, TypeArguments: not null }
+                ? SubstituteTypeParameters(type: memberVariable.Type, genericType: type)
+                : memberVariable.Type;
+            Expression value = Builder.Instantiation.GenericAstRewriter.DeepCloneExpression(expr: written);
+            AnalyzeExpression(expression: value, expectedType: memberVariableType);
+            ordered.Add(item: (memberVariable.Name, value));
+        }
+
+        memberVariables.Clear();
+        memberVariables.AddRange(collection: ordered);
     }
 
     /// <summary>

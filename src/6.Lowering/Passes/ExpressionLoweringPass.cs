@@ -1776,8 +1776,11 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
         string carrierName = LastNameSegment(name: varType.Name);
         // Only Maybe handled at this stage. Result/Lookup payloads need TypeLayoutPass
-        // to stamp byte sizes before their construction can be synthesized.
-        if (carrierName != MaybeTypeName)
+        // to stamp byte sizes before their construction can be synthesized. The written `E?` of a
+        // Suflae entity resolves to its nullable Roamed[E] handle, not to a Maybe, so the resolved
+        // type decides too: an entity handle is stored into an `E?` slot as it is.
+        if (carrierName != MaybeTypeName ||
+            targetType != null && CarrierBaseName(type: targetType) != MaybeTypeName)
         {
             return null;
         }
@@ -2904,8 +2907,20 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // None/None clause: prepend any hoisting from the right operand, then assign.
         var noneBody = new List<Statement>(capacity: rightH.Count + 1);
         noneBody.AddRange(collection: rightH);
-        noneBody.Add(
-            item: new AssignmentStatement(Target: qqRef, Value: loweredRight, Location: loc));
+        // A fallback that gives no value (`?? stop()`, which analysis allows only for a `@crash_only` routine)
+        // is called for its crash. Should such a routine come back after all, the result is the zero value of
+        // its type rather than storage nothing wrote.
+        if (loweredRight.ResolvedType is { IsNone: true })
+        {
+            noneBody.Add(item: new ExpressionStatement(Expression: loweredRight, Location: loc));
+            noneBody.Add(item: new AssignmentStatement(Target: qqRef,
+                Value: new ZeroValueExpression(Location: loc) { ResolvedType = valueType },
+                Location: loc));
+        }
+        else
+        {
+            noneBody.Add(item: new AssignmentStatement(Target: qqRef, Value: loweredRight, Location: loc));
+        }
 
         ProducedWhenStatement = true;
         // The value arm is the only one that keeps the carrier's content: every other arm (`None`, a caught

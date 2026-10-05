@@ -394,8 +394,11 @@ public sealed partial class SemanticVerifier
         // Store routine body for error handling variant generation (Phase 4).
         // Only store if the body actually has throw/absent/failable-calls — routines
         // implemented via @llvm_ir have no such AST nodes and can't have variants generated.
+        // A protocol-extension routine (`routine Sized.doubled()`) is stored too: each type obeying the
+        // protocol gets its own copy of the body (ProtocolDefaultImplLoweringPass), as for the library's.
         if (routineInfo.IsFailable && (routineInfo.HasThrow || routineInfo.HasAbsent ||
-                                       routineInfo.HasFailableCalls))
+                                       routineInfo.HasFailableCalls) ||
+            routineInfo.OwnerType is ProtocolTypeSymbol)
         {
             StoreRoutineBody(routine: routineInfo, body: routine.Body);
         }

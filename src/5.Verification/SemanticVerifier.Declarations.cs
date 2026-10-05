@@ -944,6 +944,31 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// The owner of a member routine declared outside its type (<c>routine List[T].second()</c>), looked up in the
+    /// realm of the file that declares it: in a Suflae file, <c>List</c> is Suflae's own list, as it is everywhere
+    /// else in that file. Declarations are collected before the per-file analysis sets that realm.
+    /// </summary>
+    private TypeSymbol? LookupOwnerInFileRealm(string name)
+    {
+        string previousRealm = _registry.ResolutionRealm;
+        if (!string.IsNullOrEmpty(value: _currentFilePath) && !IsStdlibFile(filePath: _currentFilePath) &&
+            Builder.Frontends.Languages.HasSourceExtension(fileName: _currentFilePath) &&
+            Builder.Frontends.Languages.OfFile(fileName: _currentFilePath) != Language.RazorForge)
+        {
+            _registry.ResolutionRealm = Builder.Frontends.Languages.RealmOf(fileName: _currentFilePath);
+        }
+
+        try
+        {
+            return LookupTypeWithImports(name: name);
+        }
+        finally
+        {
+            _registry.ResolutionRealm = previousRealm;
+        }
+    }
+
+    /// <summary>
     /// Classifies a routine declaration as a member routine, creator, or free function, returning its
     /// <see cref="RoutineKind"/>, resolved owner type (when any), and canonical internal name.
     /// </summary>
@@ -974,7 +999,7 @@ public sealed partial class SemanticVerifier
 
             // OwnerName is the bare owner base (e.g. "Stack" for "Stack[T].push") — already the
             // generic-definition key, so no generic-param strip needed here.
-            ownerType = LookupTypeWithImports(name: routine.OwnerName!);
+            ownerType = LookupOwnerInFileRealm(name: routine.OwnerName!);
 
             // A constructor is only ever `routine Type(...)`; `routine Type.create(...)` is an ordinary
             // member routine named `create`.
@@ -1331,6 +1356,48 @@ public sealed partial class SemanticVerifier
             CheckParentProtocols(proto: protoSymbol, targetName: marker));
     }
 
+    /// <summary>The name a protocol gives a creator requirement (<c>routine Me!(text: Text)</c>).</summary>
+    private const string ProtocolCreatorRequirementName = "Me";
+
+    /// <summary>
+    /// A protocol's creator requirement (<c>routine Me!(text: Text)</c>) is met by a creator of the type that
+    /// takes the same parameters, by name and type, with <c>Me</c> standing for the type. A creator that
+    /// cannot fail meets a failable requirement, but a failable creator does not meet one that cannot fail.
+    /// </summary>
+    private void ValidateRequiredProtocolCreator(TypeSymbol type, ProtocolTypeSymbol protocol,
+        ProtocolMemberRoutineInfo requiredCreator)
+    {
+        var candidates = new List<RoutineInfo>();
+        _registry.CollectCreatorCandidates(type: type, candidates: candidates);
+        candidates.AddRange(collection: _registry.GetMemberRoutinesForType(type: type)
+                                                 .Where(predicate: m => m.IsCreator));
+        bool met = candidates.Any(predicate: creator =>
+            !creator.IsSynthesized && (requiredCreator.IsFailable || !creator.IsFailable) &&
+            creator.Parameters.Count == requiredCreator.ParameterNames.Count &&
+            creator.Parameters.Select(selector: (p, i) =>
+                        p.Name == requiredCreator.ParameterNames[index: i] &&
+                        _registry.ReplaceProtocolSelf(type: requiredCreator.ParameterTypes[index: i], owner: type)
+                                 .FullName == p.Type.FullName)
+                   .All(predicate: matches => matches));
+        if (met)
+        {
+            return;
+        }
+
+        string parameters = string.Join(separator: ", ",
+            values: requiredCreator.ParameterNames.Select(selector: (n, i) =>
+                $"{n}: {requiredCreator.ParameterTypes[index: i].Name}"));
+        string bang = requiredCreator.IsFailable ? "!" : "";
+        ReportError(code: SemanticDiagnosticCode.MissingProtocolMemberRoutine,
+            message: $"'{type.Name}' obeys '{protocol.Name}', which requires a creator " +
+                     $"`routine {type.Name}{bang}({parameters}) -> {type.Name}`, but '{type.Name}' has none that " +
+                     "takes those parameters.",
+            location: type.Location ?? new SourceLocation(FileName: "",
+                Line: 0,
+                Column: 0,
+                Position: 0));
+    }
+
     /// <summary>
     /// Validates that a type implements all member routines required by a protocol.
     /// </summary>
@@ -1361,6 +1428,15 @@ public sealed partial class SemanticVerifier
         // Skip member routines with default implementations
         if (requiredMemberRoutine.HasDefaultImplementation)
         {
+            return;
+        }
+
+        // `routine Me!(text: Text)` requires a creator, which the type writes under its own name.
+        if (requiredMemberRoutine is { Name: ProtocolCreatorRequirementName, IsInstanceMemberRoutine: false })
+        {
+            ValidateRequiredProtocolCreator(type: type,
+                protocol: protocol,
+                requiredCreator: requiredMemberRoutine);
             return;
         }
 

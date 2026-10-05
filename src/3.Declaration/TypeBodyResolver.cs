@@ -281,6 +281,7 @@ internal sealed class TypeBodyResolver
                 Visibility = memberVariable.Visibility,
                 Index = memberVariableIndex,
                 HasDefaultValue = memberVariable.Initializer != null,
+                DefaultValue = memberVariable.Initializer,
                 Location = memberVariable.Location,
                 Owner = _sa._currentType
             };
@@ -430,6 +431,7 @@ internal sealed class TypeBodyResolver
             Visibility = memberVariable.Visibility,
             Index = memberVariableIndex,
             HasDefaultValue = memberVariable.Initializer != null,
+            DefaultValue = memberVariable.Initializer,
             IsNullable = fieldNullable,
             Location = memberVariable.Location,
             Owner = _sa._currentType
@@ -461,6 +463,7 @@ internal sealed class TypeBodyResolver
                         Visibility = memberVariable.Visibility,
                         Index = memberVariableIndex++,
                         HasDefaultValue = memberVariable.Initializer != null,
+                        DefaultValue = memberVariable.Initializer,
                         Location = memberVariable.Location,
                         Owner = _sa._currentType
                     };

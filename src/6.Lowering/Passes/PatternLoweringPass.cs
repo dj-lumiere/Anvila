@@ -825,7 +825,12 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             Statement? binding = tp.VariableName is { } name
                 ? MakeBinding(name: name, value: subject, loc: loc)
                 : null;
-            return (null, binding);
+            return WithTypePatternBindings(tp: tp,
+                matched: (null, binding),
+                payload: subject,
+                payloadType: subjectType!,
+                loc: loc,
+                boolType: boolType);
         }
 
         // Different concrete entity — never matches.
@@ -909,6 +914,47 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 loc: loc);
         }
 
+        return targetType != null
+            ? WithTypePatternBindings(tp: tp,
+                matched: (cond, binding),
+                payload: MakeCarrierPayload(subject: subject, innerType: targetType, loc: loc),
+                payloadType: targetType,
+                loc: loc,
+                boolType: boolType)
+            : (cond, binding);
+    }
+
+    /// <summary>
+    /// Adds the destructuring of an <c>is T (a, b)</c> arm to the arm's own test and binding: each named member
+    /// variable of the matched value is bound (<c>var a = payload.a</c>), and a nested pattern's test is joined
+    /// after the type test, so it reads the payload only once the type is known to match.
+    /// </summary>
+    private (Expression? Cond, Statement? Binding) WithTypePatternBindings(TypePattern tp,
+        (Expression? Cond, Statement? Binding) matched, Expression payload, TypeSymbol payloadType,
+        SourceLocation loc, TypeSymbol? boolType)
+    {
+        List<MemberVariableInfo>? memberVars = payloadType switch
+        {
+            RecordTypeSymbol record => record.MemberVariables,
+            EntityTypeSymbol entity => entity.MemberVariables,
+            _ => null
+        };
+        if (tp.Bindings is not { Count: > 0 } bindings || memberVars == null)
+        {
+            return matched;
+        }
+
+        (Expression? fieldCond, Statement? fieldBinding) = GetDestructuringCondition(bindings: bindings,
+            subject: payload,
+            memberVars: memberVars,
+            loc: loc);
+        Expression? cond = CombineConditions(left: matched.Cond, right: fieldCond, loc: loc, boolType: boolType);
+        Statement? binding = (matched.Binding, fieldBinding) switch
+        {
+            (null, var only) => only,
+            (var only, null) => only,
+            var (first, second) => new BlockStatement(Statements: [first!, second!], Location: loc)
+        };
         return (cond, binding);
     }
 

@@ -1087,6 +1087,14 @@ internal static class GenericAstRewriter
         // on a type-expression node (C1). Falls back to the original when there is nothing to resolve.
         TypeSymbol? resolvedType = ctx.ResolveType(original: type.ResolvedType) ?? type.ResolvedType;
 
+        // A lowering pass that named a template's own parameter (`var _cif_0: T` for a conditional expression)
+        // leaves the type unresolved, since a parameter is not a type yet. The parameter's binding is.
+        if (resolvedType == null && type.GenericArguments == null && ctx.TypeSubs != null &&
+            ctx.TypeSubs.TryGetValue(key: type.Name, value: out TypeSymbol? bound))
+        {
+            resolvedType = bound;
+        }
+
         if (name == type.Name && args == null && type.GenericArguments == null &&
             ReferenceEquals(objA: resolvedType, objB: type.ResolvedType))
         {

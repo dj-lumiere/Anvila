@@ -1390,6 +1390,7 @@ public sealed partial class StdlibLoader
                         {
                             Visibility = memberVariable.Visibility,
                             HasDefaultValue = memberVariable.Initializer != null,
+                            DefaultValue = memberVariable.Initializer,
                             Location = memberVariable.Location
                         });
                 }
@@ -1483,6 +1484,7 @@ public sealed partial class StdlibLoader
                                                            Visibility = mv.Visibility,
                                                            Index = i,
                                                            HasDefaultValue = mv.HasDefaultValue,
+                                                           DefaultValue = mv.DefaultValue,
                                                            Location = mv.Location,
                                                            Owner = typeInfo
                                                        })
@@ -1548,6 +1550,7 @@ public sealed partial class StdlibLoader
                         {
                             Visibility = field.Visibility,
                             HasDefaultValue = field.Initializer != null,
+                            DefaultValue = field.Initializer,
                             Location = field.Location
                         });
                 }
@@ -1570,6 +1573,7 @@ public sealed partial class StdlibLoader
                                                            Visibility = mv.Visibility,
                                                            Index = i,
                                                            HasDefaultValue = mv.HasDefaultValue,
+                                                           DefaultValue = mv.DefaultValue,
                                                            Location = mv.Location,
                                                            Owner = typeInfo
                                                        })
@@ -1651,6 +1655,7 @@ public sealed partial class StdlibLoader
                                                            Visibility = mv.Visibility,
                                                            Index = i,
                                                            HasDefaultValue = mv.HasDefaultValue,
+                                                           DefaultValue = mv.DefaultValue,
                                                            Location = mv.Location,
                                                            Owner = typeInfo
                                                        })

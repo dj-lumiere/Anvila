@@ -688,14 +688,14 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Checks whether all cases of a choice type are covered by 'is' TypePatterns.
+    /// Checks whether all cases of a choice type are covered by <c>== CASE</c> arms.
     /// </summary>
     private static ExhaustivenessResult CheckChoiceExhaustiveness(List<WhenClause> clauses,
         ChoiceTypeSymbol choice)
     {
         var coveredCases = clauses
                           .Select(selector: clause =>
-                               ExtractChoiceCaseName(pattern: clause.Pattern))
+                               ExtractChoiceCaseName(pattern: clause.Pattern, choice: choice))
                           .OfType<string>()
                           .ToHashSet();
 
@@ -709,28 +709,26 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Extracts the choice case name from a TypePattern ('is' keyword).
-    /// Returns null if the pattern is not a choice case match.
-    /// Choice matching only supports the 'is' syntax — '==' is not valid for choices.
+    /// The choice case an arm matches: a <c>== CASE</c> arm (<c>== Color.RED</c>, or <c>== RED</c>) names it. An
+    /// <c>is CASE</c> arm is an error of its own (a choice case is matched with <c>==</c>), and counts as the case
+    /// it names so the <c>when</c> is not reported a second time as missing it. Returns null for any other arm (a
+    /// guarded arm may fall through, so it covers nothing).
     /// </summary>
-    private static string? ExtractChoiceCaseName(Pattern pattern)
+    private static string? ExtractChoiceCaseName(Pattern pattern, ChoiceTypeSymbol choice)
     {
-        // TypePattern: is ACTIVE or is Status.ACTIVE
-        if (pattern is TypePattern typePat)
+        string? caseName = pattern switch
         {
-            string name = typePat.Type.Name;
-
-            // Qualified: Direction.NORTH -> extract "NORTH"
-            if (name.Contains(value: '.'))
+            ComparisonPattern { Operator: TokenType.Equal, Value: MemberExpression
             {
-                return name[(name.LastIndexOf(value: '.') + 1)..];
-            }
-
-            // Shorthand: NORTH — caller validates against case list
-            return name;
-        }
-
-        return null;
+                Object: IdentifierExpression owner, MemberName: var member
+            } } when owner.Name == choice.Name || owner.ResolvedType?.FullName == choice.FullName => member,
+            ComparisonPattern { Operator: TokenType.Equal, Value: IdentifierExpression { Name: var bare } } => bare,
+            TypePattern typePattern => ExtractChoiceCaseFromTypePattern(typePat: typePattern, choice: choice),
+            _ => null
+        };
+        return caseName != null && choice.Cases.Any(predicate: c => c.Name == caseName)
+            ? caseName
+            : null;
     }
 
     /// <summary>

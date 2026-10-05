@@ -35,6 +35,10 @@ public sealed class MemberVariableInfo
     /// <summary>Whether this member variable has a default value.</summary>
     public bool HasDefaultValue { get; init; }
 
+    /// <summary>The default value as written in the type body (<c>age: Integer = 30</c>), unanalyzed. A
+    /// construction that leaves the member variable out gets an analyzed copy of it.</summary>
+    public Expression? DefaultValue { get; init; }
+
     /// <summary>Suflae: true when this entity-reference field was declared OPTIONAL (`x: E?`), so it may
     /// hold a null Roamed handle (none). A non-nullable entity field (`x: E`) must never be none.</summary>
     public bool IsNullable { get; init; }
@@ -68,6 +72,7 @@ public sealed class MemberVariableInfo
             Visibility = Visibility,
             Index = Index,
             HasDefaultValue = HasDefaultValue,
+            DefaultValue = DefaultValue,
             IsNullable = IsNullable,
             Location = Location,
             Owner = Owner

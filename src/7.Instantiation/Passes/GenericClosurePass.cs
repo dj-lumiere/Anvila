@@ -236,6 +236,10 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // VariantReturnStatement and trip the codegen guard.
         new VariantReturnLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
             bodies: freshBodies);
+        // A body cloned before the per-file lowering ran (a protocol-extension routine of the program, copied
+        // for each type obeying the protocol) still has its domain literals: a Suflae `2` is an `Integer` to
+        // construct, not a scalar.
+        new LiteralLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
         // FStringLoweringPass runs BEFORE OperatorLoweringPass (per the per-file pipeline order).
         // Monomorphized represent/diagnose bodies need f-strings lowered to represent/diagnose
         // member-routine calls and Text concatenation before operator lowering can fold the chain.

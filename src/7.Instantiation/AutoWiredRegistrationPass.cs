@@ -437,7 +437,7 @@ internal sealed class AutoWiredRegistrationPass
                 Kind = RoutineKind.Creator,
                 OwnerType = type,
                 Parameters = recFields
-                            .Select(selector: mv => new ParamInfo(name: mv.Name, type: mv.Type))
+                            .Select(selector: mv => new ParamInfo(name: mv.Name, type: mv.Type) { DefaultValue = mv.DefaultValue })
                             .ToList(),
                 ReturnType = type,
                 IsFailable = false,
@@ -486,7 +486,7 @@ internal sealed class AutoWiredRegistrationPass
                 OwnerType = type,
                 Parameters = entityForCreate.MemberVariables
                                             .Select(selector: mv =>
-                                                 new ParamInfo(name: mv.Name, type: mv.Type))
+                                                 new ParamInfo(name: mv.Name, type: mv.Type) { DefaultValue = mv.DefaultValue })
                                             .ToList(),
                 ReturnType = type,
                 IsFailable = false,
@@ -672,7 +672,7 @@ internal sealed class AutoWiredRegistrationPass
                 Parameters = crashableForCreate.MemberVariables
                                                .Select(selector: mv =>
                                                     new ParamInfo(name: mv.Name,
-                                                        type: mv.Type))
+                                                        type: mv.Type) { DefaultValue = mv.DefaultValue })
                                                .ToList(),
                 ReturnType = type,
                 IsFailable = false,

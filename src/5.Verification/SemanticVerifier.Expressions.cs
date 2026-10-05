@@ -888,9 +888,17 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeNoneCoalesce(BinaryExpression binary, TypeSymbol leftType,
         TypeSymbol rightType)
     {
+        // The left side's own mistake was already reported.
+        if (leftType is ErrorTypeSymbol)
+        {
+            return ErrorTypeSymbol.Instance;
+        }
+
         if (IsCarrierType(type: leftType) && leftType.TypeArguments is { Count: > 0 })
         {
-            return leftType.TypeArguments[index: 0];
+            TypeSymbol valueType = leftType.TypeArguments[index: 0];
+            CheckNoneCoalesceFallback(binary: binary, valueType: valueType, rightType: rightType);
+            return valueType;
         }
 
         RoutineInfo? unwrapOrMemberRoutine =
@@ -905,6 +913,52 @@ public sealed partial class SemanticVerifier
                      "Implement 'unwrap_or(default: T) -> T' to enable none coalescing.",
             location: binary.Location);
         return ErrorTypeSymbol.Instance;
+    }
+
+    /// <summary>
+    /// Checks the fallback after <c>??</c> against the value it stands in for. A bare literal takes the value's
+    /// type. A fallback that gives no value is allowed only as a call of a <c>@crash_only</c> routine
+    /// (<c>?? stop()</c>, <c>?? breach()</c>), which crashes instead of giving one.
+    /// </summary>
+    private void CheckNoneCoalesceFallback(BinaryExpression binary, TypeSymbol valueType, TypeSymbol rightType)
+    {
+        if (rightType.Category == TypeCategory.Error || valueType.Category == TypeCategory.Error ||
+            MentionsGenericParameter(type: valueType) || MentionsGenericParameter(type: rightType))
+        {
+            return;
+        }
+
+        if (rightType.IsNone)
+        {
+            if (binary.Right is not CallExpression { ResolvedRoutine: { } routine } ||
+                !routine.Annotations.Contains(item: "crash_only"))
+            {
+                ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                    message: $"The fallback after '??' gives no value, but it stands in for a value of type " +
+                             $"'{valueType.Name}'. Give a value of that type, or end the program with `stop()` or " +
+                             "`breach()`.",
+                    location: binary.Right.Location);
+            }
+
+            return;
+        }
+
+        if (binary.Right is LiteralExpression
+            {
+                LiteralType: TokenType.UndecidedInteger or TokenType.UndecidedDecimal or TokenType.IntegerLiteral
+                or TokenType.S64Literal
+            } && !IsAssignableTo(source: rightType, target: valueType))
+        {
+            rightType = AnalyzeExpression(expression: binary.Right, expectedType: valueType);
+        }
+
+        if (!IsAssignableTo(source: rightType, target: valueType))
+        {
+            ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                message: $"The fallback after '??' has type '{rightType.Name}', but it stands in for a value of " +
+                         $"type '{valueType.Name}'. Give a value of that type.",
+                location: binary.Right.Location);
+        }
     }
 
     /// <summary>
@@ -1012,6 +1066,28 @@ public sealed partial class SemanticVerifier
             } && IsFixedWidthIntegerType(type: paramType))
         {
             rightType = AnalyzeExpression(expression: binary.Right, expectedType: paramType);
+        }
+        // Any other bare number literal the parameter cannot take as typed takes the parameter's type: the
+        // right operand of `**` keeps its own type until here, so `x ** 2.0` on a B64 is a B64 exponent.
+        else if (binary.Right is LiteralExpression
+                 {
+                     LiteralType: TokenType.UndecidedInteger or TokenType.UndecidedDecimal
+                     or TokenType.IntegerLiteral or TokenType.S64Literal
+                 } && !IsAssignableTo(source: rightType, target: paramType))
+        {
+            rightType = AnalyzeExpression(expression: binary.Right, expectedType: paramType);
+        }
+
+        // An operator routine generic in its own operand (`Text.mul[TCount](count: TCount)` for `"-" * 4`) binds
+        // that parameter from the right operand, as a call of it would: the operand only has to meet its
+        // constraints.
+        if (paramType is GenericParameterTypeSymbol operandParameter &&
+            memberRoutine.GenericParameters is [var onlyParameter] && onlyParameter == operandParameter.Name)
+        {
+            ValidateRoutineGenericConstraints(routine: memberRoutine,
+                typeArgs: [rightType],
+                location: binary.Right.Location);
+            return ResolveOperatorReturnType(routine: memberRoutine, leftType: leftType);
         }
 
         bool allowIntegralShiftAmount = IsShiftOperator(op: binary.Operator) &&

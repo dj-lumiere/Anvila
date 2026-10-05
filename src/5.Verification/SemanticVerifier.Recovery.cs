@@ -37,12 +37,47 @@ public sealed partial class SemanticVerifier
     /// composition (see the class remarks). Returns the carrier type (Maybe/Check/Lookup[T], None-collapsed);
     /// stashes the synthesized variant call on <see cref="RecoveryExpression.LoweredCall"/>.
     /// </summary>
+    /// <summary>
+    /// A <c>@crash_only</c> routine may only be called bare: reports a call of one written under the keyword
+    /// (<c>try boom()</c>) and returns whether it found one.
+    /// </summary>
+    private bool ReportCrashOnlyRecovery(RecoveryExpression recovery)
+    {
+        CallExpression? crashOnly = null;
+        AstWalker.WalkExpressions(root: recovery.Inner,
+            visit: expression =>
+            {
+                if (crashOnly == null && expression is CallExpression { ResolvedRoutine: { } routine } call &&
+                    routine.Annotations.Contains(item: "crash_only"))
+                {
+                    crashOnly = call;
+                }
+            });
+        if (crashOnly?.ResolvedRoutine is not { } crashOnlyRoutine)
+        {
+            return false;
+        }
+
+        string keyword = RecoveryKeyword(kind: recovery.Kind);
+        ReportError(code: SemanticDiagnosticCode.CrashOnlyRecovered,
+            message: $"You wrote '{keyword}' over a call of '{crashOnlyRoutine.Name}', but '{crashOnlyRoutine.Name}' " +
+                     "is '@crash_only': its failure cannot be recovered, so it is only called bare. Drop " +
+                     $"'{keyword}', or call a routine that may be recovered.",
+            location: crashOnly.Location);
+        return true;
+    }
+
     private TypeSymbol AnalyzeRecoveryExpression(RecoveryExpression recovery)
     {
         // Analyze the inner expression first so every sub-call carries its ResolvedRoutine and ResolvedType.
         // The decomposition below keys failable-ness off the ResolvedRoutine IsFailable flag.
         TypeSymbol innerType = AnalyzeExpression(expression: recovery.Inner);
         if (innerType is ErrorTypeSymbol)
+        {
+            return ErrorTypeSymbol.Instance;
+        }
+
+        if (ReportCrashOnlyRecovery(recovery: recovery))
         {
             return ErrorTypeSymbol.Instance;
         }

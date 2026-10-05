@@ -458,7 +458,16 @@ internal sealed class SignatureResolver
     {
         if (param.Type == null)
         {
-            // Type inference required - handle later
+            // A routine's parameters always state their types: only a lambda's are inferred, and a lambda is
+            // not resolved here. The `me` parameter takes its type from the owner.
+            if (param.Name != "me")
+            {
+                _sa.ReportError(code: SemanticDiagnosticCode.RoutineParameterWithoutType,
+                    message: $"You wrote the parameter '{param.Name}' without a type. Every parameter of a " +
+                             $"routine states its type, for example `{param.Name}: Integer`.",
+                    location: param.Location);
+            }
+
             parameters.Add(
                 item: new ParamInfo(name: param.Name, type: ErrorTypeSymbol.Instance)
                 {

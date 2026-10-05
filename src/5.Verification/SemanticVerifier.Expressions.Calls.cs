@@ -1332,6 +1332,13 @@ public sealed partial class SemanticVerifier
             creator: creator,
             creatorArgTypes: creatorArgTypes);
 
+        // A memberwise construction is not bound to its synthesized creator (it is built field by field), so
+        // the member variables it leaves out get their written defaults here, not from the bound-call path.
+        if (creator.IsSynthesized && creatorArgTypes.Count < creator.Parameters.Count)
+        {
+            AppendDefaultArguments(call: call, routine: creator, arguments: call.Arguments);
+        }
+
         // An auto-generated variant arm EXTRACTOR `Arm.create!(from: V)` is synthesized
         // but has a real pattern-matching body — it is NOT a memberwise field-init, and
         // for a scalar arm (S32) `ClassifyConstruction` would tag it a value conversion,
@@ -1650,6 +1657,22 @@ public sealed partial class SemanticVerifier
         foreach (Expression arg in call.Arguments)
         {
             if (arg is not NamedArgumentExpression named || !fieldNames.Contains(item: named.Name))
+            {
+                return null;
+            }
+
+            // The recovery is for an argument whose type did not resolve. An argument that did resolve, to
+            // a type its member variable cannot hold (an `Integer` for a `Real`), is a real mismatch: the
+            // by-type lookup was right to find no creator, and the construction is reported as such.
+            TypeSymbol fieldType = fields.First(predicate: f => f.Name == named.Name).Type;
+            if (callableType is { IsGenericResolution: true, TypeArguments: not null })
+            {
+                fieldType = SubstituteTypeParameters(type: fieldType, genericType: callableType);
+            }
+
+            if (named.Value.ResolvedType is { Category: not TypeCategory.Error } argType &&
+                fieldType.Category != TypeCategory.Error && !MentionsGenericParameter(type: fieldType) &&
+                !IsAssignableTo(source: argType, target: fieldType))
             {
                 return null;
             }
@@ -2182,10 +2205,12 @@ public sealed partial class SemanticVerifier
     private void InferFreeRoutineArguments(CallExpression call, TypeSymbol? expectedType,
         ref RoutineInfo? routine)
     {
+        // Parameters left to their defaults (`joined(1, 2, 3)` against `joined(nums...: Integer,
+        // separator: Text = ", ")`) take no part in inference, so a call may give fewer arguments.
         if (routine is not { IsGenericDefinition: true } ||
             call.TypeArguments is { Count: > 0 } ||
             routine.GenericParameters is not { Count: > 0 } ||
-            call.Arguments.Count != routine.Parameters.Count)
+            !RoutineCanAcceptArgCount(routine: routine, argCount: call.Arguments.Count))
         {
             return;
         }
@@ -3680,7 +3705,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// A construction no creator takes, naming an argument after no member variable of the type
     /// (`InvalidValueError(message: m)` where the member variables are `input` and `target`): reports each
-    /// such name (RF-S505), since the memberwise construction cannot bind it either.
+    /// such name (RF-S505), since the memberwise construction cannot bind it either. A name that is a member
+    /// variable must carry a value that member variable can hold.
     /// </summary>
     private void ReportUnknownMemberVariableArguments(CallExpression call, TypeSymbol type)
     {
@@ -3696,8 +3722,25 @@ public sealed partial class SemanticVerifier
 
         foreach (NamedArgumentExpression named in call.Arguments.OfType<NamedArgumentExpression>())
         {
-            if (fields.Any(predicate: f => f.Name == named.Name))
+            if (fields.FirstOrDefault(predicate: f => f.Name == named.Name) is { } field)
             {
+                // No creator took the arguments, so this is the memberwise construction: each value must be one
+                // its member variable can hold (an `Integer` is not a `Real`).
+                TypeSymbol fieldType = type is { IsGenericResolution: true, TypeArguments: not null }
+                    ? SubstituteTypeParameters(type: field.Type, genericType: type)
+                    : field.Type;
+                if (named.Value.ResolvedType is { Category: not TypeCategory.Error } valueType &&
+                    fieldType.Category != TypeCategory.Error && !MentionsGenericParameter(type: fieldType) &&
+                    !IsAssignableTo(source: valueType, target: fieldType))
+                {
+                    ReportError(code: SemanticDiagnosticCode.MemberVariableTypeMismatch,
+                        message: $"The value you give '{named.Name}' has type '{valueType.Name}', but the member " +
+                                 $"variable '{named.Name}' of '{type.Name}' holds type '{fieldType.Name}', and no " +
+                                 $"creator of '{type.Name}' takes these arguments. Give it a value of type " +
+                                 $"'{fieldType.Name}'.",
+                        location: named.Value.Location);
+                }
+
                 continue;
             }
 

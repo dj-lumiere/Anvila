@@ -27,7 +27,23 @@ public sealed partial class SemanticVerifier
             GenericMemberRoutineCallExpression { ResolvedRoutine: { } r } g => (r, g.Arguments),
             _ => (null, null)
         };
-        if (routine == null || arguments == null || !routine.Parameters.Any(predicate: p => p.HasDefaultValue))
+        if (routine == null || arguments == null)
+        {
+            return;
+        }
+
+        AppendDefaultArguments(call: call, routine: routine, arguments: arguments);
+    }
+
+    /// <summary>
+    /// Writes the defaults of the parameters of <paramref name="routine"/> that <paramref name="arguments"/>
+    /// leaves out into the list, as <see cref="AppendDefaultArguments(Expression)"/> does for a bound call. A
+    /// memberwise construction is not bound to its synthesized creator, so it calls this directly to get the
+    /// defaults of the member variables it leaves out (<c>User(name: "Ada")</c> with <c>age: Integer = 30</c>).
+    /// </summary>
+    private void AppendDefaultArguments(Expression call, RoutineInfo routine, List<Expression> arguments)
+    {
+        if (!routine.Parameters.Any(predicate: p => p.HasDefaultValue))
         {
             return;
         }

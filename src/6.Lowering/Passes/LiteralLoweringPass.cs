@@ -1,4 +1,5 @@
 using Builder.Declaration;
+using Builder.Instantiation;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -128,6 +129,15 @@ internal sealed class LiteralLoweringPass : AstRewriter
 
         BodyDispatch.RunOnVariantBodies(registry: _registry, bodies: _variantBodies,
             lower: (_, body) => VisitStatement(stmt: body));
+    }
+
+    /// <summary>
+    /// Runs this builder phase over the bodies monomorphization just built.
+    /// </summary>
+    public void RunOnInstantiatedGenericBodies(Dictionary<string, MonomorphizedBody> bodies)
+    {
+        BodyDispatch.RunOnInstantiatedGenericBodies(registry: _registry, bodies: bodies,
+            lower: (_, entry) => VisitStatement(stmt: entry.Ast.Body));
     }
 
     // -----------------------------------------------------------------------------

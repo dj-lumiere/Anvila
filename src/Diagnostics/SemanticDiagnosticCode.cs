@@ -653,6 +653,10 @@ public enum SemanticDiagnosticCode
     /// floating-point type (and the reverse).</summary>
     IntrinsicConversionTypeMismatch = 514,
 
+    /// <summary>A routine parameter written without a type (<c>routine f(x)</c>). Only a lambda's parameters
+    /// are inferred.</summary>
+    RoutineParameterWithoutType = 515,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // COLLECTION LITERAL ERRORS (RF-S550 - RF-S599)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -918,6 +922,10 @@ public enum SemanticDiagnosticCode
 
     /// <summary>Result/Lookup stored in variable beyond immediate dismantling.</summary>
     ErrorHandlingTypeStoredInVariable = 758,
+
+    /// <summary>A <c>try</c>/<c>grab</c>/<c>lookup</c> written over a call of a <c>@crash_only</c> routine, which
+    /// may only be called bare.</summary>
+    CrashOnlyRecovered = 759,
 
     /// <summary>Variant member cannot be Result[T], Lookup[T], a token, or a duplicate type.</summary>
     VariantCaseContainsInvalidType = 764,

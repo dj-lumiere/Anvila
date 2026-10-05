@@ -886,6 +886,15 @@ public sealed partial class TypeRegistry
             return;
         }
 
+        // A Suflae entity's `me` is its shared handle (`Roamed[List[T]]` for `routine List[T].second()`), while the
+        // owner it is called on is the entity itself (`List[Integer]`): the handle's entity is the pattern.
+        if (pattern is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [var handled] } &&
+            concrete is not RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed })
+        {
+            UnifyReceiverGenerics(pattern: handled, concrete: concrete, genericParams: genericParams, into: into);
+            return;
+        }
+
         if (pattern.TypeArguments is { Count: > 0 } pArgs &&
             concrete.TypeArguments is { Count: > 0 } cArgs)
         {

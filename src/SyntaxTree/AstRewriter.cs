@@ -151,7 +151,39 @@ public abstract class AstRewriter
     protected virtual Statement VisitWhen(WhenStatement s)
     {
         Expression subject = VisitExpression(expr: s.Expression);
-        List<WhenClause> clauses = RewriteList(items: s.Clauses,
+        List<WhenClause> clauses = VisitWhenClauses(clauses: s.Clauses);
+        return ReferenceEquals(objA: subject, objB: s.Expression) &&
+               ReferenceEquals(objA: clauses, objB: s.Clauses)
+            ? s
+            : s with { Expression = subject, Clauses = clauses };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="WhenExpression"/> (a <c>when</c> that gives a value) exactly like a
+    /// <see cref="WhenStatement"/>: its subject (absent for a subject-less <c>when</c>), the expressions in each
+    /// clause's pattern, and each clause's body. Passes that run before the expression form is lowered to a
+    /// statement must reach the literals and calls inside it too.
+    /// </summary>
+    /// <param name="e">The when expression to rewrite.</param>
+    /// <returns>The rewritten when expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitWhenExpression(WhenExpression e)
+    {
+        Expression? subject = e.Expression == null ? null : VisitExpression(expr: e.Expression);
+        List<WhenClause> clauses = VisitWhenClauses(clauses: e.Clauses);
+        return ReferenceEquals(objA: subject, objB: e.Expression) &&
+               ReferenceEquals(objA: clauses, objB: e.Clauses)
+            ? e
+            : e with { Expression = subject, Clauses = clauses };
+    }
+
+    /// <summary>
+    /// Rewrites the pattern and body of every clause of a <c>when</c>, statement or expression form.
+    /// </summary>
+    /// <param name="clauses">The clauses to rewrite.</param>
+    /// <returns>The rewritten list, or the original reference if no clause changed.</returns>
+    private List<WhenClause> VisitWhenClauses(List<WhenClause> clauses)
+    {
+        return RewriteList(items: clauses,
             rewrite: c =>
             {
                 Pattern pattern = VisitPattern(p: c.Pattern);
@@ -160,10 +192,6 @@ public abstract class AstRewriter
                     ? c
                     : c with { Pattern = pattern, Body = body };
             });
-        return ReferenceEquals(objA: subject, objB: s.Expression) &&
-               ReferenceEquals(objA: clauses, objB: s.Clauses)
-            ? s
-            : s with { Expression = subject, Clauses = clauses };
     }
 
     /// <summary>
@@ -461,6 +489,7 @@ public abstract class AstRewriter
             TagOfExpression e => VisitTagOf(e: e),
             BitPackExpression e => VisitBitPack(e: e),
             ClosureValueExpression e => VisitClosureValue(e: e),
+            WhenExpression e => VisitWhenExpression(e: e),
             _ => expr // LiteralExpression / IdentifierExpression / others: leaf, unchanged.
         };
     }

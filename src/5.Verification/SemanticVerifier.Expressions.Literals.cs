@@ -32,8 +32,12 @@ public sealed partial class SemanticVerifier
         // A bare integer conforms to a generic type parameter as to any expected type (`step: 1` in a
         // `Range[T]`): it is a T. Whether T can hold it is checked where T is known, at instantiation
         // (GenericAstRewriter). A const generic (`needs N is U64`) is a value, not a type, so it doesn't count.
+        // Only a parameter of the template being analyzed counts: a parameter of the routine being CALLED
+        // (`"-".mul(count: 4)` against `mul[TCount](count: TCount)`) is bound from the argument, so the literal
+        // keeps its own default type and binds it.
         if (literal.LiteralType is TokenType.UndecidedInteger &&
             expectedType is GenericParameterTypeSymbol typeParameter &&
+            IsEnclosingGenericParameter(name: typeParameter.Name) &&
             !ActiveConstraintsFor(paramName: typeParameter.Name)
                .Any(predicate: c => c.ConstraintType == ConstraintKind.ConstGeneric))
         {
@@ -70,6 +74,14 @@ public sealed partial class SemanticVerifier
         }
 
         return type;
+    }
+
+    /// <summary>Whether <paramref name="name"/> is a type parameter of the routine being analyzed or of its
+    /// owner type, so a value typed by it is one of the template's own values.</summary>
+    private bool IsEnclosingGenericParameter(string name)
+    {
+        return _currentRoutine?.GenericParameters?.Contains(item: name) == true ||
+               _currentRoutine?.OwnerType?.GenericParameters?.Contains(item: name) == true;
     }
 
     /// <summary>
