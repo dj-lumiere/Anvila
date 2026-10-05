@@ -502,8 +502,9 @@ internal sealed class AutoWiredRegistrationPass
     /// (Suflae's choices and flags hand their cases back in Suflae's own list, counted with `Integer`).</summary>
     private bool HasOwnRealmDerive(TypeSymbol type, string name)
     {
-        return type.Realm != _registry.AmbientRealm &&
-               _registry.HasRealmDeriveTemplate(name: name, realm: type.Realm);
+        string realm = _registry.DeriveRealmOf(type: type);
+        return realm != _registry.AmbientRealm &&
+               _registry.HasRealmDeriveTemplate(name: name, realm: realm);
     }
 
     /// <summary>The list a choice or flags hands its cases back in: its realm's own, when the realm writes its
@@ -511,7 +512,7 @@ internal sealed class AutoWiredRegistrationPass
     private TypeSymbol? CaseListDef(TypeSymbol type, TypeSymbol? listDef)
     {
         return HasOwnRealmDerive(type: type, name: "all_cases")
-            ? _registry.LookupType(name: "List", realm: type.Realm) ?? listDef
+            ? _registry.LookupType(name: "List", realm: _registry.DeriveRealmOf(type: type)) ?? listDef
             : listDef;
     }
 

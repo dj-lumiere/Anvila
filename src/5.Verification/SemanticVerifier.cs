@@ -1811,7 +1811,28 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private Statement AnalyzeMaterializedDeriveBodyOnDemand(RoutineInfo routine, Statement body)
     {
-        AnalyzeCompilerGeneratedBody(routineInfo: routine, body: body);
+        // A derive a realm writes for its own types (Suflae's `all_cases` making Suflae's `List`) names that
+        // realm's types, so its body resolves names there, not in the realm the build happens to be in.
+        string? ownRealm = routine.OwnerType is { } owner &&
+                           _registry.DeriveRealmOf(type: owner) is var realm &&
+                           _registry.HasRealmDeriveTemplate(name: routine.Name, realm: realm)
+            ? realm
+            : null;
+        string savedRealm = _registry.ResolutionRealm;
+        if (ownRealm != null)
+        {
+            _registry.ResolutionRealm = ownRealm;
+        }
+
+        try
+        {
+            AnalyzeCompilerGeneratedBody(routineInfo: routine, body: body);
+        }
+        finally
+        {
+            _registry.ResolutionRealm = savedRealm;
+        }
+
         return body;
     }
 

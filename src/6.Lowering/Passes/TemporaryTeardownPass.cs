@@ -266,6 +266,14 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             case ExpressionStatement es:
                 return TransformExpressionStatement(es: es);
 
+            // `discard xs.remove_last()` drops a value the call handed over, so it is torn down when the
+            // statement ends (a record a member routine returns is its own, never an alias of the receiver).
+            case DiscardStatement discard:
+                return SpillAround(owner: discard,
+                    root: discard.Expression,
+                    rebuildWithCondition: e => discard with { Expression = e },
+                    topOwning: false);
+
             case DeclarationStatement { Declaration: VariableDeclaration v } ds
                 when v.Initializer != null:
                 return SpillAround(owner: ds,

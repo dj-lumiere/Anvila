@@ -1749,7 +1749,20 @@ public sealed partial class SemanticVerifier
                 }
             }
         }
+
+        // A language without single ownership (Suflae) has no "can this be assigned?" question: a record is
+        // copied and an entity shared, so every type parameter can be assigned without saying so.
+        if (_currentRoutine?.Location is { FileName: { } file } site &&
+            !Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: file)).ChecksOwnership)
+        {
+            yield return new GenericConstraintDeclaration(ParameterName: paramName,
+                ConstraintType: ConstraintKind.Obeys,
+                ConstraintTypes: [new TypeExpression(Name: AssignableProtocolName, GenericArguments: null, Location: site)],
+                Location: site);
+        }
     }
+
+    private const string AssignableProtocolName = "Assignable";
 
     /// <summary>
     /// Checks if an operator is a comparison operator that returns Bool.

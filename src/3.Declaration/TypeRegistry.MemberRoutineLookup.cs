@@ -1225,6 +1225,18 @@ public sealed partial class TypeRegistry
 
     private const char RealmDeriveSeparator = '~';
 
+    /// <summary>
+    /// The realm whose derives a type takes: the language of the file that declares it (a choice written in a
+    /// <c>.sf</c> file takes Suflae's <c>all_cases</c>, even in a build whose ambient realm is RazorForge's), else
+    /// the type's own realm.
+    /// </summary>
+    public string DeriveRealmOf(TypeSymbol type)
+    {
+        return type.Location?.FileName is { } file && Builder.Frontends.Languages.HasSourceExtension(fileName: file)
+            ? Builder.Frontends.Languages.RealmOf(fileName: file)
+            : type.Realm;
+    }
+
     private static string DeriveTemplateKey(string name, string? realm)
     {
         return realm == null
@@ -1259,9 +1271,10 @@ public sealed partial class TypeRegistry
         TypeSymbol forType)
     {
         // A type of a realm with its own derive of this name takes that one.
-        if (forType.Realm != AmbientRealm &&
+        string realm = DeriveRealmOf(type: forType);
+        if (realm != AmbientRealm &&
             !name.Contains(value: RealmDeriveSeparator) &&
-            GetDeriveTemplate(name: DeriveTemplateKey(name: name, realm: forType.Realm), arity: arity,
+            GetDeriveTemplate(name: DeriveTemplateKey(name: name, realm: realm), arity: arity,
                 forType: forType) is { } own)
         {
             return own;

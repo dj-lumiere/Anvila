@@ -394,10 +394,12 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
 
             case DiscardStatement ds:
             {
-                // Lower discard to a plain expression statement -> the return value is
-                // already dropped by not assigning it. The 'discard' keyword is codegen noise.
+                // The statement stays a discard: TemporaryTeardownPass tears the dropped value down, which a
+                // plain expression statement (possibly a fluent alias) never gets.
                 Expression stripped = StripStealFromExpr(expr: ds.Expression);
-                return new ExpressionStatement(Expression: stripped, Location: ds.Location);
+                return ReferenceEquals(objA: stripped, objB: ds.Expression)
+                    ? stmt
+                    : ds with { Expression = stripped };
             }
 
             default:
