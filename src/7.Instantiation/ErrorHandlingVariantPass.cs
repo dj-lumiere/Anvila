@@ -1538,7 +1538,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                         Location: loc) { ResolvedType = valueType },
                     Arguments: [],
                     Location: loc) { ResolvedType = valueType }
-                : valueAccess;
+                : valueType != null && !IsAccessToken(type: valueType)
+                    // An entity moves out of the carrier, which forgets it below.
+                    ? new StealExpression(Operand: valueAccess, Location: loc) { ResolvedType = valueType }
+                    : valueAccess;
 
             bindStmt = new DeclarationStatement(
                 Declaration: new VariableDeclaration(Name: bindName,
@@ -1838,6 +1841,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         string? payloadName = bindName != null
             ? $"__rc_ok_{Interlocked.Increment(location: ref _propTemp)}"
             : null;
+        // The payload moves out: the binding takes it with `steal` and the carrier forgets it (its tag cleared, as
+        // the error arm does), so only the binding tears it down. That is right for a value and for an entity alike,
+        // and a `T` that may be either needs no choice. A token holds nothing to move.
+        TypeSymbol? payloadType = subjType?.TypeArguments is [{ } held] ? held : null;
+        bool movesOut = payloadType != null && !IsAccessToken(type: payloadType);
+        Expression payloadRef = new IdentifierExpression(Name: payloadName ?? "", Location: loc) { ResolvedType = payloadType };
         List<Statement> body = bindName == null
             ? remainder
             :
@@ -1845,14 +1854,16 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 new DeclarationStatement(
                     Declaration: new VariableDeclaration(Name: bindName,
                         Type: null,
-                        Initializer: new IdentifierExpression(Name: payloadName!, Location: loc),
+                        Initializer: movesOut
+                            ? new StealExpression(Operand: payloadRef, Location: loc) { ResolvedType = payloadType }
+                            : payloadRef,
                         Visibility: VisibilityModifier.Secret,
                         Location: loc),
                     Location: loc),
                 .. remainder
             ];
         clauses.Add(item: new WhenClause(
-            Pattern: new ElsePattern(VariableName: payloadName, Location: loc),
+            Pattern: new ElsePattern(VariableName: payloadName, Location: loc) { MovesPayloadOut = movesOut },
             Body: new BlockStatement(Statements: body, Location: loc),
             Location: loc));
 

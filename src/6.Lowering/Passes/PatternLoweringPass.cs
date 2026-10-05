@@ -512,11 +512,27 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             }
 
             case ElsePattern ep:
-                return GetElsePatternCondition(ep: ep,
+            {
+                (Expression? elseCond, Statement? elseBinding) = GetElsePatternCondition(ep: ep,
                     subject: subject,
                     subjectType: subjectType,
                     isElseNarrowed: isElseNarrowed,
                     loc: loc);
+                if (ep.MovesPayloadOut && elseBinding != null && IsResultOrLookup(type: subjectType))
+                {
+                    TypeSymbol? u64 = ctx.Registry.LookupType(name: "U64");
+                    var clearTag = new AssignmentStatement(
+                        Target: new TagOfExpression(Value: subject, Location: loc) { ResolvedType = u64 },
+                        Value: new LiteralExpression(Value: 0UL, LiteralType: TokenType.U64Literal, Location: loc)
+                        {
+                            ResolvedType = u64
+                        },
+                        Location: loc);
+                    elseBinding = new BlockStatement(Statements: [elseBinding, clearTag], Location: loc);
+                }
+
+                return (elseCond, elseBinding);
+            }
 
             case GuardPattern gp:
             {

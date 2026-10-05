@@ -1020,6 +1020,13 @@ public record ElsePattern(string? VariableName, SourceLocation Location)
     /// <c>is Crashable e</c>, and lowering treats the clause as that arm.
     /// </summary>
     public bool BindsCarrierError { get; set; }
+
+    /// <summary>
+    /// Set by the builder on the value arm of a <c>Check</c>/<c>Lookup</c> carrier whose payload cannot be shared
+    /// (an entity): the binding takes the payload and the carrier forgets it (its tag cleared), so only the
+    /// binding tears it down.
+    /// </summary>
+    public bool MovesPayloadOut { get; init; }
 }
 
 /// <summary>
