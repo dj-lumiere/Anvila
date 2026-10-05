@@ -879,6 +879,17 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             }:
                 _movedNames.Add(item: rhs2.Name);
                 break;
+            // `me.storage = moved` into a counted-handle field: the write takes no extra hold (RecordCopyLoweringPass
+            // leaves an RC field's right-hand side as it is), so the local's hold moves into the field and the local
+            // is not torn down again at scope exit.
+            case BinaryExpression
+            {
+                Operator: BinaryOperator.Assign,
+                Left: MemberExpression { ResolvedType: { } fieldType },
+                Right: IdentifierExpression rcSource
+            } when TypeRegistry.GetRcWrapperBaseName(type: fieldType) is not null:
+                _movedNames.Add(item: rcSource.Name);
+                break;
             // An explicit `v.destroy()` consumes `v` — it must NOT then be torn down again at
             // scope exit. This is the auto-synthesized variant `destroy` shape (`when me is Arm
             // as v: v.destroy()`): without this the pattern-bound heap payload is destroyed by the
