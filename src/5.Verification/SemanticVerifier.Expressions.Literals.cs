@@ -1480,7 +1480,7 @@ public sealed partial class SemanticVerifier
     /// base-prefixed wide literals (e.g. a full 256-bit <c>0x…</c> constant) were rejected as
     /// out-of-range. Returns false for a malformed digit, an empty body, or a bare base prefix.
     /// </summary>
-    private static bool TryParseWideMagnitude(string cleaned, out System.Numerics.BigInteger value)
+    internal static bool TryParseWideMagnitude(string cleaned, out System.Numerics.BigInteger value)
     {
         value = System.Numerics.BigInteger.Zero;
         if (string.IsNullOrEmpty(value: cleaned))

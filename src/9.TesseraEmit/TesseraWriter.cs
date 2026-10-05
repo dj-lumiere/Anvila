@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Builder.Backends;
 using Builder.Declaration;
@@ -797,7 +798,11 @@ internal sealed class TesseraWriter
         }
 
         string type = $"Array<{TypeText(type: data.ElementType)}, {data.Elements.Count}>";
-        string initial = $"{type} {{ {string.Join(separator: ", ", values: data.Elements)} }}";
+        // Each element is given as the long with its bits: a U64 element (an Integer literal's limbs) is written
+        // unsigned.
+        bool unsigned64 = data.ElementType.Name == "U64";
+        string initial = $"{type} {{ {string.Join(separator: ", ", values: data.Elements.Select(selector: e =>
+            unsigned64 ? unchecked((ulong)e).ToString(provider: CultureInfo.InvariantCulture) : e.ToString(provider: CultureInfo.InvariantCulture)))} }}";
         if (_texts.TryGetValue(key: initial, value: out string? name))
         {
             return name;

@@ -175,10 +175,10 @@ public static class WiredRoutineCatalog
                 Kind = WiredKind.Creator,
                 Views = Known
             },
-            // Infallible literal constructor synthesized by LiteralLoweringPass for `n`/`dn`
-            // arbitrary-precision literals (Integer/Decimal.from_literal(text:)). Declarable in
-            // stdlib (Known) and seeded live so the synthesized calls keep their link symbols (Seed).
-            new WiredEntry { Name = "from_literal", Kind = WiredKind.Creator, Views = Known | Seed },
+            // The collection literal constructor (`[1, 2]` -> List[T].from_literal(...)). Declarable in stdlib
+            // (Known). Not seeded: every call to one is a resolved call the demand walk follows, and an Integer
+            // literal is static data, never a from_literal call.
+            new WiredEntry { Name = "from_literal", Kind = WiredKind.Creator, Views = Known },
             new WiredEntry { Name = "enter", Kind = WiredKind.Context, Views = Known },
             new WiredEntry { Name = "exit", Kind = WiredKind.Context, Views = Known },
             new WiredEntry

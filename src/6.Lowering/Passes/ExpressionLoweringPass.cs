@@ -1347,7 +1347,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// Builds the step expression for a range: the explicit step if present, otherwise a default
-    /// of 1 (built via <c>T.from_literal("1")</c> for record element types, else a raw S64 literal).
+    /// of 1 (the static Integer record for an Integer range, <c>T.from_literal("1")</c> for another record
+    /// element type, else a raw S64 literal).
     /// Appends any hoisted statements from lowering an explicit step to <paramref name="hoisted"/>.
     /// </summary>
     private Expression LowerRangeStep(RangeExpression range, TypeSymbol? elemType,
@@ -1362,10 +1363,15 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
         // Default step of 1. LiteralLoweringPass has ALREADY run, so a raw literal stamped
         // with a record element type (Suflae's arbitrary-precision `Integer`/`Decimal`)
-        // would reach codegen as an invalid `%Record.Integer 1` constant. When the element
-        // type has a `from_literal` constructor (Integer/Decimal), build `T.from_literal(
-        // text: "1")` — mirroring how LiteralLoweringPass lowers the start/end literals.
+        // would reach codegen as an invalid `%Record.Integer 1` constant. An Integer step is the
+        // static Integer record LiteralLoweringPass builds for the start/end literals. Another
+        // element type with a `from_literal` constructor builds `T.from_literal(text: "1")`.
         // Scalar element types (RF's S64) have no `from_literal` and keep the raw literal.
+        if (elemType is { Name: "Integer" })
+        {
+            return LiteralLoweringPass.IntegerCreator(registry: ctx.Registry, value: 1, loc: loc);
+        }
+
         RoutineInfo? stepFromLiteral = elemType != null
             ? ctx.Registry.LookupMemberRoutine(type: elemType, memberRoutineName: "from_literal")
             : null;

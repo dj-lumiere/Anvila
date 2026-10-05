@@ -1,9 +1,11 @@
 using Builder.Declaration;
 using Builder.Instantiation;
 using Builder.Tokenizer;
+using Builder.Verification;
 using SyntaxTree;
 using TypeModel.Symbols;
 using TypeModel.Types;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace Builder.Lowering.Passes;
 
@@ -27,13 +29,11 @@ internal sealed class LiteralLoweringPass : AstRewriter
 {
     private readonly Dictionary<string, Statement>? _variantBodies;
 
-    // Arbitrary-precision literal lowering: `123n`/`3.14dn` -> Integer/Decimal.from_literal(text:"...").
-    private const string FromLiteralRoutine = "from_literal";
-
-    private readonly TypeSymbol? _integerType;
-    private readonly TypeSymbol? _textType;
-
-    private readonly RoutineInfo? _integerFromLiteral;
+    // Integer literal lowering: `123n` (or a bare literal typed `Integer`) -> the Integer record over limbs the
+    // builder computed, laid down as read-only module data.
+    private readonly RecordTypeSymbol? _integerType;
+    private readonly TypeSymbol? _boolType;
+    private readonly TypeSymbol? _u64Type;
 
     // Imaginary literal lowering: `4.0i` -> a pure-imaginary complex constructor of the resolved
     // complex type — C64(2×B32), C128(2×B64, the default) or C256(2×B128).
@@ -63,18 +63,13 @@ internal sealed class LiteralLoweringPass : AstRewriter
     {
         _variantBodies = ctx.VariantBodies;
         _registry = ctx.Registry;
-        // `n`/`dn` arbitrary-precision literals are emitted as malformed scalar IR by codegen
-        // (e.g. `store %Record.Integer 42n`); lower them to an infallible constructor call instead.
-        // Integer lives in `module Numerics` — qualify (a bare lookup depended on the
-        // cross-module short-name scan; scan-off it missed, the `42n`/`jn` literal lowering was skipped,
-        // and the raw arbitrary-precision literal reached codegen as malformed IR — `store %Record 42n`).
-        _integerType = ctx.Registry.LookupType(name: "Numerics.Integer") ??
-                       ctx.Registry.LookupType(name: "Integer");
-        _textType = ctx.Registry.LookupType(name: "Text");
-        _integerFromLiteral = _integerType != null
-            ? ctx.Registry.LookupMemberRoutine(type: _integerType,
-                memberRoutineName: FromLiteralRoutine)
-            : null;
+        // An `n` literal has no scalar form (a raw one reaches the emitter as `store %Record.Integer 42n`), so
+        // it becomes the Integer record itself. Integer lives in `module Numerics` — qualify (a bare lookup
+        // depended on the cross-module short-name scan, and when it missed the literal reached the emitter raw).
+        _integerType = (ctx.Registry.LookupType(name: "Numerics.Integer") ??
+                        ctx.Registry.LookupType(name: "Integer")) as RecordTypeSymbol;
+        _boolType = ctx.Registry.LookupType(name: "Bool");
+        _u64Type = ctx.Registry.LookupType(name: "U64");
 
         // Imaginary `i` literals have no scalar form for the complex record types; lower them to
         // pure-imaginary complex constructors of the resolved complex type.
@@ -141,19 +136,18 @@ internal sealed class LiteralLoweringPass : AstRewriter
             {
                 // Complex literals FIRST: an imaginary `4i`, or a bare int/float literal SA promoted to
                 // a complex type (the `3` in `3 + 4i`). Must precede the arbitrary-precision case so an
-                // SF bare `3` promoted to complex builds `C(3, 0)` instead of `Integer.from_literal`.
+                // SF bare `3` promoted to complex builds `C(3, 0)` instead of an `Integer`.
                 CreatorExpression? complex = TryLowerComplexLiteral(literal: literal);
                 if (complex != null)
                 {
                     return complex;
                 }
 
-                // Arbitrary-precision `n`/`dn` literals -> infallible from_literal constructor call
-                // (instance lowering: needs the cached Integer/Decimal types + routines).
-                Expression? fromLit = TryLowerArbitraryPrecisionLiteral(literal: literal);
-                if (fromLit != null)
+                // An Integer literal -> the Integer record over build-time limbs.
+                Expression? integer = TryLowerIntegerLiteral(literal: literal);
+                if (integer != null)
                 {
-                    return fromLit;
+                    return integer;
                 }
 
                 Expression? lowered = TryLowerLiteral(literal: literal);
@@ -232,44 +226,121 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Lowers an arbitrary-precision <c>n</c>/<c>dn</c> literal to a <c>from_literal</c> constructor
-    /// call, or returns null if <paramref name="literal"/> is not such a literal (or the
-    /// Integer/Decimal type/routine is unavailable). Codegen has no scalar form for these record
-    /// types, so they must become a call before codegen.
+    /// Lowers an Integer literal to the Integer record it stands for, or returns null if
+    /// <paramref name="literal"/> is not one. The builder computes the limbs, and they become read-only module
+    /// data (<see cref="ConstantDataExpression"/>): <c>Integer(neg:, len:, tab: #constant_data[...], ctrl: none)</c>.
+    /// A null controller is how an Integer says its limbs are static, so it never counts them and never frees
+    /// them, like a Text literal. Zero has no limbs (a null <c>tab</c>), as Integer's own zero does.
+    /// Decimal literals are not here: Decimal is an i128 BID whose literals are build-time constants already.
     /// </summary>
-    private CallExpression? TryLowerArbitraryPrecisionLiteral(LiteralExpression literal)
+    private CreatorExpression? TryLowerIntegerLiteral(LiteralExpression literal)
     {
-        if (literal.Value is not string s)
+        if (literal.Value is not string raw || _integerType == null)
         {
             return null;
         }
 
-        SourceLocation loc = literal.Location;
-        return literal.LiteralType switch
+        // Suflae: an UNSUFFIXED integer literal that SA resolved to `Integer` (the SF default, RF defaults to
+        // S64) is still `UndecidedInteger` at this pass, since ExpressionLoweringPass only rewrites the token to
+        // IntegerLiteral later. So match the resolved type too.
+        bool integer = literal.LiteralType == TokenType.IntegerLiteral ||
+                       literal.LiteralType == TokenType.UndecidedInteger &&
+                       literal.ResolvedType?.Name == "Integer";
+        if (!integer)
         {
-            TokenType.IntegerLiteral when _integerType != null && _integerFromLiteral != null =>
-                MakeFromLiteralCall(raw: s,
-                    suffix: "n",
-                    type: _integerType,
-                    fromLiteral: _integerFromLiteral,
-                    loc: loc),
-            // Suflae: an UNSUFFIXED integer literal that SA resolved to `Integer` (the SF default; RF
-            // defaults to S64) is still `UndecidedInteger` at this pass — ExpressionLoweringPass only
-            // rewrites the token to IntegerLiteral LATER, after this construction pass has already run.
-            // So match the RESOLVED TYPE here and construct it too; otherwise codegen emits an invalid
-            // raw `store <int> %Record.Integer` (Integer is a limb-buffer record, not a scalar).
-            TokenType.UndecidedInteger when literal.ResolvedType?.Name == "Integer" &&
-                                            _integerType != null &&
-                                            _integerFromLiteral != null => MakeFromLiteralCall(
-                raw: s,
-                suffix: "n",
-                type: _integerType,
-                fromLiteral: _integerFromLiteral,
-                loc: loc),
-            // Decimal is now @llvm("i128") BID — its literals bake to a buildtime i128 constant
-            // (NumericLiteralParser.EncodeDecimalCanonical) like D128, not a runtime from-string call.
-            _ => null
-        };
+            return null;
+        }
+
+        string digits = SemanticVerifier.CleanNumericLiteral(value: raw.EndsWith(value: 'n') ||
+                                                                    raw.EndsWith(value: 'N')
+            ? raw[..^1]
+            : raw);
+        if (!SemanticVerifier.TryParseWideMagnitude(cleaned: digits, value: out BigInteger value))
+        {
+            throw new InvalidOperationException(
+                message: $"The Integer literal '{raw}' at {literal.Location} passed analysis but does not parse.");
+        }
+
+        return IntegerCreator(integer: _integerType, boolType: _boolType, u64Type: _u64Type, value: value,
+            loc: literal.Location);
+    }
+
+    /// <summary>
+    /// The Integer record a build-time <paramref name="value"/> stands for: its limbs as read-only module data,
+    /// <c>Integer(neg:, len:, tab: #constant_data[...], ctrl: none)</c>, or a null <c>tab</c> for zero. Every
+    /// Integer the builder writes as a constant (a literal, a range's default step) is built here.
+    /// </summary>
+    internal static CreatorExpression IntegerCreator(TypeRegistry registry, BigInteger value, SourceLocation loc)
+    {
+        RecordTypeSymbol integer = (registry.LookupType(name: "Numerics.Integer") ??
+                                    registry.LookupType(name: "Integer")) as RecordTypeSymbol ??
+                                   throw new InvalidOperationException(message: "Integer is not registered.");
+        return IntegerCreator(integer: integer,
+            boolType: registry.LookupType(name: "Bool"),
+            u64Type: registry.LookupType(name: "U64"),
+            value: value,
+            loc: loc);
+    }
+
+    private static CreatorExpression IntegerCreator(RecordTypeSymbol integer, TypeSymbol? boolType,
+        TypeSymbol? u64Type, BigInteger value, SourceLocation loc)
+    {
+        List<long> limbs = Limbs(magnitude: BigInteger.Abs(value: value));
+        List<MemberVariableInfo> fields = integer.MemberVariables;
+        TypeSymbol FieldType(string name) => fields.First(predicate: f => f.Name == name).Type;
+
+        Expression tab = limbs.Count == 0
+            ? new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "tab") }
+            : new ConstantDataExpression(Elements: limbs,
+                ElementType: u64Type ?? throw new InvalidOperationException(message: "U64 is not registered."),
+                Location: loc) { ResolvedType = FieldType(name: "tab") };
+        bool negative = value.Sign < 0;
+        return new CreatorExpression(TypeName: integer.Name,
+            TypeArguments: null,
+            MemberVariables:
+            [
+                ("neg", new LiteralExpression(Value: negative,
+                    LiteralType: negative
+                        ? TokenType.True
+                        : TokenType.False,
+                    Location: loc) { ResolvedType = boolType }),
+                ("len", new LiteralExpression(Value: (ulong)limbs.Count,
+                    LiteralType: TokenType.U64Literal,
+                    Location: loc) { ResolvedType = u64Type }),
+                ("tab", tab),
+                ("ctrl", new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "ctrl") })
+            ],
+            Location: loc) { ResolvedType = integer };
+    }
+
+    /// <summary>The little-endian 64-bit limbs of a non-negative value, with no high zero limb (none for zero).
+    /// Each limb is given as the <c>long</c> with its bits.</summary>
+    private static List<long> Limbs(BigInteger magnitude)
+    {
+        byte[] bytes = magnitude.ToByteArray(isUnsigned: true, isBigEndian: false);
+        var limbs = new List<long>();
+        if (magnitude.IsZero)
+        {
+            return limbs;
+        }
+
+        for (int at = 0; at < bytes.Length; at += 8)
+        {
+            ulong limb = 0;
+            for (int b = 0; b < 8 && at + b < bytes.Length; b++)
+            {
+                limb |= (ulong)bytes[at + b] << (8 * b);
+            }
+
+            limbs.Add(item: unchecked((long)limb));
+        }
+
+        while (limbs.Count > 0 && limbs[^1] == 0)
+        {
+            limbs.RemoveAt(index: limbs.Count - 1);
+        }
+
+        return limbs;
     }
 
     /// <summary>
@@ -385,38 +456,6 @@ internal sealed class LiteralLoweringPass : AstRewriter
                 ? [("real", zero), ("imag", value)]
                 : [("real", value), ("imag", zero)],
             Location: loc) { ResolvedType = type };
-    }
-
-    /// <summary>
-    /// Builds <c>&lt;Type&gt;.from_literal(text: "&lt;digits&gt;")</c> for an arbitrary-precision
-    /// (<c>n</c>/<c>dn</c>) literal. The suffix and digit-group underscores are stripped; the bare
-    /// digit string is materialized at runtime by the infallible <c>from_literal</c> constructor.
-    /// </summary>
-    private CallExpression MakeFromLiteralCall(string raw, string suffix, TypeSymbol type,
-        RoutineInfo fromLiteral, SourceLocation loc)
-    {
-        string digits =
-            (raw.EndsWith(value: suffix, comparisonType: StringComparison.OrdinalIgnoreCase)
-                ? raw[..^suffix.Length]
-                : raw).Replace(oldValue: "_", newValue: "");
-
-        var textLit =
-            new LiteralExpression(Value: digits, LiteralType: TokenType.TextLiteral, Location: loc)
-            {
-                ResolvedType = _textType
-            };
-        var arg = new NamedArgumentExpression(Name: "text", Value: textLit, Location: loc);
-        var callee = new MemberExpression(
-            Object: new IdentifierExpression(Name: type.Name, Location: loc)
-            {
-                ResolvedType = type
-            },
-            MemberName: FromLiteralRoutine,
-            Location: loc);
-        return new CallExpression(Callee: callee, Arguments: [arg], Location: loc)
-        {
-            ResolvedRoutine = fromLiteral, ResolvedType = fromLiteral.ReturnType
-        };
     }
 
     /// <summary>
