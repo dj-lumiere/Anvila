@@ -2792,8 +2792,11 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// 1a. Lowers a chained comparison <c>a &lt; b &lt; c</c> to
-    /// <c>(a &lt; b) and (b &lt; c)</c>, hoisting complex middle operands.
+    /// 1a. Lowers a chained comparison <c>a &lt; b &lt; c</c> to <c>(a &lt; b) and (b &lt; c)</c>. Every operand
+    /// is evaluated once, eagerly, left to right, before any comparison: when an operand is more than a name or
+    /// a literal, each operand that is not a literal is bound to a temporary in order (a name too, so it is read
+    /// where it stands in the chain, before an operand to its right runs). Only the comparisons stop at the first
+    /// false link.
     /// </summary>
     private (List<Statement> Hoisted, Expression Expr) LowerChainedComparison(
         ChainedComparisonExpression chain)

@@ -121,7 +121,13 @@ internal static class FailurePointCalls
     private static CallExpression MemberCall(Expression receiver, string memberName, List<Expression> arguments,
         RoutineInfo routine, TypeSymbol? resultType, SourceLocation location)
     {
-        var callee = new MemberExpression(Object: receiver, MemberName: memberName, Location: location)
+        // A bare literal on the left (`10` in `try 10 // n`) took the other operand's type, but as the receiver of the
+        // call it is analyzed again with nothing beside it to take a type from. It keeps the type it took as its own
+        // literal token, so the call stays the routine of that type.
+        Expression pinned = receiver is LiteralExpression { ResolvedType: not null } literal
+            ? UndecidedLiteralConformance.Conform(literal: literal)
+            : receiver;
+        var callee = new MemberExpression(Object: pinned, MemberName: memberName, Location: location)
         {
             IsFailable = true
         };
