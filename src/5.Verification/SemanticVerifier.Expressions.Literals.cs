@@ -517,7 +517,7 @@ public sealed partial class SemanticVerifier
         // already valid as a scalar from its first analysis; LiteralLoweringPass rebuilds the complex
         // constructor from the raw text, so no parsed-value cache entry is needed. Route it away from
         // ParseIntegerByResolvedType/ParseDecimalByResolvedType, which only know scalar numeric types.
-        if (resolvedTypeName is "C64" or "C128" or "C256" or "Complex" &&
+        if (resolvedTypeName is "C64" or "C128" or "C256" &&
             literal.LiteralType is TokenType.UndecidedInteger or TokenType.UndecidedDecimal)
         {
             return null;

@@ -1472,10 +1472,10 @@ public sealed partial class SemanticVerifier
         return type.Name is "D32" or "D64" or "D128" or "Decimal";
     }
 
-    /// <summary>Returns true if the type is a complex number type (C64, C128, C256, Complex).</summary>
+    /// <summary>Returns true if the type is a complex number type (C64, C128, C256).</summary>
     private static bool IsComplexType(TypeSymbol type)
     {
-        return type.Name is "C64" or "C128" or "C256" or "Complex";
+        return type.Name is "C64" or "C128" or "C256";
     }
 
     /// <summary>

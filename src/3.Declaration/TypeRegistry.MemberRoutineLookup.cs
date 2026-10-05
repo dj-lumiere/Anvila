@@ -375,7 +375,7 @@ public sealed partial class TypeRegistry
         // `{Module}.name#…` (its BaseName carries the module), so neither the bare-key nor the
         // Core-prefix lookup above finds it from an unqualified call. Scan the free-overload index by
         // the routine's BARE name + exact argument-type identity — this reaches e.g. the module-Numerics
-        // free `atan2(Real, Real, S32)` that an unqualified `atan2(realY, realX, prec)` must bind (the
+        // free `atan2(y, x)` that an unqualified `atan2(y: a, x: b)` must bind (the
         // D/F-type atan2 overloads live in module Core and resolve via the Core-prefix above).
         if (MatchFreeOverloadByArgTypes(baseName: baseName, argTypes: argTypes) is { } freeOverload)
         {
@@ -694,7 +694,7 @@ public sealed partial class TypeRegistry
         // A foreign (C/LLVM) generic routine is only reachable via its realm qualifier — an unqualified
         // lookup must NOT bind it, or a bare call to a name shared with an intrinsic (the free
         // `atan2(y, x)` vs the `LLVM::atan2[T]` intrinsic) would fall through to the intrinsic and emit
-        // an invalid `@llvm.atan2.<non-float>` (e.g. instantiated on the arbitrary-precision `Real`).
+        // an invalid `@llvm.atan2.<non-float>` (e.g. instantiated on a record type).
         // Realm-qualified call sites opt in with includeForeign:true.
         if (!includeForeign)
         {
@@ -2040,7 +2040,7 @@ public sealed partial class TypeRegistry
         }
 
         // A full-arity match wins; only when none exists may trailing defaulted parameters be left out
-        // (`Real(text: t)` against `create(text: Text, radix: S32 = 10)`).
+        // (`Integer(text: t)` against `create(text: Text, radix: S32 = 10)`).
         return MatchMemberOverloadByArgTypes(candidates: candidates,
                    receiverType: type,
                    argTypes: argTypes,

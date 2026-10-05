@@ -30,28 +30,20 @@ internal sealed class LiteralLoweringPass : AstRewriter
     // Arbitrary-precision literal lowering: `123n`/`3.14dn` -> Integer/Decimal.from_literal(text:"...").
     private const string FromLiteralRoutine = "from_literal";
 
-    // Name of the arbitrary-precision complex record type (components are Real).
-    private const string ComplexTypeName = "Complex";
     private readonly TypeSymbol? _integerType;
     private readonly TypeSymbol? _textType;
 
     private readonly RoutineInfo? _integerFromLiteral;
 
     // Imaginary literal lowering: `4.0i` -> a pure-imaginary complex constructor of the resolved
-    // complex type — C64(2×B32), C128(2×B64, the default), C256(2×B128), or arbitrary Complex.
+    // complex type — C64(2×B32), C128(2×B64, the default) or C256(2×B128).
     private readonly TypeSymbol? _c64Type;
     private readonly TypeSymbol? _c128Type;
     private readonly TypeSymbol? _c256Type;
-    private readonly TypeSymbol? _complexType;
     private readonly TypeSymbol? _b32Type;
     private readonly TypeSymbol? _b64Type;
 
     private readonly TypeSymbol? _b128Type;
-
-    // An arbitrary-precision imaginary literal builds a Complex whose components are Real.
-    private readonly TypeSymbol? _realType;
-
-    private readonly RoutineInfo? _realFromLiteral;
 
     // Domain-literal record types, stamped onto the lowered CreatorExpression's ResolvedType. Without this
     // the creator carries no type, and any pipeline copy that reaches OperatorLoweringPass WITHOUT first
@@ -73,7 +65,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
         _registry = ctx.Registry;
         // `n`/`dn` arbitrary-precision literals are emitted as malformed scalar IR by codegen
         // (e.g. `store %Record.Integer 42n`); lower them to an infallible constructor call instead.
-        // Integer/Complex/Real live in `module Numerics` — qualify (a bare lookup depended on the
+        // Integer lives in `module Numerics` — qualify (a bare lookup depended on the
         // cross-module short-name scan; scan-off it missed, the `42n`/`jn` literal lowering was skipped,
         // and the raw arbitrary-precision literal reached codegen as malformed IR — `store %Record 42n`).
         _integerType = ctx.Registry.LookupType(name: "Numerics.Integer") ??
@@ -89,17 +81,9 @@ internal sealed class LiteralLoweringPass : AstRewriter
         _c64Type = ctx.Registry.LookupType(name: "C64");
         _c128Type = ctx.Registry.LookupType(name: "C128");
         _c256Type = ctx.Registry.LookupType(name: "C256");
-        _complexType = ctx.Registry.LookupType(name: "Numerics." + ComplexTypeName) ??
-                       ctx.Registry.LookupType(name: ComplexTypeName);
         _b32Type = ctx.Registry.LookupType(name: "B32");
         _b64Type = ctx.Registry.LookupType(name: "B64");
         _b128Type = ctx.Registry.LookupType(name: "B128");
-        _realType = ctx.Registry.LookupType(name: "Numerics.Real") ??
-                    ctx.Registry.LookupType(name: "Real");
-        _realFromLiteral = _realType != null
-            ? ctx.Registry.LookupMemberRoutine(type: _realType,
-                memberRoutineName: FromLiteralRoutine)
-            : null;
 
         _characterType = ctx.Registry.LookupType(name: "Character");
         _byteType = ctx.Registry.LookupType(name: "Byte");
@@ -293,7 +277,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     /// width-less imaginary literal (<c>4.0i</c> / <c>4.0_i</c>) becomes <c>C(real: 0, imag: value)</c>;
     /// a bare int/float literal that SA promoted to a complex type (the real component of <c>3 + 4i</c>)
     /// becomes <c>C(real: value, imag: 0)</c>. The resolved complex type fixes the components — C64→2×B32,
-    /// C128→2×B64 (the imaginary default), C256→2×B128, or arbitrary Complex over Real. Returns null for
+    /// C128→2×B64 (the imaginary default) or C256→2×B128. Returns null for
     /// any non-complex literal. Codegen has no scalar form for the complex record types, so this rewrite
     /// must happen before codegen.
     /// </summary>
@@ -315,7 +299,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
         string? complexName = literal.ResolvedType?.Name;
         // An imaginary literal always lowers (default C128); a real literal lowers ONLY when SA promoted
         // it to a complex type (e.g. the `3` in a `C128` context) — otherwise it stays a plain scalar.
-        if (realLiteral && complexName is not ("C64" or "C128" or "C256" or ComplexTypeName))
+        if (realLiteral && complexName is not ("C64" or "C128" or "C256"))
         {
             return null;
         }
@@ -330,7 +314,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
 
     /// <summary>
     /// Builds the concrete complex constructor for a resolved complex type name (C64→2×B32,
-    /// C256→2×B128, Complex over arbitrary-precision Real, or the C128 default/fallback). Returns null
+    /// C256→2×B128, or the C128 default/fallback). Returns null
     /// when the required component types were not resolved in the registry.
     /// </summary>
     private CreatorExpression? BuildComplexCreator(string complexName, string mag, bool imaginary,
@@ -352,25 +336,6 @@ internal sealed class LiteralLoweringPass : AstRewriter
                 compLit: TokenType.B128Literal,
                 compType: _b128Type,
                 loc: loc),
-            ComplexTypeName when _complexType != null && _realType != null && _realFromLiteral != null =>
-                // Complex components are arbitrary-precision Real -> from_literal calls
-                // (the creator's args are not re-lowered, so build them already-lowered here).
-                new CreatorExpression(TypeName: ComplexTypeName,
-                    TypeArguments: null,
-                    MemberVariables:
-                    [
-                        ("real", MakeFromLiteralCall(raw: imaginary ? "0" : mag,
-                            suffix: "",
-                            type: _realType,
-                            fromLiteral: _realFromLiteral,
-                            loc: loc)),
-                        ("imag", MakeFromLiteralCall(raw: imaginary ? mag : "0",
-                            suffix: "",
-                            type: _realType,
-                            fromLiteral: _realFromLiteral,
-                            loc: loc))
-                    ],
-                    Location: loc) { ResolvedType = _complexType },
             // Default (C128, 2×B64) — also the fallback when the resolved type is C128 or unknown.
             _ when _c128Type != null => MakeComplexCreator(typeName: "C128",
                 type: _c128Type,

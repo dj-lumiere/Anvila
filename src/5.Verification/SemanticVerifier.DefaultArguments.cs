@@ -16,7 +16,7 @@ public sealed partial class SemanticVerifier
     /// (<see cref="NamedArgumentExpression.IsDefaultArgument"/>), so the default is lowered and emitted like
     /// any argument. Positional arguments fill the parameters after <c>me</c> in order, named ones by name.
     /// The value is a fresh copy of the default analyzed in the routine's own declaration context (its
-    /// module's imports and presets), not the caller's. A member conversion (<c>x.Real()</c>) binds its
+    /// module's imports and presets), not the caller's. A member conversion (<c>x.B64()</c>) binds its
     /// receiver to the creator's first parameter.
     /// </summary>
     private void AppendDefaultArguments(Expression call)

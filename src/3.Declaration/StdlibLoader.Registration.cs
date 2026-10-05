@@ -115,9 +115,9 @@ public sealed partial class StdlibLoader
     {
         // The deferred member-variable re-resolution must find THIS program's types by their
         // module-qualified name. A bare `LookupType(name)` depended on the cross-module short-name scan
-        // (e.g. `Complex` → `Numerics.Complex`); with that scan gone the bare lookup misses, `existing`
-        // is null, and the type's member variables never resolve — leaving fields like `Complex.real: Real`
-        // untyped, so `me.real + you.real` reaches codegen with a `<error>` receiver.
+        // (e.g. `Integer` → `Numerics.Integer`), and with that scan gone the bare lookup misses, `existing`
+        // is null, and the type's member variables never resolve — leaving fields like `Integer.tab`
+        // untyped, so a read of one reaches codegen with a `<error>` receiver.
         string? programModule = program.Declarations
                                        .OfType<ModuleDeclaration>()
                                        .FirstOrDefault()

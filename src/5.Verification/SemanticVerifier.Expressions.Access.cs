@@ -1577,7 +1577,7 @@ public sealed partial class SemanticVerifier
             TypeSymbol argType = AnalyzeExpression(expression: val, expectedType: expected);
 
             // The creator was bound by its parameter NAMES, so the argument types are checked here: a value
-            // the parameter cannot take (an `Integer` for a `Real`) must not reach the emitter as one.
+            // the parameter cannot take (an `Integer` for a `B64`) must not reach the emitter as one.
             if (expected != null && argType.Category != TypeCategory.Error &&
                 expected.Category != TypeCategory.Error && !MentionsGenericParameter(type: expected) &&
                 !IsAssignableTo(source: argType, target: expected))

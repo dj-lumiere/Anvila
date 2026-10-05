@@ -8,7 +8,7 @@ namespace Builder.Verification;
 internal static class ControllerRewrapCheck
 {
     /// <summary>
-    /// RF-S640. A shared-buffer value (Text, Bytes, Integer, Real, and user types in the same shape) keeps
+    /// RF-S640. A shared-buffer value (Text, Bytes, Integer, and user types in the same shape) keeps
     /// its refcount in a <c>Hijacked[FrozenController]</c> field and releases one count in <c>destroy</c>.
     /// Putting an existing value's controller (<c>r.ctrl</c>) into a new value (a construction argument or
     /// a field store) makes a second owner of that count, so the routine must take it with
