@@ -65,8 +65,10 @@ internal static class IngridTessera
     /// when the object is missing or older than the IR. The JIT loads this object instead of parsing and compiling the
     /// whole library's IR on every run: the object is only relocated and linked, and only when the program reaches one
     /// of its symbols. It is compiled once, optimized (the library is shipped code, like a C library a debug build
-    /// links), and with emulated thread-local storage, which the JIT's own code uses. Returns null when the object can't
-    /// be compiled (no clang): the caller then hands the JIT the IR.
+    /// links), and with emulated thread-local storage, which the JIT's own code uses. On Windows its constant-pool
+    /// symbols are made local here, once, so the JIT loads the object as it is (see
+    /// <see cref="Builder.Execution.OrcCoffConstantPools"/>). Returns null when the object can't be compiled (no
+    /// clang): the caller then hands the JIT the IR.
     /// </summary>
     internal static string? ObjectPath(string exeDir)
     {
@@ -87,6 +89,13 @@ internal static class IngridTessera
                 return null;
             }
 
+            if (OperatingSystem.IsWindows())
+            {
+                byte[] bytes = File.ReadAllBytes(path: tmp);
+                Builder.Execution.OrcCoffConstantPools.Localize(obj: bytes);
+                File.WriteAllBytes(path: tmp, bytes: bytes);
+            }
+
             try
             {
                 File.Move(sourceFileName: tmp, destFileName: obj, overwrite: true);
@@ -105,8 +114,101 @@ internal static class IngridTessera
         }
     }
 
-    /// <summary>The extension of the compiled library next to the IR.</summary>
-    private const string ObjectExtension = ".o";
+    /// <summary>The extension of the compiled library next to the IR. It names the JIT's object, whose constant-pool
+    /// symbols are already local, apart from the plain object earlier builders wrote as <c>ingrid_tessera.o</c>.</summary>
+    private const string ObjectExtension = ".jit.o";
+
+    private static readonly object WatchLock = new();
+    private static List<FileSystemWatcher>? _watchers;
+    private static volatile bool _watchedStale = true;
+    private static string? _watchedObject;
+
+    /// <summary>
+    /// <see cref="ObjectPath"/> for a long-lived process (the daemon), without its per-call check of every source:
+    /// the library's sources, Tessera's standard library and the cached IR, object and Tessera builder next to the
+    /// executable are watched, and the object is looked up again only after one of them changed. The daemon hands the
+    /// result to the client in its reply, so a warm run never walks the sources itself. Throws like
+    /// <see cref="ObjectPath"/> when the sources don't compile, and checks again on the next call.
+    /// </summary>
+    internal static string? WatchedObjectPath(string exeDir)
+    {
+        lock (WatchLock)
+        {
+            _watchers ??= StartWatching(exeDir: exeDir);
+            if (!_watchedStale && _watchedObject != null && File.Exists(path: _watchedObject))
+            {
+                return _watchedObject;
+            }
+
+            // Cleared before the look-up, so a change that lands during it marks the result stale again.
+            _watchedStale = false;
+            _watchedObject = null;
+            try
+            {
+                _watchedObject = ObjectPath(exeDir: exeDir);
+            }
+            catch
+            {
+                _watchedStale = true;
+                throw;
+            }
+
+            if (_watchedObject == null)
+            {
+                _watchedStale = true;
+            }
+
+            return _watchedObject;
+        }
+    }
+
+    /// <summary>Watches everything <see cref="ObjectPath"/> decides staleness from. Any event, or a watcher that lost
+    /// events (its buffer overflowed), marks the cached answer stale. The object's own writes do too, which costs one
+    /// extra look-up, made between requests.</summary>
+    private static List<FileSystemWatcher> StartWatching(string exeDir)
+    {
+        var watchers = new List<FileSystemWatcher>();
+        if (TryFindSourceDir(exeDir: exeDir, sourceDir: out string sourceDir))
+        {
+            Watch(watchers: watchers, dir: sourceDir, recursive: true, filters: ["*.tess"]);
+        }
+
+        Watch(watchers: watchers, dir: TesseraBackend.StdlibDirectory(), recursive: true, filters: ["*.tess"]);
+        string builder = typeof(Tessera.Compiler).Assembly.Location;
+        Watch(watchers: watchers, dir: exeDir, recursive: false,
+            filters: builder.Length > 0
+                ? [Path.GetFileNameWithoutExtension(path: IrFileName) + ".*", Path.GetFileName(path: builder)]
+                : [Path.GetFileNameWithoutExtension(path: IrFileName) + ".*"]);
+        return watchers;
+    }
+
+    private static void Watch(List<FileSystemWatcher> watchers, string dir, bool recursive, string[] filters)
+    {
+        if (!Directory.Exists(path: dir))
+        {
+            return;
+        }
+
+        var watcher = new FileSystemWatcher(path: dir)
+        {
+            IncludeSubdirectories = recursive,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite |
+                           NotifyFilters.Size | NotifyFilters.CreationTime,
+            InternalBufferSize = 64 * 1024
+        };
+        foreach (string filter in filters)
+        {
+            watcher.Filters.Add(item: filter);
+        }
+
+        watcher.Changed += (_, _) => _watchedStale = true;
+        watcher.Created += (_, _) => _watchedStale = true;
+        watcher.Deleted += (_, _) => _watchedStale = true;
+        watcher.Renamed += (_, _) => _watchedStale = true;
+        watcher.Error += (_, _) => _watchedStale = true;
+        watcher.EnableRaisingEvents = true;
+        watchers.Add(item: watcher);
+    }
 
     private static void TryDelete(string path)
     {

@@ -34,6 +34,11 @@ internal static unsafe class OrcJitExecutor
     // Error-context label for the OrcCreateLLJIT C-API call (passed to CheckErr).
     private const string OrcCreateLljitWhat = "OrcCreateLLJIT";
 
+    /// <summary>Ingrid's object as the warm daemon found it for this run (see
+    /// <see cref="Builder.IngridTessera.WatchedObjectPath"/>). The daemon watches the library's sources, so a client
+    /// that got this path skips checking every source itself. Null without a daemon, and then the JIT checks.</summary>
+    internal static string? DaemonIngridObjectPath { get; set; }
+
     // --- Fully-lazy on-demand materialization (resident-JIT incremental (B), M2a) ---
     // Set for the duration of one JitAndRunLazy call. The ORC custom definition generator fires (under the
     // ExecutionSession lock) with the batch of unresolved RF symbols a materialization needs; the callback
@@ -198,12 +203,14 @@ internal static unsafe class OrcJitExecutor
     /// <summary>Adds Ingrid's Tessera library (see <see cref="Builder.IngridTessera"/>) to the dylib: its routines are
     /// not in the runtime DLL, so the process-search generator can't find them. It goes in as the object compiled once
     /// from the library's IR, so a run doesn't parse and compile the whole library: the object is linked only when the
-    /// program reaches one of its symbols. Without an object (no clang to compile it) the JIT compiles the IR.</summary>
+    /// program reaches one of its symbols. Without an object (no clang to compile it) the JIT compiles the IR. The
+    /// object's constant-pool symbols were made local when it was compiled, so it is loaded as it is.</summary>
     private static void AddIngridTessera(LLVMOrcOpaqueLLJIT* jit, LLVMOrcOpaqueJITDylib* dylib)
     {
-        if (Builder.IngridTessera.ObjectPath(exeDir: AppContext.BaseDirectory) is { } objectPath)
+        if ((DaemonIngridObjectPath ?? Builder.IngridTessera.ObjectPath(exeDir: AppContext.BaseDirectory)) is
+            { } objectPath)
         {
-            AddObjectFile(jit: jit, dylib: dylib, objectPath: objectPath, what: "ingrid");
+            AddObjectFile(jit: jit, dylib: dylib, objectPath: objectPath, what: "ingrid", localize: false);
             return;
         }
 
@@ -541,14 +548,15 @@ internal static unsafe class OrcJitExecutor
 
     /// <summary>Loads a native object file from disk into the given JITDylib (relocated + linked, not
     /// compiled). ORC takes ownership of the memory buffer (a COPY of the file bytes). <paramref name="what"/> names
-    /// the object in the buffer and in an error.</summary>
+    /// the object in the buffer and in an error. <paramref name="localize"/> is false for an object whose constant-pool
+    /// symbols were already made local when it was written.</summary>
     private static void AddObjectFile(LLVMOrcOpaqueLLJIT* jit, LLVMOrcOpaqueJITDylib* dylib,
-        string objectPath, string what = "base")
+        string objectPath, string what = "base", bool localize = true)
     {
         byte[] obj = File.ReadAllBytes(path: objectPath);
         // Before ORC reads the object's symbols: a constant-pool symbol it lists would be a weak definition of the
         // dylib, which another object's copy of the same constant collides with.
-        if (OperatingSystem.IsWindows())
+        if (localize && OperatingSystem.IsWindows())
         {
             OrcCoffConstantPools.Localize(obj: obj);
         }

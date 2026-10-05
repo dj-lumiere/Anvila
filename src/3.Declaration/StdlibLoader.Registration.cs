@@ -1,3 +1,4 @@
+using Builder.Verification.Enums;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Enums;
@@ -2374,6 +2375,8 @@ public sealed partial class StdlibLoader
             ParameterNames = parameterNames,
             ReturnType = resolvedReturnType,
             IsFailable = isFailable,
+            // A library protocol's `@readonly` member binds its implementations as a user protocol's does.
+            Mutation = MutationCategoryExtensions.FromAnnotations(annotations: memberRoutine.Annotations),
             Location = memberRoutine.Location
         });
     }

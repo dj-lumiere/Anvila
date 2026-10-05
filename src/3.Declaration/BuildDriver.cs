@@ -538,16 +538,13 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Parses a single source file.
+    /// Parses a single source file. A warm daemon (the driver was handed a cached stdlib index) reuses the
+    /// parse of a standard-library file from <see cref="StdlibParseCache"/> while the file is unchanged on disk.
     /// </summary>
     private FileBuildUnit? ParseFile(string filePath)
     {
         try
         {
-            string code = SourceOverrides != null &&
-                          SourceOverrides.TryGetValue(key: Path.GetFullPath(path: filePath), value: out string? edited)
-                ? edited
-                : File.ReadAllText(path: filePath);
             Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
 
             // Validate language consistency: a build reads its own language and RazorForge (the
@@ -572,6 +569,24 @@ public sealed class BuildDriver
                                     .StartsWith(value: Path.GetFullPath(path: _stdlibRoot),
                                          comparisonType: StringComparison.OrdinalIgnoreCase);
 
+            // Only a warm daemon reuses parses: it builds request after request against the same standard
+            // library. The editor's unsaved text (SourceOverrides) is never cached.
+            bool reuseParse = isStdlibFile && _cachedStdlibIndex != null && SourceOverrides == null;
+            StdlibParseCache.FileStamp stamp = default;
+            if (reuseParse)
+            {
+                stamp = StdlibParseCache.StampOf(filePath: filePath);
+                if (StdlibParseCache.TryGet(filePath: filePath, stamp: stamp, unit: out FileBuildUnit? cached))
+                {
+                    return cached;
+                }
+            }
+
+            string code = SourceOverrides != null &&
+                          SourceOverrides.TryGetValue(key: Path.GetFullPath(path: filePath), value: out string? edited)
+                ? edited
+                : File.ReadAllText(path: filePath);
+
             // Tokenize
             List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
 
@@ -579,6 +594,7 @@ public sealed class BuildDriver
             var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
             Program ast = parser.Parse();
             List<BuildWarning> warnings = parser.GetWarnings();
+            bool declaresModule = ast.Declarations.Any(predicate: d => d is ModuleDeclaration);
 
             // Extract module and imports (deriving + inserting a synthetic module header when absent).
             string modulePath = ExtractModuleAndImports(ast: ast,
@@ -592,11 +608,20 @@ public sealed class BuildDriver
                     rules: Builder.Frontends.Languages.For(language: language));
             }
 
-            return new FileBuildUnit(FilePath: filePath,
+            var unit = new FileBuildUnit(FilePath: filePath,
                 Module: modulePath,
                 Ast: ast,
                 Imports: imports,
                 ParseWarnings: warnings);
+
+            // A module derived from the path depends on the project root, so only a file that names its own
+            // module parses the same for every project.
+            if (reuseParse && declaresModule)
+            {
+                StdlibParseCache.Store(filePath: filePath, stamp: stamp, unit: unit);
+            }
+
+            return unit;
         }
         catch (GrammarException ex)
         {

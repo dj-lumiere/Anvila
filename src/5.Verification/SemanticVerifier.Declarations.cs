@@ -1383,7 +1383,9 @@ public sealed partial class SemanticVerifier
                               Column: 0,
                               Position: 0));
         }
-        else if (typeMemberRoutine.MutationCategory > requiredMemberRoutine.Mutation)
+        // Suflae has no `@readonly` or `@reshaping`: the contract is RazorForge's.
+        else if (_registry.CompilationRules.ChecksReadonly &&
+                 typeMemberRoutine.MutationCategory > requiredMemberRoutine.Mutation)
         {
             // #61: Protocol mutation contract validation. The implementation must not be MORE
             // mutating than the protocol declares (Readonly < Writable < Reshaping): callers

@@ -128,6 +128,11 @@ internal partial class Program
             /// client can report where dev-loop latency goes: round-trip − CompileMs = transfer.</summary>
             public long CompileMs { get; set; }
 
+            /// <summary>Ingrid's up-to-date object for the client's JIT (see
+            /// <see cref="Builder.IngridTessera.WatchedObjectPath"/>), so the client doesn't check the library's
+            /// sources itself. Null when the daemon couldn't tell: the client then checks.</summary>
+            public string? IngridObjectPath { get; set; }
+
             public void Write(BinaryWriter writer)
             {
                 writer.Write(value: ExitCode);
@@ -137,6 +142,7 @@ internal partial class Program
                 WriteNullable(writer: writer, value: BaseObjectPath);
                 WriteList(writer: writer, values: LayerObjectPaths);
                 writer.Write(value: CompileMs);
+                WriteNullable(writer: writer, value: IngridObjectPath);
             }
 
             public static DaemonResponse Read(BinaryReader reader)
@@ -149,7 +155,8 @@ internal partial class Program
                     Ir = ReadNullable(reader: reader),
                     BaseObjectPath = ReadNullable(reader: reader),
                     LayerObjectPaths = ReadList(reader: reader),
-                    CompileMs = reader.ReadInt64()
+                    CompileMs = reader.ReadInt64(),
+                    IngridObjectPath = ReadNullable(reader: reader)
                 };
             }
         }
@@ -573,6 +580,7 @@ internal partial class Program
                     SemanticVerifier.PrepareNextRestore(warm: state);
                 }
 
+                _ = IngridObjectForClient();
                 GC.Collect();
             }
             catch (Exception ex)
@@ -752,8 +760,27 @@ internal partial class Program
                     : null,
                 LayerObjectPaths = exit == 0
                     ? layerObjectPaths
-                    : []
+                    : [],
+                IngridObjectPath = exit == 0
+                    ? IngridObjectForClient()
+                    : null
             };
+        }
+
+        /// <summary>Ingrid's up-to-date object for the client's JIT, from the daemon's watch of the library's sources.
+        /// Between requests this does the look-up a change made necessary, so a request finds the answer ready. Null
+        /// when the library has no object or its sources don't compile: the client then checks for itself and reports
+        /// what is wrong.</summary>
+        private static string? IngridObjectForClient()
+        {
+            try
+            {
+                return Builder.IngridTessera.WatchedObjectPath(exeDir: AppContext.BaseDirectory);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
         }
 
         /// <summary>Connects, sends <c>shutdown</c>, and returns 0 on success (used by <c>daemon-stop</c>).</summary>
@@ -1170,6 +1197,7 @@ internal partial class Program
                 serverCompileMs = resp.CompileMs;
                 baseObjectPath = resp.BaseObjectPath;
                 layerObjectPaths = resp.LayerObjectPaths;
+                OrcJitExecutor.DaemonIngridObjectPath = resp.IngridObjectPath;
                 return true;
             }
             catch
