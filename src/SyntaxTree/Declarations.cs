@@ -139,6 +139,13 @@ public record VariableDeclaration(
     public bool IsPreset { get; init; }
 
     /// <summary>
+    /// A name a <c>when</c> pattern binds to what it matched (the payload of a <c>Maybe</c> or a variant arm, or
+    /// the subject itself), written as a local by pattern lowering. The matched value still owns it, so the
+    /// local is a view: tearing it down as well would free it twice.
+    /// </summary>
+    public bool IsPatternBinding { get; init; }
+
+    /// <summary>
     /// The type of the local's storage, stamped at Phase 9 by <c>LocalTypeStampPass</c> for the backends:
     /// the declared type, else the initializer's.
     /// </summary>

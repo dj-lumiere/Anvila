@@ -1366,7 +1366,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 : null,
             Initializer: value,
             Visibility: VisibilityModifier.Secret,
-            Location: loc);
+            Location: loc) { IsPatternBinding = true };
         return new DeclarationStatement(Declaration: decl, Location: loc);
     }
 

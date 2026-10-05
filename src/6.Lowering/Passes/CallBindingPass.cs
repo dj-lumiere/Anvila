@@ -203,6 +203,15 @@ internal sealed class CallBindingPass : AstRewriter
             return null;
         }
 
+        // A recovery variant of the routine of the value a token stands for (`d[name]` under `try` with
+        // `d: Viewing[Dict[K, V]]` binds `Dict[K, V].getitem`'s variant) takes the token as its receiver, as the
+        // routine itself does.
+        if (routine.Recovery != null && !generic && receiver.TypeArguments is [{ } inner] &&
+            inner.FullName == routine.OwnerType!.FullName)
+        {
+            return null;
+        }
+
         List<TypeSymbol> argumentTypes = call.Arguments
                                              .Select(selector: a => (a is NamedArgumentExpression named
                                                   ? named.Value
@@ -210,11 +219,19 @@ internal sealed class CallBindingPass : AstRewriter
                                              .OfType<TypeSymbol>()
                                              .ToList();
         // A method-generic call is already its instantiation; the receiver lookup would hand back the template.
-        return _registry.LookupMemberRoutineOverload(type: receiver,
-            memberRoutineName: routine.Name,
-            argTypes: argumentTypes) is { IsGenericDefinition: false, OwnerType: not ProtocolTypeSymbol } own
-            ? own
-            : null;
+        if (_registry.LookupMemberRoutineOverload(type: receiver,
+                memberRoutineName: routine.Name,
+                argTypes: argumentTypes) is not { IsGenericDefinition: false, OwnerType: not ProtocolTypeSymbol } own)
+        {
+            return null;
+        }
+
+        // A recovery variant shares its routine's name, so the receiver's routine by name is the failable one: the
+        // call stays a recovery through that routine's own variant of the same kind (a wrapper forwarder's, for
+        // `d[name]` under `try` with `d: Viewing[Dict[K, V]]`).
+        return routine.Recovery is { } kind && own.Recovery != kind
+            ? _registry.LookupRecoveryVariant(recovered: own, kind: kind)
+            : own;
     }
 
     /// <summary>The call with each routine it hands to native code written as that code's address.</summary>

@@ -2437,6 +2437,27 @@ public sealed partial class TypeRegistry
     /// null when the concrete inner type does not have the forwarded memberRoutine (do not fabricate it).
     /// </summary>
     /// <summary>
+    /// The routine of <paramref name="concreteInner"/> that a wrapper forwarder built from
+    /// <paramref name="innerGenMemberRoutine"/> calls: the routine of that name and failability (the overload
+    /// with its parameter names when the name has several), or, for a forwarder of a recovery variant, that
+    /// routine's variant of the same kind. Null when the concrete inner type has no such routine.
+    /// </summary>
+    public RoutineInfo? ConcreteForwardedInner(TypeSymbol concreteInner, RoutineInfo innerGenMemberRoutine)
+    {
+        if (innerGenMemberRoutine is { Recovery: { } kind, RecoveryOf: { } innerBase })
+        {
+            return ConcreteForwardedInner(concreteInner: concreteInner, innerGenMemberRoutine: innerBase) is { } concreteBase
+                ? LookupRecoveryVariant(recovered: concreteBase, kind: kind)
+                : null;
+        }
+
+        return LookupMemberRoutine(type: concreteInner,
+            memberRoutineName: innerGenMemberRoutine.Name,
+            isFailable: innerGenMemberRoutine.IsFailable) ?? ConcreteInnerOverload(concreteInner: concreteInner,
+            innerGenMemberRoutine: innerGenMemberRoutine);
+    }
+
+    /// <summary>
     /// The overload of <paramref name="concreteInner"/> a forwarder stands for when the name has several
     /// (`Text.find!(letter:)` and `Text.find!(other:)`): the one with its failability and parameter names.
     /// </summary>
@@ -2456,9 +2477,7 @@ public sealed partial class TypeRegistry
         TypeSymbol resolvedOwner, RoutineInfo innerGenMemberRoutine)
     {
         TypeSymbol concreteInner = resolvedOwner.TypeArguments![index: 0];
-        RoutineInfo? concreteInnerMemberRoutine = LookupMemberRoutine(type: concreteInner,
-            memberRoutineName: innerGenMemberRoutine.Name,
-            isFailable: innerGenMemberRoutine.IsFailable) ?? ConcreteInnerOverload(concreteInner: concreteInner,
+        RoutineInfo? concreteInnerMemberRoutine = ConcreteForwardedInner(concreteInner: concreteInner,
             innerGenMemberRoutine: innerGenMemberRoutine);
         if (concreteInnerMemberRoutine != null)
         {

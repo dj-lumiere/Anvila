@@ -69,7 +69,7 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
             return visited;
         }
 
-        Expression read = Read(expr: init);
+        Expression read = ReadAs(expr: init, target: declared.ResolvedType);
         return ReferenceEquals(objA: read, objB: init)
             ? visited
             : decl2 with { Declaration = decl with { Initializer = read } };
@@ -313,7 +313,12 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
                 };
         }
 
-        return IsToken(type: target) ? expr : Read(expr: expr);
+        // A place typed as an iterator's `Item` (`S/Iter/Item`, a token once instantiated) or as the token itself
+        // keeps the token.
+        return IsToken(type: target) || target is AssociatedProjectionTypeSymbol ||
+               target != null && expr.ResolvedType?.FullName == target.FullName
+            ? expr
+            : Read(expr: expr);
     }
 
     // Reading through a token

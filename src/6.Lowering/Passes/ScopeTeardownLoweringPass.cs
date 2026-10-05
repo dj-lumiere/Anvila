@@ -801,7 +801,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                // matched variant's payload — the variant still owns it. Tearing `v` down frees the variant's
                // payload out from under it: a read-only `represent` would then corrupt `me`, and the
                // auto-synthesized variant `destroy` (explicit `v.destroy()`) would double-free. So exclude it.
-               || v.Initializer is CarrierPayloadExpression;
+               || v.Initializer is CarrierPayloadExpression
+               // Any other name a pattern binds (a `Maybe`'s `.value`, as an `each` loop in a recovery variant
+               // binds its item) is a view too: the matched carrier is torn down and frees it.
+               || v.IsPatternBinding;
     }
 
     // -----------------------------------------------------------------------------

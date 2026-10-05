@@ -2330,7 +2330,37 @@ internal static class GenericAstRewriter
             ctx.ParamTypes[key: "me"] = resolvedOwner;
         }
 
-        return RewriteStatement(stmt: stmt, ctx: ctx);
+        Statement rewritten = RewriteStatement(stmt: stmt, ctx: ctx);
+        BindForwardedRecoveryCall(body: rewritten, forwarder: enclosingRoutine);
+        return rewritten;
+    }
+
+    /// <summary>
+    /// A wrapper forwarder of a recovery variant (`Viewing[List[S64]].getitem` for `try`) calls the inner
+    /// routine's variant, which has the inner routine's name: bind the call to that variant, or resolution by
+    /// name would reach the failable routine itself.
+    /// </summary>
+    private static void BindForwardedRecoveryCall(Statement body, RoutineInfo? forwarder)
+    {
+        if (forwarder is not
+            {
+                WrapperForwarderInnerMemberRoutine: { Recovery: not null } innerVariant,
+                OwnerType.IsGenericDefinition: false
+            })
+        {
+            return;
+        }
+
+        AstWalker.WalkExpressions(root: body,
+            visit: e =>
+            {
+                if (e is CallExpression { Callee: MemberExpression { MemberName: var called } } innerCall &&
+                    called == innerVariant.Name && innerCall.ResolvedRoutine?.Recovery == null)
+                {
+                    innerCall.ResolvedRoutine = innerVariant;
+                    innerCall.ResolvedType = innerVariant.ReturnType;
+                }
+            });
     }
 
     private static Statement RewriteStatement(Statement stmt, RewriteContext ctx)

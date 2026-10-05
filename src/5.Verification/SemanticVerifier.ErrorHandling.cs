@@ -181,6 +181,12 @@ public sealed partial class SemanticVerifier
     /// </summary>
     internal bool EnsureRecoveryVariantsForBase(RoutineInfo baseRoutine)
     {
+        // A wrapper forwarder (`Viewing[T].getitem`) recovers through its inner routine's variants.
+        if (baseRoutine is { WrapperForwarderInnerMemberRoutine: not null, Recovery: null })
+        {
+            return GetOrCreateWrapperForwardingPass().SynthesizeRecoveryVariants(forwarder: baseRoutine);
+        }
+
         if (!baseRoutine.IsFailable && !baseRoutine.HasThrow && !baseRoutine.HasAbsent &&
             RecoverableUserBody(routine: baseRoutine) is { } recoverable)
         {

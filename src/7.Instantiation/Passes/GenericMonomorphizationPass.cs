@@ -3021,10 +3021,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             } && concreteOwner.TypeArguments is { Count: 1 } wrapperArgs)
         {
             TypeSymbol concreteInner = wrapperArgs[index: 0];
-            RoutineInfo? concreteInnerMemberRoutine = ctx.Registry.LookupMemberRoutine(
-                type: concreteInner,
-                memberRoutineName: innerGenMemberRoutine.Name,
-                isFailable: innerGenMemberRoutine.IsFailable);
+            RoutineInfo? concreteInnerMemberRoutine = ctx.Registry.ConcreteForwardedInner(
+                concreteInner: concreteInner,
+                innerGenMemberRoutine: innerGenMemberRoutine);
             if (concreteInnerMemberRoutine != null)
             {
                 var fwdParams = concreteInnerMemberRoutine.Parameters

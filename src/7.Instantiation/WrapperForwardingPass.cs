@@ -437,6 +437,81 @@ internal sealed class WrapperForwardingPass
     }
 
     /// <summary>
+    /// The <c>try</c>/<c>grab</c>/<c>lookup</c> variants of <paramref name="forwarder"/> (a forwarder on a wrapper's
+    /// generic definition whose inner routine can fail beneath its call): forwarders of the inner routine's own
+    /// variants, so a recovery keyword over <c>xs[i]</c> on a <c>Viewing[List[T]]</c> recovers the inner failure.
+    /// Built once. False when there is nothing to recover.
+    /// </summary>
+    public bool SynthesizeRecoveryVariants(RoutineInfo forwarder)
+    {
+        if (forwarder is not
+            {
+                WrapperForwarderInnerMemberRoutine: { } inner, Recovery: null,
+                OwnerType: { IsGenericDefinition: true, GenericParameters: [var genericParamName] } wrapperDef
+            } || wrapperDef.BareName == RuntimeContract.Roamed || !_registry.CanFailUnderRecovery(routine: inner))
+        {
+            return false;
+        }
+
+        if (!_synthesizedForwarderKeys.Add(item: $"{forwarder.RegistryKey}?recover"))
+        {
+            return true;
+        }
+
+        TypeSymbol innerLookupType = forwarder.WrapperForwarderInnerGenericDef ?? inner.OwnerType!;
+        Dictionary<string, TypeSymbol>? innerRename =
+            BuildInnerRenameMap(innerOwnerParams: innerLookupType.GenericParameters, wrapperDef: wrapperDef);
+        string? dataFieldName = wrapperDef is RecordTypeSymbol recDef &&
+                                recDef.LookupMemberVariable(memberVariableName: "data") != null
+            ? "data"
+            : null;
+        bool any = false;
+        foreach (RecoveryKind kind in (RecoveryKind[])[RecoveryKind.Try, RecoveryKind.Grab, RecoveryKind.Lookup])
+        {
+            if (_registry.LookupRecoveryVariant(recovered: inner, kind: kind) is not { } innerVariant)
+            {
+                continue;
+            }
+
+            (List<ParamInfo> parameters, TypeSymbol? returnType) =
+                ApplyInnerRename(innerMemberRoutine: innerVariant, innerRename: innerRename);
+            var variant = new RoutineInfo(name: forwarder.Name)
+            {
+                Kind = forwarder.Kind,
+                OwnerType = wrapperDef,
+                Parameters = parameters,
+                ReturnType = returnType,
+                IsFailable = false,
+                DeclaredMutation = forwarder.DeclaredMutation,
+                MutationCategory = forwarder.MutationCategory,
+                Visibility = forwarder.Visibility,
+                Location = forwarder.Location,
+                Module = forwarder.Module,
+                Annotations = forwarder.Annotations,
+                IsSynthesized = true,
+                WrapperForwarderInnerMemberRoutine = innerVariant,
+                WrapperForwarderInnerGenericDef = innerLookupType,
+                GenericParameters = forwarder.GenericParameters,
+                GenericConstraints = forwarder.GenericConstraints,
+                FailableVariant = innerVariant.FailableVariant,
+                RecoveryOf = forwarder,
+                Recovery = kind
+            };
+            Statement body = BuildWrapperForwarderBody(wrapperType: wrapperDef,
+                genericParamName: genericParamName,
+                innerMemberRoutine: innerVariant,
+                parameters: innerVariant.Parameters,
+                dataFieldName: dataFieldName,
+                innerIsEntity: inner.OwnerType is EntityTypeSymbol);
+            _registry.RegisterRoutine(routine: variant);
+            _synthesizedBodies[key: variant.RegistryKey] = (variant, body);
+            any = true;
+        }
+
+        return any;
+    }
+
+    /// <summary>
     /// One of the forwarders already built for a name with several overloads (no single one by name): the caller
     /// picks among them by its arguments. One of the asked failability when there is one.
     /// </summary>
