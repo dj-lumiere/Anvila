@@ -165,7 +165,7 @@ public sealed partial class SemanticVerifier
     private void ValidateAsyncRoutineArguments(RoutineInfo routine,
         IReadOnlyList<Expression> arguments, string boundaryKind, SourceLocation location)
     {
-        if (!_registry.Rules.ChecksOwnership)
+        if (!ChecksOwnershipHere)
         {
             return;
         }

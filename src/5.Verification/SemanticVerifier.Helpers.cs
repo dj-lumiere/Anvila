@@ -663,7 +663,7 @@ public sealed partial class SemanticVerifier
             paramType.Category == TypeCategory.Protocol &&
             Declaration.RuntimeContract.IsMarkerProtocol(baseName: paramBase) ||
             IsMarkerBoundParam(paramType: param.Type, routine: routine);
-        if (_registry.Rules.ChecksOwnership &&
+        if (ChecksOwnershipHere &&
             argValue is IdentifierExpression or MemberExpression &&
             !Wrappers.IsTriviallyAssignable(type: argType) && !paramIsBorrow)
         {
@@ -722,7 +722,7 @@ public sealed partial class SemanticVerifier
         // Safety comes from move tracking; this check makes the destructive transfer visible in source.
         // A builder-written body is analyzed after that strip, so a borrow parameter already reads as the bare
         // entity there (`eq(you: Accessing[Box])` as `eq(you: Box)`) and the structure says nothing.
-        if (_registry.Rules.ChecksOwnership && !_isInCompilerGeneratedBody &&
+        if (ChecksOwnershipHere && !_isInCompilerGeneratedBody &&
             ReadsKeptEntity(value: argValue, includeVariables: true) && argType is EntityTypeSymbol &&
             paramType is EntityTypeSymbol)
         {
@@ -744,6 +744,16 @@ public sealed partial class SemanticVerifier
     /// neither counts. <paramref name="includeVariables"/> is false where a bare variable is a move (a
     /// returned local).
     /// </summary>
+    /// <summary>
+    /// Whether single-ownership rules apply to the code being analyzed: the analysis language has them, and so does
+    /// the language the routine is written in. A Suflae library body is analyzed in RazorForge mode, but Suflae
+    /// shares its entities, so a second name of one is no second owner there.
+    /// </summary>
+    private bool ChecksOwnershipHere =>
+        _registry.Rules.ChecksOwnership &&
+        (_currentRoutine?.Location?.FileName is not { } file ||
+         Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: file)).ChecksOwnership);
+
     private static bool ReadsKeptEntity(Expression value, bool includeVariables)
     {
         return value switch

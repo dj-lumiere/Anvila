@@ -113,6 +113,19 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             List<Expression> handles = FieldAccessHandles(stmt: stmt)
                                        .Where(predicate: IsHeldPlace)
                                        .ToList();
+            // The IterGuard: a write to a member variable of an entity changes the entity itself (a container's
+            // count, capacity or buffer), which an `each` loop over it or a call on one of its elements relies
+            // on. Where shapes are checked at run time, the write crashes while such a use is open. An element's
+            // value lives in the container's buffer, not in a member variable, so changing it stays allowed.
+            if (Registry.CompilationRules.ChecksShapeAtRunTime && WrittenFieldHandle(stmt: stmt) is { } written &&
+                IsHeldPlace(handle: written))
+            {
+                AddBracket(into: rewritten,
+                    handle: written,
+                    memberRoutine: RuntimeContract.ShapeUse.RequireFree,
+                    isFailable: true);
+            }
+
             foreach (Expression h in handles)
             {
                 AddBracket(into: rewritten,
@@ -149,12 +162,28 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         };
     }
 
-    private void AddBracket(List<Statement> into, Expression handle, string memberRoutine)
+    private void AddBracket(List<Statement> into, Expression handle, string memberRoutine, bool isFailable = false)
     {
-        if (MakeLockCall(handle: handle, memberRoutine: memberRoutine) is { } call)
+        if (MakeLockCall(handle: handle, memberRoutine: memberRoutine, isFailable: isFailable) is { } call)
         {
             into.Add(item: call);
         }
+    }
+
+    /// <summary>The Roamed handle whose own member variable <paramref name="stmt"/> assigns (<c>me.count = n</c>,
+    /// also written as the expression <c>(me.count = n)</c>), or null.</summary>
+    private static Expression? WrittenFieldHandle(Statement stmt)
+    {
+        Expression? target = stmt switch
+        {
+            AssignmentStatement a => a.Target,
+            ExpressionStatement { Expression: BinaryExpression { Operator: BinaryOperator.Assign, Left: var left } } =>
+                left,
+            _ => null
+        };
+        return target is MemberExpression member
+            ? RoamedFieldReceiver(member: member)
+            : null;
     }
 
     // ---- Lock-free atomic global RMW ----------------------------------------------------------------
@@ -403,7 +432,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     // take the Roamed handle, and return void — so the statement is a pure side effect around the field
     // access, exactly what the removed codegen bracket did. The handle node is reused (side-effect-free
     // to re-evaluate: an identifier / member handle), mirroring the promote/retain steps.
-    private ExpressionStatement? MakeLockCall(Expression handle, string memberRoutine)
+    private ExpressionStatement? MakeLockCall(Expression handle, string memberRoutine, bool isFailable = false)
     {
         if (handle.ResolvedType is not { } recvType)
         {
@@ -411,7 +440,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         }
 
         RoutineInfo? routine =
-            Registry.LookupMemberRoutine(type: recvType, memberRoutineName: memberRoutine);
+            Registry.LookupMemberRoutine(type: recvType, memberRoutineName: memberRoutine, isFailable: isFailable);
         if (routine is null)
         {
             return null;

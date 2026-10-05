@@ -1737,7 +1737,7 @@ public sealed partial class SemanticVerifier
         // caller still owns `raw` → double-free once the param type's `destroy` is
         // materialized. Verb-wrapped args (`steal x`, `x.copy()`) are Steal/Call nodes, not
         // Identifier/Member, so they are excluded automatically.
-        if (!_registry.Rules.ChecksOwnership)
+        if (!ChecksOwnershipHere)
         {
             return;
         }
@@ -2741,7 +2741,9 @@ public sealed partial class SemanticVerifier
         // #22: Reject reshaping operations on the collection being iterated (RF-S625). Keyed on
         // the @reshaping marker (via IsReshaping) — the definitional signal, and robust to
         // member-routine registration paths that leave MutationCategory at its default.
-        if (member.Object is IdentifierExpression iterTarget &&
+        // A language that checks shapes as the program runs (Suflae) leaves this to that check.
+        if (!_registry.CompilationRules.ChecksShapeAtRunTime &&
+            member.Object is IdentifierExpression iterTarget &&
             _activeIterationSources.Contains(item: iterTarget.Name) &&
             memberRoutine.IsReshaping)
         {

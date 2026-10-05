@@ -1017,7 +1017,7 @@ public sealed partial class SemanticVerifier
         ValidateCapturedType(varName: id.Name, varType: varInfo.Type, location: id.Location);
 
         // Check 'given' clause enforcement for local captures
-        if (_registry.Rules.ChecksOwnership &&
+        if (ChecksOwnershipHere &&
             localScopeVariables.ContainsKey(key: id.Name) && !varInfo.IsPreset)
         {
             if (givenNames == null)

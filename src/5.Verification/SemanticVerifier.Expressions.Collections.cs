@@ -638,7 +638,7 @@ public sealed partial class SemanticVerifier
 
             // RF-S413: a tuple owns its items, so a variable, field or container element placed in one
             // without `steal` would have two owners (both tear it down).
-            if (_registry.Rules.ChecksOwnership &&
+            if (ChecksOwnershipHere &&
                 ReadsKeptEntity(value: tuple.Elements[i], includeVariables: true) &&
                 MayHoldEntity(type: elementType))
             {

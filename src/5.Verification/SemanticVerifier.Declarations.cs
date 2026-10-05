@@ -1078,6 +1078,23 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
+        // A language without the readonly discipline (Suflae) has neither mark: a record already keeps its value
+        // to itself, and a change of a container's shape during a loop is caught as it happens.
+        TypeModel.Enums.Language writtenIn = Builder.Frontends.Languages.OfFile(fileName: routine.Location.FileName);
+        if (Builder.Frontends.Languages.IsRegistered(language: writtenIn) &&
+            Builder.Frontends.Languages.For(language: writtenIn) is { ChecksReadonly: false } rules)
+        {
+            foreach (string mark in (string[])["readonly", "reshaping"])
+            {
+                if (routine.Annotations.Contains(item: mark))
+                {
+                    ReportError(code: SemanticDiagnosticCode.InvalidAnnotation,
+                        message: $"'@{mark}' does not exist in {rules.Name}.",
+                        location: routine.Location);
+                }
+            }
+        }
+
         // #157: Conflicting mutation category annotations
         int mutationCount = 0;
         if (routine.Annotations.Contains(item: "readonly"))

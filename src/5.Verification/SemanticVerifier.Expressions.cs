@@ -1534,7 +1534,7 @@ public sealed partial class SemanticVerifier
         // `b = a` where `a` is a bare identifier of entity-KIND type (a bare entity, or a record/tuple that
         // transitively owns one) is a build error — copying it would make two owners of the single-owner
         // entity inside. Move it (`steal`) or hold a shareable handle.
-        if (_registry.Rules.ChecksOwnership &&
+        if (ChecksOwnershipHere &&
             ReadsKeptEntity(value: value, includeVariables: true) &&
             MayHoldEntity(type: valueType))
         {
@@ -1545,7 +1545,7 @@ public sealed partial class SemanticVerifier
 
         // Phase 1: warn when the RHS is a non-trivially-copyable wrapper reference.
         // See AnalyzeVariableDeclaration for the same rule applied to var initializers.
-        if (_registry.Rules.ChecksOwnership &&
+        if (ChecksOwnershipHere &&
             value is IdentifierExpression or MemberExpression &&
             !Wrappers.IsTriviallyAssignable(type: valueType))
         {
@@ -1696,7 +1696,9 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.CompoundAssignmentNotSupported,
                 message:
                 $"Entity type '{targetType.Name}' does not support compound assignment '{opSymbol}='. " +
-                $"Define in-place operator '{inPlaceMemberRoutine}' (with @reshaping) to allow compound assignment.",
+                $"Define in-place operator '{inPlaceMemberRoutine}'" +
+                (_registry.CompilationRules.ChecksReadonly ? " (with @reshaping)" : "") +
+                " to allow compound assignment.",
                 location: compound.Location);
             return ErrorTypeSymbol.Instance;
         }

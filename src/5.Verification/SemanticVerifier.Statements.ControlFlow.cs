@@ -793,7 +793,7 @@ public sealed partial class SemanticVerifier
 
             // RF-S413: returning a field or a container element hands the caller an entity its owner
             // still keeps. A returned local is a move, so a bare variable is not flagged here.
-            if (_registry.Rules.ChecksOwnership &&
+            if (ChecksOwnershipHere &&
                 ReadsKeptEntity(value: ret.Value, includeVariables: false) &&
                 MayHoldEntity(type: returnType))
             {

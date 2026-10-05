@@ -976,7 +976,7 @@ public sealed partial class SemanticVerifier
         // RF-S630: track the controller identity of a Guarded/Witnessed handle so the
         // readers-XOR-writer check keys on the shared DATA, not the variable name — a clone
         // (`var s2 = s.share()`) inherits `s`'s identity and so conflicts with it.
-        if (_registry.Rules.ChecksOwnership &&
+        if (ChecksOwnershipHere &&
             varType.BareName is Declaration.RuntimeContract.Guarded
                 or Declaration.RuntimeContract.Witnessed)
         {
@@ -1019,7 +1019,7 @@ public sealed partial class SemanticVerifier
         // A tuple element access (`_t.item0`) is how `var (a, b) = expr` destructuring lowers: the tuple
         // is a CONSUMED temporary, so each element MOVES out — not a view of a persisting owner. Exclude it
         // (Object is a TupleTypeSymbol) so channel/pair destructuring of entity elements stays a legal move.
-        if (_registry.Rules.ChecksOwnership && varDecl.Initializer != null &&
+        if (ChecksOwnershipHere && varDecl.Initializer != null &&
             ReadsKeptEntity(value: varDecl.Initializer, includeVariables: true) &&
             MayHoldEntity(type: varType))
         {
@@ -1091,7 +1091,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckImplicitWrapperCopyOnInit(VariableDeclaration varDecl, TypeSymbol varType)
     {
-        if (!_registry.Rules.ChecksOwnership)
+        if (!ChecksOwnershipHere)
         {
             return;
         }
