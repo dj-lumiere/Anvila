@@ -120,6 +120,20 @@ public static class LspServer
         Language Lang,
         TypeRegistry Registry);
 
+    /// <summary>Whether hover text is written in Korean: the editor's language, which the Rider plugin passes as
+    /// LSP_LOCALE, else the <c>locale</c> the client sends with <c>initialize</c>.</summary>
+    private static bool _korean =
+        Environment.GetEnvironmentVariable(variable: "LSP_LOCALE")
+                  ?.StartsWith(value: "ko", comparisonType: StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>The text in the editor's language.</summary>
+    private static string Ko(string english, string korean)
+    {
+        return _korean
+            ? korean
+            : english;
+    }
+
     // Open documents by URI: their most recent typed AST + token stream (for hover).
     private static readonly Dictionary<string, DocState> Docs = new();
 
@@ -229,6 +243,15 @@ public static class LspServer
                 switch (method)
                 {
                     case "initialize":
+                        if (Environment.GetEnvironmentVariable(variable: "LSP_LOCALE") == null &&
+                            root.TryGetProperty(propertyName: PropParams, value: out JsonElement init) &&
+                            init.ValueKind == JsonValueKind.Object &&
+                            init.TryGetProperty(propertyName: "locale", value: out JsonElement locale) &&
+                            locale.GetString() is { } tag)
+                        {
+                            _korean = tag.StartsWith(value: "ko", comparisonType: StringComparison.OrdinalIgnoreCase);
+                        }
+
                         WriteResult(stdout: stdout,
                             id: id,
                             result: new Dictionary<string, object?>
@@ -573,7 +596,8 @@ public static class LspServer
                                                                 .Where(predicate: b => !(b.Argument is GenericParameterTypeSymbol self &&
                                                                     self.Name == b.Parameter))
                                                                 .ToList();
-        List<string> bindingLines = bindings.Select(selector: b => $"`{b.Parameter}` is `{TypeText(type: b.Argument)}`")
+        List<string> bindingLines = bindings.Select(selector: b => Ko(english: $"`{b.Parameter}` is `{TypeText(type: b.Argument)}`",
+                                                korean: $"`{b.Parameter}`은(는) `{TypeText(type: b.Argument)}`입니다"))
                                             .ToList();
         if (DecidedKindAt(doc: doc, hit: hit, best: best) is { } decided)
         {
@@ -581,7 +605,7 @@ public static class LspServer
             string article = decided.StartsWith(value: 'E')
                 ? "an"
                 : "a";
-            bindingLines.Add(item: $"`Me` is {article} `{decided}`");
+            bindingLines.Add(item: Ko(english: $"`Me` is {article} `{decided}`", korean: $"`Me`은(는) `{decided}`입니다"));
         }
 
         if (bindingLines.Count > 0)
@@ -589,6 +613,11 @@ public static class LspServer
             // One paragraph each: an editor drops a trailing-space line break, which would run them into one line.
             hoverValue += "\n\n" + string.Join(separator: "\n\n",
                 values: bindingLines.Select(selector: line => Surface(text: line)));
+        }
+
+        if (Instantiated(label: label, bindings: bindings) is { } instance)
+        {
+            hoverValue += $"\n\n→ `{Surface(text: instance)}`";
         }
 
         if (!string.IsNullOrWhiteSpace(value: documentation))
@@ -768,8 +797,10 @@ public static class LspServer
 
         if (deadHere)
         {
-            notes.Add(item: "⚠️ **moved out** — this value's ownership was transferred by an " +
-                            "earlier `steal`; it is dead here (use-after-steal) until re-assigned.");
+            notes.Add(item: Ko(english: "⚠️ **moved out** — this value's ownership was transferred by an " +
+                                        "earlier `steal`; it is dead here (use-after-steal) until re-assigned.",
+                korean: "⚠️ **넘겨짐** — 앞선 `steal`로 이 값의 소유권이 넘어갔습니다. 다시 대입하기 전까지 여기서는 " +
+                        "쓸 수 없습니다(use-after-steal)."));
         }
 
         if (OwnershipNote(type: bound.Type) is { } own)
@@ -958,6 +989,72 @@ public static class LspServer
             : "";
         return $"{RoutineModifiers(routine: shown)}routine {owner}{routine.Name}{generics}{RoutineDetail(r: shown)}" +
                NeedsClauses(constraints: shown.GenericConstraints);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex DeclarationWords = new(
+        pattern: @"^(?:(?:secret|posted|external|dangerous|common|suspended|threaded)\s+)*" +
+                 @"(?:routine|record|entity|bundle|variant|protocol|choice|flags|crashable)\s+");
+
+    /// <summary>
+    /// The declaration's first line with each bound generic parameter written out (<c>List[Point].add_last(value:
+    /// Point)</c> for <c>List[T].add_last(value: T)</c>), so a parameter used inside a larger type reads as what it
+    /// stands for. Null when nothing is bound.
+    /// </summary>
+    private static string? Instantiated(string label, List<(string Parameter, TypeSymbol Argument)> bindings)
+    {
+        if (bindings.Count == 0)
+        {
+            return null;
+        }
+
+        Dictionary<string, string> byName = bindings.GroupBy(keySelector: b => b.Parameter)
+                                                    .ToDictionary(keySelector: g => g.Key,
+                                                         elementSelector: g => TypeText(type: g.First().Argument));
+        string line = DeclarationWords.Replace(input: label.Split(separator: '\n')[0].Trim(), replacement: "");
+        string written = System.Text.RegularExpressions.Regex.Replace(input: line,
+            pattern: @"(?<![\w`])[A-Za-z_]\w*(?![\w`])",
+            evaluator: m => byName.TryGetValue(key: m.Value, value: out string? type)
+                ? type
+                : m.Value);
+
+        // `Me` is the type the routine is on, as this instance has it (`-> List[Point]`).
+        if (OwnerOf(routineLine: written) is { } owner)
+        {
+            written = System.Text.RegularExpressions.Regex.Replace(input: written,
+                pattern: @"(?<![\w`])Me(?![\w`])",
+                replacement: owner);
+        }
+
+        return written == line
+            ? null
+            : written;
+    }
+
+    /// <summary>The type a routine line is on: what comes before its name's <c>.</c> (<c>List[Point]</c> in
+    /// <c>List[Point].add_last(value: Point)</c>). Null for a routine on no type.</summary>
+    private static string? OwnerOf(string routineLine)
+    {
+        int depth = 0;
+        for (int i = 0; i < routineLine.Length; i++)
+        {
+            switch (routineLine[index: i])
+            {
+                case '[' or '<':
+                    depth++;
+                    break;
+                case ']' or '>':
+                    depth--;
+                    break;
+                case '(':
+                    return null;
+                case '.' when depth == 0:
+                    return i > 0
+                        ? routineLine[..i]
+                        : null;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The words a routine's declaration puts before <c>routine</c> to say what kind it is, in source order:
@@ -1662,17 +1759,21 @@ public static class LspServer
 
         if (type is EntityTypeSymbol)
         {
-            return
-                "🔒 **entity** — single owner. Hand it off with `steal` (a plain `=` is RF-S413); after " +
-                "that the source binding is dead.";
+            return Ko(english: "🔒 **entity** — single owner. Hand it off with `steal` (a plain `=` is RF-S413); after " +
+                               "that the source binding is dead.",
+                korean: "🔒 **entity** — 소유자는 하나입니다. `steal`로 넘깁니다(그냥 `=`는 RF-S413). 넘긴 뒤에는 원래 " +
+                        "바인딩을 쓸 수 없습니다.");
         }
 
         return type.BareName switch
         {
-            "Retained" => "📦 **Retained** — a persistent, storable ownership hand-off.",
+            "Retained" => Ko(english: "📦 **Retained** — a persistent, storable ownership hand-off.",
+                korean: "📦 **Retained** — 저장해 둘 수 있는, 오래가는 소유권 이전입니다."),
             "Viewing" or "Modifying" =>
-                "👁 **temporary access link** — not storable or returnable, valid only for this scope.",
-            "Controlling" or "Accessing" => "🔗 a reference protocol, not a pass-currency.",
+                Ko(english: "👁 **temporary access link** — not storable or returnable, valid only for this scope.",
+                    korean: "👁 **임시 접근 링크** — 저장하거나 반환할 수 없고, 이 scope 안에서만 유효합니다."),
+            "Controlling" or "Accessing" => Ko(english: "🔗 a reference protocol, not a pass-currency.",
+                korean: "🔗 참조 프로토콜입니다. 값을 넘기는 수단이 아닙니다."),
             _ => null
         };
     }
@@ -4235,19 +4336,19 @@ public static class LspServer
             sb.Append(value: $"**{label}** — {text}");
         }
 
-        Section(title: "Type parameters", entries: d.TypeParams);
-        Section(title: "Parameters", entries: d.Params);
-        Line(label: "Returns", text: d.Returns);
-        Line(label: "Throws", text: d.Throws);
-        Line(label: "Absent", text: d.Absent);
+        Section(title: Ko(english: "Type parameters", korean: "타입 매개변수"), entries: d.TypeParams);
+        Section(title: Ko(english: "Parameters", korean: "매개변수"), entries: d.Params);
+        Line(label: Ko(english: "Returns", korean: "반환"), text: d.Returns);
+        Line(label: Ko(english: "Throws", korean: "throw"), text: d.Throws);
+        Line(label: Ko(english: "Absent", korean: "absent"), text: d.Absent);
         foreach (string note in d.Notes)
         {
-            Line(label: "Note", text: note);
+            Line(label: Ko(english: "Note", korean: "참고"), text: note);
         }
 
         foreach (string see in d.Sees)
         {
-            Line(label: "See", text: see);
+            Line(label: Ko(english: "See", korean: "같이 보기"), text: see);
         }
 
         return sb.ToString();
