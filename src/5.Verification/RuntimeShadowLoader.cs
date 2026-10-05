@@ -47,6 +47,8 @@ public static class RuntimeShadowLoader
 
         #pragma warning restore S5443
 
+        DeleteStaleShadows(tempDir: tempDir);
+
         try
         {
             File.Copy(sourceFileName: canonical, destFileName: shadow, overwrite: true);
@@ -60,8 +62,37 @@ public static class RuntimeShadowLoader
 
         NativeLibrary.SetDllImportResolver(assembly: typeof(NumericLiteralParser).Assembly,
             resolver: Resolve);
+    }
 
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Cleanup();
+    /// <summary>
+    /// Deletes the shadow copies earlier builder processes left behind. A process cannot delete its
+    /// own copy because the DLL stays loaded until the process is gone, so each start sweeps the
+    /// leftovers instead. A copy still loaded by a running builder is locked, and its delete fails
+    /// harmlessly.
+    /// </summary>
+    private static void DeleteStaleShadows(string tempDir)
+    {
+        IEnumerable<string> leftovers;
+        try
+        {
+            leftovers = Directory.EnumerateFiles(path: tempDir,
+                searchPattern: $"{RuntimeLib}_compiler_*.dll");
+        }
+        catch (IOException)
+        {
+            return;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        foreach (string leftover in leftovers)
+        {
+            try { File.Delete(path: leftover); }
+            catch (IOException) { /* loaded by a running builder */ }
+            catch (UnauthorizedAccessException) { /* loaded by a running builder */ }
+        }
     }
 
     private static nint Resolve(string libraryName, Assembly assembly,
@@ -74,19 +105,5 @@ public static class RuntimeShadowLoader
         }
 
         return nint.Zero;
-    }
-
-    private static void Cleanup()
-    {
-        if (_shadowPath == null)
-        {
-            return;
-        }
-
-        try { File.Delete(path: _shadowPath); }
-        catch
-        {
-            /* best-effort */
-        }
     }
 }
