@@ -53,7 +53,7 @@ public partial class LlvmEmitter
             ? " nounwind"
             : "";
         string defineHeader =
-            $"define {linkagePrefix}{headerReturnType} @{funcName}({parameters}){synthAttrs} {{";
+            $"define {linkagePrefix}{headerReturnType} @{funcName}({parameters}){synthAttrs} {CpuAttributes} {{";
         _generatedRoutineDefHeaders[key: funcName] = defineHeader;
         EmitLine(sb: _functionDefinitions, line: defineHeader);
         EmitLine(sb: _functionDefinitions, line: "entry:");

@@ -221,6 +221,11 @@ public partial class LlvmEmitter
     /// <summary>Target platform configuration (triple, data layout, page size, etc.).</summary>
     private readonly TargetConfig _target;
 
+    /// <summary>The CPU attributes every routine this module defines carries (see
+    /// <see cref="TargetConfig.FunctionAttributes"/>): the same set as Ingrid's Tessera library, so its helpers inline
+    /// into RazorForge code.</summary>
+    private string CpuAttributes => _target.FunctionAttributes;
+
     /// <summary>Requested build optimization mode.</summary>
     private readonly RfBuildMode _buildMode;
 
@@ -1030,7 +1035,7 @@ public partial class LlvmEmitter
     /// crash_report reads the trace through). A 32-entry power-of-2 ring; indices mask with AND so
     /// push/pop stay branchless.
     /// </summary>
-    private static void AppendShadowStackHelpers(StringBuilder output, bool deltaMode = false)
+    private void AppendShadowStackHelpers(StringBuilder output, bool deltaMode = false)
     {
         if (deltaMode)
         {
@@ -1048,7 +1053,7 @@ public partial class LlvmEmitter
         // push helper — branchless: mask index to [0,31] with AND
         output.AppendLine(
             value:
-            "define private void @_rf_trace_push(ptr %r, ptr %f, i32 %ln, i32 %col) alwaysinline {");
+            $"define private void @_rf_trace_push(ptr %r, ptr %f, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
         output.AppendLine(value: "  %idx32 = and i32 %d, 31");
@@ -1078,7 +1083,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "}");
         output.AppendLine();
         // pop helper — branchless: depth is always > 0 when pop is called (paired with push)
-        output.AppendLine(value: "define private void @_rf_trace_pop() alwaysinline {");
+        output.AppendLine(value: $"define private void @_rf_trace_pop() alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
         output.AppendLine(value: "  %nd = add i32 %d, -1");
@@ -1089,7 +1094,7 @@ public partial class LlvmEmitter
         // update-loc helper — overwrites the line/col of the current (topmost) frame. Emitted before
         // each call so the trace reflects the call's source line. Skip when depth == 0 (no frame yet).
         output.AppendLine(
-            value: "define private void @_rf_trace_update_loc(i32 %ln, i32 %col) alwaysinline {");
+            value: $"define private void @_rf_trace_update_loc(i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
         output.AppendLine(value: "  %has = icmp ugt i32 %d, 0");
@@ -1115,13 +1120,13 @@ public partial class LlvmEmitter
         output.AppendLine(value: "}");
         output.AppendLine();
         // accessors — Core's crash_report (LLVM::trace_depth / LLVM::trace_frames) reads the trace here
-        output.AppendLine(value: "define private i32 @_rf_trace_get_depth() alwaysinline {");
+        output.AppendLine(value: $"define private i32 @_rf_trace_get_depth() alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
         output.AppendLine(value: "  ret i32 %d");
         output.AppendLine(value: "}");
         output.AppendLine();
-        output.AppendLine(value: "define private ptr @_rf_trace_get_frames() alwaysinline {");
+        output.AppendLine(value: $"define private ptr @_rf_trace_get_frames() alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  ret ptr @_rf_trace_stack");
         output.AppendLine(value: "}");
@@ -1130,7 +1135,7 @@ public partial class LlvmEmitter
         // Exported entry points for the modules that do not own the stack (see AppendShadowStackForwarders).
         foreach ((string name, string returns, string parameters, string arguments) in ShadowStackHelpers)
         {
-            output.AppendLine(value: $"define {returns} @{name}_shared({parameters}) {{");
+            output.AppendLine(value: $"define {returns} @{name}_shared({parameters}) {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
             output.AppendLine(value: ForwardingCall(returns: returns, callee: name, arguments: arguments));
             output.AppendLine(value: "}");
@@ -1163,13 +1168,13 @@ public partial class LlvmEmitter
     /// AOT-compiled: under emulated TLS the object file defines its own copy of each control block, the JIT's
     /// object loader does not merge them, and the module crashed on its first push.
     /// </summary>
-    private static void AppendShadowStackForwarders(StringBuilder output)
+    private void AppendShadowStackForwarders(StringBuilder output)
     {
         output.AppendLine(value: "; Shadow stack (owned by the resident base — forward to it)");
         foreach ((string name, string returns, string parameters, string arguments) in ShadowStackHelpers)
         {
             output.AppendLine(value: $"declare {returns} @{name}_shared({parameters})");
-            output.AppendLine(value: $"define private {returns} @{name}({parameters}) alwaysinline {{");
+            output.AppendLine(value: $"define private {returns} @{name}({parameters}) alwaysinline {CpuAttributes} {{");
             output.AppendLine(value: EntryLabel);
             output.AppendLine(value: ForwardingCall(returns: returns, callee: $"{name}_shared", arguments: arguments));
             output.AppendLine(value: "}");
@@ -1209,7 +1214,7 @@ public partial class LlvmEmitter
 
         output.AppendLine();
         output.AppendLine(value: "; Entry point");
-        output.AppendLine(value: "define i32 @main(i32 %argc, ptr %argv) {");
+        output.AppendLine(value: $"define i32 @main(i32 %argc, ptr %argv) {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  call void @rf_runtime_init()");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");

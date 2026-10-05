@@ -469,7 +469,7 @@ public partial class LlvmEmitter
         }
 
         return
-            $"define {linkagePrefix}{returnPrefix}{headerReturnType} @{funcName}({parameters}){funcAttrs} {{";
+            $"define {linkagePrefix}{returnPrefix}{headerReturnType} @{funcName}({parameters}){funcAttrs} {CpuAttributes} {{";
     }
 
     /// <summary>

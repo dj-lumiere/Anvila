@@ -38,7 +38,7 @@ public sealed class TesseraBackend : IBuilderBackend
         var decls = new List<Tessera.Decl>();
         decls.AddRange(collection: Parse(file: ModuleFileName, source: source, isLibrary: false));
         decls.AddRange(collection: Tessera.StandardLibrary.Load(directory: StdlibDirectory()));
-        var compiler = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false)
+        var compiler = new Tessera.Compiler(target: input.Target.TesseraTarget(), decls: decls, trace: false)
         {
             ExposeDefinitions = true
         };
@@ -139,7 +139,7 @@ public sealed class TesseraBackend : IBuilderBackend
         {
             // RazorForge keeps its own crash trace in the generated routines (TesseraTrace), so Tessera's stays out.
             // A delta declares what the resident base defines (EmitResidentBase).
-            var compiler = new Tessera.Compiler(target: TesseraTarget(target: input.Target), decls: decls, trace: false)
+            var compiler = new Tessera.Compiler(target: input.Target.TesseraTarget(), decls: decls, trace: false)
             {
                 ProvidedSymbols = input.ResidentSymbols is { Count: > 0 } resident
                     ? resident as IReadOnlySet<string> ?? new HashSet<string>(collection: resident, comparer: StringComparer.Ordinal)
@@ -177,18 +177,6 @@ public sealed class TesseraBackend : IBuilderBackend
         // Parsed once here, so a module the Tessera parser rejects fails the export rather than Ingrid's build.
         _ = Parse(file: "generated.tess", source: source, isLibrary: false);
         return Tessera.Formatter.Format(text: source);
-    }
-
-    /// <summary>Tessera names a target arch-os-abi (<c>x86_64-windows-msvc</c>, <c>aarch64-macos-none</c>).</summary>
-    private static Tessera.BuildTarget TesseraTarget(Targeting.TargetConfig target)
-    {
-        string abi = target.TargetOS switch
-        {
-            "windows" => "msvc",
-            "macos" => "none",
-            _ => "gnu"
-        };
-        return Tessera.BuildTarget.Parse(triple: $"{target.TargetArch}-{target.TargetOS}-{abi}");
     }
 
     internal static List<Tessera.Decl> Parse(string file, string source, bool isLibrary)

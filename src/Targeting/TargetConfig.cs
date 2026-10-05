@@ -47,6 +47,41 @@ public sealed class TargetConfig
     public string TargetArch { get; }
 
     /// <summary>
+    /// The CPU the build generates code for, or null for the triple's default. On x86-64 the floor is x86-64-v3
+    /// (Intel Haswell 2013+, AMD Excavator 2015+ and every Ryzen): FMA, AVX2, BMI1/2, LZCNT, MOVBE and F16C. Two of
+    /// those are load-bearing. The correctly rounded B32/B64 math is built on fused multiply-add, and without the
+    /// instruction every <c>llvm.fma</c> becomes a call to a software fma (2-3x slower B64 cos/tan/log10/erf/pow).
+    /// <c>B16</c> (LLVM <c>half</c>) needs the F16C conversions, without which the backend's soft-promotion path
+    /// miscompiles half values crossing a call at -O3. AArch64 has native half and FMA in its base ISA.
+    /// </summary>
+    public string? Cpu => TargetArch == "x86_64"
+        ? "x86-64-v3"
+        : null;
+
+    /// <summary>The target as the Tessera builder names it (arch-os-abi), with <see cref="Cpu"/>.</summary>
+    public Tessera.BuildTarget TesseraTarget()
+    {
+        string abi = TargetOS switch
+        {
+            "windows" => "msvc",
+            "macos" => "none",
+            _ => "gnu"
+        };
+        return Tessera.BuildTarget.Parse(triple: $"{TargetArch}-{TargetOS}-{abi}") with { Cpu = Cpu };
+    }
+
+    private string? _functionAttributes;
+
+    /// <summary>
+    /// The <c>"target-cpu"</c> / <c>"target-features"</c> attributes every defined routine carries, as clang resolves
+    /// <see cref="Cpu"/> for the triple. The RazorForge module and Ingrid's Tessera library carry the same set: LLVM
+    /// inlines a routine only into one whose features cover its own, so a mismatch keeps even a one-line runtime
+    /// helper a call. It also tells opt the CPU, which otherwise optimizes for the triple's baseline.
+    /// </summary>
+    public string FunctionAttributes => _functionAttributes ??=
+        Tessera.CpuModel.For(target: TesseraTarget(), pos: new Tessera.Pos(File: "", Line: 0, Col: 0)).FnAttrs;
+
+    /// <summary>
     /// Creates a TargetConfig with explicit values.
     /// </summary>
     public TargetConfig(string triple, string dataLayout, int pointerBitWidth,

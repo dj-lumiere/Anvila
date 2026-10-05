@@ -9,9 +9,10 @@ namespace Builder;
 /// runtime DLL, so every RazorForge module is llvm-linked with this library before <c>opt</c>. That puts the bodies in
 /// the module being optimized, where LLVM can inline them (<c>#inline</c> routines are <c>alwaysinline</c>).
 /// <para>
-/// The library is compiled in-process by the Tessera builder, for the host, and cached as LLVM IR next to the
-/// executable. It is rebuilt when a source or the Tessera builder is newer. An installed layout ships the cached IR
-/// and no sources.
+/// The library is compiled in-process by the Tessera builder, for the CPU the RazorForge module targets (see
+/// <see cref="TargetConfig.Cpu"/>), and cached as LLVM IR next to the executable. It is rebuilt when a source, the
+/// Tessera builder, or this builder (which picks the CPU) is newer. An installed layout ships the cached IR and no
+/// sources.
 /// </para>
 /// </summary>
 internal static class IngridTessera
@@ -231,11 +232,11 @@ internal static class IngridTessera
     private static bool IsStale(string cached, string[] sources)
     {
         DateTime cachedAt = File.GetLastWriteTimeUtc(path: cached);
-        string builder = typeof(Tessera.Compiler).Assembly.Location;
+        string[] builders = [typeof(Tessera.Compiler).Assembly.Location, typeof(IngridTessera).Assembly.Location];
         IEnumerable<string> stdlib = Directory.GetFiles(path: TesseraBackend.StdlibDirectory(), searchPattern: "*.tess",
             searchOption: SearchOption.AllDirectories);
         return sources.Concat(second: stdlib).Any(predicate: s => File.GetLastWriteTimeUtc(path: s) > cachedAt)
-               || (builder.Length > 0 && File.GetLastWriteTimeUtc(path: builder) > cachedAt);
+               || builders.Any(predicate: b => b.Length > 0 && File.GetLastWriteTimeUtc(path: b) > cachedAt);
     }
 
     private static string Compile(string sourceDir, string[] sources)
@@ -267,7 +268,8 @@ internal static class IngridTessera
             // RazorForge program brings its runtime, and a stray copy would pull in POSIX calls the JIT can't resolve.
             // Tessera's own crash trace stays out too: Ingrid's routines (ingrid_roam_hold and the like) sit on hot
             // paths of every RazorForge program, and RazorForge keeps its own trace.
-            return new Tessera.Compiler(target: Tessera.BuildTarget.Host(), decls: decls, trace: false)
+            return new Tessera.Compiler(target: TargetConfig.ForCurrentHost().TesseraTarget(), decls: decls,
+                    trace: false)
                     { EmitLibraryExports = false }
                 .Generate();
         }
