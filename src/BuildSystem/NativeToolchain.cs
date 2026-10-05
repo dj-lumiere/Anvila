@@ -111,7 +111,8 @@ internal static class NativeToolchain
                 Arguments = "--show-sdk-path",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true
+                RedirectStandardError = true,
+                CreateNoWindow = true
             };
             using var proc = Process.Start(startInfo: psi);
             if (proc == null)
@@ -148,7 +149,8 @@ internal static class NativeToolchain
                 Arguments = buildArgs,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true
+                RedirectStandardError = true,
+                CreateNoWindow = true
             };
 
             using var process = Process.Start(startInfo: psi);
@@ -570,7 +572,8 @@ internal static class NativeToolchain
             Arguments = optArgs,
             UseShellExecute = false,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            CreateNoWindow = true
         };
         ConfigureToolchainEnvironment(psi: optPsi, toolPath: OptTool.Value);
 
@@ -928,7 +931,8 @@ internal static class NativeToolchain
             Arguments = clangArgs,
             UseShellExecute = false,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            CreateNoWindow = true
         };
         ConfigureToolchainEnvironment(psi: clangPsi, toolPath: ClangTool.Value);
 
