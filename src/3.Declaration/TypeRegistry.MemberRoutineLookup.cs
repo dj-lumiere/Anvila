@@ -2964,7 +2964,20 @@ public sealed partial class TypeRegistry
             return true;
         }
 
-        return false;
+        // A Suflae entity and its shared handle are the same value: an argument typed `Counter` fills a
+        // parameter whose `T` became `Roamed[Counter]`, and the other way round.
+        return IsRoamedHandleOf(handle: target, entity: source) ||
+               IsRoamedHandleOf(handle: source, entity: target);
+    }
+
+    /// <summary>True when <paramref name="handle"/> is <c>Roamed[E]</c> for the entity <paramref name="entity"/>.</summary>
+    private static bool IsRoamedHandleOf(TypeSymbol handle, TypeSymbol entity)
+    {
+        return entity is EntityTypeSymbol &&
+               handle is RecordTypeSymbol
+               {
+                   GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [{ } inner]
+               } && inner.FullName == entity.FullName;
     }
 
     /// <summary>
