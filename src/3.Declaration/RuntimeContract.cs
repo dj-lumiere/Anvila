@@ -1,6 +1,7 @@
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
+using TypeModel.Types;
 
 namespace Builder.Declaration;
 
@@ -320,16 +321,20 @@ public static class RuntimeContract
                RawStoreIntrinsics.Contains(item: name);
     }
 
-    /// <summary>Index-store verbs: an index assignment <c>a[i] = v</c> lowers to a call of one of these,
-    /// which stores its VALUE argument into the receiver. The call keeps the assignment's ownership: it is
-    /// a destination like a constructor (a managed value arg is retained at the call site, a fresh rvalue
-    /// arg is not torn down at the caller), and a bare binding passed as the value is moved.</summary>
-    /// <remarks>Sites: RecordCopyLoweringPass, TemporaryTeardownPass, ScopeTeardownLoweringPass.</remarks>
-    public static readonly IReadOnlySet<string> IndexStoreVerbs =
-        new HashSet<string>(comparer: StringComparer.Ordinal)
-        {
-            "setitem"
-        };
+    /// <summary>
+    /// Whether a construction call puts its arguments straight into the member variables of the new value, so
+    /// each argument becomes one more holder there: a memberwise construction, where no written creator runs.
+    /// A written creator (<c>Buffer[T](count:, fill:)</c>, a conversion) is a routine like any other: it only
+    /// reads its arguments, and whatever its body stores, the body keeps (a memberwise construction or a raw
+    /// store inside it). The same holds for <c>setitem</c>, the call an index assignment lowers to.
+    /// </summary>
+    /// <param name="constructedType">The type the call constructs, null for a call that constructs nothing.</param>
+    /// <param name="resolved">The creator the call resolved to, null for a memberwise construction.</param>
+    public static bool IsMemberwiseConstruction(TypeSymbol? constructedType, RoutineInfo? resolved)
+    {
+        // A variant arm extractor is synthesized too, but it reads its argument through a written body.
+        return constructedType is not null && resolved is null or { IsSynthesized: true, IsFailable: false };
+    }
 
     /// <summary>Reference primitives whose result BORROWS a referent owned elsewhere — a binding or
     /// temporary initialized by one owns nothing and must not be torn down.</summary>

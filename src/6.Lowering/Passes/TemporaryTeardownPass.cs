@@ -29,7 +29,8 @@ namespace Builder.Lowering.Passes;
 /// producer and (b) the call result is not a borrow/view wrapper</b> (so it cannot alias the
 /// receiver). <c>retain</c>/<c>track</c> verbs (which consume the receiver) are excluded. This covers
 /// both <c>x.represent().count()</c> (scalar result) and the intermediate <c>Text</c> of a
-/// concatenation chain <c>a + "-" + b</c> (each <c>add</c> result is the receiver of the next).</para>
+/// concatenation chain <c>a + "-" + b</c> (each <c>add</c> result is the receiver of the next). The object
+/// of a field read (<c>xs[0].id</c>) is spilled by the same rule.</para>
 ///
 /// <para><b>Why this is safe.</b> An RC-record <c>destroy</c> releases a <i>refcounted</i>
 /// controller, so a balanced release is harmless. A memberRoutine's record/RC-record return is always
@@ -52,7 +53,7 @@ namespace Builder.Lowering.Passes;
 /// its own <c>destroy</c> calls; codegen's emit-on-demand resolves the concrete <c>destroy</c>.</para>
 ///
 /// <para><b>Known limitations</b> (leak preserved, never a crash): argument-position temporaries,
-/// non-scalar-returning chains, entity temporaries, bare field-access objects, and owned temporaries
+/// non-scalar-returning chains, entity temporaries, and owned temporaries
 /// inside loop/if conditions are not freed. User-defined generic routine bodies monomorphized before
 /// this pass also miss it.</para>
 /// </summary>
@@ -598,7 +599,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 Expression newCallee = Visit(e: call.Callee, objectPos: false, spills: spills);
                 // See the member-call case: owning-position args (torn down at the caller) unless this is
                 // a store primitive.
-                bool argsOwned = call.ConstructedType is null && !IsRawStoreCall(call: call);
+                bool argsOwned = !RuntimeContract.IsMemberwiseConstruction(
+                                     constructedType: call.ConstructedType,
+                                     resolved: call.ResolvedRoutine) &&
+                                 !IsRawStoreCall(call: call);
                 var newArgs = call.Arguments
                                   .Select(selector: a =>
                                        Visit(e: a, objectPos: argsOwned, spills: spills))
@@ -609,9 +613,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
             case MemberExpression m:
             {
-                // Field read / memberRoutine-group object: descend (to catch nested call receivers) but do
-                // not spill the object itself (v1 limitation — see class doc).
-                Expression newObj = Visit(e: m.Object, objectPos: false, spills: spills);
+                // A field read on a fresh owned value (`xs[0].id`, where `getitem` hands back a share of its
+                // own) reads the field out within the statement, so the value is torn down when the statement
+                // ends, unless the field's value may point into it.
+                Expression newObj = Visit(e: m.Object,
+                    objectPos: !ResultMayAliasReceiver(resultType: m.ResolvedType),
+                    spills: spills);
                 return m with { Object = newObj };
             }
 
@@ -704,14 +711,13 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // position — EXCEPT for a raw memory write (an `LLVM::` store intrinsic), whose value arg is
         // MOVED into the slot; spilling it would free the just-inserted element → UAF. A routine that only
         // passes the value down to such a write (`poke`) borrows it like any other call.
-        // A CONSTRUCTOR/conversion call (ConstructedType != null) persists its args into the new
-        // value's fields (a destination that RETAINS via RecordCopyLoweringPass), and a store
-        // primitive MOVES its value into storage — in both cases the arg lives on, so it must NOT
-        // be torn down at the caller. An index store (`a[i] = v` as `a.setitem(i, v)`) is the same kind
-        // of destination. Only a plain routine/memberRoutine borrows a fresh rvalue arg.
-        bool argsOwned = call.ConstructedType is null &&
-                         !IsRawStoreCall(call: call) &&
-                         !RuntimeContract.IndexStoreVerbs.Contains(item: m.MemberName);
+        // A memberwise construction persists its args into the new value's fields (a destination that
+        // RETAINS via RecordCopyLoweringPass), and a store primitive MOVES its value into storage — in both
+        // cases the arg lives on, so it must NOT be torn down at the caller. Every other call, a written
+        // creator and `setitem` included, borrows a fresh rvalue arg.
+        bool argsOwned = !RuntimeContract.IsMemberwiseConstruction(constructedType: call.ConstructedType,
+                             resolved: call.ResolvedRoutine) &&
+                         !IsRawStoreCall(call: call);
         var newArgs = call.Arguments
                           .Select(selector: a => Visit(e: a, objectPos: argsOwned, spills: spills))
                           .ToList();

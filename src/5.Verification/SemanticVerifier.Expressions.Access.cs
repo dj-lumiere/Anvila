@@ -26,6 +26,22 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// The type whose <c>getitem</c>/<c>setitem</c> an index on <paramref name="type"/> uses: the inner value of a
+    /// transparent protocol, and the entity behind a Suflae entity handle (<c>h.kids[0]</c> with <c>kids</c> a
+    /// <c>Roamed[List[Integer]]</c> field indexes the list, as a member call on the handle calls the list's routine).
+    /// </summary>
+    private static TypeSymbol IndexLookupType(TypeSymbol type)
+    {
+        TryGetTransparentProtocolTarget(type: type, targetType: out TypeSymbol target);
+        return target is RecordTypeSymbol
+        {
+            GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol entity]
+        }
+            ? entity
+            : target;
+    }
+
+    /// <summary>
     /// True if the protocol declares no memberRoutines other than the implicit-coercion markers
     /// refer/control. Such protocols (Accessing[T], Controlling[T]) are transparent for
     /// member access — `param.member` falls through to the inner T.
@@ -740,7 +756,7 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol objectType = AnalyzeExpression(expression: index.Object);
-        TryGetTransparentProtocolTarget(type: objectType, targetType: out TypeSymbol lookupType);
+        TypeSymbol lookupType = IndexLookupType(type: objectType);
 
         RoutineInfo? getItem = ResolveIndexGetItem(index: index, lookupType: lookupType);
         index.ResolvedGetItem = getItem;

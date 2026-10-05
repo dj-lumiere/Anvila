@@ -1563,8 +1563,7 @@ public sealed partial class SemanticVerifier
         // Failability: lookup setitem on the indexed type and propagate `!` to caller.
         // `arr[i] = v` desugars to `arr.setitem!(i, v)` for failable indexers; a
         // non-failable caller must mark HasFailableCalls so its `!` decl is justified.
-        TryGetTransparentProtocolTarget(type: indexedObjectType,
-            targetType: out TypeSymbol setLookupType);
+        TypeSymbol setLookupType = IndexLookupType(type: indexedObjectType);
         RoutineInfo? setItem =
             _registry.LookupMemberRoutine(type: setLookupType, memberRoutineName: "setitem") ??
             _registry.LookupMemberRoutine(type: setLookupType,

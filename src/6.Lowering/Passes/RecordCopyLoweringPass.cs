@@ -610,16 +610,14 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // cycle held through a container never reached its internal count and the collector couldn't reap
         // it). Decided by the resolved routine, not a name, so a user routine called `store` is ordinary.
         bool isStorePrimitive = RuntimeContract.IsRawStore(resolved: call.ResolvedRoutine, callee: call.Callee);
-        // A CONSTRUCTOR/conversion call (ConstructedType != null) persists its args into the new
-        // value's fields — a DESTINATION, exactly like a CreatorExpression member-init — so its
-        // borrowed-ref args must be retained (a bare struct copy would alias the source and
-        // double-free at teardown). A store primitive is likewise a destination (writes raw
-        // storage). Only a plain routine/memberRoutine call borrows its args.
-        // An index store (`a[i] = v` lowered to `a.setitem(i, v)`) persists its value into the receiver,
-        // so it is a destination too, retaining exactly as the assignment it came from did.
-        bool isIndexStore = CalleeName(callee: call.Callee) is { } isn &&
-                            RuntimeContract.IndexStoreVerbs.Contains(item: isn);
-        bool isDestination = isStorePrimitive || isIndexStore || call.ConstructedType is not null;
+        // A memberwise construction persists its args into the new value's fields — a DESTINATION, exactly
+        // like a CreatorExpression member-init — so its borrowed-ref args must be retained (a bare struct
+        // copy would alias the source and double-free at teardown). A store primitive is likewise a
+        // destination (writes raw storage). A written creator and `setitem` (an index assignment) are plain
+        // calls that borrow their args: what their bodies store, the store inside retains.
+        bool isDestination = isStorePrimitive ||
+                             RuntimeContract.IsMemberwiseConstruction(constructedType: call.ConstructedType,
+                                 resolved: call.ResolvedRoutine);
         var args = new List<Expression>(capacity: call.Arguments.Count);
         foreach (Expression arg in call.Arguments)
         {
@@ -691,7 +689,9 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // A raw memory write as a generic call (`poke` lowers to `LLVM::store[T](me, value)`): the slot is a
         // new holder, retained here once (see the CallExpression case).
         bool isStorePrimitiveG = RuntimeContract.IsRawStore(resolved: gmc.ResolvedRoutine, callee: gmc.Object);
-        bool isDestinationG = isStorePrimitiveG || gmc.ConstructedType is not null;
+        bool isDestinationG = isStorePrimitiveG ||
+                              RuntimeContract.IsMemberwiseConstruction(constructedType: gmc.ConstructedType,
+                                  resolved: gmc.ResolvedRoutine);
         var args = new List<Expression>(capacity: gmc.Arguments.Count);
         foreach (Expression arg in gmc.Arguments)
         {
