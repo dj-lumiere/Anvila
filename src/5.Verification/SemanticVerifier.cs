@@ -1529,6 +1529,7 @@ public sealed partial class SemanticVerifier
         _registry.EnsureRecoveryVariants = EnsureRecoveryVariantsForBase;
 
         AnalyzeStdlibBodies();
+        ValidateStdlibProtocolImplementations();
 
         // Collect stdlib-specific errors
         var stdlibErrors = new List<SemanticError>();

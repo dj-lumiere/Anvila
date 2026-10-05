@@ -359,14 +359,14 @@ public static class WiredRoutineCatalog
                 Name = "add",
                 Kind = WiredKind.Arithmetic,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["Addable", "DurationAddable"]
+                Protocols = ["Addable", "DurationAddable", "OffsetAddable"]
             },
             new WiredEntry
             {
                 Name = "sub",
                 Kind = WiredKind.Arithmetic,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["Subtractable", "DurationSubtractable"]
+                Protocols = ["Subtractable", "DurationSubtractable", "OffsetSubtractable"]
             },
             new WiredEntry
             {

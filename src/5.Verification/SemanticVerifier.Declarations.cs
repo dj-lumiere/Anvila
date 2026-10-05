@@ -1211,6 +1211,62 @@ public sealed partial class SemanticVerifier
             location: crashable.Location);
     }
 
+    /// <summary>Where a conformance error points for a type registered without a location (a stdlib type checked
+    /// by <see cref="ValidateStdlibProtocolImplementations"/>): its declaration.</summary>
+    private SourceLocation? _conformanceDeclaredAt;
+
+    /// <summary>
+    /// The protocol check of <see cref="ValidateTypeProtocolImplementation"/> for every type the stdlib declares.
+    /// Stdlib types are registered without a location, so a user build skips them, and `validate-stdlib` is where a
+    /// stdlib type that leaves out a routine its protocols require (an `Integer` without `ashl`) is caught.
+    /// </summary>
+    private void ValidateStdlibProtocolImplementations()
+    {
+        foreach ((Program program, _, string module) in _registry.StdlibPrograms)
+        {
+            foreach (ISyntaxTreeNode node in program.Declarations)
+            {
+                (string? name, SourceLocation? at) = node switch
+                {
+                    RecordDeclaration r => (r.Name, r.Location),
+                    EntityDeclaration e => (e.Name, e.Location),
+                    CrashableDeclaration c => (c.Name, c.Location),
+                    _ => ((string?)null, (SourceLocation?)null)
+                };
+                if (name == null || _registry.LookupType(name: $"{module}.{name}") is not { } type ||
+                    type.Location is { FileName.Length: > 0 })
+                {
+                    continue;
+                }
+
+                List<TypeSymbol>? protocols = type switch
+                {
+                    RecordTypeSymbol record => record.ImplementedProtocols,
+                    EntityTypeSymbol entity => entity.ImplementedProtocols,
+                    _ => null
+                };
+                // A conformance with an `onlyif` holds per instantiation, through the inner type's routines.
+                Dictionary<string, List<(string ParamName, string ProtocolName)>>? conditional = type switch
+                {
+                    RecordTypeSymbol record => record.ConditionalObeys,
+                    EntityTypeSymbol entity => entity.ConditionalObeys,
+                    _ => null
+                };
+                _conformanceDeclaredAt = at;
+                foreach (ProtocolTypeSymbol protocol in (protocols ?? []).OfType<ProtocolTypeSymbol>())
+                {
+                    if (!_implicitProtocolConformances.Contains(item: (type.FullName, protocol.Name)) &&
+                        conditional?.ContainsKey(key: protocol.Name) != true)
+                    {
+                        ValidateProtocolMemberRoutines(type: type, protocol: protocol);
+                    }
+                }
+
+                _conformanceDeclaredAt = null;
+            }
+        }
+    }
+
     /// <summary>
     /// Validates that a specific type implements all member routines required by its declared protocols.
     /// </summary>
@@ -1335,7 +1391,7 @@ public sealed partial class SemanticVerifier
                 "may obey marker protocols Accessing[T]/Controlling[T]. Marker-protocol parameters " +
                 "type-erase to T's ptr layout in codegen; obeyers with different layouts would " +
                 "produce undefined behavior.",
-                location: type.Location ?? new SourceLocation(FileName: "",
+                location: type.Location ?? _conformanceDeclaredAt ?? new SourceLocation(FileName: "",
                     Line: 0,
                     Column: 0,
                     Position: 0));
@@ -1392,7 +1448,7 @@ public sealed partial class SemanticVerifier
             message: $"'{type.Name}' obeys '{protocol.Name}', which requires a creator " +
                      $"`routine {type.Name}{bang}({parameters}) -> {type.Name}`, but '{type.Name}' has none that " +
                      "takes those parameters.",
-            location: type.Location ?? new SourceLocation(FileName: "",
+            location: type.Location ?? _conformanceDeclaredAt ?? new SourceLocation(FileName: "",
                 Line: 0,
                 Column: 0,
                 Position: 0));
@@ -1453,12 +1509,22 @@ public sealed partial class SemanticVerifier
                 m.Name == requiredMemberRoutine.Name && m.IsFailable);
         }
 
+        // A stdlib type checked by `validate-stdlib` gets its derived routines (`assign`, `duplicate`) when it is
+        // instantiated, so a derive template for the requirement counts as the routine.
+        if (typeMemberRoutine == null && _conformanceDeclaredAt != null &&
+            _registry.GetDeriveTemplate(name: requiredMemberRoutine.Name,
+                arity: requiredMemberRoutine.ParameterTypes.Count,
+                forType: type) != null)
+        {
+            return;
+        }
+
         if (typeMemberRoutine == null)
         {
             ReportError(code: SemanticDiagnosticCode.MissingProtocolMemberRoutine,
                 message:
                 $"Type '{type.Name}' declares 'obeys {protocol.Name}' but does not implement required memberRoutine '{requiredMemberRoutine.Name}'.",
-                location: type.Location ?? new SourceLocation(FileName: "",
+                location: type.Location ?? _conformanceDeclaredAt ?? new SourceLocation(FileName: "",
                     Line: 0,
                     Column: 0,
                     Position: 0));
