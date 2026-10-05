@@ -297,7 +297,7 @@ public sealed partial class SemanticVerifier
         // (`x.field` on an unchecked `x: E?`) and a nullable field-chain (`a.b.c` where `b: E?`) — a
         // field read is never flow-narrowed (Kotlin doesn't smart-cast mutable fields either), so it
         // must always be bound to a local and checked there.
-        if (_registry.Rules.EntitiesAreShared && SharedEntities.IsNullableRead(expr: member.Object))
+        if (_registry.EntitiesAreShared && SharedEntities.IsNullableRead(expr: member.Object))
         {
             ReportNullableEntityDeref(member: member);
         }
@@ -1579,7 +1579,7 @@ public sealed partial class SemanticVerifier
         }
 
         creator.ConstructedType = type;
-        ZeroFillCheck.Check(constructed: type, argumentCount: creator.MemberVariables.Count, location: creator.Location, report: ReportError);
+        ZeroFillCheck.Check(rules: _registry.CompilationRules, constructed: type, argumentCount: creator.MemberVariables.Count, location: creator.Location, report: ReportError);
         creator.LoweringKind = ClassifyConstruction(type: type);
 
         // Propagate the in-flight bit from the resolved type's implicit constructor.

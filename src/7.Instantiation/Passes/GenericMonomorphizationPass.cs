@@ -3789,7 +3789,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             RuntimeContract.Amending,
             RuntimeContract.Retained,
             RuntimeContract.Tracked,
-            RuntimeContract.Guarded
+            RuntimeContract.Guarded,
+            RuntimeContract.Roamed
         };
 
     /// <summary>Base type name for overload matching: strips generic args and unwraps a leading

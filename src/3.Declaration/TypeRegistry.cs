@@ -105,6 +105,134 @@ public sealed partial class TypeRegistry
         : Language;
 
     /// <summary>
+    /// Whether the code being analyzed or lowered now holds entities as shared handles: a build whose language
+    /// shares entities, in a file of that language, its own standard library files included. The shared
+    /// RazorForge library keeps single-owner entities in every build.
+    /// </summary>
+    public bool EntitiesAreShared => CompilationRules.EntitiesAreShared &&
+                                     (_stdlibSourceScopes == 0 || ResolutionRealm == CompilationRules.ShortName);
+
+    /// <summary>
+    /// Substitutes an <c>entity E</c> slot to <c>Roamed[E]</c>, recursing into generic type ARGUMENTS so
+    /// a container's element type is also lowered: <c>List[Box]</c> → <c>Roamed[List[Roamed[Box]]]</c>
+    /// (the outer <c>List</c> is itself an entity, the inner <c>Box</c> is an element). Without the
+    /// recursion the element stays a bare single-owner entity and the RC copy machinery never engages —
+    /// storing it drops the refcount → dangling → UAF on read-back.
+    /// </summary>
+    public TypeSymbol RoamEntitySlot(TypeSymbol resolved, TypeSymbol roamedDef)
+    {
+        // Already Roamed — idempotent, and its inner arg is intentionally left as-is (no Roamed[Roamed[E]]).
+        if (IsRoamedSlot(type: resolved))
+        {
+            return resolved;
+        }
+
+        // Lower entity type ARGUMENTS first (List[Box] → List[Roamed[Box]]), then wrap the top level.
+        resolved = RoamTypeArguments(resolved: resolved, roamedDef: roamedDef);
+
+        return resolved switch
+        {
+            EntityTypeSymbol entity => GetOrCreateResolution(genericDef: roamedDef,
+                typeArguments: [entity]),
+            RecordTypeSymbol
+            {
+                GenericDefinition.Name: "Maybe",
+                TypeArguments: [EntityTypeSymbol innerEntity]
+            } => GetOrCreateResolution(genericDef: roamedDef,
+                typeArguments: [innerEntity]),
+            RecordTypeSymbol
+            {
+                GenericDefinition.Name: "Maybe", TypeArguments: [{ } innerRoamed]
+            } when IsRoamedSlot(type: innerRoamed) => innerRoamed,
+            _ => resolved
+        };
+    }
+
+    /// <summary>
+    /// Recursively lowers each entity generic type argument to <c>Roamed[E]</c> and rebuilds the generic
+    /// resolution. <c>Maybe[...]</c> is skipped (the caller's switch collapses it); an already-<c>Roamed</c>
+    /// argument is left untouched by <see cref="RoamEntitySlot"/>'s idempotency guard.
+    /// </summary>
+    private TypeSymbol RoamTypeArguments(TypeSymbol resolved, TypeSymbol roamedDef)
+    {
+        (TypeSymbol? genericDef, IReadOnlyList<TypeSymbol>? args) = resolved switch
+        {
+            EntityTypeSymbol
+            {
+                IsGenericResolution: true, GenericDefinition: { } gd, TypeArguments: { } a
+            } => ((TypeSymbol?)gd, (IReadOnlyList<TypeSymbol>?)a),
+            RecordTypeSymbol
+            {
+                IsGenericResolution: true, GenericDefinition: { } gd, TypeArguments: { } a
+            } => (gd, a),
+            _ => (null, null)
+        };
+        if (genericDef == null || args == null || args.Count == 0)
+        {
+            return resolved;
+        }
+
+        // Maybe[E] is collapsed to a nullable bare Roamed[E] by RoamEntitySlot's switch, not element-substituted.
+        if (genericDef.Name == "Maybe")
+        {
+            return resolved;
+        }
+
+        var newArgs = new List<TypeSymbol>(capacity: args.Count);
+        bool changed = false;
+        foreach (TypeSymbol arg in args)
+        {
+            TypeSymbol lowered = RoamEntitySlot(resolved: arg, roamedDef: roamedDef);
+            if (!ReferenceEquals(objA: lowered, objB: arg))
+            {
+                changed = true;
+            }
+
+            newArgs.Add(item: lowered);
+        }
+
+        return changed
+            ? GetOrCreateResolution(genericDef: genericDef, typeArguments: newArgs)
+            : resolved;
+    }
+
+    private static bool IsRoamedSlot(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed };
+    }
+
+    /// <summary>An entity slot written in <paramref name="filePath"/> as the code there holds it: the shared
+    /// <c>Roamed[E]</c> handle in a file that shares entities (see <see cref="EntitiesAreSharedIn"/>), else as
+    /// written. A type written <c>RF::Name</c> keeps RazorForge's single-owner entity.</summary>
+    public TypeSymbol RoamEntitySlotIn(SyntaxTree.TypeExpression? written, string? filePath, TypeSymbol resolved)
+    {
+        return written?.Realm != TypeModel.Realms.Shared &&
+               EntitiesAreSharedIn(filePath: filePath) &&
+               LookupType(name: RuntimeContract.Roamed) is { } roamedDef
+            ? RoamEntitySlot(resolved: resolved, roamedDef: roamedDef)
+            : resolved;
+    }
+
+    /// <summary>The type arguments of <paramref name="resolved"/> as the code in <paramref name="filePath"/> holds
+    /// entities (see <see cref="RoamEntitySlotIn"/>), the type itself left as it is.</summary>
+    public TypeSymbol RoamEntityArgumentsIn(string? filePath, TypeSymbol resolved)
+    {
+        return EntitiesAreSharedIn(filePath: filePath) &&
+               LookupType(name: RuntimeContract.Roamed) is { } roamedDef
+            ? RoamTypeArguments(resolved: resolved, roamedDef: roamedDef)
+            : resolved;
+    }
+
+    /// <summary>Whether the code in <paramref name="filePath"/> holds entities as shared handles (see
+    /// <see cref="EntitiesAreShared"/>).</summary>
+    public bool EntitiesAreSharedIn(string? filePath)
+    {
+        return CompilationRules.EntitiesAreShared &&
+               (!IsStandardLibraryFile(filePath: filePath) ||
+                Frontends.Languages.RealmOf(fileName: filePath) == CompilationRules.ShortName);
+    }
+
+    /// <summary>
     /// Opens a scope in which the code being analyzed is standard library source, so
     /// <see cref="AnalysisLanguage"/> is RazorForge until the scope is disposed. Scopes nest.
     /// </summary>
@@ -456,7 +584,9 @@ public sealed partial class TypeRegistry
     /// routines sees each in place of the shared overload called the same way (the same parameter names:
     /// Suflae's `getitem(index: Integer)` stands in for `getitem(index: U64)`), and the shared overloads it does
     /// not replace. The standard library, the realm's own files included, works with the shared routines only:
-    /// inside, a collection counts with `U64` even where its Suflae surface counts with `Integer`.
+    /// inside, a collection counts with `U64` even where its Suflae surface counts with `Integer`. A surface
+    /// routine that stands in for no shared one (Suflae's `Array.erase`) is the realm's own addition, so the
+    /// realm's library files see it too.
     /// </summary>
     internal List<RoutineInfo> VisibleOverloads(List<RoutineInfo> overloads)
     {
@@ -470,6 +600,17 @@ public sealed partial class TypeRegistry
             : _stdlibSourceScopes == 0
                 ? ResolutionRealm
                 : null;
+        if (viewer == null)
+        {
+            var shared = overloads.Where(predicate: r => r.SurfaceRealm == null)
+                                  .Select(selector: CallShape)
+                                  .ToHashSet(comparer: StringComparer.Ordinal);
+            return overloads.Where(predicate: r => r.SurfaceRealm == null ||
+                                                   r.SurfaceRealm == ResolutionRealm &&
+                                                   !shared.Contains(item: CallShape(routine: r)))
+                            .ToList();
+        }
+
         List<RoutineInfo> surface = overloads.Where(predicate: r => r.SurfaceRealm != null && r.SurfaceRealm == viewer)
                                              .ToList();
         var replaced = surface.Select(selector: CallShape).ToHashSet(comparer: StringComparer.Ordinal);

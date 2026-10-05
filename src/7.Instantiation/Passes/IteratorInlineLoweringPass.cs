@@ -284,7 +284,9 @@ internal sealed class IteratorInlineLoweringPass
             return null;
         }
 
-        if (emitterType is ErrorTypeSymbol)
+        // An iterator held as a shared entity's handle is reached through the handle, which the inlined body
+        // (written against the bare entity's member variables) does not do: such a loop keeps its call.
+        if (emitterType is ErrorTypeSymbol or RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed })
         {
             return null;
         }

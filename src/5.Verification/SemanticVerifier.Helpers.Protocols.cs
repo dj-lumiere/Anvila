@@ -688,6 +688,15 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
+        // A shared entity is taken and given as its handle, which stands for the entity itself.
+        if (actual is RecordTypeSymbol
+            {
+                GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } sharedEntity]
+            })
+        {
+            return TypesMatch(actual: sharedEntity, expected: expected);
+        }
+
         // Handle ProtocolSelfTypeSymbol in expected position
         if (expected is ProtocolSelfTypeSymbol)
         {

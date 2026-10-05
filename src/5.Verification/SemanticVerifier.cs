@@ -836,6 +836,19 @@ public sealed partial class SemanticVerifier
         {
             _registry.Rules.LowerEntities(program: program, registry: _registry);
         }
+
+        // The language's own library files hold entities the same way, once analyzed (the demand path lowers
+        // a file it analyzes later in AnalyzeStdlibProgramOnDemand).
+        if (_eagerStdlibAnalyzed)
+        {
+            foreach ((Program program, string filePath, _) in _registry.FreshlyLoadedStdlibPrograms)
+            {
+                if (_registry.EntitiesAreSharedIn(filePath: filePath))
+                {
+                    _registry.CompilationRules.LowerEntities(program: program, registry: _registry);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -974,7 +987,13 @@ public sealed partial class SemanticVerifier
             teardownPass.Run(program: program);
         }
 
-        foreach ((Program program, _, _) in freshStdlib)
+        // A library file the demand path analyzes later carries no types yet, and both teardown passes need
+        // them (a local's type comes from its initializer), so such a file gets them right after its own
+        // analysis and lowering (AnalyzeStdlibProgramOnDemand) instead of here.
+        List<(Program Program, string FilePath, string Module)> analyzedStdlib = _eagerStdlibAnalyzed
+            ? freshStdlib
+            : [];
+        foreach ((Program program, _, _) in analyzedStdlib)
         {
             teardownPass.Run(program: program);
         }
@@ -987,7 +1006,7 @@ public sealed partial class SemanticVerifier
         // liveness. Stdlib + variant bodies are already Phase-8 lowered here (when→if done); USER
         // programs are lowered later (Phase 8 per-file), so they get this pass in RunPhase8Postprocessing.
         var tempTeardownPass = new TemporaryTeardownPass(ctx: markerCtx);
-        foreach ((Program program, _, _) in freshStdlib)
+        foreach ((Program program, _, _) in analyzedStdlib)
         {
             tempTeardownPass.Run(program: program);
         }
@@ -1963,7 +1982,17 @@ public sealed partial class SemanticVerifier
                 target: _target,
                 buildMode: _buildMode,
                 monomorphizedBodies: _instantiatedGenericBodies);
+            // Teardown in the order a user program gets it: scope-exit destroys for owned bindings after
+            // analysis and before the type-aware lowering (whose copy pass must see the statements as written,
+            // so a returned field read still gets its holder), destroys for owned temporaries after it.
+            if (_registry.EntitiesAreSharedIn(filePath: entry.FilePath))
+            {
+                _registry.CompilationRules.LowerEntities(program: entry.Program, registry: _registry);
+            }
+
+            new ScopeTeardownLoweringPass(ctx: pctx).Run(program: entry.Program);
             new PostprocessingPipeline(ctx: pctx).Run(program: entry.Program);
+            new TemporaryTeardownPass(ctx: pctx).Run(program: entry.Program);
 
             // A failable `try`/`grab`/`lookup` variant synthesized DURING this file's on-demand
             // analysis (e.g. `proc_result_of` calls `try term_signal_value(...)`) enqueues its raw body onto

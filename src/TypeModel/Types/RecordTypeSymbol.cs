@@ -586,6 +586,15 @@ public class RecordTypeSymbol : TypeSymbol
     /// <param name="slot">The associated-type slot name to look up (e.g. <c>Iter</c>).</param>
     internal static TypeSymbol? ProjectAssociatedBinding(TypeSymbol baseType, string slot)
     {
+        // A shared entity's handle (`Roamed[E]`) binds what the entity it stands for binds.
+        if (baseType is RecordTypeSymbol
+            {
+                GenericDefinition.Name: "Roamed", TypeArguments: [{ } sharedEntity]
+            } && sharedEntity is EntityTypeSymbol)
+        {
+            baseType = sharedEntity;
+        }
+
         (Dictionary<string, TypeSymbol>? own, TypeSymbol? def, List<TypeSymbol>? args) = baseType switch
         {
             EntityTypeSymbol e => (e.AssociatedTypeBindings, (TypeSymbol?)e.GenericDefinition,

@@ -109,13 +109,12 @@ internal sealed class SignatureResolver
                 realm: pending.OwnerType.Realm) ?? pending.OwnerType
             : null;
 
-        // Suflae representation unification: in a Suflae USER file, an `entity` is a `Roamed[E]` handle,
-        // so entity types in its routine SIGNATURES (params + return + `me`) are substituted to
-        // `Roamed[E]` — the same rule TypeBodyResolver applies to entity FIELDS. Gated to non-stdlib:
-        // the borrowed RF stdlib is RazorForge source (bare single-owner entities), and its concrete
-        // entity signatures must NOT be rewritten even though it's loaded under an SF compile.
-        bool sfUserEntity = _sa._registry.Rules.EntitiesAreShared &&
-                            !_sa.IsStdlibFile(filePath: pending.FilePath);
+        // Suflae representation unification: in a Suflae file (Suflae's own library files included), an
+        // `entity` is a `Roamed[E]` handle, so entity types in its routine SIGNATURES (params + return + `me`)
+        // are substituted to `Roamed[E]` — the same rule TypeBodyResolver applies to entity FIELDS. The
+        // borrowed RF stdlib is RazorForge source (bare single-owner entities), and its concrete entity
+        // signatures must NOT be rewritten even though it's loaded under an SF compile.
+        bool sfUserEntity = _sa._registry.EntitiesAreSharedIn(filePath: pending.FilePath);
 
         // Desugar homogeneous variadic params (`nums...: T`) into a const-generic `Array[T, __VarargN]`
         // BEFORE the generic-param filter below, so the implicit arity generic is picked up as a normal
@@ -541,7 +540,7 @@ internal sealed class SignatureResolver
                 IsByReference = param.IsByReference,
                 // A Suflae `E?` parameter resolves to a bare Roamed[E] handle (the null handle is none), so
                 // the `?` survives only in the written type, as for an entity field (TypeBodyResolver).
-                IsNullable = _sa._registry.Rules.EntitiesAreShared && param.Type is { Name: "Maybe" } &&
+                IsNullable = _sa._registry.EntitiesAreShared && param.Type is { Name: "Maybe" } &&
                              paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed }
             });
         }

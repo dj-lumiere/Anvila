@@ -348,6 +348,11 @@ public static class RuntimeContract
     /// <summary>An iterator's step (`Emittable.emit!`): what it returns is the iterator's `Item`.</summary>
     public const string Emit = "emit";
 
+    /// <summary>The name prefix of the local a reassignment's new value is first written to, before the old value
+    /// is torn down (<c>var __li_N = EXPR ; x.destroy() ; x = __li_N</c>). Such a local owns that value and hands it
+    /// over to the target: the write does not make one more holder.</summary>
+    public const string ReassignSpillPrefix = "__li_";
+
     // =====================================================================================
     // Wrapper TYPE names — genuine type-identity checks (legitimate to keep as checks, but the
     // string should be a symbol reference eventually — Design 2B). One definition per set here.

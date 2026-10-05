@@ -372,6 +372,8 @@ public sealed partial class StdlibLoader
                     moduleName: moduleName);
                 if (memberVariableType != null)
                 {
+                    memberVariableType = registry.RoamEntitySlotIn(written: memberVariable.Type, filePath: memberVariable.Location.FileName,
+                        resolved: memberVariableType);
                     result.Add(
                         item: new MemberVariableInfo(name: memberVariable.Name,
                             type: memberVariableType)
@@ -1115,6 +1117,13 @@ public sealed partial class StdlibLoader
                 typeExpr: param.Type,
                 genericParams: ctx,
                 moduleName: moduleName);
+            // A library file of a language that shares entities takes and gives them as handles, as that
+            // language's own programs do. `me` stays the bare entity.
+            if (paramType != null && param.Name != "me")
+            {
+                paramType = registry.RoamEntitySlotIn(written: param.Type, filePath: routine.Location.FileName, resolved: paramType);
+            }
+
             parameters.Add(
                 item: new ParamInfo(name: param.Name,
                     type: paramType ?? ErrorTypeSymbol.Instance)
@@ -1155,7 +1164,16 @@ public sealed partial class StdlibLoader
                 : ownerType;
         }
 
-        return returnType;
+        return returnType != null && !IsCreatorDeclaration(routine: routine)
+            ? registry.RoamEntitySlotIn(written: routine.ReturnType, filePath: routine.Location.FileName, resolved: returnType)
+            : returnType;
+    }
+
+    /// <summary>Whether <paramref name="routine"/> is a creator (`routine T(...) -> T`), which hands back the
+    /// bare entity it builds: the caller makes the handle.</summary>
+    private static bool IsCreatorDeclaration(RoutineDeclaration routine)
+    {
+        return routine.MemberRoutineName == null && routine.ReturnType is { Name: var returned } && routine.Name == returned;
     }
 
     /// <summary>
@@ -1192,6 +1210,9 @@ public sealed partial class StdlibLoader
         // `ResolveSimpleType` is realm-blind and yields the ambient-realm receiver; keep `me`
         // in the OWNER's realm so an SF-realm `Core.List` method's `me` isn't the RF-realm List
         // (which lacks the SF wrapper's `inner` field → spurious RF-S450).
+        // The receiver's elements are slots like any other (`List[Agent[T]]` in Suflae is a list of Agent
+        // handles); `me` itself stays the bare value.
+        resolvedRecv = registry.RoamEntityArgumentsIn(filePath: routine.Location.FileName, resolved: resolvedRecv);
         return ownerType != null && resolvedRecv.Realm != ownerType.Realm
             ? registry.ReResolveInRealm(type: resolvedRecv, realm: ownerType.Realm) ?? resolvedRecv
             : resolvedRecv;
@@ -1384,6 +1405,8 @@ public sealed partial class StdlibLoader
                     moduleName: moduleName);
                 if (memberVariableType != null)
                 {
+                    memberVariableType = registry.RoamEntitySlotIn(written: memberVariable.Type, filePath: memberVariable.Location.FileName,
+                        resolved: memberVariableType);
                     memberVariables.Add(
                         item: new MemberVariableInfo(name: memberVariable.Name,
                             type: memberVariableType)
@@ -1784,7 +1807,11 @@ public sealed partial class StdlibLoader
                 moduleName: moduleName);
             if (concrete != null)
             {
-                bindings[key: binding.Name] = concrete;
+                // An associated type is a slot like any other: an entity bound there is held as the code of
+                // its file holds entities (`relates SetEmittable[T] as Iter` is the iterator's handle in Suflae).
+                bindings[key: binding.Name] = registry.RoamEntitySlotIn(written: binding.Binding,
+                    filePath: binding.Binding.Location.FileName,
+                    resolved: concrete);
             }
         }
     }
@@ -2179,6 +2206,11 @@ public sealed partial class StdlibLoader
                 genericParams: ctx,
                 moduleName: moduleName)
             : null;
+        if (resolvedReturnType != null && !IsCreatorDeclaration(routine: routine))
+        {
+            resolvedReturnType = registry.RoamEntitySlotIn(written: routine.ReturnType, filePath: routine.Location.FileName,
+                resolved: resolvedReturnType);
+        }
 
         RoutineInfo? existingRoutine = LookupExistingRoutine(registry: registry,
             ownerType: ownerType,

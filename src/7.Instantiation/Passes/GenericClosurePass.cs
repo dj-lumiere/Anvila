@@ -240,6 +240,24 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // for each type obeying the protocol) still has its domain literals: a Suflae `2` is an `Integer` to
         // construct, not a scalar.
         new LiteralLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
+        // Such a body also still holds entities the way its source was analyzed. In a file whose language
+        // shares entities they become handles here, as the rest of its file did after analysis.
+        foreach (string key in freshBodies.Keys.ToList())
+        {
+            MonomorphizedBody entry = freshBodies[key: key];
+            if (entry.IsSynthesized || !ctx.Registry.EntitiesAreSharedIn(filePath: entry.Ast.Body.Location.FileName))
+            {
+                continue;
+            }
+
+            RoutineDeclaration lowered =
+                ctx.Registry.CompilationRules.LowerEntitiesInRoutine(routine: entry.Ast, registry: ctx.Registry);
+            if (!ReferenceEquals(objA: lowered, objB: entry.Ast))
+            {
+                freshBodies[key: key] = entry with { Ast = lowered };
+            }
+        }
+
         // FStringLoweringPass runs BEFORE OperatorLoweringPass (per the per-file pipeline order).
         // Monomorphized represent/diagnose bodies need f-strings lowered to represent/diagnose
         // member-routine calls and Text concatenation before operator lowering can fold the chain.
@@ -267,6 +285,12 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
             instantiatedGenericBodies: freshBodies);
         new OperatorLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
             instantiatedGenericBodies: freshBodies);
+        // A routine made concrete for a shared entity holds it as its handle and reaches the entity through it
+        // (after operator lowering, as in the per-file pipeline, so `x == y` and `d[i]` are calls by now).
+        if (ctx.Registry.CompilationRules.EntitiesAreShared)
+        {
+            new RoamedProjectionLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
+        }
         // Copy lowering for instantiated bodies: at generic-def time a field of generic type T looks
         // borrow-tier (no retaining store), so a monomorphized body that returns/stores a value with
         // a now-concrete refcounted field (e.g. DictEntry[Text, S64] from entry_get) never retained

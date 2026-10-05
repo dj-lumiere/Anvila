@@ -69,6 +69,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             // Variant/synthesized bodies have no parameter list available here; teardown applies to
             // their block-local owned vars only.
+            _meType = null;
             _movedNames.Clear();
             CollectMovedNames(stmt: ctx.VariantBodies[key: key]);
             var live = new List<Owned>();
@@ -92,8 +93,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     private readonly HashSet<string> _movedNames = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>The type that owns the routine being lowered, the type of its <c>me</c>.</summary>
+    private TypeSymbol? _meType;
+
     private RoutineDeclaration LowerRoutine(RoutineDeclaration r)
     {
+        _meType = r.ResolvedInfo?.OwnerType;
         _movedNames.Clear();
         CollectMovedNames(stmt: r.Body);
         // Merge SA's authoritative per-routine "stolen / out of scope" record. `steal` takes a
@@ -121,7 +126,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // unification (SignatureResolver.MaybeRoamSuflaeEntity) an SF entity param resolves to `Roamed[E]`
         // (a RecordTypeSymbol) which is a record → borrow by the rule above anyway; a bare `EntityTypeSymbol`
         // param in SF is skipped here (it would otherwise be consuming per the RF rule).
-        bool entitiesAreShared = ctx.Registry.Rules.EntitiesAreShared;
+        bool entitiesAreShared = ctx.Registry.EntitiesAreSharedIn(filePath: r.Location.FileName);
         var paramLive = new List<Owned>();
         foreach (Parameter p in r.Parameters)
         {
@@ -544,7 +549,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // A bare-identifier RHS is a move of an existing binding — no spill needed.
         if (rhs is not IdentifierExpression)
         {
-            string tmp = $"__li_{_spillCounter++}";
+            string tmp = $"{RuntimeContract.ReassignSpillPrefix}{_spillCounter++}";
             var decl = new VariableDeclaration(Name: tmp,
                 Type: null,
                 Initializer: rhs,
@@ -574,7 +579,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private Statement LowerRoamedFieldReassign(Statement original, MemberExpression target,
         Expression rhs, Func<Expression, Statement> rebuild)
     {
-        TypeSymbol? fieldType = target.ResolvedType;
+        // A library body is lowered here before it is analyzed, so its member target may carry no type yet: a
+        // field of `me` then takes its declared type from the routine's owner.
+        TypeSymbol? fieldType = target.ResolvedType ?? DeclaredFieldOfMe(target: target);
         if (fieldType is null ||
             TypeRegistry.GetRcWrapperBaseName(type: fieldType) != RuntimeContract.Roamed ||
             !TryResolveDestroy(type: fieldType, destroy: out RoutineInfo? destroy) ||
@@ -589,7 +596,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // A bare-identifier RHS is a move of an existing binding — no spill needed.
         if (rhs is not IdentifierExpression)
         {
-            string tmp = $"__li_{_spillCounter++}";
+            string tmp = $"{RuntimeContract.ReassignSpillPrefix}{_spillCounter++}";
             var decl = new VariableDeclaration(Name: tmp,
                 Type: null,
                 Initializer: rhs,
@@ -608,6 +615,22 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             loc: original.Location));
         stmts.Add(item: rebuild(arg: finalRhs));
         return new BlockStatement(Statements: stmts, Location: original.Location);
+    }
+
+    /// <summary>The declared type of the field <paramref name="target"/> names when it is a field of <c>me</c>.</summary>
+    private TypeSymbol? DeclaredFieldOfMe(MemberExpression target)
+    {
+        if (target.Object is not IdentifierExpression { Name: "me" })
+        {
+            return null;
+        }
+
+        return _meType switch
+        {
+            EntityTypeSymbol entity => entity.LookupMemberVariable(memberVariableName: target.MemberName)?.Type,
+            RecordTypeSymbol record => record.LookupMemberVariable(memberVariableName: target.MemberName)?.Type,
+            _ => null
+        };
     }
 
     private static bool WillDestroyAny(List<Owned> live, int from, string? skip)

@@ -539,7 +539,7 @@ public sealed partial class SemanticVerifier
             typeArguments: typeArgs.ToList());
         generic.ConstructedType = resolvedType;
         generic.LoweringKind = ClassifyConstruction(type: resolvedType);
-        ZeroFillCheck.Check(constructed: resolvedType, argumentCount: generic.Arguments.Count, location: generic.Location, report: ReportError);
+        ZeroFillCheck.Check(rules: _registry.CompilationRules, constructed: resolvedType, argumentCount: generic.Arguments.Count, location: generic.Location, report: ReportError);
 
         // Named arguments see the type they will land in as their expected type, so a literal adapts: the
         // parameters of a written creator called by exactly these names (`List[Text](count: 2, fill_value:

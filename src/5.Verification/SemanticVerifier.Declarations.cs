@@ -881,7 +881,7 @@ public sealed partial class SemanticVerifier
         RoutineKind kind)
     {
         string? file = routine.Location.FileName;
-        if (!_registry.Rules.EntitiesAreShared || file == null ||
+        if (!_registry.EntitiesAreShared || file == null ||
             Builder.Frontends.Languages.OfFile(fileName: file) != _registry.Language ||
             IsStdlibFile(filePath: file))
         {

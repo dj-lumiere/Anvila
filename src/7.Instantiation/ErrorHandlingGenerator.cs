@@ -372,7 +372,7 @@ public sealed class ErrorHandlingGenerator
             };
         }
 
-        TypeSymbol carrierInner = WrapBareEntityForCarrier(type: returnType);
+        TypeSymbol carrierInner = WrapBareEntityForCarrier(type: returnType, original: original);
 
         TypeSymbol maybeDef = _registry.LookupType(name: "Maybe") ??
                             throw new InvalidOperationException(
@@ -418,7 +418,7 @@ public sealed class ErrorHandlingGenerator
         TypeSymbol innerType = original.ReturnType ?? _registry.LookupType(name: NoneTypeName) ??
             throw new InvalidOperationException(message: "None type not registered");
 
-        TypeSymbol carrierInner = WrapBareEntityForCarrier(type: innerType);
+        TypeSymbol carrierInner = WrapBareEntityForCarrier(type: innerType, original: original);
 
         TypeSymbol resultDef = _registry.LookupType(name: "Check") ??
                              throw new InvalidOperationException(
@@ -503,7 +503,7 @@ public sealed class ErrorHandlingGenerator
             };
         }
 
-        TypeSymbol carrierInner = WrapBareEntityForCarrier(type: returnType);
+        TypeSymbol carrierInner = WrapBareEntityForCarrier(type: returnType, original: original);
 
         TypeSymbol lookupDef = _registry.LookupType(name: "Lookup") ??
                              throw new InvalidOperationException(
@@ -538,16 +538,15 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Carrier-shape adjustment for failable return types. Post-Owned-retirement,
-    /// bare entity <c>T</c> IS the lvalue/bound form, so <c>Maybe[T]</c> /
-    /// <c>Result[T]</c> / <c>Lookup[T]</c> over a bare entity is the correct shape:
-    /// the carrier owns the bound entity directly, no <c>T</c> intermediary.
-    /// Identity for all inputs; retained for the call-site hook in case future
-    /// carrier-element transforms (e.g., needs-RecordType relaxation) want a single
-    /// chokepoint.
+    /// The value a recovery variant's carrier (<c>Maybe[T]</c> / <c>Check[T]</c> / <c>Lookup[T]</c>) holds. A
+    /// bare entity is held as such, except in a file of a language that shares entities: there a creator builds
+    /// the bare entity and its caller makes the handle, but the variant hands the value on inside the carrier,
+    /// so the carrier holds the handle, as every other value of that language does.
     /// </summary>
-    private static TypeSymbol WrapBareEntityForCarrier(TypeSymbol type)
+    private TypeSymbol WrapBareEntityForCarrier(TypeSymbol type, RoutineInfo original)
     {
-        return type;
+        return type is EntityTypeSymbol
+            ? _registry.RoamEntitySlotIn(written: null, filePath: original.Location?.FileName, resolved: type)
+            : type;
     }
 }

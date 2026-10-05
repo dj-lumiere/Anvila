@@ -246,12 +246,7 @@ internal sealed class TypeResolver
 
     private TypeSymbol RoamSharedEntitySlot(TypeSymbol resolved)
     {
-        if (!_sa._registry.Rules.EntitiesAreShared)
-        {
-            return resolved;
-        }
-
-        if (_sa.IsStdlibFile(filePath: _sa._currentFilePath))
+        if (!_sa._registry.EntitiesAreShared || !_sa._registry.EntitiesAreSharedIn(filePath: _sa._currentFilePath))
         {
             return resolved;
         }
@@ -274,96 +269,7 @@ internal sealed class TypeResolver
             return resolved;
         }
 
-        return RoamSlot(resolved: resolved, roamedDef: roamedDef);
-    }
-
-    /// <summary>
-    /// Substitutes an <c>entity E</c> slot to <c>Roamed[E]</c>, recursing into generic type ARGUMENTS so
-    /// a container's element type is also lowered: <c>List[Box]</c> → <c>Roamed[List[Roamed[Box]]]</c>
-    /// (the outer <c>List</c> is itself an entity, the inner <c>Box</c> is an element). Without the
-    /// recursion the element stays a bare single-owner entity and the RC copy machinery never engages —
-    /// storing it drops the refcount → dangling → UAF on read-back.
-    /// </summary>
-    private TypeSymbol RoamSlot(TypeSymbol resolved, TypeSymbol roamedDef)
-    {
-        // Already Roamed — idempotent, and its inner arg is intentionally left as-is (no Roamed[Roamed[E]]).
-        if (IsRoamed(type: resolved))
-        {
-            return resolved;
-        }
-
-        // Lower entity type ARGUMENTS first (List[Box] → List[Roamed[Box]]), then wrap the top level.
-        resolved = RoamTypeArguments(resolved: resolved, roamedDef: roamedDef);
-
-        return resolved switch
-        {
-            EntityTypeSymbol entity => _sa._registry.GetOrCreateResolution(genericDef: roamedDef,
-                typeArguments: [entity]),
-            RecordTypeSymbol
-            {
-                GenericDefinition.Name: MaybeTypeName,
-                TypeArguments: [EntityTypeSymbol innerEntity]
-            } => _sa._registry.GetOrCreateResolution(genericDef: roamedDef,
-                typeArguments: [innerEntity]),
-            RecordTypeSymbol
-            {
-                GenericDefinition.Name: MaybeTypeName, TypeArguments: [{ } innerRoamed]
-            } when IsRoamed(type: innerRoamed) => innerRoamed,
-            _ => resolved
-        };
-    }
-
-    /// <summary>
-    /// Recursively lowers each entity generic type argument to <c>Roamed[E]</c> and rebuilds the generic
-    /// resolution. <c>Maybe[...]</c> is skipped (the caller's switch collapses it); an already-<c>Roamed</c>
-    /// argument is left untouched by <see cref="RoamSlot"/>'s idempotency guard.
-    /// </summary>
-    private TypeSymbol RoamTypeArguments(TypeSymbol resolved, TypeSymbol roamedDef)
-    {
-        (TypeSymbol? genericDef, IReadOnlyList<TypeSymbol>? args) = resolved switch
-        {
-            EntityTypeSymbol
-            {
-                IsGenericResolution: true, GenericDefinition: { } gd, TypeArguments: { } a
-            } => ((TypeSymbol?)gd, (IReadOnlyList<TypeSymbol>?)a),
-            RecordTypeSymbol
-            {
-                IsGenericResolution: true, GenericDefinition: { } gd, TypeArguments: { } a
-            } => (gd, a),
-            _ => (null, null)
-        };
-        if (genericDef == null || args == null || args.Count == 0)
-        {
-            return resolved;
-        }
-
-        // Maybe[E] is collapsed to a nullable bare Roamed[E] by RoamSlot's switch, not element-substituted.
-        if (genericDef.Name == MaybeTypeName)
-        {
-            return resolved;
-        }
-
-        var newArgs = new List<TypeSymbol>(capacity: args.Count);
-        bool changed = false;
-        foreach (TypeSymbol arg in args)
-        {
-            TypeSymbol lowered = RoamSlot(resolved: arg, roamedDef: roamedDef);
-            if (!ReferenceEquals(objA: lowered, objB: arg))
-            {
-                changed = true;
-            }
-
-            newArgs.Add(item: lowered);
-        }
-
-        return changed
-            ? _sa._registry.GetOrCreateResolution(genericDef: genericDef, typeArguments: newArgs)
-            : resolved;
-    }
-
-    private static bool IsRoamed(TypeSymbol type)
-    {
-        return type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed };
+        return _sa._registry.RoamEntitySlot(resolved: resolved, roamedDef: roamedDef);
     }
 
     private TypeSymbol ResolveTypeCore(TypeExpression typeExpr)

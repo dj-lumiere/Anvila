@@ -1002,7 +1002,7 @@ public sealed partial class SemanticVerifier
 
         // Shared entities: bare entity E and Roamed[E] are mutually assignable (the lowering pass
         // inserts roam).
-        if (_registry.Rules.EntitiesAreShared &&
+        if (_registry.EntitiesAreShared &&
             IsEntityRoamedAssignable(source: source, target: target))
         {
             return true;
@@ -2046,6 +2046,15 @@ public sealed partial class SemanticVerifier
             iterableType = unwrapped;
         }
 
+        // A shared entity is iterated through its handle: the entity's own iterator is what walks it.
+        if (iterableType is RecordTypeSymbol
+            {
+                GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } sharedIterable]
+            })
+        {
+            iterableType = sharedIterable;
+        }
+
         // Protocol-typed receiver: if the static type IS `Iterable[T]` (or a
         // protocol that obeys Iterable), trust the dispatch and take the
         // element type from the type-arg. Any concrete value bound will
@@ -2088,6 +2097,15 @@ public sealed partial class SemanticVerifier
             _registry.LookupMemberRoutine(type: iterableType, memberRoutineName: "iter");
         if (iterMemberRoutine?.ReturnType is { } iteratorType and not ErrorTypeSymbol)
         {
+            // An iterator that is a shared entity comes back as its handle: its `emit!` is the entity's own.
+            if (iteratorType is RecordTypeSymbol
+                {
+                    GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } sharedIterator]
+                })
+            {
+                iteratorType = sharedIterator;
+            }
+
             RoutineInfo? emitMemberRoutine = _registry.LookupMemberRoutine(type: iteratorType,
                 memberRoutineName: "emit",
                 isFailable: true);

@@ -1472,7 +1472,7 @@ public sealed partial class SemanticVerifier
 
 
         // Suflae flow typing: reassigning an entity reference re-derives its nullability.
-        if (!_registry.Rules.EntitiesAreShared || varInfo == null ||
+        if (!_registry.EntitiesAreShared || varInfo == null ||
             !SharedEntities.IsEntityRef(type: varInfo.Type))
         {
             return;
@@ -1527,7 +1527,7 @@ public sealed partial class SemanticVerifier
         // Suflae: a NON-NULLABLE entity field (`x: E`) rejects `o.x = <possibly-none>` — literal
         // `none` or an unchecked `E?` read. Only an optional field (`x: E?`) may hold a null Roamed
         // handle. Mirrors the construction check; the field's IsNullable is set in TypeBodyResolver.
-        if (_registry.Rules.EntitiesAreShared && objectType is EntityTypeSymbol writeEntity &&
+        if (_registry.EntitiesAreShared && objectType is EntityTypeSymbol writeEntity &&
             writeEntity.LookupMemberVariable(memberVariableName: member.MemberName) is
             {
                 IsNullable: false,

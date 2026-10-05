@@ -877,6 +877,18 @@ public sealed partial class SemanticVerifier
         ref TypeSymbol dispatchType, out RoutineInfo? memberRoutine, out bool ambiguousSeed)
     {
         string callLookupName = member.MemberName;
+        // A shared entity's handle stands for the entity: a call on it is a call on the entity, unless the handle
+        // itself has the routine (`share`, `control`, `lock_enter`, ...). Library code holds such handles where a
+        // program's code still holds the entity at this point, and finds the same routines.
+        if (dispatchType is RecordTypeSymbol
+            {
+                GenericDefinition: { } handleDef, TypeArguments: [EntityTypeSymbol sharedEntity]
+            } && handleDef.Name == Declaration.RuntimeContract.Roamed &&
+            !_registry.GetMemberRoutinesForType(type: handleDef).Any(predicate: r => r.Name == callLookupName))
+        {
+            dispatchType = sharedEntity;
+        }
+
         memberRoutine = _registry.LookupMemberRoutine(type: dispatchType,
             memberRoutineName: callLookupName,
             isFailable: isFailableMemberRoutineCall);

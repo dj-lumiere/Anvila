@@ -29,7 +29,7 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
     /// </summary>
     internal bool IsNullableRead(Expression expr)
     {
-        if (!registry.Rules.EntitiesAreShared)
+        if (!registry.EntitiesAreShared)
         {
             return false;
         }
@@ -68,7 +68,7 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
     /// </summary>
     internal bool IsEntityRef(TypeSymbol type)
     {
-        return registry.Rules.EntitiesAreShared && (type is EntityTypeSymbol ||
+        return registry.EntitiesAreShared && (type is EntityTypeSymbol ||
                                                          type is RecordTypeSymbol
                                                          {
                                                              GenericDefinition.Name:
@@ -135,7 +135,7 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
             return (annotated, false, false);
         }
 
-        if (!registry.Rules.EntitiesAreShared ||
+        if (!registry.EntitiesAreShared ||
             registry.LookupType(name: Declaration.RuntimeContract.Roamed) is not { } roamedDef)
         {
             return (annotated, false, false);

@@ -133,11 +133,16 @@ public abstract class TypeSymbol
                 ? Name
                 : $"{Module}.{Name}";
 
-            if (TypeArguments is not { Count: > 0 } || Name.Contains(value: '['))
+            if (TypeArguments is not { Count: > 0 })
             {
                 return $"{Realm}::{baseName}";
             }
 
+            // An instance's name already spells its arguments, without their realms: rebuild it from the bare
+            // name so every argument carries its own (`Modifying[SF::ObjectHacker.MemberVariableInfo]`).
+            baseName = string.IsNullOrEmpty(value: Module)
+                ? BareName
+                : $"{Module}.{BareName}";
             string args = string.Join(separator: ", ",
                 values: TypeArguments.Select(selector: t => t.RealmQualifiedName));
             return $"{Realm}::{baseName}[{args}]";

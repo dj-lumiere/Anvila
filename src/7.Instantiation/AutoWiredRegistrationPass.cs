@@ -607,9 +607,11 @@ internal sealed class AutoWiredRegistrationPass
 
         if (CaseListDef(type: type, listDef: listDef) is { } caseListDef)
         {
-            TypeSymbol listMeType = _registry.GetOrCreateResolution(
-                genericDef: caseListDef,
-                typeArguments: [type]);
+            // The list is held as the type's own file holds entities: a Suflae choice hands back the handle
+            // of a Suflae list.
+            TypeSymbol listMeType = _registry.RoamEntitySlotIn(written: null,
+                filePath: type.Location?.FileName,
+                resolved: _registry.GetOrCreateResolution(genericDef: caseListDef, typeArguments: [type]));
             MaybeRegisterWired(owner: type,
                 name: "all_cases",
                 returnType: listMeType,
@@ -759,9 +761,11 @@ internal sealed class AutoWiredRegistrationPass
             existingMemberRoutines: existingMemberRoutines);
         if (CaseListDef(type: type, listDef: listDef) is { } caseListDef)
         {
-            TypeSymbol listMeType = _registry.GetOrCreateResolution(
-                genericDef: caseListDef,
-                typeArguments: [type]);
+            // The list is held as the type's own file holds entities: a Suflae choice hands back the handle
+            // of a Suflae list.
+            TypeSymbol listMeType = _registry.RoamEntitySlotIn(written: null,
+                filePath: type.Location?.FileName,
+                resolved: _registry.GetOrCreateResolution(genericDef: caseListDef, typeArguments: [type]));
             MaybeRegisterWired(owner: type,
                 name: "all_cases",
                 returnType: listMeType,

@@ -110,7 +110,7 @@ public sealed class RoutineInfo
             if (TypeArguments is { Count: > 0 })
             {
                 string typeArgs = string.Join(separator: ",",
-                    values: TypeArguments.Select(selector: GetTypeIdentity));
+                    values: TypeArguments.Select(selector: GetTypeArgumentIdentity));
                 baseName = $"{baseName}[{typeArgs}]";
             }
 
@@ -148,6 +148,24 @@ public sealed class RoutineInfo
     /// Uses fully-qualified resolved type names while preserving generic-parameter
     /// syntax for open generic definitions like <c>List[T]</c>.
     /// </summary>
+    /// <summary>
+    /// How an instance's type argument is spelled in its key: as <see cref="GetTypeIdentity"/> does, with the realm
+    /// of every part that is not the shared one marked, so an instance over Suflae's
+    /// <c>ObjectHacker.MemberVariableInfo</c> keys apart from one over RazorForge's same-named record.
+    /// </summary>
+    public static string GetTypeArgumentIdentity(TypeSymbol type)
+    {
+        return InvolvesOtherRealm(type: type)
+            ? type.RealmQualifiedName
+            : GetTypeIdentity(type: type);
+    }
+
+    private static bool InvolvesOtherRealm(TypeSymbol type)
+    {
+        return type.Realm != TypeModel.Realms.Shared ||
+               type.TypeArguments?.Any(predicate: InvolvesOtherRealm) == true;
+    }
+
     public static string GetTypeIdentity(TypeSymbol type)
     {
         if (type.GenericParameters is { Count: > 0 } && !type.Name.Contains(value: '['))

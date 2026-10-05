@@ -120,6 +120,11 @@ public abstract class LanguageRules
     /// language's containers are shared handles the build cannot follow).</summary>
     public abstract bool ChecksShapeAtRunTime { get; }
 
+    /// <summary>Zero bits are an empty place for every type: a zero entity place holds no entity, reading it
+    /// crashes and tearing it down does nothing. <c>Array[T, N]()</c> may then fill any element type with
+    /// zero, otherwise only a type whose zero bits are a real value of it.</summary>
+    public abstract bool ZeroIsEmptyPlace { get; }
+
     /// <summary>
     /// The type as the language's user knows it, for anything shown to them (hover, completion, hints). A
     /// language whose entities are shared handles hides the handle type the builder wraps them in.
@@ -182,6 +187,16 @@ public abstract class LanguageRules
     /// <summary>Lowers the language's entity model in a user program right after analysis.</summary>
     public virtual void LowerEntities(Program program, Declaration.TypeRegistry registry)
     {
+    }
+
+    /// <summary>Lowers the language's entity model in one routine made concrete from a generic one written in a
+    /// file of the language. Such a routine may have been copied before its file was lowered (a protocol's
+    /// routine copied for each type obeying it), and lowering an already lowered routine again changes
+    /// nothing.</summary>
+    public virtual RoutineDeclaration LowerEntitiesInRoutine(RoutineDeclaration routine,
+        Declaration.TypeRegistry registry)
+    {
+        return routine;
     }
 
     /// <summary>Lowers the language's own constructs first in the type-aware lowering of

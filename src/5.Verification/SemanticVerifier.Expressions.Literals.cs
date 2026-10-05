@@ -174,7 +174,7 @@ public sealed partial class SemanticVerifier
         // Suflae: `none` against a `Roamed[E]` slot (an OPTIONAL entity reference `x: E?`) is a null
         // Roamed handle (roamed_none). Entity references carry their own none via a null pointer, so
         // no Maybe carrier is needed.
-        if (_registry.Rules.EntitiesAreShared && expectedType is RecordTypeSymbol
+        if (_registry.EntitiesAreShared && expectedType is RecordTypeSymbol
             {
                 GenericDefinition.Name: Declaration.RuntimeContract.Roamed
             })

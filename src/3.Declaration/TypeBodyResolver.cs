@@ -419,7 +419,7 @@ internal sealed class TypeBodyResolver
         // entity reference carries its own none via a null handle). We only still record
         // NULLABILITY as a flow fact: it is no longer visible in the resolved type, so detect it
         // from the AST — the field was written `E?`, which desugars to a `Maybe[...]` type expr.
-        bool fieldNullable = _sa._registry.Rules.EntitiesAreShared &&
+        bool fieldNullable = _sa._registry.EntitiesAreShared &&
                              memberVariable.Type is { Name: "Maybe" } &&
                              memberVariableType is RecordTypeSymbol
                              {

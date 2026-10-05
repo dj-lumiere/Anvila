@@ -466,7 +466,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckWhenSharedEntityRef(WhenStatement whenStmt, TypeSymbol matchedType)
     {
-        if (_registry.Rules.EntitiesAreShared && SharedEntities.IsEntityRef(type: matchedType))
+        if (_registry.EntitiesAreShared && SharedEntities.IsEntityRef(type: matchedType))
         {
             ReportError(code: SemanticDiagnosticCode.NullableEntityDeref,
                 message:
@@ -934,8 +934,7 @@ public sealed partial class SemanticVerifier
         // `discard foo()` on an Agent is the lazy-async footgun: `discard` only throws away the value,
         // it does NOT run the routine — an un-launched Agent's body never executes. (In the old eager
         // model `discard foo()` still ran the work.) So warn even though the value was explicitly ignored.
-        if (discardedType is RecordTypeSymbol dag &&
-            (dag.GenericDefinition?.Name ?? dag.Name) == "Agent")
+        if (IsAgentType(type: discardedType))
         {
             string routineName = discard.Expression switch
             {

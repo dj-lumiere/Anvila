@@ -1147,8 +1147,7 @@ public sealed partial class SemanticVerifier
             // An `Agent[T]` result dropped on the floor is the lazy-async footgun: a `suspended`/
             // `threaded` call only builds a recipe — dropping it means the routine BODY never runs
             // (in the old eager model it would have). Point at the verbs that actually start it.
-            if (exprType is RecordTypeSymbol ag &&
-                (ag.GenericDefinition?.Name ?? ag.Name) == "Agent")
+            if (IsAgentType(type: exprType))
             {
                 ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
                     message:
@@ -1165,6 +1164,26 @@ public sealed partial class SemanticVerifier
                     location: call.Location);
             }
         }
+    }
+
+    /// <summary>Whether <paramref name="type"/> is an Agent: RazorForge's record, or a language's own Agent
+    /// entity (Suflae's), held as such or as its handle.</summary>
+    private static bool IsAgentType(TypeSymbol type)
+    {
+        if (type is RecordTypeSymbol
+            {
+                GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } shared]
+            })
+        {
+            type = shared;
+        }
+
+        return type switch
+        {
+            RecordTypeSymbol record => (record.GenericDefinition?.Name ?? record.Name) == "Agent",
+            EntityTypeSymbol entity => (entity.GenericDefinition?.Name ?? entity.Name) == "Agent",
+            _ => false
+        };
     }
 
     private void AnalyzeAssignmentStatement(AssignmentStatement assign)

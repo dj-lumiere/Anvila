@@ -3136,7 +3136,9 @@ public sealed partial class TypeRegistry
             : _stdlibSourceScopes == 0
                 ? ResolutionRealm
                 : null;
-        return $"{viewer}|{type.RealmQualifiedName}";
+        return viewer == null
+            ? $"lib:{ResolutionRealm}|{type.RealmQualifiedName}"
+            : $"{viewer}|{type.RealmQualifiedName}";
     }
 
     private readonly Dictionary<string, List<RoutineInfo>> _memberRoutinesForTypeCache =

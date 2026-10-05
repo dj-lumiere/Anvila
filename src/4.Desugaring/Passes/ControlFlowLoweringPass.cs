@@ -607,6 +607,17 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 failureClause: failureClause);
     }
 
+    /// <summary>The entity a shared-entity handle (<c>Roamed[E]</c>) stands for, else the type itself.</summary>
+    private static TypeSymbol SharedEntityOf(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol
+        {
+            GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } entity]
+        }
+            ? entity
+            : type;
+    }
+
     /// <summary>The iterator step an <c>each</c> loop recovers with <c>try</c>.</summary>
     private const string EmitRoutineName = "emit";
 
@@ -630,9 +641,12 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         IdentifierExpression tryNextReceiver, CallExpression emitCall)
     {
         if (eachStmt.Iterable.ResolvedType is { } iterType and not ErrorTypeSymbol &&
-            ctx.Registry.LookupMemberRoutine(type: iterType, memberRoutineName: "iter") is
+            ctx.Registry.LookupMemberRoutine(type: SharedEntityOf(type: iterType), memberRoutineName: "iter") is
                 { ReturnType: { } rawIteratorType } iterMemberRoutine)
         {
+            // A shared entity is walked through its handle by the entity's own `iter`, whose type parameters
+            // the entity's type arguments bind (not the handle's).
+            iterType = SharedEntityOf(type: iterType);
             // LookupMemberRoutine returns the generic-def `iter`, whose ReturnType still carries the
             // owner's params (e.g. `?EnumerateEmitter[T, S/Iter]`). Substitute the concrete owner's type
             // args so the step binds on the CONCRETE emitter (`EnumerateEmitter[Text, ListEmitter[Text]]`);
@@ -643,7 +657,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             iterCallExpr.ResolvedType = iteratorType;
             // Carry the concrete emitter type onto the receiver so reachability/codegen see it.
             tryNextReceiver.ResolvedType = iteratorType;
-            if (ctx.Registry.LookupMemberRoutine(type: iteratorType,
+            if (ctx.Registry.LookupMemberRoutine(type: SharedEntityOf(type: iteratorType),
                     memberRoutineName: EmitRoutineName,
                     isFailable: true) is { } emit &&
                 ctx.Registry.LookupRecoveryVariant(recovered: emit, kind: StepKind(eachStmt: eachStmt)) is { } step)
