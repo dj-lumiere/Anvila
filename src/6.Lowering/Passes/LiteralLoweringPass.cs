@@ -227,10 +227,10 @@ internal sealed class LiteralLoweringPass : AstRewriter
 
     /// <summary>
     /// Lowers an Integer literal to the Integer record it stands for, or returns null if
-    /// <paramref name="literal"/> is not one. The builder computes the limbs, and they become read-only module
-    /// data (<see cref="ConstantDataExpression"/>): <c>Integer(neg:, len:, tab: #constant_data[...], ctrl: none)</c>.
-    /// A null controller is how an Integer says its limbs are static, so it never counts them and never frees
-    /// them, like a Text literal. Zero has no limbs (a null <c>tab</c>), as Integer's own zero does.
+    /// <paramref name="literal"/> is not one. A magnitude below 2^64 is the value itself. The builder computes a
+    /// bigger one's limbs, and they become read-only module data (<see cref="ConstantDataExpression"/>) under a null
+    /// controller, which is how an Integer says its limbs are static: it never counts them and never frees them,
+    /// like a Text literal.
     /// Decimal literals are not here: Decimal is an i128 BID whose literals are build-time constants already.
     /// </summary>
     private CreatorExpression? TryLowerIntegerLiteral(LiteralExpression literal)
@@ -266,9 +266,10 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// The Integer record a build-time <paramref name="value"/> stands for: its limbs as read-only module data,
-    /// <c>Integer(neg:, len:, tab: #constant_data[...], ctrl: none)</c>, or a null <c>tab</c> for zero. Every
-    /// Integer the builder writes as a constant (a literal, a range's default step) is built here.
+    /// The Integer record a build-time <paramref name="value"/> stands for: <c>Integer(neg:, magnitude: v)</c> with
+    /// the magnitude itself below 2^64, else its limbs as read-only module data
+    /// (<c>IntegerLimbs(len:, tab: #constant_data[...], ctrl: none)</c>). Every Integer the builder writes as a
+    /// constant (a literal, a range's default step) is built here.
     /// </summary>
     internal static CreatorExpression IntegerCreator(TypeRegistry registry, BigInteger value, SourceLocation loc)
     {
@@ -285,15 +286,50 @@ internal sealed class LiteralLoweringPass : AstRewriter
     private static CreatorExpression IntegerCreator(RecordTypeSymbol integer, TypeSymbol? boolType,
         TypeSymbol? u64Type, BigInteger value, SourceLocation loc)
     {
-        List<long> limbs = Limbs(magnitude: BigInteger.Abs(value: value));
-        List<MemberVariableInfo> fields = integer.MemberVariables;
-        TypeSymbol FieldType(string name) => fields.First(predicate: f => f.Name == name).Type;
+        if (u64Type == null)
+        {
+            throw new InvalidOperationException(message: "U64 is not registered.");
+        }
 
-        Expression tab = limbs.Count == 0
-            ? new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "tab") }
-            : new ConstantDataExpression(Elements: limbs,
-                ElementType: u64Type ?? throw new InvalidOperationException(message: "U64 is not registered."),
-                Location: loc) { ResolvedType = FieldType(name: "tab") };
+        List<long> limbs = Limbs(magnitude: BigInteger.Abs(value: value));
+        VariantTypeSymbol magnitude =
+            integer.MemberVariables.First(predicate: f => f.Name == "magnitude").Type as VariantTypeSymbol ??
+            throw new InvalidOperationException(message: "Integer's magnitude is not a variant.");
+
+        // A magnitude below 2^64 is the value itself (the U64 arm), a bigger one the limbs as read-only module data
+        // with no controller, so the Integer never counts or frees them, like a Text literal.
+        Expression payload;
+        TypeSymbol armType;
+        if (limbs.Count <= 1)
+        {
+            armType = u64Type;
+            payload = new LiteralExpression(Value: limbs.Count == 0 ? 0UL : (ulong)limbs[index: 0],
+                LiteralType: TokenType.U64Literal,
+                Location: loc) { ResolvedType = u64Type };
+        }
+        else
+        {
+            RecordTypeSymbol limbsType = magnitude.Members.Select(selector: m => m.Type)
+                                                  .OfType<RecordTypeSymbol>()
+                                                  .First(predicate: t => t.Name != u64Type.Name);
+            TypeSymbol FieldType(string name) => limbsType.MemberVariables.First(predicate: f => f.Name == name).Type;
+            armType = limbsType;
+            payload = new CreatorExpression(TypeName: limbsType.Name,
+                TypeArguments: null,
+                MemberVariables:
+                [
+                    ("len", new LiteralExpression(Value: (ulong)limbs.Count,
+                        LiteralType: TokenType.U64Literal,
+                        Location: loc) { ResolvedType = u64Type }),
+                    ("tab", new ConstantDataExpression(Elements: limbs, ElementType: u64Type, Location: loc)
+                    {
+                        ResolvedType = FieldType(name: "tab")
+                    }),
+                    ("ctrl", new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "ctrl") })
+                ],
+                Location: loc) { ResolvedType = limbsType };
+        }
+
         bool negative = value.Sign < 0;
         return new CreatorExpression(TypeName: integer.Name,
             TypeArguments: null,
@@ -304,11 +340,10 @@ internal sealed class LiteralLoweringPass : AstRewriter
                         ? TokenType.True
                         : TokenType.False,
                     Location: loc) { ResolvedType = boolType }),
-                ("len", new LiteralExpression(Value: (ulong)limbs.Count,
-                    LiteralType: TokenType.U64Literal,
-                    Location: loc) { ResolvedType = u64Type }),
-                ("tab", tab),
-                ("ctrl", new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "ctrl") })
+                ("magnitude", new CreatorExpression(TypeName: magnitude.Name,
+                    TypeArguments: null,
+                    MemberVariables: [(armType.Name, payload)],
+                    Location: loc) { ResolvedType = magnitude, ConstructedType = magnitude })
             ],
             Location: loc) { ResolvedType = integer };
     }
