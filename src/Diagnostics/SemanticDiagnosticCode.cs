@@ -657,6 +657,10 @@ public enum SemanticDiagnosticCode
     /// are inferred.</summary>
     RoutineParameterWithoutType = 515,
 
+    /// <summary>A range's literal step (<c>by -3</c>, <c>by 0</c>) is zero or negative. The step is always a
+    /// positive distance: the direction of a range comes from its endpoints (<c>10 to 0 by 3</c>).</summary>
+    RangeStepNotPositive = 516,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // COLLECTION LITERAL ERRORS (RF-S550 - RF-S599)
     // ═══════════════════════════════════════════════════════════════════════════

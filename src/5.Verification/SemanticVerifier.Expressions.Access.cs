@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Builder.Diagnostics;
+using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -1305,6 +1306,7 @@ public sealed partial class SemanticVerifier
         if (range.Step != null)
         {
             AnalyzeExpression(expression: range.Step, expectedType: endpointExpected);
+            ValidateLiteralRangeStep(step: range.Step);
         }
 
         bool startIsBack = range.Start is BackIndexExpression;
@@ -1329,6 +1331,143 @@ public sealed partial class SemanticVerifier
         }
 
         return rangeGenericDef ?? ErrorTypeSymbol.Instance;
+    }
+
+    /// <summary>
+    /// Reports a literal range step that is zero or negative (<c>by -3</c>, <c>by 0</c>, <c>by 0.0</c>). The step is
+    /// always a positive distance and the endpoints alone decide the direction, so such a step would never reach
+    /// the end. A step that is not a literal is checked when the range is iterated (the stdlib's
+    /// <c>Range.require_positive_step</c>).
+    /// </summary>
+    private void ValidateLiteralRangeStep(Expression step)
+    {
+        Expression operand = step;
+        bool negated = false;
+        while (operand is UnaryExpression { Operator: UnaryOperator.Minus } unary)
+        {
+            negated = !negated;
+            operand = unary.Operand;
+        }
+
+        if (operand is not LiteralExpression literal ||
+            !TryNumericLiteralIsZero(literal: literal, isZero: out bool isZero))
+        {
+            return;
+        }
+
+        // The parser folds a minus written right before a number into the literal's text (`-3` is one literal).
+        string magnitude = NumericLiteralText(literal: literal);
+        if (magnitude.StartsWith(value: '-'))
+        {
+            negated = !negated;
+            magnitude = magnitude[1..];
+        }
+
+        if (!isZero && !negated)
+        {
+            return;
+        }
+
+        string written = (negated ? "-" : "") + magnitude;
+        string why = isZero
+            ? "A step of 0 never moves, so the range would never reach its end. Give it a positive step, " +
+              "such as `by 1`, or leave `by` out for a step of 1."
+            : "The direction of a range comes from its endpoints, never from the sign of its step. To count " +
+              "down, put the larger endpoint first and keep the step positive, as in `10 to 0 by 3`.";
+        ReportError(code: SemanticDiagnosticCode.RangeStepNotPositive,
+            message: $"You wrote `by {written}`, but a range's step must be positive. {why}",
+            location: step.Location);
+    }
+
+    /// <summary>
+    /// Tells whether a numeric literal's magnitude is zero, ignoring a minus the parser folded into its text.
+    /// Returns false for a literal that is not a number.
+    /// </summary>
+    private static bool TryNumericLiteralIsZero(LiteralExpression literal, out bool isZero)
+    {
+        switch (literal.Value)
+        {
+            case sbyte v: isZero = v == 0; return true;
+            case short v: isZero = v == 0; return true;
+            case int v: isZero = v == 0; return true;
+            case long v: isZero = v == 0; return true;
+            case Int128 v: isZero = v == 0; return true;
+            case byte v: isZero = v == 0; return true;
+            case ushort v: isZero = v == 0; return true;
+            case uint v: isZero = v == 0; return true;
+            case ulong v: isZero = v == 0; return true;
+            case UInt128 v: isZero = v == 0; return true;
+            case Half v: isZero = v == (Half)0; return true;
+            case float v: isZero = v == 0; return true;
+            case double v: isZero = v == 0; return true;
+            case decimal v: isZero = v == 0; return true;
+            case System.Numerics.BigInteger v: isZero = v.IsZero; return true;
+            case string text when literal.LiteralType is TokenType.UndecidedInteger or TokenType.UndecidedDecimal
+                or TokenType.IntegerLiteral or TokenType.DecimalLiteral or TokenType.S256Literal
+                or TokenType.U256Literal or TokenType.B128Literal or TokenType.D32Literal or TokenType.D64Literal
+                or TokenType.D128Literal:
+                isZero = NumericTextIsZero(text: text);
+                return true;
+            default:
+                isZero = false;
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Tells whether the digits of a numeric literal's text are all zero (<c>0</c>, <c>0.0</c>, <c>0x00</c>,
+    /// <c>0e5</c>). The exponent of a decimal or hex float does not count.
+    /// </summary>
+    private static bool NumericTextIsZero(string text)
+    {
+        string body = text.Replace(oldValue: "_", newValue: "").TrimStart('-');
+        bool hex = false;
+        if (body.Length > 2 && body[index: 0] == '0' && body[index: 1] is 'x' or 'X' or 'b' or 'B' or 'o' or 'O')
+        {
+            hex = body[index: 1] is 'x' or 'X';
+            body = body[2..];
+        }
+
+        int exponent = hex
+            ? body.IndexOfAny(anyOf: ['p', 'P'])
+            : body.IndexOfAny(anyOf: ['e', 'E']);
+        if (exponent >= 0)
+        {
+            body = body[..exponent];
+        }
+
+        bool sawDigit = false;
+        foreach (char c in body)
+        {
+            if (c == '.')
+            {
+                continue;
+            }
+
+            if (!char.IsAsciiHexDigit(c: c))
+            {
+                break;
+            }
+
+            sawDigit = true;
+            if (c != '0')
+            {
+                return false;
+            }
+        }
+
+        return sawDigit;
+    }
+
+    /// <summary>The literal as the user wrote it, near enough to name it in a diagnostic.</summary>
+    private static string NumericLiteralText(LiteralExpression literal)
+    {
+        return literal.Value switch
+        {
+            IFormattable f => f.ToString(format: null,
+                formatProvider: System.Globalization.CultureInfo.InvariantCulture),
+            _ => literal.Value.ToString() ?? ""
+        };
     }
 
     /// <summary>
