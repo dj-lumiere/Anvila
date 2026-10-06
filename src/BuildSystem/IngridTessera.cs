@@ -54,9 +54,25 @@ internal static class IngridTessera
             }
 
             string ir = Compile(sourceDir: sourceDir, sources: sources);
-            string tmp = cached + ".tmp";
+            // A file of this process's own: builds run side by side (the test suites start several builder
+            // processes at once), and a shared temporary name let one process move another's half-written file.
+            string tmp = $"{cached}.{Environment.ProcessId}.tmp";
             File.WriteAllText(path: tmp, contents: ir);
-            File.Move(sourceFileName: tmp, destFileName: cached, overwrite: true);
+            try
+            {
+                File.Move(sourceFileName: tmp, destFileName: cached, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Another process put its copy in place first and has it open: the same sources made it, so it is
+                // just as good.
+                TryDelete(path: tmp);
+                if (!File.Exists(path: cached))
+                {
+                    throw;
+                }
+            }
+
             return cached;
         }
     }
