@@ -756,6 +756,18 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             ReturnStatement { Value: IdentifierExpression id } => id.Name,
             VariantReturnStatement { Value: IdentifierExpression id } => id.Name,
+            // `return x.release_inner()` takes the entity out of the handle `x` and ends it: `x` moves out.
+            ReturnStatement
+            {
+                Value: CallExpression
+                {
+                    Callee: MemberExpression
+                    {
+                        Object: IdentifierExpression released,
+                        MemberName: RuntimeContract.RoamedMemberRoutine.ReleaseInner
+                    }
+                }
+            } => released.Name,
             // A recovery variant's `return x` wrapped in its carrier (`return Maybe(present: true, value: x)`)
             // still returns `x`: it moves out, as RecordCopyLoweringPass treats it.
             ReturnStatement

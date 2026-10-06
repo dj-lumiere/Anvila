@@ -126,6 +126,9 @@ public static class RuntimeContract
 
         /// <summary>Project the Roamed handle to the bare inner entity pointer.</summary>
         public const string RawInner = "raw_inner";
+
+        /// <summary>Take the entity out of its only handle, ending the handle (a creator returning a handle).</summary>
+        public const string ReleaseInner = "release_inner";
     }
 
     /// <summary>The two ORTHOGONAL duplication verbs. <c>assign</c> (Assignable) = the implicit shallow

@@ -694,7 +694,9 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // Constructing an RC wrapper FROM a bare entity (STRUCTURAL: entity receiver + RC-wrapper
         // result) moves it into the controller, so that receiver is not torn down either.
         bool receiverIsIndexRead = m.Object is CallExpression { Callee: MemberExpression { MemberName: "getitem" } };
+        // `release_inner` takes the entity out of its handle and ends the handle, so the handle is not torn down.
         bool receiverConsumed = m.MemberName is "assign" or "duplicate" && !receiverIsIndexRead ||
+                                m.MemberName == RuntimeContract.RoamedMemberRoutine.ReleaseInner ||
                                 m.Object.ResolvedType is EntityTypeSymbol &&
                                 call.ResolvedType is { } rcCtorRes &&
                                 TypeRegistry.GetRcWrapperBaseName(type: rcCtorRes) is not null;
