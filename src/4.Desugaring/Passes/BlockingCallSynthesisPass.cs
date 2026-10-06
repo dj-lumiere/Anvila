@@ -189,7 +189,7 @@ internal static class BlockingCallSynthesisPass
                 Location: loc),
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
-            Location: loc) { IsDangerous = external.IsDangerous };
+            Location: loc) { IsDangerous = external.IsDangerous, IsBuilderWritten = true };
     }
 
     /// <summary><c>__blocking_run_f(recipe: CPtr)</c>: takes the arguments out of the recipe, makes the foreign
@@ -260,7 +260,7 @@ internal static class BlockingCallSynthesisPass
                 Location: loc),
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
-            Location: loc);
+            Location: loc) { IsBuilderWritten = true };
     }
 
     private static DeclarationStatement Var(string name, Expression value, SourceLocation loc)

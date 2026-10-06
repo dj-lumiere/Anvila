@@ -80,6 +80,16 @@ partial class TypeRegistry
         /// <see cref="DeferredVariantBases"/>.</summary>
         public Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
             pessimistic)> DeferredVariantBases { get; init; } = null!;
+
+        /// <summary>The loader's <c>@rf</c> declarations and RazorForge library types: a restored registry's loader
+        /// does not parse the restored modules again, so it starts from these.</summary>
+        public List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings
+        {
+            get;
+            init;
+        } = [];
+
+        public HashSet<string> RazorForgeLibraryTypes { get; init; } = [];
     }
 
     /// <summary>
@@ -136,7 +146,9 @@ partial class TypeRegistry
                                          .ToList()),
             DeferredVariantBases =
                 new Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
-                    pessimistic)>(dictionary: DeferredVariantBases)
+                    pessimistic)>(dictionary: DeferredVariantBases),
+            RfBindings = [..RfBindings],
+            RazorForgeLibraryTypes = [..RazorForgeLibraryTypes]
         };
     }
 
@@ -294,6 +306,8 @@ partial class TypeRegistry
                     // are NOT reported as freshly-loaded (they'd be re-lowered and crash — the D128 ternary bug).
                     CoreResident = true
                 };
+            _stdlibLoader.SeedParsedFacts(bindings: snapshot.RfBindings,
+                razorForgeLibraryTypes: snapshot.RazorForgeLibraryTypes);
         }
 
         _coreModuleLoaded = true;

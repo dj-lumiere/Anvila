@@ -662,9 +662,21 @@ public partial class Parser
         RejectCommonOnTypeDeclaration(isCommon: isCommon);
         RejectNoEffectOnTypeDeclaration(annotations: annotations, visibility: visibility, isDangerous: isDangerous);
 
+        // An `@rf("...")` binding may sit on any type declaration: it is kept on the node for the standard library
+        // loader, which takes the declaration out (see RfBindingCheck).
+        List<string> bindings = annotations.Where(predicate: a => a.StartsWith(value: "rf(",
+                                                    comparisonType: StringComparison.Ordinal))
+                                           .ToList();
+        SyntaxTree.Declaration Bound(SyntaxTree.Declaration declaration)
+        {
+            return bindings.Count > 0
+                ? declaration with { LeadingAnnotations = bindings }
+                : declaration;
+        }
+
         if (CheckAndAdvance(type: TokenType.Entity))
         {
-            return ParseEntityDeclaration(visibility: visibility);
+            return Bound(declaration: ParseEntityDeclaration(visibility: visibility));
         }
 
         if (CheckAndAdvance(type: TokenType.Record))
@@ -679,27 +691,27 @@ public partial class Parser
 
         if (CheckAndAdvance(type: TokenType.Choice))
         {
-            return ParseChoiceDeclaration(visibility: visibility);
+            return Bound(declaration: ParseChoiceDeclaration(visibility: visibility));
         }
 
         if (CheckAndAdvance(type: TokenType.Flags))
         {
-            return ParseFlagsDeclaration(visibility: visibility);
+            return Bound(declaration: ParseFlagsDeclaration(visibility: visibility));
         }
 
         if (CheckAndAdvance(type: TokenType.Crashable))
         {
-            return ParseCrashableDeclaration(visibility: visibility);
+            return Bound(declaration: ParseCrashableDeclaration(visibility: visibility));
         }
 
         if (CheckAndAdvance(type: TokenType.Variant))
         {
-            return ParseVariantDeclaration();
+            return Bound(declaration: ParseVariantDeclaration());
         }
 
         if (CheckAndAdvance(type: TokenType.Protocol))
         {
-            return ParseProtocolDeclaration(visibility: visibility);
+            return Bound(declaration: ParseProtocolDeclaration(visibility: visibility));
         }
 
         if (visibility != VisibilityModifier.Open)
@@ -872,9 +884,12 @@ public partial class Parser
             return;
         }
 
-        RejectNoEffect(when: annotations.Count > 0 && CurrentToken.Type is not (TokenType.Record or TokenType.Bundle),
+        List<string> ineffective = annotations.Where(predicate: a => !a.StartsWith(value: "rf(",
+                                                  comparisonType: StringComparison.Ordinal))
+                                              .ToList();
+        RejectNoEffect(when: ineffective.Count > 0 && CurrentToken.Type is not (TokenType.Record or TokenType.Bundle),
             at: CurrentToken,
-            message: $"An annotation ({string.Join(separator: ", ", values: annotations.Select(selector: a => "@" + a))}) " +
+            message: $"An annotation ({string.Join(separator: ", ", values: ineffective.Select(selector: a => "@" + a))}) " +
                      $"has no effect on {kind}. Remove it.");
         RejectNoEffect(when: isDangerous, at: CurrentToken,
             message: $"'dangerous' marks a routine whose signature exposes raw unsafety, and has no effect on {kind}. " +

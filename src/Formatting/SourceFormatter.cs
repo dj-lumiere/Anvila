@@ -130,9 +130,9 @@ public static class SourceFormatter
                      .Replace(oldChar: '\r', newChar: '\n');
     }
 
-    private sealed record ParsedFile(SyntaxTree.Program Program, SourceIndex Index);
+    internal sealed record ParsedFile(SyntaxTree.Program Program, SourceIndex Index);
 
-    private static ParsedFile ParseFile(string source, string fileName, Language language, string what)
+    internal static ParsedFile ParseFile(string source, string fileName, Language language, string what)
     {
         List<Token> tokens;
         List<CommentTrivia> comments;

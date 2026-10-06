@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Builder.Diagnostics;
+using Builder.Documentation;
 using Builder.Parser;
 using Builder.Declaration;
 using Builder.Tokenizer;
@@ -760,7 +761,7 @@ public static class LspServer
                                      DocAbove(location: declaring.Location);
                 string? paramDoc = routineDoc == null
                     ? null
-                    : ParseDoc(doc: routineDoc)
+                    : DocComment.Parse(doc: routineDoc)
                      .Params.FirstOrDefault(predicate: x => x.Name == parameter.Name)
                      .Desc;
                 return ($"{parameter.Name}: {TypeText(type: info.Type)}", null,
@@ -1438,7 +1439,7 @@ public static class LspServer
             return null;
         }
 
-        string description = ParseDoc(doc: routineDoc)
+        string description = DocComment.Parse(doc: routineDoc)
                             .Params.FirstOrDefault(predicate: x => x.Name == parameter.Name)
                             .Desc;
         return string.IsNullOrWhiteSpace(value: description)
@@ -2564,9 +2565,9 @@ public static class LspServer
         int activeParam)
     {
         // Pull per-parameter descriptions from the routine's `:param name:` doc fields.
-        DocInfo? sigDoc = string.IsNullOrWhiteSpace(value: routine.Documentation)
+        DocComment? sigDoc = string.IsNullOrWhiteSpace(value: routine.Documentation)
             ? null
-            : ParseDoc(doc: routine.Documentation);
+            : DocComment.Parse(doc: routine.Documentation);
 
         List<object?> parameters = BuildSignatureParameters(routine: routine, sigDoc: sigDoc);
 
@@ -2601,7 +2602,7 @@ public static class LspServer
 
     /// <summary>Builds the parameter array for a signature help response, annotating each parameter
     /// with its doc-comment description when available.</summary>
-    private static List<object?> BuildSignatureParameters(RoutineInfo routine, DocInfo? sigDoc)
+    private static List<object?> BuildSignatureParameters(RoutineInfo routine, DocComment? sigDoc)
     {
         return routine.Parameters
                       .Select(selector: p =>
@@ -4177,124 +4178,11 @@ public static class LspServer
         items.Add(item: item);
     }
 
-    /// <summary>A doc-comment parsed into its summary prose and reStructuredText-style field lists.</summary>
-    private sealed record DocInfo(
-        string Summary,
-        List<(string Name, string Desc)> Params,
-        List<(string Name, string Desc)> TypeParams,
-        string? Returns,
-        string? Throws,
-        string? Absent,
-        List<string> Notes,
-        List<string> Sees);
-
-    /// <summary>
-    /// Parses a stored <c>###</c> doc-comment into a summary plus the field lists the docs use:
-    /// <c>:param name:</c>, <c>:typeparam Name:</c>, <c>:returns:</c>, <c>:throws:</c>, <c>:absent:</c>,
-    /// <c>:note:</c>, <c>:see:</c>. Lines before the first field are the summary; a line that does not
-    /// open a new <c>:field:</c> continues the previous field's (or the summary's) text.
-    /// </summary>
-    private static DocInfo ParseDoc(string doc)
-    {
-        var summary = new List<string>();
-        var pars = new List<(string, string)>();
-        var typePars = new List<(string, string)>();
-        string? returns = null, throws = null, absent = null;
-        var notes = new List<string>();
-        var sees = new List<string>();
-
-        // Where the last field's continuation text goes; null = still in the summary.
-        Action<string>? append = null;
-
-        foreach (string raw in doc.Replace(oldValue: "\r", newValue: "")
-                                  .Split(separator: '\n'))
-        {
-            string line = raw.Trim();
-            if (line.StartsWith(value: ':') &&
-                line.IndexOf(value: ':', startIndex: 1) is var sc and > 0)
-            {
-                string spec = line[1..sc]
-                   .Trim();
-                string desc = line[(sc + 1)..]
-                   .Trim();
-                string[] parts = spec.Split(separator: ' ',
-                    count: 2,
-                    options: StringSplitOptions.RemoveEmptyEntries);
-                string kind = parts[0]
-                   .ToLowerInvariant();
-                string? name = parts.Length > 1
-                    ? parts[1]
-                    : null;
-
-                switch (kind)
-                {
-                    case "param" when name != null:
-                        pars.Add(item: (name, desc));
-                        int pi = pars.Count - 1;
-                        append = s => pars[index: pi] = (pars[index: pi].Item1,
-                            $"{pars[index: pi].Item2} {s}".Trim());
-                        break;
-                    case "typeparam" when name != null:
-                        typePars.Add(item: (name, desc));
-                        int ti = typePars.Count - 1;
-                        append = s => typePars[index: ti] = (typePars[index: ti].Item1,
-                            $"{typePars[index: ti].Item2} {s}".Trim());
-                        break;
-                    case "returns":
-                        returns = desc;
-                        append = s => returns = $"{returns} {s}".Trim();
-                        break;
-                    case "throws":
-                        throws = desc;
-                        append = s => throws = $"{throws} {s}".Trim();
-                        break;
-                    case "absent":
-                        absent = desc;
-                        append = s => absent = $"{absent} {s}".Trim();
-                        break;
-                    case "note":
-                        notes.Add(item: desc);
-                        int ni = notes.Count - 1;
-                        append = s => notes[index: ni] = $"{notes[index: ni]} {s}".Trim();
-                        break;
-                    case "see":
-                        sees.Add(item: desc);
-                        int si = sees.Count - 1;
-                        append = s => sees[index: si] = $"{sees[index: si]} {s}".Trim();
-                        break;
-                    default:
-                        // Unknown `:field:` — keep it verbatim in the summary so nothing is lost.
-                        summary.Add(item: line);
-                        append = null;
-                        break;
-                }
-            }
-            else if (append != null && line.Length > 0)
-            {
-                append(obj: line);
-            }
-            else
-            {
-                summary.Add(item: line);
-            }
-        }
-
-        return new DocInfo(Summary: string.Join(separator: "\n", values: summary)
-                                          .Trim(),
-            Params: pars,
-            TypeParams: typePars,
-            Returns: returns,
-            Throws: throws,
-            Absent: absent,
-            Notes: notes,
-            Sees: sees);
-    }
-
     /// <summary>Renders a parsed doc-comment as hover/completion markdown: the summary prose, then a
     /// bulleted parameters/type-parameters block and labelled Returns/Throws/Absent/Note/See lines.</summary>
     private static string RenderDoc(string doc)
     {
-        DocInfo d = ParseDoc(doc: doc);
+        DocComment d = DocComment.Parse(doc: doc);
         var sb = new StringBuilder();
         if (d.Summary.Length > 0)
         {
@@ -4339,8 +4227,16 @@ public static class LspServer
         Section(title: Ko(english: "Type parameters", korean: "타입 매개변수"), entries: d.TypeParams);
         Section(title: Ko(english: "Parameters", korean: "매개변수"), entries: d.Params);
         Line(label: Ko(english: "Returns", korean: "반환"), text: d.Returns);
-        Line(label: Ko(english: "Throws", korean: "throw"), text: d.Throws);
-        Line(label: Ko(english: "Absent", korean: "absent"), text: d.Absent);
+        foreach (string throws in d.Throws)
+        {
+            Line(label: Ko(english: "Throws", korean: "throw"), text: throws);
+        }
+
+        foreach (string absent in d.Absent)
+        {
+            Line(label: Ko(english: "Absent", korean: "absent"), text: absent);
+        }
+
         foreach (string note in d.Notes)
         {
             Line(label: Ko(english: "Note", korean: "참고"), text: note);

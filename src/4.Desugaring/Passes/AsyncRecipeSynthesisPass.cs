@@ -167,7 +167,7 @@ internal static class AsyncRecipeSynthesisPass
                 Location: loc),
             Visibility: routine.Visibility,
             Annotations: [],
-            Location: loc);
+            Location: loc) { IsBuilderWritten = true };
     }
 
     /// <summary><c>__async_run_foo(task: CPtr, recipe: CPtr)</c> (threaded) or <c>(recipe: CPtr)</c>
@@ -262,7 +262,7 @@ internal static class AsyncRecipeSynthesisPass
                 Location: loc),
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
-            Location: loc);
+            Location: loc) { IsBuilderWritten = true };
     }
 
     /// <summary>What a parameter's recipe slot holds: the value, or for a by-reference parameter a

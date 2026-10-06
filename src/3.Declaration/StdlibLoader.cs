@@ -64,6 +64,28 @@ public sealed partial class StdlibLoader
         return _modulePrograms.Keys.ToList();
     }
 
+    private readonly List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> _rfBindings = [];
+
+    /// <summary>The <c>@rf("...")</c> declarations taken out of the parsed files, with the file and module of
+    /// each: Suflae's view of shared declarations, checked by <see cref="RfBindingCheck"/>.</summary>
+    public IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings => _rfBindings;
+
+    private readonly HashSet<string> _razorForgeLibraryTypes = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The <c>Module.Name</c> of every type a parsed file of RazorForge's library declares (Suflae's library
+    /// has RazorForge files of its own, which do not count).</summary>
+    public IReadOnlySet<string> RazorForgeLibraryTypes => _razorForgeLibraryTypes;
+
+    /// <summary>Carries the bindings and RazorForge library types of a captured registry into the fresh loader of a
+    /// restored one, whose modules are not parsed again.</summary>
+    internal void SeedParsedFacts(
+        IEnumerable<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> bindings,
+        IEnumerable<string> razorForgeLibraryTypes)
+    {
+        _rfBindings.AddRange(collection: bindings);
+        _razorForgeLibraryTypes.UnionWith(other: razorForgeLibraryTypes);
+    }
+
     /// <summary>Gets all parsed programs (core + loaded modules) for codegen.</summary>
     public List<(Program Program, string FilePath, string Module)> AllLoadedPrograms
     {
@@ -102,7 +124,12 @@ public sealed partial class StdlibLoader
         // stamped Realm="SF" at registration, so they key distinctly from the RF-realm `Core.*`). Each file's
         // realm is derived from its extension (`.sf`→SF, `.rf`→RF) — see StdlibLoader.Registration.RealmOf.
         _scanRoots = Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: stdlibRoot, language: language);
+        _razorForgeRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),
+            path2: Builder.Frontends.Languages.For(language: Language.RazorForge).Name) + Path.DirectorySeparatorChar;
     }
+
+    /// <summary>The folder of RazorForge's own library, with a trailing separator.</summary>
+    private readonly string _razorForgeRoot;
 
     /// <summary>
     /// Loads the Core module types into the type registry.
@@ -394,12 +421,43 @@ public sealed partial class StdlibLoader
     /// <param name="code">The source code to parse.</param>
     /// <param name="filePath">The file path (extension determines parser choice).</param>
     /// <returns>The parsed program AST.</returns>
-    private static Program ParseFileByExtension(string code, string filePath)
+    private Program ParseFileByExtension(string code, string filePath)
     {
         Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
         List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
         var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
         Program program = parser.Parse();
+
+        // An `@rf("...")` declaration shows a shared RazorForge declaration in the file's language and creates
+        // nothing: it leaves the program here, before any pass sees it, and is checked against its target by
+        // validate-stdlib (RfBindingCheck). The documentation and the editor read it from the file itself.
+        string module = GetDeclaredModule(program: program) ?? DeriveModuleFromPath(filePath: filePath);
+        foreach (SyntaxTree.Declaration binding in program.Declarations.OfType<SyntaxTree.Declaration>()
+                                               .Where(predicate: RfBindingCheck.IsBinding)
+                                               .ToList())
+        {
+            _rfBindings.Add(item: (binding, filePath, module));
+            program.Declarations.Remove(item: binding);
+        }
+
+        if (Path.GetFullPath(path: filePath).StartsWith(value: _razorForgeRoot,
+                comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (string name in program.Declarations.Select(selector: d => d switch
+                     {
+                         RecordDeclaration r => r.Name,
+                         EntityDeclaration e => e.Name,
+                         CrashableDeclaration c => c.Name,
+                         ChoiceDeclaration c => c.Name,
+                         FlagsDeclaration f => f.Name,
+                         VariantDeclaration v => v.Name,
+                         ProtocolDeclaration p => p.Name,
+                         _ => null
+                     }).OfType<string>())
+            {
+                _razorForgeLibraryTypes.Add(item: $"{module}.{name}");
+            }
+        }
 
         // A stdlib file is never a program entry. A loose top-level statement (e.g. a stray literal left
         // by a table generator) would otherwise become a script `start()` inside the stdlib module and

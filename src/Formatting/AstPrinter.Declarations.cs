@@ -753,12 +753,18 @@ internal sealed partial class AstPrinter
         PrintNeeds(needs: NeedsConstraints(constraints: routine.GenericConstraints, kept: kept, at: routine.Location),
             depth: depth);
 
+        if (_signatureOnly)
+        {
+            return;
+        }
+
         if (routine.Body is not BlockStatement body)
         {
             throw Unsupported(node: routine.Body, at: routine.Location);
         }
 
-        if (body.Statements.Count == 0 && routine.Annotations.Contains(item: "innate"))
+        if (body.Statements.Count == 0 && (routine.Annotations.Contains(item: "innate") ||
+                                           Builder.Declaration.RfBindingCheck.IsBinding(declaration: routine)))
         {
             return;
         }
@@ -1254,6 +1260,11 @@ internal sealed partial class AstPrinter
     /// <summary>The members of a record, entity or crashable body, each in its source order.</summary>
     private void PrintMembers(SourceLocation keyword, List<SyntaxTree.Declaration> members, bool hasPass, int depth)
     {
+        if (_signatureOnly)
+        {
+            return;
+        }
+
         if (hasPass)
         {
             int passStart = BodyTokenStart(keyword: keyword, type: TokenType.Pass);
@@ -1280,6 +1291,13 @@ internal sealed partial class AstPrinter
 
     private void PrintChoice(ChoiceDeclaration choice, int start, int depth)
     {
+        if (_signatureOnly)
+        {
+            PrintTypeHeader(keyword: "choice", declaration: choice, start: start, depth: depth,
+                visibility: choice.Visibility, constraints: null, obeys: [], relates: choice.AssociatedTypes);
+            return;
+        }
+
         if (choice.MemberRoutines.Count > 0)
         {
             throw Refuse(at: choice.Location, reason: "a choice with member routines in its body");
@@ -1307,6 +1325,11 @@ internal sealed partial class AstPrinter
     {
         PrintTypeHeader(keyword: "flags", declaration: flags, start: start, depth: depth,
             visibility: flags.Visibility, constraints: null, obeys: [], relates: null);
+        if (_signatureOnly)
+        {
+            return;
+        }
+
         List<int> memberStarts = BodyIdentifierStarts(keyword: flags.Location);
         if (memberStarts.Count != flags.Members.Count)
         {
@@ -1410,6 +1433,11 @@ internal sealed partial class AstPrinter
         PrintTypeHeader(keyword: "variant", declaration: variant, start: start, depth: depth,
             visibility: VisibilityModifier.Open, constraints: variant.GenericConstraints, obeys: [], relates: null,
             genericParameters: variant.GenericParameters);
+        if (_signatureOnly)
+        {
+            return;
+        }
+
         bool first = true;
         foreach (VariantMember member in variant.Members)
         {
@@ -1428,6 +1456,11 @@ internal sealed partial class AstPrinter
             visibility: protocol.Visibility, constraints: protocol.GenericConstraints, obeys: protocol.ParentProtocols,
             relates: protocol.AssociatedTypes, genericParameters: protocol.GenericParameters,
             obeysAllowConditions: false);
+        if (_signatureOnly)
+        {
+            return;
+        }
+
         bool first = true;
         foreach (RoutineSignature signature in protocol.MemberRoutines)
         {

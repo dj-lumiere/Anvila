@@ -59,6 +59,49 @@ internal sealed partial class AstPrinter
     }
 
     /// <summary>
+    /// True while printing one declaration's signature for the API reference: routine bodies and the members of a
+    /// type body are left out, and no comment is written.
+    /// </summary>
+    private bool _signatureOnly;
+
+    /// <summary>
+    /// The signature of <paramref name="declaration"/> in the canonical layout: its annotations and header lines
+    /// (a routine's parameters, return type and <c>needs</c>, a type's <c>relates</c>/<c>obeys</c>/<c>needs</c>),
+    /// without a body, members or comments. Throws <see cref="FormatRefusedException"/> for a shape the formatter
+    /// does not print.
+    /// </summary>
+    public string PrintSignature(SyntaxTree.Declaration declaration)
+    {
+        return PrintSignatureLines(print: () => PrintDeclaration(declaration: declaration, depth: 0, first: true,
+            policy: BlankPolicy.None));
+    }
+
+    /// <summary>The signature of a protocol's member routine, laid out as <see cref="PrintSignature(SyntaxTree.Declaration)"/>
+    /// lays out a declaration.</summary>
+    public string PrintSignature(RoutineSignature signature)
+    {
+        return PrintSignatureLines(print: () => PrintSignature(signature: signature, depth: 0, first: true));
+    }
+
+    private string PrintSignatureLines(Action print)
+    {
+        _signatureOnly = true;
+        _collecting = false;
+        _lines.Clear();
+        try
+        {
+            print();
+        }
+        finally
+        {
+            _signatureOnly = false;
+        }
+
+        return string.Join(separator: "\n", values: _lines.Select(selector: line => line.TrimEnd(trimChar: ' ')))
+                     .Trim(trimChar: '\n');
+    }
+
+    /// <summary>
     /// The top-level nodes in the order they were printed, so the round-trip check can compare the reparsed tree
     /// with the original in that order. Null until <see cref="Print"/> runs.
     /// </summary>

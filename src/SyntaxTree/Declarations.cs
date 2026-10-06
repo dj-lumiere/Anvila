@@ -22,6 +22,13 @@ namespace SyntaxTree;
 public abstract record Declaration(SourceLocation Location) : SyntaxTreeNode(Location: Location)
 {
     /// <summary>
+    /// The annotations written above a type declaration whose node has no annotation list of its own (entity,
+    /// choice, flags, crashable, variant, protocol). Only the standard library's <c>@rf("...")</c> binding is
+    /// allowed there; the parser rejects any other as having no effect.
+    /// </summary>
+    public List<string>? LeadingAnnotations { get; init; }
+
+    /// <summary>
     /// The documentation-comment text (the lines of a <c>###</c> doc block) written immediately above
     /// this declaration, joined with newlines, or null if none. Attached by the parser; carried into
     /// <c>RoutineInfo.Documentation</c> at registration so hover / completion can surface it (including
@@ -281,6 +288,12 @@ public record RoutineDeclaration(
     /// (script mode). Only the build's entry file may have one.
     /// </summary>
     public bool IsScriptEntry { get; init; }
+
+    /// <summary>
+    /// True for a routine a desugaring pass wrote into the program (the routines that build and run an Agent
+    /// recipe): it may name what the program itself may not.
+    /// </summary>
+    public bool IsBuilderWritten { get; init; }
 
     /// <summary>
     /// For a script-mode <c>start()</c>: the names of the top-level <c>var</c>s it absorbed. They are

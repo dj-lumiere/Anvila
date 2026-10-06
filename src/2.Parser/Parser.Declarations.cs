@@ -557,7 +557,10 @@ public partial class Parser
     /// </summary>
     private BlockStatement ParseRoutineBody(List<string>? annotations, SourceLocation location)
     {
-        bool isInnate = annotations != null && annotations.Contains(item: "innate");
+        // An `@rf("...")` routine shows a RazorForge routine in the file's language: its body is RazorForge's.
+        bool isInnate = annotations != null && (annotations.Contains(item: "innate") ||
+                                                annotations.Any(predicate: a => a.StartsWith(value: "rf(",
+                                                    comparisonType: StringComparison.Ordinal)));
         // A body exists when the next tokens are Newline+Indent or just Indent.
         // A bare Newline without a following Indent means no body (next declaration follows).
         bool hasBody = Check(type: TokenType.Indent) || Check(type: TokenType.Newline) &&

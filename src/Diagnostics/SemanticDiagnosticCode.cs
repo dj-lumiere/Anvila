@@ -445,6 +445,10 @@ public enum SemanticDiagnosticCode
     /// <summary>A bundle that contains itself: a bundle is an inline value, so a recursive one has no finite size.</summary>
     RecursiveBundle = 446,
 
+    /// <summary>A Suflae program uses a RazorForge library type or routine that Suflae's library does not show (no
+    /// <c>@rf</c> declaration binds it).</summary>
+    UnsharedRazorForgeDeclaration = 447,
+
     /// <summary>Record member variable has a type that is not a value type (entities, wrappers, tokens cannot be stored in records).</summary>
     RecordContainsNonValueType = 412,
 

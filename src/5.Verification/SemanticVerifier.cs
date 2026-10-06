@@ -573,6 +573,20 @@ public sealed partial class SemanticVerifier
     /// <summary>Phase 1: Collect all type shapes and routine stubs -> no names resolved.</summary>
     private void RunPhase1Declarations(Program program)
     {
+        // The standard library takes its `@rf("...")` declarations out as it loads them, so one that reaches here
+        // is in a program: there it would declare a routine with no body or a second type of an existing name.
+        foreach (SyntaxTree.Declaration binding in program.Declarations.OfType<SyntaxTree.Declaration>()
+                                                          .Where(predicate: RfBindingCheck.IsBinding)
+                                                          .ToList())
+        {
+            ReportError(code: SemanticDiagnosticCode.InvalidAnnotation,
+                message: "You wrote @rf on a declaration in your program. Only the standard library uses @rf. " +
+                         "Remove it, and give a routine its body.",
+                location: binding.Location);
+            // Reported once: the rest of the analysis does not see it, so its missing body is not reported again.
+            program.Declarations.Remove(item: binding);
+        }
+
         CollectDeclarations(program: program);
     }
 
@@ -666,6 +680,7 @@ public sealed partial class SemanticVerifier
     private void RunPhase5SemanticAnalysis(Program program)
     {
         AnalyzeBodies(program: program);
+        CheckSharedDeclarationsAreBound(program: program);
         CheckShapeEffects(programs: [program]);
         AnalyzeSynthesizedBodies();
         // M-0: Annotate stdlib expression types so desugaring passes can lower stdlib bodies
@@ -1513,6 +1528,14 @@ public sealed partial class SemanticVerifier
     public List<string> CheckRuntimeContract()
     {
         return RuntimeContractCheck.Check(registry: _registry);
+    }
+
+    /// <summary>Checks the standard library's <c>@rf("...")</c> declarations against the RazorForge ones they name;
+    /// returns one line per problem.</summary>
+    public List<string> CheckRfBindings()
+    {
+        RfBindingCheck.LoadModules(registry: _registry);
+        return RfBindingCheck.Check(registry: _registry);
     }
 
     /// <summary>True while <see cref="ValidateStdlibBodies"/> runs its reduced-phase stdlib check, so
@@ -2520,6 +2543,7 @@ public sealed partial class SemanticVerifier
                 moduleNameSnapshots: moduleNameSnapshots);
 
             AnalyzeBodies(program: program);
+            CheckSharedDeclarationsAreBound(program: program);
         }
 
         CheckShapeEffects(programs: files.Select(selector: f => f.Program));

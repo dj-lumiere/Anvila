@@ -87,6 +87,21 @@ public sealed partial class TypeRegistry
                         comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Whether a file belongs to <paramref name="language"/>'s own standard library (its folder under the
+    /// standard library root), whatever the file's extension: Suflae's library has RazorForge files of its own.</summary>
+    public bool IsLanguageLibraryFile(string? filePath, Language language)
+    {
+        if (string.IsNullOrEmpty(value: _stdlibPath) || string.IsNullOrEmpty(value: filePath))
+        {
+            return false;
+        }
+
+        string root = Path.Combine(path1: Path.GetFullPath(path: _stdlibPath),
+            path2: Builder.Frontends.Languages.For(language: language).Name) + Path.DirectorySeparatorChar;
+        return Path.GetFullPath(path: filePath)
+                   .StartsWith(value: root, comparisonType: StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class SurfaceViewScope(TypeRegistry registry, bool savedSet, string? saved) : IDisposable
     {
         public void Dispose()
@@ -767,6 +782,15 @@ public sealed partial class TypeRegistry
     /// Checks if the Core module has been loaded.
     /// </summary>
     public bool IsCoreModuleLoaded => _coreModuleLoaded;
+
+    /// <summary>The standard library's <c>@rf("...")</c> declarations (see <see cref="RfBindingCheck"/>).</summary>
+    internal IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings =>
+        _stdlibLoader?.RfBindings ?? [];
+
+    /// <summary>The <c>Module.Name</c> of every type RazorForge's library declares (see
+    /// <see cref="StdlibLoader.RazorForgeLibraryTypes"/>).</summary>
+    internal IReadOnlySet<string> RazorForgeLibraryTypes =>
+        _stdlibLoader?.RazorForgeLibraryTypes ?? new HashSet<string>();
 
     /// <summary>
     /// Gets the parsed stdlib programs (for code generation).

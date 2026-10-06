@@ -68,7 +68,7 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "parse" or "tokenize" or "codegen" or BuildCommand
-            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "export-ingrid" or "help" or "fmt";
+            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "export-ingrid" or "help" or "fmt" or "docs" or "rf-stubs";
 
         if (!isCommand)
         {
@@ -182,6 +182,12 @@ internal partial class Program
 
             case "fmt":
                 return RunFormatCommand(args: args);
+
+            case "rf-stubs":
+                return RunRfStubsCommand(args: args);
+
+            case "docs":
+                return RunDocsCommand(args: args);
 
             case "help":
                 PrintUsage();
@@ -856,6 +862,7 @@ internal partial class Program
         Console.WriteLine(value: $"  {tool} test <dir-or-file>...            - Run test programs against their expected output");
         Console.WriteLine(value: $"  {tool} fmt [--check] <file-or-dir>...   - Format sources in place (--check: only list)");
         Console.WriteLine(value: $"  {tool} lint <file-or-dir>...            - Report code that is not in the canonical style");
+        Console.WriteLine(value: $"  {tool} docs <source-dir> <output-dir>    - Write the API reference pages of a library");
         Console.WriteLine(value: $"  {tool} lsp                              - Run the language server (for an editor)");
         Console.WriteLine(value: $"  {tool} help                             - Show this help");
         Console.WriteLine(value: $"  {tool} version                          - Show the version");
@@ -1031,6 +1038,23 @@ internal partial class Program
             // hard-codes against the stdlib must still resolve. A rename that breaks a contract
             // fails HERE (loudly) instead of silently miscompiling at runtime.
             List<string> contractErrors = analyzer.CheckRuntimeContract();
+
+            // A language's view of shared declarations (`@rf("...")`) must still match what it names.
+            List<string> bindingErrors = analyzer.CheckRfBindings();
+            if (bindingErrors.Count > 0)
+            {
+                Console.WriteLine(value: $"=== @rf DECLARATIONS THAT NO LONGER MATCH RAZORFORGE ({bindingErrors.Count}) ===");
+                foreach (string bindingError in bindingErrors)
+                {
+                    Console.WriteLine(value: $"    - {bindingError}");
+                }
+
+                Console.WriteLine();
+                if (stdlibErrors.Count == 0 && contractErrors.Count == 0)
+                {
+                    return 1;
+                }
+            }
 
             if (stdlibErrors.Count == 0 && contractErrors.Count == 0)
             {
