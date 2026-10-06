@@ -392,35 +392,53 @@ internal sealed class SignatureResolver
 
     /// <summary>
     /// S511: reports <c>AllMemberVariablesCreatorReserved</c> when a user <c>create</c> occupies the
-    /// all-fields memberwise signature — taking exactly the type's fields by BOTH name AND type. That
-    /// shape is the built-in memberwise constructor and cannot be overridden. The match is by TYPE, not
-    /// just name: a parsing/validating constructor that reuses a field name with a DIFFERENT type
-    /// (e.g. <c>create(tag: S32)</c> for field <c>tag: S64</c>) is allowed and routes normally. The
+    /// all-fields memberwise signature — taking the type's member-variable types in declaration order. An
+    /// overload is its parameter types in order, so parameter names do not matter: <c>Box(half: S64)</c> next to
+    /// the memberwise <c>Box(n: S64)</c> is the same overload. A creator taking a field name with a DIFFERENT type
+    /// (e.g. <c>create(tag: S32)</c> for field <c>tag: S64</c>) is a different overload and routes normally. The
     /// synthesized memberwise creator is registered elsewhere (AutoWiredRegistrationPass), so it never
     /// reaches here.
     /// </summary>
     private void CheckMemberwiseCreatorReserved(TypeSymbol? refreshedOwnerType,
         List<ParamInfo> parameters, RoutineDeclaration routine)
     {
-        List<MemberVariableInfo>? fields = refreshedOwnerType switch
+        if (MemberwiseOverloadClash(owner: refreshedOwnerType, parameters: parameters) is { } message)
+        {
+            _sa.ReportError(code: SemanticDiagnosticCode.AllMemberVariablesCreatorReserved,
+                message: message,
+                location: routine.Location);
+        }
+    }
+
+    /// <summary>
+    /// What is wrong when a written creator of <paramref name="owner"/> is the memberwise creator again, or null when
+    /// it is not. An overload is told apart by its parameter types in order, never by their names, so a creator taking
+    /// the member variables' types in declaration order is the memberwise creator, whatever it calls them. Shared by
+    /// the program path (a diagnostic) and the stdlib registration (a crash, since a stdlib file is the builder's own).
+    /// </summary>
+    internal static string? MemberwiseOverloadClash(TypeSymbol? owner, IReadOnlyList<ParamInfo> parameters)
+    {
+        List<MemberVariableInfo>? fields = owner switch
         {
             EntityTypeSymbol e => e.MemberVariables.ToList(),
             RecordTypeSymbol r => r.MemberVariables.ToList(),
             _ => null
         };
-        if (fields is { Count: > 0 } && parameters.Count == fields.Count &&
-            new HashSet<(string Name, string Type)>(
-                    collection: parameters.Select(selector: p => (p.Name, p.Type.FullName)))
-               .SetEquals(other: fields.Select(selector: f => (f.Name, f.Type.FullName))))
+        if (fields is not { Count: > 0 } || parameters.Count != fields.Count ||
+            !parameters.Select(selector: p => p.Type.FullName)
+                       .SequenceEqual(second: fields.Select(selector: f => f.Type.FullName)))
         {
-            _sa.ReportError(code: SemanticDiagnosticCode.AllMemberVariablesCreatorReserved,
-                message:
-                $"'create' cannot take exactly the fields ({string.Join(separator: ", ", values: fields.Select(selector: f => $"{f.Name}: {f.Type.Name}"))}) " +
-                $"of '{refreshedOwnerType!.Name}' — that signature is the built-in memberwise constructor and " +
-                "cannot be overridden. Use a distinct parameter shape (different names or types) or " +
-                "`secret` fields with a named constructor.",
-                location: routine.Location);
+            return null;
         }
+
+        string memberwise = string.Join(separator: ", ",
+            values: fields.Select(selector: f => $"{f.Name}: {f.Type.Name}"));
+        string written = string.Join(separator: ", ",
+            values: parameters.Select(selector: p => $"{p.Name}: {p.Type.Name}"));
+        return $"Your creator '{owner!.Name}({written})' takes the same types, in the same order, as the memberwise " +
+               $"creator '{owner.Name}({memberwise})', so the two are one overload: argument names never choose " +
+               "between overloads. Give this creator a different parameter list (other types, or another count), " +
+               "or build the value through the memberwise creator.";
     }
 
     /// <summary>

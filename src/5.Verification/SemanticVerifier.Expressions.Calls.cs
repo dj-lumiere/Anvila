@@ -3629,8 +3629,8 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckCreatorArgumentNames(List<Expression> arguments, RoutineInfo creator, TypeSymbol type)
     {
-        // Naming every member variable is the memberwise field-init, which a written creator taking the same
-        // types (`Atomic[T](initial: T)` next to `Atomic[T](value: initial)`) does not replace.
+        // Naming every member variable is the memberwise field-init: no written creator takes the same types
+        // (S511), so the names are the fields'.
         List<MemberVariableInfo>? fields = type switch
         {
             EntityTypeSymbol e => e.MemberVariables,

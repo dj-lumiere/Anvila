@@ -998,6 +998,12 @@ public sealed partial class StdlibLoader
             IsDangerous = routine.IsDangerous
         };
 
+        if (routineKind == RoutineKind.Creator &&
+            SignatureResolver.MemberwiseOverloadClash(owner: ownerType, parameters: parameters) is { } clash)
+        {
+            throw new InvalidOperationException(message: $"{routine.Location.FileName}:{routine.Location.Line}: {clash}");
+        }
+
         // Opt-in derive templates (capability-gated) must not register as live universals — skip them.
         if (IsOptInDeriveTemplateToSkip(registry: registry,
                 routine: routine,
