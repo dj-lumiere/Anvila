@@ -842,6 +842,26 @@ internal static class NativeToolchain
             : "";
     }
 
+    // The main thread's stack, 64 MiB, so a deep recursion has room and runs as deep on Windows and macOS as it can go.
+    // It is only reserved: the pages are taken as the calls reach them. Windows reserves 1 MiB and macOS 8 MiB unless
+    // the executable asks. Linux gives the main thread the size of the stack limit (`ulimit -s`, usually 8 MiB), which
+    // no link option changes.
+    private const long MainStackBytes = 64L * 1024 * 1024;
+
+    private static string MainStackFragment()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return ClangIsMingw.Value
+                ? $" -Wl,--stack,{MainStackBytes}"
+                : $" -Wl,/STACK:{MainStackBytes}";
+        }
+
+        return OperatingSystem.IsMacOS()
+            ? $" -Wl,-stack_size,0x{MainStackBytes:x}"
+            : "";
+    }
+
     // The modes that print a crash trace (debug, release) write a PDB next to the Windows executable: DbgHelp names
     // the trace's frames, with file and line, from it and from nothing else (the emitter writes the debug information
     // as CodeView on Windows). lld-link takes /DEBUG, the mingw linker --pdb= (empty: next to the output).
@@ -925,7 +945,7 @@ internal static class NativeToolchain
         string userLibArgs =
             BuildUserLibraryArgs(cLibraries: cLibraries, libraryPaths: libraryPaths);
         string clangArgs =
-            $"{clangOptLevel}{framePointerFlag}{TargetCodegenFlags()}{lldFlag}{macSysrootArg} -o \"{exeFile}\" \"{optFile}\" -L\"{runtimeLibDir}\" -lrazorforge_runtime{userLibArgs}{compilerRtArg}{windowsThreadingLibs}{unixRuntimeLibs}{linkerErrorLimitFlag}{manifestUacFlag}{WindowsDebugInfoFragment(buildMode: buildMode)}";
+            $"{clangOptLevel}{framePointerFlag}{TargetCodegenFlags()}{lldFlag}{macSysrootArg} -o \"{exeFile}\" \"{optFile}\" -L\"{runtimeLibDir}\" -lrazorforge_runtime{userLibArgs}{compilerRtArg}{windowsThreadingLibs}{unixRuntimeLibs}{linkerErrorLimitFlag}{manifestUacFlag}{WindowsDebugInfoFragment(buildMode: buildMode)}{MainStackFragment()}";
 
         var clangPsi = new ProcessStartInfo
         {
