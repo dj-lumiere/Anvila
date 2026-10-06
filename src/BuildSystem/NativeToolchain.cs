@@ -842,6 +842,21 @@ internal static class NativeToolchain
             : "";
     }
 
+    // The modes that print a crash trace (debug, release) write a PDB next to the Windows executable: DbgHelp names
+    // the trace's frames, with file and line, from it and from nothing else (the emitter writes the debug information
+    // as CodeView on Windows). lld-link takes /DEBUG, the mingw linker --pdb= (empty: next to the output).
+    private static string WindowsDebugInfoFragment(RfBuildMode buildMode)
+    {
+        if (!OperatingSystem.IsWindows() || buildMode is not (RfBuildMode.Debug or RfBuildMode.Release))
+        {
+            return "";
+        }
+
+        return ClangIsMingw.Value
+            ? " -Wl,--pdb="
+            : " -Wl,/DEBUG";
+    }
+
     // The macOS system libraries (-lm/-lSystem/...) only exist as SDK stubs; point the driver at
     // the Command Line Tools SDK explicitly (see MacSdkPath).
     private static string MacSysrootFragment()
@@ -910,7 +925,7 @@ internal static class NativeToolchain
         string userLibArgs =
             BuildUserLibraryArgs(cLibraries: cLibraries, libraryPaths: libraryPaths);
         string clangArgs =
-            $"{clangOptLevel}{framePointerFlag}{TargetCodegenFlags()}{lldFlag}{macSysrootArg} -o \"{exeFile}\" \"{optFile}\" -L\"{runtimeLibDir}\" -lrazorforge_runtime{userLibArgs}{compilerRtArg}{windowsThreadingLibs}{unixRuntimeLibs}{linkerErrorLimitFlag}{manifestUacFlag}";
+            $"{clangOptLevel}{framePointerFlag}{TargetCodegenFlags()}{lldFlag}{macSysrootArg} -o \"{exeFile}\" \"{optFile}\" -L\"{runtimeLibDir}\" -lrazorforge_runtime{userLibArgs}{compilerRtArg}{windowsThreadingLibs}{unixRuntimeLibs}{linkerErrorLimitFlag}{manifestUacFlag}{WindowsDebugInfoFragment(buildMode: buildMode)}";
 
         var clangPsi = new ProcessStartInfo
         {

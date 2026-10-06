@@ -141,7 +141,20 @@ public partial class LlvmEmitter
         int cuId, int cuFileId, int flagsId)
     {
         outSb.Append(value: $"\n!llvm.dbg.cu = !{{!{cuId}}}\n");
-        outSb.Append(value: $"!llvm.module.flags = !{{!{flagsId}}}\n");
+        // Windows reads debug information as CodeView (in a PDB): DbgHelp, which names the frames of a crash
+        // trace, and the Windows debuggers do not read DWARF. The same metadata goes out as CodeView there.
+        if (OperatingSystem.IsWindows())
+        {
+            // The flags id is the last one allocated, so the next one is free.
+            int codeViewId = flagsId + 1;
+            outSb.Append(value: $"!llvm.module.flags = !{{!{flagsId}, !{codeViewId}}}\n");
+            outSb.Append(value: $"!{codeViewId} = !{{i32 2, !\"CodeView\", i32 1}}\n");
+        }
+        else
+        {
+            outSb.Append(value: $"!llvm.module.flags = !{{!{flagsId}}}\n");
+        }
+
         outSb.Append(
             value:
             $"!{cuId} = distinct !DICompileUnit(language: DW_LANG_C99, file: !{cuFileId}, " +
