@@ -38,34 +38,6 @@ internal sealed class TypeResolver
     /// </summary>
     internal TypeSymbol? LookupTypeWithImports(string name)
     {
-        TypeSymbol? found = LookupTypeWithImportsInAnyLanguage(name: name);
-        return found != null && IsHiddenFromCurrentFile(type: found)
-            ? null
-            : found;
-    }
-
-    /// <summary>
-    /// Whether <paramref name="type"/> is a standard library type the language of the file being analyzed does
-    /// not show its programs (Suflae's programs do not see the split collections). The library's own files still
-    /// see it.
-    /// </summary>
-    private bool IsHiddenFromCurrentFile(TypeSymbol type)
-    {
-        string file = _sa._currentFilePath;
-        if (string.IsNullOrEmpty(value: file) || _sa.IsStdlibFile(filePath: file) ||
-            !Builder.Frontends.Languages.HasSourceExtension(fileName: file))
-        {
-            return false;
-        }
-
-        IReadOnlySet<string> hidden = Builder.Frontends.Languages
-                                             .For(language: Builder.Frontends.Languages.OfFile(fileName: file))
-                                             .HiddenStandardTypes;
-        return hidden.Count > 0 && hidden.Contains(item: TypeSymbol.StripTypeArgs(name: type.FullName));
-    }
-
-    private TypeSymbol? LookupTypeWithImportsInAnyLanguage(string name)
-    {
         // Already-qualified names (and the resolution cache for generic instances) are handled
         // directly by the registry — no module search needed.
         if (name.Contains(value: '.'))

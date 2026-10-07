@@ -49,7 +49,9 @@ internal sealed class RfStubWriter
         "Consulting", "Amending", "ListEmittable", "CircularListEmittable", "SplitListEmittable",
         "SplitArrayEmittable", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
         "DD", "FloatDigits", "FloatParsed", "D32Parts", "D64Parts", "D128Parts", "ComplexTextParts",
-        "IntegerMagnitude", "IntegerLimbs", "IntegerLimbView", "IntV", "Exposed", "Wielded"
+        "IntegerMagnitude", "IntegerLimbs", "IntegerLimbView", "IntV", "Exposed", "Wielded",
+        // Suflae has its own lists and no structure-of-arrays layouts.
+        "SplitList", "SplitArray", "CircularList"
     };
 
     /// <summary>The protocols a Suflae program has no use for, left out of an <c>obeys</c> list.</summary>
@@ -120,17 +122,23 @@ internal sealed class RfStubWriter
             }
         }
 
-        IReadOnlySet<string> hidden = Builder.Frontends.Languages.For(language: Language.Suflae)
-                                             .HiddenStandardTypes;
         var types = new Dictionary<string, (Source Source, SyntaxTree.Declaration Declaration)>(
             comparer: StringComparer.Ordinal);
+        // Every type the shared sources declare, shown or not: a creator of a type that is not shown is not shown
+        // either.
+        var declaredTypes = new HashSet<string>(comparer: StringComparer.Ordinal);
         foreach (Source source in shared)
         {
             foreach (SyntaxTree.Declaration declaration in source.Program.Declarations.OfType<SyntaxTree.Declaration>())
             {
-                if (TypeName(declaration: declaration) is { } name && IsPublic(declaration: declaration) &&
-                    !ownTypes.Contains(item: name) && !UnsharedTypes.Contains(item: name) &&
-                    !hidden.Contains(item: $"{source.Module}.{name}") && !types.ContainsKey(key: name))
+                if (TypeName(declaration: declaration) is not { } name)
+                {
+                    continue;
+                }
+
+                declaredTypes.Add(item: name);
+                if (IsPublic(declaration: declaration) && !ownTypes.Contains(item: name) &&
+                    !UnsharedTypes.Contains(item: name) && !types.ContainsKey(key: name))
                 {
                     types[key: name] = (source, declaration);
                 }
@@ -156,7 +164,9 @@ internal sealed class RfStubWriter
                          !routine.Name.StartsWith(value: "__") && !routine.IsDangerous &&
                          OwnerOf(routine: routine, types: types) is var owner &&
                          (owner == null || types.ContainsKey(key: owner)) &&
-                         !(owner == null && routine.OwnerName != null))
+                         !(owner == null && routine.OwnerName != null) &&
+                         !(routine.OwnerName == null && declaredTypes.Contains(item: routine.Name) &&
+                           !types.ContainsKey(key: routine.Name)))
                 {
                     string target = TargetFor(routine: routine);
                     string shape = Shape(target: target, routine: routine);
