@@ -115,10 +115,7 @@ public partial class LlvmEmitter
             return "i16";
         }
 
-        string attrs = GetExplicitParameterAttributes(type: param.Type);
-        return string.IsNullOrEmpty(value: attrs)
-            ? t
-            : $"{t} {attrs}";
+        return t;
     }
 
     /// <summary>
@@ -407,9 +404,6 @@ public partial class LlvmEmitter
             paramType = coerce ?? GetParameterLlvmType(type: param.Type);
         }
 
-        string paramAttrs = byReference || byval || coerce != null
-            ? string.Empty
-            : GetExplicitParameterAttributes(type: param.Type);
         string emittedName;
         if (byReference || byval)
         {
@@ -422,9 +416,7 @@ public partial class LlvmEmitter
                 : param.Name;
         }
 
-        return string.IsNullOrEmpty(value: paramAttrs)
-            ? $"{paramType} %{emittedName}"
-            : $"{paramType} {paramAttrs} %{emittedName}";
+        return $"{paramType} %{emittedName}";
     }
 
     /// <summary>
@@ -1092,24 +1084,11 @@ public partial class LlvmEmitter
 
     private static string GetImplicitMeParameterAttributes(RoutineInfo routine)
     {
-        // An exclusive `me` is `noalias` (also `readonly` when the routine only reads); a wrapper `me` a
-        // @readonly routine only reads is `readonly` (ReceiverFacts).
-        if (Declaration.ReceiverFacts.MeIsExclusive(routine: routine))
-        {
-            return routine.MutationCategory == MutationCategory.Readonly
-                ? "noalias readonly"
-                : "noalias";
-        }
-
+        // No pointer is `noalias`: two tokens may name the same object (`modify_at(index: a)` and
+        // `modify_at(index: b)` with a == b), and the language allows that. A `me` the routine only reads is
+        // `readonly` (ReceiverFacts).
         return Declaration.ReceiverFacts.MeIsReadOnlyPointer(routine: routine)
             ? "readonly"
-            : string.Empty;
-    }
-
-    private static string GetExplicitParameterAttributes(TypeSymbol? type)
-    {
-        return Declaration.ReceiverFacts.IsExclusive(type: type)
-            ? "noalias"
             : string.Empty;
     }
 

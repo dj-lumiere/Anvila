@@ -447,8 +447,6 @@ public enum TokenType
 
     /// <summary>`lookup` prefix keyword — recover a failable call into Lookup[T] (value | absent | Crashable).</summary>
     Lookup,
-
-    /// <summary>Becomes statement keyword (block result value)</summary>
     #endregion
 
     #region Keywords - Module System

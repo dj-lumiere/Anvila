@@ -7,7 +7,7 @@ namespace Builder.Declaration;
 
 /// <summary>
 /// What the language says about a routine's <c>me</c> and its parameters that a backend turns into storage and
-/// aliasing: the type the local <c>me</c> holds, and which pointers are exclusive or only read.
+/// aliasing: the type the local <c>me</c> holds, and which pointers are only read.
 /// </summary>
 internal static class ReceiverFacts
 {
@@ -23,20 +23,15 @@ internal static class ReceiverFacts
     }
 
     /// <summary>
-    /// True when <c>me</c> is the only reference to what it points at for the call: a bare entity (a bound entity
-    /// cannot be duplicated) or a <c>Modifying[T]</c> (a scope-bound exclusive token).
+    /// True when <c>me</c> is a pointer the routine only reads: a <c>@readonly</c> routine of an entity or of a
+    /// wrapper. No pointer is ever exclusive: two tokens may name the same object.
     /// </summary>
-    public static bool MeIsExclusive(RoutineInfo routine)
-    {
-        return IsExclusive(type: routine.OwnerType);
-    }
-
-    /// <summary>True when <c>me</c> is a pointer the routine only reads: a <c>@readonly</c> routine of a wrapper.</summary>
     public static bool MeIsReadOnlyPointer(RoutineInfo routine)
     {
         return routine.MutationCategory == MutationCategory.Readonly &&
-               routine.OwnerType is RecordTypeSymbol owner &&
-               RuntimeContract.WrapperTypes.Contains(item: (owner.GenericDefinition ?? owner).BareName);
+               (routine.OwnerType is EntityTypeSymbol ||
+                routine.OwnerType is RecordTypeSymbol owner &&
+                RuntimeContract.WrapperTypes.Contains(item: (owner.GenericDefinition ?? owner).BareName));
     }
 
     /// <summary>
