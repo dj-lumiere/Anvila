@@ -94,13 +94,16 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The <c>Array[T, N]</c> type of an element-list construction <c>Array[N](a, b, ...)</c>: <c>N</c>
-    /// from <paramref name="arrayLength"/>, <c>T</c> from the first element (the rest are then checked
-    /// against it). Null when the length or the element type does not resolve (already reported).
+    /// from <paramref name="arrayLength"/>, <c>T</c> as written (<c>Array[T, N](a, b, ...)</c>) or else from
+    /// the first element (the rest are then checked against it). Null when the length or the element type
+    /// does not resolve (already reported).
     /// </summary>
     private TypeSymbol? ResolveElementListArrayType(ListLiteralExpression list, TypeExpression arrayLength)
     {
         TypeSymbol length = ResolveType(typeExpr: arrayLength);
-        TypeSymbol elementType = AnalyzeExpression(expression: list.Elements[index: 0]);
+        TypeSymbol elementType = list.ElementType is { } written
+            ? ResolveType(typeExpr: written)
+            : AnalyzeExpression(expression: list.Elements[index: 0]);
         if (length is ErrorTypeSymbol || elementType is ErrorTypeSymbol ||
             _registry.LookupType(name: CollectionNameArray) is not { } arrayDef)
         {
@@ -184,20 +187,31 @@ public sealed partial class SemanticVerifier
     private TypeSymbol? ResolveListElementType(ListLiteralExpression list,
         TypeSymbol? expectedElementType)
     {
+        // A written element type is the type, and the elements are still analyzed against it (a bare
+        // literal conforms to it, a mismatch is reported).
         if (list.ElementType != null)
         {
-            return ResolveType(typeExpr: list.ElementType);
+            expectedElementType = ResolveType(typeExpr: list.ElementType);
         }
 
         if (list.Elements.Count > 0)
         {
             // Infer from first element, propagating expected element type.
-            TypeSymbol elementType = AnalyzeExpression(expression: list.Elements[index: 0],
+            TypeSymbol first = AnalyzeExpression(expression: list.Elements[index: 0],
                 expectedType: expectedElementType);
+            // With the element type written, every element is checked against it, the first one too.
+            bool written = list.ElementType != null && expectedElementType is not ErrorTypeSymbol;
+            TypeSymbol elementType = written ? expectedElementType! : first;
 
             // Validate all elements have compatible types.
             // Use inferred element type as context for subsequent elements (e.g., [] in [[1,2], []]).
             TypeSymbol elemExpected = expectedElementType ?? elementType;
+            if (written && first is not ErrorTypeSymbol && !IsAssignableTo(source: first, target: elementType))
+            {
+                ReportError(code: SemanticDiagnosticCode.ListElementTypeMismatch,
+                    message: $"List element type mismatch: expected '{elementType.Name}', got '{first.Name}'.",
+                    location: list.Elements[index: 0].Location);
+            }
             for (int i = 1; i < list.Elements.Count; i++)
             {
                 TypeSymbol elemType = AnalyzeExpression(expression: list.Elements[index: i],
