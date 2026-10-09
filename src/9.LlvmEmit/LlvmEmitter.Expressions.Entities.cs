@@ -137,6 +137,8 @@ public partial class LlvmEmitter
             EmitLine(sb: sb, line: $"  {payloadPtr} = getelementptr {llvmType}, ptr {slot}, i32 0, i32 1");
             if (payloadType is CrashableTypeSymbol crashable && HoldsErrorObject(carrier: type))
             {
+                // The trace's top frame moves to the throw, so the copy the error keeps points at it.
+                EmitTraceLocUpdate(sb: sb, location: tagged.Location);
                 EmitLine(sb: sb,
                     line: $"  store ptr {EmitCrashObject(sb: sb, crashable: crashable, value: value)}, ptr {payloadPtr}");
             }
@@ -161,9 +163,10 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Moves a caught crashable into the heap object a carrier's error slot holds: <c>{ mold, crashable }</c>, the mold
-    /// naming the crashable's routines (<see cref="EnsureCrashMold"/>) so a call on the error needs no knowledge of
-    /// its type. Returns the object's address.
+    /// Moves a caught crashable into the heap object a carrier's error slot holds: <c>{ mold, trace, crashable }</c>,
+    /// the mold naming the crashable's routines (<see cref="EnsureCrashMold"/>) so a call on the error needs no
+    /// knowledge of its type, and the trace a copy of the calling thread's crash trace, taken here where the error is
+    /// first thrown. Returns the object's address.
     /// </summary>
     private string EmitCrashObject(StringBuilder sb, CrashableTypeSymbol crashable, string value)
     {
@@ -176,17 +179,25 @@ public partial class LlvmEmitter
         string objectPtr = NextTemp();
         EmitLine(sb: sb, line: $"  {objectPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
         EmitLine(sb: sb, line: $"  store ptr {EnsureCrashMold(crashable: crashable)}, ptr {objectPtr}");
+        string tracePtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {tracePtr} = getelementptr {objectType}, ptr {objectPtr}, i32 0, i32 1");
+        EmitLine(sb: sb, line: $"  call void @_rf_trace_snapshot(ptr {tracePtr})");
         string errorPtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {errorPtr} = getelementptr {objectType}, ptr {objectPtr}, i32 0, i32 1");
+        EmitLine(sb: sb,
+            line: $"  {errorPtr} = getelementptr {objectType}, ptr {objectPtr}, i32 0, i32 {CrashObjectErrorField}");
         EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {errorPtr}");
         return objectPtr;
     }
 
-    /// <summary>The heap object a caught crashable lives in: its mold's address, then the crashable.</summary>
+    /// <summary>The heap object a caught crashable lives in: its mold's address, the trace it was first thrown with,
+    /// then the crashable.</summary>
     private static string CrashObjectType(string crashableType)
     {
-        return $"{{ ptr, {crashableType} }}";
+        return $"{{ ptr, {CrashTraceType}, {crashableType} }}";
     }
+
+    /// <summary>The field of <see cref="CrashObjectType"/> holding the crashable.</summary>
+    private const int CrashObjectErrorField = 2;
 
     /// <summary>
     /// A mold: <c>{ type id, the crashable's offset in its object, then one routine per <c>CrashMoldMembers</c> }</c>.
@@ -219,7 +230,7 @@ public partial class LlvmEmitter
         var fields = new List<string>
         {
             $"i64 {typeId}",
-            $"i64 ptrtoint (ptr getelementptr ({CrashObjectType(crashableType: typeName)}, ptr null, i32 0, i32 1) to i64)"
+            $"i64 ptrtoint (ptr getelementptr ({CrashObjectType(crashableType: typeName)}, ptr null, i32 0, i32 {CrashObjectErrorField}) to i64)"
         };
         foreach (string member in Declaration.RuntimeContract.CrashMoldMembers)
         {

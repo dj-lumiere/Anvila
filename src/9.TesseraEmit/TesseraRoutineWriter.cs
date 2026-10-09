@@ -1360,6 +1360,13 @@ internal sealed class TesseraRoutineWriter
             string typeId = $"t{_temps++}";
             Emit(line: $"{typeId} : U64 = 0x{TypeIdHelper.ComputeTypeId(fullName: crashable.FullName):X}");
             Emit(line: $"{errorObject}.to<@{objectRecord}>().type_id.store({typeId})");
+            // The trace's top frame moves to the throw, so the copy the error keeps points at it.
+            if (_traced && tagged.Location is { } at && (at.Line > 0 || at.Column > 0))
+            {
+                Emit(line: $"{TesseraTrace.UpdateLocation}({at.Line}, {at.Column})");
+            }
+
+            Emit(line: $"{TesseraTrace.Snapshot}({errorObject}.to<@{objectRecord}>().trace)");
             Emit(line: $"{errorObject}.to<@{objectRecord}>().error.store({value})");
             Emit(line: $"{slot}.{payloadField}.to<@Addr>().store({errorObject})");
         }

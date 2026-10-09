@@ -608,7 +608,7 @@ public partial class LlvmEmitter
             string crashableType = EnsureRecordTypeDeclared(record: crashable);
             string errorPtr = NextTemp();
             EmitLine(sb: sb,
-                line: $"  {errorPtr} = getelementptr {CrashObjectType(crashableType: crashableType)}, ptr {objectPtr}, i32 0, i32 1");
+                line: $"  {errorPtr} = getelementptr {CrashObjectType(crashableType: crashableType)}, ptr {objectPtr}, i32 0, i32 {CrashObjectErrorField}");
             string error = NextTemp();
             EmitLine(sb: sb, line: $"  {error} = load {crashableType}, ptr {errorPtr}");
             return error;

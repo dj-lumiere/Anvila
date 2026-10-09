@@ -111,6 +111,14 @@ internal sealed class CrashReachability
                     case BinaryExpression binary when !IsPlainOperand(type: binary.Left.ResolvedType):
                         crashes = true;
                         break;
+                    // A recovery variant's throw, before or after it is lowered to a carrier holding the error: the
+                    // error keeps a copy of the trace, which should show this routine.
+                    case VariantReturnStatement { SiteKind: VariantSiteKind.FromThrow }:
+                        crashes = true;
+                        break;
+                    case Expression held when Instantiation.Passes.GenericMonomorphizationPass.CaughtCrashable(expr: held) != null:
+                        crashes = true;
+                        break;
                 }
             });
         return crashes;

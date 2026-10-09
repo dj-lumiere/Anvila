@@ -10,8 +10,13 @@ namespace Builder.Lowering.Passes;
 ///
 /// <para>A <c>throw</c> nothing recovers, an <c>absent</c> in a failable routine and a crashable returned
 /// from a failable routine each become a <see cref="CrashStatement"/>:
-/// <c>crash_report(type_name: "&lt;error type&gt;", message: error.crash_message(), file: .., line: .., column: ..)</c>.
-/// An <c>absent</c> reports <c>AbsentValueError</c> with the routine's name. A recovery variant's
+/// <c>crash_report(type_name: error.crash_title(), message: error.crash_message(), file: .., line: .., column: ..)</c>.
+/// Every report is headed by the error's crash title (its type name in sentence case, unless the crashable writes its
+/// own), whichever way the crash happened.
+/// A caught error thrown again (a <c>Crashables</c>, also what a <c>when</c> that does not handle the error passes on)
+/// becomes <c>crash_report_rethrown(..., error: e, ...)</c> instead: by then the routines between the first throw and
+/// the catcher have returned and left the live trace, so the report prints the trace the error kept from its first
+/// throw and names the place it was thrown again. An <c>absent</c> reports <c>AbsentValueError</c> with the routine's name. A recovery variant's
 /// <c>absent</c> (it returns the empty carrier) is left as it is.</para>
 ///
 /// <para>Runs at Phase 9 over each body that reaches the emitter, after monomorphization, so a thrown
@@ -27,15 +32,17 @@ internal sealed class CrashLoweringPass : AstRewriter
     private readonly TypeRegistry _registry;
     private readonly RoutineInfo? _routine;
     private readonly RoutineInfo _crashReport;
+    private readonly RoutineInfo _crashReportRethrown;
     private readonly TypeSymbol _text;
     private readonly TypeSymbol _s32;
 
     private CrashLoweringPass(TypeRegistry registry, RoutineInfo? routine, RoutineInfo crashReport,
-        TypeSymbol text, TypeSymbol s32)
+        RoutineInfo crashReportRethrown, TypeSymbol text, TypeSymbol s32)
     {
         _registry = registry;
         _routine = routine;
         _crashReport = crashReport;
+        _crashReportRethrown = crashReportRethrown;
         _text = text;
         _s32 = s32;
     }
@@ -53,9 +60,17 @@ internal sealed class CrashLoweringPass : AstRewriter
         }
 
         (TypeSymbol text, TypeSymbol s32, RoutineInfo crashReport) = CrashReportParts(registry: registry);
+        TypeSymbol crashables = registry.LookupType(name: RuntimeContract.Crashables) ??
+                                throw new InvalidOperationException(message: "Core.Crashables is not registered.");
+        RoutineInfo crashReportRethrown = registry.LookupRoutineOverload(
+                                              baseName: $"Core.{RuntimeContract.CrashReportRethrown}",
+                                              argTypes: [text, text, crashables, text, s32, s32]) ??
+                                          throw new InvalidOperationException(
+                                              message: $"Core.{RuntimeContract.CrashReportRethrown} is not registered.");
         var pass = new CrashLoweringPass(registry: registry,
             routine: routine,
             crashReport: crashReport,
+            crashReportRethrown: crashReportRethrown,
             text: text,
             s32: s32);
         for (int i = 0; i < block.Statements.Count; i++)
@@ -70,28 +85,48 @@ internal sealed class CrashLoweringPass : AstRewriter
         return stmt switch
         {
             ThrowStatement { Error.ResolvedType.Name: RuntimeContract.Crashables } throwStmt =>
-                new CrashStatement(
-                    Report: Report(crashReport: _crashReport, text: _text, s32: _s32,
-                        typeName: CaughtError(error: throwStmt.Error, member: RuntimeContract.CrashTitle),
-                        message: CaughtError(error: throwStmt.Error, member: RuntimeContract.CrashMessage),
-                        location: throwStmt.Location),
+                new CrashStatement(Report: Rethrown(error: throwStmt.Error, location: throwStmt.Location),
                     Location: throwStmt.Location),
             ThrowStatement { Error.ResolvedType: { } errorType } throwStmt
                 when errorType is not (ErrorTypeSymbol or GenericParameterTypeSymbol) =>
-                Crash(typeName: errorType.Name,
+                Crash(title: CrashTitle(error: throwStmt.Error, errorType: errorType),
                     message: CrashMessage(error: throwStmt.Error, errorType: errorType),
                     location: throwStmt.Location),
             ReturnStatement { Value: { ResolvedType: CrashableTypeSymbol crashable } error } ret
                 when _routine is { IsFailable: true } =>
-                Crash(typeName: crashable.Name,
+                Crash(title: CrashTitle(error: error, errorType: crashable),
                     message: CrashMessage(error: error, errorType: crashable),
                     location: ret.Location),
             AbsentStatement absent when _routine is { IsFailable: true } =>
-                Crash(typeName: AbsentValueError,
+                Crash(title: Text(value: CrashableTypeSymbol.SynthesizeCrashTitle(typeName: AbsentValueError),
+                        location: absent.Location),
                     message: Text(value: $"Routine '{_routine.BaseName}' signaled absent.", location: absent.Location),
                     location: absent.Location),
             _ => base.VisitStatement(stmt: stmt)
         };
+    }
+
+    /// <summary>
+    /// <c>crash_report_rethrown(type_name: e.crash_title(), message: e.crash_message(), error: e, file: .., line: ..,
+    /// column: ..)</c> for a caught error <paramref name="error"/> thrown again at <paramref name="location"/>.
+    /// </summary>
+    private CallExpression Rethrown(Expression error, SourceLocation location)
+    {
+        return new CallExpression(
+            Callee: new IdentifierExpression(Name: RuntimeContract.CrashReportRethrown, Location: location)
+            {
+                ResolvedRoutine = _crashReportRethrown
+            },
+            Arguments:
+            [
+                Named(name: "type_name", value: CaughtError(error: error, member: RuntimeContract.CrashTitle)),
+                Named(name: "message", value: CaughtError(error: error, member: RuntimeContract.CrashMessage)),
+                Named(name: "error", value: error),
+                Named(name: "file", value: Text(value: location.FileName, location: location)),
+                Named(name: "line", value: S32(value: location.Line, s32: _s32, location: location)),
+                Named(name: "column", value: S32(value: location.Column, s32: _s32, location: location))
+            ],
+            Location: location) { ResolvedRoutine = _crashReportRethrown };
     }
 
     /// <summary>A member of a caught error (a <c>Crashables</c>), called through its mold.</summary>
@@ -100,6 +135,28 @@ internal sealed class CrashLoweringPass : AstRewriter
         return new CrashableDispatchExpression(Carrier: error, MemberName: member, Location: error.Location)
         {
             ResolvedType = _text
+        };
+    }
+
+    /// <summary><c>error.crash_title()</c>, or the title its type name gives when the error type has no routine for it.</summary>
+    private Expression CrashTitle(Expression error, TypeSymbol errorType)
+    {
+        RoutineInfo? crashTitle = _registry.LookupMemberRoutineOverload(type: errorType,
+            memberRoutineName: RuntimeContract.CrashTitle,
+            argTypes: []);
+        if (crashTitle is not { IsGenericDefinition: false })
+        {
+            return Text(value: CrashableTypeSymbol.SynthesizeCrashTitle(typeName: errorType.Name),
+                location: error.Location);
+        }
+
+        return new CallExpression(
+            Callee: new MemberExpression(Object: error, MemberName: RuntimeContract.CrashTitle,
+                Location: error.Location) { ResolvedType = crashTitle.ReturnType },
+            Arguments: [],
+            Location: error.Location)
+        {
+            ResolvedRoutine = crashTitle, ResolvedType = _text, LoweringKind = CallLoweringKind.DirectMemberRoutine
         };
     }
 
@@ -124,25 +181,27 @@ internal sealed class CrashLoweringPass : AstRewriter
         };
     }
 
-    private CrashStatement Crash(string typeName, Expression message, SourceLocation location)
+    private CrashStatement Crash(Expression title, Expression message, SourceLocation location)
     {
         return new CrashStatement(
             Report: Report(crashReport: _crashReport, text: _text, s32: _s32,
-                typeName: Text(value: typeName, location: location), message: message, location: location),
+                typeName: title, message: message, location: location),
             Location: location);
     }
 
     /// <summary>
-    /// <c>crash_report(type_name: "&lt;typeName&gt;", message: "&lt;message&gt;", file: .., line: .., column: ..)</c>
-    /// for a crash at <paramref name="location"/> with a fixed message. Other passes that write a crash
-    /// (StealGuardLoweringPass) build it here, so every crash goes through the same call.
+    /// <c>crash_report(type_name: "&lt;title&gt;", message: "&lt;message&gt;", file: .., line: .., column: ..)</c>
+    /// for a crash at <paramref name="location"/> with a fixed message, headed by the crash title of
+    /// <paramref name="typeName"/>. Other passes that write a crash (StealGuardLoweringPass) build it here, so every
+    /// crash goes through the same call.
     /// </summary>
     internal static CallExpression Report(TypeRegistry registry, string typeName, string message,
         SourceLocation location)
     {
         (TypeSymbol text, TypeSymbol s32, RoutineInfo crashReport) = CrashReportParts(registry: registry);
         return Report(crashReport: crashReport, text: text, s32: s32,
-            typeName: Text(value: typeName, text: text, location: location),
+            typeName: Text(value: CrashableTypeSymbol.SynthesizeCrashTitle(typeName: typeName), text: text,
+                location: location),
             message: Text(value: message, text: text, location: location), location: location);
     }
 

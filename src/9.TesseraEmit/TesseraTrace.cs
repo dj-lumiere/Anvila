@@ -20,6 +20,12 @@ internal static class TesseraTrace
     /// <summary>The routine that moves the top frame to another source position.</summary>
     public const string UpdateLocation = "rf_trace_update_loc";
 
+    /// <summary>The routine that copies the trace into a caught error's object.</summary>
+    public const string Snapshot = "rf_trace_snapshot";
+
+    /// <summary>The record that copy is, a field of every caught error's object.</summary>
+    public const string SnapshotRecord = "RfTraceSnapshot";
+
     /// <summary>The frame stack, the depth, and the routines over them.</summary>
     public const string Support = """
         /// One frame of the crash trace, laid out as the runtime's printer reads it.
@@ -79,6 +85,28 @@ internal static class TesseraTrace
             block entry()
                 frames : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>()
                 return(frames)
+
+        /// A copy of the trace in a caught error's object, laid out as Core's Crashables reads it: the 32 frames,
+        /// then the depth.
+        record RfTraceSnapshot
+            frames : Array<RfTraceFrame, 32>
+            depth  : S32
+
+        /// Copies the trace into a caught error's object where the error is first thrown, so a report of the error
+        /// thrown again shows where it began.
+        routine rf_trace_snapshot(into: @RfTraceSnapshot) -> Void
+            block entry()
+                RF_TRACE_DEPTH.load().store_into(into.depth)
+                jump copy(0)
+
+            block copy(i: USize)
+                branch i.lt(32) ? one(i) : return()
+
+            block one(i: USize)
+                from : @RfTraceFrame = RF_TRACE_STACK.to<@RfTraceFrame>().stride(i)
+                to   : @RfTraceFrame = into.frames.to<@RfTraceFrame>().stride(i)
+                to.store(from.load())
+                jump copy(i.add(1))
 
 
         """;

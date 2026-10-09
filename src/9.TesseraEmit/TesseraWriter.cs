@@ -484,8 +484,9 @@ internal sealed class TesseraWriter
     private readonly Dictionary<string, string> _crashObjectRecords = new(comparer: StringComparer.Ordinal);
 
     /// <summary>
-    /// The record a caught crashable lives in on the heap: its type id, so the object says what it holds, then the
-    /// crashable. A carrier's error slot holds the address of one. Declared on first use.
+    /// The record a caught crashable lives in on the heap: its type id, so the object says what it holds, the trace
+    /// it was first thrown with (Core's Crashables reads it after the first word), then the crashable. A carrier's
+    /// error slot holds the address of one. Declared on first use.
     /// </summary>
     public string CrashObjectRecord(CrashableTypeSymbol crashable)
     {
@@ -496,7 +497,8 @@ internal sealed class TesseraWriter
 
         string name = VerbatimName(text: $"crash object {crashable.FullName}");
         _crashObjectRecords[key: crashable.FullName] = name;
-        _records.Append(value: $"{Private}record {name}\n    type_id : U64\n    error : {TypeText(type: crashable)}\n\n");
+        _records.Append(value: $"{Private}record {name}\n    type_id : U64\n    trace : {TesseraTrace.SnapshotRecord}\n" +
+                               $"    error : {TypeText(type: crashable)}\n\n");
         return name;
     }
 

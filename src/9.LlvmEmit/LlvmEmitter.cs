@@ -1131,6 +1131,19 @@ public partial class LlvmEmitter
         output.AppendLine(value: "  ret ptr @_rf_trace_stack");
         output.AppendLine(value: "}");
         output.AppendLine();
+        // snapshot helper — copies the 32 frames and the depth into a caught error's object (CrashTraceType), so a
+        // report of the error thrown again shows the trace it was first thrown with
+        output.AppendLine(value: $"define private void @_rf_trace_snapshot(ptr %into) {CpuAttributes} {{");
+        output.AppendLine(value: EntryLabel);
+        output.AppendLine(value: $"  %frames = load {TraceRingType}, ptr @_rf_trace_stack");
+        output.AppendLine(value: $"  %framesPtr = getelementptr {CrashTraceType}, ptr %into, i32 0, i32 0");
+        output.AppendLine(value: $"  store {TraceRingType} %frames, ptr %framesPtr");
+        output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+        output.AppendLine(value: $"  %depthPtr = getelementptr {CrashTraceType}, ptr %into, i32 0, i32 1");
+        output.AppendLine(value: "  store i32 %d, ptr %depthPtr");
+        output.AppendLine(value: RetVoidInstruction);
+        output.AppendLine(value: "}");
+        output.AppendLine();
 
         // Exported entry points for the modules that do not own the stack (see AppendShadowStackForwarders).
         foreach ((string name, string returns, string parameters, string arguments) in ShadowStackHelpers)
@@ -1150,8 +1163,16 @@ public partial class LlvmEmitter
         ("_rf_trace_pop", "void", "", ""),
         ("_rf_trace_update_loc", "void", "i32 %ln, i32 %col", "i32 %ln, i32 %col"),
         ("_rf_trace_get_depth", "i32", "", ""),
-        ("_rf_trace_get_frames", "ptr", "", "")
+        ("_rf_trace_get_frames", "ptr", "", ""),
+        ("_rf_trace_snapshot", "void", "ptr %into", "ptr %into")
     ];
+
+    /// <summary>The trace ring: 32 frames of (routine name, file, line, column).</summary>
+    private const string TraceRingType = "[32 x { ptr, ptr, i32, i32 }]";
+
+    /// <summary>A copy of the trace in a caught error's object: the 32 frames, then the depth (Core's
+    /// <c>Crashables.thrown_trace_frames</c> / <c>thrown_trace_depth</c> read it).</summary>
+    private const string CrashTraceType = "{ " + TraceRingType + ", i32 }";
 
     /// <summary>The body of a helper that forwards to <paramref name="callee"/>: the call, then its value.</summary>
     private static string ForwardingCall(string returns, string callee, string arguments)

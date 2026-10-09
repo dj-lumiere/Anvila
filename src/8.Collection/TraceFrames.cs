@@ -17,20 +17,24 @@ internal static class TraceFrames
     }
 
     /// <summary>
-    /// True when <paramref name="routine"/> pushes a frame: a routine of the program (not one the builder wrote), not
+    /// True when <paramref name="routine"/> pushes a frame: a routine of the program (not one the builder wrote,
+    /// except a recovery variant, which runs the program's own routine for a <c>try</c> / <c>grab</c> call), not
     /// <c>@inline</c> (an implementation detail that adds no navigable frame) or <c>@untraced</c> (a frame that is
-    /// noise in a trace, like Core's crash_report), that can crash.
+    /// noise in a trace, like Core's crash_report), that can crash. A recovery variant's frame is what the trace a
+    /// caught error keeps shows of the routines between its throw and the catcher.
     /// </summary>
     public static bool Pushes(RoutineInfo routine, CrashReachability? reachability)
     {
-        return !routine.IsSynthesized && !routine.Annotations.Contains(value: "inline") &&
+        return (!routine.IsSynthesized || routine.IsRecoveryVariant) && !routine.Annotations.Contains(value: "inline") &&
                !routine.Annotations.Contains(value: "untraced") && reachability?.CanCrash(routine: routine) != false;
     }
 
-    /// <summary>The name a frame shows: the routine with its failability and parameter types.</summary>
+    /// <summary>The name a frame shows: the routine with its failability and parameter types. A recovery variant
+    /// shows as the failable routine it runs.</summary>
     public static string Name(RoutineInfo routine)
     {
         string parameters = string.Join(separator: ", ", values: routine.Parameters.Select(selector: p => p.Type.FullName));
-        return $"{routine.BaseName}{(routine.IsFailable ? "!" : "")}({parameters})";
+        bool failable = routine.IsFailable || routine.IsRecoveryVariant;
+        return $"{routine.BaseName}{(failable ? "!" : "")}({parameters})";
     }
 }

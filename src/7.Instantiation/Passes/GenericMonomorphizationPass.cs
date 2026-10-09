@@ -470,6 +470,29 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
+    /// Core's <c>crash_report_rethrown</c>: CrashLoweringPass turns a throw of a caught error (a <c>Crashables</c>)
+    /// into a call of it, so a body that throws one needs it live.
+    /// </summary>
+    internal static RoutineInfo? CrashReportRethrownRoutine(TypeRegistry registry)
+    {
+        if (registry.LookupType(name: "Text") is not { } text || registry.LookupType(name: "S32") is not { } s32 ||
+            registry.LookupType(name: RuntimeContract.Crashables) is not { } crashables)
+        {
+            return null;
+        }
+
+        return registry.LookupRoutineOverload(baseName: $"Core.{RuntimeContract.CrashReportRethrown}",
+            argTypes: [text, text, crashables, text, s32, s32]);
+    }
+
+    /// <summary>Whether a node is a throw of a caught error, which CrashLoweringPass writes out as a
+    /// <c>crash_report_rethrown</c> call.</summary>
+    internal static bool IsRethrow(object? node)
+    {
+        return node is ThrowStatement { Error.ResolvedType.Name: RuntimeContract.Crashables };
+    }
+
+    /// <summary>
     /// The crashable a recovery carrier is built around (a <c>Check</c> or <c>Lookup</c> whose payload is a caught
     /// crashable), before or after the carrier's construction is lowered to a tagged creator. Null for anything else.
     /// </summary>
@@ -532,6 +555,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         bool reportChanged = CrashReportRoutine(registry: ctx.Registry) is { } report &&
                              ctx.LiveRoutineKeys.Add(item: report.RegistryKey);
+        if (IsRethrow(node: node) && CrashReportRethrownRoutine(registry: ctx.Registry) is { } rethrown)
+        {
+            reportChanged |= ctx.LiveRoutineKeys.Add(item: rethrown.RegistryKey);
+        }
+
         Expression? error = node switch
         {
             ThrowStatement t => t.Error,
@@ -560,6 +588,13 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         bool changed = ctx.LiveRoutineKeys.Add(item: crashMsg.RegistryKey) | reportChanged;
+        // The report is headed by the error's crash title.
+        if (ctx.Registry.LookupMemberRoutine(type: errorType,
+                memberRoutineName: RuntimeContract.CrashTitle) is { IsGenericDefinition: false } title)
+        {
+            changed |= ctx.LiveRoutineKeys.Add(item: title.RegistryKey);
+        }
+
         // crash_message's body formats via `me.represent()` (no source AST call), so a thrown error's
         // represent is otherwise never built → link-undefined. Enliven it alongside crash_message.
         if (ctx.Registry.LookupMemberRoutine(type: errorType,
@@ -1132,6 +1167,23 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
                     // CrashLoweringPass (Phase 9) writes the crash out as a crash_report call.
                     Discover(r: CrashReportRoutine(registry: _ctx.Registry));
+                    if (IsRethrow(node: n))
+                    {
+                        Discover(r: CrashReportRethrownRoutine(registry: _ctx.Registry));
+                    }
+
+                    // The report is headed by the thrown error's crash title.
+                    if ((n switch
+                        {
+                            ThrowStatement t => t.Error.ResolvedType,
+                            ReturnStatement r => r.Value?.ResolvedType,
+                            _ => null
+                        }) is CrashableTypeSymbol thrown)
+                    {
+                        Discover(r: _ctx.Registry.LookupMemberRoutine(type: thrown,
+                            memberRoutineName: RuntimeContract.CrashTitle));
+                    }
+
                     MarkOwner(t: n switch
                     {
                         ThrowStatement t => t.Error.ResolvedType,

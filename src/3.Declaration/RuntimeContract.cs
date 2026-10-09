@@ -230,6 +230,11 @@ public static class RuntimeContract
     /// builder writes out (CrashLoweringPass) calls it.</summary>
     public const string CrashReport = "crash_report";
 
+    /// <summary>Core's <c>crash_report_rethrown(type_name:, message:, error:, file:, line:, column:)</c>: the crash of a
+    /// caught error thrown again (a <c>Crashables</c>), which reports the trace the error was first thrown with
+    /// (CrashLoweringPass).</summary>
+    public const string CrashReportRethrown = "crash_report_rethrown";
+
     /// <summary><c>crash_title()</c> on error types — the second Crashable protocol member.</summary>
     /// <remarks>Sites: CrashableExpansionPass (dispatchable-member set), ImplicitCallContract (reachability seed).</remarks>
     public const string CrashTitle = "crash_title";
