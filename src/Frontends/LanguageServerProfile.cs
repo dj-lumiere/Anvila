@@ -23,6 +23,20 @@ public abstract class LanguageServerProfile
     public abstract IReadOnlyList<string> Keywords { get; }
 
     /// <summary>
+    /// Words the language's next version reserves that its lexer doesn't yet: the editor colors one as a keyword where
+    /// it names nothing (a routine or a variable of that name keeps its own color), so code written for the planned
+    /// surface reads right before the builder takes it. Completion doesn't offer them, since the builder still rejects
+    /// them.
+    /// </summary>
+    public virtual IReadOnlyList<string> PlannedKeywords => [];
+
+    /// <summary>
+    /// Keywords the lexer still reserves that the next version drops or renames: the editor keeps coloring them and
+    /// marks them `retired` (the plugins strike them through), so code that still uses one shows what is going away.
+    /// </summary>
+    public virtual IReadOnlyList<string> RetiredKeywords => [];
+
+    /// <summary>
     /// Whether this server serves the document: a file of its own language. A file of the other language
     /// belongs to the other server, so this one neither analyzes nor reports on it.
     /// </summary>

@@ -1969,9 +1969,11 @@ public static class LspServer
     }
 
     // Token modifiers. `deprecated` (bit 0) marks a DEAD use — a variable read after its ownership was
-    // moved out by `steal` — which editors render struck-through / faded (the ownership grey-out).
-    private static readonly List<object?> SemanticTokenModifiers = new() { "deprecated" };
+    // moved out by `steal` — which editors render struck-through / faded (the ownership grey-out). `retired`
+    // (bit 1) marks a keyword the next version drops or renames (the profile's RetiredKeywords).
+    private static readonly List<object?> SemanticTokenModifiers = new() { "deprecated", "retired" };
     private const int ModDeprecated = 1; // 1 << 0
+    private const int ModRetired = 2; // 1 << 1
 
     /// <summary>
     /// <c>textDocument/references</c>: all occurrences of the symbol under the cursor, in this file.
@@ -3489,6 +3491,10 @@ public static class LspServer
             int mods = roles.Dead.Contains(item: (t.Line, t.Column))
                 ? ModDeprecated
                 : 0;
+            if (t.Type != TokenType.Identifier && _profile.RetiredKeywords.Contains(value: t.Text))
+            {
+                mods |= ModRetired;
+            }
             spans.Add(item: (t.Line, t.Column, t.Text.Length, type, mods));
         }
 
@@ -3609,6 +3615,12 @@ public static class LspServer
         if (doc.Registry.LookupVariable(name: t.Text) is { IsPreset: true } or { IsGlobal: true })
         {
             return SemTok(name: "constant");
+        }
+
+        // A word the next version reserves, where it names nothing here, reads as the keyword it is about to be.
+        if (_profile.PlannedKeywords.Contains(value: t.Text))
+        {
+            return SemTok(name: "keyword");
         }
 
         return -1;
