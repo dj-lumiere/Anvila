@@ -84,6 +84,8 @@ internal sealed class WrapperForwardingPass
     private static readonly HashSet<string> ImplicitlyInvokedMemberRoutines =
     [
         "destruct",
+        RuntimeContract.Dispose,
+        RuntimeContract.RoamDispose,
         // Operators/hashing/display: invoked from generic stdlib container
         // bodies after monomorphization, so they bypass SA's lazy synthesis
         // path. Wrappers do not define these themselves — they transparently

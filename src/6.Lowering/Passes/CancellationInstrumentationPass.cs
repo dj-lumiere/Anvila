@@ -218,7 +218,7 @@ public sealed class CancellationInstrumentationPass
                     {
                         Callee: MemberExpression
                         {
-                            MemberName: "destruct", Object: IdentifierExpression destroyed
+                            MemberName: "destruct" or "dispose", Object: IdentifierExpression destroyed
                         },
                         ResolvedRoutine: { } destroy
                     }:
@@ -354,7 +354,7 @@ public sealed class CancellationInstrumentationPass
                 {
                     Callee: MemberExpression
                     {
-                        MemberName: "destruct", Object: IdentifierExpression id
+                        MemberName: "destruct" or "dispose", Object: IdentifierExpression id
                     }
                 }
             })

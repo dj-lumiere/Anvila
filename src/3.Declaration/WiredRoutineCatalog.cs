@@ -187,6 +187,14 @@ public static class WiredRoutineCatalog
             },
             new WiredEntry
             {
+                Name = RuntimeContract.Dispose, Kind = WiredKind.Lifecycle, Views = Known, AlwaysLive = true
+            },
+            new WiredEntry
+            {
+                Name = RuntimeContract.RoamDispose, Kind = WiredKind.Lifecycle, Views = Known, AlwaysLive = true
+            },
+            new WiredEntry
+            {
                 // The copy step `=` runs. Not protocol-bound: whether a type has one is its kind
                 // (TypeRegistry.IsCopiedByAssignment), checked in TypeHasWiredRoutine.
                 Name = "share",

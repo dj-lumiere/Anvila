@@ -542,7 +542,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         {
             Expression: CallExpression
             {
-                Callee: MemberExpression { Object: IdentifierExpression local, MemberName: "destruct" }
+                Callee: MemberExpression { Object: IdentifierExpression local, MemberName: "destruct" or "dispose" }
             }
         }
             ? local.Name

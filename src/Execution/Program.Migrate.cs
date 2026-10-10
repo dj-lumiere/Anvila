@@ -553,6 +553,21 @@ internal partial class Program
                 continue;
             }
 
+            // A written `destruct` no longer gives back its entity's own box (whoever allocated the box does), so its
+            // closing `me.hijack().invalidate()` would free the box twice: it goes.
+            if (token.Type == TokenType.Me && token.Position >= 0 && i + 8 < tokens.Count &&
+                tokens[index: i + 1].Type == TokenType.Dot &&
+                tokens[index: i + 2].Text == "hijack" && tokens[index: i + 5].Type == TokenType.Dot &&
+                tokens[index: i + 6].Text == "invalidate" && tokens[index: i + 8].Type == TokenType.RightParen)
+            {
+                Token last = tokens[index: i + 8];
+                edits.Add(item: new MigrationEdit(Start: token.Position,
+                    Length: last.Position + last.Text.Length - token.Position, Replacement: "",
+                    Line: token.Line, What: "me.hijack().invalidate() in destruct → removed (the builder frees the box)"));
+                i += 8;
+                continue;
+            }
+
             if (token.Type != TokenType.Identifier || token.Position < 0 || i + 1 >= tokens.Count)
             {
                 continue;

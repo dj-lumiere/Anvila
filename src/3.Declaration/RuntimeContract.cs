@@ -163,8 +163,18 @@ public static class RuntimeContract
     /// RoutineReachabilityPass (seed). Body is aggregate field-walk or scalar box.</remarks>
     public const string Serialize = "serialize";
 
-    /// <summary>The teardown member routine every entity has: what scope exit and a last strong release run.</summary>
+    /// <summary>The teardown member routine every type has: it tears down what the value owns. An entity's own box is
+    /// not its business: whoever allocated the box gives it back (see <see cref="Dispose"/>).</summary>
     public const string Destroy = "destruct";
+
+    /// <summary>What an owner runs to end a value it holds: <see cref="Destroy"/>, and for an entity in a box of its own,
+    /// that box given back as well. Scope exit, a reassignment, a member walk and a container's element teardown call
+    /// it. An RC controller holding its entity in its own block calls <see cref="Destroy"/> instead.</summary>
+    public const string Dispose = "dispose";
+
+    /// <summary>The cycle collector's counterpart of <see cref="Dispose"/>: <c>roam_free</c> (which leaves the
+    /// <c>Roamed</c> edges to the collector), then an entity's own box.</summary>
+    public const string RoamDispose = "roam_dispose";
 
     /// <summary>The entity-footprint allocation primitive <c>hollow[T]()</c> (Core, bodyless).</summary>
     public const string Hollow = "hollow";

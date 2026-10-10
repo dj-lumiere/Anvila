@@ -921,7 +921,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// </summary>
     private void SeedLifecycleHooks(Queue<MonomorphizedBody> worklist, ref int totalBuilt)
     {
-        string[] lifecycleHooks = [DestroyMemberRoutineName, "roam_free", "roam_trace"];
+        string[] lifecycleHooks =
+        [
+            DestroyMemberRoutineName, RuntimeContract.Dispose, RuntimeContract.RoamDispose, "roam_free", "roam_trace"
+        ];
         foreach (TypeSymbol t in ctx.Registry
                                   .AllConcreteGenericInstancesUnfiltered
                                   .ToArray())
@@ -1929,6 +1932,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             foreach (string hook in new[]
                      {
                          DestroyMemberRoutineName,
+                         RuntimeContract.Dispose,
+                         RuntimeContract.RoamDispose,
                          "roam_free",
                          "roam_trace"
                      })
@@ -2034,9 +2039,15 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 }
 
                 break;
-            case DestroyMemberRoutineName or "share" or "hash" or "eq":
-                foreach (RoutineInfo fc in MemberVariableWiredCallees(owner: owner,
-                             verb: routine.Name))
+            case DestroyMemberRoutineName or "share" or "hash" or "eq" or "roam_free":
+                // A teardown walk ends each member through its `dispose` (`roam_dispose` for the collector's).
+                string verb = routine.Name switch
+                {
+                    DestroyMemberRoutineName => RuntimeContract.Dispose,
+                    "roam_free" => RuntimeContract.RoamDispose,
+                    _ => routine.Name
+                };
+                foreach (RoutineInfo fc in MemberVariableWiredCallees(owner: owner, verb: verb))
                 {
                     yield return fc;
                 }

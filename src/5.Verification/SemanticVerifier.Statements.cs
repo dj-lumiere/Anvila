@@ -1593,8 +1593,8 @@ public sealed partial class SemanticVerifier
         if (isDestroyDecl && !routine.IsDangerous)
         {
             ReportError(code: SemanticDiagnosticCode.DestroyMustBeDangerous,
-                message: "A user-defined `destroy` must be marked `dangerous` — overriding it " +
-                         "makes you responsible for freeing `me` and its owned fields.",
+                message: "You write `destruct` here without `dangerous`. It tears down what the value owns " +
+                         "by hand (the box itself is given back by whoever allocated it), so mark it `dangerous`.",
                 location: routine.Location);
         }
     }
