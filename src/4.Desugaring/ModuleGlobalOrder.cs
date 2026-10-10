@@ -60,13 +60,15 @@ public static class ModuleGlobalOrder
         return false;
     }
 
-    /// <summary>The block of the first <c>routine start()</c> in <paramref name="orderedFiles"/>, with its program, or
+    /// <summary>The block of the entry file's <c>routine start()</c> (the last in <paramref name="orderedFiles"/>), with its program, or
     /// null after reporting RF-S438 when there is none.</summary>
     public static (SyntaxTree.Program Program, BlockStatement Block)? FindStart(
         List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
         Action<SemanticDiagnosticCode, string, SourceLocation> report, SourceLocation at)
     {
-        foreach ((SyntaxTree.Program program, string _) in orderedFiles)
+        // The files come in initialization order, a module after the modules it imports, so the entry file (which
+        // imports the others) is the last with a start(): another module's start() is only a routine it calls.
+        foreach ((SyntaxTree.Program program, string _) in Enumerable.Reverse(source: orderedFiles))
         {
             foreach (ISyntaxTreeNode node in program.Declarations)
             {

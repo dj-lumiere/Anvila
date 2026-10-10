@@ -250,7 +250,8 @@ public partial class Parser
     private Expression ParseInfix()
     {
         Expression expr = ParseRange();
-        while (CurrentToken.Type == TokenType.Identifier && StartsInfixOperand(token: PeekToken(offset: 1)))
+        while (CurrentToken.Type == TokenType.Identifier && SameLineAsOperand() &&
+               StartsInfixOperand(token: PeekToken(offset: 1)))
         {
             Token name = CurrentToken;
             string? retired = name.Text switch
@@ -274,6 +275,15 @@ public partial class Parser
         }
 
         return expr;
+    }
+
+    /// <summary>Whether the name at the current token stands on the line of the operand before it (a block that ends
+    /// an operand, like a <c>when</c> expression, leaves the next line's name a statement of its own).</summary>
+    private bool SameLineAsOperand()
+    {
+        Token before = PeekToken(offset: -1);
+        return before.Type is not (TokenType.Newline or TokenType.Dedent or TokenType.Indent) &&
+               before.Line == CurrentToken.Line;
     }
 
     private static bool StartsInfixOperand(Token token)

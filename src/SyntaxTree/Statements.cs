@@ -294,6 +294,12 @@ public record PassStatement(SourceLocation Location) : Statement(Location: Locat
 public record DropStatement(Expression Expression, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>
+    /// True for <c>drop x</c> on a local binding the routine owns (set by semantic analysis): the binding is torn
+    /// down here and ends, as after <c>steal x</c>. False for <c>drop f()</c>, which throws a result away.
+    /// </summary>
+    public bool EndsBinding { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

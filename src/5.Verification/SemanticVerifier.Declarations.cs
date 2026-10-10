@@ -371,11 +371,6 @@ public sealed partial class SemanticVerifier
         // Member variable registration into the type's member variable list happens during type body resolution (Phase 4).
     }
 
-    /// <summary>
-    /// Collects a Suflae module-level <c>global</c> (`global counter: S64 = 0`). Registers it both into
-    /// the current scope (intra-file resolution) and into the registry's module-global table (cross-file
-    /// resolution + the codegen storage signal). Unlike a preset the global is MUTABLE and not inlined.
-    /// </summary>
     /// <summary>Globals seen while collecting declarations, with the module and file they are in.</summary>
     private readonly List<(VariableDeclaration Global, string? Module, string File)> _pendingGlobals = [];
 
@@ -396,6 +391,11 @@ public sealed partial class SemanticVerifier
         _currentFilePath = previousFile;
     }
 
+    /// <summary>
+    /// Collects a module-level <c>global</c> (`global counter: S64 = 0`). Registers it both into
+    /// the current scope (intra-file resolution) and into the registry's module-global table (cross-file
+    /// resolution + the codegen storage signal). Unlike a preset the global is MUTABLE and not inlined.
+    /// </summary>
     private void CollectGlobalDeclaration(VariableDeclaration global)
     {
         // The parser requires a type annotation on every `global`, so global.Type is non-null here.

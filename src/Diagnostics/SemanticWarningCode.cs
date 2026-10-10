@@ -48,6 +48,10 @@ public enum SemanticWarningCode
     /// (<c>start_now</c>/<c>retrieve</c>/<c>gather</c>/<c>race</c>) starts it, so its work never runs.</summary>
     AsyncAgentNeverLaunched = 8,
 
+    /// <summary>An <c>Agent[T]</c> bound to a variable is started but nothing takes what it came to (no
+    /// <c>retrieve</c>, no <c>drop</c>, never handed on): its scope's end cancels it and waits for it.</summary>
+    AgentNeverCollected = 9,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // UNREACHABLE CODE WARNINGS (RF-W050 - RF-W099)
     // ═══════════════════════════════════════════════════════════════════════════

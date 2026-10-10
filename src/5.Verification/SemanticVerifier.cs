@@ -187,6 +187,9 @@ public sealed partial class SemanticVerifier
     /// <summary>Ever-stolen-anywhere set (never cleared per-branch) — drives the codegen UAS guard-elision.</summary>
     private readonly HashSet<string> _everStolenVariables = [];
 
+    /// <summary>The locals of the routine being analyzed that a <c>drop x</c> ended (a later use says so).</summary>
+    private readonly HashSet<string> _droppedVariables = new(comparer: StringComparer.Ordinal);
+
     /// <summary>Flags-context stack: while a flags type is on top, bare identifiers are resolved
     /// against the flag members of that type.</summary>
     private readonly Stack<TypeSymbol> _flagsContextStack = new();
@@ -662,6 +665,7 @@ public sealed partial class SemanticVerifier
         {
             (_shapeEffects ??= new ShapeEffectChecker(report: ReportError)).Check(programs: list);
             new AgentOneThreadChecker(report: ReportError).Check(programs: list);
+            new AgentCollectedChecker(warn: ReportWarning).Check(programs: list);
         }
 
         if (!_userBodyCheckMade)
@@ -3122,6 +3126,46 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Attempts to restore import state for routine and reports whether it succeeded.
     /// </summary>
+    /// <summary>
+    /// Runs <paramref name="analyze"/> with the import state (imports, module, realm) of <paramref name="file"/>, then
+    /// puts the current state back. Runs it as it is when the file is the current one or left no snapshot.
+    /// </summary>
+    private T InImportStateOf<T>(string file, Func<T> analyze)
+    {
+        if (string.IsNullOrEmpty(value: file) || file == _currentFilePath ||
+            ResolveSnapshotFilePath(locationFile: file) is not { } snapshotFile)
+        {
+            return analyze();
+        }
+
+        string savedFile = _currentFilePath;
+        var savedImports = new HashSet<string>(collection: _importedModules, comparer: StringComparer.OrdinalIgnoreCase);
+        var savedSymbols = new HashSet<string>(collection: _importedSymbolNames, comparer: StringComparer.Ordinal);
+        var savedAliases = new HashSet<string>(collection: _importedForeignAliases, comparer: StringComparer.Ordinal);
+        string? savedModule = _currentModuleName;
+        var savedRealm = _registry.ResolutionRealm;
+        RestoreImportState(filePath: snapshotFile,
+            importSnapshots: _importSnapshots,
+            symbolNameSnapshots: _symbolNameSnapshots,
+            moduleNameSnapshots: _moduleNameSnapshots);
+        try
+        {
+            return analyze();
+        }
+        finally
+        {
+            _currentFilePath = savedFile;
+            _importedModules.Clear();
+            _importedModules.UnionWith(other: savedImports);
+            _importedSymbolNames.Clear();
+            _importedSymbolNames.UnionWith(other: savedSymbols);
+            _importedForeignAliases.Clear();
+            _importedForeignAliases.UnionWith(other: savedAliases);
+            _currentModuleName = savedModule;
+            _registry.ResolutionRealm = savedRealm;
+        }
+    }
+
     private bool TryRestoreImportStateForRoutine(RoutineInfo routineInfo)
     {
         string? locationFile = routineInfo.Location?.FileName;

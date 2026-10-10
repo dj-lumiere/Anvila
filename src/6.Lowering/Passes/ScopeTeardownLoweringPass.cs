@@ -234,6 +234,16 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                     from: 0,
                     skip: ReturnedName(stmt: stmt));
 
+            // `drop x` tears the binding down here. Semantic analysis recorded it among the stolen names, so it is
+            // not in `live` and the scope's end leaves it alone.
+            case DropStatement { EndsBinding: true, Expression: IdentifierExpression ended } dropped:
+                return ended.ResolvedType is { } endedType &&
+                       TryResolveDestroy(type: endedType, destroy: out RoutineInfo? endedDestroy) &&
+                       endedDestroy != null
+                    ? MakeDestroyStmt(owned: new Owned(Name: ended.Name, Type: endedType, Destroy: endedDestroy),
+                        loc: dropped.Location)
+                    : new BlockStatement(Statements: [], Location: dropped.Location);
+
             case BreakStatement or ContinueStatement:
                 return PrefixDestroys(exit: stmt,
                     live: live,

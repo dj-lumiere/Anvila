@@ -216,6 +216,7 @@ public sealed partial class SemanticVerifier
 
         _deadrefVariables.Clear();
         _everStolenVariables.Clear();
+        _droppedVariables.Clear();
 
         _registry.EnterScope(kind: ScopeKind.Function, name: routine.Name);
         DeclareParametersInScope(routine: routine, routineInfo: routineInfo);
@@ -1316,11 +1317,19 @@ public sealed partial class SemanticVerifier
             }
 
             ReportError(code: SemanticDiagnosticCode.StealOnSomePaths,
-                message: $"'{name}' is taken with 'steal' in a turn of this loop that goes on to the next turn, where " +
-                         $"it is gone. Take it where the loop ends ('return', 'break' right after), or declare it " +
+                message: $"'{name}' is {EndedHow(name: name)} in a turn of this loop that goes on to the next turn, " +
+                         $"where it is gone. End it where the loop ends ('return', 'break' right after), or declare it " +
                          "inside the loop so each turn has its own.",
                 location: loop.Location);
         }
+    }
+
+    /// <summary>How a binding was ended, for a message: "taken with 'steal'" or "ended with 'drop'".</summary>
+    private string EndedHow(string name)
+    {
+        return _droppedVariables.Contains(item: name)
+            ? "ended with 'drop'"
+            : "taken with 'steal'";
     }
 
     private void AnalyzeExpressionStatement(ExpressionStatement expr)
@@ -1396,9 +1405,9 @@ public sealed partial class SemanticVerifier
         return false;
     }
 
-    /// <summary>Whether <paramref name="type"/> is an Agent: RazorForge's record, or a language's own Agent
-    /// entity (Suflae's), held as such or as its handle.</summary>
-    private static bool IsAgentType(TypeSymbol type)
+    /// <summary>Whether <paramref name="type"/> is an Agent: a language's own Agent entity, held as such or as its
+    /// handle.</summary>
+    internal static bool IsAgentType(TypeSymbol type)
     {
         if (type is RecordTypeSymbol
             {
@@ -1444,8 +1453,12 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol targetType = AnalyzeExpression(expression: assign.Target);
-        TypeSymbol valueType =
-            AnalyzeExpression(expression: assign.Value, expectedType: targetType);
+        // A global's initializer stands at the top of start() but was written in the global's own file: its names
+        // resolve there (that file's imports and module), not in the entry file.
+        TypeSymbol valueType = assign.IsGlobalInit
+            ? InImportStateOf(file: assign.Location.FileName,
+                analyze: () => AnalyzeExpression(expression: assign.Value, expectedType: targetType))
+            : AnalyzeExpression(expression: assign.Value, expectedType: targetType);
 
         // Check if target is assignable (variable, member variable, or index)
         if (!IsAssignableTarget(target: assign.Target))

@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Diagnostics;
 using SyntaxTree;
 using TypeModel.Enums;
@@ -115,8 +116,8 @@ public sealed partial class SemanticVerifier
             }
 
             ReportError(code: SemanticDiagnosticCode.StealOnSomePaths,
-                message: $"'{name}' is taken with 'steal' on some paths through this '{construct}' and kept on " +
-                         $"others. What a scope holds is torn down at its end by one rule, so take '{name}' on every " +
+                message: $"'{name}' is {EndedHow(name: name)} on some paths through this '{construct}' and kept on " +
+                         $"others. What a scope holds is torn down at its end by one rule, so end '{name}' on every " +
                          $"path that goes on past the '{construct}', or on none.",
                 location: at);
         }
@@ -971,6 +972,13 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void AnalyzeDropStatement(DropStatement dropped)
     {
+        // `drop x` on a binding ends it here.
+        if (dropped.Expression is IdentifierExpression ended)
+        {
+            AnalyzeDropBinding(dropped: dropped, ended: ended);
+            return;
+        }
+
         // drop must target a routine call, not an arbitrary expression like a literal or variable.
         // Explicit-generic calls (`f[T](...)`) parse to GenericMemberRoutineCallExpression — also a call.
         // A `try`/`check` recovery (`drop check feeder.send(...)`) is likewise a call under the
@@ -999,6 +1007,44 @@ public sealed partial class SemanticVerifier
                       "`.start_now()` on it to start it, and `.retrieve()` later to wait for its value.",
                 location: dropped.Location);
         }
+    }
+
+    /// <summary>
+    /// <c>drop x</c>: tears a local binding the routine owns down here and ends the name, as <c>steal x</c> does
+    /// (a later use is RF-S615, and the scope's end does not tear it down again). A global, <c>me</c>
+    /// and an access token (<c>Viewing</c> / <c>Modifying</c>, which someone else owns) cannot be dropped.
+    /// </summary>
+    private void AnalyzeDropBinding(DropStatement dropped, IdentifierExpression ended)
+    {
+        TypeSymbol type = AnalyzeExpression(expression: ended);
+        if (type is ErrorTypeSymbol)
+        {
+            return;
+        }
+
+        VariableInfo? variable = _registry.LookupVariable(name: ended.Name);
+        string? refusal = variable == null
+            ? $"'{ended.Name}' is not a variable."
+            : ended.Name == "me"
+                ? "'me' belongs to whoever called this routine, so it cannot be dropped here."
+                : variable.IsGlobal
+                    ? $"'{ended.Name}' is a global, which lives as long as the program. `drop` ends a local binding."
+                    : ImplicitToken.IsTokenParameter(parameter: type, tokenKind: out string kind, target: out _)
+                        ? $"'{ended.Name}' is a {kind} token, access to a value someone else owns: dropping it would " +
+                          "end that value. The access ends with its scope."
+                        : null;
+        if (refusal != null)
+        {
+            ReportError(code: SemanticDiagnosticCode.InvalidDropTarget,
+                message: refusal,
+                location: dropped.Location);
+            return;
+        }
+
+        dropped.EndsBinding = true;
+        _deadrefVariables.Add(item: ended.Name);
+        _everStolenVariables.Add(item: ended.Name);
+        _droppedVariables.Add(item: ended.Name);
     }
 
     private void AnalyzeDangerStatement(DangerStatement danger)

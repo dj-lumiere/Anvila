@@ -771,7 +771,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
     private Expression MaybeSpillTop(Expression e, bool objectPos, List<Spill> spills)
     {
+        // A call that hands out access to an entity kept elsewhere (`me[i]`, which is `modify_at`) gives a token, not
+        // the entity: the container still owns it.
         if (objectPos && _droppedEntityTop && e is CallExpression or CreatorExpression &&
+            !HandsOutAccess(e: e) &&
             e.ResolvedType is EntityTypeSymbol droppedEntity &&
             ctx.Registry.GetLifecycle(type: droppedEntity) is { IsBorrow: false, Destroy: not null })
         {
@@ -784,6 +787,14 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         }
 
         return e;
+    }
+
+    /// <summary>Whether <paramref name="e"/> is a call whose routine returns an access token (<c>Viewing</c> /
+    /// <c>Modifying</c>) to a value kept elsewhere.</summary>
+    private static bool HandsOutAccess(Expression e)
+    {
+        return e is CallExpression { ResolvedRoutine.ReturnType: { } returned } &&
+               ImplicitToken.IsTokenParameter(parameter: returned, tokenKind: out _, target: out _);
     }
 
     private IdentifierExpression MakeSpill(Expression producer, List<Spill> spills)

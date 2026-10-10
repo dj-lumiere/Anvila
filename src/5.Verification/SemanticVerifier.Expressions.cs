@@ -524,8 +524,10 @@ public sealed partial class SemanticVerifier
                     ? $"You are using '{id.Name}' in this call, but 'steal {id.Name}' (column {sameCall.Location.Column}) " +
                       $"moves it out in the same call, so this argument would point at an object that has moved. " +
                       $"Use '{id.Name}' in one statement and steal it in a separate one after it."
-                    : $"Variable '{id.Name}' is a deadref — it was invalidated by a previous 'steal' or ownership " +
-                      "transfer. The variable can no longer be used.",
+                    : _droppedVariables.Contains(item: id.Name)
+                        ? $"'{id.Name}' was ended by 'drop {id.Name}', so it can no longer be used."
+                        : $"Variable '{id.Name}' is a deadref — it was invalidated by a previous 'steal' or ownership " +
+                          "transfer. The variable can no longer be used.",
                 location: id.Location);
             return ErrorTypeSymbol.Instance;
         }
