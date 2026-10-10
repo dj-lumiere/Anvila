@@ -100,6 +100,31 @@ internal partial class Program
     /// layout (the one <c>fmt</c> writes), at the first line that differs, with what the line should read. Nothing is
     /// written. Returns 1 when a file has a style error or cannot be read as source, 0 otherwise.
     /// </summary>
+    /// <summary>Prints a hint for each name in <paramref name="source"/> that carries a kind or scope prefix
+    /// (<see cref="NamePrefixLint"/>), and returns how many. A file that does not parse has its own error.</summary>
+    private static int ReportPrefixedNames(string file, string source)
+    {
+        SourceFormatter.ParsedFile parsed;
+        try
+        {
+            parsed = SourceFormatter.ParseFile(source: source, fileName: file, language: SourceLanguage(path: file),
+                what: "the file");
+        }
+        catch (FormatRefusedException)
+        {
+            return 0;
+        }
+
+        List<(SyntaxTree.SourceLocation At, string Name, string Plain)> prefixed = NamePrefixLint.Find(program: parsed.Program);
+        foreach ((SyntaxTree.SourceLocation at, string name, string plain) in prefixed)
+        {
+            Console.WriteLine(value: $"hint[name]: {file}:{at.Line}:{at.Column}: '{name}' carries a prefix for its kind " +
+                                     $"or scope, which the code already shows: name it '{plain}'");
+        }
+
+        return prefixed.Count;
+    }
+
     private static int RunLintCommand(string[] args)
     {
         List<string> targets = args.Skip(count: 1).ToList();
@@ -133,10 +158,12 @@ internal partial class Program
         }
 
         int problems = 0;
+        int hints = 0;
         foreach (string file in files.Distinct()
                                      .Order(comparer: StringComparer.Ordinal))
         {
             string source = File.ReadAllText(path: file);
+            hints += ReportPrefixedNames(file: file, source: source);
             FormatResult result = SourceFormatter.Format(source: source, fileName: file,
                 language: SourceLanguage(path: file), keepOrder: false);
             if (!result.Succeeded)
@@ -170,6 +197,10 @@ internal partial class Program
         Console.WriteLine(value: problems == 0
             ? $"{files.Count} files: no style errors"
             : $"{files.Count} files: {problems} with style errors (fmt fixes them)");
+        if (hints > 0)
+        {
+            Console.WriteLine(value: $"{hints} names carry a prefix (hints, not errors)");
+        }
         return problems == 0
             ? 0
             : 1;
