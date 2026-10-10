@@ -650,9 +650,20 @@ public sealed partial class SemanticVerifier
         TypeSymbol leftType = AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
         // Pass leftType as expected for assignments so RHS literals like `none`
         // see the target's carrier-slot type as their contextual expected type.
+        // A flags test names a bare member of the left side's flags type: `perms have WRITE`.
+        bool flagsTest = binary.Operator is BinaryOperator.Have or BinaryOperator.Lack && leftType is FlagsTypeSymbol;
+        if (flagsTest)
+        {
+            _flagsContextStack.Push(item: leftType);
+        }
+
         TypeSymbol rightType = binary.Operator == BinaryOperator.Assign
             ? AnalyzeExpression(expression: binary.Right, expectedType: leftType)
             : AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
+        if (flagsTest)
+        {
+            _flagsContextStack.Pop();
+        }
 
         // An operand that is a value's token (an iterated element, an element read into a variable) is its value
         // here: `x + 1` with `x: Viewing[S64]` adds S64s (TokenReadLoweringPass reads it through the token).
