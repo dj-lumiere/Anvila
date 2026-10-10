@@ -44,11 +44,11 @@ public sealed class BaseObjectCache
         "    names.add_last(value: \"gamma\")\n" +
         "    show(f\"names: {names} have beta {names have \"beta\"}\")\n" +
         "    var d = Dict[Text, S64]()\n" +
-        "    drop d.add(key: \"one\", value: 1)\n" +
-        "    drop d.add(key: \"two\", value: 2)\n" +
+        "    d[\"one\"] = 1\n" +
+        "    d[\"two\"] = 2\n" +
         "    show(f\"d: {d} d[one] {d[\"one\"]} have two {d have \"two\"}\")\n" +
         "    var di = Dict[S64, S64]()\n" +
-        "    drop di.add(key: 10, value: 100)\n" +
+        "    di[10] = 100\n" +
         "    show(f\"di: {di} size {di.count()}\")\n" +
         "    var s = Set[S64]()\n" +
         "    drop s.add(value: 7)\n" +

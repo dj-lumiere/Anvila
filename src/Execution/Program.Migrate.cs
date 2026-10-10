@@ -143,6 +143,15 @@ internal partial class Program
                 continue;
             }
 
+            // `d.add(key: k, value: v)` on a statement of its own (after `drop` too) is `d[k] = v`.
+            if (token.Text == "add" && i > 0 && tokens[index: i - 1].Type == TokenType.Dot &&
+                next.Type == TokenType.LeftParen && i + 3 < tokens.Count && tokens[index: i + 2].Text == "key" &&
+                tokens[index: i + 3].Type == TokenType.Colon)
+            {
+                edits.AddRange(collection: DictAddEdits(tokens: tokens, index: i));
+                continue;
+            }
+
             // The teardown routine `destroy` is `destruct` (`x.destroy()`, `routine T.destroy()`).
             if (token.Text == "destroy" && i > 0 && tokens[index: i - 1].Type == TokenType.Dot)
             {
@@ -406,6 +415,82 @@ internal partial class Program
             Line: word.Line, What: "unless c → if not (c)");
         yield return new MigrationEdit(Start: end.Position + end.Text.Length, Length: 0, Replacement: ")",
             Line: word.Line, What: "unless c → if not (c)");
+    }
+
+    /// <summary>
+    /// Rewrites <c>d.add(key: k, value: v)</c> at <paramref name="index"/> (the <c>add</c> token) as <c>d[k] = v</c>
+    /// when the call is a whole statement (a leading <c>drop</c> goes too). A call whose result is used is left for
+    /// a hand rewrite, since <c>d[k] = v</c> has no result.
+    /// </summary>
+    private static IEnumerable<MigrationEdit> DictAddEdits(List<Token> tokens, int index)
+    {
+        Token dot = tokens[index: index - 1];
+        int open = index + 1;
+        int close = SkipBalanced(tokens: tokens, start: open, open: TokenType.LeftParen, close: TokenType.RightParen) - 1;
+        bool lineEnds = close + 1 >= tokens.Count || tokens[index: close + 1].Type is TokenType.Newline or TokenType.Dedent;
+        int first = index - 1;
+        while (first > 0 && tokens[index: first - 1].Line == dot.Line &&
+               tokens[index: first - 1].Type is not (TokenType.Newline or TokenType.Indent or TokenType.Dedent))
+        {
+            first--;
+        }
+
+        bool dropped = tokens[index: first].Type == TokenType.Drop;
+        int valueAt = -1;
+        int depth = 0;
+        for (int k = open; k <= close; k++)
+        {
+            TokenType t = tokens[index: k].Type;
+            if (t is TokenType.LeftParen or TokenType.LeftBracket)
+            {
+                depth++;
+            }
+            else if (t is TokenType.RightParen or TokenType.RightBracket)
+            {
+                depth--;
+            }
+            else if (t == TokenType.Comma && depth == 1 && k + 2 <= close && tokens[index: k + 1].Text == "value" &&
+                     tokens[index: k + 2].Type == TokenType.Colon)
+            {
+                valueAt = k;
+            }
+        }
+
+        // Only a whole statement: the receiver starts the line (or follows `drop`) and the call ends it.
+        int receiverStart = dropped ? first + 1 : first;
+        bool receiverStartsStatement = true;
+        for (int k = receiverStart; k < index - 1; k++)
+        {
+            if (tokens[index: k].Type is not (TokenType.Identifier or TokenType.Me or TokenType.Dot or
+                TokenType.LeftBracket or TokenType.RightBracket or TokenType.LeftParen or TokenType.RightParen or
+                TokenType.Comma or TokenType.Colon) && !tokens[index: k].Type.ToString().EndsWith(value: "Literal") &&
+                !tokens[index: k].Type.ToString().StartsWith(value: "Undecided"))
+            {
+                receiverStartsStatement = false;
+                break;
+            }
+        }
+        if (!lineEnds || valueAt < 0 || !receiverStartsStatement)
+        {
+            yield break;
+        }
+
+        Token closing = tokens[index: close];
+        if (dropped)
+        {
+            Token drop = tokens[index: first];
+            yield return new MigrationEdit(Start: drop.Position, Length: tokens[index: first + 1].Position - drop.Position,
+                Replacement: "", Line: drop.Line, What: "drop d.add(...) → d[k] = v");
+        }
+
+        // `.add(key: ` → `[`, `, value: ` → `] = `, `)` → nothing.
+        yield return new MigrationEdit(Start: dot.Position, Length: tokens[index: index + 4].Position - dot.Position,
+            Replacement: "[", Line: dot.Line, What: "d.add(key: k, value: v) → d[k] = v");
+        int valueStart = tokens[index: valueAt + 3].Position;
+        yield return new MigrationEdit(Start: tokens[index: valueAt].Position, Length: valueStart - tokens[index: valueAt].Position,
+            Replacement: "] = ", Line: tokens[index: valueAt].Line, What: "d.add(key: k, value: v) → d[k] = v");
+        yield return new MigrationEdit(Start: closing.Position, Length: 1, Replacement: "", Line: closing.Line,
+            What: "d.add(key: k, value: v) → d[k] = v");
     }
 
     /// <summary>Whether <paramref name="token"/> can begin the expression a recovery keyword or <c>discard</c> takes.</summary>
