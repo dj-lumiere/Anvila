@@ -1490,6 +1490,8 @@ public sealed partial class TypeRegistry
         {
             Realm = choice.Realm,
             Cases = cases,
+            // The protocols conferred so far (the kind's marker ones) stay with the type.
+            ImplementedProtocols = choice.ImplementedProtocols,
             UnderlyingType = choice.UnderlyingType,
             GenericParameters = choice.GenericParameters,
             GenericConstraints = choice.GenericConstraints,
@@ -1521,6 +1523,8 @@ public sealed partial class TypeRegistry
         {
             Realm = flags.Realm,
             Members = members,
+            // The protocols conferred so far (the kind's marker ones) stay with the type.
+            ImplementedProtocols = flags.ImplementedProtocols,
             Visibility = flags.Visibility,
             Location = flags.Location,
             Module = flags.Module

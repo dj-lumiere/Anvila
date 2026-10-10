@@ -26,6 +26,21 @@ internal sealed class ProtocolConformanceAnalyzer
     /// Records implicitly conform to RecordType, entities to EntityType, etc.
     /// Also adds all transitive protocols from the marker's obeys chain.
     /// </summary>
+    /// <summary>
+    /// Confers the kind marker protocols on every choice and flags type (<c>ChoiceType</c> and what it obeys,
+    /// <c>Equatable</c> and <c>Hashable</c> included). They depend on nothing but the kind, so they are in place before
+    /// member variable types are resolved: a member variable of type <c>Set[Color]</c> checks <c>Color</c> against
+    /// <c>Set</c>'s constraints then.
+    /// </summary>
+    internal void ApplyKindMarkerConformanceEarly()
+    {
+        foreach (TypeSymbol type in _sa._registry.GetTypesByCategory(category: TypeCategory.Choice)
+                                     .Concat(second: _sa._registry.GetTypesByCategory(category: TypeCategory.Flags)))
+        {
+            ApplyMarkerConformanceForType(type: type);
+        }
+    }
+
     internal void ApplyImplicitMarkerConformance()
     {
         foreach (TypeSymbol type in _sa._registry.GetTypesWithMemberRoutines())

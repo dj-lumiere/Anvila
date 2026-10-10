@@ -592,6 +592,7 @@ public sealed partial class SemanticVerifier
     /// <summary>Phase 2: Resolve all bare names to qualified types.</summary>
     private void RunPhase2Resolution(Program program)
     {
+        _conformanceAnalyzer.ApplyKindMarkerConformanceEarly();
         _typeBodyResolver.ResolveTypeBodies(program: program);
         _signatureResolver.ResolveAndRegisterPendingRoutines();
         _signatureResolver.ResolveExternalSignatures(program: program);
@@ -2410,6 +2411,7 @@ public sealed partial class SemanticVerifier
         Mark(label: "Phase 1b -> re-resolve conformances");
 
         // Phase 2: Resolve type bodies across ALL files (members can reference types from other files)
+        _conformanceAnalyzer.ApplyKindMarkerConformanceEarly();
         foreach ((Program program, string filePath) in files)
         {
             RestoreImportState(filePath: filePath,

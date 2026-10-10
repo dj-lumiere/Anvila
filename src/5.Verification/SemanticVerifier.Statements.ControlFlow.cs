@@ -407,6 +407,12 @@ public sealed partial class SemanticVerifier
     private void AnalyzeWhenStatement(WhenStatement whenStmt)
     {
         TypeSymbol matchedType = AnalyzeExpression(expression: whenStmt.Expression);
+        // A token (`each m in marks` binds one) is matched by the value it reaches.
+        if (Declaration.RuntimeContract.AccessTokenTypes.Contains(item: matchedType.BareName) &&
+            Wrappers.GetWrapperInnerType(wrapperType: matchedType) is { } reached)
+        {
+            matchedType = reached;
+        }
 
         // Buildtime arm-expansion: concrete arms are unknown until monomorphization.
         // Validate leniently and skip exhaustiveness/order checks.

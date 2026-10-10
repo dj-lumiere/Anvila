@@ -152,6 +152,27 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
         TypeSymbol? subjectType = s.Expression.ResolvedType;
 
+        // A token subject (`each m in marks` binds one) is matched by the value it reaches.
+        if (subjectType is { } tokenType && Declaration.RuntimeContract.AccessTokenTypes.Contains(item: tokenType.BareName) &&
+            Verification.Wrappers.GetWrapperInnerType(wrapperType: tokenType) is { } reached)
+        {
+            string reach = tokenType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Consulting
+                ? Declaration.RuntimeContract.Access
+                : Declaration.RuntimeContract.Control;
+            RoutineInfo? reachRoutine = ctx.Registry.LookupMemberRoutine(type: tokenType, memberRoutineName: reach);
+            var read = new CallExpression(
+                Callee: new MemberExpression(Object: s.Expression, MemberName: reach, Location: s.Location),
+                Arguments: [],
+                Location: s.Location) { ResolvedRoutine = reachRoutine, ResolvedType = reached };
+            if (reachRoutine != null)
+            {
+                read.LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: reachRoutine);
+            }
+
+            s = s with { Expression = read };
+            subjectType = reached;
+        }
+
         if (!IsLowerable(when: s, subjectType: subjectType))
         {
             // Leave for codegen's EmitWhen; update clauses if any bodies changed.
