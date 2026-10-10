@@ -1876,6 +1876,13 @@ public sealed partial class SemanticVerifier
         string? regularMemberRoutine)
     {
         string opSymbol = $"{compound.Operator.ToStringRepresentation()}=";
+        // A token on the right reads its value, as in the binary form (`total += x` over `each x in xs`).
+        if (Declaration.RuntimeContract.AccessTokenTypes.Contains(item: valueType.BareName) &&
+            Wrappers.GetWrapperInnerType(wrapperType: valueType) is { } read)
+        {
+            valueType = read;
+        }
+
         if (targetType.Name != valueType.Name && IsFixedWidthNumericType(type: targetType) &&
             IsFixedWidthNumericType(type: valueType))
         {
