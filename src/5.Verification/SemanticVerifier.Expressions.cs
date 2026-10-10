@@ -28,6 +28,22 @@ public sealed partial class SemanticVerifier
             return preAnalyzed;
         }
 
+        // Where a flags value is expected (a parameter of that flags type, `perms.without(WRITE)`), its members are
+        // named bare, as they are in a `have` / `lack` test.
+        if (expectedType is FlagsTypeSymbol expectedFlags && expression is IdentifierExpression or BinaryExpression &&
+            (_flagsContextStack.Count == 0 || !ReferenceEquals(objA: _flagsContextStack.Peek(), objB: expectedFlags)))
+        {
+            _flagsContextStack.Push(item: expectedFlags);
+            try
+            {
+                return AnalyzeExpression(expression: expression, expectedType: expectedType);
+            }
+            finally
+            {
+                _flagsContextStack.Pop();
+            }
+        }
+
         TypeSymbol resultType = expression switch
         {
             LiteralExpression literal => AnalyzeLiteralExpression(literal: literal,

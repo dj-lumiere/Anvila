@@ -755,6 +755,13 @@ internal partial class Program
                 continue;
             }
 
+            // `perms but WRITE` (taking flags off a value) is `perms.without(WRITE)`.
+            if (token.Text == "but" && i > 0 && ButEdits(tokens: tokens, index: i) is { Count: > 0 } butEdits)
+            {
+                edits.AddRange(collection: butEdits);
+                continue;
+            }
+
             // `unless c` (the old inverted `if`) is `if not (c)`.
             if (token.Text == "unless" && StartsStatement(tokens: tokens, index: i))
             {
@@ -1002,6 +1009,54 @@ internal partial class Program
         }
 
         return tokens.Count;
+    }
+
+    /// <summary>
+    /// Rewrites <c>perms but WRITE</c> at <paramref name="index"/> (the <c>but</c> token) as
+    /// <c>perms.without(WRITE)</c>: the flags on the right, a name (<c>Permission.WRITE</c>) or a parenthesized group
+    /// (<c>(READ and WRITE)</c>), become the argument. Anything else after <c>but</c> is left for a hand rewrite.
+    /// </summary>
+    private static List<MigrationEdit> ButEdits(List<Token> tokens, int index)
+    {
+        Token word = tokens[index: index];
+        Token before = tokens[index: index - 1];
+        if (index + 1 >= tokens.Count || before.Type is not (TokenType.Identifier or TokenType.RightParen))
+        {
+            return [];
+        }
+
+        Token first = tokens[index: index + 1];
+        int gapStart = before.Position + before.Text.Length;
+        if (first.Type == TokenType.LeftParen)
+        {
+            // `x but (A and B)` keeps its parentheses as the call's.
+            return
+            [
+                new MigrationEdit(Start: gapStart, Length: first.Position + 1 - gapStart, Replacement: ".without(",
+                    Line: word.Line, What: "x but y → x.without(y)")
+            ];
+        }
+
+        if (first.Type != TokenType.Identifier)
+        {
+            return [];
+        }
+
+        int last = index + 1;
+        while (last + 2 < tokens.Count && tokens[index: last + 1].Type == TokenType.Dot &&
+               tokens[index: last + 2].Type == TokenType.Identifier)
+        {
+            last += 2;
+        }
+
+        Token end = tokens[index: last];
+        return
+        [
+            new MigrationEdit(Start: gapStart, Length: first.Position - gapStart, Replacement: ".without(",
+                Line: word.Line, What: "x but y → x.without(y)"),
+            new MigrationEdit(Start: end.Position + end.Text.Length, Length: 0, Replacement: ")",
+                Line: word.Line, What: "x but y → x.without(y)")
+        ];
     }
 
     /// <summary>
