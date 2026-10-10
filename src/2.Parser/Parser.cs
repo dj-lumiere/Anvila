@@ -444,8 +444,7 @@ public partial class Parser
         }
 
         // Check for dangerous modifier: dangerous routine foo(), dangerous external("C") routine bar()
-        bool isDangerous = Rules.AllowsUnsafeCode &&
-                           CheckAndAdvance(type: TokenType.Dangerous);
+        bool isDangerous = CheckAndAdvance(type: TokenType.Dangerous);
 
         Token beforeVarOrField = CurrentToken;
         ISyntaxTreeNode? varOrField = TryParseTypeBodyOrVariableDeclaration(
@@ -1020,7 +1019,7 @@ public partial class Parser
         // ═══════════════════════════════════════════════════════════════════════════
 
         // Danger block (unsafe operations)
-        if (Rules.AllowsUnsafeCode && CheckAndAdvance(type: TokenType.Danger))
+        if (CheckAndAdvance(type: TokenType.Danger))
         {
             return ParseDangerStatement();
         }

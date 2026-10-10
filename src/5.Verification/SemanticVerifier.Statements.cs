@@ -212,6 +212,15 @@ public sealed partial class SemanticVerifier
         _registry.EnterScope(kind: ScopeKind.Function, name: routine.Name);
         DeclareParametersInScope(routine: routine, routineInfo: routineInfo);
 
+        if (routine.IsDangerous && UnsafeSurfaceIsBarred())
+        {
+            ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
+                message:
+                $"You mark '{routine.Name}' `dangerous`, but a {_registry.Rules.Name} program has no memory-unsafe " +
+                "routines. Remove `dangerous`, or move the routine into a `.rf` module this program imports.",
+                location: routine.Location);
+        }
+
         bool wasDangerImplicit = routineInfo.IsDangerous && _dangerBlockDepth == 0;
         if (wasDangerImplicit)
         {

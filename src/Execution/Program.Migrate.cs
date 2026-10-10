@@ -67,6 +67,23 @@ internal partial class Program
                     namesToRename++;
                 }
 
+                // A Suflae program has no memory-unsafe code of its own: C goes through a `.rf` module it imports.
+                for (int i = 0; i + 1 < tokens.Count; i++)
+                {
+                    bool unsafeWord = tokens[index: i].Text is "danger" or "dangerous";
+                    bool foreign = tokens[index: i].Text is "C" or "LLVM" && tokens[index: i + 1].Text == "::";
+                    if (unsafeWord || foreign)
+                    {
+                        string what = foreign
+                            ? $"{tokens[index: i].Text}::"
+                            : tokens[index: i].Text;
+                        Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: '{what}' is not available in a " +
+                                                 "Suflae program, move this code into a .rf module the program " +
+                                                 "imports by hand");
+                        namesToRename++;
+                    }
+                }
+
                 // A List keeps its elements from the first place on, so the ring operations are CircularList's.
                 // The receiver's type is not known here (`x.rotate_left(bits:)` on an integer is fine), so only the
                 // list spelling is reported: `rotate_left(n:` and the latest-N history routines.

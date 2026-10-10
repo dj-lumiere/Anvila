@@ -889,10 +889,9 @@ public sealed partial class SemanticVerifier
         }
 
         const string advice =
-            " A RazorForge entity has no reference count, so passing it by value " +
-            "across a Suflae routine would let scope-exit teardown free the same object more than once. " +
-            "Hold it as a field of a Suflae entity, or hand it across as 'Retained[T]' (to keep it) or " +
-            "'Consulting[T]'/'Amending[T]' (to read/write it during the call).";
+            " An entity from a `.rf` module has one owner and no reference count, so handing it across a routine " +
+            "here would free the same object more than once. Keep it as a member variable of an entity of this " +
+            "program and pass that entity, or do the work on it inside the `.rf` module.";
 
         foreach (Parameter p in routine.Parameters)
         {
@@ -901,7 +900,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
                     message:
-                    $"Parameter '{p.Name}' is a bare RazorForge entity '{pe.Name}' (via 'RF::')." +
+                    $"You declare parameter '{p.Name}' as '{pe.Name}', an entity from a `.rf` module." +
                     advice,
                     location: pType.Location);
             }
@@ -913,7 +912,7 @@ public sealed partial class SemanticVerifier
             ResolveType(typeExpr: rType) is EntityTypeSymbol re)
         {
             ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
-                message: $"The return type is a bare RazorForge entity '{re.Name}' (via 'RF::')." +
+                message: $"You declare the return type as '{re.Name}', an entity from a `.rf` module." +
                          advice,
                 location: rType.Location);
         }

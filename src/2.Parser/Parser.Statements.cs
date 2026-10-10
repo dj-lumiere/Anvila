@@ -1376,7 +1376,8 @@ public partial class Parser
 
     /// <summary>
     /// Parses a danger statement (unsafe memory operations block).
-    /// Parsed only where the language allows unsafe code (<c>LanguageRules.AllowsUnsafeCode</c>).
+    /// Parsed in every language: whether a program's own files may use it is checked after parsing
+    /// (<c>LanguageRules.AllowsUnsafeCode</c>), since the standard library always may.
     /// Syntax: <c>danger</c> followed by indented body.
     /// </summary>
     /// <returns>A <see cref="DangerStatement"/> AST node.</returns>

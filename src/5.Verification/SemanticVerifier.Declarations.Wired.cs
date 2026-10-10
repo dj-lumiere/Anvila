@@ -136,13 +136,13 @@ public sealed partial class SemanticVerifier
 
     private void CollectExternalDeclaration(ExternalDeclaration external)
     {
-        // #123: a language without unsafe code cannot use C interop directly
-        if (!_registry.Rules.AllowsUnsafeCode)
+        // A program in a language without unsafe code declares no foreign routine of its own.
+        if (UnsafeSurfaceIsBarredIn(filePath: external.Location.FileName))
         {
             ReportError(code: SemanticDiagnosticCode.SuflaeNoCInterop,
                 message:
-                $"{_registry.Rules.Name} does not support C interop. External declaration '{external.Name}' is not allowed. " +
-                "Use RazorForge for native interop.",
+                $"You declare the foreign routine '{external.Name}' here, but a {_registry.Rules.Name} program " +
+                "cannot reach C directly. Declare it in a `.rf` module and import that module from this program.",
                 location: external.Location);
         }
 

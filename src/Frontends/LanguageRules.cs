@@ -62,8 +62,9 @@ public abstract class LanguageRules
     // SURFACE
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Memory-unsafe surface: <c>dangerous</c> routines, <c>danger</c> blocks, and external (C)
-    /// declarations.</summary>
+    /// <summary>Whether a program may use the memory-unsafe surface: <c>dangerous</c> routines, <c>danger</c>
+    /// blocks, and foreign (<c>C::</c>/<c>LLVM::</c>) routines. Every language parses that surface and its standard
+    /// library may always use it, so this only decides whether the program's own files may.</summary>
     public abstract bool AllowsUnsafeCode { get; }
 
     /// <summary>The <c>pass</c> placeholder statement and declaration.</summary>

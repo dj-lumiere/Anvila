@@ -926,10 +926,12 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeDangerStatement(DangerStatement danger)
     {
-        if (!_registry.Rules.AllowsUnsafeCode && !danger.IsBuilderWritten)
+        if (UnsafeSurfaceIsBarred() && !danger.IsBuilderWritten)
         {
             ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
-                message: $"Danger blocks are not available in {_registry.Rules.Name}.",
+                message:
+                $"A {_registry.Rules.Name} program has no `danger` block: memory is never handled directly here. " +
+                "Code that must handle memory or call C goes in a `.rf` module this program imports.",
                 location: danger.Location);
             return;
         }

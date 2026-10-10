@@ -26,6 +26,19 @@ public sealed partial class SemanticVerifier
     private void CheckCallRealm(IdentifierExpression callee, RoutineInfo routine,
         SourceLocation location)
     {
+        if (routine.IsForeign && UnsafeSurfaceIsBarred())
+        {
+            string realm = routine.Realm == RoutineRealm.C
+                ? "C"
+                : "LLVM";
+            ReportError(code: SemanticDiagnosticCode.SuflaeNoCInterop,
+                message:
+                $"You call the foreign routine '{realm}::{routine.Name}' here, but a {_registry.Rules.Name} program " +
+                "cannot reach it directly. Call it from a `.rf` module and import that module from this program.",
+                location: location);
+            return;
+        }
+
         string? tag = callee.Realm;
         if (tag == null)
         {
@@ -146,21 +159,35 @@ public sealed partial class SemanticVerifier
         return result;
     }
 
+    /// <summary>True while analyzing a program's own file in a language whose programs may not use the
+    /// memory-unsafe surface (<c>LanguageRules.AllowsUnsafeCode</c> false). The standard library always may, and so
+    /// does a module of another language the program imports (a `.rf` module of a Suflae program).</summary>
+    private bool UnsafeSurfaceIsBarred()
+    {
+        return UnsafeSurfaceIsBarredIn(filePath: _currentFilePath);
+    }
+
+    private bool UnsafeSurfaceIsBarredIn(string? filePath)
+    {
+        return !_registry.Rules.AllowsUnsafeCode && filePath != null && !IsStdlibFile(filePath: filePath) &&
+               Builder.Frontends.Languages.HasSourceExtension(fileName: filePath) &&
+               Builder.Frontends.Languages.OfFile(fileName: filePath) == _registry.Language;
+    }
+
     /// <summary>
-    /// Unsafe-call gate for a language without unsafe code (<c>LanguageRules.AllowsUnsafeCode</c> false):
-    /// whatever overload a call finally resolved to, a <c>dangerous</c> routine is outside its surface. This is
-    /// the one choke point (called from both the plain- and generic-call analyzers). Stdlib files are exempt.
-    /// RazorForge and Suflae both allow unsafe code, so for them the <c>danger</c>-block rule applies instead.
+    /// Unsafe-call gate for a language whose programs have no unsafe code (<c>LanguageRules.AllowsUnsafeCode</c>
+    /// false): whatever overload a call finally resolved to, a <c>dangerous</c> routine is outside the program's
+    /// surface. This is the one choke point (called from both the plain- and generic-call analyzers). Stdlib files
+    /// are exempt.
     /// </summary>
     private void EnforceUnsafeCallAllowed(RoutineInfo? resolved, SourceLocation location)
     {
-        if (!_registry.Rules.AllowsUnsafeCode && !IsStdlibFile(filePath: _currentFilePath) &&
-            !InDangerBlock && resolved is { IsDangerous: true } dangerousRoutine)
+        if (UnsafeSurfaceIsBarred() && !InDangerBlock && resolved is { IsDangerous: true } dangerousRoutine)
         {
             ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
                 message:
-                $"'{dangerousRoutine.Name}' is unsafe (dangerous) surface and is not available in " +
-                $"{_registry.Rules.Name} — {_registry.Rules.Name} hides memory-unsafe operations.",
+                $"You call '{dangerousRoutine.Name}' here, but it handles memory directly (`dangerous`), and a " +
+                $"{_registry.Rules.Name} program never does. Code that must goes in a `.rf` module this program imports.",
                 location: location);
         }
     }
