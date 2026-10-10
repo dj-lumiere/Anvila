@@ -66,6 +66,21 @@ internal partial class Program
                 namesToRename++;
             }
 
+            // A dict's pairs are `items()`, `(key, value)` tuples, in place of `entries()` and its `DictEntry` (Suflae's
+            // `items()` gave `DictEntry` too): the loop that reads `.key` / `.value` takes the pair apart instead.
+            for (int i = 1; i + 1 < tokens.Count; i++)
+            {
+                string pairs = tokens[index: i].Text;
+                bool old = language == Language.Suflae ? pairs == "items" : pairs == "entries";
+                if (old && tokens[index: i - 1].Text == "." && tokens[index: i + 1].Text == "(")
+                {
+                    Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: a dict's '{pairs}()' is 'items()' now, " +
+                                             "(key, value) pairs: each (k, v) in d.items(), rewrite it by hand " +
+                                             "(a directory's 'entries()' stays)");
+                    namesToRename++;
+                }
+            }
+
             // A Suflae channel (`make_channel` and its sender and receiver) is one `Queue[T]` now: the pair a call
             // gave back and its uses change shape, so they are listed for a hand rewrite.
             if (language == Language.Suflae)
