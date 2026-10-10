@@ -433,6 +433,10 @@ public enum TokenType
     /// through every handler. The crash counterpart to the recoverable `throw`.</summary>
     Pierce,
 
+    /// <summary>Todo statement keyword - a place not written yet: running it crashes with NotImplementedError naming
+    /// the routine. Like `pierce`, it never makes the routine failable and ends its path.</summary>
+    Todo,
+
 
     /// <summary>`try` prefix keyword — recover a failable call into Maybe[T] (present|absent, no crash info).</summary>
     Try,

@@ -87,6 +87,9 @@ internal sealed partial class AstPrinter
                     : Doc.Concat(prefix, Doc.Text(text: "return "),
                         Expr(expression: ret.Value, context: ExprContext.Statement)));
                 break;
+            case ThrowStatement { IsTodo: true }:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "todo")));
+                break;
             case ThrowStatement thrown:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: thrown.IsFatal
                         ? "pierce "

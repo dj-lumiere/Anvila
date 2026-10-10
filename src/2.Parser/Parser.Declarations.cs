@@ -446,7 +446,9 @@ public partial class Parser
         // @innate routines are builder-intrinsic: the body is supplied by the builder,
         // not the source. Allow them to have no written body at all.
 
+        _routineBeingParsed = name;
         BlockStatement body = ParseRoutineBody(annotations: annotations, location: location);
+        _routineBeingParsed = null;
 
         // Name is the BARE member for an extension-syntax member routine (owner lives in the structured
         // OwnerName/RenderedReceiver/ReceiverType fields); free routines and type-body members keep their

@@ -197,6 +197,10 @@ public record ThrowStatement(Expression Error, SourceLocation Location, bool IsF
     /// </summary>
     public bool IsFatal { get; init; } = IsFatal;
 
+    /// <summary>True for a <c>todo</c> (a place not written yet), which the parser writes as this fatal crash. The
+    /// verifier warns once per routine that has one.</summary>
+    public bool IsTodo { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

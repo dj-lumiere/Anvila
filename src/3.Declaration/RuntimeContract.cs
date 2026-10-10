@@ -129,6 +129,12 @@ public static class RuntimeContract
 
         /// <summary>Take the entity out of its only handle, ending the handle (a creator returning a handle).</summary>
         public const string ReleaseInner = "release_inner";
+
+        /// <summary>The standard library's mark on an entity that guards itself (a mailbox over a channel): its member
+        /// variables are set once when it is made and what they hold does its own locking, so a call on its handle
+        /// takes no access lock. A call that waits inside (taking from an empty mailbox) would otherwise hold the
+        /// lock the other side needs to add.</summary>
+        public const string SelfLockingAnnotation = "self_locking";
     }
 
     /// <summary>The two ORTHOGONAL duplication verbs. <c>assign</c> (Assignable) = the implicit shallow

@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Diagnostics;
 using Builder.Tokenizer;
 using SyntaxTree;
@@ -120,6 +121,10 @@ public partial class Parser
     /// When true, nested routine declarations are rejected.
     /// </summary>
     private bool _inRoutineBody;
+
+    /// <summary>The name of the routine whose body is being parsed, which a <c>todo</c> in it names when it
+    /// crashes. Null outside a routine (a script's loose statements).</summary>
+    private string? _routineBeingParsed;
 
     /// <summary>
     /// Indicates whether we are currently parsing within a 'when' pattern context.
@@ -676,8 +681,10 @@ public partial class Parser
 
         // An `@rf("...")` binding may sit on any type declaration: it is kept on the node for the standard library
         // loader, which takes the declaration out (see RfBindingCheck).
+        // The standard library's `@self_locking` on an entity is kept the same way (the type registration reads it).
         List<string> bindings = annotations.Where(predicate: a => a.StartsWith(value: "rf(",
-                                                    comparisonType: StringComparison.Ordinal))
+                                                     comparisonType: StringComparison.Ordinal) ||
+                                                 a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation)
                                            .ToList();
         SyntaxTree.Declaration Bound(SyntaxTree.Declaration declaration)
         {
@@ -898,7 +905,9 @@ public partial class Parser
         }
 
         List<string> ineffective = annotations.Where(predicate: a => !a.StartsWith(value: "rf(",
-                                                  comparisonType: StringComparison.Ordinal))
+                                                      comparisonType: StringComparison.Ordinal) &&
+                                                  !(a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation &&
+                                                    CurrentToken.Type == TokenType.Entity))
                                               .ToList();
         RejectNoEffect(when: ineffective.Count > 0 && CurrentToken.Type is not (TokenType.Record or TokenType.Bundle),
             at: CurrentToken,
@@ -1142,6 +1151,9 @@ public partial class Parser
             case TokenType.Pierce:
                 Advance();
                 return ParseThrowStatement(isFatal: true);
+            case TokenType.Todo:
+                Advance();
+                return ParseTodoStatement();
             case TokenType.Using:
                 Advance();
                 return ParseUsingStatement();

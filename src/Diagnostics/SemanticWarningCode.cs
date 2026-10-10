@@ -168,6 +168,9 @@ public enum SemanticWarningCode
     /// <summary>Constant name does not follow UPPER_CASE convention.</summary>
     ConstantNameNotUpperCase = 302,
 
+    /// <summary>A routine has a <c>todo</c>: a place not written yet, which crashes when it runs.</summary>
+    TodoLeft = 303,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PERFORMANCE WARNINGS (RF-W350 - RF-W399)
     // ═══════════════════════════════════════════════════════════════════════════

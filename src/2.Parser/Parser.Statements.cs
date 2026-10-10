@@ -1161,6 +1161,24 @@ public partial class Parser
     }
 
     /// <summary>
+    /// Parses <c>todo</c>, a place not written yet. It is a <c>pierce NotImplementedError(feature: ...)</c> naming
+    /// the routine: running it crashes, it never makes the routine failable, and it ends its path, so a body that
+    /// is only <c>todo</c> needs no <c>return</c>.
+    /// </summary>
+    private ThrowStatement ParseTodoStatement()
+    {
+        SourceLocation location = GetLocation(token: PeekToken(offset: -1));
+        ConsumeStatementTerminator();
+        var feature = new LiteralExpression(Value: _routineBeingParsed ?? "start",
+            LiteralType: TokenType.TextLiteral,
+            Location: location);
+        var error = new CallExpression(Callee: new IdentifierExpression(Name: "NotImplementedError", Location: location),
+            Arguments: [new NamedArgumentExpression(Name: "feature", Value: feature, Location: location)],
+            Location: location);
+        return new ThrowStatement(Error: error, Location: location, IsFatal: true) { IsTodo = true };
+    }
+
+    /// <summary>
     /// Parses a break statement for exiting loops.
     /// Syntax: <c>break</c>
     /// </summary>

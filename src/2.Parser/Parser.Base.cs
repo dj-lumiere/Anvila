@@ -491,6 +491,7 @@ public partial class Parser
             TokenType.Return => true,
             TokenType.Throw => true,
             TokenType.Pierce => true,
+            TokenType.Todo => true,
             _ => false
         };
     }

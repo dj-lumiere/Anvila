@@ -90,6 +90,9 @@ public sealed partial class SemanticVerifier
     /// <summary>Current function being analyzed (for return type checking).</summary>
     internal RoutineInfo? _currentRoutine;
 
+    /// <summary>The routines already warned about for a <c>todo</c> (one warning each).</summary>
+    private readonly HashSet<RoutineInfo> _routinesWarnedForTodo = new(comparer: ReferenceEqualityComparer.Instance);
+
     /// <summary>Current type being analyzed (for me reference resolution).</summary>
     internal TypeSymbol? _currentType;
 

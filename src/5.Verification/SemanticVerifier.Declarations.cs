@@ -787,13 +787,25 @@ public sealed partial class SemanticVerifier
 
     private void CollectEntityDeclaration(EntityDeclaration entity)
     {
+        // `@self_locking` lets every call on the entity's handle skip the access lock, which is sound only for an
+        // entity whose member variables never change after it is made and do their own locking.
+        if (entity.LeadingAnnotations?.Contains(item: RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation) ==
+            true && !IsStdlibFile(filePath: _currentFilePath))
+        {
+            ReportError(code: SemanticDiagnosticCode.InvalidAnnotation,
+                message: $"'@self_locking' on '{entity.Name}' belongs to the standard library's own entities, " +
+                         "which lock inside. Remove it: calls on your entity keep their access lock.",
+                location: entity.Location);
+        }
+
         var typeInfo = new EntityTypeSymbol(name: entity.Name)
         {
             GenericParameters = entity.GenericParameters,
             GenericConstraints = entity.GenericConstraints,
             Visibility = entity.Visibility,
             Location = entity.Location,
-            Module = GetCurrentModuleName()
+            Module = GetCurrentModuleName(),
+            Annotations = entity.LeadingAnnotations
         };
 
         TryRegisterType(type: typeInfo, location: entity.Location);

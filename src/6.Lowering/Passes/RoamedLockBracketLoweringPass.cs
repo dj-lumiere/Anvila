@@ -111,7 +111,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             }
 
             List<Expression> handles = FieldAccessHandles(stmt: stmt)
-                                       .Where(predicate: IsHeldPlace)
+                                       .Where(predicate: h => IsHeldPlace(handle: h) && !IsSelfLocking(handle: h))
                                        .ToList();
             // The IterGuard: a write to a member variable of an entity changes the entity itself (a container's
             // count, capacity or buffer), which an `each` loop over it or a call on one of its elements relies
@@ -160,6 +160,18 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             MemberExpression member => IsHeldPlace(handle: member.Object),
             _ => false
         };
+    }
+
+    /// <summary>
+    /// Whether <paramref name="handle"/> is over a standard-library entity marked <c>@self_locking</c> (a mailbox):
+    /// its member variables are set once and lock inside, so calls on it take no access lock. Holding one across a
+    /// call that waits (taking from an empty mailbox) would block the agent that adds.
+    /// </summary>
+    private static bool IsSelfLocking(Expression handle)
+    {
+        return RoamedInnerEntity(t: handle.ResolvedType) is { } entity &&
+               ((entity.GenericDefinition ?? entity).Annotations
+                ?.Contains(item: RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation) ?? false);
     }
 
     private void AddBracket(List<Statement> into, Expression handle, string memberRoutine, bool isFailable = false)

@@ -852,6 +852,15 @@ public sealed partial class SemanticVerifier
                 location: throwStmt.Error.Location);
         }
 
+        // One warning per routine with a `todo`, at its first one, so a routine written in full has none left.
+        if (throwStmt.IsTodo && _routinesWarnedForTodo.Add(item: _currentRoutine))
+        {
+            ReportWarning(code: SemanticWarningCode.TodoLeft,
+                message: $"'{_currentRoutine.Name}' has a 'todo': it crashes with NotImplementedError when it runs. " +
+                         "Write the code in its place.",
+                location: throwStmt.Location);
+        }
+
         // Mark routine as having throw statements (drives the declaration check and variant
         // generation). A `pierce` never marks failable — it is a crash, not a recoverable failure.
         if (!throwStmt.IsFatal)

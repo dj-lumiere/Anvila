@@ -1676,7 +1676,8 @@ public sealed partial class StdlibLoader
             ImplementedProtocols = protocols,
             ConditionalObeys = BuildConditionalObeys(protoExprs: entity.Protocols),
             GenericParameters = entity.GenericParameters,
-            GenericConstraints = entity.GenericConstraints
+            GenericConstraints = entity.GenericConstraints,
+            Annotations = entity.LeadingAnnotations
         };
         if (expandTemplates.Count > 0)
         {

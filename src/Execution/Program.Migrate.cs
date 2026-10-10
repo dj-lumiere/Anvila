@@ -81,16 +81,16 @@ internal partial class Program
                 }
             }
 
-            // A Suflae channel (`make_channel` and its sender and receiver) is one `Queue[T]` now: the pair a call
+            // A Suflae channel (`make_channel` and its sender and receiver) is one `Mailbox[T]` now: the pair a call
             // gave back and its uses change shape, so they are listed for a hand rewrite.
             if (language == Language.Suflae)
             {
                 foreach (Token channel in tokens.Where(predicate: t =>
                              t.Text is "make_channel" or "make_shared_channel"))
                 {
-                    Console.WriteLine(value: $"{file}:{channel.Line}: '{channel.Text}' is a Queue[T] now " +
-                                             "(var q = Queue[T](capacity: n), q.put(item: x), each x in q, " +
-                                             "q.close()), rewrite it by hand");
+                    Console.WriteLine(value: $"{file}:{channel.Line}: '{channel.Text}' is a Mailbox[T] now " +
+                                             "(var m = Mailbox[T](capacity: n), m.add_last(value: x), each x in m, " +
+                                             "m.close()), rewrite it by hand");
                     namesToRename++;
                 }
 
@@ -1360,7 +1360,7 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
-            if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.ReservedWord))
+            if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.Todo or TokenType.ReservedWord))
             {
                 continue;
             }
