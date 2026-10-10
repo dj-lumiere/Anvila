@@ -66,6 +66,25 @@ internal partial class Program
                                              "q.close()), rewrite it by hand");
                     namesToRename++;
                 }
+
+                // A List keeps its elements from the first place on, so the ring operations are CircularList's.
+                // The receiver's type is not known here (`x.rotate_left(bits:)` on an integer is fine), so only the
+                // list spelling is reported: `rotate_left(n:` and the latest-N history routines.
+                for (int i = 1; i + 2 < tokens.Count; i++)
+                {
+                    string name = tokens[index: i].Text;
+                    bool ringRoutine = name is "keep_last" or "keep_first" or "add_last_keeping"
+                                           or "add_first_keeping" ||
+                                       name is "rotate_left" or "rotate_right" &&
+                                       tokens[index: i + 2].Text == "n";
+                    if (ringRoutine && tokens[index: i - 1].Text == ".")
+                    {
+                        Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: '{name}' is CircularList's now " +
+                                                 "(a List keeps its elements from the first place on), make that " +
+                                                 "list a CircularList[T] (import Collections) by hand");
+                        namesToRename++;
+                    }
+                }
             }
 
             if (edits.Count == 0)
