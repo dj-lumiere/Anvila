@@ -682,10 +682,13 @@ internal sealed class WrapperForwardingPass
                 ctx: callCtx);
         }
         else if (wrapperType.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying
-                 or RuntimeContract.Amending or RuntimeContract.Consulting or RuntimeContract.Retained)
+                 or RuntimeContract.Amending or RuntimeContract.Consulting or RuntimeContract.Retained
+                 or RuntimeContract.Guarded)
         {
+            // A Guarded is reached directly only under the ReadOnly policy (analysis rejects the rest), so only to
+            // read.
             innerStatements = BuildReachForwarderStatements(wrapperType: wrapperType,
-                readOnly: innerMemberRoutine.IsReadOnly,
+                readOnly: innerMemberRoutine.IsReadOnly || wrapperType.BareName == RuntimeContract.Guarded,
                 ctx: callCtx);
         }
         else if (wrapperType.BareName is RuntimeContract.Tracked or RuntimeContract.Roamed)

@@ -69,6 +69,21 @@ public sealed partial class SemanticVerifier
     /// <param name="location">Source location for error reporting.</param>
     /// <param name="receiver">The expression the routine is called on, used to name the fix when it is a read token
     /// bound from an index (<c>var x = s[a]</c>).</param>
+    private void ReportGuardedReachedWithoutLock(TypeSymbol wrapperType, string memberName, Expression receiver,
+        SourceLocation location, bool isCall = false)
+    {
+        string holder = receiver is IdentifierExpression named ? named.Name : "the handle";
+        string policy = Wrappers.GuardedPolicy(type: wrapperType)!;
+        string open = policy == "MultiRead"
+            ? $"'using {holder}.consult() as v' to read it, 'using {holder}.amend() as v' to change it"
+            : $"'using {holder}.amend() as v'";
+        ReportError(code: SemanticDiagnosticCode.GuardedReachedWithoutLock,
+            message: $"'{memberName}' is on the value inside '{holder}', a Guarded with the {policy} policy, and that value " +
+                     $"is reached only while its lock is held: open it with {open}, then use 'v.{memberName}{(isCall ? "()" : "")}'. " +
+                     "Only a Guarded with the ReadOnly policy, which has no lock, is read directly.",
+            location: location);
+    }
+
     private void ValidateReadOnlyWrapperMemberRoutineAccess(TypeSymbol wrapperType,
         RoutineInfo memberRoutine, SourceLocation location, Expression? receiver = null)
     {
@@ -94,6 +109,18 @@ public sealed partial class SemanticVerifier
             }
 
             string holder = receiver is IdentifierExpression named ? $"'{named.Name}'" : "This value";
+            if (Wrappers.GuardedPolicy(type: wrapperType) == "ReadOnly")
+            {
+                ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
+                    message:
+                    $"{holder} is a Guarded with the ReadOnly policy, so its value is only read: it can call only " +
+                    $"routines marked @readonly, and '{memberRoutine.Name}' is not. To change the value, share it " +
+                    "under the Exclusive or MultiRead policy and open it with 'using ... amend()', or mark " +
+                    $"'{memberRoutine.Name}' @readonly if it does not change anything.",
+                    location: location);
+                return;
+            }
+
             string writeToken = wrapperName == "Consulting" ? "an Amending token ('amend()')" : "a write token ('.modify()')";
             ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
                 message:

@@ -2918,6 +2918,13 @@ public sealed partial class SemanticVerifier
         // A read token (`Viewing[T]`, `Consulting[T]`) reaches only the inner value's `@readonly` routines: a call
         // that changes the value goes through a write token. The token's own routines and builder-written calls
         // are left out.
+        if (!_isInCompilerGeneratedBody && !call.IsSynthesizedLowering && Wrappers.IsLockedGuarded(type: dispatchType) &&
+            memberRoutine.WrapperForwarderInnerMemberRoutine != null)
+        {
+            ReportGuardedReachedWithoutLock(wrapperType: dispatchType, memberName: memberRoutine.Name,
+                receiver: member.Object, location: call.Location, isCall: true);
+        }
+
         if (_registry.CompilationRules.ChecksReadonly && !_isInCompilerGeneratedBody && !call.IsSynthesizedLowering &&
             Wrappers.IsReadOnlyWrapper(type: dispatchType) && !memberRoutine.IsReadOnly &&
             Wrappers.GetWrapperInnerType(wrapperType: dispatchType) is { } inner &&

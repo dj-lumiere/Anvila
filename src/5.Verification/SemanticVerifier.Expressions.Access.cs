@@ -318,6 +318,15 @@ public sealed partial class SemanticVerifier
     private TypeSymbol? TryForwardWrapperMemberAccess(TypeSymbol lookupType,
         MemberExpression member)
     {
+        if (Wrappers.IsLockedGuarded(type: lookupType) && !_isInCompilerGeneratedBody &&
+            Wrappers.LookupMemberVariableOnWrapperInnerType(wrapperType: lookupType,
+                memberVariableName: member.MemberName) != null)
+        {
+            ReportGuardedReachedWithoutLock(wrapperType: lookupType, memberName: member.MemberName,
+                receiver: member.Object, location: member.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         // Try to forward member variable access to the inner type
         MemberVariableInfo? innerMemberVariable =
             Wrappers.LookupMemberVariableOnWrapperInnerType(wrapperType: lookupType,

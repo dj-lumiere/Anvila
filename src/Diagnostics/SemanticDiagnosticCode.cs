@@ -846,6 +846,11 @@ public enum SemanticDiagnosticCode
     /// across work running in parallel.</summary>
     ThreadArgNotShareable = 632,
 
+    /// <summary>The value inside a <c>Guarded[T, Exclusive]</c> / <c>Guarded[T, MultiRead]</c> is reached on the handle
+    /// itself, outside a <c>using … amend()</c> / <c>consult()</c> that holds its lock. Only a
+    /// <c>Guarded[T, ReadOnly]</c>, which has no lock, is read directly.</summary>
+    GuardedReachedWithoutLock = 649,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // MUTATION INFERENCE ERRORS (RF-S650 - RF-S699)
     // ═══════════════════════════════════════════════════════════════════════════

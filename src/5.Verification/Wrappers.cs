@@ -90,7 +90,24 @@ internal static class Wrappers
     internal static bool IsReadOnlyWrapper(TypeSymbol type)
     {
         string baseName = type.BareName;
-        return ReadOnlyWrapperTypes.Contains(value: baseName);
+        return ReadOnlyWrapperTypes.Contains(value: baseName) || GuardedPolicy(type: type) == "ReadOnly";
+    }
+
+    /// <summary>The lock policy of a <c>Guarded[T, TPolicy]</c> (<c>ReadOnly</c>, <c>Exclusive</c>, <c>MultiRead</c>), or
+    /// null for any other type and for a policy still generic.</summary>
+    internal static string? GuardedPolicy(TypeSymbol type)
+    {
+        return type.BareName == Declaration.RuntimeContract.Guarded &&
+               type.TypeArguments is [_, { } policy] && policy is not GenericParameterTypeSymbol
+            ? policy.BareName
+            : null;
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a <c>Guarded</c> whose value is reached only while its lock is held
+    /// (an <c>Exclusive</c> or <c>MultiRead</c> policy).</summary>
+    internal static bool IsLockedGuarded(TypeSymbol type)
+    {
+        return GuardedPolicy(type: type) is { } policy && policy != "ReadOnly";
     }
 
     /// <summary>

@@ -1567,8 +1567,12 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
                 message:
-                $"Cannot write to member '{member.MemberName}' through read-only wrapper '{objectType.Name}'. " +
-                "Use Modifying[T] for exclusive write access or Amending[T] for locked write access.",
+                Wrappers.GuardedPolicy(type: objectType) == "ReadOnly"
+                    ? $"Cannot write to member '{member.MemberName}': '{objectType.Name}' has the ReadOnly policy, so " +
+                      "its value is only read. Share it under the Exclusive or MultiRead policy and change it inside " +
+                      "'using ... amend()'."
+                    : $"Cannot write to member '{member.MemberName}' through read-only wrapper '{objectType.Name}'. " +
+                      "Use Modifying[T] for exclusive write access or Amending[T] for locked write access.",
                 location: location);
         }
 
