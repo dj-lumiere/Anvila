@@ -44,39 +44,39 @@ internal static class TesseraTrace
         /// Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
             block entry()
-                depth: S32 = RF_TRACE_DEPTH.load()
+                depth: S32 = RF_TRACE_DEPTH.peek()
                 index: USize = zext[S32, USize](band[S32](depth, 31))
                 frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
-                frame.routine.store(routine_name)
-                frame.file.store(file)
-                frame.line.store(line)
-                frame.column.store(column)
-                add[S32](depth, 1).store_into(RF_TRACE_DEPTH)
+                frame.routine.poke(routine_name)
+                frame.file.poke(file)
+                frame.line.poke(line)
+                frame.column.poke(column)
+                add[S32](depth, 1).poke_into(RF_TRACE_DEPTH)
                 return()
 
         routine rf_trace_pop() -> Void
             block entry()
-                sub[S32](RF_TRACE_DEPTH.load(), 1).store_into(RF_TRACE_DEPTH)
+                sub[S32](RF_TRACE_DEPTH.peek(), 1).poke_into(RF_TRACE_DEPTH)
                 return()
 
         /// Moves the top frame to the position of the call about to be made.
         routine rf_trace_update_loc(line: S32, column: S32) -> Void
             block entry()
-                depth: S32 = RF_TRACE_DEPTH.load()
+                depth: S32 = RF_TRACE_DEPTH.peek()
                 branch depth.gt(0) ? update(depth) : return()
 
             block update(depth: S32)
                 index: USize = zext[S32, USize](band[S32](sub[S32](depth, 1), 31))
                 frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
-                frame.line.store(line)
-                frame.column.store(column)
+                frame.line.poke(line)
+                frame.column.poke(column)
                 return()
 
         /// The trace's depth, under the name the LLVM emitter exports it by: Ingrid's crash handler reads it.
         #export("_rf_trace_get_depth_shared")
         routine rf_trace_get_depth() -> S32
             block entry()
-                depth: S32 = RF_TRACE_DEPTH.load()
+                depth: S32 = RF_TRACE_DEPTH.peek()
                 return(depth)
 
         /// The trace's 32 frames, under the name the LLVM emitter exports them by.
@@ -96,7 +96,7 @@ internal static class TesseraTrace
         /// thrown again shows where it began.
         routine rf_trace_snapshot(into: @RfTraceSnapshot) -> Void
             block entry()
-                RF_TRACE_DEPTH.load().store_into(into.depth)
+                RF_TRACE_DEPTH.peek().poke_into(into.depth)
                 jump copy(0)
 
             block copy(i: USize)
@@ -105,7 +105,7 @@ internal static class TesseraTrace
             block one(i: USize)
                 from: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(i)
                 to: @RfTraceFrame = into.frames.to[@RfTraceFrame]().stride(i)
-                to.store(from.load())
+                to.poke(from.peek())
                 jump copy(i.add(1))
 
 

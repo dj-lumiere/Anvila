@@ -121,19 +121,19 @@ internal sealed class TesseraIntrinsics
             "float_to_unsigned" => Conversion(operation: "fptoui"),
             "float_extend" => Conversion(operation: "fpext"),
             "float_narrow" => Conversion(operation: "fptrunc"),
-            "load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().load()",
-            "load_unaligned" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().load_unaligned()",
-            "store" => $"{Argument(index: 0)}.to[@{Type(index: 1)}]().store({Argument(index: 1)})",
+            "load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek()",
+            "load_unaligned" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_unaligned()",
+            "store" => $"{Argument(index: 0)}.to[@{Type(index: 1)}]().poke({Argument(index: 1)})",
             // zero_value is zeroed under an older name: every byte of a T zero.
             "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"{Argument(index: 0)}.ptr_eq({Argument(index: 1)})",
             // The crash trace the routines keep (TesseraTrace), read by Core's crash_report.
-            "trace_depth" => "RF_TRACE_DEPTH.load()",
+            "trace_depth" => "RF_TRACE_DEPTH.peek()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
                 ? $"RF_TRACE_STACK.to[@{pointee}]()"
                 : "RF_TRACE_STACK",
             "element_pointer" => ElementPointer(),
-            "atomic_load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().atomic_load()",
+            "atomic_load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_atomic()",
             "atomic_store" => Atomic(method: "atomic_store"),
             "atomic_add" => Atomic(method: "atomic_fetch_add"),
             "atomic_sub" => Atomic(method: "atomic_fetch_sub"),
@@ -143,12 +143,12 @@ internal sealed class TesseraIntrinsics
             "atomic_exchange" => Atomic(method: "atomic_swap"),
             "atomic_compare_and_exchange" => CompareExchange(),
             "load_element_ref" =>
-                $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().stride({Index(index: 1)}).load()",
+                $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().stride({Index(index: 1)}).peek()",
             "store_element_ref" =>
-                $"{Argument(index: 0)}.to[@{Type(index: 2)}]().stride({Index(index: 1)}).store({Argument(index: 2)})",
+                $"{Argument(index: 0)}.to[@{Type(index: 2)}]().stride({Index(index: 1)}).poke({Argument(index: 2)})",
             "element_at" or "byte_at" =>
                 $"{_spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type)}.to[@{_typeText(arg: _resultType)}]()" +
-                $".stride({Index(index: 1)}).load()",
+                $".stride({Index(index: 1)}).peek()",
             "set_byte_at" => SetElement(),
             "entity_from_hijacked" => Argument(index: 0),
             _ => throw new NotSupportedException(
@@ -229,7 +229,7 @@ internal sealed class TesseraIntrinsics
         string previous = _spill(arg1: Argument(index: 1), arg2: _arguments[index: 1].Type);
         _emit(obj: $"{previous}_swapped: Bool = {Argument(index: 0)}.to[@{type}]()" +
                    $".atomic_compare_exchange_raw({Argument(index: 1)}, {Argument(index: 2)}, {previous})");
-        _emit(obj: $"{previous}_held: {type} = {previous}.load()");
+        _emit(obj: $"{previous}_held: {type} = {previous}.peek()");
         return $"{_typeText(arg: _resultType)}(item0: {previous}_held, item1: {previous}_swapped)";
     }
 
@@ -253,8 +253,8 @@ internal sealed class TesseraIntrinsics
     private string SetElement()
     {
         string slot = _spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type);
-        _emit(obj: $"{slot}.to[@{Type(index: 2)}]().stride({Index(index: 1)}).store({Argument(index: 2)})");
-        return $"{slot}.load()";
+        _emit(obj: $"{slot}.to[@{Type(index: 2)}]().stride({Index(index: 1)}).poke({Argument(index: 2)})");
+        return $"{slot}.peek()";
     }
 
     private string Argument(int index)

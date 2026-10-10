@@ -268,7 +268,7 @@ internal sealed class TesseraWriter
                     branch done
                         ? return(utf8.to[Bytes]())
                         : continue
-                    code: U32 = data.stride(i.to[USize]()).load()
+                    code: U32 = data.stride(i.to[USize]()).peek()
                     character: Char = code.to[Char]()
                     utf8.write("{character}")
                     jump each(i.add(1))
@@ -478,7 +478,7 @@ internal sealed class TesseraWriter
         string error = $"error.to[@{CrashObjectRecord(crashable: crashable)}]().error";
         return Declaration.ReceiverFacts.MeByReference(ownerType: crashable)
             ? error
-            : $"{error}.load()";
+            : $"{error}.peek()";
     }
 
     private readonly Dictionary<string, string> _crashObjectRecords = new(comparer: StringComparer.Ordinal);
@@ -756,7 +756,7 @@ internal sealed class TesseraWriter
             // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
             text.Append(value: $"    block {block}(code: Addr{extra}{Parameters(prefix: prefix)})\n")
                 .Append(value: "        claim slot: @Addr <- code\n")
-                .Append(value: $"        callee: {callable} = slot.to[@{callable}]().load()\n");
+                .Append(value: $"        callee: {callable} = slot.to[@{callable}]().peek()\n");
             if (returns)
             {
                 text.Append(value: $"        result: {returnType} = callee.call({arguments})\n")
