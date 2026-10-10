@@ -1772,8 +1772,7 @@ public sealed partial class SemanticVerifier
         return op is BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.Less
             or BinaryOperator.LessEqual or BinaryOperator.Greater or BinaryOperator.GreaterEqual
             or BinaryOperator.In or BinaryOperator.NotIn or BinaryOperator.Have or BinaryOperator.Lack
-            or BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys
-            or BinaryOperator.Disobeys;
+            or BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys;
     }
 
     /// <summary>Returns true if the operator is a short-circuit logical operator (<c>and</c> or <c>or</c>).</summary>

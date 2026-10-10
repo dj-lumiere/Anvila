@@ -1100,9 +1100,6 @@ public partial class Parser
             case TokenType.If:
                 Advance();
                 return ParseIfStatement();
-            case TokenType.Unless:
-                Advance();
-                return ParseUnlessStatement();
             case TokenType.While:
                 Advance();
                 return ParseWhileStatement();

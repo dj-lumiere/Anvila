@@ -14,7 +14,6 @@ public partial class Parser
         bool isNegated, SourceLocation location)
     {
         var flags = new List<string> { firstFlag };
-        List<string>? excluded = null;
         FlagsTestKind kind = isNegated
             ? FlagsTestKind.Lack
             : FlagsTestKind.Have;
@@ -28,17 +27,11 @@ public partial class Parser
                 flags.Add(item: ConsumeIdentifier(errorMessage: ExpectedFlagNameAfterAnd));
             }
 
-            // Optional 'but' exclusion
-            if (CheckAndAdvance(type: TokenType.But))
-            {
-                excluded = ParseButExclusionList();
-            }
-
             return new FlagsTestExpression(Subject: subject,
                 Kind: kind,
                 TestFlags: flags,
                 Connective: FlagsTestConnective.And,
-                ExcludedFlags: excluded,
+                ExcludedFlags: null,
                 Location: location);
         }
 
@@ -58,39 +51,8 @@ public partial class Parser
                 Location: location);
         }
 
-        if (CheckAndAdvance(type: TokenType.But))
-        {
-            // Single flag with but exclusion: is READ but WRITE
-            excluded = ParseButExclusionList();
-
-            return new FlagsTestExpression(Subject: subject,
-                Kind: kind,
-                TestFlags: flags,
-                Connective: FlagsTestConnective.And,
-                ExcludedFlags: excluded,
-                Location: location);
-        }
-
-        // Should not reach here (caller checked for and/or/but)
-        throw ThrowParseError(message: "Expected 'and', 'or', or 'but' in flags test");
-    }
-
-    /// <summary>
-    /// Parses the excluded-flag list following a <c>but</c> keyword (already consumed):
-    /// the first flag name, then any <c>and</c>-chained additional flag names.
-    /// </summary>
-    private List<string> ParseButExclusionList()
-    {
-        var excluded = new List<string>
-        {
-            ConsumeIdentifier(errorMessage: "Expected flag name after 'but'")
-        };
-        while (CheckAndAdvance(type: TokenType.And))
-        {
-            excluded.Add(item: ConsumeIdentifier(errorMessage: ExpectedFlagNameAfterAnd));
-        }
-
-        return excluded;
+        // Should not reach here (caller checked for and/or)
+        throw ThrowParseError(message: "Expected 'and' or 'or' in flags test");
     }
 
     /// <summary>
@@ -279,7 +241,7 @@ public partial class Parser
         return token.Type switch
         {
             TokenType.And or TokenType.Or or TokenType.Not or TokenType.Is or TokenType.IsNot
-                or TokenType.In or TokenType.NotIn or TokenType.Obeys or TokenType.Disobeys
+                or TokenType.In or TokenType.NotIn or TokenType.Obeys
                 or TokenType.If or TokenType.Else or TokenType.While or TokenType.Each
                 or TokenType.Return or TokenType.Throw or TokenType.Pierce or TokenType.When
                 or TokenType.Then or TokenType.To or TokenType.Til or TokenType.By => true,

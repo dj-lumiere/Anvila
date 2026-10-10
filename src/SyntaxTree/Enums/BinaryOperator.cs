@@ -157,9 +157,6 @@ public enum BinaryOperator
     /// <summary>Protocol conformance check operator (obeys)</summary>
     Obeys,
 
-    /// <summary>Negated protocol conformance check operator (disobeys)</summary>
-    Disobeys,
-
     #endregion
 
     #region Logical - boolean operations with short-circuit evaluation
@@ -169,9 +166,6 @@ public enum BinaryOperator
 
     /// <summary>Short-circuiting logical OR operator (or)</summary>
     Or,
-
-    /// <summary>Flags removal operator (but) — removes flags from a value</summary>
-    But,
 
     #endregion
 
@@ -270,11 +264,9 @@ public static class BinaryOperatorExtensions
                 BinaryOperator.Is => "is",
                 BinaryOperator.IsNot => "isnot",
                 BinaryOperator.Obeys => "obeys",
-                BinaryOperator.Disobeys => "disobeys",
 
                 BinaryOperator.And => "and",
                 BinaryOperator.Or => "or",
-                BinaryOperator.But => "but",
 
                 BinaryOperator.BitwiseAnd => "&",
                 BinaryOperator.BitwiseOr => "|",

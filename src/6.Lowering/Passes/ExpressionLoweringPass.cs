@@ -511,9 +511,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         {
             // Step 1b: none-coalescing (??) -> temp + when-statement
             { Operator: BinaryOperator.NoneCoalesce } => LowerNoneCoalesce(binary: bin),
-            // Step 1e: flags combination (and/but on FlagsTypeSymbol) -> bitwise op
+            // Step 1e: flags combination (and on FlagsTypeSymbol) -> bitwise op
             {
-                Operator: BinaryOperator.And or BinaryOperator.But,
+                Operator: BinaryOperator.And,
                 Left.ResolvedType: FlagsTypeSymbol
             } => LowerFlagsCombination(binary: bin),
             // Step 1f-2: variant type test (x is T / x isnot T) -> type_id compare
@@ -532,8 +532,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 LowerBooleanAnd(bin: bin),
             // Step 1h: boolean Or -> short-circuit ConditionalExpression
             { Operator: BinaryOperator.Or } => LowerBooleanOr(bin: bin),
-            // Step 1h-2: obeys/disobeys -> buildtime Bool literal
-            { Operator: BinaryOperator.Obeys or BinaryOperator.Disobeys } => LowerObeysExpr(
+            // Step 1h-2: obeys -> buildtime Bool literal
+            { Operator: BinaryOperator.Obeys } => LowerObeysExpr(
                 obeysBin: bin),
             // Step 1j: binary-assign with Maybe member target
             { Operator: BinaryOperator.Assign } => LowerBinaryAssign(assignBin: bin, expr: expr),

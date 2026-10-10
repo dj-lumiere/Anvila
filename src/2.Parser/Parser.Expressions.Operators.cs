@@ -184,7 +184,7 @@ public partial class Parser
     {
         Expression expr = ParseRange();
 
-        while (CheckAndAdvance(TokenType.Or, TokenType.But))
+        while (CheckAndAdvance(type: TokenType.Or))
         {
             Token op = PeekToken(offset: -1);
             Expression right = ParseRange();
@@ -387,8 +387,7 @@ public partial class Parser
                    TokenType.IsNot,
                    TokenType.Have,
                    TokenType.Lack,
-                   TokenType.Obeys,
-                   TokenType.Disobeys))
+                   TokenType.Obeys))
         {
             Token op = PeekToken(offset: -1);
             SourceLocation location = GetLocation(token: op);
@@ -430,7 +429,7 @@ public partial class Parser
 
         // Multi-flag chain: `have READ and WRITE`, `lack READ or WRITE`, `have READ but WRITE`.
         if (Check(type: TokenType.Identifier) && PeekToken(offset: 1)
-               .Type is TokenType.And or TokenType.Or or TokenType.But)
+               .Type is TokenType.And or TokenType.Or)
         {
             string firstFlag = ConsumeIdentifier(errorMessage: "Expected flag name");
             return ParseFlagsTestChain(subject: container,
@@ -472,7 +471,7 @@ public partial class Parser
 
         // `is` matches a variant TYPE only — flags membership moved to `have`/`lack`. A flags-chain
         // shape here (`is READ and WRITE`) is now an error steering to the new operator.
-        if (Check(type: TokenType.And) || Check(type: TokenType.Or) || Check(type: TokenType.But))
+        if (Check(type: TokenType.And) || Check(type: TokenType.Or))
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
                 message:

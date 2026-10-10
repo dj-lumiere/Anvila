@@ -137,35 +137,6 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses an unless statement (inverted if).
-    /// Syntax: <c>unless condition</c> = <c>if not condition</c>, followed by indented body.
-    /// </summary>
-    /// <returns>An <see cref="IfStatement"/> with negated condition.</returns>
-    private IfStatement ParseUnlessStatement()
-    {
-        SourceLocation location = GetLocation(token: PeekToken(offset: -1));
-
-        Expression condition = ParseExpression();
-        Statement thenBranch = ParseBody();
-        Statement? elseBranch = null;
-
-        if (CheckAndAdvance(type: TokenType.Else))
-        {
-            elseBranch = ParseBody();
-        }
-
-        // Unless is "if not condition"
-        var negatedCondition = new UnaryExpression(Operator: UnaryOperator.Not,
-            Operand: condition,
-            Location: condition.Location);
-
-        return new IfStatement(Condition: negatedCondition,
-            ThenStatement: thenBranch,
-            ElseStatement: elseBranch,
-            Location: location);
-    }
-
-    /// <summary>
     /// Parses a while loop statement.
     /// Syntax: <c>while condition</c> followed by indented body
     /// Optional <c>else</c> block runs only when the body ran zero times (the condition was false at the first check).
@@ -699,18 +670,12 @@ public partial class Parser
         flags.Add(item: ConsumeIdentifier(errorMessage: "Expected flag name after 'have'/'lack'"));
 
         FlagsTestConnective connective = FlagsTestConnective.And;
-        List<string>? excluded = null;
 
         if (Check(type: TokenType.And))
         {
             while (CheckAndAdvance(type: TokenType.And))
             {
                 flags.Add(item: ConsumeIdentifier(errorMessage: ExpectedFlagNameAfterAnd));
-            }
-
-            if (CheckAndAdvance(type: TokenType.But))
-            {
-                excluded = ParseExcludedFlagsAfterBut();
             }
         }
         else if (Check(type: TokenType.Or))
@@ -721,34 +686,12 @@ public partial class Parser
                 flags.Add(item: ConsumeIdentifier(errorMessage: "Expected flag name after 'or'"));
             }
         }
-        else if (CheckAndAdvance(type: TokenType.But))
-        {
-            excluded = ParseExcludedFlagsAfterBut();
-        }
 
         return new FlagsPattern(FlagNames: flags,
             Connective: connective,
-            ExcludedFlags: excluded,
+            ExcludedFlags: null,
             IsNegated: isNegated,
             Location: loc);
-    }
-
-    /// <summary>
-    /// Parses the excluded-flag list following a <c>but</c> keyword (already consumed): the first flag
-    /// name, then each subsequent <c>and</c>-separated flag name.
-    /// </summary>
-    private List<string> ParseExcludedFlagsAfterBut()
-    {
-        var excluded = new List<string>
-        {
-            ConsumeIdentifier(errorMessage: "Expected flag name after 'but'")
-        };
-        while (CheckAndAdvance(type: TokenType.And))
-        {
-            excluded.Add(item: ConsumeIdentifier(errorMessage: ExpectedFlagNameAfterAnd));
-        }
-
-        return excluded;
     }
 
     /// <summary>

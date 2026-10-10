@@ -539,7 +539,7 @@ public partial class Parser
         _inWhenPatternContext = true;
         Pattern pattern;
         if (Check(type: TokenType.Identifier) && PeekToken(offset: 1)
-               .Type is TokenType.And or TokenType.Or or TokenType.But)
+               .Type is TokenType.And or TokenType.Or)
         {
             // `is` no longer tests flags — flags membership is `have`/`lack`.
             throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,

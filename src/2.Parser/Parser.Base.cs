@@ -258,7 +258,7 @@ public partial class Parser
         return type switch
         {
             TokenType.In or TokenType.Is or TokenType.Obeys => true,
-            TokenType.NotIn or TokenType.IsNot or TokenType.Disobeys => true,
+            TokenType.NotIn or TokenType.IsNot => true,
             TokenType.Have or TokenType.Lack => true,
             TokenType.Less or TokenType.LessEqual or TokenType.Greater or TokenType.GreaterEqual =>
                 true,
@@ -486,7 +486,6 @@ public partial class Parser
             TokenType.Var => true,
             TokenType.Preset => true,
             TokenType.If => true,
-            TokenType.Unless => true,
             TokenType.While => true,
             TokenType.Each => true,
             TokenType.Return => true,
@@ -694,7 +693,6 @@ public partial class Parser
             TokenType.ThreeWayComparison => BinaryOperator.ThreeWayComparator,
             TokenType.And => BinaryOperator.And,
             TokenType.Or => BinaryOperator.Or,
-            TokenType.But => BinaryOperator.But,
             TokenType.Ampersand => BinaryOperator.BitwiseAnd,
             TokenType.Pipe => BinaryOperator.BitwiseOr,
             TokenType.Caret => BinaryOperator.BitwiseXor,
@@ -709,7 +707,6 @@ public partial class Parser
             TokenType.Is => BinaryOperator.Is,
             TokenType.IsNot => BinaryOperator.IsNot,
             TokenType.Obeys => BinaryOperator.Obeys,
-            TokenType.Disobeys => BinaryOperator.Disobeys,
             TokenType.NoneCoalesce => BinaryOperator.NoneCoalesce,
 
             _ => throw new GrammarException(code: GrammarDiagnosticCode.UnexpectedToken,

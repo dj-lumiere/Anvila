@@ -143,6 +143,13 @@ internal partial class Program
                 continue;
             }
 
+            // `unless c` (the old inverted `if`) is `if not (c)`.
+            if (token.Text == "unless" && StartsStatement(tokens: tokens, index: i))
+            {
+                edits.AddRange(collection: UnlessEdits(tokens: tokens, index: i));
+                continue;
+            }
+
             // A routine value's type `Routine[(…), R]` is `Callable[(…), R]`.
             if (token.Text == "Routine" && next.Type == TokenType.LeftBracket)
             {
@@ -365,6 +372,32 @@ internal partial class Program
         }
 
         return tokens.Count;
+    }
+
+    /// <summary>
+    /// Rewrites <c>unless c</c> at <paramref name="index"/> as <c>if not (c)</c>: the condition runs to the end of the
+    /// line.
+    /// </summary>
+    private static IEnumerable<MigrationEdit> UnlessEdits(List<Token> tokens, int index)
+    {
+        Token word = tokens[index: index];
+        int last = index;
+        while (last + 1 < tokens.Count && tokens[index: last + 1].Line == word.Line &&
+               tokens[index: last + 1].Type is not (TokenType.Newline or TokenType.Indent or TokenType.Dedent))
+        {
+            last++;
+        }
+
+        if (last == index)
+        {
+            yield break;
+        }
+
+        Token end = tokens[index: last];
+        yield return new MigrationEdit(Start: word.Position, Length: word.Text.Length + 1, Replacement: "if not (",
+            Line: word.Line, What: "unless c → if not (c)");
+        yield return new MigrationEdit(Start: end.Position + end.Text.Length, Length: 0, Replacement: ")",
+            Line: word.Line, What: "unless c → if not (c)");
     }
 
     /// <summary>Whether <paramref name="token"/> can begin the expression a recovery keyword or <c>discard</c> takes.</summary>

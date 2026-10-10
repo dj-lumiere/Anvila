@@ -129,13 +129,13 @@ internal sealed partial class AstPrinter
         {
             BinaryOperator.Assign => PAssign,
             BinaryOperator.NoneCoalesce => PCoalesce,
-            BinaryOperator.Or or BinaryOperator.But => POr,
+            BinaryOperator.Or => POr,
             BinaryOperator.And => PAnd,
             BinaryOperator.NotEqual or BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual => PEquality,
             BinaryOperator.Equal or BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater
                 or BinaryOperator.GreaterEqual or BinaryOperator.ThreeWayComparator => PComparison,
             BinaryOperator.Have or BinaryOperator.Lack when binary.Left is RangeExpression => PRange,
-            BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys or BinaryOperator.Disobeys
+            BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys
                 or BinaryOperator.Have or BinaryOperator.Lack or BinaryOperator.In
                 or BinaryOperator.NotIn => PIs,
             BinaryOperator.BitwiseOr => PBitOr,
@@ -488,7 +488,7 @@ internal sealed partial class AstPrinter
         var operands = new List<(string? Op, Expression Operand)>();
         Expression current = binary;
         while (current is BinaryExpression b && BinaryPrecedence(binary: b) == level &&
-               b.Operator is BinaryOperator.And or BinaryOperator.Or or BinaryOperator.But)
+               b.Operator is BinaryOperator.And or BinaryOperator.Or)
         {
             operands.Insert(index: 0, item: (b.Operator.ToStringRepresentation(), b.Right));
             current = b.Left;

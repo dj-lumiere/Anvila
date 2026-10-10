@@ -460,7 +460,7 @@ public partial class LlvmEmitter
                 cmpOp: "ne"),
             // obeys/disobeys are folded to a buildtime Bool literal by ExpressionLoweringPass
             // (SA validates the conformance and gates any error). They must never reach codegen.
-            BinaryOperator.Obeys or BinaryOperator.Disobeys => throw new InvalidOperationException(
+            BinaryOperator.Obeys => throw new InvalidOperationException(
                 message:
                 $"BinaryExpression({binary.Operator}) must be folded to a Bool literal by " +
                 $"ExpressionLoweringPass before codegen (loc={binary.Location})"),

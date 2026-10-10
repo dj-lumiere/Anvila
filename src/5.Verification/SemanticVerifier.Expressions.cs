@@ -767,32 +767,8 @@ public sealed partial class SemanticVerifier
         result = null;
         switch (binary.Operator)
         {
-            case BinaryOperator.But when leftType is not FlagsTypeSymbol:
-                ReportError(code: SemanticDiagnosticCode.FlagsTypeMismatch,
-                    message:
-                    $"'but' operator requires a flags type on the left side, but got '{leftType.Name}'.",
-                    location: binary.Location);
-                result = ErrorTypeSymbol.Instance;
-                return true;
-            case BinaryOperator.But when rightType is not FlagsTypeSymbol:
-                ReportError(code: SemanticDiagnosticCode.FlagsTypeMismatch,
-                    message:
-                    $"'but' operator requires a flags type on the right side, but got '{rightType.Name}'.",
-                    location: binary.Location);
-                result = ErrorTypeSymbol.Instance;
-                return true;
-            case BinaryOperator.But when leftType.Name != rightType.Name:
-                ReportError(code: SemanticDiagnosticCode.FlagsTypeMismatch,
-                    message:
-                    $"'but' operator requires both operands to be the same flags type, but got '{leftType.Name}' and '{rightType.Name}'.",
-                    location: binary.Location);
-                result = ErrorTypeSymbol.Instance;
-                return true;
-            case BinaryOperator.But:
-                result = leftType;
-                return true;
             // Flags membership (container-first): `flags have READ` / `flags lack READ` → Bool. A single
-            // flag member/mask on the right; a multi-flag and/or/but chain is a FlagsTestExpression, not
+            // flag member/mask on the right; a multi-flag and/or chain is a FlagsTestExpression, not
             // this binary. Both operands must be the same flags type.
             case BinaryOperator.Have or BinaryOperator.Lack when leftType is FlagsTypeSymbol:
                 if (rightType.Name != leftType.Name)

@@ -358,11 +358,6 @@ public enum TokenType
     /// </summary>
     Obeys,
 
-    /// <summary>
-    /// Negated protocol constraint.
-    /// Asserts a type does NOT implement a protocol (needs T disobeys SomeTrait).
-    /// </summary>
-    Disobeys,
 
     #endregion
 
@@ -382,8 +377,6 @@ public enum TokenType
     /// <summary>One-liner of conditional expression (if predicate then A else B)</summary>
     Then,
 
-    /// <summary>Unless (negative if) conditional keyword</summary>
-    Unless,
 
     /// <summary>Pattern matching when keyword</summary>
     When,
@@ -536,13 +529,6 @@ public enum TokenType
     /// <summary>Logical NOT operator keyword</summary>
     Not,
 
-    /// <summary>
-    /// Flags removal / exclusion keyword.
-    /// Removes flags from a value (perms but WRITE = bitwise AND NOT), or
-    /// excludes flags in 'is' tests (perms is READ and WRITE but EXECUTE =
-    /// READ and WRITE are set AND EXECUTE is NOT set).
-    /// </summary>
-    But,
 
     #endregion
 
