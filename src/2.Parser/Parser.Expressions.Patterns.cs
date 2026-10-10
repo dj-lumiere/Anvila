@@ -1,3 +1,4 @@
+using Builder.Diagnostics;
 using Builder.Tokenizer;
 using SyntaxTree;
 
@@ -250,85 +251,31 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses bitwise OR expressions.
-    /// Syntax: <c>a | b</c>
+    /// Parses bitwise expressions: <c>&lt;&lt; &gt;&gt; &gt;&gt;&gt; &amp; ^ |</c> on one level, left-associative, looser than
+    /// arithmetic (<c>1 &lt;&lt; n + 1</c> shifts by <c>n + 1</c>) and tighter than ranges and comparisons
+    /// (<c>x &amp; 1 == 0</c> is <c>(x &amp; 1) == 0</c>). Different bitwise operators side by side need parentheses
+    /// (<c>(a &amp; b) | c</c>), a chain of one of them does not (<c>a | b | c</c>).
     /// </summary>
     /// <returns>The parsed expression.</returns>
-    private Expression ParseBitwiseOr()
-    {
-        Expression expr = ParseBitwiseXor();
-
-        while (CheckAndAdvance(type: TokenType.Pipe))
-        {
-            Token op = PeekToken(offset: -1);
-            Expression right = ParseBitwiseXor();
-            expr = new BinaryExpression(Left: expr,
-                Operator: TokenToBinaryOperator(tokenType: op.Type),
-                Right: right,
-                Location: GetLocation(token: op));
-        }
-
-        return expr;
-    }
-
-    /// <summary>
-    /// Parses bitwise XOR expressions.
-    /// Syntax: <c>a ^ b</c>
-    /// </summary>
-    /// <returns>The parsed expression.</returns>
-    private Expression ParseBitwiseXor()
-    {
-        Expression expr = ParseBitwiseAnd();
-
-        while (CheckAndAdvance(type: TokenType.Caret))
-        {
-            Token op = PeekToken(offset: -1);
-            Expression right = ParseBitwiseAnd();
-            expr = new BinaryExpression(Left: expr,
-                Operator: TokenToBinaryOperator(tokenType: op.Type),
-                Right: right,
-                Location: GetLocation(token: op));
-        }
-
-        return expr;
-    }
-
-    /// <summary>
-    /// Parses bitwise AND expressions.
-    /// Syntax: <c>a &amp; b</c>
-    /// </summary>
-    /// <returns>The parsed expression.</returns>
-    private Expression ParseBitwiseAnd()
-    {
-        Expression expr = ParseShift();
-
-        while (CheckAndAdvance(type: TokenType.Ampersand))
-        {
-            Token op = PeekToken(offset: -1);
-            Expression right = ParseShift();
-            expr = new BinaryExpression(Left: expr,
-                Operator: TokenToBinaryOperator(tokenType: op.Type),
-                Right: right,
-                Location: GetLocation(token: op));
-        }
-
-        return expr;
-    }
-
-    /// <summary>
-    /// Parses bit shift expressions.
-    /// Syntax: <c>a &lt;&lt; b</c>, <c>a &gt;&gt; b</c>.
-    /// </summary>
-    /// <returns>The parsed expression.</returns>
-    private Expression ParseShift()
+    private Expression ParseBitwise()
     {
         Expression expr = ParseAdditive();
+        Token? first = null;
 
-        while (CheckAndAdvance(TokenType.LeftShift,
-                   TokenType.RightShift,
-                   TokenType.LogicalRightShift))
+        while (Check(TokenType.Pipe, TokenType.Caret, TokenType.Ampersand, TokenType.LeftShift,
+                   TokenType.RightShift, TokenType.LogicalRightShift))
         {
-            Token op = PeekToken(offset: -1);
+            Token op = CurrentToken;
+            if (first != null && op.Type != first.Type)
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.MixedOperatorsNeedParentheses,
+                    message: $"You put '{first.Text}' and '{op.Text}' side by side without parentheses. Different " +
+                             "bitwise operators share one level: group the part that goes together, as in " +
+                             "'(a & b) | c'.");
+            }
+
+            first ??= op;
+            Advance();
             Expression right = ParseAdditive();
             expr = new BinaryExpression(Left: expr,
                 Operator: TokenToBinaryOperator(tokenType: op.Type),
@@ -375,7 +322,7 @@ public partial class Parser
     /// <returns>The parsed expression.</returns>
     private Expression ParseMultiplicative()
     {
-        Expression expr = ParsePower();
+        Expression expr = ParseUnary();
 
         while (CheckAndAdvance(TokenType.Star,
                    TokenType.Slash,
@@ -390,7 +337,7 @@ public partial class Parser
                    TokenType.PercentUnchecked))
         {
             Token op = PeekToken(offset: -1);
-            Expression right = ParsePower();
+            Expression right = ParseUnary();
             expr = new BinaryExpression(Left: expr,
                 Operator: TokenToBinaryOperator(tokenType: op.Type),
                 Right: right,
@@ -408,7 +355,14 @@ public partial class Parser
     /// <returns>The parsed expression.</returns>
     private Expression ParsePower()
     {
-        Expression expr = ParseUnary();
+        return ContinuePower(baseExpr: ParsePostfix());
+    }
+
+    /// <summary>Applies a <c>**</c> after <paramref name="baseExpr"/>, if one follows: right-associative, and the
+    /// exponent may carry a sign (<c>2 ** -1</c>).</summary>
+    private Expression ContinuePower(Expression baseExpr)
+    {
+        Expression expr = baseExpr;
 
         if (CheckAndAdvance(TokenType.Power,
                 TokenType.PowerWrap,
@@ -416,7 +370,8 @@ public partial class Parser
                 TokenType.PowerUnchecked))
         {
             Token op = PeekToken(offset: -1);
-            Expression right = ParsePower(); // Recursive call for right-associativity
+            // Right-associative, and the exponent may carry a sign: `2 ** -1`.
+            Expression right = ParseUnary();
             expr = new BinaryExpression(Left: expr,
                 Operator: TokenToBinaryOperator(tokenType: op.Type),
                 Right: right,
@@ -472,7 +427,7 @@ public partial class Parser
 
         if (!CheckAndAdvance(TokenType.Minus, TokenType.Not, TokenType.Tilde))
         {
-            return ParsePostfix();
+            return ParsePower();
         }
 
         Token op = PeekToken(offset: -1);
@@ -515,6 +470,14 @@ public partial class Parser
             Expression chained = literal;
             while (TryParsePostfixStep(expr: ref chained))
             {
+            }
+
+            // `**` binds tighter than the sign: `-2 ** 2` is `-(2 ** 2)`, so the literal keeps no sign of its own.
+            if (Check(TokenType.Power, TokenType.PowerWrap, TokenType.PowerClamp, TokenType.PowerUnchecked))
+            {
+                return new UnaryExpression(Operator: TokenToUnaryOperator(tokenType: op.Type),
+                    Operand: ContinuePower(baseExpr: chained),
+                    Location: opLocation);
             }
 
             if (!ReferenceEquals(objA: chained, objB: literal))
@@ -567,7 +530,7 @@ public partial class Parser
         // arithmetic/comparison/range/logical operators so `try a + b` recovers the checked-arith overflow
         // as a whole-expression composition (`try (a + b)`, not `(try a) + b`). SA's AnalyzeRecoveryExpression
         // hoists every failable sub-call AND checked-arith operator inside it.
-        Expression recoveryInner = ParseLogicalOr();
+        Expression recoveryInner = ParseLogical();
 
         // A trailing force-unwrap binds LOOSER than the recovery keyword: `try route()!!` means
         // `(try route())!!`, not `try (route()!!)`. The keyword PRODUCES a carrier and `!!` CONSUMES it,

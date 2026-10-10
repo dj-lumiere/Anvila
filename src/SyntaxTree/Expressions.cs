@@ -863,6 +863,13 @@ public record RangeExpression(
     SourceLocation Location,
     bool IsExclusive = false) : Expression(Location: Location)
 {
+    /// <summary>
+    /// The magnitude of a negative literal step (<c>by -1</c> → <c>1</c>), set by analysis: the range counts down by it.
+    /// Null for any other step. Kept apart from <see cref="Step"/> because an unsigned element type holds the
+    /// magnitude but not the negative literal.
+    /// </summary>
+    public LiteralExpression? DownwardStep { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

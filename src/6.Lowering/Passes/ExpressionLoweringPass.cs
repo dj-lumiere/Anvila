@@ -1354,6 +1354,16 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     private Expression LowerRangeStep(RangeExpression range, TypeSymbol? elemType,
         SourceLocation loc, ref List<Statement> hoisted)
     {
+        // A negative literal step: the range counts down by its magnitude (`descending` says which way).
+        if (range is { DownwardStep.Value: string magnitude, Step: not null })
+        {
+            // The written literal as the literal pass left it (its kind settled), with the sign dropped.
+            (List<Statement> stepH, Expression loweredStep) = LowerExpr(expr: range.Step);
+            hoisted = Concat(a: hoisted, b: stepH);
+            return StepLiteral(text: magnitude, elemType: elemType, literal: loweredStep as LiteralExpression,
+                loc: loc);
+        }
+
         if (range.Step != null)
         {
             (List<Statement> stepH, Expression loweredStep) = LowerExpr(expr: range.Step);
@@ -1361,15 +1371,25 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return loweredStep;
         }
 
-        // Default step of 1. LiteralLoweringPass has ALREADY run, so a raw literal stamped
+        return StepLiteral(text: "1", elemType: elemType, literal: null, loc: loc);
+    }
+
+    /// <summary>
+    /// A step of <paramref name="text"/> (a non-negative number) of the range's element type.
+    /// </summary>
+    private Expression StepLiteral(string text, TypeSymbol? elemType, LiteralExpression? literal,
+        SourceLocation loc)
+    {
+        // LiteralLoweringPass has ALREADY run, so a raw literal stamped
         // with a record element type (Suflae's arbitrary-precision `Integer`/`Decimal`)
         // would reach codegen as an invalid `%Record.Integer 1` constant. An Integer step is the
         // static Integer record LiteralLoweringPass builds for the start/end literals. Another
         // element type with a `from_literal` constructor builds `T.from_literal(text: "1")`.
         // Scalar element types (RF's S64) have no `from_literal` and keep the raw literal.
-        if (elemType is { Name: "Integer" })
+        if (elemType is { Name: "Integer" } && long.TryParse(s: text.Replace(oldValue: "_", newValue: ""),
+                result: out long integerStep))
         {
-            return LiteralLoweringPass.IntegerCreator(registry: ctx.Registry, value: 1, loc: loc);
+            return LiteralLoweringPass.IntegerCreator(registry: ctx.Registry, value: integerStep, loc: loc);
         }
 
         RoutineInfo? stepFromLiteral = elemType != null
@@ -1378,7 +1398,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         if (elemType != null && stepFromLiteral != null)
         {
             var stepText =
-                new LiteralExpression(Value: "1",
+                new LiteralExpression(Value: text,
                     LiteralType: TokenType.TextLiteral,
                     Location: loc) { ResolvedType = ctx.Registry.LookupType(name: "Text") };
             return new CallExpression(
@@ -1395,6 +1415,11 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             {
                 ResolvedRoutine = stepFromLiteral, ResolvedType = stepFromLiteral.ReturnType
             };
+        }
+
+        if (literal != null)
+        {
+            return literal with { Value = text, ResolvedType = elemType ?? literal.ResolvedType };
         }
 
         return new LiteralExpression(Value: 1L, LiteralType: TokenType.S64Literal, Location: loc)
@@ -1452,7 +1477,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 ("start", loweredStart),
                 ("end", loweredEnd),
                 ("step", stepExpr),
-                ("inclusive", inclusiveLit)
+                ("inclusive", inclusiveLit),
+                ("descending", new LiteralExpression(Value: range.DownwardStep != null,
+                    LiteralType: range.DownwardStep != null
+                        ? TokenType.True
+                        : TokenType.False,
+                    Location: loc) { ResolvedType = boolType })
             ],
             Location: loc) { ResolvedType = range.ResolvedType });
     }

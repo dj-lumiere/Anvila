@@ -47,7 +47,7 @@ internal partial class Program
             }
 
             List<MigrationEdit> edits = MigrationEdits(tokens: tokens, file: file, language: language,
-                concurrentRoutines: concurrentRoutines);
+                concurrentRoutines: concurrentRoutines, source: source);
             foreach (Token name in KeywordsUsedAsNames(tokens: tokens))
             {
                 Console.WriteLine(value: $"{file}:{name.Line}: '{name.Text}' is a keyword now, rename it by hand");
@@ -110,6 +110,318 @@ internal partial class Program
         return names;
     }
 
+    /// <summary>The integer a literal (with the minus written before it) spells, starting at <paramref name="index"/>,
+    /// and the index after it, or null when no integer literal starts there.</summary>
+    private static (long Value, int Next)? IntegerLiteralAt(List<Token> tokens, int index)
+    {
+        bool negative = index < tokens.Count && tokens[index: index].Type == TokenType.Minus;
+        int at = negative
+            ? index + 1
+            : index;
+        if (at >= tokens.Count || !tokens[index: at].Type.ToString().EndsWith(value: "Literal") &&
+            tokens[index: at].Type != TokenType.UndecidedInteger)
+        {
+            return null;
+        }
+
+        string digits = new(value: tokens[index: at].Text.TakeWhile(predicate: c => char.IsDigit(c: c) || c == '_' || c == '-')
+                                                         .Where(predicate: c => c != '_')
+                                                         .ToArray());
+        if (!long.TryParse(s: digits, result: out long value) || tokens[index: at].Text.Contains(value: '.'))
+        {
+            return null;
+        }
+
+        return (negative ? -value : value, at + 1);
+    }
+
+    /// <summary>
+    /// The rewrite of a range with literal endpoints that counted down (its end below its start): with no step it
+    /// gains <c>by -1</c>, with a positive literal step that step is negated. Null for any other range.
+    /// </summary>
+    private static MigrationEdit? DescendingLiteralRangeEdit(List<Token> tokens, int index)
+    {
+        // The start: a literal right before the operator, with a minus written before it.
+        int startAt = index - 1;
+        if (startAt < 0)
+        {
+            return null;
+        }
+
+        if (startAt > 0 && tokens[index: startAt - 1].Type == TokenType.Minus &&
+            (startAt < 2 || tokens[index: startAt - 2].Type is not (TokenType.Identifier or TokenType.RightParen
+                or TokenType.RightBracket) && !tokens[index: startAt - 2].Type.ToString().EndsWith(value: "Literal")))
+        {
+            startAt--;
+        }
+
+        if (IntegerLiteralAt(tokens: tokens, index: startAt) is not { Next: var afterStart } start || afterStart != index ||
+            startAt > 0 && tokens[index: startAt - 1].Type is TokenType.Dot or TokenType.Identifier or TokenType.RightParen
+                or TokenType.Star or TokenType.Plus or TokenType.Slash or TokenType.Percent or TokenType.Power ||
+            IntegerLiteralAt(tokens: tokens, index: index + 1) is not { } end || end.Value >= start.Value)
+        {
+            return null;
+        }
+
+        Token endToken = tokens[index: end.Next - 1];
+        if (end.Next < tokens.Count && tokens[index: end.Next].Type is TokenType.Plus or TokenType.Minus or
+                TokenType.Star or TokenType.Slash or TokenType.Percent or TokenType.Power or TokenType.Dot)
+        {
+            return null;
+        }
+
+        if (end.Next < tokens.Count && tokens[index: end.Next].Type == TokenType.By)
+        {
+            if (IntegerLiteralAt(tokens: tokens, index: end.Next + 1) is not { Value: > 0 } step ||
+                tokens[index: end.Next + 1].Position < 0)
+            {
+                return null;
+            }
+
+            Token stepToken = tokens[index: end.Next + 1];
+            return new MigrationEdit(Start: stepToken.Position, Length: 0, Replacement: "-", Line: stepToken.Line,
+                What: "a range that counted down gets a negative step");
+        }
+
+        // `by -1` goes right after the end literal as written.
+        int afterEnd = end.Next < tokens.Count && tokens[index: end.Next].Position > endToken.Position
+            ? tokens[index: end.Next].Position
+            : endToken.Position + endToken.Text.Length;
+        string source = _migrationSource;
+        int comment = source.IndexOf(value: " #", startIndex: endToken.Position, count: afterEnd - endToken.Position,
+            comparisonType: StringComparison.Ordinal);
+        if (comment >= 0)
+        {
+            afterEnd = comment;
+        }
+
+        while (afterEnd > endToken.Position + 1 && char.IsWhiteSpace(c: source[index: afterEnd - 1]))
+        {
+            afterEnd--;
+        }
+
+        return new MigrationEdit(Start: afterEnd, Length: 0, Replacement: " by -1", Line: endToken.Line,
+            What: "a range that counted down gets `by -1`");
+    }
+
+    /// <summary>One operand-or-operator unit of an expression at one bracket depth: a single token, or a whole
+    /// bracketed group (<c>First</c> its opening token, <c>Last</c> its closing one).</summary>
+    private sealed record PrecedenceAtom(int First, int Last);
+
+    /// <summary>Tokens that end an expression (or a part of a statement that is an expression of its own).</summary>
+    private static readonly HashSet<TokenType> ExpressionEnds =
+    [
+        TokenType.Newline, TokenType.Indent, TokenType.Dedent, TokenType.Comma, TokenType.Colon, TokenType.FatArrow,
+        TokenType.Arrow, TokenType.Then, TokenType.Else, TokenType.If, TokenType.Elseif, TokenType.While,
+        TokenType.Return, TokenType.When, TokenType.Each, TokenType.In, TokenType.Throw, TokenType.Eof,
+        TokenType.Assign, TokenType.PlusAssign, TokenType.MinusAssign, TokenType.StarAssign, TokenType.SlashAssign,
+        TokenType.PercentAssign, TokenType.AmpersandAssign, TokenType.PipeAssign, TokenType.CaretAssign,
+        TokenType.LeftShiftAssign, TokenType.RightShiftAssign, TokenType.LogicalRightShiftAssign,
+        TokenType.DivideAssign, TokenType.PowerAssign, TokenType.NoneCoalesceAssign
+    ];
+
+    /// <summary>Operators looser than bitwise ones: a bitwise expression ends at them.</summary>
+    private static readonly HashSet<TokenType> BitwiseEnds =
+    [
+        TokenType.And, TokenType.Or, TokenType.Equal, TokenType.NotEqual, TokenType.IdentityEqual,
+        TokenType.IdentityNotEqual, TokenType.Less, TokenType.LessEqual, TokenType.Greater, TokenType.GreaterEqual,
+        TokenType.ThreeWayComparison, TokenType.To, TokenType.Til, TokenType.By, TokenType.Have, TokenType.Lack,
+        TokenType.Is, TokenType.IsNot, TokenType.Obeys, TokenType.NoneCoalesce
+    ];
+
+    /// <summary>The bitwise operators from the tightest-binding group to the loosest, as they bound before they shared
+    /// one level.</summary>
+    private static readonly TokenType[][] BitwiseTiers =
+    [
+        [TokenType.LeftShift, TokenType.RightShift, TokenType.LogicalRightShift],
+        [TokenType.Ampersand], [TokenType.Caret], [TokenType.Pipe]
+    ];
+
+    /// <summary>
+    /// Parentheses that keep the grouping an expression had, where operators now share a level and mixing them needs
+    /// parentheses: <c>a or b and c</c> is <c>a or (b and c)</c> (<c>and</c> bound tighter), and
+    /// <c>a | b &amp; c</c> is <c>a | (b &amp; c)</c> (<c>&amp;</c> bound tighter than <c>^</c>, which bound tighter than
+    /// <c>|</c>, with shifts tightest).
+    /// </summary>
+    private static List<MigrationEdit> PrecedenceEdits(List<Token> tokens, string source)
+    {
+        var edits = new List<MigrationEdit>();
+        _migrationSource = source;
+        GroupSegments(tokens: tokens, from: 0, to: tokens.Count, edits: edits);
+        return edits;
+    }
+
+    /// <summary>The source of the file <see cref="PrecedenceEdits"/> works on, where a closing parenthesis is placed.</summary>
+    private static string _migrationSource = "";
+
+    /// <summary>Splits <c>tokens[from..to)</c> into expressions at one depth and groups each, going into every
+    /// bracketed group too.</summary>
+    private static void GroupSegments(List<Token> tokens, int from, int to, List<MigrationEdit> edits)
+    {
+        var segment = new List<PrecedenceAtom>();
+        int i = from;
+        while (i < to)
+        {
+            Token t = tokens[index: i];
+            if (t.Type is TokenType.LeftParen or TokenType.LeftBracket or TokenType.LeftBrace)
+            {
+                TokenType close = t.Type switch
+                {
+                    TokenType.LeftParen => TokenType.RightParen,
+                    TokenType.LeftBracket => TokenType.RightBracket,
+                    _ => TokenType.RightBrace
+                };
+                int after = SkipBalanced(tokens: tokens, start: i, open: t.Type, close: close);
+                GroupSegments(tokens: tokens, from: i + 1, to: after - 1, edits: edits);
+                segment.Add(item: new PrecedenceAtom(First: i, Last: Math.Min(val1: after - 1, val2: tokens.Count - 1)));
+                i = after;
+                continue;
+            }
+
+            if (ExpressionEnds.Contains(item: t.Type))
+            {
+                GroupExpression(tokens: tokens, atoms: segment, edits: edits);
+                segment = [];
+            }
+            else
+            {
+                segment.Add(item: new PrecedenceAtom(First: i, Last: i));
+            }
+
+            i++;
+        }
+
+        GroupExpression(tokens: tokens, atoms: segment, edits: edits);
+    }
+
+    private static void GroupExpression(List<Token> tokens, List<PrecedenceAtom> atoms, List<MigrationEdit> edits)
+    {
+        if (atoms.Count == 0)
+        {
+            return;
+        }
+
+        // `and` inside `or`.
+        if (HasOperator(tokens: tokens, atoms: atoms, ops: [TokenType.And]) &&
+            HasOperator(tokens: tokens, atoms: atoms, ops: [TokenType.Or]))
+        {
+            foreach (List<PrecedenceAtom> piece in SplitAt(tokens: tokens, atoms: atoms, ops: [TokenType.Or]))
+            {
+                if (HasOperator(tokens: tokens, atoms: piece, ops: [TokenType.And]))
+                {
+                    Wrap(tokens: tokens, atoms: piece, edits: edits, what: "and inside or → (… and …)");
+                }
+            }
+        }
+
+        // Bitwise operators of different tiers, within each stretch between looser operators.
+        foreach (List<PrecedenceAtom> stretch in SplitAt(tokens: tokens, atoms: atoms, ops: BitwiseEnds))
+        {
+            GroupBitwise(tokens: tokens, atoms: stretch, tier: BitwiseTiers.Length - 1, edits: edits);
+        }
+    }
+
+    private static void GroupBitwise(List<Token> tokens, List<PrecedenceAtom> atoms, int tier, List<MigrationEdit> edits)
+    {
+        if (tier < 0)
+        {
+            return;
+        }
+
+        // Shifts of different kinds bound left to right: `a >>> b << c` is `(a >>> b) << c`.
+        if (tier == 0)
+        {
+            TokenType? previous = null;
+            for (int k = 0; k < atoms.Count; k++)
+            {
+                if (atoms[index: k].First != atoms[index: k].Last ||
+                    !BitwiseTiers[0].Contains(value: tokens[index: atoms[index: k].First].Type))
+                {
+                    continue;
+                }
+
+                TokenType shift = tokens[index: atoms[index: k].First].Type;
+                if (previous != null && shift != previous)
+                {
+                    Wrap(tokens: tokens, atoms: atoms.Take(count: k).ToList(), edits: edits,
+                        what: "shifts grouped as they bound");
+                }
+
+                previous = shift;
+            }
+
+            return;
+        }
+
+        List<List<PrecedenceAtom>> pieces = SplitAt(tokens: tokens, atoms: atoms, ops: BitwiseTiers[tier]);
+        TokenType[] tighter = BitwiseTiers.Take(count: tier).SelectMany(selector: t => t).ToArray();
+        foreach (List<PrecedenceAtom> piece in pieces)
+        {
+            if (pieces.Count > 1 && HasOperator(tokens: tokens, atoms: piece, ops: tighter))
+            {
+                Wrap(tokens: tokens, atoms: piece, edits: edits, what: "bitwise operators grouped as they bound");
+            }
+
+            GroupBitwise(tokens: tokens, atoms: piece, tier: tier - 1, edits: edits);
+        }
+    }
+
+    private static bool HasOperator(List<Token> tokens, List<PrecedenceAtom> atoms, ICollection<TokenType> ops)
+    {
+        return atoms.Any(predicate: a => a.First == a.Last && ops.Contains(item: tokens[index: a.First].Type));
+    }
+
+    private static List<List<PrecedenceAtom>> SplitAt(List<Token> tokens, List<PrecedenceAtom> atoms,
+        ICollection<TokenType> ops)
+    {
+        var pieces = new List<List<PrecedenceAtom>> { new() };
+        foreach (PrecedenceAtom atom in atoms)
+        {
+            if (atom.First == atom.Last && ops.Contains(item: tokens[index: atom.First].Type))
+            {
+                pieces.Add(item: []);
+            }
+            else
+            {
+                pieces[^1].Add(item: atom);
+            }
+        }
+
+        return pieces.Where(predicate: p => p.Count > 0).ToList();
+    }
+
+    private static void Wrap(List<Token> tokens, List<PrecedenceAtom> atoms, List<MigrationEdit> edits, string what)
+    {
+        Token first = tokens[index: atoms[0].First];
+        Token last = tokens[index: atoms[^1].Last];
+        if (first.Position < 0 || last.Position < 0)
+        {
+            return;
+        }
+
+        edits.Add(item: new MigrationEdit(Start: first.Position, Length: 0, Replacement: "(", Line: first.Line,
+            What: what));
+        // The parenthesis closes right after the last token as written (a token's text may not be its spelling,
+        // as a text literal's quotes show): just before whatever follows it.
+        int end = atoms[^1].Last + 1 < tokens.Count && tokens[index: atoms[^1].Last + 1].Position > last.Position
+            ? tokens[index: atoms[^1].Last + 1].Position
+            : _migrationSource.Length;
+        // A comment after the last token on its line stays after the parenthesis.
+        int comment = _migrationSource.IndexOf(value: " #", startIndex: last.Position, count: end - last.Position,
+            comparisonType: StringComparison.Ordinal);
+        if (comment >= 0)
+        {
+            end = comment;
+        }
+
+        while (end > last.Position + 1 && char.IsWhiteSpace(c: _migrationSource[index: end - 1]))
+        {
+            end--;
+        }
+
+        edits.Add(item: new MigrationEdit(Start: end, Length: 0, Replacement: ")", Line: last.Line, What: what));
+    }
+
     /// <summary>The source files of this language under <paramref name="paths"/> (files as given, directories walked).</summary>
     private static IEnumerable<string> MigrationSources(List<string> paths)
     {
@@ -146,7 +458,7 @@ internal partial class Program
     /// A <c>.share()</c> call goes too, because <c>=</c> does what it did.
     /// </summary>
     private static List<MigrationEdit> MigrationEdits(List<Token> tokens, string file, Language language,
-        HashSet<string> concurrentRoutines)
+        HashSet<string> concurrentRoutines, string source)
     {
         bool inStandardLibrary = file.Replace(oldChar: '\\', newChar: '/').Contains(value: "/Standard/");
         // A name this file declares decides for itself: a `suspended`/`threaded` routine is called through
@@ -164,6 +476,7 @@ internal partial class Program
         }
 
         var edits = new List<MigrationEdit>();
+        edits.AddRange(collection: PrecedenceEdits(tokens: tokens, source: source));
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
@@ -172,6 +485,15 @@ internal partial class Program
             {
                 edits.Add(item: new MigrationEdit(Start: bound.Position, Length: 0, Replacement: "as ", Line: bound.Line,
                     What: token.Type == TokenType.Is ? "is T x → is T as x" : "else p → else as p"));
+                continue;
+            }
+
+            // A range counted down when its end was below its start: `10 to 1` is `10 to 1 by -1` now (it would be
+            // empty), and `10 to 0 by 2` is `10 to 0 by -2`. Only literal endpoints say which way it went.
+            if (token.Type is TokenType.To or TokenType.Til && DescendingLiteralRangeEdit(tokens: tokens, index: i) is
+                    { } descending)
+            {
+                edits.Add(item: descending);
                 continue;
             }
 

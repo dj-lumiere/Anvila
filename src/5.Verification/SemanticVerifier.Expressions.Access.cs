@@ -1304,14 +1304,29 @@ public sealed partial class SemanticVerifier
             startType: startType,
             endType: endType);
 
+        bool startIsBack = range.Start is BackIndexExpression;
+        bool endIsBack = range.End is BackIndexExpression;
         if (range.Step != null)
         {
-            AnalyzeExpression(expression: range.Step, expectedType: endpointExpected);
+            // The step has the range's element type. A negative literal step (`by -1`) counts down by its magnitude,
+            // which every element type can hold, an unsigned one too (`3u64 to 0u64 by -1`): the magnitude is what
+            // is checked against the element type.
+            TypeSymbol stepExpected = endpointExpected ?? (startIsBack
+                ? endType
+                : startType);
+            if (NegativeLiteralStepMagnitude(step: range.Step) is { } magnitude)
+            {
+                range.Step.ResolvedType = AnalyzeExpression(expression: magnitude, expectedType: stepExpected);
+                range.DownwardStep = magnitude;
+            }
+            else
+            {
+                AnalyzeExpression(expression: range.Step, expectedType: stepExpected);
+            }
+
             ValidateLiteralRangeStep(step: range.Step);
         }
 
-        bool startIsBack = range.Start is BackIndexExpression;
-        bool endIsBack = range.End is BackIndexExpression;
         ValidateRangeBounds(range: range,
             endpointExpected: endpointExpected,
             startType: startType,
@@ -1335,48 +1350,44 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports a literal range step that is zero or negative (<c>by -3</c>, <c>by 0</c>, <c>by 0.0</c>). The step is
-    /// always a positive distance and the endpoints alone decide the direction, so such a step would never reach
-    /// the end. A step that is not a literal is checked when the range is iterated (the stdlib's
-    /// <c>Range.require_positive_step</c>).
+    /// The magnitude of a negative literal range step (<c>by -1</c> → <c>1</c>), as a literal of its own, or null when
+    /// the step is not a negative literal. A range that counts down keeps the magnitude and a downward direction, so
+    /// an unsigned range counts down too.
+    /// </summary>
+    internal static LiteralExpression? NegativeLiteralStepMagnitude(Expression step)
+    {
+        return step switch
+        {
+            LiteralExpression { Value: string text } literal when text.StartsWith(value: '-') =>
+                literal with { Value = text[1..] },
+            UnaryExpression { Operator: UnaryOperator.Minus, Operand: LiteralExpression { Value: string text } operand }
+                when !text.StartsWith(value: '-') => operand with { },
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Reports a literal range step of zero (<c>by 0</c>, <c>by 0.0</c>): it never moves, so the range would never
+    /// reach its end. The sign of a step sets the direction (<c>10 to 0 by -1</c> counts down). A step that is not a
+    /// literal is checked when the range is iterated (the stdlib's <c>Range.require_nonzero_step</c>).
     /// </summary>
     private void ValidateLiteralRangeStep(Expression step)
     {
         Expression operand = step;
-        bool negated = false;
         while (operand is UnaryExpression { Operator: UnaryOperator.Minus } unary)
         {
-            negated = !negated;
             operand = unary.Operand;
         }
 
         if (operand is not LiteralExpression literal ||
-            !TryNumericLiteralIsZero(literal: literal, isZero: out bool isZero))
+            !TryNumericLiteralIsZero(literal: literal, isZero: out bool isZero) || !isZero)
         {
             return;
         }
 
-        // The parser folds a minus written right before a number into the literal's text (`-3` is one literal).
-        string magnitude = NumericLiteralText(literal: literal);
-        if (magnitude.StartsWith(value: '-'))
-        {
-            negated = !negated;
-            magnitude = magnitude[1..];
-        }
-
-        if (!isZero && !negated)
-        {
-            return;
-        }
-
-        string written = (negated ? "-" : "") + magnitude;
-        string why = isZero
-            ? "A step of 0 never moves, so the range would never reach its end. Give it a positive step, " +
-              "such as `by 1`, or leave `by` out for a step of 1."
-            : "The direction of a range comes from its endpoints, never from the sign of its step. To count " +
-              "down, put the larger endpoint first and keep the step positive, as in `10 to 0 by 3`.";
-        ReportError(code: SemanticDiagnosticCode.RangeStepNotPositive,
-            message: $"You wrote `by {written}`, but a range's step must be positive. {why}",
+        ReportError(code: SemanticDiagnosticCode.RangeStepZero,
+            message: "You wrote `by 0`, but a step of 0 never moves, so the range would never reach its end. Give " +
+                     "it a step that moves: `by 1` (or leave `by` out) to count up, `by -1` to count down.",
             location: step.Location);
     }
 
@@ -1458,17 +1469,6 @@ public sealed partial class SemanticVerifier
         }
 
         return sawDigit;
-    }
-
-    /// <summary>The literal as the user wrote it, near enough to name it in a diagnostic.</summary>
-    private static string NumericLiteralText(LiteralExpression literal)
-    {
-        return literal.Value switch
-        {
-            IFormattable f => f.ToString(format: null,
-                formatProvider: System.Globalization.CultureInfo.InvariantCulture),
-            _ => literal.Value.ToString() ?? ""
-        };
     }
 
     /// <summary>

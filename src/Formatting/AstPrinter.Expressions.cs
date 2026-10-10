@@ -26,20 +26,18 @@ internal sealed partial class AstPrinter
     private const int PAssign = 1;
     private const int PConditional = 3;
     private const int PCoalesce = 4;
+    // `and` and `or` share one level (mixing them needs parentheses), as do all bitwise operators.
     private const int POr = 5;
-    private const int PRange = 6;
-    private const int PAnd = 7;
+    private const int PAnd = POr;
     private const int PEquality = 8;
     private const int PComparison = 9;
     private const int PIs = 10;
-    private const int PBitOr = 11;
-    private const int PBitXor = 12;
-    private const int PBitAnd = 13;
-    private const int PShift = 14;
+    private const int PRange = 11;
+    private const int PBitwise = 12;
     private const int PAdditive = 15;
     private const int PMultiplicative = 16;
-    private const int PPower = 17;
-    private const int PUnary = 18;
+    private const int PUnary = 17;
+    private const int PPower = 18;
     private const int PPostfix = 19;
     private const int PPrimary = 20;
 
@@ -135,15 +133,12 @@ internal sealed partial class AstPrinter
             BinaryOperator.NotEqual or BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual => PEquality,
             BinaryOperator.Equal or BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater
                 or BinaryOperator.GreaterEqual or BinaryOperator.ThreeWayComparator => PComparison,
-            BinaryOperator.Have or BinaryOperator.Lack when binary.Left is RangeExpression => PRange,
             BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys
                 or BinaryOperator.Have or BinaryOperator.Lack or BinaryOperator.In
                 or BinaryOperator.NotIn => PIs,
-            BinaryOperator.BitwiseOr => PBitOr,
-            BinaryOperator.BitwiseXor => PBitXor,
-            BinaryOperator.BitwiseAnd => PBitAnd,
-            BinaryOperator.ArithmeticLeftShift or BinaryOperator.ArithmeticRightShift
-                or BinaryOperator.LogicalRightShift => PShift,
+            BinaryOperator.BitwiseOr or BinaryOperator.BitwiseXor or BinaryOperator.BitwiseAnd
+                or BinaryOperator.ArithmeticLeftShift or BinaryOperator.ArithmeticRightShift
+                or BinaryOperator.LogicalRightShift => PBitwise,
             BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.AddWrap or BinaryOperator.SubtractWrap
                 or BinaryOperator.AddClamp or BinaryOperator.SubtractClamp or BinaryOperator.AddUnchecked
                 or BinaryOperator.SubtractUnchecked => PAdditive,
@@ -437,21 +432,20 @@ internal sealed partial class AstPrinter
             return LogicalChainDoc(binary: binary, follow: follow);
         }
 
-        if (binary.Operator is BinaryOperator.Have or BinaryOperator.Lack && binary.Left is RangeExpression range)
-        {
-            // `0 to 10 have 10`: the range parser applies the test to the whole range.
-            return Doc.Concat(RangeDoc(range: range, follow: PIs),
-                Doc.Text(text: " " + op + " "),
-                Expr(expression: binary.Right, min: PBitOr, follow: follow, comma: false));
-        }
-
         (int leftMin, int rightMin) = level switch
         {
-            PPower => (PUnary, PPower),
+            // `**`: the base is a postfix expression and the exponent may carry a sign (`2 ** -1`).
+            PPower => (PPostfix, PUnary),
             PComparison => (PIs, PIs),
-            PIs => (PIs, PBitOr),
+            PIs => (PIs, PRange),
             _ => (level, level + 1)
         };
+        // Different bitwise operators on one level are grouped in parentheses: `(a & b) | c`.
+        if (level == PBitwise && binary.Left is BinaryExpression { Operator: var leftOp } left &&
+            BinaryPrecedence(binary: left) == PBitwise && leftOp != binary.Operator)
+        {
+            leftMin = level + 1;
+        }
         return Doc.Concat(Operand(expression: binary.Left, min: leftMin, follow: level, parentLevel: level),
             Doc.Text(text: " " + op + " "),
             Operand(expression: binary.Right, min: rightMin, follow: follow, parentLevel: level));
@@ -460,8 +454,7 @@ internal sealed partial class AstPrinter
     /// <summary>
     /// An operand of a binary operator at <paramref name="parentLevel"/>. Parentheses the grammar does not need
     /// are kept where they say how an expression groups at a glance: a bitwise or shift expression compared
-    /// (<c>(a &amp; m) == 0</c>), a shift inside a bitwise one (<c>a &amp; (1 &lt;&lt; i)</c>), and an <c>and</c>
-    /// inside an <c>or</c>.
+    /// (<c>(a &amp; m) == 0</c>).
     /// </summary>
     private Doc Operand(Expression expression, int min, int follow, int parentLevel)
     {
@@ -470,9 +463,7 @@ internal sealed partial class AstPrinter
             : 0;
         bool clarify = parentLevel switch
         {
-            PEquality or PComparison => level is PBitOr or PBitXor or PBitAnd or PShift,
-            PBitOr or PBitXor or PBitAnd => level == PShift,
-            POr => level == PAnd,
+            PEquality or PComparison => level == PBitwise,
             _ => false
         };
         return clarify
@@ -490,8 +481,8 @@ internal sealed partial class AstPrinter
         int level = BinaryPrecedence(binary: binary);
         var operands = new List<(string? Op, Expression Operand)>();
         Expression current = binary;
-        while (current is BinaryExpression b && BinaryPrecedence(binary: b) == level &&
-               b.Operator is BinaryOperator.And or BinaryOperator.Or)
+        // Only one operator chains: `and` and `or` share a level, so the other one is a parenthesized operand.
+        while (current is BinaryExpression b && b.Operator == binary.Operator)
         {
             operands.Insert(index: 0, item: (b.Operator.ToStringRepresentation(), b.Right));
             current = b.Left;
@@ -512,7 +503,7 @@ internal sealed partial class AstPrinter
         }
 
         return Doc.Group(content: Doc.Concat(
-            Operand(expression: operands[index: 0].Operand, min: level, follow: level, parentLevel: level),
+            Operand(expression: operands[index: 0].Operand, min: level + 1, follow: level, parentLevel: level),
             Doc.Nest(indent: IndentWidth, content: Doc.Concat(parts: rest))));
     }
 
@@ -628,18 +619,18 @@ internal sealed partial class AstPrinter
 
         var parts = new List<Doc>
         {
-            Expr(expression: range.Start, min: PAnd, follow: PRange, comma: false),
+            Expr(expression: range.Start, min: PBitwise, follow: PRange, comma: false),
             Doc.Text(text: range.IsExclusive
                 ? " til "
                 : " to "),
-            Expr(expression: range.End, min: PAnd, follow: range.Step != null
+            Expr(expression: range.End, min: PBitwise, follow: range.Step != null
                 ? PRange
                 : follow, comma: false)
         };
         if (range.Step != null)
         {
             parts.Add(item: Doc.Text(text: " by "));
-            parts.Add(item: Expr(expression: range.Step, min: PAnd, follow: follow, comma: false));
+            parts.Add(item: Expr(expression: range.Step, min: PBitwise, follow: follow, comma: false));
         }
 
         return Doc.Concat(parts: parts);

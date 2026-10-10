@@ -132,16 +132,14 @@ public partial class Parser
                 SourceLocation partLocation = GetLocation(token: braceToken);
 
                 // Parse the expression inside the braces. A hole is closed off by its braces, so nothing of a
-                // surrounding when arm or range operand reaches into it: `f"{v is None}"` in an arm body reads `is`.
+                // surrounding when arm reaches into it: `f"{v is None}"` in an arm body reads `is`.
                 int exprStart = _position;
                 bool savedPattern = _inWhenPatternContext;
                 bool savedCondition = _inWhenConditionContext;
                 bool savedClauseBody = _inWhenClauseBody;
-                bool savedRangeOperand = _inRangeOperand;
                 _inWhenPatternContext = false;
                 _inWhenConditionContext = false;
                 _inWhenClauseBody = false;
-                _inRangeOperand = false;
                 Expression expr;
                 try
                 {
@@ -152,7 +150,6 @@ public partial class Parser
                     _inWhenPatternContext = savedPattern;
                     _inWhenConditionContext = savedCondition;
                     _inWhenClauseBody = savedClauseBody;
-                    _inRangeOperand = savedRangeOperand;
                 }
 
                 string sourceText = SourceTextOf(first: exprStart, end: _position);

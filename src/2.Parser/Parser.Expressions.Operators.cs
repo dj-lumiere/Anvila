@@ -159,12 +159,12 @@ public partial class Parser
     /// <returns>The parsed expression.</returns>
     private Expression ParseNoneCoalesce()
     {
-        Expression expr = ParseLogicalOr();
+        Expression expr = ParseLogical();
 
         while (CheckAndAdvance(type: TokenType.NoneCoalesce))
         {
             Token op = PeekToken(offset: -1);
-            Expression right = ParseLogicalOr();
+            Expression right = ParseLogical();
             expr = new BinaryExpression(Left: expr,
                 Operator: BinaryOperator.NoneCoalesce,
                 Right: right,
@@ -175,19 +175,29 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses logical OR expressions.
-    /// Syntax: <c>a or b</c>
-    /// Left-associative, short-circuit evaluation.
+    /// Parses logical expressions: <c>a and b</c>, <c>a or b</c>, left-associative, short-circuit. <c>and</c> and
+    /// <c>or</c> share one level, so mixing them needs parentheses (<c>a or (b and c)</c>): a reader never has to
+    /// remember which binds tighter. A chain of one of them (<c>x and y and z</c>) needs none.
     /// </summary>
     /// <returns>The parsed expression.</returns>
-    private Expression ParseLogicalOr()
+    private Expression ParseLogical()
     {
-        Expression expr = ParseRange();
+        Expression expr = ParseEquality();
+        TokenType? chain = null;
 
-        while (CheckAndAdvance(type: TokenType.Or))
+        while (Check(TokenType.And, TokenType.Or))
         {
-            Token op = PeekToken(offset: -1);
-            Expression right = ParseRange();
+            Token op = CurrentToken;
+            if (chain != null && op.Type != chain)
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.MixedOperatorsNeedParentheses,
+                    message: "You mixed 'and' and 'or' without parentheses. Group the part that goes together: " +
+                             "'a or (b and c)' or '(a or b) and c'.");
+            }
+
+            chain = op.Type;
+            Advance();
+            Expression right = ParseEquality();
             expr = new BinaryExpression(Left: expr,
                 Operator: TokenToBinaryOperator(tokenType: op.Type),
                 Right: right,
@@ -198,15 +208,14 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses range expressions.
-    /// Syntax: <c>start to end</c>, <c>start to end by step</c>,
-    /// <c>start downto end</c>, or <c>start downto end by step</c>
-    /// Used for iteration ranges and slicing.
+    /// Parses range expressions: <c>start to end</c>, <c>start til end</c>, each optionally followed by
+    /// <c>by step</c>. A range binds looser than arithmetic and bitwise operators and tighter than comparisons, so
+    /// <c>0 to n - 1</c> and <c>0 to 10 have x</c> read as written.
     /// </summary>
     /// <returns>The parsed expression, possibly a range.</returns>
     private Expression ParseRange()
     {
-        Expression expr = ParseLogicalAnd();
+        Expression expr = ParseBitwise();
 
         // A to B / A til B, each optionally followed by `by C`.
         bool inclusive = Check(type: TokenType.To);
@@ -217,58 +226,19 @@ public partial class Parser
 
         Advance(); // consume 'to' / 'til'
 
-        bool savedInRangeOperand = _inRangeOperand;
-        _inRangeOperand = true;
-        Expression end = ParseLogicalAnd();
+        Expression end = ParseBitwise();
         Expression? step = null;
         if (CheckAndAdvance(type: TokenType.By))
         {
-            step = ParseLogicalAnd();
+            step = ParseBitwise();
         }
 
-        _inRangeOperand = savedInRangeOperand;
-
-        Expression range = new RangeExpression(Start: expr,
+        return new RangeExpression(Start: expr,
             End: end,
             Step: step,
             IsDescending: false,
             Location: expr.Location,
             IsExclusive: !inclusive);
-
-        // Membership on the whole range: `0 to 10 have 10`, `0 til 10 lack x`.
-        if (!_inRangeOperand && !_inWhenPatternContext && !_inWhenClauseBody &&
-            CheckAndAdvance(TokenType.Have, TokenType.Lack))
-        {
-            Token op = PeekToken(offset: -1);
-            range = ParseHaveOrLackExpression(container: range,
-                op: op,
-                location: GetLocation(token: op));
-        }
-
-        return range;
-    }
-
-    /// <summary>
-    /// Parses logical AND expressions.
-    /// Syntax: <c>a and b</c>
-    /// Left-associative, short-circuit evaluation.
-    /// </summary>
-    /// <returns>The parsed expression.</returns>
-    private Expression ParseLogicalAnd()
-    {
-        Expression expr = ParseEquality();
-
-        while (CheckAndAdvance(type: TokenType.And))
-        {
-            Token op = PeekToken(offset: -1);
-            Expression right = ParseEquality();
-            expr = new BinaryExpression(Left: expr,
-                Operator: TokenToBinaryOperator(tokenType: op.Type),
-                Right: right,
-                Location: GetLocation(token: op));
-        }
-
-        return expr;
     }
 
     /// <summary>
@@ -367,7 +337,7 @@ public partial class Parser
     /// <returns>The parsed expression.</returns>
     private Expression ParseIsExpression()
     {
-        Expression expr = ParseBitwiseOr();
+        Expression expr = ParseRange();
 
         // `x in coll` as a test: containment is written container-first. `in` only introduces a loop
         // source (`each x in xs`, `expand m in ...`), which those headers consume themselves.
@@ -382,7 +352,6 @@ public partial class Parser
         // (`in`/`notin` are RETIRED at the expression level — `in` is iteration-only, containment is
         // `have`/`lack`.)
         while (!_inWhenPatternContext && !_inWhenClauseBody &&
-               !(_inRangeOperand && (Check(type: TokenType.Have) || Check(type: TokenType.Lack))) &&
                CheckAndAdvance(TokenType.Is,
                    TokenType.IsNot,
                    TokenType.Have,
@@ -402,8 +371,8 @@ public partial class Parser
             }
             else
             {
-                // Handle obeys/disobeys as binary operators
-                Expression right = ParseBitwiseOr();
+                // Handle obeys as a binary operator
+                Expression right = ParseRange();
                 expr = new BinaryExpression(Left: expr,
                     Operator: TokenToBinaryOperator(tokenType: op.Type),
                     Right: right,
@@ -438,7 +407,7 @@ public partial class Parser
                 location: location);
         }
 
-        Expression element = ParseBitwiseOr();
+        Expression element = ParseRange();
         return new BinaryExpression(Left: container,
             Operator: isNegated
                 ? BinaryOperator.Lack

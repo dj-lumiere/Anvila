@@ -163,6 +163,10 @@ public enum GrammarDiagnosticCode
     /// <summary><c>x in coll</c> used as a membership test; containment is container-first: <c>coll have x</c>.</summary>
     InAsMembership = 212,
 
+    /// <summary>Operators that share one precedence level written side by side without parentheses: <c>and</c> with
+    /// <c>or</c>, or two different bitwise operators (<c>a &amp; b | c</c>).</summary>
+    MixedOperatorsNeedParentheses = 216,
+
     /// <summary>
     /// An annotation or modifier was written where it has no effect (an annotation on an entity, <c>dangerous</c>
     /// on a type, <c>common</c> on a variable, a visibility on a variant or a foreign routine). The parser used to
