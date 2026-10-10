@@ -25,14 +25,20 @@ internal static class TraceFrames
     /// </summary>
     public static bool Pushes(RoutineInfo routine, CrashReachability? reachability)
     {
-        return (!routine.IsSynthesized || routine.IsRecoveryVariant) && !routine.Annotations.Contains(value: "inline") &&
+        return (!routine.IsSynthesized || routine.IsRecoveryVariant || routine.TraceName != null) &&
+               !routine.Annotations.Contains(value: "inline") &&
                !routine.Annotations.Contains(value: "untraced") && reachability?.CanCrash(routine: routine) != false;
     }
 
     /// <summary>The name a frame shows: the routine with its failability and parameter types. A recovery variant
-    /// shows as the failable routine it runs.</summary>
+    /// shows as the failable routine it runs, and a routine the builder wrote with a trace name shows that.</summary>
     public static string Name(RoutineInfo routine)
     {
+        if (routine.TraceName != null)
+        {
+            return routine.TraceName;
+        }
+
         string parameters = string.Join(separator: ", ", values: routine.Parameters.Select(selector: p => p.Type.FullName));
         bool failable = routine.IsFailable || routine.IsRecoveryVariant;
         return $"{routine.BaseName}{(failable ? "!" : "")}({parameters})";

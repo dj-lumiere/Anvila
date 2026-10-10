@@ -105,7 +105,15 @@ public sealed partial class SemanticVerifier
                 ], Location: loc),
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
-            Location: loc) { IsBuilderWritten = true };
+            Location: loc)
+        {
+            IsBuilderWritten = true,
+            // A crash in the work reads as the Agent it ran in, not the name the builder gave it: the frame's
+            // position is the agent call.
+            TraceName = _currentRoutine != null
+                ? $"agent in {Builder.Collection.TraceFrames.Name(routine: _currentRoutine)}"
+                : "agent"
+        };
         string spawnName = baseName + "_spawn";
         TypeExpression agentResult = Known(type: resultType, loc: loc);
         RoutineDeclaration spawn = AgentRecipe.BuildSpawn(routine: work, spawnName: spawnName,

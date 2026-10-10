@@ -98,7 +98,7 @@ internal static class AgentRecipe
                     Location: loc) { IsBuilderWritten = true }],
                 Location: loc),
             Visibility: routine.Visibility,
-            Annotations: [],
+            Annotations: ["untraced"],
             Location: loc) { IsBuilderWritten = true };
     }
 
@@ -190,7 +190,7 @@ internal static class AgentRecipe
                 ],
                 Location: loc),
             Visibility: VisibilityModifier.Secret,
-            Annotations: [],
+            Annotations: ["untraced"],
             Location: loc) { IsBuilderWritten = true };
     }
 

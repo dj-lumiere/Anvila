@@ -107,6 +107,13 @@ internal sealed class CrashLoweringPass : AstRewriter
     /// </summary>
     private CallExpression Rethrown(Expression error, SourceLocation location)
     {
+        // A rethrow written in the standard library (an Agent's error rethrown where it is retrieved) is named by
+        // where the program called into the library, not by the library's own line: line 0 with the library's
+        // directory as the file asks the report for the most recent frame of the live trace outside it.
+        bool fromLibrary = _registry.IsStandardLibraryFile(filePath: location.FileName) && _registry.StdlibPath != null;
+        string file = fromLibrary
+            ? Path.GetFullPath(path: _registry.StdlibPath!)
+            : location.FileName;
         return new CallExpression(
             Callee: new IdentifierExpression(Name: RuntimeContract.CrashReportRethrown, Location: location)
             {
@@ -117,8 +124,8 @@ internal sealed class CrashLoweringPass : AstRewriter
                 Named(name: "type_name", value: CaughtError(error: error, member: RuntimeContract.CrashTitle)),
                 Named(name: "message", value: CaughtError(error: error, member: RuntimeContract.CrashMessage)),
                 Named(name: "error", value: error),
-                Named(name: "file", value: Text(value: location.FileName, location: location)),
-                Named(name: "line", value: S32(value: location.Line, s32: _s32, location: location)),
+                Named(name: "file", value: Text(value: file, location: location)),
+                Named(name: "line", value: S32(value: fromLibrary ? 0 : location.Line, s32: _s32, location: location)),
                 Named(name: "column", value: S32(value: location.Column, s32: _s32, location: location))
             ],
             Location: location) { ResolvedRoutine = _crashReportRethrown };

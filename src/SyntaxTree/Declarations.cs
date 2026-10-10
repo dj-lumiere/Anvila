@@ -300,6 +300,12 @@ public record RoutineDeclaration(
     public bool IsBuilderWritten { get; init; }
 
     /// <summary>
+    /// The name a crash-trace frame shows for a routine the builder wrote, in place of the routine's own name
+    /// (the work of an Agent shows as <c>agent in start()</c>). Null shows the routine's name.
+    /// </summary>
+    public string? TraceName { get; init; }
+
+    /// <summary>
     /// For a script-mode <c>start()</c>: the names of the top-level <c>var</c>s it absorbed. They are
     /// locals of <c>start()</c>, so a routine in the same file cannot see them. Semantic analysis uses
     /// this to explain that instead of reporting a bare unknown identifier.

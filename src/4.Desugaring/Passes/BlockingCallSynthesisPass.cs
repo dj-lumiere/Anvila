@@ -188,7 +188,7 @@ internal static class BlockingCallSynthesisPass
                 ],
                 Location: loc),
             Visibility: VisibilityModifier.Secret,
-            Annotations: [],
+            Annotations: ["untraced"],
             Location: loc) { IsDangerous = external.IsDangerous, IsBuilderWritten = true };
     }
 
@@ -259,7 +259,7 @@ internal static class BlockingCallSynthesisPass
                 ],
                 Location: loc),
             Visibility: VisibilityModifier.Secret,
-            Annotations: [],
+            Annotations: ["untraced"],
             Location: loc) { IsBuilderWritten = true };
     }
 

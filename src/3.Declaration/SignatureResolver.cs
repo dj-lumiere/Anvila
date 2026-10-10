@@ -363,6 +363,7 @@ internal sealed class SignatureResolver
             DeclaredMutation = declaredModification,
             MutationCategory = declaredModification,
             IsDangerous = routine.IsDangerous,
+            TraceName = routine.TraceName,
         };
     }
 

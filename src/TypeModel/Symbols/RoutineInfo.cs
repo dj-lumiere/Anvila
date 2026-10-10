@@ -456,6 +456,12 @@ public sealed class RoutineInfo
     public bool IsSynthesized { get; init; }
 
     /// <summary>
+    /// The name a crash-trace frame shows for a routine the builder wrote in place of its own name (the work of
+    /// an Agent shows as <c>agent in start()</c>). Null shows the routine's name.
+    /// </summary>
+    public string? TraceName { get; init; }
+
+    /// <summary>
     /// For wrapper-forwarder synthesized routines: the inner-type member routine that this forwarder
     /// delegates to. Used by monomorphization to re-resolve signatures against the concrete
     /// inner type when the inner member routine's return depends on the inner's generic parameter.
