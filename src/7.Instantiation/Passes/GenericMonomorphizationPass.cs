@@ -2525,6 +2525,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     {
         string astName = BuildAstNameForResolvedRoutine(resolvedRoutine: resolvedRoutine);
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: astName,
+            expectedDefinition: resolvedRoutine.GenericDefinition,
             expectedParamCount: resolvedRoutine.GenericDefinition!.Parameters.Count,
             typeSubs: typeSubs,
             expectedParamNames: resolvedRoutine.GenericDefinition
@@ -2886,6 +2887,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                                              .Select(selector: static p => p.Type?.Name)
                                              .ToList();
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: astName,
+            expectedDefinition: genMemberRoutine,
             expectedParamCount: genMemberRoutine.Parameters.Count,
             typeSubs: typeSubs,
             expectedParamNames: paramNames,
@@ -3017,6 +3019,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // Scoped by the owner's module and realm like the other lookups: Suflae's `DictEmittable.emit` and
         // RazorForge's share the name, and RazorForge's body reads constants Suflae's file does not have.
         RoutineDeclaration? astDecl = FindInStdlib(genericAstName: fallbackAstName,
+            expectedDefinition: genMemberRoutine,
             expectedParamCount: genMemberRoutine.Parameters.Count,
             typeSubs: typeSubs,
             expectedOwnerModule: genMemberRoutine.OwnerType?.FullName is { } ownerName
@@ -3606,7 +3609,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         Dictionary<string, TypeSymbol>? typeSubs = null, List<string>? expectedParamNames = null,
         List<string?>? expectedParamTypeNames = null, string? expectedOwnerModule = null,
         string? expectedOwnerRealm = null, string? expectedSurfaceRealm = null,
-        IReadOnlyList<TypeSymbol>? expectedSpecialization = null)
+        IReadOnlyList<TypeSymbol>? expectedSpecialization = null, RoutineInfo? expectedDefinition = null)
     {
         bool requireGenericSuffix = genericAstName.EndsWith(value: "[generic]");
         string baseName = requireGenericSuffix
@@ -3645,6 +3648,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                                                     pair.First.KnownType?.FullName == pair.Second.FullName ||
                                                     pair.First.Name == pair.Second.Name))
                                    .ToList();
+        }
+
+        // The declarations that registered the routine being built are its body: matched by identity, never by
+        // spelling. Kind-split implementations of one derive (`needs AnyType T` / `needs EntityType T`) register under
+        // one key, so the ranking below still picks among them.
+        if (expectedDefinition?.RegistryKey is { } definitionKey &&
+            candidates.Where(predicate: d => d.ResolvedInfo?.RegistryKey == definitionKey).ToList() is
+                { Count: > 0 } registered)
+        {
+            candidates = registered;
         }
 
         return FindBestCandidate(candidates: candidates,
@@ -3758,6 +3771,17 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             }
 
             return decl;
+        }
+
+        // A same-arity declaration whose parameter names differ is a different routine: its body reads names this one
+        // does not have. Building it would be silently wrong, so the builder stops here.
+        if (countOnlyMatch != null && expectedParamNames != null &&
+            !ParamNamesMatch(decl: countOnlyMatch, expectedParamNames: expectedParamNames))
+        {
+            throw new InvalidOperationException(
+                message: $"No declaration of '{countOnlyMatch.Name}' takes ({string.Join(separator: ", ", values: expectedParamNames)}): " +
+                         "the only one of that arity takes " +
+                         $"({string.Join(separator: ", ", values: countOnlyMatch.Parameters.Select(selector: p => p.Name))}).");
         }
 
         return countOnlyMatch ?? firstMatch;

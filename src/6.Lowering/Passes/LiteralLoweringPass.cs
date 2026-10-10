@@ -266,10 +266,9 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// The Integer record a build-time <paramref name="value"/> stands for: <c>Integer(neg:, magnitude: v)</c> with
-    /// the magnitude itself below 2^64, else its limbs as read-only module data
-    /// (<c>IntegerLimbs(len:, tab: #constant_data[...], ctrl: none)</c>). Every Integer the builder writes as a
-    /// constant (a literal, a range's default step) is built here.
+    /// The Integer record a build-time <paramref name="value"/> stands for: the magnitude itself in <c>small</c> below
+    /// 2^64, else its limbs as read-only module data (<c>data: #constant_data[...], count: n</c>) with no owner. Every
+    /// Integer the builder writes as a constant (a literal, a range's default step) is built here.
     /// </summary>
     internal static CreatorExpression IntegerCreator(TypeRegistry registry, BigInteger value, SourceLocation loc)
     {
@@ -292,58 +291,33 @@ internal sealed class LiteralLoweringPass : AstRewriter
         }
 
         List<long> limbs = Limbs(magnitude: BigInteger.Abs(value: value));
-        VariantTypeSymbol magnitude =
-            integer.MemberVariables.First(predicate: f => f.Name == "magnitude").Type as VariantTypeSymbol ??
-            throw new InvalidOperationException(message: "Integer's magnitude is not a variant.");
+        TypeSymbol FieldType(string name) => integer.MemberVariables.First(predicate: f => f.Name == name).Type;
 
-        // A magnitude below 2^64 is the value itself (the U64 arm), a bigger one the limbs as read-only module data
-        // with no controller, so the Integer never counts or frees them, like a Text literal.
-        Expression payload;
-        TypeSymbol armType;
-        if (limbs.Count <= 1)
-        {
-            armType = u64Type;
-            payload = new LiteralExpression(Value: limbs.Count == 0 ? 0UL : (ulong)limbs[index: 0],
-                LiteralType: TokenType.U64Literal,
-                Location: loc) { ResolvedType = u64Type };
-        }
-        else
-        {
-            RecordTypeSymbol limbsType = magnitude.Members.Select(selector: m => m.Type)
-                                                  .OfType<RecordTypeSymbol>()
-                                                  .First(predicate: t => t.Name != u64Type.Name);
-            TypeSymbol FieldType(string name) => limbsType.MemberVariables.First(predicate: f => f.Name == name).Type;
-            armType = limbsType;
-            payload = new CreatorExpression(TypeName: limbsType.Name,
-                TypeArguments: null,
-                MemberVariables:
-                [
-                    ("len", new LiteralExpression(Value: (ulong)limbs.Count,
-                        LiteralType: TokenType.U64Literal,
-                        Location: loc) { ResolvedType = u64Type }),
-                    ("tab", new ConstantDataExpression(Elements: limbs, ElementType: u64Type, Location: loc)
-                    {
-                        ResolvedType = FieldType(name: "tab")
-                    }),
-                    ("ctrl", new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "ctrl") })
-                ],
-                Location: loc) { ResolvedType = limbsType };
-        }
-
+        // A magnitude below 2^64 is the value itself (`small`), a bigger one its limbs as read-only module data with
+        // no owner, so the Integer never counts or frees them, like a Text literal.
+        bool big = limbs.Count > 1;
         bool negative = value.Sign < 0;
+        Expression U64(ulong v) =>
+            new LiteralExpression(Value: v, LiteralType: TokenType.U64Literal, Location: loc) { ResolvedType = u64Type };
+        Expression data = big
+            ? new ConstantDataExpression(Elements: limbs, ElementType: u64Type, Location: loc)
+            {
+                ResolvedType = FieldType(name: "data")
+            }
+            : new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "data") };
         return new CreatorExpression(TypeName: integer.Name,
             TypeArguments: null,
             MemberVariables:
             [
+                ("owner", new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "owner") }),
+                ("small", U64(v: big || limbs.Count == 0 ? 0UL : (ulong)limbs[index: 0])),
+                ("data", data),
+                ("count", U64(v: big ? (ulong)limbs.Count : 0UL)),
                 ("neg", new LiteralExpression(Value: negative,
                     LiteralType: negative
                         ? TokenType.True
                         : TokenType.False,
-                    Location: loc) { ResolvedType = boolType }),
-                ("magnitude", new CreatorExpression(TypeName: magnitude.Name,
-                    TypeArguments: null,
-                    MemberVariables: [(armType.Name, payload)],
-                    Location: loc) { ResolvedType = magnitude, ConstructedType = magnitude })
+                    Location: loc) { ResolvedType = boolType })
             ],
             Location: loc) { ResolvedType = integer };
     }

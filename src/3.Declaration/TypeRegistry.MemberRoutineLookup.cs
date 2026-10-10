@@ -3491,6 +3491,13 @@ public sealed partial class TypeRegistry
                 continue;
             }
 
+            // An RC handle field (Retained/Guarded/Roamed/...) gains one more holder on every copy: its copy step is
+            // the refcount bump (the same rule ResolveStoreHook applies to the handle itself).
+            if (GetRcWrapperBaseName(type: fieldRec) is not null)
+            {
+                return true;
+            }
+
             var fieldOwn = GetOwnMemberRoutinesResolved(type: fieldRec)
                .ToList();
             if (fieldOwn.Any(predicate: m =>
