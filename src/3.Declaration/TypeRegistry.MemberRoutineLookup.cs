@@ -1807,7 +1807,7 @@ public sealed partial class TypeRegistry
         // `Controlling[X]` protocol triggers the marker-protocol unwrap at the top of this
         // memberRoutine, dispatching the lookup transparently to X's memberRoutine. That is correct for
         // protocol-as-type parameter receivers (where the call site already holds an X-shaped
-        // pointer), but WRONG for RC wrappers — their pointer addresses a `RetainController[T]`
+        // pointer), but WRONG for RC wrappers — their pointer addresses a `RetainManager[T]`
         // struct, NOT T directly. Letting the unwrap proceed here returns the inner T memberRoutine
         // (e.g. `ListNode.chain_text`), which the call dispatcher then invokes with the
         // controller pointer as `me`, reading strong+weak counts as if they were T's first

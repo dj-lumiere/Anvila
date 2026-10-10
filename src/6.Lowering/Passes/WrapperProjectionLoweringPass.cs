@@ -69,7 +69,7 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
         }
 
         // The callee is a routine, not a field: only its receiver is rewritten. A Consulting/Amending
-        // token points at the shared GuardController, so a forwarded routine owned by the guarded entity
+        // token points at the shared GuardManager, so a forwarded routine owned by the guarded entity
         // gets the entity as its receiver. The token's own routines (enter/exit/refer/control/…) keep it.
         Expression receiver = VisitExpression(expr: callee.Object);
         if (e.ResolvedRoutine is { OwnerType: { } owner } &&

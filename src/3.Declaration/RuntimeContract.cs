@@ -59,13 +59,13 @@ public static class RuntimeContract
         public const string Hijack = "hijack";
     }
 
-    /// <summary>Reference-counting controller surface (<c>RetainController[T]</c> and the RC wrappers).</summary>
+    /// <summary>Reference-counting controller surface (<c>RetainManager[T]</c> and the RC wrappers).</summary>
     /// <remarks>The controllers' count primitives are the canonical vocabulary <c>hold</c>/<c>unhold</c>
     /// (strong ±1) and <c>observe</c>/<c>unobserve</c> (weak ±1) — plain stdlib memberRoutine names, called only
     /// from wrapper <c>.rf</c> bodies, so they need no constants here.</remarks>
     public static class RefCount
     {
-        /// <summary><c>RetainController[T].raw_data()</c> — read the controlled payload.</summary>
+        /// <summary><c>RetainManager[T].raw_data()</c> — read the controlled payload.</summary>
         public const string RawData = "raw_data";
 
         /// <summary>The UNIFIED RC copy verb: a same-strength co-owner mint on any RC wrapper handle
@@ -400,11 +400,11 @@ public static class RuntimeContract
     public const string Roamed = "Roamed";
 
     /// <summary>Controller behind <c>Retained[T]</c> / <c>Tracked[T]</c>.</summary>
-    public const string RetainController = "RetainController";
+    public const string RetainManager = "RetainManager";
 
     /// <summary>Controller behind <c>Guarded[T, P]</c> / <c>Witnessed[T, P]</c> and their
     /// <c>Consulting</c> / <c>Amending</c> tokens.</summary>
-    public const string GuardController = "GuardController";
+    public const string GuardManager = "GuardManager";
 
     /// <summary>Controller behind <c>Roamed[T]</c>.</summary>
     public const string RoamController = "RoamController";
@@ -415,15 +415,15 @@ public static class RuntimeContract
     /// <summary>
     /// The controller a pointer-backed wrapper points at, or null when the wrapper holds the entity (or a
     /// value) directly. The controller takes the wrapper's type arguments unchanged
-    /// (<c>Guarded[T, P]</c> → <c>GuardController[T, P]</c>). The entity itself lives in the controller's
+    /// (<c>Guarded[T, P]</c> → <c>GuardManager[T, P]</c>). The entity itself lives in the controller's
     /// <c>data</c> field.
     /// </summary>
     public static string? ControllerOf(string wrapperBaseName)
     {
         return wrapperBaseName switch
         {
-            Retained or Tracked => RetainController,
-            Guarded or Witnessed or Consulting or Amending => GuardController,
+            Retained or Tracked => RetainManager,
+            Guarded or Witnessed or Consulting or Amending => GuardManager,
             Roamed => RoamController,
             _ => null
         };

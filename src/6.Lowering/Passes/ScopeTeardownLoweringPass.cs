@@ -839,7 +839,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// <summary>
     /// True for a binding that holds a borrowed <c>T</c> view — <c>var ctrl = ptr.as_entity()</c>,
     /// <c>var x = h.refer()</c>, <c>var x = h.control()</c>. These pervade the RC wrapper bodies
-    /// (e.g. <c>var ctrl = Hijacked[RetainController[T]](me).as_entity()</c> in <c>Retained.release</c>).
+    /// (e.g. <c>var ctrl = Hijacked[RetainManager[T]](me).as_entity()</c> in <c>Retained.release</c>).
     /// The binding's static type is the bare referent (<c>T</c>), so <c>GetLifecycle</c> would resolve
     /// the referent's real <c>destruct</c> and free a value owned elsewhere — hence we key on the
     /// initializer VERB (a reference primitive), per the four-routine governance model, not the type.

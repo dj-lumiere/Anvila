@@ -1839,7 +1839,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // (2b) Crash path — `throw X` is genuinely NON-discoverable (control flow, no AST call): codegen's
         //   EmitThrow calls `X.crash_message()`, whose body formats via `X.represent()`. Seed both per reached
         //   throwable owner. represent is on the call-driven denylist (f-string/show), so seed it explicitly here.
-        // (2c) Lock-policy no-arg constructor. A `Guarded[T, P]` / `GuardController[T, P]` initializes its
+        // (2c) Lock-policy no-arg constructor. A `Guarded[T, P]` / `GuardManager[T, P]` initializes its
         //   lock field by constructing P (Exclusive/MultiRead/ReadOnly), but the ctor is synthesized into the
         //   container's create with NO resolved-creator AST call the walk can follow. Seed P.create on each
         //   reached lock policy so codegen's lock-field init links. Demand-scoped to a reached policy type.

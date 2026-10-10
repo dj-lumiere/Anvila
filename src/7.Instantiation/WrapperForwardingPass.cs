@@ -762,19 +762,19 @@ internal sealed class WrapperForwardingPass
     }
 
     /// <summary>
-    /// RC wrappers (Retained/Tracked/Roamed): `me` is a ptr to <c>RetainController[T]</c>, NOT to T
+    /// RC wrappers (Retained/Tracked/Roamed): `me` is a ptr to <c>RetainManager[T]</c>, NOT to T
     /// directly. Reaching T requires double-indirection through the controller's <c>data: Hijacked[T]</c>
     /// field:
     /// <code>
     ///   danger
-    ///     var raw  = Hijacked[RetainController[T]](me)
-    ///     var ctrl = raw.as_entity()              # RetainController[T] ptr
+    ///     var raw  = Hijacked[RetainManager[T]](me)
+    ///     var ctrl = raw.as_entity()              # RetainManager[T] ptr
     ///     [return] ctrl.raw_data().as_entity().MemberRoutine(args...)
     /// </code>
     /// Without this, the pointer-wrapper path would emit
     /// <c>Hijacked[T](me).as_entity().MemberRoutine(...)</c>, treating the controller's strong+weak
     /// counts (first 8 bytes) as if they were T's first 8 bytes. A `Roaming` guard indirects through
-    /// <c>RoamController.data_ptr()</c>; Retained/Tracked through <c>RetainController.raw_data()</c>.
+    /// <c>RoamController.data_ptr()</c>; Retained/Tracked through <c>RetainManager.raw_data()</c>.
     /// Both just reach the inner entity — for `Roaming` the lock is already held by the enclosing
     /// `using` (enter), so the forwarder only reaches + calls (release happens at exit on every path).
     /// </summary>
@@ -785,7 +785,7 @@ internal sealed class WrapperForwardingPass
         bool viaRoamController = isRoamed;
         string controllerName = viaRoamController
             ? "RoamController"
-            : "RetainController";
+            : "RetainManager";
         string dataRevealName = viaRoamController
             ? "data_ptr"
             : RuntimeContract.RefCount.RawData;
@@ -813,13 +813,13 @@ internal sealed class WrapperForwardingPass
         // The inner T may still be a GenericParameterTypeSymbol at synth time; codegen's
         // ApplyTypeSubstitutions substitutes T at monomorphization.
         //
-        // Annotate with the OPEN instantiation RetainController[T] (T = the wrapper's
+        // Annotate with the OPEN instantiation RetainManager[T] (T = the wrapper's
         // param), never the bare generic def. The shared synth body is re-resolved by
         // later consumers (SA lazy analysis, GMP rewrite, codegen re-lookup) under a
         // substitution keyed on T; the open form is idempotent there — the same shape
         // SA bakes into Retained.rf's source bodies — while a bare def gets freshly
         // instantiated with whatever binding is at hand, double-wrapping the controller
-        // (RetainController[RetainController[X]]) and killing forwarder body emission
+        // (RetainManager[RetainManager[X]]) and killing forwarder body emission
         // (undefined symbol at link).
         TypeSymbol innerType = ctx.InnerType;
         TypeSymbol? retainControllerDef = _registry.LookupType(name: controllerName);

@@ -1665,7 +1665,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The concrete controller entity behind a pointer-backed wrapper (<c>Retained[E]</c> →
-    /// <c>RetainController[E]</c>, <c>Consulting[E, P]</c> → <c>GuardController[E, P]</c>), derived from the
+    /// <c>RetainManager[E]</c>, <c>Consulting[E, P]</c> → <c>GuardManager[E, P]</c>), derived from the
     /// wrapper's structure: its base name picks the controller (<see cref="RuntimeContract.ControllerOf"/>)
     /// and its type arguments instantiate it. Null when the wrapper has no controller.
     /// </summary>
