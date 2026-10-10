@@ -2944,7 +2944,7 @@ public static class LspServer
                     roles: roles);
             }
 
-            // `Copyable onlyif T obeys Assignable`: the parameter a conformance condition is about.
+            // `Copyable when T obeys Copyable`: the parameter a conformance condition is about.
             foreach (TypeExpression type in written.Where(predicate: w => w.ConformanceConditions != null))
             {
                 foreach (GenericConstraintDeclaration condition in type.ConformanceConditions!)

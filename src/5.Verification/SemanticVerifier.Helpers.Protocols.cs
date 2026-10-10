@@ -73,7 +73,7 @@ public sealed partial class SemanticVerifier
     /// Reports RF-S150 for each <c>needs &lt;param&gt; obeys P</c> constraint on a generic ROUTINE that the
     /// resolved explicit type arguments violate — the clean call-site diagnostic that replaces the
     /// over-prune codegen crash (the body's <c>x.duplicate()</c> etc. would otherwise be pruned when the
-    /// arg fails the bound, surfacing as an "undefined symbol"). Uses the onlyif-aware
+    /// arg fails the bound, surfacing as an "undefined symbol"). Uses the when-aware
     /// <see cref="ImplementsProtocol"/> so a conditional-conformance failure (e.g. <c>List[NonCopyable]</c>
     /// vs <c>T obeys Copyable</c>) is caught. Args still abstract (a nested generic param) are skipped —
     /// they are validated once fully concrete.
@@ -285,7 +285,7 @@ public sealed partial class SemanticVerifier
             return GenericParamObeysConstraint(type: type, protocolName: protocolName);
         }
 
-        // DECLARED conformance (own ImplementedProtocols + their parent chain, gated by `onlyif`, plus the
+        // DECLARED conformance (own ImplementedProtocols + their parent chain, gated by `when`, plus the
         // reflexive marker-protocol rule) is decided by the single registry authority — no duplicate walk
         // here. A positive result covers e.g. `List[NonCopyable]` NOT satisfying `T obeys Copyable`
         // (RF-S150), and Viewing/Modifying/value types satisfying Accessing/Controlling.

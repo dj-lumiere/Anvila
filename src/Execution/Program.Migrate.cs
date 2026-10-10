@@ -128,6 +128,13 @@ internal partial class Program
             }
 
             Token next = tokens[index: i + 1];
+            // `obeys P onlyif (T obeys A, U obeys B)` is `obeys P when T obeys A and U obeys B`.
+            if (token.Text == "onlyif")
+            {
+                edits.AddRange(collection: ConditionalConformanceEdits(tokens: tokens, index: i));
+                continue;
+            }
+
             // `x.share()` is what `=` does now: the call goes, the value stays. The standard library keeps
             // calling the copy step (it reads values out of raw memory), and a definition is left alone.
             if (token.Text == "share" && !inStandardLibrary && !OnDefinitionLine(tokens: tokens, index: i) && i > 0 && tokens[index: i - 1].Type == TokenType.Dot &&
@@ -213,6 +220,49 @@ internal partial class Program
                         Replacement: isGrab ? "check" : "", Line: token.Line,
                         What: isGrab ? "grab → check (in an f-text)" : ".share() removed (in an f-text)");
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rewrites an <c>onlyif</c> conformance condition at <paramref name="index"/> to the <c>when</c> form: the word
+    /// becomes <c>when</c>, and a parenthesized list loses its parentheses with its commas becoming <c>and</c>.
+    /// </summary>
+    private static IEnumerable<MigrationEdit> ConditionalConformanceEdits(List<Token> tokens, int index)
+    {
+        Token word = tokens[index: index];
+        yield return new MigrationEdit(Start: word.Position, Length: word.Text.Length, Replacement: "when",
+            Line: word.Line, What: "onlyif → when");
+        if (index + 1 >= tokens.Count || tokens[index: index + 1].Type != TokenType.LeftParen)
+        {
+            yield break;
+        }
+
+        Token open = tokens[index: index + 1];
+        int depth = 0;
+        for (int j = index + 1; j < tokens.Count; j++)
+        {
+            Token t = tokens[index: j];
+            if (t.Type is TokenType.LeftParen or TokenType.LeftBracket)
+            {
+                depth++;
+            }
+            else if (t.Type is TokenType.RightParen or TokenType.RightBracket)
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    yield return new MigrationEdit(Start: open.Position, Length: 1, Replacement: "", Line: open.Line,
+                        What: "onlyif parentheses removed");
+                    yield return new MigrationEdit(Start: t.Position, Length: 1, Replacement: "", Line: t.Line,
+                        What: "onlyif parentheses removed");
+                    yield break;
+                }
+            }
+            else if (t.Type == TokenType.Comma && depth == 1)
+            {
+                yield return new MigrationEdit(Start: t.Position, Length: 1, Replacement: " and", Line: t.Line,
+                    What: "onlyif comma → and");
             }
         }
     }

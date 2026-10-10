@@ -982,7 +982,7 @@ public record TypeExpression(
     Expression? BuildtimeValue = null) : Expression(Location: Location)
 {
     /// <summary>
-    /// Conditional-conformance conditions from an <c>obeys P onlyif (cond, …)</c> clause: this generic
+    /// Conditional-conformance conditions from an <c>obeys P when cond and …</c> clause: this generic
     /// type obeys THIS protocol ONLY when every listed condition holds (comma = AND). Set by the parser on
     /// the protocol TypeExpression in a type header's obeys list; null = unconditional obeys. Each condition
     /// is a <c>&lt;param&gt; obeys &lt;protocol&gt;</c> pair (a <see cref="GenericConstraintDeclaration"/>).

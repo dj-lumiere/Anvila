@@ -620,7 +620,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// The SINGLE authority for "does this concrete <paramref name="type"/> obey the protocol named
     /// <paramref name="protocolName"/>" via its DECLARED conformance: the type's own
-    /// <c>ImplementedProtocols</c> (+ their parent chain), gated by any <c>onlyif</c> clause, plus the
+    /// <c>ImplementedProtocols</c> (+ their parent chain), gated by any <c>when</c> clause, plus the
     /// reflexive marker-protocol rule. Both the generic-constraint gate (<see cref="ImplementerSatisfiesConstraint"/>)
     /// and the SA-level <c>SemanticVerifier.ImplementsProtocol</c> delegate here for the declared-conformance
     /// check (the latter adds category/generic-param/structural cases around this core). Matches on either the
@@ -642,7 +642,7 @@ public sealed partial class TypeRegistry
             return false;
         }
 
-        // A conditional conformance (`obeys P onlyif T obeys Q`) that does not hold for this instance confers
+        // A conditional conformance (`obeys P when T obeys Q`) that does not hold for this instance confers
         // neither P nor P's parents, so it is left out before the walk.
         implemented = implemented.Where(predicate: p => ConditionalConformanceHolds(type: type, protocolName: p.Name))
                                  .ToList();
@@ -663,7 +663,7 @@ public sealed partial class TypeRegistry
             return false;
         }
 
-        // Conditional-conformance gate: an `obeys P onlyif (…)` protocol is obeyed by a concrete
+        // Conditional-conformance gate: an `obeys P when …` protocol is obeyed by a concrete
         // generic INSTANCE only when the clause's conditions hold for its bound type args.
         return ConditionalConformanceHolds(type: type, protocolName: protocolName);
 
@@ -721,7 +721,7 @@ public sealed partial class TypeRegistry
         // (`obeys Container, Iterable, …`) are populated by the eager Phase-3 conformance pass onto the AMBIENT
         // (RF-realm) generic DEFINITION only. Without inheriting them, `x in dict` in an SF file false-fires
         // RF-S065. Fold in the ambient definition's protocols (realm-blind lookup by bare name reaches the
-        // populated RF-realm def even under an SF ResolutionRealm); conditional (`onlyif`) conformances stay
+        // populated RF-realm def even under an SF ResolutionRealm); conditional (`when`) conformances stay
         // gated per-instance by ConditionalConformanceHolds (checked against THIS instance's type args).
         if (implemented.Count == 0 || type.IsGenericResolution)
         {
@@ -752,7 +752,7 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Evaluates an <c>obeys P onlyif (param obeys proto, …)</c> clause for a concrete generic instance:
+    /// Evaluates an <c>obeys P when param obeys proto and …</c> clause for a concrete generic instance:
     /// true unless <paramref name="type"/> is an instance whose definition declared conditions for
     /// <paramref name="protocolName"/> and some condition fails for the bound type argument. Permissive on
     /// anything it cannot evaluate (a bare def with no args, an unknown param) — the clause only ever

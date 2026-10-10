@@ -27,7 +27,7 @@ public class RecordTypeSymbol : TypeSymbol
     /// <summary>Protocols this record implements (obeys).</summary>
     public List<TypeSymbol> ImplementedProtocols { get; set; } = [];
 
-    /// <summary>Conditional-conformance conditions from an <c>obeys P onlyif (param obeys proto, …)</c>
+    /// <summary>Conditional-conformance conditions from an <c>obeys P when param obeys proto and …</c>
     /// clause, stored on the generic DEFINITION and keyed by the conditionally-obeyed protocol's bare name.
     /// Each entry is the AND-list of <c>(paramName, protocolName)</c> conditions. A concrete instance obeys
     /// that protocol only when every condition holds for its bound type args. Null/absent = unconditional.</summary>

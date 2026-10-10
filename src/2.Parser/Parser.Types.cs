@@ -713,56 +713,39 @@ public partial class Parser
     /// needs T obeys A, U obeys B (comma-separated)
     /// </remarks>
     /// <summary>Parses one protocol in a type header's <c>obeys</c> list, plus an optional trailing
-    /// <c>onlyif (cond, …)</c> conditional-conformance clause attached to that protocol.</summary>
+    /// <c>when T obeys P and U obeys Q</c> conditional-conformance clause attached to that protocol.</summary>
     private TypeExpression ParseObeysProtocol()
     {
         TypeExpression proto = ParseType();
-        if (CheckAndAdvance(type: TokenType.OnlyIf))
+        if (CheckAndAdvance(type: TokenType.When))
         {
-            proto.ConformanceConditions = ParseOnlyIfConditions();
+            proto.ConformanceConditions = ParseConformanceConditions();
         }
 
         return proto;
     }
 
-    /// <summary>Parses an <c>onlyif</c> clause into its AND-list of <c>&lt;param&gt; obeys &lt;protocol&gt;</c>
-    /// conditions. Parens are OPTIONAL: a single condition may be written bare (<c>onlyif T obeys P</c>);
-    /// MULTIPLE conditions need parens (<c>onlyif (T obeys P, U obeys Q)</c>) so their comma separators
-    /// don't collide with the outer obeys-list comma. Comma = AND.</summary>
-    private List<GenericConstraintDeclaration> ParseOnlyIfConditions()
+    /// <summary>Parses the conditions after <c>when</c> in an <c>obeys</c> list: one or more
+    /// <c>&lt;param&gt; obeys &lt;protocol&gt;</c> joined by <c>and</c>. A comma after them belongs to the outer
+    /// <c>obeys</c> list.</summary>
+    private List<GenericConstraintDeclaration> ParseConformanceConditions()
     {
-        var conds = new List<GenericConstraintDeclaration>();
-        if (CheckAndAdvance(type: TokenType.LeftParen))
+        var conds = new List<GenericConstraintDeclaration> { ParseOneConformanceCondition() };
+        while (CheckAndAdvance(type: TokenType.And))
         {
-            do
-            {
-                while (CheckAndAdvance(type: TokenType.Newline))
-                {
-                    // Skip newlines between comma-separated onlyif conditions.
-                }
-
-                conds.Add(item: ParseOneOnlyIfCondition());
-            } while (CheckAndAdvance(type: TokenType.Comma));
-
-            Consume(type: TokenType.RightParen,
-                errorMessage: "Expected ')' after 'onlyif' conditions");
-        }
-        else
-        {
-            // Bare single condition — a following comma belongs to the outer obeys list, not here.
-            conds.Add(item: ParseOneOnlyIfCondition());
+            conds.Add(item: ParseOneConformanceCondition());
         }
 
         return conds;
     }
 
-    /// <summary>Parses one <c>&lt;param&gt; obeys &lt;protocol&gt;</c> condition of an <c>onlyif</c> clause.</summary>
-    private GenericConstraintDeclaration ParseOneOnlyIfCondition()
+    /// <summary>Parses one <c>&lt;param&gt; obeys &lt;protocol&gt;</c> condition of a <c>when</c> clause.</summary>
+    private GenericConstraintDeclaration ParseOneConformanceCondition()
     {
         SourceLocation loc = GetLocation();
         string paramName =
-            ConsumeIdentifier(errorMessage: "Expected type parameter name in 'onlyif' condition");
-        Consume(type: TokenType.Obeys, errorMessage: "Expected 'obeys' in 'onlyif' condition");
+            ConsumeIdentifier(errorMessage: "Expected a type parameter name after 'when' in an 'obeys' list");
+        Consume(type: TokenType.Obeys, errorMessage: "Expected 'obeys' in the 'when' condition");
         return new GenericConstraintDeclaration(ParameterName: paramName,
             ConstraintType: ConstraintKind.Obeys,
             ConstraintTypes: [ParseType()],

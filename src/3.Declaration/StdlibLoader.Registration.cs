@@ -1700,10 +1700,10 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Extracts the <c>obeys P onlyif (param obeys proto, …)</c> conditional-conformance conditions from a
+    /// Extracts the <c>obeys P when param obeys proto and …</c> conditional-conformance conditions from a
     /// type header's obeys list into the def-level map the conformance query reads (protocol bare name →
     /// AND-list of <c>(paramName, protocolName)</c>). Returns null when no protocol carries an
-    /// <c>onlyif</c> clause, so an unconditional type stores nothing.
+    /// <c>when</c> clause, so an unconditional type stores nothing.
     /// </summary>
     internal static Dictionary<string, List<(string ParamName, string ProtocolName)>>?
         BuildConditionalObeys(List<TypeExpression> protoExprs)

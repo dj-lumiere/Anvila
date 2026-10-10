@@ -1245,7 +1245,7 @@ public sealed partial class SemanticVerifier
                     EntityTypeSymbol entity => entity.ImplementedProtocols,
                     _ => null
                 };
-                // A conformance with an `onlyif` holds per instantiation, through the inner type's routines.
+                // A conformance with an `when` holds per instantiation, through the inner type's routines.
                 Dictionary<string, List<(string ParamName, string ProtocolName)>>? conditional = type switch
                 {
                     RecordTypeSymbol record => record.ConditionalObeys,

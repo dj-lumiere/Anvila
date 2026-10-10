@@ -41,7 +41,7 @@ public partial class Parser
             constraints: ref constraints,
             protocols: interfaces,
             relates: ref associatedTypes,
-            allowOnlyIf: true);
+            allowConditions: true);
 
         var members = new List<SyntaxTree.Declaration>();
 
@@ -104,7 +104,7 @@ public partial class Parser
             constraints: ref constraints,
             protocols: interfaces,
             relates: ref associatedTypes,
-            allowOnlyIf: true);
+            allowConditions: true);
 
         var members = new List<SyntaxTree.Declaration>();
 
@@ -356,7 +356,7 @@ public partial class Parser
     /// </summary>
     private void ParseHeaderClauses(List<string>? genericParams,
         ref List<GenericConstraintDeclaration>? constraints, List<TypeExpression> protocols,
-        ref List<AssociatedTypeDeclaration>? relates, bool allowOnlyIf)
+        ref List<AssociatedTypeDeclaration>? relates, bool allowConditions)
     {
         while (true)
         {
@@ -382,7 +382,7 @@ public partial class Parser
                         existingConstraints: constraints);
                     continue;
                 case TokenType.Obeys:
-                    protocols.AddRange(collection: ParseObeysProtocolList(allowOnlyIf: allowOnlyIf));
+                    protocols.AddRange(collection: ParseObeysProtocolList(allowConditions: allowConditions));
                     continue;
             }
 
@@ -400,12 +400,12 @@ public partial class Parser
     /// <summary>
     /// Skips an optional line-break before <c>obeys</c>, then parses the comma-separated protocol list
     /// that follows an <c>obeys</c> keyword (if present). Returns the list (empty when no <c>obeys</c>).
-    /// When <paramref name="allowOnlyIf"/> is <see langword="true"/> (the default for entity/record),
-    /// each item is parsed via <see cref="ParseObeysProtocol"/> (which handles <c>onlyif</c> conditions);
+    /// When <paramref name="allowConditions"/> is <see langword="true"/> (the default for entity/record),
+    /// each item is parsed via <see cref="ParseObeysProtocol"/> (which handles <c>when</c> conditions);
     /// when <see langword="false"/> (for protocol parent-protocol lists), each item is a plain
     /// <see cref="ParseType"/> call. Newlines between comma-separated items are consumed silently.
     /// </summary>
-    private List<TypeExpression> ParseObeysProtocolList(bool allowOnlyIf = true)
+    private List<TypeExpression> ParseObeysProtocolList(bool allowConditions = true)
     {
         // Allow a line break before 'obeys' in the type header.
         while (Check(type: TokenType.Newline) && PeekToken(offset: 1)
@@ -428,7 +428,7 @@ public partial class Parser
                 // Consume newline; continue to the next protocol name.
             }
 
-            interfaces.Add(item: allowOnlyIf
+            interfaces.Add(item: allowConditions
                 ? ParseObeysProtocol()
                 : ParseType());
         } while (CheckAndAdvance(type: TokenType.Comma));
@@ -645,7 +645,7 @@ public partial class Parser
         }
 
         // The header clauses (`relates`, `obeys`, `needs`), each on its own line, in any order. A protocol's
-        // parent protocols are plain types (no onlyif conditions).
+        // parent protocols are plain types (no when conditions).
         List<GenericConstraintDeclaration>? constraints = inlineConstraints;
         List<AssociatedTypeDeclaration>? associatedTypes = null;
         var parentProtocols = new List<TypeExpression>();
@@ -653,7 +653,7 @@ public partial class Parser
             constraints: ref constraints,
             protocols: parentProtocols,
             relates: ref associatedTypes,
-            allowOnlyIf: false);
+            allowConditions: false);
 
         var memberRoutines = new List<RoutineSignature>();
 

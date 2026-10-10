@@ -1206,10 +1206,10 @@ internal sealed partial class AstPrinter
                 {
                     if (!obeysAllowConditions)
                     {
-                        throw Refuse(at: declaration.Location, reason: "an onlyif condition on a protocol's parent");
+                        throw Refuse(at: declaration.Location, reason: "a conformance condition on a protocol's parent");
                     }
 
-                    items.Add(item: Doc.Concat(TypeDoc(type: protocol), OnlyIfDoc(conditions: conditions)));
+                    items.Add(item: Doc.Concat(TypeDoc(type: protocol), ConformanceConditionsDoc(conditions: conditions)));
                 }
                 else
                 {
@@ -1224,34 +1224,25 @@ internal sealed partial class AstPrinter
             depth: depth);
     }
 
-    private Doc OnlyIfDoc(List<GenericConstraintDeclaration> conditions)
+    private Doc ConformanceConditionsDoc(List<GenericConstraintDeclaration> conditions)
     {
-        var parts = new List<Doc> { Doc.Text(text: " onlyif ") };
-        if (conditions.Count > 1)
-        {
-            parts.Add(item: Doc.Text(text: "("));
-        }
+        var parts = new List<Doc> { Doc.Text(text: " when ") };
 
         for (int i = 0; i < conditions.Count; i++)
         {
             GenericConstraintDeclaration condition = conditions[index: i];
             if (condition.ConstraintType != ConstraintKind.Obeys || condition.ConstraintTypes is not { Count: 1 })
             {
-                throw Refuse(at: condition.Location, reason: "an onlyif condition of this shape");
+                throw Refuse(at: condition.Location, reason: "a conformance condition of this shape");
             }
 
             if (i > 0)
             {
-                parts.Add(item: Doc.Text(text: ", "));
+                parts.Add(item: Doc.Text(text: " and "));
             }
 
             parts.Add(item: Doc.Text(text: condition.ParameterName + " obeys "));
             parts.Add(item: TypeDoc(type: condition.ConstraintTypes[index: 0]));
-        }
-
-        if (conditions.Count > 1)
-        {
-            parts.Add(item: Doc.Text(text: ")"));
         }
 
         return Doc.Concat(parts: parts);
