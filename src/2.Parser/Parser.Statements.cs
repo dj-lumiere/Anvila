@@ -1376,15 +1376,30 @@ public partial class Parser
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
         // Parse resource-binding pairs: using expr as name [, expr as name]*
-        var resources = new List<(Expression Resource, string Name)>();
+        var resources = new List<(Expression Resource, string Name, List<string>? Parts)>();
 
         do
         {
             Expression resource = ParseExpression();
             Consume(type: TokenType.As,
                 errorMessage: "Expected 'as' after resource expression in using block");
+            // `as (a, b)` names the items of the tuple the scope binds.
+            if (CheckAndAdvance(type: TokenType.LeftParen))
+            {
+                var parts = new List<string>();
+                do
+                {
+                    parts.Add(item: ConsumeIdentifier(errorMessage: "Expected a name in 'as (...)'"));
+                } while (CheckAndAdvance(type: TokenType.Comma));
+
+                Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after the names in 'as (...)'");
+                SourceLocation at = resource.Location;
+                resources.Add(item: (resource, $"__using_{at.Line}_{at.Column}", parts));
+                continue;
+            }
+
             string name = ConsumeIdentifier(errorMessage: "Expected binding name after 'as'");
-            resources.Add(item: (resource, name));
+            resources.Add(item: (resource, name, null));
         } while (CheckAndAdvance(type: TokenType.Comma));
 
         // Parse the indented body
@@ -1412,7 +1427,7 @@ public partial class Parser
                 Location: location,
                 FallbackBody: i == 0
                     ? fallbackBody
-                    : null);
+                    : null) { Parts = resources[index: i].Parts };
         }
 
         return result;

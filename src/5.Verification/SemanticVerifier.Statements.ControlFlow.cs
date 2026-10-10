@@ -1019,6 +1019,10 @@ public sealed partial class SemanticVerifier
         _registry.DeclareVariable(name: usingStmt.Name,
             type: boundType,
             location: usingStmt.Location);
+        if (usingStmt.Parts != null)
+        {
+            DeclareUsingParts(usingStmt: usingStmt, boundType: boundType);
+        }
 
         // Analyze the body. (A token's use after its source changed is RazorForge's TokenLifetimeChecker's, RF-S643.)
         AnalyzeStatement(statement: usingStmt.Body);
@@ -1042,6 +1046,44 @@ public sealed partial class SemanticVerifier
             _registry.EnterScope(kind: ScopeKind.Block, name: "using-fallback");
             AnalyzeStatement(statement: usingStmt.FallbackBody);
             _registry.ExitScope();
+        }
+    }
+
+    /// <summary>Declares the names of <c>using r as (a, b)</c>, one per item of the tuple the scope binds.</summary>
+    private void DeclareUsingParts(UsingStatement usingStmt, TypeSymbol boundType)
+    {
+        List<string> parts = usingStmt.Parts!;
+        if (boundType is ErrorTypeSymbol)
+        {
+            return;
+        }
+
+        if (usingStmt.FallbackBody != null)
+        {
+            ReportError(code: SemanticDiagnosticCode.DestructuringArityMismatch,
+                message: "A 'using' with a 'fallback' binds the resource itself, so it takes one name after 'as', " +
+                         $"not '{usingStmt.BoundText}'.",
+                location: usingStmt.Location);
+            return;
+        }
+
+        if (boundType is not TupleTypeSymbol tuple || tuple.ElementTypes.Count != parts.Count)
+        {
+            string gives = boundType is TupleTypeSymbol other
+                ? $"a tuple of {other.ElementTypes.Count}"
+                : $"one '{boundType.Name}'";
+            ReportError(code: SemanticDiagnosticCode.DestructuringArityMismatch,
+                message: $"'as {usingStmt.BoundText}' names {parts.Count} items, but this 'using' gives {gives}. " +
+                         "Name each item of the tuple it gives, or bind it with one name.",
+                location: usingStmt.Location);
+            return;
+        }
+
+        for (int i = 0; i < parts.Count; i++)
+        {
+            _registry.DeclareVariable(name: parts[index: i],
+                type: tuple.ElementTypes[index: i],
+                location: usingStmt.Location);
         }
     }
 

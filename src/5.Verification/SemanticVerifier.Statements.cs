@@ -1388,6 +1388,16 @@ public sealed partial class SemanticVerifier
         }
 
         // #173: Tuple assignment destructuring — (a, b) = (b, a)
+        if (assign is { Target: TupleLiteralExpression places, Value: TupleLiteralExpression values } &&
+            Desugaring.Passes.ControlFlowLoweringPass.SwapSources(left: places.Elements, right: values.Elements) is
+                { } swapSources)
+        {
+            // A swap analyzed before desugaring turned it into a PlaceSwapStatement (a stdlib body checked on its own).
+            AnalyzePlaceSwap(swap: new PlaceSwapStatement(Places: places.Elements, Sources: swapSources,
+                Location: assign.Location));
+            return;
+        }
+
         if (assign.Target is TupleLiteralExpression tupleLhs)
         {
             AnalyzeTupleDestructuringAssignment(assign: assign, tupleLhs: tupleLhs);

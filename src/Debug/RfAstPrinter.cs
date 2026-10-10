@@ -1548,7 +1548,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     public string VisitUsingStatement(UsingStatement node)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(handler: $"{I}using {node.Resource.Accept(visitor: this)} as {node.Name}");
+        sb.AppendLine(handler: $"{I}using {node.Resource.Accept(visitor: this)} as {node.BoundText}");
         sb.Append(value: PrintBodyOf(stmt: node.Body));
         if (node.FallbackBody != null)
         {

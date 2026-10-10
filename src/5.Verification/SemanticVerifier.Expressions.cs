@@ -638,6 +638,19 @@ public sealed partial class SemanticVerifier
 
         // A tuple of places on the left that the right doesn't reorder (a swap is a PlaceSwapStatement by now) would
         // need each value worked out first and then put in order, which the builder doesn't do.
+        if (binary is { Operator: BinaryOperator.Assign, Left: TupleLiteralExpression swapPlaces,
+                Right: TupleLiteralExpression swapValues } &&
+            Desugaring.Passes.ControlFlowLoweringPass.SwapSources(left: swapPlaces.Elements,
+                right: swapValues.Elements) is { } swapSources)
+        {
+            // A swap analyzed before desugaring turned it into a PlaceSwapStatement (a stdlib body checked on its own).
+            AnalyzePlaceSwap(swap: new PlaceSwapStatement(Places: swapPlaces.Elements, Sources: swapSources,
+                Location: binary.Location));
+            TypeSymbol none = _registry.LookupType(name: "None") ?? ErrorTypeSymbol.Instance;
+            binary.ResolvedType = none;
+            return none;
+        }
+
         if (binary is { Operator: BinaryOperator.Assign, Left: TupleLiteralExpression places })
         {
             if (binary.Right is TupleLiteralExpression values && values.Elements.Count != places.Elements.Count)

@@ -1222,6 +1222,13 @@ public record UsingStatement(
     SourceLocation Location,
     Statement? FallbackBody = null) : Statement(Location: Location)
 {
+    /// <summary>The names of <c>using r as (a, b)</c>, one per item of the tuple the scope binds, which then goes by
+    /// the hidden <see cref="Name"/>. Null for <c>using r as x</c>.</summary>
+    public List<string>? Parts { get; init; }
+
+    /// <summary>The names the body sees: the parts of a tuple binding, or the one name.</summary>
+    public string BoundText => Parts == null ? Name : "(" + string.Join(separator: ", ", values: Parts) + ")";
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

@@ -288,7 +288,7 @@ internal sealed partial class AstPrinter
         while (true)
         {
             resources.Add(item: Doc.Concat(Expr(expression: current.Resource, context: ExprContext.ListItem),
-                Doc.Text(text: " as " + current.Name)));
+                Doc.Text(text: " as " + current.BoundText)));
             if (current.Body is UsingStatement inner && inner.Location == current.Location &&
                 inner.FallbackBody == null)
             {

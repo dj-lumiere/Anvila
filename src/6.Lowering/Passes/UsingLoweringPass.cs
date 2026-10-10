@@ -104,6 +104,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
             resTempIdent: resTempIdent,
             resourceType: resourceType,
             loc: loc);
+        EmitPartBindings(stmts: stmts, u: u, loc: loc);
 
         // Build the exit() call expression (reused for injection and normal exit)
         ExpressionStatement? exitCallStmt = MakeExitCallStmt(exitMemberRoutine: exitMemberRoutine,
@@ -165,6 +166,29 @@ internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
                 value: resTempIdent,
                 type: resourceType,
                 loc: loc));
+        }
+    }
+
+    // `using r as (a, b)`: each name takes its item of the tuple the scope bound to the hidden name.
+    private static void EmitPartBindings(List<Statement> stmts, UsingStatement u, SourceLocation loc)
+    {
+        if (u.Parts == null || stmts[^1] is not DeclarationStatement
+            {
+                Declaration: VariableDeclaration { Initializer.ResolvedType: TupleTypeSymbol tuple }
+            })
+        {
+            return;
+        }
+
+        var whole = new IdentifierExpression(Name: u.Name, Location: loc) { ResolvedType = tuple };
+        for (int i = 0; i < u.Parts.Count; i++)
+        {
+            TypeSymbol itemType = tuple.ElementTypes[index: i];
+            var item = new MemberExpression(Object: whole, MemberName: $"item{i}", Location: loc)
+            {
+                ResolvedType = itemType
+            };
+            stmts.Add(item: MakeBinding(name: u.Parts[index: i], value: item, type: itemType, loc: loc));
         }
     }
 

@@ -366,7 +366,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     /// When <paramref name="right"/> names the places of <paramref name="left"/> in another order (<c>(a, b) =
     /// (b, a)</c>), the index of the left place each right element names, else null.
     /// </summary>
-    private static List<int>? SwapSources(List<Expression> left, List<Expression> right)
+    internal static List<int>? SwapSources(List<Expression> left, List<Expression> right)
     {
         if (left.Count != right.Count || left.Count < 2)
         {
