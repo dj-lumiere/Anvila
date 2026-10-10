@@ -440,6 +440,10 @@ public enum TokenType
     /// <summary>Becomes statement keyword - the value of a block arm of a `when` that gives a value, as its last line.</summary>
     Becomes,
 
+    /// <summary>Until statement keyword - a loop that runs while its condition is false: <c>until c</c> is
+    /// <c>while not (c)</c>.</summary>
+    Until,
+
 
     /// <summary>`try` prefix keyword — recover a failable call into Maybe[T] (present|absent, no crash info).</summary>
     Try,

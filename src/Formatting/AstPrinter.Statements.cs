@@ -127,10 +127,14 @@ internal sealed partial class AstPrinter
                 PrintIf(statement: ifStatement, start: start, depth: depth, prefix: prefix, keyword: "if");
                 break;
             case WhileStatement whileStatement:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "while "),
-                    Expr(expression: whileStatement.Condition, context: ExprContext.Statement)));
+                EmitHead(start: start, depth: depth, head: whileStatement is
+                    { IsUntil: true, Condition: UnaryExpression { Operator: UnaryOperator.Not } written }
+                    ? Doc.Concat(prefix, Doc.Text(text: "until "), Expr(expression: written.Operand, context: ExprContext.Statement))
+                    : Doc.Concat(prefix, Doc.Text(text: "while "),
+                        Expr(expression: whileStatement.Condition, context: ExprContext.Statement)));
                 PrintBody(body: whileStatement.Body, depth: depth + 1, at: whileStatement.Location);
                 PrintElseBranch(elseBranch: whileStatement.ElseBranch, depth: depth, at: whileStatement.Location);
+                PrintThenBranch(thenBranch: whileStatement.ThenBranch, depth: depth, at: whileStatement.Location);
                 break;
             case LoopStatement loop:
                 if (loop.IsIteratorEachLoop || loop.IterationSourceName != null || loop.IterationSourcePath != null)
@@ -232,6 +236,14 @@ internal sealed partial class AstPrinter
     }
 
     /// <summary>An <c>else</c> header and its block (of an if, a while or an each).</summary>
+    private void PrintThenBranch(Statement? thenBranch, int depth, SourceLocation at)
+    {
+        if (thenBranch != null)
+        {
+            PrintContinuation(keyword: "then", body: thenBranch, depth: depth, at: at);
+        }
+    }
+
     private void PrintElseBranch(Statement? elseBranch, int depth, SourceLocation at)
     {
         if (elseBranch == null)
@@ -266,6 +278,7 @@ internal sealed partial class AstPrinter
             Expr(expression: each.Iterable, context: ExprContext.Statement)));
         PrintBody(body: each.Body, depth: depth + 1, at: each.Location);
         PrintElseBranch(elseBranch: each.ElseBranch, depth: depth, at: each.Location);
+        PrintThenBranch(thenBranch: each.ThenBranch, depth: depth, at: each.Location);
     }
 
     private void PrintUsing(UsingStatement statement, int start, int depth, Doc prefix)

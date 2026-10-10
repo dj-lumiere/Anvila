@@ -493,6 +493,7 @@ public partial class Parser
             TokenType.Pierce => true,
             TokenType.Todo => true,
             TokenType.Becomes => true,
+            TokenType.Until => true,
             _ => false
         };
     }

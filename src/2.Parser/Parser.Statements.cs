@@ -159,7 +159,47 @@ public partial class Parser
         return new WhileStatement(Condition: condition,
             Body: body,
             ElseBranch: elseBranch,
-            Location: location);
+            Location: location) { ThenBranch = ParseLoopThen() };
+    }
+
+    /// <summary>
+    /// Parses an until loop: <c>until c</c> runs its body while <c>c</c> is false, so it is <c>while not (c)</c>,
+    /// marked to print back as written.
+    /// </summary>
+    private WhileStatement ParseUntilStatement()
+    {
+        SourceLocation location = GetLocation(token: PeekToken(offset: -1));
+        Expression condition = ParseExpression();
+        WhileStatement loop = ParseWhileTail(condition: new UnaryExpression(Operator: UnaryOperator.Not,
+            Operand: condition,
+            Location: condition.Location), location: location);
+        return loop with { IsUntil = true };
+    }
+
+    private WhileStatement ParseWhileTail(Expression condition, SourceLocation location)
+    {
+        Statement body = ParseBody();
+        Statement? elseBranch = CheckAndAdvance(type: TokenType.Else)
+            ? ParseBody()
+            : null;
+        return new WhileStatement(Condition: condition,
+            Body: body,
+            ElseBranch: elseBranch,
+            Location: location) { ThenBranch = ParseLoopThen() };
+    }
+
+    /// <summary>A loop's <c>then</c> block, run when the loop ends by itself (no <c>break</c>), or null.</summary>
+    private Statement? ParseLoopThen()
+    {
+        return Check(type: TokenType.Then) && PeekToken(offset: 1).Type == TokenType.Newline
+            ? AdvanceThen()
+            : null;
+
+        Statement AdvanceThen()
+        {
+            Advance(); // `then`
+            return ParseBody();
+        }
     }
 
     /// <summary>
@@ -216,7 +256,7 @@ public partial class Parser
             Iterable: sequenceable,
             Body: body,
             ElseBranch: elseBranch,
-            Location: location);
+            Location: location) with { ThenBranch = ParseLoopThen() };
     }
 
     /// <summary>

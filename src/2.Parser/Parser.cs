@@ -1154,6 +1154,9 @@ public partial class Parser
             case TokenType.Todo:
                 Advance();
                 return ParseTodoStatement();
+            case TokenType.Until:
+                Advance();
+                return ParseUntilStatement();
             case TokenType.Becomes:
             {
                 SourceLocation becomesAt = GetLocation();

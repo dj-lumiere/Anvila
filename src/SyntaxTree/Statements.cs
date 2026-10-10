@@ -448,6 +448,14 @@ public record WhileStatement(
     Statement? ElseBranch,
     SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The <c>then</c> block after the loop: it runs when the loop ends by itself, never after a
+    /// <c>break</c>.</summary>
+    public Statement? ThenBranch { get; init; }
+
+    /// <summary>True for <c>until c</c>, kept as <c>while not (c)</c>: the condition is the negation of what was
+    /// written, so the source prints back as written.</summary>
+    public bool IsUntil { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
@@ -527,6 +535,10 @@ public record EachStatement(
     Statement? ElseBranch,
     SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The <c>then</c> block after the loop: it runs when the loop ends by itself, never after a
+    /// <c>break</c>.</summary>
+    public Statement? ThenBranch { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

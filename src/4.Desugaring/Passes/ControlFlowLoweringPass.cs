@@ -127,6 +127,10 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     {
         return stmt switch
         {
+            EachStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then,
+                body: f.Body, rebuild: b => f with { ThenBranch = null, Body = b }),
+            WhileStatement { ThenBranch: { } then } w => LowerLoopThen(loop: w with { ThenBranch = null }, then: then,
+                body: w.Body, rebuild: b => w with { ThenBranch = null, Body = b }),
             EachStatement f => LowerEach(eachStmt: f),
             DestructuringStatement ds => LowerDestructuring(destruct: ds),
             BlockStatement b => LowerBlock(b: b),
@@ -307,6 +311,49 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 IfNotRan(name: ranName, elseBranch: LowerStatement(stmt: elseBranch), loc: loc)
             ],
             Location: loc);
+    }
+
+    /// <summary>
+    /// A loop with a <c>then</c> block, which runs when the loop ends by itself, never after a <c>break</c>:
+    /// <code>
+    /// var _lf_broke_N = false
+    /// loop, each of its own breaks first setting _lf_broke_N = true
+    /// if !_lf_broke_N { then }
+    /// </code>
+    /// </summary>
+    private BlockStatement LowerLoopThen(Statement loop, Statement then, Statement body, Func<Statement, Statement> rebuild)
+    {
+        SourceLocation loc = loop.Location;
+        string brokeName = $"_lf_broke_{_iterCount++}";
+        Statement marked = rebuild(arg: new BreakMarker(flag: brokeName).VisitStatement(stmt: body));
+        return new BlockStatement(Statements:
+            [
+                RanFlag(name: brokeName, loc: loc),
+                LowerStatement(stmt: marked),
+                IfNotRan(name: brokeName, elseBranch: LowerStatement(stmt: then), loc: loc)
+            ],
+            Location: loc);
+    }
+
+    /// <summary>Sets a flag before each <c>break</c> of one loop, the breaks of the loops inside it left alone.</summary>
+    private sealed class BreakMarker(string flag) : AstRewriter
+    {
+        public override Statement VisitStatement(Statement stmt)
+        {
+            return stmt switch
+            {
+                BreakStatement b => new BlockStatement(Statements:
+                    [
+                        new AssignmentStatement(Target: new IdentifierExpression(Name: flag, Location: b.Location),
+                            Value: new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: b.Location),
+                            Location: b.Location),
+                        b
+                    ],
+                    Location: b.Location),
+                WhileStatement or EachStatement or LoopStatement => stmt,
+                _ => base.VisitStatement(stmt: stmt)
+            };
+        }
     }
 
     /// <summary><c>var name: Bool = false</c>, the flag a loop with an <c>else</c> sets when its body runs.</summary>
