@@ -143,7 +143,7 @@ internal sealed class CrashReachability
         return callee.LlvmIrTemplate == null || callee.IsFailable || callee.HasFailableCalls;
     }
 
-    // A number, Bool or Character operand: its operators are wrapping/unchecked instructions or routines
+    // A number, Bool or Char operand: its operators are wrapping/unchecked instructions or routines
     // whose failability the verifier already recorded on the caller (HasFailableCalls).
     private static bool IsPlainOperand(TypeSymbol? type)
     {

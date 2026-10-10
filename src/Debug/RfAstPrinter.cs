@@ -141,7 +141,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         // 3. Monomorphized instances (concrete AST bodies), bucketed by owner. INCLUDES synthesized
         // instances (per-owner derives the collector materializes — represent/eq/cmp/destroy/lt/…):
         // codegen EMITS these, so a debuggable dump MUST show them. They were previously skipped, which is
-        // exactly why a materialized `ComparisonSign.eq` / `Character.destroy` was invisible in the dump.
+        // exactly why a materialized `ComparisonSign.eq` / `Char.destroy` was invisible in the dump.
         // Each synthesized instance is tagged so the reader can tell it from a normal monomorphization.
         foreach ((string _, MonomorphizedBody mono) in instantiatedGenericBodies ??
                                                        new Dictionary<string, MonomorphizedBody>())
@@ -1099,7 +1099,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
                 return $"{ri.QualifiedName}{typeArgs}({args})";
             }
 
-            // Member routine: keep the receiver form (`obj.MemberRoutine[...](...)`).
+            // Member routine: keep the receiver form (`obj.MemberCallable[...](...)`).
             return $"{node.Object.Accept(visitor: this)}.{ri.Name}{typeArgs}({args})";
         }
 

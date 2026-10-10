@@ -906,7 +906,7 @@ public sealed partial class SemanticVerifier
 
         _registry.EnterScope(kind: ScopeKind.Function, name: "lambda");
 
-        // Extract expected parameter types from context (e.g., Routine[(S64, S64), Bool])
+        // Extract expected parameter types from context (e.g., Callable[(S64, S64), Bool])
         List<TypeSymbol>? expectedParamTypes = expectedType is RoutineTypeSymbol rt
             ? rt.ParameterTypes
             : null;
@@ -941,7 +941,7 @@ public sealed partial class SemanticVerifier
                         $"Cannot infer the type of lambda parameter '{param.Name}' — there is no type " +
                         "annotation and no typed target to infer from. Annotate it (e.g. " +
                         "`(a: S32, b: S32) => a + b`) or assign the lambda to a typed target " +
-                        "(`var f: Routine[(S32, S32), S32] = …`).",
+                        "(`var f: Callable[(S32, S32), S32] = …`).",
                         location: param.Location);
                 }
 

@@ -243,7 +243,7 @@ public partial class Parser
         string member = CurrentToken.Text;
         Advance();
 
-        // Generic member access / call: obj.MemberRoutine[T](...).
+        // Generic member access / call: obj.MemberCallable[T](...).
         // Parsed uniformly (no generic-vs-index decision): the `.MemberRoutine` folds into a
         // MemberExpression and the brackets attach as a BracketAccessExpression whose
         // Object is that MemberExpression. BracketReclassifyPass rewrites this into a
@@ -258,7 +258,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Handles a generic member access/call: <c>obj.MemberRoutine[T](...)</c>. Called after the member
+    /// Handles a generic member access/call: <c>obj.MemberCallable[T](...)</c>. Called after the member
     /// name is consumed and a bracket (or a rejected call-site <c>![</c>) is confirmed next.
     /// </summary>
     private Expression HandleGenericMemberAccess(Expression expr, string member)

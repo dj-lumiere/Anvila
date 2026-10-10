@@ -273,9 +273,9 @@ public class EntityTypeSymbol : TypeSymbol
         }
 
         // A RoutineTypeSymbol keeps its holes in ParameterTypes/ReturnType, NOT TypeArguments — so the
-        // IsGenericResolution/TypeArguments path below would leave a `transform: Routine[(T,), U]` FIELD
+        // IsGenericResolution/TypeArguments path below would leave a `transform: Callable[(T,), U]` FIELD
         // unsubstituted when a generic iterator entity is monomorphized (`SelectEmittable[S64, S64, …]`).
-        // Its `destroy` field-walk then emits a call to the NON-CONCRETE `Routine[(T,), U].destroy()`, which
+        // Its `destroy` field-walk then emits a call to the NON-CONCRETE `Callable[(T,), U].destroy()`, which
         // reaches LlvmEmit (a dumb translator that must only ever see concrete types) and links undefined.
         // Substitute the routine's parameter/return slots recursively. Tuples carry theirs the same way.
         if (type is RoutineTypeSymbol rt)

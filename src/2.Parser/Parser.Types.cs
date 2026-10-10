@@ -284,7 +284,7 @@ public partial class Parser
         var elementTypes = new List<TypeExpression>();
 
         // Empty tuple type `()` — a zero-element parameter list, the param slot of a no-argument
-        // routine type: `Routine[(), None]`. Kept as a `Tuple` with an empty argument list so the
+        // routine type: `Callable[(), None]`. Kept as a `Tuple` with an empty argument list so the
         // type resolver produces zero parameter types.
         if (Check(type: TokenType.RightParen))
         {

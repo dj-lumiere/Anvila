@@ -11,14 +11,14 @@ namespace Builder.Lowering.Passes;
 
 /// <summary>
 /// Lowers domain-specific literal tokens to equivalent record constructor expressions
-/// before codegen. After this pass, codegen never sees ByteSize, Duration, Character,
+/// before codegen. After this pass, codegen never sees ByteSize, Duration, Char,
 /// or ByteLetter literals -> only <see cref="CreatorExpression"/> nodes.
 ///
 /// <para>Handled token types:</para>
 /// <list type="bullet">
 /// <item>ByteSize (<c>64kib</c>, <c>100mb</c>, ?? -> <c>ByteSize(value: bytes_u64)</c></item>
 /// <item>Duration (<c>5s</c>, <c>100ms</c>, ?? -> <c>Duration(seconds: s64, nanoseconds: u32)</c></item>
-/// <item>Character (<c>'a'</c>) -> <c>Character(from: codepoint_u32)</c></item>
+/// <item>Char (<c>'a'</c>) -> <c>Char(from: codepoint_u32)</c></item>
 /// <item>ByteLetter (<c>b'x'</c>) -> <c>Byte(from: byte_u8)</c></item>
 /// </list>
 ///
@@ -80,7 +80,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
         _b64Type = ctx.Registry.LookupType(name: "B64");
         _b128Type = ctx.Registry.LookupType(name: "B128");
 
-        _characterType = ctx.Registry.LookupType(name: "Character");
+        _characterType = ctx.Registry.LookupType(name: "Char");
         _byteType = ctx.Registry.LookupType(name: "Byte");
         _byteSizeType = ctx.Registry.LookupType(name: "ByteSize");
         _durationType = ctx.Registry.LookupType(name: "Duration");
@@ -536,7 +536,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
         var cpLit = new LiteralExpression(Value: codepoint.ToString(),
             LiteralType: TokenType.U32Literal,
             Location: loc);
-        return new CreatorExpression(TypeName: "Character",
+        return new CreatorExpression(TypeName: "Char",
             TypeArguments: null,
             MemberVariables: [("from", cpLit)],
             Location: loc) { ResolvedType = _characterType };

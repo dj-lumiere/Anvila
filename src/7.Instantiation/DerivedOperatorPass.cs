@@ -91,7 +91,7 @@ internal sealed class DerivedOperatorPass
         // bodies materialized by the collector from the DeriveText.rf `T.lt/le/gt/ge` universal templates
         // (`me.cmp(you) == ME_SMALL` etc.). Routing them through the template mechanism — the same path as
         // cmp/represent — is what makes them survive the collector/warm codegen path (the C#-synthesized
-        // bodies here did not), so `a < b` resolves uniformly for Character/numerics/records.
+        // bodies here did not), so `a < b` resolves uniformly for Char/numerics/records.
 
         // Look for contains memberRoutine
         RoutineInfo? containsMemberRoutine =

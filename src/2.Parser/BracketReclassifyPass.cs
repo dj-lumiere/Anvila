@@ -64,7 +64,7 @@ internal static class BracketReclassifyPass
                            .Select(selector: ExpressionToTypeArg)
                            .ToList();
 
-        // When the parser folded a `.member` into the Object (obj.MemberRoutine[T](...)), the receiver and
+        // When the parser folded a `.member` into the Object (obj.MemberCallable[T](...)), the receiver and
         // member name are recovered from that MemberExpression; otherwise this is a free reference
         // (foo[T](x)) whose Object is the identifier and whose member name is that identifier.
         Expression receiver;

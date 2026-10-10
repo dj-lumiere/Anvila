@@ -771,9 +771,9 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
 
         // RoutineTypeSymbol keeps its parameter/return types in dedicated properties, NOT in
         // TypeArguments, so the generic recursion below misses them. Substitute each explicitly so
-        // a lambda parameter like `transform: Routine[(T,), U]` becomes `Routine[(S64,), S64]`.
-        // Without this the synthesized routine mangles to `...select(Routine[(T,), U])` and never
-        // matches the call site's `...select(Routine[(S64,), S64])` — "undefined symbol" at codegen.
+        // a lambda parameter like `transform: Callable[(T,), U]` becomes `Callable[(S64,), S64]`.
+        // Without this the synthesized routine mangles to `...select(Callable[(T,), U])` and never
+        // matches the call site's `...select(Callable[(S64,), S64])` — "undefined symbol" at codegen.
         if (t is RoutineTypeSymbol rt)
         {
             return SubstituteRoutineType(rt: rt, subs: subs);

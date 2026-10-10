@@ -218,7 +218,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Substitutes inside a routine type's parameter and return types so
-    /// <c>Routine[(T, T), Bool]</c> becomes <c>Routine[(S64, S64), Bool]</c> for
+    /// <c>Callable[(T, T), Bool]</c> becomes <c>Callable[(S64, S64), Bool]</c> for
     /// target-typing lambda arguments. Returns the new routine type when any slot changed,
     /// or null when no substitution was needed.
     /// </summary>

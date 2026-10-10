@@ -98,7 +98,7 @@ public abstract record Expression(SourceLocation Location) : SyntaxTreeNode(Loca
 /// <item>Integers: S8, S16, S32, S64, S128, U8, U16, U32, U64, U128, Address</item>
 /// <item>Floats: B16, B32, B64, B128</item>
 /// <item>Decimals: D32, D64, D128</item>
-/// <item>Text and characters: Character, Byte, Text, Bytes</item>
+/// <item>Text and characters: Char, Byte, Text, Bytes</item>
 /// <item>Booleans: true, false</item>
 /// <item>Duration: w, d, h, m, s, ms, us, ns</item>
 /// <item>ByteSize: b, kb, kib, mb, mib, gb, gib</item>
@@ -1077,7 +1077,7 @@ public record GenericMemberRoutineCallExpression(
 
     /// <summary>
     /// The fully resolved RoutineInfo from semantic analysis (with owner-level and memberRoutine-level
-    /// generic substitution applied). Set for generic memberRoutine calls on objects (e.g., obj.MemberRoutine[U](args)).
+    /// generic substitution applied). Set for generic memberRoutine calls on objects (e.g., obj.MemberCallable[U](args)).
     /// </summary>
     public RoutineInfo? ResolvedRoutine { get; set; }
 
@@ -1209,11 +1209,11 @@ public record TaggedCreatorExpression(Expression Tag, Expression? Payload, Sourc
 /// <summary>
 /// The address of a constant array laid down once as module data, produced by lowering (never parsed):
 /// <c>TextLiteralLoweringPass</c> writes the characters of a text literal and the bytes of a bytes literal as
-/// this. Its resolved type is the pointer to the elements (<c>Hijacked[Character]</c>, <c>Hijacked[Byte]</c>), and
+/// this. Its resolved type is the pointer to the elements (<c>Hijacked[Char]</c>, <c>Hijacked[Byte]</c>), and
 /// each element is given as the integer value of that element type.
 /// </summary>
 /// <param name="Elements">The element values, in order.</param>
-/// <param name="ElementType">The type of each element (<c>Character</c>, <c>Byte</c>).</param>
+/// <param name="ElementType">The type of each element (<c>Char</c>, <c>Byte</c>).</param>
 /// <param name="Location">Source location of the literal it comes from.</param>
 public record ConstantDataExpression(IReadOnlyList<long> Elements, TypeSymbol ElementType, SourceLocation Location)
     : Expression(Location: Location)

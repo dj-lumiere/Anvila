@@ -1121,7 +1121,7 @@ internal sealed class AutoWiredRegistrationPass
             // A DERIVED operator registers here ONLY when a universal derive-template body exists for
             // it (DeriveText.rf lt/le/gt/ge → `me.cmp(you) == ME_SMALL` etc.). Routing these through
             // the everywhere-derive template mechanism (registered + materialized by the collector) is
-            // what makes `a < b` resolve uniformly for Character/numerics/records — the C#
+            // what makes `a < b` resolve uniformly for Char/numerics/records — the C#
             // DerivedOperatorPass bodies did not survive the collector/warm codegen path. Delegation
             // derives WITHOUT a template (ne, notcontains) are still produced by DerivedOperatorPass,
             // so we skip them here rather than register stubs the collector cannot materialize.

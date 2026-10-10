@@ -33,8 +33,8 @@ internal sealed class TextLiteralLoweringPass(TypeSymbol character, TypeSymbol b
         }
 
         var pass = new TextLiteralLoweringPass(
-            character: registry.LookupType(name: "Character") ??
-                       throw new InvalidOperationException(message: "The Character type is not registered."),
+            character: registry.LookupType(name: "Char") ??
+                       throw new InvalidOperationException(message: "The Char type is not registered."),
             byteType: registry.LookupType(name: "Byte") ??
                       throw new InvalidOperationException(message: "The Byte type is not registered."));
         for (int i = 0; i < block.Statements.Count; i++)

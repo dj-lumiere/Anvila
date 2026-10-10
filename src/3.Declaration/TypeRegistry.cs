@@ -2299,7 +2299,7 @@ public sealed partial class TypeRegistry
         // types never reach the AutoWiredRegistrationPass named-type loop). Serializing executable code is
         // meaningless, but a routine has a first-class `represent` (its signature), so serialize boxes that
         // Text. Registering the per-type memberRoutine lets the universal serialize walk over a routine-typed
-        // member (`entity Callback { f: Routine[...] }`) resolve; the BODY is the zero-field
+        // member (`entity Callback { f: Callable[...] }`) resolve; the BODY is the zero-field
         // BuildSerializeBody path, synthesized in WiredRoutinePass's routine-type loop.
         TypeSymbol? routineSerialValue = LookupType(name: "SerialValue");
         if (routineSerialValue != null)
@@ -2321,7 +2321,7 @@ public sealed partial class TypeRegistry
         // A routine VALUE is a trivially-destructible LEAF (a fat pointer over non-owned code + env), but the
         // auto-derived record/entity `destroy` field-walk (`me.$nameof(m).destroy()`, DeriveText) assumes EVERY
         // member type has a `destroy` — "a no-op for a raw-pointer / scalar / borrow leaf". A routine-typed
-        // field otherwise resolves that call to nothing, so codegen mangles + references `Routine[...].destroy`
+        // field otherwise resolves that call to nothing, so codegen mangles + references `Callable[...].destroy`
         // with no definition (link-undefined). Register the no-op leaf destroy here (BODY = bare `return`,
         // synthesized in WiredRoutinePass's routine-type loop) so the invariant holds and the field-walk links.
         RegisterRoutine(routine: new RoutineInfo(name: "destroy")

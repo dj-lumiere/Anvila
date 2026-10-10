@@ -31,7 +31,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Check if this is a generic type constructor call (e.g., Hijacked[U8](addr))
-        // The parser creates GenericMemberRoutineCallExpression for both Type[Args](args) and obj.MemberRoutine[Args](args).
+        // The parser creates GenericMemberRoutineCallExpression for both Type[Args](args) and obj.MemberCallable[Args](args).
         // A FAILABLE construction `Type![Args](args)` parses with a BARE memberRoutineName equal to the
         // type name plus the structured `IsMemoryOperation` failable flag — recognize it here and
         // route to the type's failable `create` overload (e.g. the auto-generated variant arm

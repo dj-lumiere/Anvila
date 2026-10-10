@@ -35,7 +35,7 @@ public partial class LlvmEmitter
         }
 
         // Indirect call through a local Routine-typed variable (e.g., compare(a: x, b: y) where
-        // 'compare' is a parameter of type Routine[(T, T), Bool]). The variable holds the fat Routine
+        // 'compare' is a parameter of type Callable[(T, T), Bool]). The variable holds the fat Routine
         // value `{ ptr fn, ptr bound }` (v0.4.1): load it and dispatch through EmitFatRoutineIndirectCall,
         // which branches on `bound == null` (captureless `fn(args)` vs capturing `fn(args, bound)`).
         if (_localVariables.TryGetValue(key: functionName, value: out TypeSymbol? localType) &&
@@ -205,7 +205,7 @@ public partial class LlvmEmitter
         }
 
         // Dynamic call through a callable FIELD on the receiver (e.g. `me.predicate(item)` in
-        // a stdlib iterator emitter, where `predicate` is a `secret predicate: Routine[(T,), Bool]`
+        // a stdlib iterator emitter, where `predicate` is a `secret predicate: Callable[(T,), Bool]`
         // field). SA classifies these as DynamicCall. There is no memberRoutine named `predicate`. load
         // the stored function pointer from the field and call it indirectly — mirroring the
         // free-call indirect path for Routine-typed locals/params (see EmitRoutineCall).
@@ -353,7 +353,7 @@ public partial class LlvmEmitter
                 argTypes: argTypes);
         }
 
-        // Build the call -> for resolved generic types (e.g., List[Character].add_last),
+        // Build the call -> for resolved generic types (e.g., List[Char].add_last),
         // use the resolved type name even if the memberRoutine was found via the base type
         string mangledName;
         ResolveMemberCallSymbol(member: member,
@@ -826,7 +826,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Emits an indirect call through a callable FIELD on a receiver — the member form of
     /// EmitRoutineCall's local-variable indirect path. Used for stdlib iterator emitters that
-    /// store a lambda in a field (e.g. <c>secret predicate: Routine[(T,), Bool]</c>) and invoke
+    /// store a lambda in a field (e.g. <c>secret predicate: Callable[(T,), Bool]</c>) and invoke
     /// it as <c>me.predicate(item)</c>. Loads the function pointer from the field, then calls it
     /// indirectly with the supplied arguments.
     /// </summary>
@@ -854,7 +854,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Emits a Routine-typed VALUE argument at a C boundary (v0.4.1). Capturing-ness is not in the
-    /// <c>Routine[T]</c> type (it is erased), so it is guarded at RUNTIME on the fat value's
+    /// <c>Callable[T]</c> type (it is erased), so it is guarded at RUNTIME on the fat value's
     /// <c>bound</c> word: captureless (<c>bound == null</c>) hands C the bare 1-word <c>fn</c>; a
     /// capturing value crashes (a capture has no C slot — thread state through explicit userdata).
     /// Returns the SSA <c>ptr</c> (the <c>fn</c>) to pass as the C callback argument.

@@ -1250,7 +1250,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Renders a parameter's AST <see cref="TypeExpression"/> to the same textual shape a registered
     /// <c>RoutineInfo</c> parameter type carries, so the two compare by string in
-    /// <see cref="MatchRoutineDeclaration"/>. Special-cases the <c>Routine[(params), ret]</c> form.
+    /// <see cref="MatchRoutineDeclaration"/>. Special-cases the <c>Callable[(params), ret]</c> form.
     /// </summary>
     private static string GetAstMatchTypeName(TypeExpression typeExpr)
     {
@@ -1259,7 +1259,7 @@ public sealed partial class SemanticVerifier
             return typeExpr.Name;
         }
 
-        // `Routine[(params), ret]`: RoutineTypeSymbol.Name renders the parameter-list tuple
+        // `Callable[(params), ret]`: RoutineTypeSymbol.Name renders the parameter-list tuple
         // PARENTHESIZED — `(T,)` for one element, `(A, B)` for several — and the return type
         // directly, NOT as `Tuple[...]` (see RoutineTypeSymbol.BuildName). The AST instead parses
         // the param-list as a generic `Tuple[...]`. Render the Routine form to match exactly, so
@@ -1268,7 +1268,7 @@ public sealed partial class SemanticVerifier
         // ProtocolDefaultImplLoweringPass can't synthesize per-implementer instances → "undefined
         // symbol" at codegen. Scoped to the Routine param-list ONLY — a standalone `Tuple[...]`
         // parameter keeps its `Tuple[...]` rendering (which matches TupleTypeSymbol.Name).
-        if (typeExpr.Name == "Routine" && typeExpr.GenericArguments.Count == 2)
+        if (typeExpr.Name == "Callable" && typeExpr.GenericArguments.Count == 2)
         {
             TypeExpression paramTupleExpr = typeExpr.GenericArguments[index: 0];
             string paramList;
@@ -1287,7 +1287,7 @@ public sealed partial class SemanticVerifier
             }
 
             return
-                $"Routine[{paramList}, {GetAstMatchTypeName(typeExpr: typeExpr.GenericArguments[index: 1])}]";
+                $"Callable[{paramList}, {GetAstMatchTypeName(typeExpr: typeExpr.GenericArguments[index: 1])}]";
         }
 
         return $"{typeExpr.Name}[{string.Join(separator: ",",

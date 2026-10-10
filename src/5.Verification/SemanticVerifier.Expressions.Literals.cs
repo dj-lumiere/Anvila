@@ -257,7 +257,7 @@ public sealed partial class SemanticVerifier
             TokenType.BytesLiteral => "Bytes",
             TokenType.BytesRawLiteral => "Bytes",
             TokenType.ByteLetterLiteral => "Byte",
-            TokenType.CharacterLiteral => "Character",
+            TokenType.CharacterLiteral => "Char",
 
             // byte size literals (all map to ByteSize type)
             TokenType.ByteLiteral or TokenType.KilobyteLiteral or TokenType.KibibyteLiteral

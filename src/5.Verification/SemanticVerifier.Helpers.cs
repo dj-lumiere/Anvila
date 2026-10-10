@@ -832,7 +832,7 @@ public sealed partial class SemanticVerifier
     /// Re-types lambda arguments after a memberRoutine-generic routine has been resolved. The initial
     /// <see cref="AnalyzeCallArguments"/> pass runs before memberRoutine-level generics are inferred, so a
     /// lambda parameter bound to a memberRoutine generic keeps it unresolved — e.g. `acc` in
-    /// <c>accumulate[U](combiner: Routine[(U,T),U])</c> stays <c>U</c> rather than the inferred
+    /// <c>accumulate[U](combiner: Callable[(U,T),U])</c> stays <c>U</c> rather than the inferred
     /// <c>S64</c>. Re-analyzing the lambda against the resolved parameter type rewrites
     /// <c>lambda.ResolvedType</c> with concrete parameter types so the post-processing lambda-lift
     /// mangles a defined symbol instead of one carrying an unbound generic.
@@ -863,7 +863,7 @@ public sealed partial class SemanticVerifier
 
             TypeSymbol paramType = param.Type;
             // Owner-level generics (T) are substituted the same way AnalyzeCallArguments does, so a
-            // `Routine[(U,T),U]` parameter is fully concrete once both U (memberRoutine) and T (owner) bind.
+            // `Callable[(U,T),U]` parameter is fully concrete once both U (memberRoutine) and T (owner) bind.
             if (callObjectType != null && resolvedMemberRoutine.OwnerType is
                     { IsGenericDefinition: true })
             {
@@ -1880,7 +1880,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>The <c>contains</c> a membership operator calls on <paramref name="container"/>: picked by the element
-    /// type, since a container may declare several (<c>Text.contains</c> takes a <c>Character</c> or a <c>Text</c>) and a
+    /// type, since a container may declare several (<c>Text.contains</c> takes a <c>Char</c> or a <c>Text</c>) and a
     /// name alone cannot choose among them.</summary>
     private RoutineInfo? LookupContains(TypeSymbol container, TypeSymbol element)
     {

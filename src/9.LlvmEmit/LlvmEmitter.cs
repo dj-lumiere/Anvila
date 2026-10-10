@@ -601,7 +601,7 @@ public partial class LlvmEmitter
     /// True if a routine's SIGNATURE (return type or any parameter type) still carries an unresolved
     /// generic parameter — a template that is NOT caught by <see cref="RoutineInfo.IsGenericDefinition"/>
     /// (which only covers a routine's OWN declared type params). Example:
-    /// <c>List[Character].from_literal(elements: Array[Character, __Vararg0])</c> — the owner is concrete
+    /// <c>List[Char].from_literal(elements: Array[Char, __Vararg0])</c> — the owner is concrete
     /// but the const-generic array arity <c>__Vararg0</c> is unresolved, so emitting it yields malformed IR
     /// (<c>[__Vararg0 x i32]</c>). The normal (pruned) build never reaches such a routine because it is
     /// never live; base-mode emission (<see cref="_baseMode"/>) has no liveness gate, so it must skip these

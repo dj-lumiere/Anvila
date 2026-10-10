@@ -143,6 +143,22 @@ internal partial class Program
                 continue;
             }
 
+            // A routine value's type `Routine[(…), R]` is `Callable[(…), R]`.
+            if (token.Text == "Routine" && next.Type == TokenType.LeftBracket)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "Callable",
+                    Line: token.Line, What: "Routine[…] → Callable[…]"));
+                continue;
+            }
+
+            // The type `Character` is `Char`.
+            if (token.Text == "Character")
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "Char",
+                    Line: token.Line, What: "Character → Char"));
+                continue;
+            }
+
             // `x.share()` is what `=` does now: the call goes, the value stays. The standard library keeps
             // calling the copy step (it reads values out of raw memory), and a definition is left alone.
             if (token.Text == "share" && !inStandardLibrary && !OnDefinitionLine(tokens: tokens, index: i) && i > 0 && tokens[index: i - 1].Type == TokenType.Dot &&

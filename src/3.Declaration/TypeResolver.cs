@@ -280,8 +280,8 @@ internal sealed class TypeResolver
             return ResolveTupleType(typeExpr: typeExpr);
         }
 
-        // Handle Routine type: Routine[(T, T), Bool] -> RoutineTypeSymbol
-        if (typeExpr is { Name: "Routine", GenericArguments.Count: 2 })
+        // Handle Routine type: Callable[(T, T), Bool] -> RoutineTypeSymbol
+        if (typeExpr is { Name: "Callable", GenericArguments.Count: 2 })
         {
             return ResolveRoutineType(typeExpr: typeExpr);
         }
@@ -471,7 +471,7 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// Resolves a <c>Routine[(T, T), Bool]</c> type expression to a <see cref="RoutineTypeSymbol"/>,
+    /// Resolves a <c>Callable[(T, T), Bool]</c> type expression to a <see cref="RoutineTypeSymbol"/>,
     /// unpacking the parameter tuple and resolving the return type.
     /// </summary>
     private RoutineTypeSymbol ResolveRoutineType(TypeExpression typeExpr)

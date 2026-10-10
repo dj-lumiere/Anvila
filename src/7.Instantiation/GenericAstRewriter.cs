@@ -217,10 +217,10 @@ internal static class GenericAstRewriter
                 return resolvedDefinition;
             }
 
-            // Routine value type (`Routine[(T,), U]` -> `Routine[(S64,), S64]`): RoutineTypeSymbol
+            // Routine value type (`Callable[(T,), U]` -> `Callable[(S64,), S64]`): RoutineTypeSymbol
             // carries its parameter/return types in dedicated slots, NOT TypeArguments, so the
             // generic-resolution branch above never reaches them. A chained iterator emitter stores
-            // its projection as `secret transform: Routine[(T,), U]`; the `me.transform(item)` call's
+            // its projection as `secret transform: Callable[(T,), U]`; the `me.transform(item)` call's
             // indirect return type is read straight off this RoutineTypeSymbol at codegen, so an
             // unsubstituted `U` here reaches GetLlvmType. Resolve each slot recursively (handles
             // nested generics/wrappers/tuples uniformly) and rebuild.
@@ -1921,7 +1921,7 @@ internal static class GenericAstRewriter
         }
 
         // A memberRoutine-generic callee whose type param is supplied by an explicit
-        // `.MemberRoutine[U]()` type-argument (e.g. `recast_as[T]`) stays generic after
+        // `.MemberCallable[U]()` type-argument (e.g. `recast_as[T]`) stays generic after
         // owner/arg resolution — re-instantiate from the callee's rewritten type args.
         rewrittenRoutine = ReinstantiateMemberRoutineGenericCallee(
             call: call,
@@ -2004,7 +2004,7 @@ internal static class GenericAstRewriter
 
     /// <summary>
     /// When a call's resolved routine is still a memberRoutine-generic definition (its type param comes
-    /// from an explicit <c>.MemberRoutine[U]()</c> type-argument, not an operand), re-instantiate it from
+    /// from an explicit <c>.MemberCallable[U]()</c> type-argument, not an operand), re-instantiate it from
     /// the callee's rewritten type arguments. Returns <paramref name="resolved"/> unchanged when it
     /// is already concrete or no explicit type arguments are available.
     /// </summary>

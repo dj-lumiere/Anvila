@@ -104,7 +104,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     }
 
     /// <summary>Lowers carrier-return sites inside monomorphized generic instances (e.g. a concrete
-    /// <c>ListEmittable[Character].emit's try variant</c>), which are not part of the program/variant-body tracks.</summary>
+    /// <c>ListEmittable[Char].emit's try variant</c>), which are not part of the program/variant-body tracks.</summary>
     public void RunOnMonomorphizedBodies()
     {
         if (ctx.MonomorphizedBodies is not { } bodies)

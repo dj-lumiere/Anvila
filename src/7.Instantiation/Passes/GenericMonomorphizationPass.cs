@@ -1764,9 +1764,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         private void ForceSeedOwner(TypeSymbol type)
         {
             // ROOT of the itertools builder StackOverflow: a NON-CONCRETE owner (unbound generic param, e.g. a
-            // `Routine[(T,), Bool]` predicate-field type that was marked a reached owner while its `T` was still
+            // `Callable[(T,), Bool]` predicate-field type that was marked a reached owner while its `T` was still
             // open) must NOT have its universal derives materialized. Doing so binds the derive's own owner
-            // param `T` to that owner — but the owner CONTAINS `T` (`T := Routine[(T,), Bool]`), an infinite
+            // param `T` to that owner — but the owner CONTAINS `T` (`T := Callable[(T,), Bool]`), an infinite
             // type that later crashes `ResolveType`. Only a fully-concrete owner is a real instance to seed.
             if (ContainsGenericParam(t: type))
             {
@@ -1954,8 +1954,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         private static bool ContainsGenericParam(TypeSymbol t)
         {
             // A RoutineTypeSymbol carries its holes in ParameterTypes/ReturnType, NOT TypeArguments — so a
-            // non-concrete `Routine[(T,), Bool]` would slip past a TypeArguments-only scan and get force-seeded
-            // as if concrete (then its universal derive binds `T := Routine[(T,), Bool]` → infinite type).
+            // non-concrete `Callable[(T,), Bool]` would slip past a TypeArguments-only scan and get force-seeded
+            // as if concrete (then its universal derive binds `T := Callable[(T,), Bool]` → infinite type).
             if (t is RoutineTypeSymbol rt)
             {
                 return rt.ParameterTypes.Any(predicate: ContainsGenericParam) ||
@@ -2337,7 +2337,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// <paramref name="paramName"/> — i.e. a substitution <c>paramName := t</c> is CYCLIC (substituting the
     /// param reintroduces the param, so re-resolution never terminates). Created by an inference/unification
     /// that bound a param to a type containing it with no occurs-check — the itertools lambda-predicate case
-    /// binds the element `T := Routine[(T,), Bool]`, and later `ResolveType` follows `T → Routine[(T,),Bool] →
+    /// binds the element `T := Callable[(T,), Bool]`, and later `ResolveType` follows `T → Callable[(T,),Bool] →
     /// T → …` forever, crashing the builder with a StackOverflow.</summary>
     private static bool TypeContainsParam(TypeSymbol t, string paramName)
     {
@@ -2392,7 +2392,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // Routine types are structural — no per-type wired handler in WiredRoutinePass — so the
         // universal represent/diagnose template would field-walk their (empty) member set into a
         // bogus `Routine()`. Emit the SIGNATURE (the routine type's own name, e.g.
-        // `Routine[(S32,), S32]`) directly: no parens, no field walk.
+        // `Callable[(S32,), S32]`) directly: no parens, no field walk.
         if (resolvedRoutine.OwnerType is RoutineTypeSymbol routineOwner &&
             resolvedRoutine.Name is RuntimeContract.Display.Represent
                 or RuntimeContract.Display.Diagnose)
@@ -2410,10 +2410,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         // OCCURS-CHECK. A universal derive (`T.roam_trace()` / `roam_free` / `cyclic_visit`) materialized onto
-        // a routine-type owner such as `Routine[(T,), Bool]` binds its owner param `T` to that owner — but the
+        // a routine-type owner such as `Callable[(T,), Bool]` binds its owner param `T` to that owner — but the
         // owner's OWN inner parameter is ALSO named `T` (a slot-vs-name collision), so the binding becomes the
-        // self-referential `T := Routine[(T,), Bool]`. Substituting it re-introduces `T` without end, and a
-        // later `ResolveType` follows `T → Routine[(T,),Bool] → T → …` forever, crashing the builder with a
+        // self-referential `T := Callable[(T,), Bool]`. Substituting it re-introduces `T` without end, and a
+        // later `ResolveType` follows `T → Callable[(T,),Bool] → T → …` forever, crashing the builder with a
         // StackOverflow. Such an instantiation is an infinite type — not a real reachable instance — so drop it.
         if (typeSubs.Any(predicate: kv => TypeContainsParam(t: kv.Value, paramName: kv.Key)))
         {

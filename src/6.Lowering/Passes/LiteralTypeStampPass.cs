@@ -58,7 +58,7 @@ internal static class LiteralTypeStampPass
             TokenType.True or TokenType.False => "Bool",
             TokenType.TextLiteral or TokenType.RawText => "Text",
             TokenType.BytesLiteral => "Bytes",
-            TokenType.CharacterLiteral => "Character",
+            TokenType.CharacterLiteral => "Char",
             TokenType.ByteLetterLiteral => "Byte",
             _ => null
         };

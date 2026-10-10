@@ -624,7 +624,7 @@ public sealed class RoutineInfo
             // provenance is buried one level down, and reachability / GMP (which gate the
             // self-type owner→receiver binding on `GenericDefinition.OwnerType is
             // GenericParameterTypeSymbol`) can no longer recover `T → receiver` — the concrete
-            // receiver carries no TypeArguments to recover it from, unlike `List[S32].MemberRoutine[U]`.
+            // receiver carries no TypeArguments to recover it from, unlike `List[S32].MemberCallable[U]`.
             // The result is an emitted call to `Receiver.share[P]` with no matching definition
             // (LINKERR). Keep the universal member routine as the definition so that binding survives.
             GenericDefinition = GenericDefinition?.OwnerType is GenericParameterTypeSymbol
@@ -695,7 +695,7 @@ public sealed class RoutineInfo
             return substituted;
         }
 
-        // Substitute inside routine types (e.g., Routine[(T, T), Bool] -> Routine[(S64, S64), Bool])
+        // Substitute inside routine types (e.g., Callable[(T, T), Bool] -> Callable[(S64, S64), Bool])
         if (type is RoutineTypeSymbol routineType)
         {
             return SubstituteRoutineType(routineType: routineType, substitution: substitution);

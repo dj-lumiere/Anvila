@@ -168,10 +168,10 @@ internal static class MonomorphizationCompletenessAssertionPass
             return true;
         }
 
-        // RoutineTypeSymbol (`Routine[(T,), U]`) and TupleTypeSymbol (`Tuple[T, Bool]`) carry their
+        // RoutineTypeSymbol (`Callable[(T,), U]`) and TupleTypeSymbol (`Tuple[T, Bool]`) carry their
         // component types in dedicated slots, NOT TypeArguments, so the recursion below would miss a
         // residual param nested inside them. A chained iterator emitter stores its projection as
-        // `secret transform: Routine[(T,), U]`; `me.transform(item)`'s indirect return type is read
+        // `secret transform: Callable[(T,), U]`; `me.transform(item)`'s indirect return type is read
         // straight off that RoutineTypeSymbol at codegen — an unsubstituted `U` there would slip past
         // C1 and only surface as a GetLlvmType crash. Recurse both slot kinds explicitly.
         if (type is RoutineTypeSymbol rt)

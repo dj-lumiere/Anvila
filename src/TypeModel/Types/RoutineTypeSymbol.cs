@@ -52,7 +52,7 @@ public sealed class RoutineTypeSymbol : TypeSymbol
 
     /// <summary>
     /// Builds the display name for a function type.
-    /// Examples: "Routine[(S32, S32), S32]", "Routine[(), Bool]", "Routine[(Text,), None]"
+    /// Examples: "Callable[(S32, S32), S32]", "Callable[(), Bool]", "Callable[(Text,), None]"
     /// The parameter list is ALWAYS tuple-notation so the display matches the writable source
     /// spelling: "()" for zero parameters (NOT "None", which in a parameter position parses as a
     /// single unit-typed parameter — a different type), "(T,)" for one, "(A, B)" for more.
@@ -68,7 +68,7 @@ public sealed class RoutineTypeSymbol : TypeSymbol
         };
 
         string returnName = returnType?.Name ?? "None";
-        return $"Routine[{paramList}, {returnName}]";
+        return $"Callable[{paramList}, {returnName}]";
     }
 
     /// <summary>

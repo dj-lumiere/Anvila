@@ -35,7 +35,7 @@ public enum ConstraintKind
 
     /// <summary>Redirect-type constraint (<c>&lt;RedirectType&gt; T</c>) — a type that immediately
     /// redirects to another type: an <c>@llvm("…")</c>-annotated primitive (S8..S128/U8..U128/B16..F256/
-    /// Bool/Byte/Character/CPtr/Address…) whose storage/behavior IS the raw LLVM type it names, with no RF
+    /// Bool/Byte/Char/CPtr/Address…) whose storage/behavior IS the raw LLVM type it names, with no RF
     /// fields of its own. Lets a derive redirect to the underlying op instead of an (ill-typed) empty
     /// field-walk. Distinct from an empty record (→ RecordType, 0-field: trivial derive is correct) and
     /// from choice/flags (→ their own kinds). Renamed from the old zero-member-variable framing.</summary>

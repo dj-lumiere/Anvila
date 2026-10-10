@@ -1096,7 +1096,7 @@ internal sealed class TesseraWriter
             return $"Array<{TypeText(type: element)}, {count}>";
         }
 
-        // Any other integer-backed type (a choice, flags, Address, Character, a C integer alias) is the integer
+        // Any other integer-backed type (a choice, flags, Address, Char, a C integer alias) is the integer
         // of its width. A choice is signed, as in the LLVM emitter; the rest are unsigned bit carriers, and the
         // primitives they reach check signedness against the operand type.
         if (backend.Length > 1 && backend[0] == 'i' && int.TryParse(s: backend[1..], result: out int bits))

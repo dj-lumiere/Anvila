@@ -960,7 +960,7 @@ public sealed partial class SemanticVerifier
         // (no first-wins — that was the S8-vs-S64 mis-pick bug class). Pin the unique overload from
         // the call shape: filter the candidates by arity + supplied named-argument names, preferring
         // the requested failability. A single survivor IS the answer. Several survivors differ only
-        // by parameter TYPE (e.g. `Text.split(Character)` vs `split(Text)`) — scaffold with one so
+        // by parameter TYPE (e.g. `Text.split(Char)` vs `split(Text)`) — scaffold with one so
         // the arguments can be analyzed for their expected param types, and set `ambiguousSeed` to
         // FORCE the argType-driven retry below to pin the unique (name, argTypes) match.
         ambiguousSeed = false;
@@ -2645,7 +2645,7 @@ public sealed partial class SemanticVerifier
                     typeArguments: inferredMemberRoutineTypeArgs);
                 // AnalyzeCallArguments above ran against the still-generic signature, so a
                 // lambda argument whose parameter binds a memberRoutine-level generic kept it
-                // unresolved (e.g. `acc` in `accumulate[U](combiner: Routine[(U,T),U])`
+                // unresolved (e.g. `acc` in `accumulate[U](combiner: Callable[(U,T),U])`
                 // stayed `U`). Now that the memberRoutine generics are bound, re-analyze the
                 // lambda arguments against the resolved parameter types so their
                 // parameters become concrete — otherwise the lifted lambda mangles with an

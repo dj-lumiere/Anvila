@@ -874,8 +874,8 @@ public sealed partial class StdlibLoader
             return constGeneric;
         }
 
-        // Routine type: Routine[(T, T), Bool] -> RoutineTypeSymbol
-        if (typeName == "Routine" && typeExpr.GenericArguments?.Count == 2)
+        // Routine type: Callable[(T, T), Bool] -> RoutineTypeSymbol
+        if (typeName == "Callable" && typeExpr.GenericArguments?.Count == 2)
         {
             return ResolveRoutineType(registry: registry,
                 typeExpr: typeExpr,
@@ -883,7 +883,7 @@ public sealed partial class StdlibLoader
                 moduleName: moduleName);
         }
 
-        // Parameterized type like List[Character], Dict[Text, S32]
+        // Parameterized type like List[Char], Dict[Text, S32]
         if (typeExpr.GenericArguments is { Count: > 0 })
         {
             TypeSymbol? parameterized = ResolveParameterizedType(registry: registry,
@@ -1041,7 +1041,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Resolves a <c>Routine[(T, T), Bool]</c> type expression into a RoutineTypeSymbol. Parameter types
+    /// Resolves a <c>Callable[(T, T), Bool]</c> type expression into a RoutineTypeSymbol. Parameter types
     /// live in the first arg's GenericArguments (parsed as Tuple). Returns null when a parameter type
     /// fails to resolve.
     /// </summary>
@@ -1093,7 +1093,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Resolves a parameterized type expression (<c>List[Character]</c>, <c>Dict[Text, S32]</c>,
+    /// Resolves a parameterized type expression (<c>List[Char]</c>, <c>Dict[Text, S32]</c>,
     /// a wrapper token like <c>Hijacked[T]</c>, or a <c>Tuple[..]</c>). Sets <paramref name="resolved"/>
     /// to true and returns the resolved type (possibly null, e.g. when an argument fails to resolve)
     /// when this method took responsibility for the expression; sets it to false to signal the caller

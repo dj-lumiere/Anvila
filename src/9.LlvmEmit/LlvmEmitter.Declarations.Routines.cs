@@ -929,7 +929,7 @@ public partial class LlvmEmitter
             // Also drop bare GenericParameterTypeSymbol entries: when SignatureResolver leaves
             // an owner-level param (e.g. T) in routine.TypeArguments and the owner is already
             // monomorphized to a concrete type, the bare T would survive the name-based
-            // dedup and mangle as `Type[Concrete].MemberRoutine[T]` — producing an undefined symbol.
+            // dedup and mangle as `Type[Concrete].MemberCallable[T]` — producing an undefined symbol.
             //
             // Additionally drop entries whose Name matches one of the owner gen-def's
             // GenericParameters (e.g. "T" for SortedSet[T]). When TransferSubstitutedTypeArguments

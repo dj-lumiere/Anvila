@@ -1329,8 +1329,8 @@ public sealed partial class SemanticVerifier
         }
 
         // RoutineTypeSymbol is structural: its parameter/return types live in ParameterTypes/ReturnType,
-        // not TypeArguments. Without this branch, `Routine[(T,), U]` would not unify against
-        // `Routine[(S64,), S64]` and memberRoutine-level params (e.g. `select[U]`) would stay unresolved.
+        // not TypeArguments. Without this branch, `Callable[(T,), U]` would not unify against
+        // `Callable[(S64,), S64]` and memberRoutine-level params (e.g. `select[U]`) would stay unresolved.
         InferFromRoutineTypeStructure(paramType: paramType,
             argType: argType,
             genericParameters: genericParameters,

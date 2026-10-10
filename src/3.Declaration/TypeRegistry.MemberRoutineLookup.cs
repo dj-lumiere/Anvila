@@ -2621,7 +2621,7 @@ public sealed partial class TypeRegistry
 
         // Wrapper-forwarder: re-resolve signature against the concrete inner memberRoutine instead of
         // naive name substitution (inner-T vs wrapper-T collision: both T and List[T] use T,
-        // so {T: List[Character]} would map List[T].getitem!'s T to List[Character], not Character).
+        // so {T: List[Char]} would map List[T].getitem!'s T to List[Char], not Char).
         if (memberRoutine is
             {
                 IsSynthesized: true, WrapperForwarderInnerMemberRoutine: { } innerGenMemberRoutine

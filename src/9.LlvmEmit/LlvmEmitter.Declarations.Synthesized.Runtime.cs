@@ -12,7 +12,7 @@ public partial class LlvmEmitter
     private void EmitSynthesizedBodyFromAst(RoutineInfo routine, string funcName, Statement body)
     {
         // Base mode (resident-JIT incremental, §2A.5): a synthesized body whose signature still carries an
-        // unresolved generic parameter — e.g. List[Character].from_literal(elements: Array[Character,
+        // unresolved generic parameter — e.g. List[Char].from_literal(elements: Array[Char,
         // __Vararg0]), a const-generic arity template that reaches here via Phase B's IsSynthesized branch —
         // would emit malformed IR. Such templates instantiate on demand, never in the non-pruned base. This
         // is the bypass path that skips GenerateRoutineDefinition's ShouldSkipRoutineDefinition gate.
