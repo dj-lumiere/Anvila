@@ -81,9 +81,42 @@ public partial class Parser
         return expr;
     }
 
+    /// <summary>
+    /// A word that used to start an expression or a statement, written that way: the build error names what is
+    /// written now. As a plain name (`var discard = 1`) the word is left alone.
+    /// </summary>
+    private void RejectRetiredLeadingWord()
+    {
+        if (CurrentToken.Type != TokenType.Identifier)
+        {
+            return;
+        }
+
+        Token next = PeekToken(offset: 1);
+        bool before = StartsInfixOperand(token: next) || next.Type is TokenType.Not;
+        string? fix = CurrentToken.Text switch
+        {
+            "discard" when before => "'discard' is now 'drop': write 'drop f()' to throw a result away on purpose.",
+            "grab" when before => "'grab' is now 'check': 'check f()' gives a Check[T] to take apart with 'when'.",
+            "lookup" when before =>
+                "'lookup' is gone: a routine that finds nothing throws, and 'try f()' gives a Maybe[T] (none when it " +
+                "failed) or 'check f()' a Check[T].",
+            "unless" when before => "'unless' is gone: write 'if not (condition)'.",
+            "absent" when next.Type is TokenType.Newline or TokenType.Dedent or TokenType.Eof =>
+                "'absent' is gone: a routine that has nothing to give throws (`throw KeyNotFoundError(...)`), and the " +
+                "caller recovers with 'try' (a Maybe[T]) or 'check'.",
+            _ => null
+        };
+        if (fix != null)
+        {
+            throw ThrowParseError(message: fix);
+        }
+    }
+
     private Expression ParsePrimary()
     {
         SourceLocation location = GetLocation();
+        RejectRetiredLeadingWord();
 
         // Buildtime splice in expression position: ${expr} (legacy) or $primary (brace-less).
         if (CheckAndAdvance(type: TokenType.SpliceOpen))

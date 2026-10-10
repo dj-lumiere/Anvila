@@ -253,6 +253,18 @@ public partial class Parser
         while (CurrentToken.Type == TokenType.Identifier && StartsInfixOperand(token: PeekToken(offset: 1)))
         {
             Token name = CurrentToken;
+            string? retired = name.Text switch
+            {
+                "notin" => "'notin' is gone: the container comes first, 'xs lack x'.",
+                "but" => "'but' is gone: take flags off with 'perms.without(WRITE)', or test with 'perms lack WRITE'.",
+                "disobeys" => "'disobeys' is gone: write 'not (x obeys P)'.",
+                _ => null
+            };
+            if (retired != null)
+            {
+                throw ThrowParseError(message: retired);
+            }
+
             Advance();
             Expression right = ParseRange();
             SourceLocation at = GetLocation(token: name);

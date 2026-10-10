@@ -2550,6 +2550,10 @@ public sealed partial class SemanticVerifier
 
                 string hint = BuildUnresolvedMemberCallHint(callLookupName: callLookupName,
                     namedField: namedField);
+                if (hint.Length == 0)
+                {
+                    hint = Suggestions.ForMember(type: objectType, name: member.MemberName);
+                }
 
                 ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
                     message:

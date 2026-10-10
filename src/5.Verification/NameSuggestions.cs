@@ -22,6 +22,21 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     /// <summary>The suggestion suffix for an unknown type name.</summary>
     internal string ForType(string typeName)
     {
+        // A type renamed for 0.5 names its new name.
+        string? renamed = typeName switch
+        {
+            "Character" or "Letter" => "Char",
+            "Routine" => "Callable",
+            "RoamController" => "RoamManager",
+            "Queue" => "Mailbox",
+            _ => null
+        };
+        // `Callable` is the builder's own type of routine values, not a registered one.
+        if (renamed != null && (renamed == "Callable" || TypeSuggestionCandidates().Contains(value: renamed)))
+        {
+            return $" It is called '{renamed}' now.";
+        }
+
         // The binary floating-point types are B16, B32, B64 and B128: F64 names B64, not the S64 or U64 an edit away.
         if (typeName is "F16" or "F32" or "F64" or "F128" &&
             TypeSuggestionCandidates().Contains(value: $"B{typeName[1..]}"))
@@ -36,6 +51,17 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     /// does not have.</summary>
     internal string ForMember(TypeSymbol type, string name)
     {
+        // A member renamed or removed for 0.5 names what is written now.
+        switch (name)
+        {
+            case "entries" when MemberSuggestionCandidates(type: type).Contains(value: "items"):
+                return " It is called 'items' now: a list of (key, value) tuples.";
+            case "destroy" when MemberSuggestionCandidates(type: type).Contains(value: "destruct"):
+                return " It is called 'destruct' now (written 'drop x' outside the standard library).";
+            case "assign":
+                return " 'assign' is gone: '=' copies a value ('var b = a').";
+        }
+
         return DidYouMean(target: name, candidates: MemberSuggestionCandidates(type: type));
     }
 
