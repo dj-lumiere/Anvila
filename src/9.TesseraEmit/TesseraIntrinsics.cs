@@ -213,7 +213,7 @@ internal sealed class TesseraIntrinsics
             return 'i';
         }
 
-        return text is "F16" or "BF16" or "F32" or "F64"
+        return text is "B16" or "BF16" or "B32" or "B64"
             ? 'f'
             : 'a';
     }

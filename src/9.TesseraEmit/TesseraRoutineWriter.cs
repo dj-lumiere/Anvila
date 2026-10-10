@@ -638,7 +638,7 @@ internal sealed class TesseraRoutineWriter
         {
             case "Bool":
                 return "false";
-            case "F16" or "BF16" or "F32" or "F64":
+            case "B16" or "BF16" or "B32" or "B64":
                 return "0.0";
             case "Addr":
                 return "null";
@@ -965,7 +965,7 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>
-    /// A float literal as its exact bits (<c>F64.from_bits(0x...)</c>), so Tessera does no rounding of its own.
+    /// A float literal as its exact bits (<c>B64.from_bits(0x...)</c>), so Tessera does no rounding of its own.
     /// The value is the one the LLVM emitter writes: the text read as a double, then narrowed to the literal's
     /// width; a hexadecimal literal is encoded exactly.
     /// </summary>
@@ -973,9 +973,9 @@ internal sealed class TesseraRoutineWriter
     {
         (string tessera, int mantissa, int exponent) = type switch
         {
-            TokenType.B16Literal => ("F16", 10, 5),
-            TokenType.B32Literal => ("F32", 23, 8),
-            _ => ("F64", 52, 11)
+            TokenType.B16Literal => ("B16", 10, 5),
+            TokenType.B32Literal => ("B32", 23, 8),
+            _ => ("B64", 52, 11)
         };
         string digits = LlvmEmitter.StripNumericSuffix(text: text);
         UInt128 bits;

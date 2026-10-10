@@ -1055,10 +1055,7 @@ internal sealed class TesseraWriter
                 record.BareName,
             "Bool" => "Bool",
             "Byte" => "U8",
-            "B16" => "F16",
-            "B32" => "F32",
-            "B64" => "F64",
-            "BF16" => "BF16",
+            "B16" or "B32" or "B64" or "BF16" => record.BareName,
             _ => null
         };
         if (byName != null)
