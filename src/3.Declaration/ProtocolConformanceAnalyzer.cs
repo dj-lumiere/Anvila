@@ -10,7 +10,6 @@ namespace Builder.Declaration;
 /// </summary>
 internal sealed class ProtocolConformanceAnalyzer
 {
-    private const string AssignableProtocol = "Assignable";
     private const string CopyableProtocol = "Copyable";
 
     private readonly SemanticVerifier _sa;
@@ -35,17 +34,14 @@ internal sealed class ProtocolConformanceAnalyzer
         }
 
         // SPLIT (2026-08-23) — structural vs semantic:
-        // * Assignable/Copyable are STRUCTURAL (memory/value semantics): a record is assignable by default,
-        //   EXCLUDING entities (identity, NEVER assignable). Auto-conferred (no `obeys` needed) by the two
-        //   passes below. (The RC wrappers' `var b = rc` permission and the 4 scope-bound access tokens'
-        //   rejection are enforced by the COPY-POLICY path — SemanticVerifier's `NonTriviallyAssignableWrappers`
-        //   + `ResolveStoreHook` — not by an `Assignable` protocol stamp here; see those for RC = implicit share.)
+        // * Copyable is STRUCTURAL: placed on plain-bits values and cascaded over composition by the two passes
+        //   below. Whether `=` copies a value is not a protocol at all: TypeRegistry.IsCopiedByAssignment
+        //   decides it from the type's kind (a record owning no entity, not a token).
         // * Equatable/Comparable/Hashable are SEMANTIC (opt-in): equality/ordering is an assertion, so they
         //   are NOT auto-conferred — the generic `ApplyEverywhereConformance` is deliberately NOT run, so a
         //   plain value record does not silently gain `==`/`<`. The everywhere-derive loop registers their
         //   derives ONLY for a type that explicitly declares `obeys P`.
-        ApplyAutoAssignableConformance();
-        ApplyAutoAssignableCascadeConformance();
+        ApplyAutoCopyableConformance();
         ApplyEverywhereConformance();
     }
 
@@ -118,17 +114,17 @@ internal sealed class ProtocolConformanceAnalyzer
     /// SEMANTIC everywhere-protocols (Equatable/Comparable/Hashable) are opt-in and deliberately excluded —
     /// a plain value record must not silently gain equality/ordering. Keyed by bare protocol name.</summary>
     private static readonly HashSet<string> _autoConferredEverywhereProtocols =
-        new(comparer: StringComparer.Ordinal) { AssignableProtocol, CopyableProtocol };
+        new(comparer: StringComparer.Ordinal) { CopyableProtocol };
 
     /// <summary>
     /// Generic <c>needs P everywhere</c> gate (④ standard-impl eligibility): for every protocol that declares
     /// an <c>everywhere</c> self-constraint, auto-derive conformance to any concrete member-bearing type all
     /// of whose members obey P (<see cref="TypeRegistry.EverywhereObeys"/>). This is NOT a per-protocol
-    /// bespoke pass — it reads the rule from the stdlib protocol declaration, so Copyable (and later Assignable/
+    /// bespoke pass — it reads the rule from the stdlib protocol declaration, so Copyable (and later
     /// Equatable/…) opt in by writing <c>needs P everywhere</c> rather than growing new C# passes. The BASE
     /// case is the leaf types' own explicit/auto conformance (scalars bitwise, Text/Integer declare Copyable,
     /// <c>@llvm</c> aggregates cascade to their element via EverywhereObeys); this gate is the INDUCTIVE step
-    /// over composition. Runs LAST so leaf + Assignable-cascade conformances are already in place for the member
+    /// over composition. Runs LAST so the leaf conformances are already in place for the member
     /// walk to see. A type already declaring P is skipped (idempotent).
     /// </summary>
     private void ApplyEverywhereConformance()
@@ -137,7 +133,7 @@ internal sealed class ProtocolConformanceAnalyzer
         var everywhereProtocols = new List<ProtocolTypeSymbol>();
         foreach (TypeSymbol type in _sa._registry.GetAllTypes())
         {
-            // Only the STRUCTURAL everywhere-protocols (Assignable/Copyable) are auto-conferred here. The
+            // Only the STRUCTURAL everywhere-protocol (Copyable) is auto-conferred here. The
             // SEMANTIC ones (Equatable/Comparable/Hashable) carry the same `needs P everywhere` self-
             // constraint but are OPT-IN — conferring them structurally would give a plain value record
             // silent `==`/`<`. Their derives attach only on an explicit `obeys P` (the everywhere-derive
@@ -215,114 +211,13 @@ internal sealed class ProtocolConformanceAnalyzer
     }
 
     /// <summary>
-    /// Auto-derives <c>Assignable</c> (NOT <c>Copyable</c>) for a value aggregate whose every field/element is
-    /// itself Assignable — even when some are MANAGED (Text/Integer/RC wrapper), which <see
-    /// cref="ApplyAutoAssignableConformance"/> cannot handle (a managed field has a ptr → not bitwise
-    /// Copyable). Its <c>store</c> is a FIELD-WALK (each field's <c>store</c>), synthesized by
-    /// <c>WiredRoutinePass.BuildRecordCopyBody</c>. This completes storability so <c>.assign()</c> resolves for
-    /// every identity-less type — the store-based replacement for the arbitrary <c>IsTriviallyAssignable</c>
-    /// heuristic. Entities (identity) and the borrow/access tokens (scope-bound) are correctly left out —
-    /// <see cref="TypeRegistry.CanMemberVariableWalkAssignable"/> excludes them.
+    /// Places <c>Copyable</c> on every type whose layout holds no pointer: a bitwise duplicate is its deep copy
+    /// (nothing on the heap is shared). Composites are reached afterwards by the <c>needs Copyable everywhere</c>
+    /// cascade. Types that already declare <c>Copyable</c> are left as they are.
     /// </summary>
-    private void ApplyAutoAssignableCascadeConformance()
+    private void ApplyAutoCopyableConformance()
     {
-        if (_sa._registry.LookupType(name: AssignableProtocol) is not ProtocolTypeSymbol Assignable)
-        {
-            return;
-        }
-
-        foreach (TypeSymbol type in _sa._registry.GetTypesWithMemberRoutines())
-        {
-            List<TypeSymbol> existing = GetImplementedProtocols(type: type);
-            if (existing.Any(predicate: p => p.Name is AssignableProtocol or CopyableProtocol))
-            {
-                continue;
-            }
-
-            if (type.IsGenericDefinition)
-            {
-                ApplyGenericAssignableConformance(type: type, existing: existing, assignable: Assignable);
-                continue;
-            }
-
-            if (!_sa._registry.CanMemberVariableWalkAssignable(type: type))
-            {
-                continue;
-            }
-
-            var merged = new List<TypeSymbol>(collection: existing) { Assignable };
-            _sa._implicitProtocolConformances.Add(item: (type.FullName, Assignable.Name));
-            UpdateTypeProtocols(type: type, protocols: merged);
-        }
-    }
-
-    /// <summary>
-    /// Auto-derives <c>Assignable</c> for a generic record DEFINITION (<c>DictEntry[K, V]</c>) the way the cascade
-    /// does for a concrete record, conditioned on its parameters: <c>Assignable onlyif K obeys Assignable,
-    /// V obeys Assignable</c> for each parameter that is a field's type. An instance created after this pass
-    /// (one first named while a generic body is monomorphized) folds in its definition's protocols, so it
-    /// obeys Assignable (and finds the derived <c>assign</c>) exactly when its arguments do. A field whose type
-    /// is neither a parameter nor itself Assignable (an entity, an access token, a parameter nested in another
-    /// type) leaves the definition alone.
-    /// </summary>
-    private void ApplyGenericAssignableConformance(TypeSymbol type, List<TypeSymbol> existing,
-        ProtocolTypeSymbol assignable)
-    {
-        if (type is not RecordTypeSymbol { MemberVariables: { Count: > 0 } fields } record ||
-            type is VariantTypeSymbol || Wrappers.IsWrapperType(type: type))
-        {
-            return;
-        }
-
-        var conditions = new List<(string ParamName, string ProtocolName)>();
-        foreach (MemberVariableInfo field in fields)
-        {
-            if (field.Type is GenericParameterTypeSymbol param)
-            {
-                if (!conditions.Any(predicate: c => c.ParamName == param.Name))
-                {
-                    conditions.Add(item: (param.Name, AssignableProtocol));
-                }
-
-                continue;
-            }
-
-            bool concrete = !field.Type.IsGenericDefinition &&
-                            field.Type.TypeArguments?.Any(predicate: a => a is GenericParameterTypeSymbol) != true;
-            if (!concrete || !(_sa._registry.CanAutoDeriveAssignable(type: field.Type) ||
-                               _sa._registry.CanMemberVariableWalkAssignable(type: field.Type) ||
-                               _sa._registry.TypeObeysProtocol(type: field.Type, protocolName: AssignableProtocol)))
-            {
-                return;
-            }
-        }
-
-        record.ConditionalObeys ??= new Dictionary<string, List<(string ParamName, string ProtocolName)>>(
-            comparer: StringComparer.Ordinal);
-        record.ConditionalObeys[key: AssignableProtocol] = conditions;
-        var merged = new List<TypeSymbol>(collection: existing) { assignable };
-        _sa._implicitProtocolConformances.Add(item: (type.FullName, assignable.Name));
-        UpdateTypeProtocols(type: type, protocols: merged);
-    }
-
-    /// <summary>
-    /// Auto-derives <c>Assignable</c> conformance for any type whose LLVM layout
-    /// contains no <c>ptr</c>. Runs after marker-protocol conformance so the new
-    /// entry sits alongside <c>RecordType</c>/<c>EntityType</c>/etc. in the
-    /// type's <c>ImplementedProtocols</c>. Types that already declare
-    /// <c>obeys Assignable</c> (whether user-written for opt-in records, or
-    /// trivially for raw-pointer wrappers like <c>Hijacked[T]</c>/<c>CPtr</c>)
-    /// are left untouched — <see cref="TypeRegistry.CanAutoDeriveAssignable"/>
-    /// is only consulted when the type does not already obey the protocol.
-    /// </summary>
-    private void ApplyAutoAssignableConformance()
-    {
-        // A no-ptr layout is a bitwise duplicate — which is BOTH a valid cheap `store` AND a valid
-        // deep `copy` (nothing heap is shared). `Assignable` and `Copyable` are ORTHOGONAL (no hierarchy),
-        // so derive BOTH explicitly. Raw-pointer opt-in types (Hijacked/CPtr) have a ptr, so
-        // CanAutoDeriveAssignable is false and they keep their hand-written `obeys Assignable` only.
-        if (_sa._registry.LookupType(name: CopyableProtocol) is not ProtocolTypeSymbol copyable ||
-            _sa._registry.LookupType(name: AssignableProtocol) is not ProtocolTypeSymbol Assignable)
+        if (_sa._registry.LookupType(name: CopyableProtocol) is not ProtocolTypeSymbol copyable)
         {
             return;
         }
@@ -335,18 +230,13 @@ internal sealed class ProtocolConformanceAnalyzer
             }
 
             List<TypeSymbol> existing = GetImplementedProtocols(type: type);
-            if (existing.Any(predicate: p => p.Name is CopyableProtocol or AssignableProtocol))
+            if (existing.Any(predicate: p => p.Name is CopyableProtocol) ||
+                !_sa._registry.CanAutoDeriveAssignable(type: type))
             {
                 continue;
             }
 
-            if (!_sa._registry.CanAutoDeriveAssignable(type: type))
-            {
-                continue;
-            }
-
-            var merged = new List<TypeSymbol>(collection: existing) { Assignable, copyable };
-            _sa._implicitProtocolConformances.Add(item: (type.FullName, Assignable.Name));
+            var merged = new List<TypeSymbol>(collection: existing) { copyable };
             _sa._implicitProtocolConformances.Add(item: (type.FullName, copyable.Name));
             UpdateTypeProtocols(type: type, protocols: merged);
         }

@@ -340,7 +340,7 @@ public sealed partial class SemanticVerifier
         SourceLocation accessLocation)
     {
         // A recovery carrier's layout (`Maybe.present`/`value`, `Check`/`Lookup` `type_id`/`payload`) is what the
-        // builder builds and reads when it lowers `try`/`grab`/`lookup`. Its own bodies reach those secret fields
+        // builder builds and reads when it lowers `try`/`check`/`lookup`. Its own bodies reach those secret fields
         // by construction, whichever module they land in.
         if (_isInCompilerGeneratedBody && IsCarrierLayoutField(memberVariable: memberVariable))
         {
@@ -382,6 +382,22 @@ public sealed partial class SemanticVerifier
     private void ValidateRoutineAccess(RoutineInfo routine, SourceLocation accessLocation,
         bool isCompilerSynthesized = false)
     {
+        // The copy step (`share`) is what `=` runs: the builder calls it at every copy, and the standard library
+        // calls it where it reads a value out of raw memory. A program never names it.
+        if (routine is { Kind: RoutineKind.MemberRoutine, Name: Declaration.RuntimeContract.Duplication.Share } &&
+            routine.Parameters.Count == 0)
+        {
+            if (!isCompilerSynthesized && !_isInCompilerGeneratedBody && !IsStdlibFile(filePath: _currentFilePath))
+            {
+                ReportError(code: SemanticDiagnosticCode.SecretMemberAccess,
+                    message: "'share' is the step '=' runs to copy a value, so a program does not call it. " +
+                             "Write 'var b = a' to copy (a handle gets one more holder).",
+                    location: accessLocation);
+            }
+
+            return;
+        }
+
         ValidateMemberAccess(visibility: routine.Visibility,
             memberKind: routine.Kind switch
             {

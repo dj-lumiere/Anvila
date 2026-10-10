@@ -477,7 +477,8 @@ public sealed partial class SemanticVerifier
             // Validate read-only wrapper restrictions
             ValidateReadOnlyWrapperMemberRoutineAccess(wrapperType: lookupType,
                 memberRoutine: innerMemberRoutine,
-                location: member.Location);
+                location: member.Location,
+                receiver: member.Object);
             // Validate memberRoutine access
             ValidateRoutineAccess(routine: innerMemberRoutine, accessLocation: member.Location);
             // Return type is None if not specified

@@ -86,10 +86,10 @@ public partial class LlvmEmitter
                     EmitCancellationPop(sb: sb, pop: pop);
                     return false;
 
-                case DiscardStatement discard:
+                case DropStatement dropped:
                     // Note: creator expressions could skip evaluation entirely (creators have no observable
                     // side effects and their result is being discarded, so the allocation is wasted) — not yet implemented.
-                    EmitExpression(sb: sb, expr: discard.Expression);
+                    EmitExpression(sb: sb, expr: dropped.Expression);
                     return false;
 
                 case UsingStatement:

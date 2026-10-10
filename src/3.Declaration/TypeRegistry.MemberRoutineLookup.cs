@@ -1635,7 +1635,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Verifier-installed hook that generates and registers the recovery variants of a failable routine
-    /// (its <c>try</c>/<c>grab</c>/<c>lookup</c> forms) the first time one is needed. Returns false when
+    /// (its <c>try</c>/<c>check</c>/<c>lookup</c> forms) the first time one is needed. Returns false when
     /// the routine has none (it is not failable, or is <c>@crash_only</c>).
     /// </summary>
     public Func<RoutineInfo, bool>? EnsureRecoveryVariants { get; set; }
@@ -1643,7 +1643,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Verifier-installed hook: whether a routine that is not failable can still fail beneath a call of it
     /// (a user routine whose body divides by zero, overflows, indexes out of range or calls a failable
-    /// routine bare). Under <c>try</c>/<c>grab</c>/<c>lookup</c> such a call goes through the routine's own
+    /// routine bare). Under <c>try</c>/<c>check</c>/<c>lookup</c> such a call goes through the routine's own
     /// recovery variant, so its failure is recovered instead of crashing.
     /// </summary>
     public Func<RoutineInfo, bool>? MayFailBeneath { get; set; }
@@ -1686,7 +1686,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The recovery variant of <paramref name="recovered"/> for <paramref name="kind"/>: the routine a
-    /// <c>try</c>, <c>grab</c> or <c>lookup</c> call of it binds to. A routine of a concrete owner or a
+    /// <c>try</c>, <c>check</c> or <c>lookup</c> call of it binds to. A routine of a concrete owner or a
     /// concrete instance of a generic routine gets its definition's variant substituted the same way.
     /// The variant is generated on first use (<see cref="EnsureRecoveryVariants"/>). Null when the
     /// routine has no such variant.
@@ -3341,7 +3341,7 @@ public sealed partial class TypeRegistry
         // RC wrappers (Retained/Tracked/Guarded/Witnessed/Roamed) define no literal `store` memberRoutine — their
         // retaining copy IS the refcount verb (retain/track/share/watch/roam). LookupMemberRoutine redirects
         // `store`→that verb, but GetOwnMemberRoutinesResolved (below) never surfaces a `store` for them, so the
-        // record branch's name=="assign" filter would miss it → Store=null → no retain injected. A container
+        // record branch's name=="share" filter would miss it → Store=null → no retain injected. A container
         // storing a Roamed element (`List[Roamed[E]].add_last`'s `poke(value)`) then aliases without a
         // refcount bump → the element dangles when the caller's handle releases (the List[entity] UAF).
         // Resolve the copy verb through the redirect so instantiated generic bodies get a real retaining
@@ -3359,18 +3359,15 @@ public sealed partial class TypeRegistry
                 memberRoutineName: RuntimeContract.RefCount.Share);
         }
 
-        if (type is VariantTypeSymbol variant && VariantHasDestructibleArm(variant: variant))
+        if (type is VariantTypeSymbol variant)
         {
-            // A variant with a destructible arm (an arm whose own destroy does real work — a heap
-            // entity like a collection, a managed leaf like Text, or a record that transitively owns
-            // one) would DOUBLE-FREE if bitwise-aliased: two copies of the variant both tear down the
-            // same heap arm. Its synthesized deep `copy` (WiredRoutinePass.BuildVariantCopyBody,
-            // tag-dispatch → reconstruct each destructible arm with `arm.copy()`) makes an independent
-            // value. Return it as the store hook so the copy-lowering pass injects it at every store
-            // point (record-ctor field-store, call-arg, assignment) — exactly where a bare alias would
-            // otherwise be torn down by both owners.
-            return own.FirstOrDefault(predicate: m =>
-                m.Name == "duplicate" && m.Parameters.Count == 0);
+            // A variant is copied like a record: its copy step rebuilds the live case around that case's own
+            // copy, so a case holding a handle (a Text buffer, an RC wrapper) gains one more holder instead of
+            // being aliased bit for bit. A variant with an ENTITY case owns that entity (it drops it), so `=` never
+            // copies it: it moves with `steal`, or is copied on purpose with `.duplicate()`. No hook then.
+            return IsCopiedByAssignment(type: variant) && VariantHasDestructibleArm(variant: variant)
+                ? own.FirstOrDefault(predicate: m => m.Name == RuntimeContract.Duplication.Share && m.Parameters.Count == 0)
+                : null;
         }
 
         if (type is RecordTypeSymbol rec)
@@ -3382,7 +3379,7 @@ public sealed partial class TypeRegistry
             // store whose body can't resolve → over-prune crash. Store=null ⇒ the value is not Assignable
             // and the implicit copy is (correctly) not injected.
             RoutineInfo? store = own.FirstOrDefault(predicate: m =>
-                m.Name == "assign" && m.Parameters.Count == 0 && !m.IsSynthesized &&
+                m.Name == "share" && m.Parameters.Count == 0 && !m.IsSynthesized &&
                 OwnerConstraintsSatisfied(memberRoutine: m, ownerType: type));
 
             if (store is not null && !HandWrittenStoreRetains(record: rec))
@@ -3397,7 +3394,7 @@ public sealed partial class TypeRegistry
             if (store is null && RecordHasRetainingMemberVariable(record: rec))
             {
                 store = own.FirstOrDefault(predicate: m =>
-                    m.Name == "assign" && m.Parameters.Count == 0);
+                    m.Name == "share" && m.Parameters.Count == 0);
             }
 
             return store;
@@ -3490,7 +3487,7 @@ public sealed partial class TypeRegistry
             var fieldOwn = GetOwnMemberRoutinesResolved(type: fieldRec)
                .ToList();
             if (fieldOwn.Any(predicate: m =>
-                    m.Name == "assign" && m.Parameters.Count == 0 && !m.IsSynthesized) &&
+                    m.Name == "share" && m.Parameters.Count == 0 && !m.IsSynthesized) &&
                 HandWrittenStoreRetains(record: fieldRec))
             {
                 return true;

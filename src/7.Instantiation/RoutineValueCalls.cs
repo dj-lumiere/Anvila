@@ -11,7 +11,7 @@ namespace Builder.Instantiation;
 /// the iterator steps that may reach one, as recovery sees them. A routine value carries a recovering entry next
 /// to its routine (<see cref="IdentifierExpression.RecoverRoutine"/>): the lookup-shaped recovery variant of the
 /// routine, which returns <c>Lookup[T]</c> (<c>Check[None]</c> for a routine that returns nothing). A call of the
-/// value made beneath <c>try</c>/<c>grab</c>/<c>lookup</c> goes through that entry
+/// value made beneath <c>try</c>/<c>check</c>/<c>lookup</c> goes through that entry
 /// (<see cref="CallExpression.RecoversThroughValue"/>), and its carrier is propagated like the carrier of any other
 /// failable call, so a failure inside the lambda is recovered by the keyword above it. A call of the value made
 /// with no keyword above it calls the routine itself and still crashes on failure.
@@ -73,7 +73,7 @@ internal static class RoutineValueCalls
     }
 
     /// <summary>Whether a recovering call through a value of <paramref name="routineType"/> can come back
-    /// absent (a routine that returns nothing has the grab-shaped carrier, which has no absent state).</summary>
+    /// absent (a routine that returns nothing has the check-shaped carrier, which has no absent state).</summary>
     public static bool CanBeAbsent(RoutineTypeSymbol routineType)
     {
         return routineType.ReturnType is { IsNone: false };
@@ -165,7 +165,7 @@ internal static class RoutineValueCalls
 
     /// <summary>
     /// The arm a lookup-shaped iteration step gets in a recovery variant of <paramref name="kind"/>: a failure
-    /// beneath the step (its error state) returns as the variant's failure, the error itself for grab and lookup,
+    /// beneath the step (its error state) returns as the variant's failure, the error itself for check and lookup,
     /// an absent result for try.
     /// </summary>
     public static WhenClause StepFailureClause(ErrorHandlingVariantKind kind, TypeRegistry registry,

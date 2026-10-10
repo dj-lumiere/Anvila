@@ -9,7 +9,7 @@ namespace Builder.Instantiation;
 /// not be analyzed yet): it calls a routine value it was handed or holds in a field (<c>predicate(item)</c>,
 /// <c>me.transform(item)</c>), hands one on to another routine (<c>me.insertion_sort_by(compare: compare)</c>),
 /// or steps an iterator (<c>each item in me</c>, <c>source.emit()</c>), which may be an adapter calling a lambda.
-/// A library routine that is not failable is recovered beneath <c>try</c>/<c>grab</c>/<c>lookup</c> only through
+/// A library routine that is not failable is recovered beneath <c>try</c>/<c>check</c>/<c>lookup</c> only through
 /// the routine values it reaches (see <see cref="RoutineValueCalls"/>).
 /// </summary>
 internal static class RoutineValueReach

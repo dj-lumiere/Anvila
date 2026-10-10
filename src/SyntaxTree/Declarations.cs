@@ -745,7 +745,7 @@ public enum FailableVariant
     Lookup,
 
     /// <summary>
-    /// Builder-generated grab variant: wraps a failable routine to return Result[None].
+    /// Builder-generated check variant: wraps a failable routine to return Result[None].
     /// throw -> error carrier, absent/return -> success zeroinitializer (None).
     /// </summary>
     Check,

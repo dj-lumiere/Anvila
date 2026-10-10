@@ -383,7 +383,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
         return stmt switch
         {
             ExpressionStatement s => [s.Expression],
-            DiscardStatement s => [s.Expression],
+            DropStatement s => [s.Expression],
             ReturnStatement { Value: { } v } => [v],
             ThrowStatement s => [s.Error],
             AssignmentStatement s => [s.Target, s.Value],

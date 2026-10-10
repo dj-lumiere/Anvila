@@ -344,7 +344,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// <remarks>RazorForge only - transfers ownership and invalidates the source</remarks>
     T VisitStealExpression(StealExpression node);
 
-    /// <summary>Visits a try/grab/lookup recovery expression node (wraps a failable call into a carrier).</summary>
+    /// <summary>Visits a try/check/lookup recovery expression node (wraps a failable call into a carrier).</summary>
     /// <param name="node">The recovery expression to visit</param>
     /// <returns>Result of visiting the recovery expression</returns>
     T VisitRecoveryExpression(RecoveryExpression node);
@@ -484,10 +484,10 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the using statement</returns>
     T VisitUsingStatement(UsingStatement node);
 
-    /// <summary>Visits a discard statement node (explicit return value discard)</summary>
-    /// <param name="node">The discard statement to visit</param>
-    /// <returns>Result of visiting the discard statement</returns>
-    T VisitDiscardStatement(DiscardStatement node);
+    /// <summary>Visits a drop statement node (a result dropped on purpose)</summary>
+    /// <param name="node">The drop statement to visit</param>
+    /// <returns>Result of visiting the drop statement</returns>
+    T VisitDropStatement(DropStatement node);
 
     // Declaration visitor memberRoutines - handle all declaration node types
 

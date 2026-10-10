@@ -77,7 +77,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
         BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: LowerRoutineBody);
     }
 
-    /// <summary>Lowers the synthesized try/grab/lookup variant bodies.</summary>
+    /// <summary>Lowers the synthesized try/check/lookup variant bodies.</summary>
     public void RunOnVariantBodies()
     {
         if (_variantBodies == null)

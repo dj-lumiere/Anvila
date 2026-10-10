@@ -27,7 +27,7 @@ namespace Builder.Verification;
 /// Performs type checking, scope analysis, and inference for:
 /// - memberRoutine modification (readonly/writable/reshaping)
 /// - Reshaping modification tracking (buffer relocation detection)
-/// - Error handling variant generation (try/grab/lookup)
+/// - Error handling variant generation (try/check/lookup)
 /// </summary>
 public sealed partial class SemanticVerifier
 {
@@ -245,7 +245,7 @@ public sealed partial class SemanticVerifier
     internal ProtocolConformanceAnalyzer _conformanceAnalyzer;
 
     /// <summary>
-    /// Pre-transformed bodies for error-handling variant routines (try/grab/lookup), produced
+    /// Pre-transformed bodies for error-handling variant routines (try/check/lookup), produced
     /// by <see cref="ErrorHandlingVariantPass"/> during Phase 6 global desugaring.
     /// Merged into <c>SynthesizedBodies</c> when building the <see cref="AnalysisResult"/>.
     /// </summary>
@@ -463,7 +463,7 @@ public sealed partial class SemanticVerifier
         // Stub synthesis (3) + syntax prepass (4) run BEFORE semantic analysis (5) so their stubs are in
         // scope. Under the demand flip, stdlib SA+desugaring is driven per-file by the collector, not eagerly.
         // Install the on-demand failable-variant synthesizer hook (by RESOLVED base reference): the `try`/
-        // `grab`/`lookup` keyword and the variant-body rewriter mint a base's recovery variant on demand
+        // `check`/`lookup` keyword and the variant-body rewriter mint a base's recovery variant on demand
         // from the deferred base index, rather than eagerly registering every failable's variants.
         _registry.EnsureRecoveryVariants = EnsureRecoveryVariantsForBase;
         if (!_registry.Rules.SynthesizeBeforeAnalysis(files: [(program, _currentFilePath)],
@@ -1239,7 +1239,7 @@ public sealed partial class SemanticVerifier
             buildMode: _buildMode,
             monomorphizedBodies: _instantiatedGenericBodies);
         // Now that Phase 7 has produced the concrete instances, lower any carrier-return sites inside
-        // them (a monomorphized try/grab/lookup variant) to real record construction.
+        // them (a monomorphized try/check/lookup variant) to real record construction.
         new VariantReturnLoweringPass(ctx: ctx).RunOnMonomorphizedBodies();
         // Inline simple iterator `emit!` bodies into their for-loops before the rest of Phase 8
         // lowering, replacing the `emit`'s try variant call with the spliced advance. By Phase 8 the concrete
@@ -1564,7 +1564,7 @@ public sealed partial class SemanticVerifier
         AnalyzeSynthesizedBodies();
 
         // Index failable stdlib routines for on-demand variant synthesis (no eager GenerateVariants),
-        // then install the by-RESOLVED-base synthesizer hook so a stdlib body's `try`/`grab`/`lookup` (or
+        // then install the by-RESOLVED-base synthesizer hook so a stdlib body's `try`/`check`/`lookup` (or
         // the variant-body rewriter) mints a base's variant during analysis. AST-level detection — no full
         // body analysis required.
         PreRegisterStdlibVariants();
@@ -2017,7 +2017,7 @@ public sealed partial class SemanticVerifier
             new PostprocessingPipeline(ctx: pctx).Run(program: entry.Program);
             new TemporaryTeardownPass(ctx: pctx).Run(program: entry.Program);
 
-            // A failable `try`/`grab`/`lookup` variant synthesized DURING this file's on-demand
+            // A failable `try`/`check`/`lookup` variant synthesized DURING this file's on-demand
             // analysis (e.g. `proc_result_of` calls `try term_signal_value(...)`) enqueues its raw body onto
             // _variantBodyGenQueue but is NEVER finalized: the eager DrainVariantBodyGenQueue /
             // AnalyzeVariantBodies / RunGlobal variant-body sweep already ran (before demand collection),

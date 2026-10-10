@@ -266,12 +266,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             case ExpressionStatement es:
                 return TransformExpressionStatement(es: es);
 
-            // `discard xs.remove_last()` drops a value the call handed over, so it is torn down when the
+            // `drop xs.remove_last()` drops a value the call handed over, so it is torn down when the
             // statement ends (a record a member routine returns is its own, never an alias of the receiver).
-            case DiscardStatement discard:
-                return SpillAround(owner: discard,
-                    root: discard.Expression,
-                    rebuildWithCondition: e => discard with { Expression = e },
+            case DropStatement dropped:
+                return SpillAround(owner: dropped,
+                    root: dropped.Expression,
+                    rebuildWithCondition: e => dropped with { Expression = e },
                     topOwning: false);
 
             case DeclarationStatement { Declaration: VariableDeclaration v } ds
@@ -329,6 +329,18 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 rhs: bin.Right,
                 target: t1,
                 rebuild: rhs => es with { Expression = bin with { Right = rhs } });
+        }
+
+        // A language without `drop` (Suflae) leaves a result it does not need without a marker, so the result is
+        // torn down when the statement ends, as `drop` would. An entity there is a shared handle and a returned
+        // `me` is one more holder, so the result is always its own.
+        if (es.Location?.FileName is { } file &&
+            !Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: file)).MarksDroppedResults)
+        {
+            return SpillAround(owner: es,
+                root: es.Expression,
+                rebuildWithCondition: e => es with { Expression = e },
+                topOwning: false);
         }
 
         // A bare expression statement: recurse for receivers only. We do NOT spill the
@@ -686,7 +698,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // teardown is decided HERE, where the enclosing call's result type is known, so the
         // aliasing guard can apply. Nested receivers (a.b().c()) are handled by this same
         // branch one level down, each guarded by its own call's result type.
-        // A COPY verb (`assign` / `duplicate`) reads its receiver to MINT an owned value — so the
+        // A COPY verb (the copy step `share` / `duplicate`) reads its receiver to MINT an owned value — so the
         // receiver is a value being copied FROM (an lvalue read, or a raw in-place read like a
         // container's `get_raw`), not a fresh owned producer to tear down here. The minted copy (the
         // call result) is what gets torn down. The exception is `a[i]`: `getitem` hands back a holder
@@ -695,7 +707,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // result) moves it into the controller, so that receiver is not torn down either.
         bool receiverIsIndexRead = m.Object is CallExpression { Callee: MemberExpression { MemberName: "getitem" } };
         // `release_inner` takes the entity out of its handle and ends the handle, so the handle is not torn down.
-        bool receiverConsumed = m.MemberName is "assign" or "duplicate" && !receiverIsIndexRead ||
+        // An RC handle's `share` is the other way round: one more holder of a fresh handle, which is still torn
+        // down here, so the two balance.
+        bool receiverIsHandle = m.Object.ResolvedType is { } receiverType &&
+                                TypeRegistry.GetRcWrapperBaseName(type: receiverType) is not null;
+        bool receiverConsumed = (m.MemberName == "duplicate" || m.MemberName == "share" && !receiverIsHandle) &&
+                                !receiverIsIndexRead ||
                                 m.MemberName == RuntimeContract.RoamedMemberRoutine.ReleaseInner ||
                                 m.Object.ResolvedType is EntityTypeSymbol &&
                                 call.ResolvedType is { } rcCtorRes &&

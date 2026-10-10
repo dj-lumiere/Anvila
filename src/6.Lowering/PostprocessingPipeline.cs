@@ -106,7 +106,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
            .RunOnVariantBodies();
         new GenericCallLoweringPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies)
            .RunOnVariantBodies();
-        // Expand `is Crashable` clauses (synthesized by non-tail propagation in grab/lookup
+        // Expand `is Crashable` clauses (synthesized by non-tail propagation in check/lookup
         // variants) into per-type TypePatterns before PatternLowering can lower them. No-op for
         // variant bodies that contain no CrashablePattern.
         new CrashableExpansionPass(ctx: ctx).RunOnVariantBodies();

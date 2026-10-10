@@ -429,7 +429,7 @@ public enum TokenType
     /// <summary>Return statement keyword</summary>
     Return,
 
-    /// <summary>Throw statement keyword - recoverable failure (generates try/grab/lookup variants)</summary>
+    /// <summary>Throw statement keyword - recoverable failure (generates try/check/lookup variants)</summary>
     Throw,
 
     /// <summary>Pierce statement keyword - fatal, uncatchable crash (no variants, no `!`); pierces
@@ -442,8 +442,8 @@ public enum TokenType
     /// <summary>`try` prefix keyword — recover a failable call into Maybe[T] (present|absent, no crash info).</summary>
     Try,
 
-    /// <summary>`grab` prefix keyword — recover a failable call into Check[T] (carries the Crashable error).</summary>
-    Grab,
+    /// <summary>`check` prefix keyword — recover a failable call into Check[T] (carries the Crashable error).</summary>
+    Check,
 
     /// <summary>`lookup` prefix keyword — recover a failable call into Lookup[T] (value | absent | Crashable).</summary>
     Lookup,
@@ -513,9 +513,9 @@ public enum TokenType
     By,
 
     /// <summary>
-    /// Discard keyword for explicit discarding of variable
+    /// Drop keyword: computes a result and tears it down at once
     /// </summary>
-    Discard,
+    Drop,
 
     /// <summary>Threaded modifier - marks a routine to run on an OS thread (v0.1 concurrency)</summary>
     Threaded,

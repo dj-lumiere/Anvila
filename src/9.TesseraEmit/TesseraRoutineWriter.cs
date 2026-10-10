@@ -296,7 +296,7 @@ internal sealed class TesseraRoutineWriter
             case ExpressionStatement e:
                 WriteEffect(expression: e.Expression);
                 break;
-            case DiscardStatement d:
+            case DropStatement d:
                 WriteEffect(expression: d.Expression);
                 break;
             case AssignmentStatement a:
@@ -1128,7 +1128,7 @@ internal sealed class TesseraRoutineWriter
 
         if (call.RecoversThroughValue)
         {
-            throw Unsupported(what: "a call through a routine value beneath try, grab or lookup");
+            throw Unsupported(what: "a call through a routine value beneath try, check or lookup");
         }
 
         if (IndirectCallee(call: call) is var (callee, routineType))

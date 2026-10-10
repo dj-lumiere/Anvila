@@ -247,7 +247,7 @@ internal sealed class CallOverloadResolutionPass
             case ExpressionStatement es:
                 WalkExpression(expr: es.Expression);
                 break;
-            case DiscardStatement ds:
+            case DropStatement ds:
                 WalkExpression(expr: ds.Expression);
                 break;
             case ThrowStatement ts:

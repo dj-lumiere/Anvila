@@ -909,34 +909,34 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Analyzes a discard statement (explicitly ignores a return value).
+    /// Analyzes a drop statement (explicitly ignores a return value).
     /// Used to explicitly indicate that a routine's return value is intentionally ignored.
     /// </summary>
-    private void AnalyzeDiscardStatement(DiscardStatement discard)
+    private void AnalyzeDropStatement(DropStatement dropped)
     {
-        // discard must target a routine call, not an arbitrary expression like a literal or variable.
+        // drop must target a routine call, not an arbitrary expression like a literal or variable.
         // Explicit-generic calls (`f[T](...)`) parse to GenericMemberRoutineCallExpression — also a call.
-        // A `try`/`grab`/`lookup` recovery (`discard grab feeder.send(...)`) is likewise a call under the
+        // A `try`/`check`/`lookup` recovery (`drop check feeder.send(...)`) is likewise a call under the
         // hood — it lowers to the failable call's recovery variant — so discarding its carrier is valid.
-        if (discard.Expression is not (CallExpression or GenericMemberRoutineCallExpression
+        if (dropped.Expression is not (CallExpression or GenericMemberRoutineCallExpression
             or RecoveryExpression))
         {
-            ReportError(code: SemanticDiagnosticCode.InvalidDiscardTarget,
-                message: "'discard' can only be used with routine calls. " +
-                         "Use 'discard some_routine()' to explicitly ignore a return value.",
-                location: discard.Location);
+            ReportError(code: SemanticDiagnosticCode.InvalidDropTarget,
+                message: "'drop' can only be used with routine calls. " +
+                         "Use 'drop some_routine()' to drop a result on purpose.",
+                location: dropped.Location);
         }
 
         // Analyze the expression - this validates the expression and checks for errors
         // The result is intentionally discarded
-        TypeSymbol discardedType = AnalyzeExpression(expression: discard.Expression);
+        TypeSymbol discardedType = AnalyzeExpression(expression: dropped.Expression);
 
-        // `discard foo()` on an Agent is the lazy-async footgun: `discard` only throws away the value,
+        // `drop foo()` on an Agent is the lazy-async footgun: `drop` only throws away the value,
         // it does NOT run the routine — an un-launched Agent's body never executes. (In the old eager
-        // model `discard foo()` still ran the work.) So warn even though the value was explicitly ignored.
+        // model `drop foo()` still ran the work.) So warn even though the value was explicitly ignored.
         if (IsAgentType(type: discardedType))
         {
-            string routineName = discard.Expression switch
+            string routineName = dropped.Expression switch
             {
                 CallExpression { Callee: IdentifierExpression id } => id.Name,
                 CallExpression { Callee: MemberExpression m } => m.MemberName,
@@ -944,10 +944,10 @@ public sealed partial class SemanticVerifier
             };
             ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
                 message:
-                $"`discard {routineName}()` does NOT run the routine — `discard` only ignores " +
+                $"`drop {routineName}()` does NOT run the routine — `drop` only drops " +
                 "the value, and an un-launched Agent never executes. Call `.execute()` to run " +
                 "it in the background, or `.retrieve()` to run it and await the value.",
-                location: discard.Location);
+                location: dropped.Location);
         }
     }
 

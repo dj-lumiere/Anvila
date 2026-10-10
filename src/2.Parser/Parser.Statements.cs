@@ -1196,7 +1196,7 @@ public partial class Parser
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
         // throw/pierce both require an error expression (a crashable-kind type). `pierce` (isFatal)
-        // marks a fatal, uncatchable crash — no `!`, no try/grab variants; `throw` is a recoverable
+        // marks a fatal, uncatchable crash — no `!`, no try/check variants; `throw` is a recoverable
         // failure that propagates.
         Expression error = ParseExpression();
 
@@ -1259,12 +1259,12 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a discard statement (explicitly ignores a return value).
-    /// Syntax: <c>discard routine_call()</c>
+    /// Parses a drop statement (explicitly ignores a return value).
+    /// Syntax: <c>drop routine_call()</c>
     /// Used to explicitly indicate that a routine's return value is intentionally ignored.
     /// </summary>
-    /// <returns>A <see cref="DiscardStatement"/> AST node.</returns>
-    private DiscardStatement ParseDiscardStatement()
+    /// <returns>A <see cref="DropStatement"/> AST node.</returns>
+    private DropStatement ParseDropStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
         Expression expression = ParseExpression();
@@ -1273,7 +1273,7 @@ public partial class Parser
         // grammatical one — the semantic verifier reports it (RF-S421). The parser just records the
         // discarded expression, whatever its shape.
         ConsumeStatementTerminator();
-        return new DiscardStatement(Expression: expression, Location: location);
+        return new DropStatement(Expression: expression, Location: location);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

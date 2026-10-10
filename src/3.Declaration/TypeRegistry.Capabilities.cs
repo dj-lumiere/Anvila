@@ -72,6 +72,13 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool TypeHasWiredRoutine(TypeSymbol type, string wiredName)
     {
+        // The copy step belongs to every value `=` copies, and to a handle that defines its own.
+        if (wiredName == RuntimeContract.Duplication.Share)
+        {
+            return type is GenericParameterTypeSymbol or ErrorTypeSymbol || IsCopiedByAssignment(type: type) ||
+                   LookupMemberRoutine(type: type, memberRoutineName: wiredName) is { OwnerType: not ProtocolTypeSymbol };
+        }
+
         if (!_wiredRoutineMap.TryGetValue(key: wiredName,
                 value: out (string Protocol, string WiredName) entry))
         {
@@ -267,6 +274,25 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// Whether <c>=</c> copies a value of <paramref name="type"/>. A record (choice, flags, tuple, variant and
+    /// handle included) is copied unless it owns an entity (a variant with an entity arm, an <c>Array</c> of
+    /// entities) or is an access token, and a routine value is copied too. The copy runs the type's <c>share</c>
+    /// step: nothing for plain bits, a walk over the fields for a record or variant, one more holder for a
+    /// handle. An entity, a value owning one and a token are never copied by <c>=</c>.
+    /// </summary>
+    public bool IsCopiedByAssignment(TypeSymbol type)
+    {
+        return type switch
+        {
+            RoutineTypeSymbol => true,
+            RecordTypeSymbol { IsGenericDefinition: true } => false,
+            RecordTypeSymbol record => !RuntimeContract.AccessTokenTypes.Contains(
+                item: record.GenericDefinition?.Name ?? record.Name) && !IsEntityKind(type: record),
+            _ => false
+        };
+    }
+
+    /// <summary>
     /// Returns true iff <paramref name="type"/> can auto-derive <c>Assignable</c>:
     /// its LLVM layout contains no <c>ptr</c> (and is not zero-sized in a way that
     /// indicates a managed reference). Concretely:
@@ -339,7 +365,7 @@ public sealed partial class TypeRegistry
         bool MemberVariableAssignable(TypeSymbol f)
         {
             return CanAutoDeriveAssignable(type: f) || CanMemberVariableWalkAssignable(type: f) ||
-                   TypeObeysProtocol(type: f, protocolName: "Assignable");
+                   IsCopiedByAssignment(type: f);
         }
 
         return type switch
@@ -422,13 +448,10 @@ public sealed partial class TypeRegistry
         switch (type)
         {
             case GenericParameterTypeSymbol parameter:
-                // A kind constraint that excludes entities keeps it to values, and so does `obeys Assignable` (an
-                // entity is never Assignable: a shallow copy would make two owners).
-                return constraints?.Any(predicate: c => c.ParameterName == parameter.Name && (c.ConstraintType is
+                // A kind constraint that excludes entities keeps it to values.
+                return constraints?.Any(predicate: c => c.ParameterName == parameter.Name && c.ConstraintType is
                     SyntaxTree.ConstraintKind.RecordType or SyntaxTree.ConstraintKind.ChoiceType or SyntaxTree.ConstraintKind.FlagsType or
-                    SyntaxTree.ConstraintKind.RoutineType or SyntaxTree.ConstraintKind.ConstGeneric ||
-                    c is { ConstraintType: SyntaxTree.ConstraintKind.Obeys, ConstraintTypes: { } protocols } &&
-                    protocols.Any(predicate: p => p.Name == "Assignable"))) == true
+                    SyntaxTree.ConstraintKind.RoutineType or SyntaxTree.ConstraintKind.ConstGeneric) == true
                     ? null
                     : parameter.Name;
             case TupleTypeSymbol tuple:
@@ -620,7 +643,7 @@ public sealed partial class TypeRegistry
         }
 
         // A conditional conformance (`obeys P onlyif T obeys Q`) that does not hold for this instance confers
-        // neither P nor P's parents (Assignable's parent Copyable included), so it is left out before the walk.
+        // neither P nor P's parents, so it is left out before the walk.
         implemented = implemented.Where(predicate: p => ConditionalConformanceHolds(type: type, protocolName: p.Name))
                                  .ToList();
 

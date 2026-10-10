@@ -44,7 +44,7 @@ public abstract class AstRewriter
             CrashStatement s => VisitCrash(s: s),
             VariantReturnStatement s => VisitVariantReturn(s: s),
             AtomicRmwStatement s => VisitAtomicRmw(s: s),
-            DiscardStatement s => VisitDiscard(s: s),
+            DropStatement s => VisitDrop(s: s),
             ExpressionStatement s => VisitExpressionStatement(s: s),
             AssignmentStatement s => VisitAssignment(s: s),
             DeclarationStatement s => VisitDeclarationStatement(s: s),
@@ -365,12 +365,12 @@ public abstract class AstRewriter
     }
 
     /// <summary>
-    /// Rewrites a <see cref="DiscardStatement"/> (an explicit <c>discard</c> of a value-producing expression)
+    /// Rewrites a <see cref="DropStatement"/> (an explicit <c>drop</c> of a value-producing expression)
     /// by visiting the inner expression. Returns the original node when the expression is unchanged.
     /// </summary>
-    /// <param name="s">The discard statement to rewrite.</param>
-    /// <returns>The rewritten discard statement, or the original reference if nothing changed.</returns>
-    protected virtual Statement VisitDiscard(DiscardStatement s)
+    /// <param name="s">The drop statement to rewrite.</param>
+    /// <returns>The rewritten drop statement, or the original reference if nothing changed.</returns>
+    protected virtual Statement VisitDrop(DropStatement s)
     {
         Expression e = VisitExpression(expr: s.Expression);
         return ReferenceEquals(objA: e, objB: s.Expression)

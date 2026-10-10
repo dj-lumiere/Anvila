@@ -9,14 +9,14 @@ using TypeModel.Types;
 namespace Builder.Instantiation;
 
 /// <summary>
-/// Generates the recovery variants (the routines `try`, `grab` and `lookup` bind to) of failable routines.
+/// Generates the recovery variants (the routines `try`, `check` and `lookup` bind to) of failable routines.
 /// A variant has its failable routine's name and parameters and is reached through it
 /// (<see cref="TypeRegistry.LookupRecoveryVariant"/>), never by a name.
 /// Runs once globally after Phase 4 body analysis.
 ///
 /// Generation rules (based on throw/absent found in body):
 /// - Only absent:       try
-/// - Only throw:        try + grab
+/// - Only throw:        try + check
 /// - Both:              try + lookup
 /// </summary>
 internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
@@ -26,7 +26,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     {
         return kind switch
         {
-            ErrorHandlingVariantKind.Check => RecoveryKind.Grab,
+            ErrorHandlingVariantKind.Check => RecoveryKind.Check,
             ErrorHandlingVariantKind.Lookup => RecoveryKind.Lookup,
             _ => RecoveryKind.Try
         };
@@ -215,7 +215,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         // DEMAND-DRIVEN: only the iterator `emit` variants are generated eagerly here (their generic-def
         // bodies must exist before Phase-8 monomorphization of composed emitters). EVERY OTHER failable's
-        // try/grab/lookup variant — body and registration — is produced ON DEMAND the first time a call
+        // try/check/lookup variant — body and registration — is produced ON DEMAND the first time a call
         // site reaches it (SemanticVerifier's TrySynthesizeVariantOnDemand → GenerateVariantBody, drained
         // before AnalyzeVariantBodies). This is what stops ~3600 stdlib variant bodies from being built +
         // analyzed every run when a program uses only a handful.
@@ -340,7 +340,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <summary>
     /// Builds ONE variant's body on demand (the same transform Phase D applies eagerly), for the
     /// SemanticVerifier's on-demand synthesizer. Uses the broad (path-1, <c>nextOnly:false</c>) propagation
-    /// so inner failable calls are rewritten to THEIR try/grab/lookup variants — those inner lookups go
+    /// so inner failable calls are rewritten to THEIR try/check/lookup variants — those inner lookups go
     /// through <see cref="TypeRegistry.LookupMemberRoutine"/>, whose on-demand hook synthesizes the inner
     /// variant transitively.
     /// </summary>
@@ -357,9 +357,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         {
             variantSourceBody = FailurePointCalls.Resolve(body: variantSourceBody, registry: registry);
         }
-        // A grab carrier has no absent state: an `absent` in the body is caught as AbsentValueError, the same
-        // error an absence beneath a grab becomes.
-        if (variant.Routine.Recovery == RecoveryKind.Grab &&
+        // A check carrier has no absent state: an `absent` in the body is caught as AbsentValueError, the same
+        // error an absence beneath a check becomes.
+        if (variant.Routine.Recovery == RecoveryKind.Check &&
             registry.LookupType(name: "AbsentValueError") is { } absentError)
         {
             variantSourceBody = new AbsentAsThrow(absentError: absentError).VisitStatement(stmt: variantSourceBody);
@@ -409,7 +409,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// Signature for an optional rewriter that may convert a tail-return value into a passthrough
-    /// call against the corresponding try/grab/lookup variant of an inner failable callee.
+    /// call against the corresponding try/check/lookup variant of an inner failable callee.
     /// </summary>
     public delegate bool VariantCallRewriter(Expression? value, ErrorHandlingVariantKind kind,
         out Expression? rewritten);
@@ -477,7 +477,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         return body switch
         {
-            // `pierce` stays a crash even inside a try/grab variant — it pierces through the
+            // `pierce` stays a crash even inside a try/check variant — it pierces through the
             // recovery surface, so it is NOT rewritten into a recoverable return.
             ThrowStatement { IsFatal: true } => body,
 
@@ -528,7 +528,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     registry: registry,
                     nextOnly: nextOnly),
 
-            // A tail call whose callee has no variant of this kind (`return f()` in a grab variant, f able to
+            // A tail call whose callee has no variant of this kind (`return f()` in a check variant, f able to
             // go absent but not throw): bind it to a temp so the statement propagation below picks the
             // callee's best variant and maps its failure onto this carrier.
             ReturnStatement { Value: CallExpression tailCall } ret when registry != null && !nextOnly &&
@@ -649,7 +649,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <summary>
     /// Whether a variant of <paramref name="kind"/> calls the recovering entry of the routine values it calls.
     /// Not inside the try variant of an iterator's <c>emit</c> (<see cref="_valueCallsStayPlain"/>). A variant
-    /// built from a monomorphized body (<paramref name="nextOnly"/>) does it only for grab and lookup, whose
+    /// built from a monomorphized body (<paramref name="nextOnly"/>) does it only for check and lookup, whose
     /// carrier keeps a failure beneath apart from the absent end of an iteration: such a body is an iterator's
     /// <c>emit</c>, whose try variant is the plain step of an <c>each</c> loop. The recovering call reaches no
     /// routine of its own (the entry travels in the value), so it needs nothing marked live.
@@ -1073,7 +1073,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <c>var __rf_hoist_0 = v.sqrtrem()</c> then <c>return __rf_hoist_0.item0</c>.
     ///
     /// Only eagerly evaluated positions are split: the value of a <c>return</c>, a variable initializer, an
-    /// expression / <c>discard</c> statement, an assignment's value, and an <c>if</c> condition (evaluated once,
+    /// expression / <c>drop</c> statement, an assignment's value, and an <c>if</c> condition (evaluated once,
     /// before either branch). Inside an expression, conditionally evaluated operands are never hoisted
     /// ahead of their condition: an <c>and</c>/<c>or</c> whose right side holds a failable call is lowered to
     /// <c>var t = left</c> plus an <c>if</c> that assigns the right side only when it would run, so that call
@@ -1121,7 +1121,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } init } } =>
                 (init, init is CallExpression c && Propagates(call: c)),
             ExpressionStatement { Expression: var e } => (e, e is CallExpression c && Propagates(call: c)),
-            DiscardStatement { Expression: var e } => (e, false),
+            DropStatement { Expression: var e } => (e, false),
             AssignmentStatement { Value: var v } => (v, false),
             IfStatement { Condition: var c } => (c, false),
             _ => ((Expression?)null, false)
@@ -1160,7 +1160,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             DeclarationStatement { Declaration: VariableDeclaration vd } d =>
                 d with { Declaration = vd with { Initializer = newRoot } },
             ExpressionStatement es => es with { Expression = newRoot },
-            DiscardStatement ds => ds with { Expression = newRoot },
+            DropStatement ds => ds with { Expression = newRoot },
             AssignmentStatement a => a with { Value = newRoot },
             IfStatement ifs => ifs with { Condition = newRoot },
             _ => stmt
@@ -1529,12 +1529,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             // Looking `assign` up on it would reach the value's own `assign` through the token.
             bool payloadAssignable = valueType != null && !IsAccessToken(type: valueType) && registry.LookupMemberRoutine(
                 type: valueType,
-                memberRoutineName: RuntimeContract.Duplication.Assign,
+                memberRoutineName: RuntimeContract.Duplication.Share,
                 isFailable: false) != null;
             Expression boundValue = payloadAssignable
                 ? new CallExpression(
                     Callee: new MemberExpression(Object: valueAccess,
-                        MemberName: RuntimeContract.Duplication.Assign,
+                        MemberName: RuntimeContract.Duplication.Share,
                         Location: loc) { ResolvedType = valueType },
                     Arguments: [],
                     Location: loc) { ResolvedType = valueType }
@@ -1617,8 +1617,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Like <see cref="TryBuildTryPropagation"/> but for Check/Lookup variants: retargets a non-tail
     /// failable call to the BEST available inner safe variant and reports what that carrier can fail
     /// with. The inner routine may not have the outer's exact kind — variant generation produces
-    /// try only (absent-only), try+grab (throw-only), or try+lookup (both). So fall back:
-    /// prefer the outer's kind, then lookup &gt; grab &gt; try (try always exists). The chosen
+    /// try only (absent-only), try+check (throw-only), or try+lookup (both). So fall back:
+    /// prefer the outer's kind, then lookup &gt; check &gt; try (try always exists). The chosen
     /// carrier's capabilities (<paramref name="innerCanNone"/>/<paramref name="innerCanError"/>)
     /// drive which arms <see cref="BuildCarrierPropagationWhen"/> emits. Returns false when no failure
     /// arm would apply (e.g. a Check outer over an absent-only inner — an inconsistent combination),
@@ -1659,11 +1659,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         // Prefer the outer kind's variant, then fall back to the most-informative available (free or member
-        // bases: a whole-expression `grab`/`lookup` composition body — SemanticVerifier.Recovery — hoists FREE
+        // bases: a whole-expression `check`/`lookup` composition body — SemanticVerifier.Recovery — hoists FREE
         // failable calls, which have no OwnerType).
         RecoveryKind[] order = kind == ErrorHandlingVariantKind.Check
-            ? [RecoveryKind.Grab, RecoveryKind.Lookup, RecoveryKind.Try]
-            : [RecoveryKind.Lookup, RecoveryKind.Grab, RecoveryKind.Try];
+            ? [RecoveryKind.Check, RecoveryKind.Lookup, RecoveryKind.Try]
+            : [RecoveryKind.Lookup, RecoveryKind.Check, RecoveryKind.Try];
         (RoutineInfo? variant, RecoveryKind chosen) =
             ChooseInnerVariant(registry: registry, failRoutine: failRoutine, order: order);
 
@@ -1673,10 +1673,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         innerCanNone = chosen is RecoveryKind.Try or RecoveryKind.Lookup;
-        innerCanError = chosen is RecoveryKind.Grab or RecoveryKind.Lookup;
+        innerCanError = chosen is RecoveryKind.Check or RecoveryKind.Lookup;
 
         // A Lookup outer represents None natively; a Check outer has no None state but ABSORBS a caught
-        // absent by promoting it to AbsentValueError (a Crashable) — grab collapses "not found" into the
+        // absent by promoting it to AbsentValueError (a Crashable) — check collapses "not found" into the
         // single Crashable arm. Both outers represent an error. If neither failure the inner can produce
         // maps onto the outer, propagation is meaningless — leave the call raw.
         bool outerAbsorbsNone = kind is ErrorHandlingVariantKind.Lookup or ErrorHandlingVariantKind.Check;
@@ -1801,7 +1801,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
         else if (innerCanNone && kind == ErrorHandlingVariantKind.Check)
         {
-            // Check has no absent state — grab promotes a caught absent to AbsentValueError (a concrete
+            // Check has no absent state — check promotes a caught absent to AbsentValueError (a concrete
             // Crashable, so its type_id is baked correctly by the normal FromThrow lowering).
             var absentError = new CreatorExpression(TypeName: "AbsentValueError",
                 TypeArguments: null,
@@ -1875,7 +1875,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Builds a registry-based <see cref="VariantCallRewriter"/> for the monomorphized fallback path
     /// (<see cref="Builder.Instantiation.Passes.GenericMonomorphizationPass"/>), which has no
     /// per-pass rewriter instance. It rewrites a TAIL-position <c>return src.emit!()</c> into a
-    /// passthrough call to the matching <c>try/grab/lookupemit</c> variant (resolved via
+    /// passthrough call to the matching <c>try/check/lookupemit</c> variant (resolved via
     /// <see cref="TypeRegistry.LookupMemberRoutine"/> on the concrete callee owner). Restricted to
     /// <c>emit</c> for the same reason as <see cref="TryBuildTryPropagation"/>: the <c>try</c> variant of <c>emit</c> is
     /// systematically emitted for live iterator instances, so the rewritten chain always links.

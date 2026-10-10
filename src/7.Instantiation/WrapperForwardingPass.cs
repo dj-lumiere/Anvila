@@ -437,7 +437,7 @@ internal sealed class WrapperForwardingPass
     }
 
     /// <summary>
-    /// The <c>try</c>/<c>grab</c>/<c>lookup</c> variants of <paramref name="forwarder"/> (a forwarder on a wrapper's
+    /// The <c>try</c>/<c>check</c>/<c>lookup</c> variants of <paramref name="forwarder"/> (a forwarder on a wrapper's
     /// generic definition whose inner routine can fail beneath its call): forwarders of the inner routine's own
     /// variants, so a recovery keyword over <c>xs[i]</c> on a <c>Viewing[List[T]]</c> recovers the inner failure.
     /// Built once. False when there is nothing to recover.
@@ -466,7 +466,7 @@ internal sealed class WrapperForwardingPass
             ? "data"
             : null;
         bool any = false;
-        foreach (RecoveryKind kind in (RecoveryKind[])[RecoveryKind.Try, RecoveryKind.Grab, RecoveryKind.Lookup])
+        foreach (RecoveryKind kind in (RecoveryKind[])[RecoveryKind.Try, RecoveryKind.Check, RecoveryKind.Lookup])
         {
             if (_registry.LookupRecoveryVariant(recovered: inner, kind: kind) is not { } innerVariant)
             {
@@ -913,7 +913,7 @@ internal sealed class WrapperForwardingPass
     /// Wraps the RC-forwarder body of a <c>Roamed</c> wrapper in a mode-checked lock, released
     /// EXPLICITLY (synthesized forwarder bodies are not run through ScopeTeardownLoweringPass, so an
     /// owned-guard destroy would never be inserted). Failable calls route through the throw-based
-    /// <c>grab</c> variant and a <c>when</c> that re-propagates AFTER releasing the lock in each arm.
+    /// <c>check</c> variant and a <c>when</c> that re-propagates AFTER releasing the lock in each arm.
     /// </summary>
     private List<Statement> BuildRoamedLockedForwarderStatements(TypeSymbol wrapperType,
         Statement rawDecl, Statement ctrlDecl, CallExpression innerRevealCall,
@@ -941,7 +941,7 @@ internal sealed class WrapperForwardingPass
 
         if (ctx.IsFailable)
         {
-            // Failable: call the routine's `grab` recovery variant (non-propagating carrier), then a
+            // Failable: call the routine's `check` recovery variant (non-propagating carrier), then a
             // `when` re-propagates AFTER releasing the lock in each arm — mirrors
             // ErrorHandlingVariantPass.BuildCarrierPropagationWhen, but with lock_exit inserted
             // so the lock is freed on BOTH the failure (throw) and success paths.
@@ -954,7 +954,7 @@ internal sealed class WrapperForwardingPass
             RoutineInfo? checkM = _registry.LookupMemberRoutine(type: innerDef,
                 memberRoutineName: ctx.CallPropertyName,
                 isFailable: true) is { } failable
-                ? _registry.LookupRecoveryVariant(recovered: failable, kind: RecoveryKind.Grab)
+                ? _registry.LookupRecoveryVariant(recovered: failable, kind: RecoveryKind.Check)
                 : null;
             var checkSubject = new CallExpression(
                 Callee: new MemberExpression(Object: innerRevealCall,

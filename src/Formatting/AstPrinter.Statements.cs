@@ -93,9 +93,9 @@ internal sealed partial class AstPrinter
                         : "throw "),
                     Expr(expression: thrown.Error, context: ExprContext.Statement)));
                 break;
-            case DiscardStatement discard:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "discard "),
-                    Expr(expression: discard.Expression, context: ExprContext.Statement)));
+            case DropStatement dropped:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "drop "),
+                    Expr(expression: dropped.Expression, context: ExprContext.Statement)));
                 break;
             case AbsentStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "absent")));

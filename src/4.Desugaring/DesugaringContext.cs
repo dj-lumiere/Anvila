@@ -16,7 +16,7 @@ public sealed class DesugaringContext
 
     /// <summary>
     /// Routine bodies collected during Phase 4 body analysis, keyed by RoutineInfo.RegistryKey.
-    /// Used by <see cref="ErrorHandlingVariantPass"/> to generate try/grab/lookup variants.
+    /// Used by <see cref="ErrorHandlingVariantPass"/> to generate try/check/lookup variants.
     /// </summary>
     public IReadOnlyDictionary<string, Statement> RoutineBodies { get; }
 

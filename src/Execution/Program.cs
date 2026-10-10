@@ -67,7 +67,7 @@ internal partial class Program
         }
 
         // Check if first arg is a command or a file
-        bool isCommand = command is "new" or "parse" or "tokenize" or "codegen" or BuildCommand
+        bool isCommand = command is "new" or "migrate" or "parse" or "tokenize" or "codegen" or BuildCommand
             or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "export-ingrid" or "help" or "fmt" or "docs" or "rf-stubs";
 
         if (!isCommand)
@@ -127,6 +127,9 @@ internal partial class Program
         {
             case "new":
                 return RunNewCommand(args: args);
+
+            case "migrate":
+                return RunMigrateCommand(args: args);
 
             case "parse":
                 if (args.Length < 2)
@@ -860,6 +863,7 @@ internal partial class Program
         // not part of the tool's face.
         Console.WriteLine(value: "Usage:");
         Console.WriteLine(value: $"  {tool} new [folder]                     - Start a project (config.toml, main{CliRules.FileExtension}, editor files)");
+        Console.WriteLine(value: $"  {tool} migrate [--check] <paths>...      - Move sources from the previous release to this one");
         Console.WriteLine(value: $"  {tool} check [entry-file]               - Check the program without building it");
         Console.WriteLine(value: $"  {tool} build [entry-file]               - Build a native executable");
         Console.WriteLine(value: $"  {tool} run [entry-file]                 - Build the program and run it");

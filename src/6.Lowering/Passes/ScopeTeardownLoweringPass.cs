@@ -914,15 +914,19 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             }:
                 _movedNames.Add(item: rhs2.Name);
                 break;
-            // `me.storage = moved` into a counted-handle field: the write takes no extra hold (RecordCopyLoweringPass
-            // leaves an RC field's right-hand side as it is), so the local's hold moves into the field and the local
-            // is not torn down again at scope exit.
+            // `me.storage = moved` into a counted-handle field in Suflae: the write takes no extra hold
+            // (RecordCopyLoweringPass leaves an RC field's right-hand side as it is there, the entity lowering already
+            // wrote the hold), so the local's hold moves into the field and the local is not torn down again at scope
+            // exit. In RazorForge `=` copies the handle (the field gains its own holder), so the local stays.
             case BinaryExpression
             {
                 Operator: BinaryOperator.Assign,
                 Left: MemberExpression { ResolvedType: { } fieldType },
                 Right: IdentifierExpression rcSource
-            } when TypeRegistry.GetRcWrapperBaseName(type: fieldType) is not null:
+            } assignment when TypeRegistry.GetRcWrapperBaseName(type: fieldType) is not null &&
+                               (assignment.Location?.FileName is not { } assignFile ||
+                                Builder.Frontends.Languages.For(
+                                    language: Builder.Frontends.Languages.OfFile(fileName: assignFile)).EntitiesAreShared):
                 _movedNames.Add(item: rcSource.Name);
                 break;
             // An explicit `v.destroy()` consumes `v` — it must NOT then be torn down again at

@@ -254,13 +254,13 @@ public sealed class RoutineInfo
     /// Used by <c>ErrorHandlingVariantPass</c> to propagate <see cref="HasThrow"/> /
     /// <see cref="HasAbsent"/> / <see cref="ThrowableTypes"/> through the call graph so that
     /// routines whose failability is purely propagated (e.g. <c>return Foo!(...)</c>) get the
-    /// right wrapper variants (<c>try</c> / <c>grab</c> / <c>lookup</c>) generated.
+    /// right wrapper variants (<c>try</c> / <c>check</c> / <c>lookup</c>) generated.
     /// </summary>
     public HashSet<RoutineInfo> FailableCallees { get; } = [];
 
     /// <summary>
     /// Concrete crashable types directly thrown by this routine (or its corresponding
-    /// <c>grab</c>/<c>lookup</c> variant). Populated after Phase 4 body analysis.
+    /// <c>check</c>/<c>lookup</c> variant). Populated after Phase 4 body analysis.
     /// Does not include types thrown by called routines (propagated throws).
     /// </summary>
     public List<TypeSymbol> ThrowableTypes { get; set; } = [];
@@ -497,7 +497,7 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// Which builder-generated failable wrapper this routine is, if any (None for ordinary
-    /// routines). Orthogonal to <see cref="AsyncStatus"/> — previously the lookup/grab/try
+    /// routines). Orthogonal to <see cref="AsyncStatus"/> — previously the lookup/check/try
     /// variants were mixed into AsyncStatus and are now tracked separately here.
     /// </summary>
     public FailableVariant FailableVariant { get; init; } = FailableVariant.None;
@@ -524,7 +524,7 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// For a recovery variant the builder generates for a failable routine (the routine a <c>try</c>,
-    /// <c>grab</c> or <c>lookup</c> call binds to): the failable routine it recovers. The variant has that
+    /// <c>check</c> or <c>lookup</c> call binds to): the failable routine it recovers. The variant has that
     /// routine's name and parameters and is told apart by <see cref="Recovery"/>, never by its name. On a
     /// variant substituted onto a concrete owner this may still be the generic definition's routine.
     /// </summary>
@@ -538,7 +538,7 @@ public sealed class RoutineInfo
     /// </summary>
     public string? SurfaceRealm { get; init; }
 
-    /// <summary>The recovery keyword this variant serves: <c>try</c> (Maybe[T] or Bool), <c>grab</c>
+    /// <summary>The recovery keyword this variant serves: <c>try</c> (Maybe[T] or Bool), <c>check</c>
     /// (Check[T]) or <c>lookup</c> (Lookup[T]). Null for every other routine.</summary>
     public RecoveryKind? Recovery { get; init; }
 
@@ -551,7 +551,7 @@ public sealed class RoutineInfo
         return kind switch
         {
             RecoveryKind.Try => "try",
-            RecoveryKind.Grab => "grab",
+            RecoveryKind.Check => "check",
             _ => "lookup"
         };
     }

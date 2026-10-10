@@ -9,14 +9,14 @@ using TypeModel.Types;
 namespace Builder.Verification;
 
 /// <summary>
-/// Phase 5: whole-expression <c>try</c>/<c>grab</c>/<c>lookup</c> recovery composition.
+/// Phase 5: whole-expression <c>try</c>/<c>check</c>/<c>lookup</c> recovery composition.
 ///
 /// A recovery keyword wraps an ENTIRE expression and short-circuits to its carrier on the FIRST failure
 /// (evaluation order: inner→outer, left→right). Rather than lower this inline (which, lacking a non-local
 /// break, would nest a <c>when</c> per hop), we synthesize a failable BASE routine
 /// <c>__recover_N!(freevars) -&gt; T</c> whose body is the inner expression in A-normal form (each failable
 /// sub-call hoisted to its own <c>var</c>, in evaluation order), then take that base's
-/// <c>try</c>/<c>grab</c>/<c>lookup</c> variant. The variant's <see cref="Builder.Instantiation.ErrorHandlingVariantPass.TransformBody"/>
+/// <c>try</c>/<c>check</c>/<c>lookup</c> variant. The variant's <see cref="Builder.Instantiation.ErrorHandlingVariantPass.TransformBody"/>
 /// turns every hoisted failable <c>var</c> into its own recovery variant + unwrap + early <c>return</c> —
 /// i.e. the existing per-routine variant machinery does all the threading. The <see cref="RecoveryExpression"/>'s
 /// <see cref="RecoveryExpression.LoweredCall"/> becomes a call to that variant (Phase-6 splices it in).
@@ -33,7 +33,7 @@ public sealed partial class SemanticVerifier
     private const string RecoveryTempPrefix = "__rc_t";
 
     /// <summary>
-    /// Analyzes a <c>try</c>/<c>grab</c>/<c>lookup</c> <see cref="RecoveryExpression"/> as a whole-expression
+    /// Analyzes a <c>try</c>/<c>check</c>/<c>lookup</c> <see cref="RecoveryExpression"/> as a whole-expression
     /// composition (see the class remarks). Returns the carrier type (Maybe/Check/Lookup[T], None-collapsed);
     /// stashes the synthesized variant call on <see cref="RecoveryExpression.LoweredCall"/>.
     /// </summary>
@@ -99,7 +99,7 @@ public sealed partial class SemanticVerifier
         // same owner: concrete carrier `Maybe[S64]` (not the generic-def `Maybe[T]`), receiver stays in place
         // so an entity is BORROWED as the base call borrowed it (no synth-routine by-value capture → no
         // spurious RF-S413). Routine synthesis (below) is the fallback ONLY for a MULTI-call short-circuit, or
-        // a shape the base has no variant for (grab over an absent-only base — the routine path shapes that).
+        // a shape the base has no variant for (check over an absent-only base — the routine path shapes that).
         if (hoister.Hoisted is
                 [
                     DeclarationStatement
@@ -157,11 +157,11 @@ public sealed partial class SemanticVerifier
         // The carrier the KEYWORD selects drives which variant the base must expose:
         //  - try    → try    (Maybe): pessimistic (throw+absent) generates try.
         //  - lookup → lookup (Lookup): pessimistic (throw+absent) generates lookup.
-        //  - grab   → grab  (Check): grab collapses the WHOLE crashable set (and, per the design, promotes
+        //  - check   → check  (Check): check collapses the WHOLE crashable set (and, per the design, promotes
         //    a sub-call's absent to AbsentValueError) into Check's single Crashable arm. The variant rules
-        //    only mint grab for a THROW-ONLY shape, so mark grab's base throw-only (HasThrow, no HasAbsent,
-        //    non-pessimistic) — otherwise the both-shape yields lookup and no grab exists.
-        bool grab = recovery.Kind == RecoveryKind.Grab;
+        //    only mint check for a THROW-ONLY shape, so mark check's base throw-only (HasThrow, no HasAbsent,
+        //    non-pessimistic) — otherwise the both-shape yields lookup and no check exists.
+        bool check = recovery.Kind == RecoveryKind.Check;
         string baseName = $"__recover_{_recoveryCompositionSeq++}";
         var baseRoutine = new RoutineInfo(name: baseName)
         {
@@ -170,7 +170,7 @@ public sealed partial class SemanticVerifier
             ReturnType = innerType,
             IsFailable = true,
             IsSynthesized = true,
-            HasThrow = grab,
+            HasThrow = check,
             // Open: this is builder-internal, and its variant inherits this visibility. Secret would trip
             // the cross-module access check (RF-S403) at the call site.
             Visibility = VisibilityModifier.Open,
@@ -181,14 +181,14 @@ public sealed partial class SemanticVerifier
         _registry.RegisterRoutine(routine: baseRoutine);
 
         // Index the base for on-demand variant synthesis. try/lookup use the pessimistic (throw+absent)
-        // shape; grab uses the throw-only shape stamped above (so grab is generated).
-        _registry.DeferredVariantBases[key: baseRoutine.RegistryKey] = (baseRoutine, baseBody, !grab);
+        // shape; check uses the throw-only shape stamped above (so check is generated).
+        _registry.DeferredVariantBases[key: baseRoutine.RegistryKey] = (baseRoutine, baseBody, !check);
 
         RoutineInfo? variant = _registry.LookupRecoveryVariant(recovered: baseRoutine, kind: recovery.Kind);
         if (variant == null)
         {
-            // The requested carrier variant is not (yet) synthesizable for this base shape (e.g. `grab`'s
-            // grab before the Check/Lookup propagation generalization). Surface as a generation error
+            // The requested carrier variant is not (yet) synthesizable for this base shape (e.g. `check`'s
+            // check before the Check/Lookup propagation generalization). Surface as a generation error
             // rather than silently miscompiling.
             ReportError(code: SemanticDiagnosticCode.VariantGenerationError,
                 message:
@@ -353,7 +353,7 @@ public sealed partial class SemanticVerifier
     /// <summary>The surface keyword for a <see cref="RecoveryKind"/>, for diagnostics.</summary>
     private static string RecoveryKeyword(RecoveryKind kind) => kind switch
     {
-        RecoveryKind.Grab => "grab",
+        RecoveryKind.Check => "check",
         RecoveryKind.Lookup => "lookup",
         _ => "try"
     };

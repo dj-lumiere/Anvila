@@ -556,7 +556,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
             case NonePattern when IsResultOrLookup(type: subjectType):
                 // Lookup/Check carrier: absent is `type_id == 0` (mirrors the TypePattern("None")
-                // path in GetResultLookupTypePatternCondition). A grab/lookup composition's
+                // path in GetResultLookupTypePatternCondition). A check/lookup composition's
                 // BuildCarrierPropagationWhen emits a raw NonePattern (not TypePattern) for an
                 // inner call whose best-available variant is lookup, so this arm must lower too.
                 return (MakeTypeIdIsZero(subject: subject,
@@ -1523,7 +1523,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Rethrowing a carrier's caught error (<c>throw e</c> in a <c>grab</c>/<c>lookup</c> variant, which returns it in
+    /// Rethrowing a carrier's caught error (<c>throw e</c> in a <c>check</c>/<c>lookup</c> variant, which returns it in
     /// the routine's own carrier) MOVES the error's object out: the return carries the <c>Crashables</c> read out of
     /// the carrier, and the carrier's tag is cleared first so its teardown does not free the object the returned
     /// carrier now holds.

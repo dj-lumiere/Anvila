@@ -107,7 +107,7 @@ public partial class Parser
     /// <summary>
     /// The error for a `!` written at a call site (<c>foo!(x)</c>, <c>obj.foo!(x)</c>, <c>Type![T](x)</c>).
     /// Failability is declared once, on the routine (<c>routine foo!(...)</c>); a call is written plain and
-    /// recovered with <c>try</c>/<c>grab</c>/<c>lookup</c>.
+    /// recovered with <c>try</c>/<c>check</c>/<c>lookup</c>.
     /// </summary>
     /// <summary>
     /// Reclassifies a bracket node, reporting an argument of a generic bracket that cannot be a type argument
@@ -135,7 +135,7 @@ public partial class Parser
     {
         return ThrowParseError(code: GrammarDiagnosticCode.BangAtCallSite,
             message: "A call doesn't take '!'. The '!' goes on the routine's declaration only " +
-                     "(`routine parse!(...)`); call it as `parse(...)`, and put `try`, `grab` or `lookup` " +
+                     "(`routine parse!(...)`); call it as `parse(...)`, and put `try`, `check` or `lookup` " +
                      "in front of the call to recover from a failure.");
     }
 

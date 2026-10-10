@@ -1047,7 +1047,7 @@ public partial class LlvmEmitter
 
     // A creator is identified by its semantic KIND, not a name substring. SA sets Kind=Creator for
     // `create` and `routine T(...)` (SemanticVerifier.Declarations.cs); error-handling variants inherit it
-    // (ErrorHandlingGenerator copies `Kind = original.Kind`), so try/grab/lookupcreate qualify too.
+    // (ErrorHandlingGenerator copies `Kind = original.Kind`), so try/check/lookupcreate qualify too.
     private static bool IsCreatorRoutine(RoutineInfo routine)
     {
         return routine.Kind == TypeModel.Enums.RoutineKind.Creator;

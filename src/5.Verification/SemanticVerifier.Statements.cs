@@ -686,8 +686,8 @@ public sealed partial class SemanticVerifier
                 AnalyzeDestructuringStatement(destruct: destruct);
                 break;
 
-            case DiscardStatement discard:
-                AnalyzeDiscardStatement(discard: discard);
+            case DropStatement dropped:
+                AnalyzeDropStatement(dropped: dropped);
                 break;
 
             case DangerStatement danger:
@@ -813,7 +813,16 @@ public sealed partial class SemanticVerifier
             // Type inference from initializer
             varType = RuntimeTypeOfConstGeneric(type: AnalyzeExpression(expression: varDecl.Initializer),
                 initializer: varDecl.Initializer);
-            varType = ElementTokenBinding(initializer: varDecl.Initializer, elementType: varType) ?? varType;
+            TypeSymbol? elementToken = ElementTokenBinding(initializer: varDecl.Initializer, elementType: varType);
+            if (elementToken != null)
+            {
+                varType = elementToken;
+                _elementTokenSources[key: varDecl.Name] = DescribeIndexRead(element: (IndexExpression)varDecl.Initializer);
+            }
+            else
+            {
+                _elementTokenSources.Remove(key: varDecl.Name);
+            }
 
             // Collection literals analyze to the bare entity type (List[T] / Set[T] / Dict[K,V]),
             // which can't be stored bare per the entity-ownership rule (S413). At binding sites,
@@ -1057,7 +1066,7 @@ public sealed partial class SemanticVerifier
         }
 
         // #81: Result/Lookup cannot be copied from variable to variable
-        // `var r = grab parse(data)` then `when r` is allowed (call result)
+        // `var r = check parse(data)` then `when r` is allowed (call result)
         // `var r2 = r1` where r1: Result[T] is not allowed (variable copy)
         if (varDecl.Initializer is IdentifierExpression && IsCarrierType(type: varType) &&
             !IsMaybeType(type: varType))
@@ -1133,7 +1142,7 @@ public sealed partial class SemanticVerifier
         // (return values, assignments, nested expressions — not just expression statements)
 
         // Check if this is a call expression with a non-None return value
-        // If so, warn that the return value is unused (use 'discard' to explicitly ignore)
+        // If so, warn that the return value is unused (use 'drop' to drop it on purpose)
         if (expr.Expression is CallExpression call && !exprType.IsNone)
         {
             // Get a readable name for the routine being called
@@ -1156,11 +1165,12 @@ public sealed partial class SemanticVerifier
                     "run it and await the value.",
                     location: call.Location);
             }
-            else
+            else if (Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: _currentFilePath))
+                    .MarksDroppedResults)
             {
                 ReportWarning(code: SemanticWarningCode.UnusedRoutineReturnValue,
                     message: $"Return value of '{routineName}()' ({exprType.Name}) is unused. " +
-                             "Use 'discard' to explicitly ignore the return value, or assign it to a variable.",
+                             "Use 'drop' to drop the result on purpose, or bind it to a variable.",
                     location: call.Location);
             }
         }

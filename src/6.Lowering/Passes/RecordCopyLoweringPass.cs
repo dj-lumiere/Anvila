@@ -143,7 +143,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private static bool IsCopyVerbRoutine(string nameOrKey)
     {
         string tail = memberRoutineTail(nameOrKey: nameOrKey);
-        return tail == RuntimeContract.Duplication.Assign ||
+        return tail == RuntimeContract.Duplication.Share ||
                tail == RuntimeContract.Duplication.Duplicate;
     }
 
@@ -392,9 +392,9 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
                     : es with { Expression = stripped };
             }
 
-            case DiscardStatement ds:
+            case DropStatement ds:
             {
-                // The statement stays a discard: TemporaryTeardownPass tears the dropped value down, which a
+                // The statement stays a drop: TemporaryTeardownPass tears the dropped value down, which a
                 // plain expression statement (possibly a fluent alias) never gets.
                 Expression stripped = StripStealFromExpr(expr: ds.Expression);
                 return ReferenceEquals(objA: stripped, objB: ds.Expression)
@@ -734,7 +734,12 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // (`a.next = a`) then never reaches refcount 0 and cc_collect reclaims nothing. Recurse for
         // nested copies but do NOT retain the top-level RHS. Local / non-RC-field targets keep the
         // normal retain (managed leaves like Text ARE pass-owned).
-        if (bin.Left is MemberExpression lhsm && IsRcWrapperType(type: lhsm.ResolvedType))
+        // That retain-new comes from Suflae's own entity lowering, which writes the `.share()` before this pass runs.
+        // RazorForge has no such step (a program does not write `.share()`: `=` copies a handle), so there the field
+        // write is an ordinary copy position and the handle gains its holder here.
+        if (bin.Left is MemberExpression lhsm && IsRcWrapperType(type: lhsm.ResolvedType) &&
+            (bin.Location?.FileName is not { } file ||
+             Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: file)).EntitiesAreShared))
         {
             return bin with { Right = StripStealFromExpr(expr: bin.Right) };
         }

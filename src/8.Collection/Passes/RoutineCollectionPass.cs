@@ -159,7 +159,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             variantBodies: ctx.VariantBodies,
             target: ctx.Target,
             buildMode: ctx.BuildMode);
-        // Resolve BOTH the monomorphized bodies AND the variant bodies (failable originals + try/grab/
+        // Resolve BOTH the monomorphized bodies AND the variant bodies (failable originals + try/check/
         // lookup variants). A monomorphized variant like the try variant of `List[S64].pick` lives in VariantBodies; its
         // member calls (`n == 0` → `n.eq(...)`) are lowered with LoweringKind set but ResolvedRoutine null and
         // reach codegen unresolved unless classified here. Idempotent — fully-classified calls are skipped.
@@ -323,7 +323,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     }
 
     /// <summary>
-    /// Materializes every REACHED variant body (<c>try</c>/<c>grab</c>/<c>lookup</c>/the <c>try</c> variant of <c>emit</c>) that
+    /// Materializes every REACHED variant body (<c>try</c>/<c>check</c>/<c>lookup</c>/the <c>try</c> variant of <c>emit</c>) that
     /// nothing else placed into <c>InstantiatedGenericBodies</c> — the FREE, NON-generic variant case.
     /// A generic or member-of-generic variant is materialized during the demand walk by
     /// <c>GenericMonomorphizationPass.TryBuildAndStoreVariantBody</c> (it has a <c>GenericDefinition</c>), so it

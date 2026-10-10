@@ -44,15 +44,15 @@ public sealed class BaseObjectCache
         "    names.add_last(value: \"gamma\")\n" +
         "    show(f\"names: {names} have beta {names have \"beta\"}\")\n" +
         "    var d = Dict[Text, S64]()\n" +
-        "    discard d.add(key: \"one\", value: 1)\n" +
-        "    discard d.add(key: \"two\", value: 2)\n" +
+        "    drop d.add(key: \"one\", value: 1)\n" +
+        "    drop d.add(key: \"two\", value: 2)\n" +
         "    show(f\"d: {d} d[one] {d[\"one\"]} have two {d have \"two\"}\")\n" +
         "    var di = Dict[S64, S64]()\n" +
-        "    discard di.add(key: 10, value: 100)\n" +
+        "    drop di.add(key: 10, value: 100)\n" +
         "    show(f\"di: {di} size {di.count()}\")\n" +
         "    var s = Set[S64]()\n" +
-        "    discard s.add(value: 7)\n" +
-        "    discard s.add(value: 8)\n" +
+        "    drop s.add(value: 7)\n" +
+        "    drop s.add(value: 8)\n" +
         "    show(f\"s: {s} size {s.count()} have 7 {s have 7}\")\n" +
         "    var b = true\n" +
         "    var n: S64 = 42\n" +

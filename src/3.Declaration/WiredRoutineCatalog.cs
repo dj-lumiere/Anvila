@@ -111,8 +111,8 @@ public sealed class WiredEntry
 
     /// <summary>The protocols that materialise this routine. <c>[0]</c> is the primary/canonical
     /// protocol used by capability gating; the full list is the <see cref="WiredViews.ProtocolDecl"/>
-    /// requirement set. Empty when the routine is not protocol-bound (e.g. <c>store</c> is keyed on
-    /// Assignable for capability but not declared via a protocol-operator).</summary>
+    /// requirement set. Empty when the routine is not protocol-bound (the copy step <c>share</c>, which a
+    /// type has by its kind).</summary>
     public IReadOnlyList<string> Protocols { get; init; } = [];
 
     /// <summary>The canonical wired routine the capability gate looks up on the owner. Defaults to
@@ -187,10 +187,11 @@ public static class WiredRoutineCatalog
             },
             new WiredEntry
             {
-                Name = "assign",
+                // The copy step `=` runs. Not protocol-bound: whether a type has one is its kind
+                // (TypeRegistry.IsCopiedByAssignment), checked in TypeHasWiredRoutine.
+                Name = "share",
                 Kind = WiredKind.Copy,
-                Views = Cap | Seed,
-                Protocols = ["Assignable"],
+                Views = Seed,
                 AlwaysLive = true
             },
             // Deep `copy` (Copyable). Like `store`, it is INJECTED during postprocessing (the record/

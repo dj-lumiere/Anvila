@@ -588,7 +588,7 @@ internal sealed partial class AstPrinter
         string keyword = recovery.Kind switch
         {
             RecoveryKind.Try => "try ",
-            RecoveryKind.Grab => "grab ",
+            RecoveryKind.Check => "check ",
             _ => "lookup "
         };
         // A trailing `!!` on the inner expression would be read as applying to the recovery.

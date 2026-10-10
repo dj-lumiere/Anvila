@@ -166,7 +166,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
 
     /// <summary>
     /// Names a bare identifier could plausibly have meant: variables in scope,
-    /// free routines (including generated try/grab/lookup variants), and type names.
+    /// free routines (including generated try/check/lookup variants), and type names.
     /// </summary>
     private IEnumerable<string> IdentifierSuggestionCandidates()
     {

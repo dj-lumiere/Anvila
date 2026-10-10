@@ -472,14 +472,14 @@ public partial class Parser
     /// <returns>The parsed expression.</returns>
     private Expression ParseUnary()
     {
-        // Recovery prefix keywords (try/grab/lookup): wrap a failable CALL into a carrier. MILESTONE
+        // Recovery prefix keywords (try/check/lookup): wrap a failable CALL into a carrier. MILESTONE
         // lowering — rewrite the wrapped call's name to the existing generated recovery variant:
         //   try foo(a)      -> foo's try variant    (Maybe[T])
-        //   grab x.foo()    -> x.foo's grab variant (Check[T])
+        //   check x.foo()    -> x.foo's check variant (Check[T])
         //   lookup foo()    -> foo's lookup variant (Lookup[T])
         // Bare-word keywords only (`try_foo` etc. tokenize as single identifiers). Whole-expression
         // monadic composition + a dedicated RecoveryExpression node replace this rewrite later.
-        if (CheckAndAdvance(TokenType.Try, TokenType.Grab, TokenType.Lookup))
+        if (CheckAndAdvance(TokenType.Try, TokenType.Check, TokenType.Lookup))
         {
             return ParseRecoveryPrefix();
         }
@@ -579,7 +579,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a recovery-prefix expression (try/grab/lookup) after the keyword has been consumed.
+    /// Parses a recovery-prefix expression (try/check/lookup) after the keyword has been consumed.
     /// Rewrites the wrapped failable expression into a <see cref="RecoveryExpression"/> carrier,
     /// re-applying any trailing force-unwraps on top of the carrier.
     /// </summary>
@@ -589,7 +589,7 @@ public partial class Parser
         Token recoveryKw = PeekToken(offset: -1);
         RecoveryKind recoveryKind = recoveryKw.Type switch
         {
-            TokenType.Grab => RecoveryKind.Grab,
+            TokenType.Check => RecoveryKind.Check,
             TokenType.Lookup => RecoveryKind.Lookup,
             _ => RecoveryKind.Try
         };

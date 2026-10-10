@@ -94,7 +94,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             ExpressionStatement { Expression: CompoundAssignmentExpression } es =>
                 LowerCompoundAssignmentStatement(es: es),
             ExpressionStatement es => LowerExpressionStatement(es: es, stmt: stmt),
-            DiscardStatement ds => LowerDiscardStatement(ds: ds, stmt: stmt),
+            DropStatement ds => LowerDropStatement(ds: ds, stmt: stmt),
             ThrowStatement t => LowerThrowStatement(t: t, stmt: stmt),
             // D-AST-7: recurse into variant return value expressions.
             VariantReturnStatement { Value: not null } vrs => LowerVariantReturnStatement(vrs: vrs,
@@ -306,7 +306,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return (hoisted, es with { Expression = loweredExpr });
     }
 
-    private (List<Statement> Hoisted, Statement Lowered) LowerDiscardStatement(DiscardStatement ds,
+    private (List<Statement> Hoisted, Statement Lowered) LowerDropStatement(DropStatement ds,
         Statement stmt)
     {
         (List<Statement> hoisted, Expression loweredExpr) = LowerExpr(expr: ds.Expression);
@@ -397,7 +397,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             // -- Step 1c: force-unwrap (!!) -- handled by OperatorLoweringPass --------
             // !! is desugared to operand.unwrap() in OperatorLoweringPass so that
             // stdlib bodies (which bypass ExpressionLoweringPass) are also covered.
-            // try/grab/lookup recovery: splice in the recovery-variant call SA analyzed and lower that. One SA left
+            // try/check/lookup recovery: splice in the recovery-variant call SA analyzed and lower that. One SA left
             // unbound (a call on a receiver whose type is still a parameter) stays a recovery, so monomorphization
             // binds the concrete receiver's variant. Dropping to the inner call would drop the `try`.
             RecoveryExpression recovery => recovery.LoweredCall is { } loweredCall
@@ -2023,7 +2023,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             Location: loc) { ResolvedType = collectionType, ConstructedType = collectionType };
     }
 
-    private DiscardStatement MakeCollectionAddCall(Expression receiver, TypeSymbol receiverType,
+    private DropStatement MakeCollectionAddCall(Expression receiver, TypeSymbol receiverType,
         string memberRoutineName, List<Expression> args, SourceLocation loc)
     {
         RoutineInfo? memberRoutine = ctx.Registry.LookupMemberRoutine(type: receiverType,
@@ -2040,7 +2040,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 ? CallLoweringKind.DirectMemberRoutine
                 : CallLoweringKind.Unknown
         };
-        return new DiscardStatement(Expression: call, Location: loc);
+        return new DropStatement(Expression: call, Location: loc);
     }
 
     /// <summary>Lowers a list of element expressions, collecting their hoisted statements.</summary>
@@ -2409,7 +2409,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     {
         // var with_copy = baseRef.assign()
         var copyCall = new CallExpression(
-            Callee: new MemberExpression(Object: baseRef, MemberName: "assign", Location: loc)
+            Callee: new MemberExpression(Object: baseRef, MemberName: "share", Location: loc)
             {
                 ResolvedType = baseType
             },

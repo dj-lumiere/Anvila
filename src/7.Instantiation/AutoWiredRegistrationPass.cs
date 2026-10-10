@@ -265,8 +265,31 @@ internal sealed class AutoWiredRegistrationPass
         // Declaration-driven everywhere-derive registration.
         RegisterEverywhereDeriveMembers(type: type);
 
+        // Every value `=` copies gets the copy step `share` (a field walk for a record or a variant).
+        MaybeRegisterCopyStep(type: type, existingMemberRoutines: existingMemberRoutines);
+
         MaybeRegisterFromSerialCreator(type: type,
             serialValueType: bundle.SerialValueType,
+            existingMemberRoutines: existingMemberRoutines);
+    }
+
+    /// <summary>
+    /// Registers the copy step <c>share</c> on a record (choice, flags, tuple, variant, crashable) that <c>=</c>
+    /// copies, unless it defines its own. Its body is the field walk of <c>Derivation.rf</c>. A generic
+    /// definition gets it too, so every instance can be given it when it is made. Handles and tokens are left
+    /// out: an RC handle defines its own, a token is never copied.
+    /// </summary>
+    private void MaybeRegisterCopyStep(TypeSymbol type, List<RoutineInfo> existingMemberRoutines)
+    {
+        if (type is not RecordTypeSymbol || IsWrapperType(type: type) ||
+            !type.IsGenericDefinition && !_registry.IsCopiedByAssignment(type: type))
+        {
+            return;
+        }
+
+        MaybeRegisterWired(owner: type,
+            name: RuntimeContract.Duplication.Share,
+            returnType: type,
             existingMemberRoutines: existingMemberRoutines);
     }
 
@@ -557,9 +580,9 @@ internal sealed class AutoWiredRegistrationPass
                 existingMemberRoutines: existingMemberRoutines);
         }
 
-        // Choices auto-derive Assignable (scalar tag layout).
+        // A choice is copied bit for bit (a tag).
         MaybeRegisterWired(owner: type,
-            name: "assign",
+            name: "share",
             returnType: type,
             existingMemberRoutines: existingMemberRoutines);
         MaybeRegisterWired(owner: type,
@@ -734,9 +757,9 @@ internal sealed class AutoWiredRegistrationPass
                 existingMemberRoutines: existingMemberRoutines);
         }
 
-        // Flags auto-derive Assignable (scalar bitset layout).
+        // A flags value is copied bit for bit (a bitset).
         MaybeRegisterWired(owner: type,
-            name: "assign",
+            name: "share",
             returnType: type,
             existingMemberRoutines: existingMemberRoutines);
         MaybeRegisterWired(owner: type,
@@ -832,23 +855,6 @@ internal sealed class AutoWiredRegistrationPass
         {
             MaybeRegisterWired(owner: type,
                 name: "duplicate",
-                returnType: type,
-                existingMemberRoutines: existingMemberRoutines);
-        }
-
-        // A variant whose every arm is Assignable gets a shallow `assign` (arm-walk re-store).
-        // REQUIRED so a variant used as a record member (e.g. `Maybe[S32]` in a struct) resolves
-        // the field-walk `.assign()` its owner's auto-derived `assign` emits — the everywhere-
-        // derive for records/entities is arm-blind, so variants register here. Gate on the
-        // STRUCTURAL `EverywhereObeys` (branchof over THIS instance's concrete arms), NOT the
-        // conferred `obeys` — a monomorphized instance (`Maybe[S32]`) is created AFTER conferral
-        // ran, so it never gained the conferred `obeys Assignable`. Body: the `T.assign() needs T
-        // is VariantType` derive template (branchof re-store).
-        if (!type.IsGenericDefinition && type is VariantTypeSymbol &&
-            _registry.EverywhereObeys(type: type, protocol: "Assignable"))
-        {
-            MaybeRegisterWired(owner: type,
-                name: "assign",
                 returnType: type,
                 existingMemberRoutines: existingMemberRoutines);
         }

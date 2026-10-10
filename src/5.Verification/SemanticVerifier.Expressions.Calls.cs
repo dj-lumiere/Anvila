@@ -1028,7 +1028,7 @@ public sealed partial class SemanticVerifier
     /// Handles the member-chain constructor path: `"42".S32!()` → `S32.create!(from: "42")`. Infers generic
     /// type args from the variant arm when the target is a generic definition, then delegates to
     /// <see cref="AnalyzeMemberConversion"/>. Returns a resolved type on success, null when the member name
-    /// is not a type. Recovery of a failable conversion (`try x.S8()`) is NOT a name here — the `try`/`grab`/
+    /// is not a type. Recovery of a failable conversion (`try x.S8()`) is NOT a name here — the `try`/`check`/
     /// `lookup` keyword resolves the bare conversion, then binds the reader's variant by RESOLVED reference
     /// in <see cref="BindResolvedVariantCall"/> (no `try_S8` string ever exists).
     /// </summary>
@@ -1361,7 +1361,7 @@ public sealed partial class SemanticVerifier
 
         // The extractor is synthesized bodiless — its real pattern-matching body is minted HERE, keyed
         // off the EXACT overload SA just resolved (no name-scan): `when from { is Arm v => return
-        // v.duplicate(), else => absent }`. AnalyzeVariantBodies annotates it later like a try/grab
+        // v.duplicate(), else => absent }`. AnalyzeVariantBodies annotates it later like a try/check
         // body; without this the bare `Dict!(from: sv)` call link-fails as "declared+called never defined".
         if (isVariantArmExtractor)
         {
@@ -2426,7 +2426,7 @@ public sealed partial class SemanticVerifier
         // null for a bare reinterpret, which codegen inlines (EmitMemberRoutineCall's TypeConstructor path).
         //
         // A failable conversion `x.S8()` resolves to the failable free reader `S8!(from: S64)` here (bare,
-        // crash-on-failure). Its RECOVERY (`try x.S8()`) is handled by the `try`/`grab`/`lookup` keyword,
+        // crash-on-failure). Its RECOVERY (`try x.S8()`) is handled by the `try`/`check`/`lookup` keyword,
         // which analyzes this bare conversion and then binds the reader's variant by RESOLVED reference in
         // BindResolvedVariantCall — no `try_S8` string is ever formed.
         if (creator == null && call.Arguments.Count == 0 &&
@@ -2714,6 +2714,19 @@ public sealed partial class SemanticVerifier
                 $"Cannot call writable member routine '{memberRoutine.Name}' through read-only protocol '{objectType.Name}'. " +
                 "Use Controlling[T] or a writable token instead.",
                 location: call.Location);
+        }
+
+        // A read token (`Viewing[T]`, `Consulting[T]`) reaches only the inner value's `@readonly` routines: a call
+        // that changes the value goes through a write token. The token's own routines and builder-written calls
+        // are left out.
+        if (_registry.CompilationRules.ChecksReadonly && !_isInCompilerGeneratedBody && !call.IsSynthesizedLowering &&
+            Wrappers.IsReadOnlyWrapper(type: dispatchType) && !memberRoutine.IsReadOnly &&
+            Wrappers.GetWrapperInnerType(wrapperType: dispatchType) is { } inner &&
+            _registry.LookupMemberRoutine(type: inner, memberRoutineName: memberRoutine.Name,
+                isFailable: memberRoutine.IsFailable) is { IsReadOnly: false })
+        {
+            ValidateReadOnlyWrapperMemberRoutineAccess(wrapperType: dispatchType, memberRoutine: memberRoutine,
+                location: call.Location, receiver: member.Object);
         }
 
         // @readonly enforcement: cannot call mutating memberRoutines on 'me'. RazorForge-only —

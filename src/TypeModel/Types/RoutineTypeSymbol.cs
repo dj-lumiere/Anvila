@@ -14,7 +14,7 @@ public sealed class RoutineTypeSymbol : TypeSymbol
     /// <summary>
     /// A Routine value is <c>{ ptr fn, ptr bound, ptr recover }</c> = THREE pointers: the routine, its
     /// bound payload (null when it captures nothing) and its recovering entry (the lookup-shaped
-    /// recovery variant a call beneath <c>try</c>/<c>grab</c>/<c>lookup</c> goes through, null when the
+    /// recovery variant a call beneath <c>try</c>/<c>check</c>/<c>lookup</c> goes through, null when the
     /// routine cannot fail beneath its call). Its alignment is pointer-alignment. A stale size here
     /// under-allocates any entity/record that stores a Routine field (the store overruns the heap block).
     /// </summary>

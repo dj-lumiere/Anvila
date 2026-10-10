@@ -112,6 +112,10 @@ public abstract class LanguageRules
     /// <summary><c>@readonly</c> member routines are checked not to change <c>me</c>.</summary>
     public abstract bool ChecksReadonly { get; }
 
+    /// <summary>A result thrown away on purpose is marked with <c>drop</c>, and one left without it is warned
+    /// about. Without it a result you do not need is simply left.</summary>
+    public abstract bool MarksDroppedResults { get; }
+
     /// <summary>A container changed in shape while it is being looped over crashes at run time (the
     /// language's containers are shared handles the build cannot follow).</summary>
     public abstract bool ChecksShapeAtRunTime { get; }

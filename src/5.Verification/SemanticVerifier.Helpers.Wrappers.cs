@@ -34,14 +34,43 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// Read tokens bound from an index (<c>var x = s[a]</c>), by variable name, with the index written out
+    /// (<c>s[a]</c>), so a write through one can name the exact fix. A hint only: a name rebound in another scope
+    /// keeps its last entry.
+    /// </summary>
+    private readonly Dictionary<string, string> _elementTokenSources = new();
+
+    /// <summary>
+    /// Writes out an index read the way the user wrote it (<c>boxes[i]</c>, <c>me.cells[0]</c>), or a placeholder
+    /// when a part is not a name, a member, or a literal.
+    /// </summary>
+    private static string DescribeIndexRead(IndexExpression element)
+    {
+        static string Part(Expression e)
+        {
+            return e switch
+            {
+                IdentifierExpression id => id.Name,
+                MemberExpression m => $"{Part(e: m.Object)}.{m.MemberName}",
+                LiteralExpression lit => lit.Value.ToString() ?? "…",
+                _ => "…"
+            };
+        }
+
+        return $"{Part(e: element.Object)}[{Part(e: element.Index)}]";
+    }
+
+    /// <summary>
     /// Validates that a memberRoutine can be called through a read-only wrapper.
     /// Read-only wrappers (Viewing, Consulting) can only call @readonly memberRoutines.
     /// </summary>
     /// <param name="wrapperType">The wrapper type being used.</param>
     /// <param name="memberRoutine">The memberRoutine being called.</param>
     /// <param name="location">Source location for error reporting.</param>
+    /// <param name="receiver">The expression the routine is called on, used to name the fix when it is a read token
+    /// bound from an index (<c>var x = s[a]</c>).</param>
     private void ValidateReadOnlyWrapperMemberRoutineAccess(TypeSymbol wrapperType,
-        RoutineInfo memberRoutine, SourceLocation location)
+        RoutineInfo memberRoutine, SourceLocation location, Expression? receiver = null)
     {
         if (!Wrappers.IsReadOnlyWrapper(type: wrapperType))
         {
@@ -52,10 +81,25 @@ public sealed partial class SemanticVerifier
         if (!memberRoutine.IsReadOnly)
         {
             string wrapperName = wrapperType.BareName;
+            if (receiver is IdentifierExpression id &&
+                _elementTokenSources.TryGetValue(key: id.Name, value: out string? source))
+            {
+                ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
+                    message:
+                    $"'{id.Name}' reads the element in place ('var {id.Name} = {source}' gives a read token), so it " +
+                    $"cannot call '{memberRoutine.Name}', which changes the element. To change it through " +
+                    $"'{id.Name}', bind a write token: 'var {id.Name} = {source}.modify()'.",
+                    location: location);
+                return;
+            }
+
+            string holder = receiver is IdentifierExpression named ? $"'{named.Name}'" : "This value";
+            string writeToken = wrapperName == "Consulting" ? "an Amending token ('amend()')" : "a write token ('.modify()')";
             ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
                 message:
-                $"Cannot call writable member routine '{memberRoutine.Name}' through read-only wrapper '{wrapperName}[T]'. " +
-                $"Only @readonly member routines are accessible.",
+                $"{holder} is a read token ({wrapperName}), so it can call only routines marked @readonly, and " +
+                $"'{memberRoutine.Name}' is not. Change the value through {writeToken}, or mark " +
+                $"'{memberRoutine.Name}' @readonly if it does not change anything.",
                 location: location);
         }
     }

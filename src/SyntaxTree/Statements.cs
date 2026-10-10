@@ -180,14 +180,14 @@ public record ReturnStatement(Expression? Value, SourceLocation Location)
 ///     throw DivisionError(message: "Division by zero")
 ///   return a // b
 /// </code>
-/// Builder generates safe variants for `try divide()` -> s32? and `grab divide()` -> Result[s32]
+/// Builder generates safe variants for `try divide()` -> s32? and `check divide()` -> Result[s32]
 /// </remarks>
 public record ThrowStatement(Expression Error, SourceLocation Location, bool IsFatal = false)
     : Statement(Location: Location)
 {
     /// <summary>
     /// When true this is a `pierce` (fatal, uncatchable crash): it does NOT make the routine failable,
-    /// is NOT rewritten into a recoverable return in try/grab/lookup variants, and pierces through
+    /// is NOT rewritten into a recoverable return in try/check/lookup variants, and pierces through
     /// every handler to abort. When false this is a recoverable `throw`. Codegen is identical (both
     /// lower to a crash_report call) — the difference is purely in the error-handling/variant machinery.
     /// </summary>
@@ -273,13 +273,13 @@ public record PassStatement(SourceLocation Location) : Statement(Location: Locat
 /// <param name="Expression">The expression whose result is discarded</param>
 /// <param name="Location">Source location information</param>
 /// <remarks>
-/// The discard statement prevents warnings about unused return values:
+/// The drop statement prevents warnings about unused return values:
 /// <code>
-/// # Without discard - build warning: unused return value
+/// # Without drop - build warning: unused return value
 /// process_data()
 ///
-/// # With discard - explicitly ignore return value
-/// discard process_data()
+/// # With drop - explicitly ignore return value
+/// drop process_data()
 /// </code>
 /// Benefits:
 /// <list type="bullet">
@@ -288,13 +288,13 @@ public record PassStatement(SourceLocation Location) : Statement(Location: Locat
 /// <item>Clean code - No need for dummy variables like var _ = process_data()</item>
 /// </list>
 /// </remarks>
-public record DiscardStatement(Expression Expression, SourceLocation Location)
+public record DropStatement(Expression Expression, SourceLocation Location)
     : Statement(Location: Location)
 {
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
-        return visitor.VisitDiscardStatement(node: this);
+        return visitor.VisitDropStatement(node: this);
     }
 }
 

@@ -343,9 +343,9 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     inheritedGenericConstraints: inheritedGenericConstraints,
                     includeMe: includeMe)
             },
-            DiscardStatement discard => discard with
+            DropStatement dropped => dropped with
             {
-                Expression = RewriteExpression(expression: discard.Expression,
+                Expression = RewriteExpression(expression: dropped.Expression,
                     scope: scope,
                     inheritedGenericParameters: inheritedGenericParameters,
                     inheritedGenericConstraints: inheritedGenericConstraints,
@@ -1068,7 +1068,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
     /// <summary>
     /// The recovering entry of a lifted lambda's routine value: the lookup-shaped recovery variant of the lifted
     /// routine (<c>Check[None]</c>-returning for a lambda that returns nothing), built from its body like a user
-    /// routine's, when the body can fail beneath its call. A call of the value beneath <c>try</c>/<c>grab</c>/
+    /// routine's, when the body can fail beneath its call. A call of the value beneath <c>try</c>/<c>check</c>/
     /// <c>lookup</c> goes through it (see <c>RoutineValueCalls</c>). A lambda inside a generic routine has none:
     /// its value is built per instance, from a template routine.
     /// </summary>
@@ -1089,7 +1089,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
 
         RecoveryKind kind = lifted.ReturnType is { IsNone: false }
             ? RecoveryKind.Lookup
-            : RecoveryKind.Grab;
+            : RecoveryKind.Check;
         return ctx.Registry.LookupRecoveryVariant(recovered: lifted, kind: kind);
     }
 
@@ -1108,7 +1108,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
 
         RecoveryKind kind = named.ReturnType is { IsNone: false }
             ? RecoveryKind.Lookup
-            : RecoveryKind.Grab;
+            : RecoveryKind.Check;
         return ctx.Registry.LookupRecoveryVariant(recovered: named, kind: kind);
     }
 
@@ -2198,8 +2198,8 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     parameterNames: parameterNames,
                     captures: captures);
                 break;
-            case DiscardStatement discard:
-                CollectLocalCapturesRecursive(expression: discard.Expression,
+            case DropStatement dropped:
+                CollectLocalCapturesRecursive(expression: dropped.Expression,
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);

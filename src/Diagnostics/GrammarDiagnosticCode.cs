@@ -152,7 +152,7 @@ public enum GrammarDiagnosticCode
     ExpectedDedentAfterBody = 205,
 
     /// <summary>A discard statement ('_') was used on a non-call expression; discards are only valid for call results.</summary>
-    DiscardRequiresCall = 206,
+    DropRequiresCall = 206,
 
     /// <summary>The number of variables in a tuple destructuring assignment does not match the tuple's member variable count.</summary>
     TupleDependencyCountMismatch = 207,

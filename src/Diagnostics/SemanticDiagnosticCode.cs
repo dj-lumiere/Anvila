@@ -277,7 +277,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Using statement requires disposable type.</summary>
     UsingRequiresDisposable = 209,
 
-    /// <summary>Warning: Routine call's return value is unused. Use 'discard' to explicitly ignore it.</summary>
+    /// <summary>Warning: Routine call's return value is unused. Use 'drop' to drop it on purpose.</summary>
     UnusedReturnValue = 210,
 
     /// <summary>Empty block or type body requires 'pass' keyword.</summary>
@@ -486,8 +486,8 @@ public enum SemanticDiagnosticCode
     /// <summary>Duplicate choice case value.</summary>
     ChoiceDuplicateValue = 429,
 
-    /// <summary>Discard target must be a routine call, not an arbitrary expression.</summary>
-    InvalidDiscardTarget = 421,
+    /// <summary>Drop target must be a routine call, not an arbitrary expression.</summary>
+    InvalidDropTarget = 421,
 
     /// <summary>Variant type cannot be copied from one variable to another.</summary>
     VariantCopyNotAllowed = 422,
@@ -931,7 +931,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Result/Lookup stored in variable beyond immediate dismantling.</summary>
     ErrorHandlingTypeStoredInVariable = 758,
 
-    /// <summary>A <c>try</c>/<c>grab</c>/<c>lookup</c> written over a call of a <c>@crash_only</c> routine, which
+    /// <summary>A <c>try</c>/<c>check</c>/<c>lookup</c> written over a call of a <c>@crash_only</c> routine, which
     /// may only be called bare.</summary>
     CrashOnlyRecovered = 759,
 

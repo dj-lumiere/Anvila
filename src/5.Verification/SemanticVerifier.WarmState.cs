@@ -350,7 +350,7 @@ public partial class SemanticVerifier
         _variantBodies = new Dictionary<string, Statement>(dictionary: warm.VariantBodies);
 
         // Replay the variant/synthesized bodies each cached file's on-demand analysis produced. A file's
-        // Phase-5 analysis drains its own failables' try/grab/lookup variants into _variantBodies and
+        // Phase-5 analysis drains its own failables' try/check/lookup variants into _variantBodies and
         // synthesizes their represent/diagnose/derives into _synthesizedBodies; the snapshot (no reachability
         // at capture) never generated them, so a build that REUSES the cached file (skipping its analysis)
         // must have these replayed or the variant call site link-fails ("declared+called but never defined").

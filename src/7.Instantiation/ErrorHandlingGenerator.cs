@@ -11,7 +11,7 @@ namespace Builder.Instantiation;
 ///
 /// Generation rules based on throw/absent usage:
 /// - Only absent: try (returns T?)
-/// - Only throw: try (returns T?) + grab (returns Result&lt;T&gt;)
+/// - Only throw: try (returns T?) + check (returns Result&lt;T&gt;)
 /// - Both: try (returns T?) + lookup (returns Lookup&lt;T&gt;)
 ///
 /// Phase 1: Keyword Detection - scan for throw/absent in body
@@ -82,7 +82,7 @@ public sealed class ErrorHandlingGenerator
     /// stub variants exist by name for SA resolution. <see cref="ErrorHandlingVariantPass"/>
     /// later refines them after fixpoint propagation.
     /// </summary>
-    /// <param name="everyKind">Generate try, grab and lookup whatever the body's own throw/absent say, and
+    /// <param name="everyKind">Generate try, check and lookup whatever the body's own throw/absent say, and
     /// accept a routine that is not failable. A user routine gets every kind: what can fail beneath it (a
     /// checked operator, a subscript, a call of a routine that is not failable but fails beneath its own call)
     /// is only known once its body is built, and each keyword must keep that failure's error.</param>
@@ -170,10 +170,10 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Phase 2: builds the list of wrapper variants (try always; grab for throw-only;
+    /// Phase 2: builds the list of wrapper variants (try always; check for throw-only;
     /// lookup for throw+absent) for a failable routine from its <paramref name="analysis"/>. With
     /// <paramref name="everyKind"/> (a routine recovered beneath its call, whose failures are only known once its
-    /// body is built) all three are generated: its grab turns an absence beneath it into AbsentValueError.
+    /// body is built) all three are generated: its check turns an absence beneath it into AbsentValueError.
     /// </summary>
     private List<GeneratedVariant> BuildVariants(RoutineInfo routine,
         ErrorHandlingAnalysis analysis, bool everyKind = false, bool withLookup = false)
@@ -185,7 +185,7 @@ public sealed class ErrorHandlingGenerator
         variants.Add(item: new GeneratedVariant(Kind: ErrorHandlingVariantKind.Try,
             Routine: tryVariant));
 
-        // grab variant if only throw (no absent)
+        // check variant if only throw (no absent)
         if (analysis is { HasThrow: true, HasAbsent: false } || everyKind)
         {
             RoutineInfo checkVariant = GenerateCheckVariant(original: routine);
@@ -197,7 +197,7 @@ public sealed class ErrorHandlingGenerator
         if (analysis is { HasThrow: true, HasAbsent: true } || everyKind || withLookup)
         {
             RoutineInfo lookupVariant = GenerateLookupVariant(original: routine);
-            // Lookup[None] degenerates to grab (Result[None]) when the return type is None:
+            // Lookup[None] degenerates to check (Result[None]) when the return type is None:
             // absent and return are both None so only throw vs no-throw matters.
             // Use Check kind so TransformBody emits Result carriers in the variant body —
             // if Lookup kind is used, the body emits Lookup[None] but the declaration says Result[None].
@@ -407,14 +407,14 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Generates the grab variant (returns Result&lt;T&gt;).
+    /// Generates the check variant (returns Result&lt;T&gt;).
     /// throw -> return error
     /// </summary>
     /// <param name="original">The original routine.</param>
-    /// <returns>The grab variant routine info.</returns>
+    /// <returns>The check variant routine info.</returns>
     private RoutineInfo GenerateCheckVariant(RoutineInfo original)
     {
-        // grab returns Result[T] — success carries T, throw carries the error.
+        // check returns Result[T] — success carries T, throw carries the error.
         TypeSymbol innerType = original.ReturnType ?? _registry.LookupType(name: NoneTypeName) ??
             throw new InvalidOperationException(message: "None type not registered");
 
@@ -434,7 +434,7 @@ public sealed class ErrorHandlingGenerator
             MeType = VariantMeType(original: original),
             Parameters = original.Parameters,
             ReturnType = resultType,
-            IsFailable = false, // grab variants don't fail
+            IsFailable = false, // check variants don't fail
             IsSynthesized = true,
             DeclaredMutation = original.DeclaredMutation,
             MutationCategory = original.MutationCategory,
@@ -448,7 +448,7 @@ public sealed class ErrorHandlingGenerator
             CallingConvention = original.CallingConvention,
             RecoveryOf = original,
             SurfaceRealm = original.SurfaceRealm,
-            Recovery = RecoveryKind.Grab
+            Recovery = RecoveryKind.Check
         };
     }
 
@@ -467,7 +467,7 @@ public sealed class ErrorHandlingGenerator
         TypeSymbol returnType = original.ReturnType ?? noneType;
 
         // Lookup[None] degenerates to Result[None]: absent and return are both None,
-        // so the only distinction is throw vs no-throw — same as grab.
+        // so the only distinction is throw vs no-throw — same as check.
         if (returnType.Name == NoneTypeName)
         {
             TypeSymbol resultDef = _registry.LookupType(name: "Check") ??
@@ -477,7 +477,7 @@ public sealed class ErrorHandlingGenerator
                 genericDef: resultDef,
                 typeArguments: [noneType]);
 
-            // Degenerated: Lookup[None] -> Result[None], and the API name becomes grab not lookup
+            // Degenerated: Lookup[None] -> Result[None], and the API name becomes check not lookup
             return new RoutineInfo(name: original.Name)
             {
                 Kind = VariantKind(original: original),
@@ -499,7 +499,7 @@ public sealed class ErrorHandlingGenerator
                 CallingConvention = original.CallingConvention,
                 RecoveryOf = original,
                 SurfaceRealm = original.SurfaceRealm,
-                Recovery = RecoveryKind.Grab
+                Recovery = RecoveryKind.Check
             };
         }
 

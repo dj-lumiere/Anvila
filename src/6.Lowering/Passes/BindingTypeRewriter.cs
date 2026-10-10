@@ -532,7 +532,7 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
 
         return false;
     }
-    public bool VisitDiscardStatement(DiscardStatement node)
+    public bool VisitDropStatement(DropStatement node)
     {
         Visit(e: node.Expression);
         return false;

@@ -141,7 +141,7 @@ public static class RuntimeContract
     public static class Duplication
     {
         /// <summary>Implicit shallow bind/share (Assignable) — the verb injected at copy sites.</summary>
-        public const string Assign = "assign";
+        public const string Share = "share";
 
         /// <summary>Explicit deep copy (Copyable).</summary>
         public const string Duplicate = "duplicate";
@@ -510,6 +510,18 @@ public static class RuntimeContract
             Consulting,
             Amending,
             Retained
+        };
+
+    /// <summary>The access tokens: scope-bound, never stored and never copied by <c>=</c>.</summary>
+    public static readonly IReadOnlySet<string> AccessTokenTypes =
+        new HashSet<string>(comparer: StringComparer.Ordinal)
+        {
+            Viewing,
+            Modifying,
+            Consulting,
+            Amending,
+            Accessing,
+            Controlling
         };
 
     /// <summary>The reference-counting wrapper base names: a value of one of these co-owns a

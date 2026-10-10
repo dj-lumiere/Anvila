@@ -1161,7 +1161,7 @@ internal static class GenericAstRewriter
 
     #region Expression Rewriting
     /// <summary>
-    /// A <c>try</c>/<c>grab</c>/<c>lookup</c> over one member call that could not be bound while its receiver was
+    /// A <c>try</c>/<c>check</c>/<c>lookup</c> over one member call that could not be bound while its receiver was
     /// still generic (the step of an <c>each</c> loop over <c>List[Agent[V]]</c>, lowered after analysis): with
     /// the receiver concrete, bind the call to the recovery variant of that receiver's failable routine.
     /// Anything else is left as it is.
@@ -1620,7 +1620,7 @@ internal static class GenericAstRewriter
                 Value = RewriteExpression(expr: nae.Value, ctx: ctx)
             },
 
-            // An analyzed `try`/`grab`/`lookup` is its recovery-variant call: rewrite that call (so it rebinds
+            // An analyzed `try`/`check`/`lookup` is its recovery-variant call: rewrite that call (so it rebinds
             // on the concrete owner) in its place, as AstRewriter splices it. Unanalyzed, rewrite the inner.
             RecoveryExpression recovery => recovery.LoweredCall is { } lowered
                 ? RewriteExpression(expr: lowered, ctx: ctx)
@@ -2460,7 +2460,7 @@ internal static class GenericAstRewriter
 
             CrashStatement cs => cs with { Report = (CallExpression)RewriteExpression(expr: cs.Report, ctx: ctx) },
 
-            DiscardStatement disc => disc with
+            DropStatement disc => disc with
             {
                 Expression = RewriteExpression(expr: disc.Expression, ctx: ctx)
             },

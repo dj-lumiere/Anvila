@@ -2473,11 +2473,10 @@ public sealed partial class TypeRegistry
     private void RegisterTupleStoreRoutine(TupleTypeSymbol newType, List<TypeSymbol> elementTypes)
     {
         if (elementTypes.All(predicate: et =>
-                CanAutoDeriveAssignable(type: et) ||
-                DoesTypeObeyProtocol(type: et, protocolName: "Assignable") ||
-                LookupMemberRoutine(type: et, memberRoutineName: "assign") is not null))
+                CanAutoDeriveAssignable(type: et) || IsCopiedByAssignment(type: et) ||
+                LookupMemberRoutine(type: et, memberRoutineName: "share") is not null))
         {
-            RegisterSynthesizedMemberRoutine(name: "assign", owner: newType, returnType: newType);
+            RegisterSynthesizedMemberRoutine(name: "share", owner: newType, returnType: newType);
         }
     }
 

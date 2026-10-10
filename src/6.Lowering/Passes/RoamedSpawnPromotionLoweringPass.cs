@@ -147,7 +147,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
             case ExpressionStatement es:
                 yield return es.Expression;
                 break;
-            case DiscardStatement ds:
+            case DropStatement ds:
                 yield return ds.Expression;
                 break;
             case ReturnStatement { Value: not null } s: yield return s.Value; break;

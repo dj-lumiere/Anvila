@@ -279,10 +279,8 @@ internal static class Wrappers
 
         if (implemented != null)
         {
-            // Either capability qualifies: `Assignable` (can `store`) or `Copyable` (deep copy, which
-            // obeys Assignable). The auto-derive adds `Copyable` directly (not `Assignable`), so this direct
-            // name check must accept both.
-            return implemented.Any(predicate: p => p.Name is "Assignable" or "Copyable");
+            // `Copyable` is placed on every value copied bit for bit and passed along through composition.
+            return implemented.Any(predicate: p => p.Name is "Copyable");
         }
 
         // Anything we did not recognise falls back to trivially copyable so this pass does

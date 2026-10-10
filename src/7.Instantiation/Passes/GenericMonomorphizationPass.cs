@@ -1710,7 +1710,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         // Crash path per LIVE routine: codegen's EmitThrow calls `<E>.crash_message()` (→ `<E>.represent()`)
         // for every crashable E this routine DIRECTLY throws (RoutineInfo.ThrowableTypes — populated post Phase-4,
-        // covering the routine and its grab/lookup variant). Seeding off ThrowableTypes matches codegen's
+        // covering the routine and its check/lookup variant). Seeding off ThrowableTypes matches codegen's
         // reference set EXACTLY — demand-scoped to live routines, so no over-materialization of unthrown errors.
         // ThrowableTypes is populated on the GENERIC DEF (Phase-4 body analysis), not copied onto each
         // monomorphized instance — so a generic throw needs the def's list too.
@@ -1821,7 +1821,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         private static bool IsCallDrivenWiredName(string wiredName)
         {
             return wiredName is RepresentMemberRoutineName or "diagnose" or "hash" or "serialize"
-                or "duplicate" or "assign" or "eq" or "ne" or "cmp" or "lt" or "le" or "gt" or "ge"
+                or "duplicate" or "share" or "eq" or "ne" or "cmp" or "lt" or "le" or "gt" or "ge"
                 or "contains" or "notcontains" or "getitem" or "setitem" or "iter";
         }
 
@@ -2018,7 +2018,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 }
 
                 break;
-            case DestroyMemberRoutineName or "assign" or "hash" or "eq":
+            case DestroyMemberRoutineName or "share" or "hash" or "eq":
                 foreach (RoutineInfo fc in MemberVariableWiredCallees(owner: owner,
                              verb: routine.Name))
                 {
@@ -2420,7 +2420,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return;
         }
 
-        // Variant routines (iterator `emit`'s try variant; and try/grab/lookup of any failable) have NO source AST
+        // Variant routines (iterator `emit`'s try variant; and try/check/lookup of any failable) have NO source AST
         // under their own name — their real body is built from the ORIGINAL failable routine's AST via the
         // path-2 transform (BuildVariantBody → FindInStdlib(emit!) + ErrorHandlingVariantPass.TransformBody).
         if (TryBuildAndStoreVariantBody(resolvedRoutine: resolvedRoutine, typeSubs: typeSubs))
@@ -2464,7 +2464,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Attempts to build and store the monomorphized body for a variant routine (try/grab/lookup variant).
+    /// Attempts to build and store the monomorphized body for a variant routine (try/check/lookup variant).
     /// Returns true if the variant body was found and stored.
     /// </summary>
     private bool TryBuildAndStoreVariantBody(RoutineInfo resolvedRoutine,
@@ -2764,7 +2764,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private static readonly HashSet<string> _concreteRequiredDerives =
         new(comparer: StringComparer.Ordinal)
         {
-            "assign",
+            "share",
             "duplicate",
             "eq",
             "ne",
@@ -4069,7 +4069,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             case ExpressionStatement es:
                 ScanExprForMemberRoutineGenericCalls(expr: es.Expression);
                 break;
-            case DiscardStatement ds:
+            case DropStatement ds:
                 ScanExprForMemberRoutineGenericCalls(expr: ds.Expression);
                 break;
             case ThrowStatement ts:

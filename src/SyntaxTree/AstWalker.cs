@@ -125,7 +125,7 @@ public static class AstWalker
                     s.Value
                 }
                 : Enumerable.Empty<object>(),
-            DiscardStatement s => new object[]
+            DropStatement s => new object[]
             {
                 s.Expression
             },

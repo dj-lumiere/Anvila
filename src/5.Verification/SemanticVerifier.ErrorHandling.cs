@@ -17,7 +17,7 @@ namespace Builder.Verification;
 ///
 /// Variant generation rules:
 /// - Only absent: try (returns T? -> None on absent)
-/// - Only throw: try (returns T? -> None on throw) + grab (returns Result&lt;T&gt;)
+/// - Only throw: try (returns T? -> None on throw) + check (returns Result&lt;T&gt;)
 /// - Both throw and absent: try + lookup (returns Lookup&lt;T&gt;)
 ///
 /// The actual variant generation is delegated to <see cref="ErrorHandlingVariantPass"/>
@@ -47,7 +47,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Phase 6 pre-pass: Pre-register error handling variant stubs for user-defined failable routines.
-    /// Called before Phase 5 body analysis so that try/grab/lookup variants are in scope
+    /// Called before Phase 5 body analysis so that try/check/lookup variants are in scope
     /// when user code calls them from within the same module.
     /// Uses AST-level throw/absent detection -> no full semantic analysis required.
     /// </summary>
@@ -65,7 +65,7 @@ public sealed partial class SemanticVerifier
             // Failability is inferred from the body when the `!` marker is absent (`foo` and `foo!` are the
             // SAME routine — failability is never a factor in identity/lookup). Pre-register variants for any
             // routine that is `!`-marked OR whose body directly `throw`/`absent`s, so its recovery variants
-            // exist for a `try`/`grab`/`lookup` call resolving during Phase-5. (Purely-propagated failability
+            // exist for a `try`/`check`/`lookup` call resolving during Phase-5. (Purely-propagated failability
             // — no direct throw/absent — is still finalized by the Phase-7 fixpoint.)
             if (node is not RoutineDeclaration routineDecl || routineDecl.Body == null)
             {
@@ -91,7 +91,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Resolves a failable routine declaration and registers its <c>try</c>/<c>grab</c>/<c>lookup</c>
+    /// Resolves a failable routine declaration and registers its <c>try</c>/<c>check</c>/<c>lookup</c>
     /// variant stubs (checking each for a reserved-prefix collision). Shared by
     /// <see cref="PreRegisterUserVariants"/> and <see cref="PreRegisterStdlibVariants"/>. A routine with
     /// direct <c>throw</c>/<c>absent</c> gets precise variants; a propagated-failability routine gets
@@ -131,7 +131,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // Record the base routine's body for ON-DEMAND variant synthesis: the first `try`/`grab`/`lookup`
+        // Record the base routine's body for ON-DEMAND variant synthesis: the first `try`/`check`/`lookup`
         // of it (TypeRegistry.LookupRecoveryVariant) generates its variants from this body
         // (EnsureRecoveryVariantsForBase). Keyed by the base RegistryKey.
         _registry.DeferredVariantBases[key: routineInfo.RegistryKey] =
@@ -143,7 +143,7 @@ public sealed partial class SemanticVerifier
         // and be pruned (over-prune), and on the warm path — where PreRegisterStdlibVariants is skipped — the
         // generic-def emit variants are RESTORED from the snapshot, so resolution + path-2 monomorphization
         // proceed without the hook. `emit` is a bounded set; the COMBINATORIAL failable surface (every `foo!`
-        // → its try/grab/lookup variants) is what stays lazy.
+        // → its try/check/lookup variants) is what stays lazy.
         if (routineInfo.Name != "emit")
         {
             return;
@@ -290,14 +290,14 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The bodies of the user's routines that are NOT failable, by registry key. Such a routine can still
     /// fail beneath its call (a checked operator, a subscript, a bare call of a failable routine), and a
-    /// call of it made under <c>try</c>/<c>grab</c>/<c>lookup</c> must recover that failure too: it goes
+    /// call of it made under <c>try</c>/<c>check</c>/<c>lookup</c> must recover that failure too: it goes
     /// through a recovery variant built from this body, exactly as a failable routine's does. Stdlib
     /// routines are not recorded: a stdlib routine that can fail is declared failable.
     /// </summary>
     private readonly Dictionary<string, Statement> _recoverableUserBodies = new(comparer: StringComparer.Ordinal);
 
     /// <summary>
-    /// The user's failable routines, by registry key: they get every recovery variant (try, grab and
+    /// The user's failable routines, by registry key: they get every recovery variant (try, check and
     /// lookup), since a failure beneath them (a checked operator, a subscript, a user routine that fails
     /// beneath its call) may be one their own throw/absent do not show, and each keyword must keep it.
     /// </summary>
@@ -524,7 +524,7 @@ public sealed partial class SemanticVerifier
                 _variantBodyGenQueue.Dequeue();
 
             // The captured base body is the PRE-SA declaration body: if the base failable routine was never
-            // DIRECTLY called (only its try/grab/lookup variant is used — e.g. `S64.from_digit_bytes!`,
+            // DIRECTLY called (only its try/check/lookup variant is used — e.g. `S64.from_digit_bytes!`,
             // reached solely through its try variant), SA never annotated its body, so an inner failable
             // call (`from_digit_bytes_at`) carries NO ResolvedRoutine. The variant-body rewriter's non-tail
             // propagation (ErrorHandlingVariantPass.TryBuildTryPropagation) keys on `ce.ResolvedRoutine is
@@ -559,7 +559,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Mints the body of an auto-generated variant arm EXTRACTOR (<c>Arm.create!(from: V)</c>) the first
     /// time a call site resolves it, keyed off the EXACT overload SA resolved (no name-scan). Stores into
-    /// <see cref="_variantBodies"/> so <see cref="AnalyzeVariantBodies"/> annotates it like a try/grab/
+    /// <see cref="_variantBodies"/> so <see cref="AnalyzeVariantBodies"/> annotates it like a try/check/
     /// lookup body and it flows through the SAME lowering + reachability + codegen path. Body:
     /// <code>when from { is Arm v =&gt; return v.duplicate(), else =&gt; absent }</code>
     /// — extract the arm payload when the active arm matches (DEEP-copied via <c>duplicate</c> so the caller
@@ -638,7 +638,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Phase 3 global: pre-registers try/grab/lookup stub variants for all failable stdlib
+    /// Phase 3 global: pre-registers try/check/lookup stub variants for all failable stdlib
     /// member routines (e.g., Tracked[T].recover!, ListEmitter[T].emit!).
     /// Must run before Phase 4 user-body analysis so that user code calling these variants
     /// (e.g., <c>try rt.recover()</c> or desugared for-loop <c>iter.emit() (under try)</c>) resolves
@@ -1016,7 +1016,7 @@ public sealed partial class SemanticVerifier
     /// creator <see cref="RoutineInfo"/>. Such a decl parses with its type name as the routine name, but the
     /// creator is REGISTERED under the empty <see cref="RoutineInfo.CreatorName"/> (keyed <c>Owner#Params</c>),
     /// so the by-NAME free/member resolution above misses it — leaving the failable creator with NO
-    /// deferred-variant base, so its <c>try</c>/<c>grab</c>/<c>lookup</c> conversion variant is never
+    /// deferred-variant base, so its <c>try</c>/<c>check</c>/<c>lookup</c> conversion variant is never
     /// synthesized and a recover call (<c>try_S64_from_text</c> whose tail is <c>S64!(from_text:)</c>) falls
     /// through to the RAW crashable creator, CRASHING on the recoverable path. Matching the creator overload
     /// by the decl's parameter types registers it as a deferred base like any other failable routine.

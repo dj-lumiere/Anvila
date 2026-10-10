@@ -117,7 +117,7 @@ internal partial class Program
         {
             string arguments = string.Join(separator: ", ",
                 values: export.Parameters.Select(selector: p => $"{p.Name}: {ZeroLiteral(type: p.Type)}"));
-            driver.Append(value: $"        discard {IngridExportOwner}.{export.Name}({arguments})\n");
+            driver.Append(value: $"        drop {IngridExportOwner}.{export.Name}({arguments})\n");
         }
 
         driver.Append(value: "    return\n");

@@ -2294,7 +2294,7 @@ public static class LspServer
 
         // Methods whose SPECIALIZED receiver doesn't accept this instantiation (e.g.
         // `List[Agent[V]].gather` on a `List[FaceDraw]`). The builder-generated failable variants
-        // (the try/grab/lookup variants of `gather`) carry no MeType, so key the rejection on the BASE name
+        // (the try/check/lookup variants of `gather`) carry no MeType, so key the rejection on the BASE name
         // and let a variant inherit its base's (in)applicability.
         var rejected = new HashSet<string>(collection: ownMethods
                                                       .Where(predicate: mr =>
@@ -4022,7 +4022,7 @@ public static class LspServer
 
     /// <summary>
     /// <c>textDocument/codeAction</c>: quick-fixes for the diagnostics in range. Currently one — an
-    /// unused Bool-returning call (RF-W007) gets a "Prepend discard" edit. The structure takes more.
+    /// unused Bool-returning call (RF-W007) gets a "Prepend drop" edit. The structure takes more.
     /// </summary>
     private static void HandleCodeAction(Stream stdout, JsonElement id, JsonElement root)
     {
@@ -4044,7 +4044,7 @@ public static class LspServer
         {
             foreach (JsonElement diag in diags.EnumerateArray())
             {
-                TryAddDiscardCodeAction(actions: actions,
+                TryAddDropCodeAction(actions: actions,
                     doc: doc,
                     uri: uri,
                     diag: diag);
@@ -4055,8 +4055,8 @@ public static class LspServer
     }
 
     /// <summary>If <paramref name="diag"/> is an RF-W007 (unused Bool-returning call) diagnostic and the
-    /// first token on its line can be found, adds a "Prepend 'discard'" quick-fix code action.</summary>
-    private static void TryAddDiscardCodeAction(List<object?> actions, DocState doc, string uri,
+    /// first token on its line can be found, adds a "Prepend 'drop'" quick-fix code action.</summary>
+    private static void TryAddDropCodeAction(List<object?> actions, DocState doc, string uri,
         JsonElement diag)
     {
         string code;
@@ -4098,7 +4098,7 @@ public static class LspServer
         };
         actions.Add(item: new Dictionary<string, object?>
         {
-            [key: "title"] = "Prepend 'discard'",
+            [key: "title"] = "Prepend 'drop'",
             [key: "kind"] = "quickfix",
             [key: "diagnostics"] = new List<object?> { JsonElementToObject(el: diag) },
             [key: "edit"] = new Dictionary<string, object?>
@@ -4113,7 +4113,7 @@ public static class LspServer
                             {
                                 [key: PropStart] = pos, [key: "end"] = pos
                             },
-                            [key: "newText"] = "discard "
+                            [key: "newText"] = "drop "
                         }
                     }
                 }

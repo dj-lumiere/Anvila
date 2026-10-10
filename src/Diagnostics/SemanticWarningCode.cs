@@ -41,7 +41,7 @@ public enum SemanticWarningCode
     /// <summary>Member variable is declared but never read.</summary>
     UnusedMemberVariable = 6,
 
-    /// <summary>Routine call's return value is unused. Use 'discard' to explicitly ignore it.</summary>
+    /// <summary>Routine call's return value is unused. Use 'drop' to drop it on purpose.</summary>
     UnusedRoutineReturnValue = 7,
 
     /// <summary>An <c>Agent[T]</c> (from a <c>suspended</c>/<c>threaded</c> call) is created but never
