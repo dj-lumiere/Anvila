@@ -4134,6 +4134,15 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
+        // An argument with no type yet (a buildtime splice like `me.$nameof(m)`, typed when the template is
+        // instantiated, or an argument that already failed) leaves the inference to the instance: reporting here
+        // would only repeat that.
+        if (call.Arguments.Any(predicate: a =>
+                (a is NamedArgumentExpression named ? named.Value : a).ResolvedType is ErrorTypeSymbol))
+        {
+            return false;
+        }
+
         string genericNames = string.Join(separator: ", ",
             values: routine.GenericParameters ?? []);
         ReportError(code: SemanticDiagnosticCode.CannotInferTypeArgument,

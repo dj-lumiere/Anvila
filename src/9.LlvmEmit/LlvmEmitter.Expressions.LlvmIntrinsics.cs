@@ -141,9 +141,12 @@ public partial class LlvmEmitter
         }
 
         // Overflow intrinsics return anonymous struct types like { i128, i1 }.
-        // If the memberRoutine's return type is a TupleTypeSymbol, coerce via extractvalue/insertvalue
-        // so the caller receives the named LLVM type (%"Record.Tuple[...]").
-        if (lastResult != null && memberRoutine.ReturnType is TupleTypeSymbol tupleReturn)
+        // If the memberRoutine DECLARES a tuple return, coerce via extractvalue/insertvalue so the caller receives
+        // the named LLVM type (%"Record.Tuple[...]"). A routine returning a type parameter that an instance made a
+        // tuple (`Hijacked[T].peek()` with `T = (S64, Text)`) already yields the named type: coercing it again would
+        // read a named value as an anonymous one.
+        if (lastResult != null && memberRoutine.ReturnType is TupleTypeSymbol tupleReturn &&
+            (memberRoutine.GenericDefinition?.ReturnType ?? memberRoutine.ReturnType) is TupleTypeSymbol)
         {
             return CoerceAnonStructToNamedTuple(sb: sb,
                 tupleReturn: tupleReturn,
