@@ -36,9 +36,14 @@ public sealed class PackageInfo
     public string? Repository { get; set; }
 
     /// <summary>
-    /// Gets the required RazorForge version constraint.
+    /// Gets the RazorForge release the package's sources are written for (what <c>migrate</c> reads).
     /// </summary>
     public string? RazorForgeVersion { get; set; }
+
+    /// <summary>
+    /// Gets the Suflae release the package's sources are written for.
+    /// </summary>
+    public string? SuflaeVersion { get; set; }
 }
 
 /// <summary>

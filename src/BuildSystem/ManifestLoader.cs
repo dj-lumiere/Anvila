@@ -297,6 +297,11 @@ public static class ManifestLoader
             pkg.RazorForgeVersion = rfVersion?.ToString();
         }
 
+        if (table.TryGetValue(key: "suflae-version", value: out object? sfVersion))
+        {
+            pkg.SuflaeVersion = sfVersion?.ToString();
+        }
+
         return pkg;
     }
 

@@ -31,10 +31,22 @@ internal partial class Program
         int changedFiles = 0;
         int namesToRename = 0;
         HashSet<string> concurrentRoutines = ConcurrentRoutineNames(files: MigrationSources(paths: paths));
+        int skippedFiles = 0;
+        var migratedManifests = new HashSet<string>(comparer: StringComparer.Ordinal);
         foreach (string file in MigrationSources(paths: paths))
         {
             string source = File.ReadAllText(path: file);
             Language language = SourceLanguage(path: file);
+            // A program whose manifest says it is written for this release already is left alone: the rewrites
+            // assume the previous spelling, and some of them would change this release's code.
+            string? manifest = ManifestAbove(file: file);
+            if (manifest != null && MigrationLanguageVersion(manifest: manifest, language: language) is { } written &&
+                written >= MigrationRelease)
+            {
+                skippedFiles++;
+                continue;
+            }
+
             List<Token> tokens;
             try
             {
@@ -118,12 +130,83 @@ internal partial class Program
             if (!check)
             {
                 File.WriteAllText(path: file, contents: ApplyMigrationEdits(source: source, edits: edits));
+                if (manifest != null)
+                {
+                    migratedManifests.Add(item: $"{manifest}\n{VersionKey(language: language)}");
+                }
             }
         }
 
+        foreach (string entry in migratedManifests)
+        {
+            string[] parts = entry.Split(separator: '\n');
+            SetManifestVersion(manifest: parts[0], key: parts[1]);
+        }
+
         string verb = check ? "would change" : "changed";
-        Console.WriteLine(value: $"{changedFiles} file(s) {verb}, {namesToRename} name(s) to rename by hand");
+        string skipped = skippedFiles > 0
+            ? $", {skippedFiles} file(s) already written for {MigrationRelease}"
+            : "";
+        Console.WriteLine(value: $"{changedFiles} file(s) {verb}{skipped}, {namesToRename} name(s) to rename by hand");
         return check && changedFiles > 0 || namesToRename > 0 ? 1 : 0;
+    }
+
+    /// <summary>The release <c>migrate</c> moves sources to.</summary>
+    private static readonly Version MigrationRelease = new(major: 0, minor: 5);
+
+    /// <summary>The manifest key that says which release a program's sources are written for.</summary>
+    private static string VersionKey(Language language) => language == Language.Suflae
+        ? "suflae-version"
+        : "razorforge-version";
+
+    /// <summary>The nearest <c>config.toml</c> in the file's folder or above it, or null.</summary>
+    private static string? ManifestAbove(string file)
+    {
+        for (DirectoryInfo? dir = new FileInfo(fileName: file).Directory; dir != null; dir = dir.Parent)
+        {
+            string candidate = Path.Combine(path1: dir.FullName, path2: "config.toml");
+            if (File.Exists(path: candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The release a manifest says its sources are written for (<c>razorforge-version = "0.5.0"</c> under
+    /// <c>[package]</c>), or null when it says none.</summary>
+    private static Version? MigrationLanguageVersion(string manifest, Language language)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(input: File.ReadAllText(path: manifest),
+            pattern: $@"(?m)^\s*{VersionKey(language: language)}\s*=\s*""(\d+)\.(\d+)");
+        return match.Success
+            ? new Version(major: int.Parse(s: match.Groups[1].Value), minor: int.Parse(s: match.Groups[2].Value))
+            : null;
+    }
+
+    /// <summary>Writes this release into the manifest's version key, adding the key under <c>[package]</c> (or the
+    /// section itself) when it is missing.</summary>
+    private static void SetManifestVersion(string manifest, string key)
+    {
+        string text = File.ReadAllText(path: manifest);
+        string value = $"{key} = \"{MigrationRelease.Major}.{MigrationRelease.Minor}.0\"";
+        var existing = new System.Text.RegularExpressions.Regex(pattern: $@"(?m)^\s*{key}\s*=.*$");
+        if (existing.IsMatch(input: text))
+        {
+            text = existing.Replace(input: text, replacement: value, count: 1);
+        }
+        else if (System.Text.RegularExpressions.Regex.IsMatch(input: text, pattern: @"(?m)^\[package\]\s*$"))
+        {
+            text = System.Text.RegularExpressions.Regex.Replace(input: text, pattern: @"(?m)^\[package\]\s*$",
+                replacement: $"[package]\n{value}", options: System.Text.RegularExpressions.RegexOptions.None);
+        }
+        else
+        {
+            text = $"[package]\n{value}\n\n{text}";
+        }
+
+        File.WriteAllText(path: manifest, contents: text);
     }
 
     /// <summary>
