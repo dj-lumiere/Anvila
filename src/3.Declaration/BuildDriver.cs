@@ -591,9 +591,18 @@ public sealed class BuildDriver
             List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
 
             // Parse
-            var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
+            var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath)
+            {
+                PrintsErrors = false
+            };
             Program ast = parser.Parse();
             List<BuildWarning> warnings = parser.GetWarnings();
+
+            // An error the parser recovered from still stops the build: the statement it dropped is missing.
+            foreach (GrammarException recovered in parser.GetStructuredErrors())
+            {
+                _errors.Add(item: ToParseError(ex: recovered));
+            }
             bool declaresModule = ast.Declarations.Any(predicate: d => d is ModuleDeclaration);
 
             // Extract module and imports (deriving + inserting a synthetic module header when absent).
@@ -616,7 +625,7 @@ public sealed class BuildDriver
 
             // A module derived from the path depends on the project root, so only a file that names its own
             // module parses the same for every project.
-            if (reuseParse && declaresModule)
+            if (reuseParse && declaresModule && parser.GetStructuredErrors().Count == 0)
             {
                 StdlibParseCache.Store(filePath: filePath, stamp: stamp, unit: unit);
             }
@@ -625,19 +634,7 @@ public sealed class BuildDriver
         }
         catch (GrammarException ex)
         {
-            // Preserve the REAL error position (not 1:1) so the caret renderer points at the
-            // offending token, and embed only the grammar code + raw text — the SemanticError
-            // envelope supplies its own `error[…]: file:line:col:` prefix.
-            _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.ParseError,
-                Message: $"[{ex.Code.ToCodeString(language: ex.Language)}] {ex.RawMessage}",
-                Location: new SourceLocation(FileName: ex.FileName,
-                    Line: ex.Line > 0
-                        ? ex.Line
-                        : 1,
-                    Column: ex.Column > 0
-                        ? ex.Column
-                        : 1,
-                    Position: 0)));
+            _errors.Add(item: ToParseError(ex: ex));
             return null;
         }
         catch (Exception ex)
@@ -897,6 +894,27 @@ public sealed class BuildDriver
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// A grammar error as a build error. The REAL position is kept (not 1:1) so the caret points at the offending
+    /// token, and the grammar code is shown in place of the semantic one.
+    /// </summary>
+    private static SemanticError ToParseError(GrammarException ex)
+    {
+        return new SemanticError(Code: SemanticDiagnosticCode.ParseError,
+            Message: ex.RawMessage,
+            Location: new SourceLocation(FileName: ex.FileName,
+                Line: ex.Line > 0
+                    ? ex.Line
+                    : 1,
+                Column: ex.Column > 0
+                    ? ex.Column
+                    : 1,
+                Position: 0))
+        {
+            GrammarCode = ex.Code.ToCodeString(language: ex.Language)
+        };
     }
 
     /// <summary>

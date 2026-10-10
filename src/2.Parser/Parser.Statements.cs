@@ -585,9 +585,7 @@ public partial class Parser
                 line: CurrentToken.Line,
                 column: CurrentToken.Column,
                 language: _language);
-            _errors.Add(item: ex.Message);
-            _structuredErrors.Add(item: ex);
-            DiagnosticRenderer.Print(ex: ex, writer: Console.Error);
+            RecordError(ex: ex);
             while (!Check(type: TokenType.FatArrow) && !Check(type: TokenType.Newline) && !IsAtEnd)
             {
                 Advance();
@@ -1569,8 +1567,7 @@ public partial class Parser
                 // Statement-level recovery: record the error, resynchronize to the next
                 // statement in THIS block, and keep parsing — one bad statement must not
                 // discard the rest of the routine (or cascade through the rest of the file).
-                _errors.Add(item: ex.Message);
-                DiagnosticRenderer.Print(ex: ex, writer: Console.Error);
+                RecordError(ex: ex);
                 SynchronizeWithinBlock();
                 hadParseError = true;
             }

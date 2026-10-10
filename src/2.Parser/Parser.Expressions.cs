@@ -200,6 +200,15 @@ public partial class Parser
             return ParseSetOrDictLiteral(location: location);
         }
 
+        if (Check(type: TokenType.None))
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,
+                message: "`None` is the nothing type, used in a type or a pattern (`Agent[None]`, `is None`). " +
+                         "The absent value is `none`: " + (_language == TypeModel.Enums.Language.Suflae
+                             ? "`var m: S64? = none`."
+                             : "`var m: Maybe[S64] = none`."));
+        }
+
         throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,
             message: $"Unexpected token: {CurrentToken.Type}");
     }

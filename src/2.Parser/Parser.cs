@@ -64,6 +64,24 @@ public partial class Parser
     }
 
     /// <summary>
+    /// Whether a recovered error is printed to stderr the moment it is found. The build driver turns it off and
+    /// reports the errors itself (from <see cref="GetStructuredErrors"/>), so each is printed once and stops the
+    /// build.
+    /// </summary>
+    public bool PrintsErrors { get; init; } = true;
+
+    /// <summary>Keeps an error the parser recovered from, and prints it unless the caller reports it.</summary>
+    private void RecordError(GrammarException ex)
+    {
+        _errors.Add(item: ex.Message);
+        _structuredErrors.Add(item: ex);
+        if (PrintsErrors)
+        {
+            DiagnosticRenderer.Print(ex: ex, writer: Console.Error);
+        }
+    }
+
+    /// <summary>
     /// The source file name for error reporting.
     /// </summary>
     public string FileName { get; set; } = "";
@@ -276,9 +294,7 @@ public partial class Parser
                 // GrammarException.Message already contains formatted error:
                 // error[RF-G150]: filename.rf:9:14: message
                 // error[SF-G150]: filename.sf:9:14: message
-                _errors.Add(item: ex.Message);
-                _structuredErrors.Add(item: ex);
-                DiagnosticRenderer.Print(ex: ex, writer: Console.Error);
+                RecordError(ex: ex);
                 Synchronize();
             }
         }
@@ -407,9 +423,7 @@ public partial class Parser
             line: startLoc.Line,
             column: startLoc.Column,
             language: _language);
-        _errors.Add(item: ex.Message);
-        _structuredErrors.Add(item: ex);
-        DiagnosticRenderer.Print(ex: ex, writer: Console.Error);
+        RecordError(ex: ex);
         return kept;
     }
 

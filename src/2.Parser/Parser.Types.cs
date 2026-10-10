@@ -559,6 +559,15 @@ public partial class Parser
             return head;
         }
 
+        // `None` as a type argument (`List[Agent[None]]()`): the keyword names the nothing type here, as it does
+        // in a type annotation, and is not an expression of its own.
+        if (Check(type: TokenType.None) && PeekToken(offset: 1).Type is TokenType.Comma or TokenType.RightBracket)
+        {
+            SourceLocation location = GetLocation();
+            Advance(); // consume None
+            return new IdentifierExpression(Name: "None", Location: location);
+        }
+
         return ParseExpression();
     }
 

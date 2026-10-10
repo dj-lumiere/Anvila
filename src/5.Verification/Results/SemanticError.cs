@@ -18,7 +18,12 @@ public sealed record SemanticError(
     /// The code as the user sees it, spelled in the language of the file the error points at
     /// (RF-S### for a .rf file, SF-S### for a .sf file).
     /// </summary>
-    public string CodeString => Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
+    public string CodeString => GrammarCode ?? Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
+
+    /// <summary>
+    /// The grammar code (RF-G###) of a parse error carried as a build error, shown in place of the semantic code.
+    /// </summary>
+    public string? GrammarCode { get; init; }
 
     /// <summary>The message in the words of the language of the file it points at (see
     /// <see cref="DiagnosticLanguage.Surface"/>).</summary>
