@@ -355,7 +355,11 @@ public sealed partial class SemanticVerifier
         // The parser requires a type annotation on every `global`, so global.Type is non-null here.
         TypeSymbol globalType = ResolveType(typeExpr: global.Type!);
 
-        _registry.DeclareVariable(name: global.Name, type: globalType, isGlobal: true);
+        // A RazorForge global is reached from every thread, so its binding is never assigned again (only its
+        // initialization, at the top of start()): an Atomic or a Guarded changes what it holds through its own
+        // routines, any other value is only read.
+        _registry.DeclareVariable(name: global.Name, type: globalType, isGlobal: true,
+            isReadOnly: !_registry.EntitiesAreShared);
 
         string? module = GetCurrentModuleName();
         _registry.RegisterGlobal(name: global.Name,

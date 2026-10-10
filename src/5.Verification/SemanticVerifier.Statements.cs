@@ -1418,14 +1418,14 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // Check modifiability
+        // Check modifiability (a global's own initialization at the top of start() excepted)
         if (assign.Target is IdentifierExpression id)
         {
             VariableInfo? varInfo = _registry.LookupVariable(name: id.Name);
-            if (varInfo is { IsModifiable: false })
+            if (varInfo is { IsModifiable: false } && !assign.IsGlobalInit)
             {
                 ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
-                    message: $"Cannot assign to preset variable '{id.Name}'.",
+                    message: ImmutableBindingMessage(name: id.Name, what: "it can't be assigned"),
                     location: assign.Location);
             }
         }
@@ -1489,7 +1489,7 @@ public sealed partial class SemanticVerifier
             if (place is IdentifierExpression id && _registry.LookupVariable(name: id.Name) is { IsModifiable: false })
             {
                 ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
-                    message: $"Cannot assign to preset variable '{id.Name}'.",
+                    message: ImmutableBindingMessage(name: id.Name, what: "it can't be assigned"),
                     location: place.Location);
             }
 
@@ -1554,7 +1554,7 @@ public sealed partial class SemanticVerifier
                 if (varInfo is { IsModifiable: false })
                 {
                     ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
-                        message: $"Cannot assign to preset variable '{elemId.Name}'.",
+                        message: ImmutableBindingMessage(name: elemId.Name, what: "it can't be assigned"),
                         location: assign.Location);
                 }
             }
@@ -1614,7 +1614,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.MemberVariableAssignmentOnImmutable,
                     message:
-                    $"Cannot assign to member variable '{member.MemberName}' of preset variable '{memberVariableTarget.Name}'.",
+                    ImmutableBindingMessage(name: memberVariableTarget.Name, what: $"its member variable '{member.MemberName}' can't be assigned"),
                     location: assign.Location);
             }
         }

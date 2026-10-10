@@ -1467,7 +1467,7 @@ public sealed partial class SemanticVerifier
                 if (varInfo is { IsModifiable: false })
                 {
                     ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
-                        message: $"Cannot assign to preset variable '{elemId.Name}'.",
+                        message: ImmutableBindingMessage(name: elemId.Name, what: "it can't be assigned"),
                         location: location);
                 }
             }
@@ -1518,7 +1518,7 @@ public sealed partial class SemanticVerifier
         if (varInfo is { IsModifiable: false })
         {
             ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
-                message: $"Cannot assign to preset variable '{id.Name}'.",
+                message: ImmutableBindingMessage(name: id.Name, what: "it can't be assigned"),
                 location: location);
         }
 
@@ -1638,7 +1638,7 @@ public sealed partial class SemanticVerifier
             if (varInfo is { IsModifiable: false })
             {
                 ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
-                    message: $"Cannot assign to index of preset variable '{indexedVar.Name}'.",
+                    message: ImmutableBindingMessage(name: indexedVar.Name, what: "its elements can't be assigned"),
                     location: location);
             }
         }
@@ -1932,7 +1932,7 @@ public sealed partial class SemanticVerifier
                 if (varInfo is { IsModifiable: false })
                 {
                     ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
-                        message: $"Cannot assign to preset variable '{id.Name}'.",
+                        message: ImmutableBindingMessage(name: id.Name, what: "it can't be assigned"),
                         location: compound.Location);
                 }
 
@@ -1968,7 +1968,7 @@ public sealed partial class SemanticVerifier
                     {
                         ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
                             message:
-                            $"Cannot assign to index of preset variable '{indexedVar.Name}'.",
+                            ImmutableBindingMessage(name: indexedVar.Name, what: "its elements can't be assigned"),
                             location: compound.Location);
                     }
                 }

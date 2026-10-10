@@ -69,6 +69,27 @@ public sealed partial class SemanticVerifier
     /// <param name="location">Source location for error reporting.</param>
     /// <param name="receiver">The expression the routine is called on, used to name the fix when it is a read token
     /// bound from an index (<c>var x = s[a]</c>).</param>
+    /// <summary>The message for a change to a binding that is only read: a preset, or a RazorForge global, which every
+    /// thread reaches.</summary>
+    private string ImmutableBindingMessage(string name, string what)
+    {
+        if (_registry.LookupVariable(name: name) is not { IsGlobal: true } global)
+        {
+            return $"'{name}' is a preset, so {what}.";
+        }
+
+        if (global.Type.BareName is Declaration.RuntimeContract.Atomic or Declaration.RuntimeContract.Guarded)
+        {
+            return $"'{name}' is a global, which every thread reaches, so the global itself is never assigned again: " +
+                   $"{what}. Change what it holds through its own routines ('{name}.store(...)', " +
+                   $"'{name}.fetch_add(...)', or inside 'using {name}.amend() as v').";
+        }
+
+        return $"'{name}' is a global, which every thread reaches, so it is only read: {what}. Shared state that " +
+               $"changes goes in a global of a type made for it: an Atomic (counters, flags) or a Guarded, changed " +
+               $"inside 'using {name}.amend() as v'.";
+    }
+
     private void ReportGuardedReachedWithoutLock(TypeSymbol wrapperType, string memberName, Expression receiver,
         SourceLocation location, bool isCall = false)
     {

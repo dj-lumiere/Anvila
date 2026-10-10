@@ -2968,7 +2968,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.ModifyingCallOnImmutable,
                     message:
-                    $"Cannot call modifying member routine '{memberRoutine.Name}' on preset variable '{letTarget.Name}'.",
+                    ImmutableBindingMessage(name: letTarget.Name, what: $"it can't be changed by '{memberRoutine.Name}'"),
                     location: call.Location);
             }
         }

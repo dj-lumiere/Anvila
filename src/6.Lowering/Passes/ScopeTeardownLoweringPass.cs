@@ -383,17 +383,18 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         return block with { Statements = stmts };
     }
 
-    // The Suflae globals singleton (`__globals__ = __ModuleGlobals(...)`, the first statement of
-    // start()) lives in a module-level cell so every routine can reach it, but its lifetime is start()'s
-    // scope: it is constructed there and released at every exit of start(), like a local declared at
+    // A global's init assignment (Suflae's one singleton `__globals__ = __ModuleGlobals(...)`, or each RazorForge
+    // global) is at the top of start(). The global lives in a module-level cell so every routine can reach it, but its
+    // lifetime is start()'s scope: it is made there and released at every exit of start(), like a local declared at
     // that point. Registered AFTER its init assignment, so the init itself is not lowered as a reassign
     // that destroys a not-yet-constructed handle. Only a Roamed handle is registered; a bare entity
     // destroy would bypass the RC release and the cycle collector.
     private void RegisterGlobalsSingleton(IdentifierExpression target, List<Owned> live)
     {
         TypeSymbol? t = ctx.Registry.LookupVariable(name: target.Name)?.Type ?? target.ResolvedType;
-        if (t is not RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed } ||
-            !TryResolveDestroy(type: t, destroy: out RoutineInfo? d) || d == null)
+        bool held = !ctx.Registry.EntitiesAreShared ||
+                    t is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed };
+        if (t == null || !held || !TryResolveDestroy(type: t, destroy: out RoutineInfo? d) || d == null)
         {
             return;
         }
