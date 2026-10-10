@@ -980,12 +980,12 @@ public sealed partial class SemanticVerifier
 
         // Suflae only: lower `entity E` bindings to a `Roamed[E]` biased-RC backing. MUST run BEFORE
         // scope-teardown below so teardown inserts `Roamed.destroy` (→ release → cycle-collector
-        // chain) for entity locals instead of a bare-entity `destroy` (which double-frees an alias
+        // chain) for entity locals instead of a bare-entity `destruct` (which double-frees an alias
         // and never reaches the RC/cc machinery). Also before reachability, so the roam/promote/lock/
         // cc hooks seed off the live `Roamed` wrapper type. No-op for RazorForge.
         LowerLanguageEntityBindings();
 
-        // Insert scope-exit `destroy()` calls BEFORE reachability (so the calls drive liveness —
+        // Insert scope-exit `destruct()` calls BEFORE reachability (so the calls drive liveness —
         // no manual seeding needed) and BEFORE the marker pass (so Accessing[T]/Controlling[T]
         // params are still protocol-typed and excluded as access types, not yet stripped to the
         // inner entity). Generic bodies are processed here too, then monomorphized with the calls.
@@ -1941,7 +1941,7 @@ public sealed partial class SemanticVerifier
         // the eager path does this by RemoveRange-ing everything AnalyzeStdlibBodies() reports (Phase 5).
         // The demand path analyzes each reached stdlib file HERE instead, so it must discard its diagnostics
         // the same way; otherwise a stdlib-internal diagnostic that the eager sweep silently drops (a bare
-        // foreign call RF-S460, a teardown-injected `destroy` RF-S609, an iterator-protocol RF-S205) leaks
+        // foreign call RF-S460, a teardown-injected `destruct` RF-S609, an iterator-protocol RF-S205) leaks
         // into the user build and fails it — the demand-only regression across the stdlib fixtures.
         int errorsBeforeStdlib = _errors.Count;
         int warningsBeforeStdlib = _warnings.Count;

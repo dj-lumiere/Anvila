@@ -377,7 +377,7 @@ public sealed partial class SemanticVerifier
     /// <param name="routine">The routine being accessed.</param>
     /// <param name="accessLocation">Source location of the access site.</param>
     /// <param name="isCompilerSynthesized">When true, suppresses the dangerous-outside-danger-block
-    /// check for builder-injected calls (e.g. <c>local.destroy()</c> from teardown lowering)
+    /// check for builder-injected calls (e.g. <c>local.destruct()</c> from teardown lowering)
     /// that are not user-written and must not be gated by a danger block.</param>
     private void ValidateRoutineAccess(RoutineInfo routine, SourceLocation accessLocation,
         bool isCompilerSynthesized = false)
@@ -411,7 +411,7 @@ public sealed partial class SemanticVerifier
             memberModule: routine.OwnerType?.Module ?? routine.Module);
 
         // Dangerous routines can only be called inside danger blocks — EXCEPT a builder-synthesized
-        // call (e.g. ScopeTeardownLoweringPass's injected `local.destroy()`), which is the builder's
+        // call (e.g. ScopeTeardownLoweringPass's injected `local.destruct()`), which is the builder's
         // own teardown, not user code invoking a dangerous routine. Under the demand pipeline teardown is
         // injected before the stdlib body is SA'd on reach, so without this exemption the re-analysis
         // would false-fire RF-S609 on every scope-exit destroy (the eager pipeline SA'd stdlib first).

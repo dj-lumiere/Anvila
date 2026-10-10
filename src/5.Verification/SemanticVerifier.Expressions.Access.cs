@@ -1644,7 +1644,7 @@ public sealed partial class SemanticVerifier
         _registry.CollectCreatorCandidates(type: type, candidates: candidates);
         // Also pull the concrete type's own routines directly — CollectCreatorCandidates
         // can miss a user-declared constructor on an entity, while GetMemberRoutinesForType returns it
-        // (this is how the entity `destroy` resolves correctly elsewhere). Failable creators keep the
+        // (this is how the entity `destruct` resolves correctly elsewhere). Failable creators keep the
         // same Creator kind (IsFailable is a structured flag), so IsCreator matches both.
         candidates.AddRange(collection: _registry.GetMemberRoutinesForType(type: type)
                                                  .Where(predicate: m => m.IsCreator));

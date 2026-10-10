@@ -349,7 +349,7 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary>
     /// Links a local into the running coroutine's cancellation chain: a node slot for it, the local (its address for a
-    /// value, the reference it holds for an entity) and its own <c>destroy</c>, which an abandoned coroutine runs.
+    /// value, the reference it holds for an entity) and its own <c>destruct</c>, which an abandoned coroutine runs.
     /// </summary>
     private void WriteCancellationPush(CancellationPushStatement push)
     {

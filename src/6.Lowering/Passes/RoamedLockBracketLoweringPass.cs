@@ -398,7 +398,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     // the receiver projection RoamedProjectionLoweringPass inserts for a memberRoutine call on a Roamed
     // receiver — returns the Roamed[E] handle to bracket; otherwise null. This is what makes a memberRoutine
     // call on a Roamed receiver hold the access lock (the field-access path above only catches direct
-    // field touches). The lifecycle coercions on the handle itself (`roam`/`promote`/`lock_*`/`destroy`)
+    // field touches). The lifecycle coercions on the handle itself (`roam`/`promote`/`lock_*`/`destruct`)
     // are NOT deref and are deliberately excluded.
     private static Expression? RoamedCoercionReceiver(MemberExpression member)
     {

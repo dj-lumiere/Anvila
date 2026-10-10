@@ -665,7 +665,7 @@ public class RecordTypeSymbol : TypeSymbol
         // A RoutineTypeSymbol / TupleTypeSymbol carries its holes in ParameterTypes-ReturnType / ElementTypes,
         // NOT TypeArguments — the IsGenericResolution path below would leave a `Callable[(T,), U]` / `(T, Bool)`
         // FIELD unsubstituted on monomorphization, so its destroy field-walk emits a NON-CONCRETE
-        // `Callable[(T,), U].destroy()` into LlvmEmit (undefined at link). Substitute the slots recursively.
+        // `Callable[(T,), U].destruct()` into LlvmEmit (undefined at link). Substitute the slots recursively.
         if (type is RoutineTypeSymbol rt)
         {
             return new RoutineTypeSymbol(

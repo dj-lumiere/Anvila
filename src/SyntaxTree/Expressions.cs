@@ -314,7 +314,7 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
     /// (<c>target = __rv</c>). It marks, STRUCTURALLY (not by parsing the <c>__rv_</c> name), that this
     /// reassignment is already the pass's OWN output — so a second run over the same body (the
     /// warm-restore re-lowering) recognizes it and skips re-injecting the teardown, which would emit a
-    /// second <c>target.destroy()</c> and double-free the heap buffer.
+    /// second <c>target.destruct()</c> and double-free the heap buffer.
     /// </summary>
     public bool IsSynthesizedTeardownTemp { get; set; }
 

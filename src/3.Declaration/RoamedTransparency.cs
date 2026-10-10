@@ -12,7 +12,7 @@ namespace Builder.Declaration;
 /// entity's own — takes the handle directly). Both the codegen member-call path and
 /// <c>OperatorLoweringPass</c> route their Roamed receivers through here so the rule lives in one
 /// place. Genuine Roamed-own memberRoutines (<c>roam</c>/<c>promote</c>/<c>lock_enter</c>/<c>raw_inner</c>/
-/// <c>destroy</c>) are deliberately left alone — their name never resolves onto the inner.
+/// <c>destruct</c>) are deliberately left alone — their name never resolves onto the inner.
 /// </summary>
 internal static class RoamedTransparency
 {

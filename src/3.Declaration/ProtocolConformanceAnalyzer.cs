@@ -292,7 +292,7 @@ internal sealed class ProtocolConformanceAnalyzer
     }
 
     // RC wrappers (Retained/Tracked/Guarded/Witnessed/Roamed) now permit `var b = rc` (2026-09-21): an RC
-    // copy is an implicit `share` (refcount bump), release is automatic (`destroy` at teardown IS the
+    // copy is an implicit `share` (refcount bump), release is automatic (`destruct` at teardown IS the
     // decrement). This is enforced by the COPY-POLICY path — the analyzer no longer lists them in
     // `NonTriviallyAssignableWrappers`, and the retaining copy is injected via `ResolveStoreHook` (→ `share`).
     // No `Assignable` protocol stamp is needed on the wrappers themselves for this. Thread-boundary crossing

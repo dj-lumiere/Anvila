@@ -44,9 +44,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     // avoids re-allocating the literal on each call and keeps the name in sync with RuntimeContract.
     private const string RepresentMemberRoutineName = RuntimeContract.Display.Represent;
 
-    // The "destroy" lifecycle member-routine name, used across several liveness seeds and wired-callee
+    // The "destruct" lifecycle member-routine name, used across several liveness seeds and wired-callee
     // walks. Named once so the string stays consistent everywhere it drives collection.
-    private const string DestroyMemberRoutineName = "destroy";
+    private const string DestroyMemberRoutineName = "destruct";
 
     // Routine-declaration index
 
@@ -772,7 +772,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// Closes the live-routine set under the implicit callees of builder-synthesized routines.
     /// <para>
     /// Routines enlivened AFTER <c>RoutineReachabilityPass</c> (by this pass, e.g. a wired
-    /// <c>destroy</c> on <c>Tuple[S64, Bool]</c> pulled in by overflow-arithmetic machinery, or a
+    /// <c>destruct</c> on <c>Tuple[S64, Bool]</c> pulled in by overflow-arithmetic machinery, or a
     /// derived <c>U64.lt</c> referenced from an emitted generic body) never had their own bodies
     /// walked: those bodies live in <c>SynthesizedBodies</c> (not <c>VariantBodies</c>, the only
     /// source the reachability BFS walks), and their leaf callees sit on NON-generic primitive
@@ -858,7 +858,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         SeedEntitySelfFreeTail(worklist: worklist, totalBuilt: ref totalBuilt);
 
         // SEED the per-type LIFECYCLE HOOKS on EVERY REGISTERED instance. Codegen synthesizes a body per
-        // type for each of these hooks — the teardown `destroy`/`roam_free` (field-walk `me.f.destroy()`
+        // type for each of these hooks — the teardown `destruct`/`roam_free` (field-walk `me.f.destruct()`
         // + entity self-free) and the cycle-tracer `roam_trace` (field-walk `me.f.cyclic_visit()` /
         // `Hijacked[f].cyclic_trace_buffer()`). Their calls are codegen-injected, so the call-driven walk
         // can't discover them; but the HOOKS themselves are registered per-type routines. Build the hooks on
@@ -1366,10 +1366,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         {
             // An EMPTY synthesized sentinel (0-statement body) already in InstantiatedGenericBodies means
             // BuildGenericInstanceIfNeeded instantiated a generic-def member that has no real body of its own —
-            // a DERIVE-ONLY member such as an entity `destroy` on a generic backing type (`ListEmittable[T]`,
+            // a DERIVE-ONLY member such as an entity `destruct` on a generic backing type (`ListEmittable[T]`,
             // `ArrayEmittable[T, N]`): the def carries only the signature, the per-type body must still be
             // cloned from the derive template. Codegen SKIPS a 0-statement synthesized body, so leaving the
-            // sentinel in place emits no definition → the `destroy` call link-fails ("declared+called but never
+            // sentinel in place emits no definition → the `destruct` call link-fails ("declared+called but never
             // defined"). So an empty sentinel must NOT block materialization — fall through and overwrite it
             // with the real template clone (the GetDeriveTemplate lookup below is the gate: no matching template
             // → the sentinel is left untouched, which is correct for a type that genuinely has no derive body).
@@ -1647,7 +1647,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         /// Prepends a zero-arg <c>me.&lt;memberRoutineName&gt;()</c> statement to <paramref name="block"/>,
         /// with <c>me</c> typed as the concrete <paramref name="owner"/> so the later
         /// <see cref="Declaration.CallOverloadResolutionPass"/> resolves the call. Used to graft a user-authored
-        /// <c>destroy</c>'s side-effects onto an entity's derived <c>roam_free</c>.
+        /// <c>destruct</c>'s side-effects onto an entity's derived <c>roam_free</c>.
         /// </summary>
         private static BlockStatement PrependReceiverCall(BlockStatement block,
             string memberRoutineName, TypeSymbol owner)
@@ -1901,7 +1901,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // teardown + cycle-trace calls per reached type with NO source AST call (scope-exit destroy of a
         // temporary, a wrapper/routine-value's destroy). Base mode seeds these over ALL registered instances
         // (MaterializeEntitySelfFreeInIsolation); mirror that DEMAND-scoped on each reached concrete owner.
-        // Also seeds the exact lifecycle-destroy GetLifecycle returns — routine-VALUEs carry a `destroy`
+        // Also seeds the exact lifecycle-destroy GetLifecycle returns — routine-VALUEs carry a `destruct`
         // that `LookupMemberRoutine` misses but GetLifecycle surfaces.
         private void SeedLifecycleHooksIfApplicable(TypeSymbol type)
         {
@@ -2303,9 +2303,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// Routines emitted for every live owner regardless of call-site reachability. Two sources:
-    /// (1) the unified-teardown lifecycle routines (<c>destroy</c>/<c>store</c>, from
+    /// (1) the unified-teardown lifecycle routines (<c>destruct</c>/<c>store</c>, from
     /// <see cref="Builder.Declaration.WiredRoutineCatalog.AlwaysLiveNames"/>) — scope-exit teardown
-    /// inserts <c>destroy</c> calls that must always have a concrete body, and the matching
+    /// inserts <c>destruct</c> calls that must always have a concrete body, and the matching
     /// retaining <c>store</c> likewise; (2) the <c>try</c> variant of the iterator step <c>emit</c>,
     /// reachable only through synthesized `each` iteration bodies whose owner type (ListEmitter[Byte],
     /// etc.) is created post-pass during GMP body rewriting, so ReachabilityPass cannot trace it. Kept
@@ -3679,7 +3679,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             else if (expectedOwnerRealm != TypeModel.Realms.Shared && expectedOwnerModule != null)
             {
                 // A Suflae type never takes the body of RazorForge's same-named type: Suflae's `List` has no
-                // `destroy` of its own, and RazorForge's reads member variables Suflae's list does not have.
+                // `destruct` of its own, and RazorForge's reads member variables Suflae's list does not have.
                 // Its routine is then built the way any routine without a written declaration is. A body
                 // written for every type (`hijack`) still applies.
                 candidates = candidates.Where(predicate: d =>

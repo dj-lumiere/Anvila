@@ -1018,7 +1018,7 @@ public sealed partial class TypeRegistry
                 implementer is RecordTypeSymbol and not VariantTypeSymbol && IsEntityKind(type: implementer),
             ConstraintKind.RecordType =>
                 // `is RecordType` — a value record. A crashable is one, so it takes the record derives
-                // (copy, field-walk `destroy`); its crashable-specific members (represent/diagnose/
+                // (copy, field-walk `destruct`); its crashable-specific members (represent/diagnose/
                 // crash_message) still come from HandleCrashable via DispatchByOwnerType, which routes by
                 // owner type before any template.
                 implementer is RecordTypeSymbol,
@@ -1064,12 +1064,12 @@ public sealed partial class TypeRegistry
             return list[index: 0];
         }
 
-        // A derive name (`represent`, `destroy`, `count`, ...): the registered default is only a stub, and the
+        // A derive name (`represent`, `destruct`, `count`, ...): the registered default is only a stub, and the
         // body is chosen per receiver from the derive templates by kind. It applies when one of those
         // templates fits the receiver. `count` has only the choice and flags templates, so it is not a
         // `count` of a `Retained[List[S64]]`, whose call must be forwarded to the list instead; binding it
         // anyway called a routine whose body can never be built for that receiver (declared, called, never
-        // defined). A field-less record such as `Hijacked` does fit the record `destroy` template.
+        // defined). A field-less record such as `Hijacked` does fit the record `destruct` template.
         if (HasDeriveTemplate(name: memberRoutineName))
         {
             return list.FirstOrDefault(predicate: candidate =>
@@ -3150,7 +3150,7 @@ public sealed partial class TypeRegistry
     /// definition's own memberRoutines substituted for this owner (via <see cref="SubstituteMemberRoutineForOwner"/>).
     /// This is the single source of truth the find-side and the lifecycle (teardown/copy) passes share,
     /// so <c>GetMemberRoutinesForType</c> (raw) and <see cref="LookupMemberRoutine"/> can no longer disagree about
-    /// whether e.g. <c>Retained[Tracer]</c> has a <c>destroy</c>.
+    /// whether e.g. <c>Retained[Tracer]</c> has a <c>destruct</c>.
     ///
     /// <para>Plain OWN-memberRoutine enumeration only — no protocol-memberRoutine synthesis, no universal-memberRoutine
     /// stub, no marker/wrapper unwrap (those are dispatch concerns). That keeps it from surfacing the
@@ -3210,12 +3210,12 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Lifecycle and reference are governed by the four wired routines
-    /// <c>create</c>/<c>refer</c>/<c>control</c>/<c>destroy</c> — the system is AGNOSTIC to
+    /// <c>create</c>/<c>refer</c>/<c>control</c>/<c>destruct</c> — the system is AGNOSTIC to
     /// specific wrapper-type names (no hardcoded Viewing/Modifying/Hijacked list). Teardown simply calls
-    /// <c>destroy</c> uniformly: it is a real destructor on owning types and a no-op on the
+    /// <c>destruct</c> uniformly: it is a real destructor on owning types and a no-op on the
     /// access/borrow wrappers, so firing it is always safe by construction. The only thing this gate
     /// excludes is the ABSTRACT tier — generic parameters and protocols (the latter also covering the
-    /// <c>Accessing</c>/<c>Controlling</c> access markers) — which have no concrete <c>destroy</c> to
+    /// <c>Accessing</c>/<c>Controlling</c> access markers) — which have no concrete <c>destruct</c> to
     /// resolve. The one remaining hazard, a <c>T</c> reference bound to the bare referent type via the
     /// reference primitives <c>refer</c>/<c>control</c>/<c>as_entity</c>, is excluded at the binding
     /// site by <c>ScopeTeardownLoweringPass.IsViewBinding</c> (keyed on the producing verb, since the
@@ -3252,7 +3252,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Resolves a type's owned-value lifecycle: its retaining <c>store</c> (a hand-written, i.e.
     /// non-synthesized, zero-arg <c>store</c> on a record — the managed-leaf retain hook), its
-    /// <c>destroy</c> (preferring the user-written one), and whether it is a borrow-tier type. The
+    /// <c>destruct</c> (preferring the user-written one), and whether it is a borrow-tier type. The
     /// teardown and copy lowering passes both drive off THIS one decision, so a value is either both
     /// retaining-copied and balanced-destroyed, or neither — never the asymmetry that double-freed
     /// before. Resolved via <see cref="GetOwnMemberRoutinesResolved"/>, so it works for generic resolutions.
@@ -3315,7 +3315,7 @@ public sealed partial class TypeRegistry
            .ToList();
         RoutineInfo? destroy = own
                               .Where(predicate: m =>
-                                   m.Name == "destroy" && m.Parameters.Count == 0)
+                                   m.Name == "destruct" && m.Parameters.Count == 0)
                               .OrderBy(keySelector: m => m.IsSynthesized
                                    ? 1
                                    : 0)
@@ -3347,7 +3347,7 @@ public sealed partial class TypeRegistry
         // Resolve the copy verb through the redirect so instantiated generic bodies get a real retaining
         // copy — checked BEFORE the RecordTypeSymbol branch (RC wrappers ARE records). AUTO-RETAIN IN BOTH
         // REALMS (2026-09-21): an RC copy IS an implicit `share` (a refcount bump), so `var b = rc` is allowed
-        // and copy-lowering injects the retain here; release is already automatic (`destroy` at teardown IS
+        // and copy-lowering injects the retain here; release is already automatic (`destruct` at teardown IS
         // the decrement — see Retained.rf). This is the store side of the copy-policy decoupling; thread-
         // boundary crossing stays barred separately via `IsThreadUnsafeReferenceWrapper`. (SF already relied on
         // this for `Roamed[E]` container elements; RazorForge now shares the retaining-copy path.)
@@ -3405,7 +3405,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Whether a variant has at least one arm whose payload owns a real destructor — i.e. an arm type
-    /// with a non-borrow <c>destroy</c> (a heap entity/collection, a managed leaf like <c>Text</c>, or
+    /// with a non-borrow <c>destruct</c> (a heap entity/collection, a managed leaf like <c>Text</c>, or
     /// a record that transitively owns one). Such an arm double-frees on bitwise alias, so the variant
     /// needs a synthesized deep <c>copy</c>. None/None/scalar arms are safe to bitwise-copy and are
     /// ignored. Drives the variant branch of <see cref="GetLifecycle"/> and the copy/Copyable synthesis.

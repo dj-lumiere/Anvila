@@ -383,7 +383,7 @@ internal sealed class AutoWiredRegistrationPass
                 existingMemberRoutines: universalExisting);
         }
 
-        // destroy as a universal member routine so v.destroy() resolves on a generic T.
+        // destroy as a universal member routine so v.destruct() resolves on a generic T.
         if (bundle.NoneType != null)
         {
             MaybeRegisterDestroy(owner: tParam,
@@ -899,19 +899,19 @@ internal sealed class AutoWiredRegistrationPass
     }
 
     /// <summary>
-    /// Registers the auto-derived <c>destroy()</c> destructor if not already user-defined.
+    /// Registers the auto-derived <c>destruct()</c> destructor if not already user-defined.
     /// Marked <c>dangerous</c>: calling it (explicitly or overriding it) is manual memory
     /// management. The body is synthesized by <c>WiredRoutinePass</c>.
     /// </summary>
     private void MaybeRegisterDestroy(TypeSymbol owner, TypeSymbol noneType,
         List<RoutineInfo> existingMemberRoutines)
     {
-        if (existingMemberRoutines.Any(predicate: m => m.Name == "destroy"))
+        if (existingMemberRoutines.Any(predicate: m => m.Name == "destruct"))
         {
             return;
         }
 
-        _registry.RegisterRoutine(routine: new RoutineInfo(name: "destroy")
+        _registry.RegisterRoutine(routine: new RoutineInfo(name: "destruct")
         {
             Kind = RoutineKind.MemberRoutine,
             OwnerType = owner,

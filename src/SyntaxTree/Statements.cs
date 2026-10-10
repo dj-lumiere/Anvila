@@ -341,7 +341,7 @@ public record AtomicRmwStatement(
 /// </summary>
 /// <param name="Local">The local's name, as declared in the routine body.</param>
 /// <param name="Destroy">The routine the local's own inline teardown calls.</param>
-/// <param name="PassesAddress">True when <c>destroy</c> receives the local's storage address (a value
+/// <param name="PassesAddress">True when <c>destruct</c> receives the local's storage address (a value
 /// type), false when it receives the value the local holds (an entity reference).</param>
 /// <param name="Location">Source location of the local's declaration.</param>
 public record CancellationPushStatement(
@@ -359,7 +359,7 @@ public record CancellationPushStatement(
 
 /// <summary>
 /// Unlinks a local registered by a <see cref="CancellationPushStatement"/> right before its inline
-/// <c>destroy</c>, so an abandoned coroutine never tears it down a second time.
+/// <c>destruct</c>, so an abandoned coroutine never tears it down a second time.
 /// </summary>
 /// <param name="Local">The local's name.</param>
 /// <param name="Location">Source location of the teardown.</param>

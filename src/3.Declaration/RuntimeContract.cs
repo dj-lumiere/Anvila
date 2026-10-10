@@ -164,7 +164,7 @@ public static class RuntimeContract
     public const string Serialize = "serialize";
 
     /// <summary>The teardown member routine every entity has: what scope exit and a last strong release run.</summary>
-    public const string Destroy = "destroy";
+    public const string Destroy = "destruct";
 
     /// <summary>The entity-footprint allocation primitive <c>hollow[T]()</c> (Core, bodyless).</summary>
     public const string Hollow = "hollow";
@@ -357,7 +357,7 @@ public static class RuntimeContract
     public const string Emit = "emit";
 
     /// <summary>The name prefix of the local a reassignment's new value is first written to, before the old value
-    /// is torn down (<c>var __li_N = EXPR ; x.destroy() ; x = __li_N</c>). Such a local owns that value and hands it
+    /// is torn down (<c>var __li_N = EXPR ; x.destruct() ; x = __li_N</c>). Such a local owns that value and hands it
     /// over to the target: the write does not make one more holder.</summary>
     public const string ReassignSpillPrefix = "__li_";
 

@@ -636,7 +636,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Emits a <see cref="CrashableDispatchExpression"/>: a member of a caught error of unknown type, called through the
     /// mold the error's heap object points at (<see cref="EnsureCrashMold"/>). The receiver is a <c>Crashables</c>.
-    /// <c>crash_type_id</c> reads the mold's type id, and <c>destroy</c> also frees the object.
+    /// <c>crash_type_id</c> reads the mold's type id, and <c>destruct</c> also frees the object.
     /// </summary>
     private string EmitCrashableDispatchExpression(StringBuilder sb,
         CrashableDispatchExpression dispatch)

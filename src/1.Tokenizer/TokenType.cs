@@ -413,6 +413,10 @@ public enum TokenType
     /// <summary>Standard-impl eligibility quantifier keyword (`needs P everywhere`)</summary>
     Everywhere,
 
+    /// <summary>A word reserved for a keyword this release does not use yet (<c>until</c>, <c>becomes</c>,
+    /// <c>agent</c>, and <c>inject</c> in RazorForge): it cannot name anything.</summary>
+    ReservedWord,
+
     /// <summary>Break statement keyword</summary>
     Break,
 

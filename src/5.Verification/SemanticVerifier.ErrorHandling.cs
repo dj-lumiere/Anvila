@@ -735,7 +735,7 @@ public sealed partial class SemanticVerifier
     /// <see cref="SaOnly"/>) so a warm-stdlib snapshot — captured with <c>SaOnly=true</c>, before the
     /// variant-body collection ever runs — still carries the templates. Without this the warm
     /// <c>snapshot:</c> full-analyze path has an empty template store (its restored registry has no
-    /// StdlibPrograms to re-scan) and <c>WiredRoutinePass</c> throws cloning e.g. <c>CLong.destroy()</c>.
+    /// StdlibPrograms to re-scan) and <c>WiredRoutinePass</c> throws cloning e.g. <c>CLong.destruct()</c>.
     /// Registration is idempotent (RegisterDeriveTemplate dedups by arity+gate set), so the re-scan inside
     /// CollectStdlibBodiesForVariantGeneration is a harmless no-op.
     /// </summary>
@@ -844,7 +844,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Enforces the <c>@override</c> marker on a concrete type's routine that collides with a UNIVERSAL
     /// <c>@overridable</c> auto-derive template (<c>represent</c>/<c>diagnose</c>/<c>serialize</c>/
-    /// <c>destroy</c> — the never-capability-gated derives). Without the marker the concrete routine is
+    /// <c>destruct</c> — the never-capability-gated derives). Without the marker the concrete routine is
     /// SILENTLY shadowed by the auto-derive (the Byte.represent → "Byte()" bug), so require it to be
     /// explicit: <c>@override</c> replaces the derive; otherwise it is an error. Opt-in derives
     /// (eq/cmp/hash/copy/store — capability-gated) are excluded: those only exist when the type
@@ -922,7 +922,7 @@ public sealed partial class SemanticVerifier
         // owner as a type parameter via a `needs <owner> is …` constraint (`needs T is TypeName`, or a
         // kind-gate like `needs T is VariantType`). EVERY universal derive template in the stdlib carries
         // one. A routine WITHOUT such a constraint on its owner is a per-type OVERRIDE on a concrete type
-        // (`@override routine Byte.represent()`, `@override dangerous routine SignalCaster.destroy()`) —
+        // (`@override routine Byte.represent()`, `@override dangerous routine SignalCaster.destruct()`) —
         // it must NOT enter the derive-template store, or e.g. SignalCaster's `me.sig` body would be
         // handed to `Atomic[U8]`. No `LookupType` (which returned null for a not-yet-resolvable bare owner
         // and mis-registered it as a template) and no `record T` name-trap — pure structure.

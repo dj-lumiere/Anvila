@@ -15,14 +15,14 @@ namespace Builder.Lowering.Passes;
 /// <c>Text</c> (an RC-record holding a heap buffer), <c>.count()</c> borrows it, and the <c>Text</c>
 /// is then dropped on the floor — never destroyed. Inside a hot loop that leaks one buffer per
 /// iteration. This pass spills such a temporary into a synthetic block-scoped local and emits its
-/// <c>destroy()</c> at end-of-statement, so the buffer is freed each time the statement runs.</para>
+/// <c>destruct()</c> at end-of-statement, so the buffer is freed each time the statement runs.</para>
 ///
 /// <para><b>Why a separate, late pass.</b> <see cref="ScopeTeardownLoweringPass"/> runs before
 /// reachability and before user-code Phase 8 lowering — at that point a <c>var u = when … =>
 /// x.represent().count()</c> is still a <c>when</c>-<i>expression</i>, so the producing call is
 /// buried in conditional arms with no statement to attach teardown to. This pass runs AFTER Phase 8
-/// (when→if already lowered, so arms are real blocks) and emits its own <c>destroy</c> calls;
-/// codegen's emit-on-demand picks up the referenced concrete <c>destroy</c>.</para>
+/// (when→if already lowered, so arms are real blocks) and emits its own <c>destruct</c> calls;
+/// codegen's emit-on-demand picks up the referenced concrete <c>destruct</c>.</para>
 ///
 /// <para><b>What is spilled (deliberately narrow — correctness over coverage, never a double-free).</b>
 /// Exactly one shape: the <b>receiver of a memberRoutine call where (a) the receiver is a fresh RC-record
@@ -32,7 +32,7 @@ namespace Builder.Lowering.Passes;
 /// concatenation chain <c>a + "-" + b</c> (each <c>add</c> result is the receiver of the next). The object
 /// of a field read (<c>xs[0].id</c>) is spilled by the same rule.</para>
 ///
-/// <para><b>Why this is safe.</b> An RC-record <c>destroy</c> releases a <i>refcounted</i>
+/// <para><b>Why this is safe.</b> An RC-record <c>destruct</c> releases a <i>refcounted</i>
 /// controller, so a balanced release is harmless. A memberRoutine's record/RC-record return is always
 /// <i>independent</i> of the receiver — freshly allocated (string concat builds a new buffer) or a
 /// retaining +1 copy (<see cref="ScopeTeardownLoweringPass"/>'s sibling RecordCopyLoweringPass injects
@@ -50,7 +50,7 @@ namespace Builder.Lowering.Passes;
 /// reachability and before user-code Phase 8 lowering — at that point a <c>var u = when … =>
 /// x.represent().count()</c> is still a <c>when</c>-expression with the producing call buried in
 /// conditional arms. This pass runs AFTER Phase 8 (when→if lowered, arms are real blocks) and emits
-/// its own <c>destroy</c> calls; codegen's emit-on-demand resolves the concrete <c>destroy</c>.</para>
+/// its own <c>destruct</c> calls; codegen's emit-on-demand resolves the concrete <c>destruct</c>.</para>
 ///
 /// <para><b>Known limitations</b> (leak preserved, never a crash): argument-position temporaries,
 /// non-scalar-returning chains, entity temporaries, and owned temporaries
@@ -437,7 +437,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// (<c>s = s + part</c>). The new RHS is already an independent owned value
     /// (RecordCopyLoweringPass, which has already run, turned any lvalue source into a fresh
     /// <c>store</c>; computed results are fresh), so the rewrite is:
-    /// <code>var __rv = RHS ; target.destroy() ; target = __rv</code>
+    /// <code>var __rv = RHS ; target.destruct() ; target = __rv</code>
     /// computing RHS (which may read the old target) BEFORE the destroy. Entities are released by
     /// ScopeTeardownLoweringPass and scalars need nothing, so for those we only spill receivers.
     /// </summary>
@@ -448,7 +448,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // whose RHS identifier carries the STRUCTURED marker below. If the pass runs a second time over an
         // already-lowered body — which happens on the warm-restore path, where a synthesized derive body
         // (e.g. a user record's auto-`represent`) is lowered once as a variant body and again when the
-        // program is re-processed — re-lowering that tail would inject a SECOND `target.destroy()` + a
+        // program is re-processed — re-lowering that tail would inject a SECOND `target.destruct()` + a
         // second spill, double-freeing the heap buffer (the record-`represent` heap-corruption bug). The
         // marker is set on the tail identifier, NOT recovered by parsing the `__rv_` name, so this is a
         // precise no-op only for the pass's own output.
@@ -498,10 +498,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// <summary>
     /// A reassignment of a <c>Roamed</c> handle <c>X</c> inside an access-lock bracket
     /// (<c>X.lock_enter()</c> … <c>X = X.next</c> … <c>X.lock_exit()</c>, RoamedLockBracketLoweringPass) has
-    /// just been expanded to <c>var __rv = RHS ; X.destroy() ; X = __rv</c>. The lock was taken on the old
+    /// just been expanded to <c>var __rv = RHS ; X.destruct() ; X = __rv</c>. The lock was taken on the old
     /// object, so it must be released on the old object, and before that object is released: the
     /// bracket's <c>X.lock_exit()</c> (one of the closing calls right after the statement) moves to just
-    /// before <c>X.destroy()</c>. Left where it was, it would unlock the NEW object (or a none handle) and
+    /// before <c>X.destruct()</c>. Left where it was, it would unlock the NEW object (or a none handle) and
     /// release the old one while still locked. Returns <paramref name="lowered"/> unchanged otherwise.
     /// </summary>
     private static Statement HoistLockExit(Statement lowered, List<Statement> following, int after,
@@ -535,14 +535,14 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         return lowered;
     }
 
-    /// <summary>The local a <c>local.destroy()</c> statement releases, or null.</summary>
+    /// <summary>The local a <c>local.destruct()</c> statement releases, or null.</summary>
     private static string? DestroyedLocal(Statement stmt)
     {
         return stmt is ExpressionStatement
         {
             Expression: CallExpression
             {
-                Callee: MemberExpression { Object: IdentifierExpression local, MemberName: "destroy" }
+                Callee: MemberExpression { Object: IdentifierExpression local, MemberName: "destruct" }
             }
         }
             ? local.Name
@@ -578,7 +578,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// with an RC-wrapper field (checked structurally: a wrapper field is a record type, so the old
     /// <c>HasRCMemberVariables</c> flag), or an
     /// RC wrapper (Retained/Tracked/Guarded/Witnessed/Roamed, whose
-    /// <c>destroy</c> is a no-op on the zeroed handle a <c>lateinit</c> binding starts with). Borrow
+    /// <c>destruct</c> is a no-op on the zeroed handle a <c>lateinit</c> binding starts with). Borrow
     /// views, scalars and plain value records are excluded, and entities are handled by
     /// ScopeTeardownLoweringPass.</summary>
     private bool IsReleasedOnReassign(TypeSymbol? t)
@@ -785,7 +785,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     }
 
     /// <summary>True for a fresh owned heap producer worth tearing down: a call/creator whose result
-    /// is an entity or RC-record with a real (non-borrow) <c>destroy</c>, excluding view-verb
+    /// is an entity or RC-record with a real (non-borrow) <c>destruct</c>, excluding view-verb
     /// producers (which yield a borrow of a referent owned elsewhere).</summary>
     private bool IsSpillableProducer(Expression e)
     {
@@ -859,7 +859,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         SourceLocation loc)
     {
         var ident = new IdentifierExpression(Name: name, Location: loc) { ResolvedType = type };
-        var callee = new MemberExpression(Object: ident, MemberName: "destroy", Location: loc)
+        var callee = new MemberExpression(Object: ident, MemberName: "destruct", Location: loc)
         {
             ResolvedType = _blankType
         };

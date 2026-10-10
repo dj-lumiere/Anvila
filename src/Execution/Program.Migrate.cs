@@ -143,6 +143,14 @@ internal partial class Program
                 continue;
             }
 
+            // The teardown routine `destroy` is `destruct` (`x.destroy()`, `routine T.destroy()`).
+            if (token.Text == "destroy" && i > 0 && tokens[index: i - 1].Type == TokenType.Dot)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "destruct",
+                    Line: token.Line, What: "destroy → destruct"));
+                continue;
+            }
+
             // `unless c` (the old inverted `if`) is `if not (c)`.
             if (token.Text == "unless" && StartsStatement(tokens: tokens, index: i))
             {
@@ -459,7 +467,7 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
-            if (token.Type is not (TokenType.Check or TokenType.Drop))
+            if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.ReservedWord))
             {
                 continue;
             }

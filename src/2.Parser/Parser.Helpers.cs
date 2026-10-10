@@ -66,6 +66,12 @@ public partial class Parser
         }
 
         Token current = CurrentToken;
+        if (current.Type == TokenType.ReservedWord)
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
+                message: $"'{current.Text}' is reserved for a keyword, so it cannot name anything. Pick another name.");
+        }
+
         throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
             message: $"{errorMessage}. Expected Identifier, got {current.Type}.");
     }

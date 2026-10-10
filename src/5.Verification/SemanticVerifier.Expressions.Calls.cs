@@ -1769,7 +1769,7 @@ public sealed partial class SemanticVerifier
         // enforces for ordinary calls, but the creator path analyzes args separately and
         // used to bypass it. Without this, `Bytes(from_list: raw)` (raw a bare List entity)
         // slips through un-stolen; the callee owns and tears down the param while the
-        // caller still owns `raw` → double-free once the param type's `destroy` is
+        // caller still owns `raw` → double-free once the param type's `destruct` is
         // materialized. Verb-wrapped args (`steal x`, `x.copy()`) are Steal/Call nodes, not
         // Identifier/Member, so they are excluded automatically.
         if (!ChecksOwnershipHere)
@@ -2733,7 +2733,7 @@ public sealed partial class SemanticVerifier
         // Suflae hides @readonly/@reshaping, so a Suflae build never enforces it (even on the
         // borrowed RF stdlib, whose readonly discipline is RazorForge's own concern). A builder-written body is
         // left out: its `@readonly` is the builder's own claim, and it calls routines (a user's `crash_message`,
-        // `eq`, `destroy`) nobody is required to mark.
+        // `eq`, `destruct`) nobody is required to mark.
         if (_registry.CompilationRules.ChecksReadonly && !_isInCompilerGeneratedBody &&
             _currentRoutine is { IsReadOnly: true } &&
             member.Object is IdentifierExpression { Name: "me" } && !memberRoutine.IsReadOnly)

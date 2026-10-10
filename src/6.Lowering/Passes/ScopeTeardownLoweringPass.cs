@@ -7,7 +7,7 @@ using Builder.Verification;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Inserts explicit <c>local.destroy()</c> calls at scope exits — the unified teardown lowering.
+/// Inserts explicit <c>local.destruct()</c> calls at scope exits — the unified teardown lowering.
 /// After this pass codegen performs NO teardown of its own: every owned local/param is destroyed
 /// by a real <see cref="CallExpression"/> in the AST, so reachability and monomorphization see the
 /// calls naturally and codegen just emits them.
@@ -36,7 +36,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private readonly TypeSymbol? _blankType = ctx.Registry.LookupType(name: "None");
     private int _spillCounter;
 
-    /// <summary>A live owned binding: its name, type, and resolved <c>destroy</c> routine.
+    /// <summary>A live owned binding: its name, type, and resolved <c>destruct</c> routine.
     /// An entity binding always holds a valid owned allocation while live (a lateinit zeroed
     /// placeholder, the declaration initializer, or a later-assigned value).</summary>
     private readonly record struct Owned(string Name, TypeSymbol Type, RoutineInfo Destroy);
@@ -353,7 +353,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // Skip entirely when the block already unconditionally terminates (its last statement is a
         // return/throw/absent/break/continue, possibly wrapped by PrefixDestroys): the fall-through
         // is unreachable, and the terminator's own PrefixDestroys already tore these locals down.
-        // Emitting them here anyway produced redundant post-terminator `x.destroy()` calls that
+        // Emitting them here anyway produced redundant post-terminator `x.destruct()` calls that
         // codegen silently dropped but that polluted the AST (and the dump).
         if (!(stmts.Count > 0 && AlwaysTerminates(s: stmts[^1])))
         {
@@ -535,7 +535,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// Rewrites <c>x = EXPR</c> on an owned entity local to
-    /// <c>var __li_N = EXPR ; x.destroy() ; x = __li_N</c> so the current content (placeholder
+    /// <c>var __li_N = EXPR ; x.destruct() ; x = __li_N</c> so the current content (placeholder
     /// or prior value) is freed exactly once and the RHS still sees the old value.
     /// <paramref name="rebuild"/> reconstructs the assignment statement (whichever AST form it
     /// has) around the spilled RHS.
@@ -570,7 +570,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// Rewrites <c>me.f = EXPR</c> on an owned <c>Roamed[T]</c> field to
-    /// <c>var __li_N = EXPR ; me.f.destroy() ; me.f = __li_N</c> so the overwritten (old) handle drops
+    /// <c>var __li_N = EXPR ; me.f.destruct() ; me.f = __li_N</c> so the overwritten (old) handle drops
     /// its co-owned count exactly once. The RHS is spilled BEFORE the destroy so it may still read the
     /// old field value and so a self-assignment (<c>me.f = me.f.share()</c>) bumps before it drops and
     /// never transiently reaches zero. Only fires for a Roamed field (the exact scope of the deleted
@@ -653,7 +653,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             {
                 ResolvedType = owned.Type
             };
-        var callee = new MemberExpression(Object: ident, MemberName: "destroy", Location: loc)
+        var callee = new MemberExpression(Object: ident, MemberName: "destruct", Location: loc)
         {
             ResolvedType = _blankType
         };
@@ -662,7 +662,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ResolvedRoutine = owned.Destroy,
             ResolvedType = _blankType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: owned.Destroy),
-            // Builder-injected teardown: exempt from the RF-S609 dangerous-call gate. `destroy` is a
+            // Builder-injected teardown: exempt from the RF-S609 dangerous-call gate. `destruct` is a
             // dangerous routine, but this call is the builder's own scope-exit teardown, not a user
             // calling it outside a `danger` block. Under the demand pipeline this destroy is injected
             // (Phase 7) BEFORE the stdlib body is SA'd on reach, so the dangerous-call check would see it
@@ -672,12 +672,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         return new ExpressionStatement(Expression: call, Location: loc);
     }
 
-    /// <summary>Builds <c>receiver.destroy()</c> for an arbitrary lvalue receiver (a member access
+    /// <summary>Builds <c>receiver.destruct()</c> for an arbitrary lvalue receiver (a member access
     /// <c>me.f</c>) — the field-reassignment counterpart of <see cref="MakeDestroyStmt"/>.</summary>
     private ExpressionStatement MakeMemberDestroyStmt(Expression receiver, RoutineInfo destroy,
         SourceLocation loc)
     {
-        var callee = new MemberExpression(Object: receiver, MemberName: "destroy", Location: loc)
+        var callee = new MemberExpression(Object: receiver, MemberName: "destruct", Location: loc)
         {
             ResolvedType = _blankType
         };
@@ -693,7 +693,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Resolves the <c>destroy</c> to call at scope exit via the unified
+    /// Resolves the <c>destruct</c> to call at scope exit via the unified
     /// <see cref="TypeRegistry.GetLifecycle"/> — the SAME decision the copy pass (<c>NeedsRetainingCopy</c>)
     /// drives off, so a value is either both retaining-copied and balanced-destroyed or neither (the
     /// asymmetry that double-freed before). <c>GetLifecycle</c> resolves through
@@ -714,8 +714,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Every type has a `destroy`, so by default it's called at scope exit (the per-type
-    /// `destroy` is a cheap no-op when there's nothing to free). The ONLY exclusions are the
+    /// Every type has a `destruct`, so by default it's called at scope exit (the per-type
+    /// `destruct` is a cheap no-op when there's nothing to free). The ONLY exclusions are the
     /// access/borrow tier — `Viewing`/`Modifying`/`Consulting`/`Amending` views, the `Accessing`/
     /// `Controlling` access protocols, and the unmanaged `Hijacked` pointer — whose referent is
     /// owned elsewhere, so destroying them here would free a caller's value. Abstract types
@@ -824,7 +824,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// <c>var x = h.refer()</c>, <c>var x = h.control()</c>. These pervade the RC wrapper bodies
     /// (e.g. <c>var ctrl = Hijacked[RetainController[T]](me).as_entity()</c> in <c>Retained.release</c>).
     /// The binding's static type is the bare referent (<c>T</c>), so <c>GetLifecycle</c> would resolve
-    /// the referent's real <c>destroy</c> and free a value owned elsewhere — hence we key on the
+    /// the referent's real <c>destruct</c> and free a value owned elsewhere — hence we key on the
     /// initializer VERB (a reference primitive), per the four-routine governance model, not the type.
     /// </summary>
     private static bool IsViewBinding(VariableDeclaration v)
@@ -835,7 +835,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                // PatternLoweringPass to `var v = <CarrierPayloadExpression on me>`) is a BORROW/view into the
                // matched variant's payload — the variant still owns it. Tearing `v` down frees the variant's
                // payload out from under it: a read-only `represent` would then corrupt `me`, and the
-               // auto-synthesized variant `destroy` (explicit `v.destroy()`) would double-free. So exclude it.
+               // auto-synthesized variant `destruct` (explicit `v.destruct()`) would double-free. So exclude it.
                || v.Initializer is CarrierPayloadExpression
                // Any other name a pattern binds (a `Maybe`'s `.value`, as an `each` loop in a recovery variant
                // binds its item) is a view too: the matched carrier is torn down and frees it.
@@ -929,15 +929,15 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                                     language: Builder.Frontends.Languages.OfFile(fileName: assignFile)).EntitiesAreShared):
                 _movedNames.Add(item: rcSource.Name);
                 break;
-            // An explicit `v.destroy()` consumes `v` — it must NOT then be torn down again at
-            // scope exit. This is the auto-synthesized variant `destroy` shape (`when me is Arm
-            // as v: v.destroy()`): without this the pattern-bound heap payload is destroyed by the
+            // An explicit `v.destruct()` consumes `v` — it must NOT then be torn down again at
+            // scope exit. This is the auto-synthesized variant `destruct` shape (`when me is Arm
+            // as v: v.destruct()`): without this the pattern-bound heap payload is destroyed by the
             // explicit call AND by binding teardown → double free (scalar arms hid it: no-op destroy).
             case CallExpression
             {
                 Callee: MemberExpression
                 {
-                    MemberName: "destroy", Object: IdentifierExpression dv
+                    MemberName: "destruct", Object: IdentifierExpression dv
                 }
             }:
                 _movedNames.Add(item: dv.Name);
@@ -946,7 +946,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             // binding is moved into the variant, not dropped at scope exit. Without this, a heap
             // payload boxed into a returned variant (e.g. a synthesized `serialize()` returning
             // `SerialValue.Dict(<hoisted dict temp>)`) is BOTH boxed and torn down → double free.
-            // (Harmless for scalar arms: scalars have no `destroy`. Entity/record field moves are
+            // (Harmless for scalar arms: scalars have no `destruct`. Entity/record field moves are
             // handled via `steal`; variant/carrier boxing has no steal, so mark it here.)
             case CreatorExpression creator
                 when (creator.ConstructedType ?? creator.ResolvedType) is VariantTypeSymbol:
@@ -961,7 +961,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             // temp identifier may not carry). This matters for synthesized bodies whose list literals
             // ExpressionLoweringPass hoists to `var _lit = List[…](); …` temps BEFORE this pass runs
             // (the reverse of user code, torn down while the literal is still inline): without marking
-            // the moved temp, scope-exit teardown would `_lit.destroy()` it on top of the entity's own
+            // the moved temp, scope-exit teardown would `_lit.destruct()` it on top of the entity's own
             // field teardown → double free (e.g. BuilderQuery `protocol_info`/`routine_info` nested
             // `List[Text]` fields).
             case CreatorExpression entityCreator

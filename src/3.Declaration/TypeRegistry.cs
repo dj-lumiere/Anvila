@@ -2319,12 +2319,12 @@ public sealed partial class TypeRegistry
         }
 
         // A routine VALUE is a trivially-destructible LEAF (a fat pointer over non-owned code + env), but the
-        // auto-derived record/entity `destroy` field-walk (`me.$nameof(m).destroy()`, DeriveText) assumes EVERY
-        // member type has a `destroy` — "a no-op for a raw-pointer / scalar / borrow leaf". A routine-typed
+        // auto-derived record/entity `destruct` field-walk (`me.$nameof(m).destruct()`, DeriveText) assumes EVERY
+        // member type has a `destruct` — "a no-op for a raw-pointer / scalar / borrow leaf". A routine-typed
         // field otherwise resolves that call to nothing, so codegen mangles + references `Callable[...].destroy`
         // with no definition (link-undefined). Register the no-op leaf destroy here (BODY = bare `return`,
         // synthesized in WiredRoutinePass's routine-type loop) so the invariant holds and the field-walk links.
-        RegisterRoutine(routine: new RoutineInfo(name: "destroy")
+        RegisterRoutine(routine: new RoutineInfo(name: "destruct")
         {
             Kind = RoutineKind.MemberRoutine,
             OwnerType = newType,

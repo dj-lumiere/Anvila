@@ -267,7 +267,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     {
         // The condition holds copy positions: `when`/`is` desugar to an if whose condition
         // is e.g. `(x.cmp(you: v)).eq(ME_SMALL)`, where `v` is a call argument needing a
-        // retaining `store`. Without lowering the condition, the callee `destroy`s the
+        // retaining `store`. Without lowering the condition, the callee `destruct`s the
         // by-value param while the caller never copied it -> double-free of the reused source.
         Expression newCond = StripStealFromExpr(expr: ifStmt.Condition);
         Statement newThen = LowerStatement(stmt: ifStmt.ThenStatement);
@@ -473,7 +473,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     {
         // A `danger` block is just a scoped block whose failable calls crash on failure.
         // Without recursing into its body, call arguments inside it never get their
-        // retaining `store` — so the callee's by-value param `destroy` frees the CALLER's
+        // retaining `store` — so the callee's by-value param `destruct` frees the CALLER's
         // value (e.g. `x.divmod!(other: b)` double-frees `b`). Recurse like any other block.
         Statement newBody = LowerStatement(stmt: danger.Body);
         return ReferenceEquals(objA: newBody, objB: danger.Body)
@@ -506,7 +506,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     /// assignment RHS, return value, call argument). A "borrowed reference" — an identifier or
     /// field read — of a type that carries a retaining <c>store</c> (e.g. <c>Text</c>, whose
     /// <c>store</c> bumps the controller refcount) is rewritten to <c>expr.assign()</c> so the new
-    /// owner holds its own reference, balancing the <c>destroy</c> that scope-teardown inserts.
+    /// owner holds its own reference, balancing the <c>destruct</c> that scope-teardown inserts.
     /// Explicit <see cref="StealExpression"/> is preserved (an explicit move, no copy). Fresh
     /// values (calls, constructors, arithmetic) are already owned and are only recursed for
     /// nested copy positions.
@@ -725,7 +725,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     // in an ExpressionStatement (the AssignmentStatement node is only for synthesized
     // bodies). The RHS is a copy position exactly like a var-init or call argument: a
     // borrowed-reference value (e.g. a `Text` local) must be retained, otherwise
-    // scope-teardown's `destroy` of the source frees the buffer the target now aliases
+    // scope-teardown's `destruct` of the source frees the buffer the target now aliases
     // (use-after-free). Mirrors the AssignmentStatement / DeclarationStatement handling.
     private BinaryExpression StripStealFromAssign(BinaryExpression bin)
     {
@@ -753,7 +753,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     // A `when` used as an EXPRESSION (e.g. `acc +% when x.cmp(you: v) is ... => ...`).
     // The subject and the arm bodies hold copy positions (call arguments, RHS values) that
     // must be lowered — without this, an argument like `v` inside the subject call never
-    // gets its retaining `store`, yet the callee (e.g. `Integer.cmp`) still `destroy`s the
+    // gets its retaining `store`, yet the callee (e.g. `Integer.cmp`) still `destruct`s the
     // by-value parameter, double-freeing the reused source on the next iteration.
     private WhenExpression StripStealFromWhen(WhenExpression whenExpr)
     {

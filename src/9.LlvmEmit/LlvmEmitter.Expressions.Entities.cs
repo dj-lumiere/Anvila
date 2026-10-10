@@ -650,7 +650,7 @@ public partial class LlvmEmitter
         // Roamed[T] field reassignment uses COPY semantics (biased RC — aliasing is free): the field
         // must drop its old strong ref and take a fresh one on the new value, or the count is off by
         // one and teardown double-frees. BOTH sides are now explicit AST calls, NOT codegen emits:
-        // the retain-new `.share()` on the RHS, and the release-old (snapshot-then-`.destroy()`)
+        // the retain-new `.share()` on the RHS, and the release-old (snapshot-then-`.destruct()`)
         // inserted by ScopeTeardownLoweringPass. So this method just emits the raw store — the RC balance
         // lives in the AST, keeping codegen out of refcount business (and letting the cycle-collector
         // lock cover field-write releases through the single RoamController.unhold chokepoint).

@@ -61,7 +61,7 @@ public sealed partial class SemanticVerifier
     /// by INFERRING it from the wired-routine catalog plus explicit protocol conformance.</para>
     ///
     /// <para>A member routine <c>R</c> is wired iff its bare name is a known wired memberRoutine AND either the
-    /// name is not protocol-gated (creator/context/lifecycle names like <c>create</c>/<c>destroy</c> —
+    /// name is not protocol-gated (creator/context/lifecycle names like <c>create</c>/<c>destruct</c> —
     /// wired by catalog name alone) or the owner EXPLICITLY <c>obeys</c> one of the name's required
     /// protocols. This reproduces the pre-removal <c>$</c> set: a numeric <c>add</c> (obeys Addable) is
     /// wired, while <c>Set.add</c> (Set does not obey Addable) stays non-wired.</para>

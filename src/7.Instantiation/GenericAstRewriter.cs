@@ -826,7 +826,7 @@ internal static class GenericAstRewriter
             List<TypeSymbol> callArgTypes, bool isFailable)
         {
             // The receiver's own ResolvedType is the RAW template annotation — for a universal derive
-            // (`T.destroy()`) cloned onto a GENERIC owner it is the bare owner GENERIC-DEF (`ListEmittable[T]`),
+            // (`T.destruct()`) cloned onto a GENERIC owner it is the bare owner GENERIC-DEF (`ListEmittable[T]`),
             // whose own param `T` COLLIDES BY NAME with the template's owner param `T`. Re-resolving it through
             // the name-keyed substitution then wrongly maps `ListEmittable`'s inner `T` and drops the concrete
             // arg — `me.hijack()` resolves on the bare `ListEmittable`, so the chained `.invalidate()` links to

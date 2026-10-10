@@ -13,15 +13,15 @@ namespace Builder.Lowering.Passes;
 ///
 /// <para>The markers are <see cref="CancellationPushStatement"/> / <see cref="CancellationPopStatement"/>,
 /// carrying every decision: which locals (those declared in the body that its inline teardown destroys),
-/// the <c>destroy</c> routine (the one that teardown calls), and whether it takes the local's address. This
+/// the <c>destruct</c> routine (the one that teardown calls), and whether it takes the local's address. This
 /// pass runs LAST (after all analysis/lowering, just before the emitter), so nothing else observes the
 /// markers; the emitter translates them to the <c>rf_coro_cf_push</c>/<c>rf_coro_cf_pop</c> runtime calls.</para>
 ///
 /// <para>Consistency-by-construction: the set of instrumented locals is DERIVED from the inline
-/// <c>local.destroy()</c> calls <c>ScopeTeardownLoweringPass</c> already inserted. A push goes
+/// <c>local.destruct()</c> calls <c>ScopeTeardownLoweringPass</c> already inserted. A push goes
 /// right after a local's construction (so a value built *after* a suspend point is not on the stack
 /// before it — partial init), and a pop right before each of that local's inline
-/// <c>destroy</c> (so the node is removed exactly when the inline teardown runs — the value can
+/// <c>destruct</c> (so the node is removed exactly when the inline teardown runs — the value can
 /// never be torn down twice). Empty may-suspend set ⇒ this pass is a no-op.</para>
 ///
 /// <para>First cut scope: owned LOCALS of free routines. Member routines and synthesized/generic
@@ -192,7 +192,7 @@ public sealed class CancellationInstrumentationPass
 
     /// <summary>
     /// Instruments one routine body (whether a source decl or a monomorphized generic body). The
-    /// set of instrumented locals is DERIVED from the inline <c>X.destroy()</c> calls
+    /// set of instrumented locals is DERIVED from the inline <c>X.destruct()</c> calls
     /// <c>ScopeTeardownLoweringPass</c> already inserted — keeping abandon's set == inline's set.
     /// </summary>
     private void InstrumentBody(Statement body)
@@ -218,7 +218,7 @@ public sealed class CancellationInstrumentationPass
                     {
                         Callee: MemberExpression
                         {
-                            MemberName: "destroy", Object: IdentifierExpression destroyed
+                            MemberName: "destruct", Object: IdentifierExpression destroyed
                         },
                         ResolvedRoutine: { } destroy
                     }:
@@ -242,7 +242,7 @@ public sealed class CancellationInstrumentationPass
 
     /// <summary>
     /// Rewrites <paramref name="block"/>'s statement list in place: a push marker after each
-    /// instrumented local's construction, a pop marker before each of its inline <c>destroy</c>,
+    /// instrumented local's construction, a pop marker before each of its inline <c>destruct</c>,
     /// recursing into nested blocks first.
     /// </summary>
     private void InstrumentBlock(BlockStatement block, Dictionary<string, (RoutineInfo Destroy, bool PassesAddress)> locals)
@@ -354,7 +354,7 @@ public sealed class CancellationInstrumentationPass
                 {
                     Callee: MemberExpression
                     {
-                        MemberName: "destroy", Object: IdentifierExpression id
+                        MemberName: "destruct", Object: IdentifierExpression id
                     }
                 }
             })

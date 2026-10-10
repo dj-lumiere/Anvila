@@ -121,7 +121,7 @@ public sealed class WiredEntry
     public string? CapabilityWiredOverride { get; init; }
 
     /// <summary>True for routines that must be emitted for every live owner regardless of call-site
-    /// reachability — the unified-teardown lifecycle routines (<c>destroy</c>/<c>store</c>).</summary>
+    /// reachability — the unified-teardown lifecycle routines (<c>destruct</c>/<c>store</c>).</summary>
     public bool AlwaysLive { get; init; }
 
     /// <summary>True when this routine carries the failable `!` marker. Failability is a PROPERTY —
@@ -183,7 +183,7 @@ public static class WiredRoutineCatalog
             new WiredEntry { Name = "exit", Kind = WiredKind.Context, Views = Known },
             new WiredEntry
             {
-                Name = "destroy", Kind = WiredKind.Lifecycle, Views = Known, AlwaysLive = true
+                Name = "destruct", Kind = WiredKind.Lifecycle, Views = Known, AlwaysLive = true
             },
             new WiredEntry
             {

@@ -161,7 +161,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // A user-defined `destroy` replaces the builder-generated memory teardown (field
+        // A user-defined `destruct` replaces the builder-generated memory teardown (field
         // recursion + invalidate `me`), so the author owns freeing `me` and its fields. Require
         // `dangerous` so this opt-in to manual memory management is explicit at the declaration.
         ValidateDestroyDeclaration(routine: routine);
@@ -416,7 +416,7 @@ public sealed partial class SemanticVerifier
         _pendingLookupVars.Clear();
 
         // Snapshot the per-routine "out of scope via steal/consumption" set onto the declaration so
-        // the scope-exit teardown pass can exclude these bindings from `destroy`.
+        // the scope-exit teardown pass can exclude these bindings from `destruct`.
         routine.StolenVariableNames = [.. _deadrefVariables];
         routine.EverStolenVariableNames = [.. _everStolenVariables];
     }
@@ -1438,7 +1438,7 @@ public sealed partial class SemanticVerifier
 
     private void ValidateDestroyDeclaration(RoutineDeclaration routine)
     {
-        bool isDestroyDecl = routine.Name == "destroy" ||
+        bool isDestroyDecl = routine.Name == "destruct" ||
                              routine.Name.EndsWith(value: ".destroy",
                                  comparisonType: StringComparison.Ordinal);
         if (isDestroyDecl && !routine.IsDangerous)

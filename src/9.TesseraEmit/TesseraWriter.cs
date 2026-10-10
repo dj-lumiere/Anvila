@@ -506,7 +506,7 @@ internal sealed class TesseraWriter
 
     /// <summary>
     /// The routine that frees a caught crashable: given the carrier's type id and the address of the object the
-    /// error lives in, it calls that crashable's <c>destroy</c> (a crashable whose type has none live has nothing
+    /// error lives in, it calls that crashable's <c>destruct</c> (a crashable whose type has none live has nothing
     /// to free in its fields), then frees the object. Written once.
     /// </summary>
     public string CrashObjectDestroy(TypeSymbol typeIdType)

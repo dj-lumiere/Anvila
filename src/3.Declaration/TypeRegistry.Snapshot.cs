@@ -66,9 +66,9 @@ partial class TypeRegistry
         /// <summary>Root path for on-demand module loading (e.g. import BuilderQuery).</summary>
         public string? StdlibRootPath { get; init; }
 
-        /// <summary>Auto-derive templates (<c>@overridable routine T.destroy()/represent()/…</c>) keyed by
+        /// <summary>Auto-derive templates (<c>@overridable routine T.destruct()/represent()/…</c>) keyed by
         /// memberRoutine name. Restored so a warm full-analyze can still CLONE a per-type derive body
-        /// (e.g. <c>CLong.destroy()</c>) for a stdlib type whose synthesized body was not pre-captured —
+        /// (e.g. <c>CLong.destruct()</c>) for a stdlib type whose synthesized body was not pre-captured —
         /// without them <see cref="GetDeriveTemplate"/> returns null and WiredRoutinePass throws.</summary>
         public Dictionary<string, List<(string OwnerParam, int Arity,
                 List<SyntaxTree.GenericConstraintDeclaration> Gates, SyntaxTree.Statement Body)>>
