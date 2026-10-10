@@ -49,6 +49,7 @@ public partial class LlvmEmitter
                     arguments: pack.Bits),
                 // CarrierPayloadExpression is the RESULT of PatternLoweringPass (Maybe/Result payload
                 // projection) — codegen consumes it, it is not a surface node.
+                VariantWidenExpression widen => EmitVariantWiden(sb: sb, widen: widen),
                 CarrierPayloadExpression payload => EmitCarrierPayloadExpression(sb: sb,
                     payload: payload),
                 CrashableDispatchExpression dispatch => EmitCrashableDispatchExpression(sb: sb,
@@ -577,6 +578,27 @@ public partial class LlvmEmitter
     /// </list>
     /// </summary>
     private string EmitCarrierPayloadExpression(StringBuilder sb, CarrierPayloadExpression payload)
+    {
+        return EmitCarrierPayloadCore(sb: sb, payload: payload);
+    }
+
+    /// <summary>Emits a <see cref="VariantWidenExpression"/>: the smaller variant written over the start of a zeroed
+    /// larger one, which is then read whole.</summary>
+    private string EmitVariantWiden(StringBuilder sb, VariantWidenExpression widen)
+    {
+        string value = EmitExpression(sb: sb, expr: widen.Value);
+        string fromType = GetLlvmType(type: widen.Value.ResolvedType!);
+        string toType = GetLlvmType(type: widen.ResolvedType!);
+        string slot = NextTemp();
+        EmitEntryAlloca(llvmName: slot, llvmType: toType);
+        EmitLine(sb: sb, line: $"  store {toType} zeroinitializer, ptr {slot}");
+        EmitLine(sb: sb, line: $"  store {fromType} {value}, ptr {slot}");
+        string result = NextTemp();
+        EmitLine(sb: sb, line: $"  {result} = load {toType}, ptr {slot}");
+        return result;
+    }
+
+    private string EmitCarrierPayloadCore(StringBuilder sb, CarrierPayloadExpression payload)
     {
         // EmitExpression returns a loaded struct value (not a pointer); GEP needs a pointer.
         // Spill the carrier value to a temp alloca first.

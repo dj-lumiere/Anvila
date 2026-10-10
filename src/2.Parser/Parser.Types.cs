@@ -141,6 +141,27 @@ public partial class Parser
 
     private TypeExpression ParseType()
     {
+        TypeExpression first = ParseOptionalType();
+        if (!Check(type: TokenType.Pipe))
+        {
+            return first;
+        }
+
+        // A variant written in place: `S64 | Text`, `Token | EndOfInput`.
+        var members = new List<TypeExpression> { first };
+        while (CheckAndAdvance(type: TokenType.Pipe))
+        {
+            members.Add(item: ParseOptionalType());
+        }
+
+        return new TypeExpression(Name: TypeExpression.UnionName(memberNames: members.Select(selector: m => m.Name)),
+            GenericArguments: null,
+            Location: first.Location) { UnionMembers = members };
+    }
+
+    /// <summary>A type, with <c>?</c> after it making it a <c>Maybe</c>.</summary>
+    private TypeExpression ParseOptionalType()
+    {
         TypeExpression baseType = ParseBaseType();
 
         // Handle nullable suffix: T? Maybe[T]

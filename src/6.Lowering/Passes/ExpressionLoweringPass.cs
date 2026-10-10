@@ -44,9 +44,18 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return $"_{prefix}_{_tempCount++}";
     }
 
+    /// <summary>What the routine being lowered returns, so a returned arm of a variant is wrapped into it.</summary>
+    private TypeSymbol? _returnType;
+
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => LowerStatementFull(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r =>
+        {
+            _returnType = r.ReturnType?.ResolvedType;
+            Statement lowered = LowerStatementFull(stmt: r.Body);
+            _returnType = null;
+            return lowered;
+        });
     }
 
     // --- Statement lowering ------------------------------------------------------
@@ -271,7 +280,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // CreatorExpression (codegen's record-creator path builds the { i1, T } aggregate),
         // instead of codegen hand-building the insertvalue at the store site.
         Expression effectiveVal =
-            TryWrapMemberMaybe(target: asgn.Target, value: loweredVal) ?? loweredVal;
+            TryWrapMemberMaybe(target: asgn.Target, value: loweredVal) ??
+            TryWrapVariantArm(targetType: asgn.Target.ResolvedType, init: loweredVal) ?? loweredVal;
         if (hoisted.Count == 0 && ReferenceEquals(objA: effectiveVal, objB: asgn.Value))
         {
             return ([], stmt);
@@ -299,6 +309,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         Statement stmt)
     {
         (List<Statement> hoisted, Expression loweredVal) = LowerExpr(expr: ret.Value!);
+        // A value of one of the variant's types, returned as the variant: `return text` from `-> S64 | Text`.
+        loweredVal = TryWrapVariantArm(targetType: _returnType, init: loweredVal) ?? loweredVal;
         if (hoisted.Count == 0 && ReferenceEquals(objA: loweredVal, objB: ret.Value))
         {
             return ([], stmt);
@@ -601,8 +613,13 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     {
         (List<Statement> leftH, Expression loweredLeft) = LowerExpr(expr: assignBin.Left);
         (List<Statement> rightH, Expression loweredRight) = LowerExpr(expr: assignBin.Right);
+        // The target's declared type: a variable narrowed by an earlier `is` is still the variant it was declared as.
+        TypeSymbol? targetType = loweredLeft is IdentifierExpression named &&
+                                 ctx.Registry.LookupVariable(name: named.Name) is { } declared
+            ? declared.Type
+            : loweredLeft.ResolvedType;
         Expression wrappedRight = TryWrapMemberMaybe(target: loweredLeft, value: loweredRight) ??
-                                  loweredRight;
+                                  TryWrapVariantArm(targetType: targetType, init: loweredRight) ?? loweredRight;
         List<Statement> hoisted = Concat(a: leftH, b: rightH);
         if (hoisted.Count == 0 && ReferenceEquals(objA: loweredLeft, objB: assignBin.Left) &&
             ReferenceEquals(objA: wrappedRight, objB: assignBin.Right))
@@ -1835,7 +1852,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// annotation is absent, or carrier isn't Maybe). Mirrors the SA assignability
     /// rule that permits <c>T -&gt; Maybe[T]</c> in initializers.
     /// </summary>
-    private static CreatorExpression? TryWrapCarrier(TypeExpression? varType, Expression init)
+    private static Expression? TryWrapCarrier(TypeExpression? varType, Expression init)
     {
         if (varType is null)
         {
@@ -1970,11 +1987,18 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// variant (passthrough — including a different variant that is itself an arm must still wrap),
     /// or it matches no arm. Guarded by the declaration auto-wrap and the call-argument auto-wrap.
     /// </summary>
-    private static CreatorExpression? TryWrapVariantArm(TypeSymbol? targetType, Expression init)
+    private static Expression? TryWrapVariantArm(TypeSymbol? targetType, Expression init)
     {
         if (targetType is not VariantTypeSymbol variant)
         {
             return null;
+        }
+
+        // A smaller variant whose every type is one of the target's: held as the target as it is.
+        if (init.ResolvedType is VariantTypeSymbol smaller && smaller.FullName != variant.FullName &&
+            Verification.SemanticVerifier.VariantWidensTo(source: smaller, target: variant))
+        {
+            return new VariantWidenExpression(Value: init, Location: init.Location) { ResolvedType = variant };
         }
 
         // `= none` / `f(none)` → the variant's None arm if it has one.
@@ -3324,6 +3348,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         Dictionary<string, Instantiation.MonomorphizedBody> instantiatedGenericBodies)
     {
         BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: instantiatedGenericBodies,
-            lower: (_, entry) => LowerStatementFull(stmt: entry.Ast.Body));
+            lower: (_, entry) =>
+            {
+                _returnType = entry.Info.ReturnType;
+                Statement lowered = LowerStatementFull(stmt: entry.Ast.Body);
+                _returnType = null;
+                return lowered;
+            });
     }
 }

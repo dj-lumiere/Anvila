@@ -1252,6 +1252,12 @@ internal sealed partial class AstPrinter
 
     private string TypeText(TypeExpression type)
     {
+        // A variant written in place keeps its types in the order they were written.
+        if (type.UnionMembers is { } members)
+        {
+            return string.Join(separator: " | ", values: members.Select(selector: TypeText));
+        }
+
         if (type.IsRvalue)
         {
             throw Refuse(at: type.Location, reason: "a type with the removed rvalue mark");

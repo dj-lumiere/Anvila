@@ -257,6 +257,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// <param name="node">The carrier-payload expression to visit</param>
     /// <returns>Result of visiting the carrier-payload expression</returns>
     T VisitCarrierPayloadExpression(CarrierPayloadExpression node);
+    T VisitVariantWidenExpression(VariantWidenExpression node);
 
     /// <summary>Visits a tagged creator node (a variant or carrier built from its tag and payload)</summary>
     /// <param name="node">The tagged creator to visit</param>

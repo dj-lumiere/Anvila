@@ -1006,6 +1006,20 @@ public record TypeExpression(
     /// </summary>
     public List<GenericConstraintDeclaration>? ConformanceConditions { get; set; }
 
+    /// <summary>The types of a variant written in place, <c>A | B</c>: the type is the variant holding one of them
+    /// (the same set of types is the same type, whatever its order). Null for any other type.</summary>
+    public List<TypeExpression>? UnionMembers { get; init; }
+
+    /// <summary>The name of the variant written in place over <paramref name="memberNames"/>: each type once,
+    /// <c>None</c> first and the rest in name order, so <c>Text | S64</c> and <c>S64 | Text</c> name one type.</summary>
+    public static string UnionName(IEnumerable<string> memberNames)
+    {
+        return string.Join(separator: " | ",
+            values: memberNames.Distinct(comparer: StringComparer.Ordinal)
+                               .OrderBy(keySelector: n => n == "None" ? 0 : 1)
+                               .ThenBy(keySelector: n => n, comparer: StringComparer.Ordinal));
+    }
+
     /// <summary>
     /// A type the builder already knows, for a routine it writes during analysis (an <c>agent</c> call's work
     /// routine takes its parameter types from the analyzed arguments). The resolver returns it as it is: such a
@@ -1206,6 +1220,23 @@ public record CarrierPayloadExpression(
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
         return visitor.VisitCarrierPayloadExpression(node: this);
+    }
+}
+
+/// <summary>
+/// A value of a variant held as a larger variant whose types include all of its own (<c>S64 | Text</c> as
+/// <c>S64 | Text | Bool</c>). Produced by lowering (never parsed). Both are a type-id tag and a payload slot, the
+/// tag of an arm is its type's id in either, and the larger slot is at least as large, so a backend writes the value
+/// over the start of a zeroed larger one. Its resolved type is the larger variant.
+/// </summary>
+/// <param name="Value">The value of the smaller variant.</param>
+/// <param name="Location">Source location of the value.</param>
+public record VariantWidenExpression(Expression Value, SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitVariantWidenExpression(node: this);
     }
 }
 

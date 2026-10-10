@@ -62,6 +62,7 @@ public sealed partial class SemanticVerifier
             CollectDeclaration(node: declaration);
         }
 
+        CollectPendingGlobals();
         ReportPresetTypeNameCollisions(program: program);
     }
 
@@ -139,6 +140,30 @@ public sealed partial class SemanticVerifier
                 CollectVariantDeclaration(variant: variant);
                 break;
 
+            case DefineDeclaration { OldType: { } oldType } define:
+            {
+                // The new name stands for the type as written, resolved where it was written, on first use.
+                string? module = GetCurrentModuleName();
+                string? file = _currentFilePath;
+                _registry.RegisterTypeAlias(name: define.NewName, resolve: () =>
+                {
+                    string? previousModule = _currentModuleName;
+                    string previousFile = _currentFilePath;
+                    _currentModuleName = module;
+                    _currentFilePath = file ?? previousFile;
+                    try
+                    {
+                        return ResolveType(typeExpr: oldType);
+                    }
+                    finally
+                    {
+                        _currentModuleName = previousModule;
+                        _currentFilePath = previousFile;
+                    }
+                });
+                break;
+            }
+
             case ProtocolDeclaration protocol:
                 CollectProtocolDeclaration(protocol: protocol);
                 break;
@@ -160,7 +185,8 @@ public sealed partial class SemanticVerifier
                 break;
 
             case VariableDeclaration { IsGlobal: true } global:
-                CollectGlobalDeclaration(global: global);
+                // Its type may name a type declared after it in the file: collected once the file's types are.
+                _pendingGlobals.Add(item: (global, GetCurrentModuleName(), _currentFilePath));
                 break;
 
             case VariableDeclaration variable:
@@ -350,6 +376,26 @@ public sealed partial class SemanticVerifier
     /// the current scope (intra-file resolution) and into the registry's module-global table (cross-file
     /// resolution + the codegen storage signal). Unlike a preset the global is MUTABLE and not inlined.
     /// </summary>
+    /// <summary>Globals seen while collecting declarations, with the module and file they are in.</summary>
+    private readonly List<(VariableDeclaration Global, string? Module, string File)> _pendingGlobals = [];
+
+    /// <summary>Collects the globals <see cref="CollectDeclaration"/> set aside, now that every type is known.</summary>
+    private void CollectPendingGlobals()
+    {
+        string? previousModule = _currentModuleName;
+        string previousFile = _currentFilePath;
+        foreach ((VariableDeclaration global, string? module, string file) in _pendingGlobals)
+        {
+            _currentModuleName = module;
+            _currentFilePath = file;
+            CollectGlobalDeclaration(global: global);
+        }
+
+        _pendingGlobals.Clear();
+        _currentModuleName = previousModule;
+        _currentFilePath = previousFile;
+    }
+
     private void CollectGlobalDeclaration(VariableDeclaration global)
     {
         // The parser requires a type annotation on every `global`, so global.Type is non-null here.

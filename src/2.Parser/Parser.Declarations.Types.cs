@@ -1054,7 +1054,9 @@ public partial class Parser
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
-        string oldName = ConsumeIdentifier(errorMessage: "Expected identifier after 'define'");
+        // The type the new name stands for: a name, a generic instance, or a variant written in place.
+        TypeExpression oldType = ParseType();
+        string oldName = oldType.Name;
         Consume(type: TokenType.As, errorMessage: "Expected 'as' in redefinition");
         string newName =
             ConsumeIdentifier(errorMessage: "Expected new identifier in redefinition");
@@ -1066,7 +1068,7 @@ public partial class Parser
             Location: location,
             Annotations: annotations is { Count: > 0 }
                 ? annotations
-                : null);
+                : null) { OldType = oldType };
     }
 
     /// <summary>

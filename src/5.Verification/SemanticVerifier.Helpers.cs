@@ -1154,9 +1154,21 @@ public sealed partial class SemanticVerifier
 
     private static bool IsVariantMemberAssignable(TypeSymbol source, TypeSymbol target)
     {
-        return target is VariantTypeSymbol variant && variant.Members.Any(predicate: member =>
-            member.Type != null && (member.Type.Name == source.Name ||
-                                    member.Type.FullName == source.FullName));
+        return target is VariantTypeSymbol variant && (variant.Members.Any(predicate: member =>
+                   member.Type != null && (member.Type.Name == source.Name ||
+                                           member.Type.FullName == source.FullName)) ||
+               source is VariantTypeSymbol smaller && VariantWidensTo(source: smaller, target: variant));
+    }
+
+    /// <summary>Whether a value of <paramref name="source"/> is held as <paramref name="target"/> as it is: every type
+    /// <paramref name="source"/> holds (its empty arm included) is one <paramref name="target"/> holds (<c>S64 | Text</c>
+    /// as <c>S64 | Text | Bool</c>).</summary>
+    internal static bool VariantWidensTo(VariantTypeSymbol source, VariantTypeSymbol target)
+    {
+        return source.Members.Count > 0 && !source.IsGenericDefinition && !target.IsGenericDefinition &&
+               source.CarrierKind == CarrierKind.None && target.CarrierKind == CarrierKind.None &&
+               source.Members.All(predicate: arm => target.Members.Any(predicate: other =>
+                   arm.IsNone ? other.IsNone : other.Type?.FullName == arm.Type!.FullName));
     }
 
     private bool IsConstGenericAssignable(TypeSymbol source, TypeSymbol target)

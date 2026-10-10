@@ -249,11 +249,48 @@ internal sealed class TypeResolver
         return _sa._registry.RoamEntitySlot(resolved: resolved, roamedDef: roamedDef);
     }
 
+    /// <summary>
+    /// <c>A | B</c>: the variant holding one of the written types, the same one for the same set of types in any order
+    /// (<see cref="TypeRegistry.GetOrCreateUnion"/>). One distinct type is that type itself.
+    /// </summary>
+    private TypeSymbol ResolveUnionType(TypeExpression typeExpr, List<TypeExpression> members)
+    {
+        var types = new List<TypeSymbol>(capacity: members.Count);
+        foreach (TypeExpression member in members)
+        {
+            TypeSymbol type = member.Name == "None"
+                ? _sa._registry.LookupType(name: "None") ?? ErrorTypeSymbol.Instance
+                : ResolveTypeCore(typeExpr: member);
+            if (type is ErrorTypeSymbol)
+            {
+                return type;
+            }
+
+            if (type is GenericParameterTypeSymbol || type.IsGenericDefinition)
+            {
+                _sa.ReportError(code: SemanticDiagnosticCode.VariantCaseContainsInvalidType,
+                    message: $"'{typeExpr.Name}' names '{member.Name}', a type parameter, and a variant written in place " +
+                             "holds only concrete types. Declare a generic variant for it instead.",
+                    location: member.Location);
+                return ErrorTypeSymbol.Instance;
+            }
+
+            types.Add(item: type);
+        }
+
+        return _sa._registry.GetOrCreateUnion(members: types, location: typeExpr.Location);
+    }
+
     private TypeSymbol ResolveTypeCore(TypeExpression typeExpr)
     {
         if (typeExpr.KnownType is { } known)
         {
             return known;
+        }
+
+        if (typeExpr.UnionMembers is { } unionMembers)
+        {
+            return ResolveUnionType(typeExpr: typeExpr, members: unionMembers);
         }
 
         // Buildtime type-position splice `${m.type}` in a decl-position expand column template: resolve

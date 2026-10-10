@@ -325,6 +325,12 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         return false;
     }
 
+    public bool VisitVariantWidenExpression(VariantWidenExpression node)
+    {
+        Visit(e: node.Value);
+        return false;
+    }
+
     public bool VisitCarrierPayloadExpression(CarrierPayloadExpression node)
     {
         Visit(e: node.Carrier);

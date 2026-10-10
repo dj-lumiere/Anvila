@@ -234,7 +234,7 @@ internal sealed partial class AstPrinter
                 break;
             case DefineDeclaration define:
                 EmitHead(start: start, depth: depth,
-                    head: Doc.Text(text: $"define {define.OldName} as {define.NewName}"));
+                    head: Doc.Text(text: $"define {(define.OldType is { } old ? TypeText(type: old) : define.OldName)} as {define.NewName}"));
                 break;
             case PresetDeclaration preset:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(

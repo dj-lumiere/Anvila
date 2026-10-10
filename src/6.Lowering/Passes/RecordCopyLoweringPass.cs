@@ -590,6 +590,8 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
             StealExpression steal => steal,
             CallExpression call => StripStealFromCall(call: call),
             CreatorExpression creator => StripStealFromCreator(creator: creator),
+            // The smaller variant is copied into the larger one: a named value is a copy position.
+            VariantWidenExpression widen => widen with { Value = LowerOwnership(expr: widen.Value, isReturn: false) },
             GenericMemberRoutineCallExpression gmc => StripStealFromGenericMemberRoutineCall(
                 gmc: gmc),
             BinaryExpression { Operator: BinaryOperator.Assign } bin => StripStealFromAssign(

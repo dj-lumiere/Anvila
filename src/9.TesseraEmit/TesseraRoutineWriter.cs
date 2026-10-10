@@ -730,6 +730,8 @@ internal sealed class TesseraRoutineWriter
                 return EvaluateCreator(creator: creator);
             case CarrierPayloadExpression payload:
                 return EvaluatePayload(payload: payload);
+            case VariantWidenExpression:
+                throw Unsupported(what: "a variant held as a larger variant");
             case TaggedCreatorExpression tagged:
                 return EvaluateTaggedCreator(tagged: tagged);
             case CrashableDispatchExpression dispatch:

@@ -912,6 +912,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
     /// <inheritdoc/>
+    public string VisitVariantWidenExpression(VariantWidenExpression node)
+    {
+        return $"#variant_widen({node.Value.Accept(visitor: this)})";
+    }
+
+    /// <inheritdoc/>
     public string VisitCarrierPayloadExpression(CarrierPayloadExpression node)
     {
         return

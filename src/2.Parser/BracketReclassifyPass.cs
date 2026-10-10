@@ -205,10 +205,35 @@ internal static class BracketReclassifyPass
                 GenericArguments: null,
                 Location: valueSplice.Location,
                 BuildtimeValue: valueSplice.Inner),
+            // A variant written in place, `List[Circle | Square]`: the `|` between types (mirrors ParseType).
+            BinaryExpression { Operator: BinaryOperator.BitwiseOr } union => UnionTypeArg(union: union),
             // A TypeExpression already (should not normally occur from bracket parsing) passes through.
             TypeExpression te => te,
             _ => throw new NotATypeArgumentException(argument: expr)
         };
+    }
+
+    /// <summary>The type argument <c>A | B | C</c>, from the left-leaning chain of <c>|</c> the expression parser
+    /// read.</summary>
+    private static TypeExpression UnionTypeArg(BinaryExpression union)
+    {
+        var members = new List<TypeExpression>();
+        void Collect(Expression e)
+        {
+            if (e is BinaryExpression { Operator: BinaryOperator.BitwiseOr } inner)
+            {
+                Collect(e: inner.Left);
+                Collect(e: inner.Right);
+                return;
+            }
+
+            members.Add(item: ExpressionToTypeArg(expr: e));
+        }
+
+        Collect(e: union);
+        return new TypeExpression(Name: TypeExpression.UnionName(memberNames: members.Select(selector: m => m.Name)),
+            GenericArguments: null,
+            Location: union.Location) { UnionMembers = members };
     }
 
     /// <summary>

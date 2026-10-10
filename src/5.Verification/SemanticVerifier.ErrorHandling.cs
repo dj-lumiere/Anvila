@@ -606,9 +606,11 @@ public sealed partial class SemanticVerifier
         {
             ResolvedType = variant
         };
+        // The arm's type as it is, not its name: a variant written in place (`Circle | Square`) lives in Core, where
+        // the name of an arm from the program's own module finds nothing.
         var typeExpr = new TypeExpression(Name: armType.Name, GenericArguments: null, Location: loc)
         {
-            ResolvedType = armType
+            ResolvedType = armType, KnownType = armType
         };
         var vRef = new IdentifierExpression(Name: "v", Location: loc) { ResolvedType = armType };
         // `v.duplicate()` — DEEP copy the payload out so the extracted value is independent of the

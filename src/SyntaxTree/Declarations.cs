@@ -823,6 +823,9 @@ public record DefineDeclaration(
     SourceLocation Location,
     List<string>? Annotations) : Declaration(Location: Location)
 {
+    /// <summary>The type the new name stands for, as written (<c>Circle | Square</c>, <c>List[S64]</c>).</summary>
+    public TypeExpression? OldType { get; init; }
+
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

@@ -529,6 +529,9 @@ public abstract class AstRewriter
             CreatorExpression e => VisitCreator(e: e),
             TypeConversionExpression e => VisitTypeConversion(e: e),
             StealExpression e => VisitSteal(e: e),
+            VariantWidenExpression e => VisitExpression(expr: e.Value) is var value && ReferenceEquals(objA: value, objB: e.Value)
+                ? e
+                : e with { Value = value },
             RecoveryExpression e => VisitRecovery(e: e),
             AgentExpression e => VisitAgent(e: e),
             BackIndexExpression e => VisitBackIndex(e: e),

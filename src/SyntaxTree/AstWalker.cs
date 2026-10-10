@@ -295,6 +295,10 @@ public static class AstWalker
             {
                 e.Type
             },
+            VariantWidenExpression e => new object[]
+            {
+                e.Value
+            },
             CarrierPayloadExpression e => new object[]
             {
                 e.Carrier,

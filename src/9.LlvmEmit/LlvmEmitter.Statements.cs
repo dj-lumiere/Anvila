@@ -239,7 +239,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>Builds the diagnostic thrown when a variable's type cannot be determined.</summary>
-    private static InvalidOperationException UndeterminableVariableType(
+    private InvalidOperationException UndeterminableVariableType(
         VariableDeclaration varDecl)
     {
         string typeText = "<null>";
@@ -259,7 +259,8 @@ public partial class LlvmEmitter
               $"'{varDecl.Initializer.ResolvedType?.FullName ?? "<none>"}'";
         return new InvalidOperationException(
             message:
-            $"Cannot determine type for variable '{varDecl.Name}' (declared type: {typeText}, initializer: {initializerText})");
+            $"Cannot determine type for variable '{varDecl.Name}' (declared type: {typeText}, initializer: {initializerText}) " +
+            $"in [{_currentRoutineDiagName}]");
     }
 
     /// <summary>Generates a unique LLVM local name for <paramref name="name"/>, handling shadowing.</summary>

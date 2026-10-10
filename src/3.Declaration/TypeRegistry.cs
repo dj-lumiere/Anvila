@@ -1144,6 +1144,52 @@ public sealed partial class TypeRegistry
         return routine.RegistryKey;
     }
 
+    private readonly Dictionary<string, VariantTypeSymbol> _unions = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The variant written in place as <c>A | B</c> over <paramref name="members"/>: one type per set of types,
+    /// whatever their order or repetition, named by its types in a fixed order (<c>S64 | Text</c>) and held in
+    /// <c>Core</c> so every module means the same type by it. One distinct type is that type itself.
+    /// </summary>
+    public TypeSymbol GetOrCreateUnion(List<TypeSymbol> members, SourceLocation? location = null)
+    {
+        List<TypeSymbol> distinct = members.DistinctBy(keySelector: m => m.FullName)
+                                           .OrderBy(keySelector: m => m.Name == "None" ? 0 : 1)
+                                           .ThenBy(keySelector: m => m.Name, comparer: StringComparer.Ordinal)
+                                           .ThenBy(keySelector: m => m.FullName, comparer: StringComparer.Ordinal)
+                                           .ToList();
+        if (distinct.Count == 1)
+        {
+            return distinct[index: 0];
+        }
+
+        string key = string.Join(separator: " | ", values: distinct.Select(selector: m => m.FullName));
+        if (_unions.TryGetValue(key: key, value: out VariantTypeSymbol? existing))
+        {
+            return existing;
+        }
+
+        var arms = new List<VariantMemberInfo>(capacity: distinct.Count);
+        foreach (TypeSymbol member in distinct)
+        {
+            arms.Add(item: member.Name == "None"
+                ? VariantMemberInfo.CreateNone(ordinal: arms.Count, location: location)
+                : new VariantMemberInfo(type: member) { Ordinal = arms.Count, Location = location });
+        }
+
+        var union = new VariantTypeSymbol(name: TypeExpression.UnionName(memberNames: distinct.Select(selector: m => m.Name)))
+        {
+            Members = arms, Module = "Core", Location = location
+        };
+        _unions[key: key] = union;
+        if (!_types.ContainsKey(key: RealmRegistryKey(type: union)))
+        {
+            RegisterType(type: union);
+        }
+
+        return union;
+    }
+
     /// <summary>
     /// Registers a type in the registry.
     /// </summary>
@@ -1569,12 +1615,62 @@ public sealed partial class TypeRegistry
     /// Looks up a type by name in the AMBIENT realm only (the realm-blind workhorse). Callers that must
     /// honor the per-file <see cref="ResolutionRealm"/> use <see cref="LookupType(string)"/> instead.
     /// </summary>
+    private readonly Dictionary<string, Func<TypeSymbol?>> _aliases = new(comparer: StringComparer.Ordinal);
+    private readonly Dictionary<string, TypeSymbol> _resolvedAliases = new(comparer: StringComparer.Ordinal);
+    private readonly HashSet<string> _resolvingAliases = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// Registers <c>define Old as New</c>: the name <paramref name="name"/> stands for the type
+    /// <paramref name="resolve"/> gives, worked out the first time the name is looked up (so it may name a type
+    /// declared after it).
+    /// </summary>
+    public void RegisterTypeAlias(string name, Func<TypeSymbol?> resolve)
+    {
+        _aliases[key: name] = resolve;
+        _resolvedAliases.Remove(key: name);
+    }
+
+    private TypeSymbol? LookupAlias(string name)
+    {
+        if (_resolvedAliases.TryGetValue(key: name, value: out TypeSymbol? done))
+        {
+            return done;
+        }
+
+        if (!_aliases.TryGetValue(key: name, value: out Func<TypeSymbol?>? resolve) || !_resolvingAliases.Add(item: name))
+        {
+            return null;
+        }
+
+        try
+        {
+            TypeSymbol? resolved = resolve();
+            if (resolved is not null and not ErrorTypeSymbol)
+            {
+                _resolvedAliases[key: name] = resolved;
+                return resolved;
+            }
+
+            return null;
+        }
+        finally
+        {
+            _resolvingAliases.Remove(item: name);
+        }
+    }
+
     private TypeSymbol? LookupTypeInAmbient(string name)
     {
         // Try exact match first
         if (_types.TryGetValue(key: name, value: out TypeSymbol? type))
         {
             return type;
+        }
+
+        // A name `define` gave to a type.
+        if (_aliases.Count > 0 && LookupAlias(name: name) is { } aliased)
+        {
+            return aliased;
         }
 
         // Try resolution cache
