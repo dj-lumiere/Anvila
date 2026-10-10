@@ -61,6 +61,10 @@ internal sealed partial class AstPrinter
     {
         switch (statement)
         {
+            case ExpressionStatement { IsBecomes: true } becomes:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "becomes "),
+                    Expr(expression: becomes.Expression, context: ExprContext.Statement)));
+                break;
             case ExpressionStatement expression:
                 EmitHead(start: start, depth: depth,
                     head: Doc.Concat(prefix, Expr(expression: expression.Expression, context: ExprContext.Statement)));

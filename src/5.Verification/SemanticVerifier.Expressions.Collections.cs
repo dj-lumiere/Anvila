@@ -933,6 +933,29 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol? AnalyzeWhenBlockClauseBody(BlockStatement block, TypeSymbol? resultType)
     {
+        // The arm's value is its last line, `becomes value`; the lines before it are ordinary statements.
+        if (block.Statements is [.., ExpressionStatement { IsBecomes: true } becomes])
+        {
+            _registry.EnterScope(kind: ScopeKind.Block, name: null);
+            try
+            {
+                foreach (Statement stmt in block.Statements.SkipLast(count: 1))
+                {
+                    AnalyzeStatement(statement: stmt);
+                }
+
+                TypeSymbol branchType = AnalyzeExpression(expression: becomes.Expression,
+                    expectedType: resultType);
+                return FoldWhenBranchType(resultType: resultType,
+                    branchType: branchType,
+                    errorLocation: becomes.Location);
+            }
+            finally
+            {
+                _registry.ExitScope();
+            }
+        }
+
         foreach (Statement stmt in block.Statements)
         {
             AnalyzeStatement(statement: stmt);
@@ -940,8 +963,8 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.WhenExpressionArmIsBlock,
             message:
-            "You wrote several statements in an arm of a 'when' that gives a value, but such an arm is one " +
-            "expression after '=>'. Compute the value first, or write a 'when' statement that sets a variable.",
+            "You wrote several statements in an arm of a 'when' that gives a value, and none of them says the arm's " +
+            "value. End the block with 'becomes value', or make the arm one expression after '=>'.",
             location: block.Location);
         return resultType;
     }

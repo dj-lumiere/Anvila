@@ -364,6 +364,10 @@ public enum SemanticDiagnosticCode
     /// <summary>An arm of a <c>when</c> that gives a value is a block instead of one expression.</summary>
     WhenExpressionArmIsBlock = 307,
 
+    /// <summary><c>becomes</c> stands somewhere other than the last line of a block arm of a <c>when</c> that gives a
+    /// value.</summary>
+    BecomesOutsideWhenArm = 308,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN MATCHING ERRORS (RF-S350 - RF-S399)
     // ═══════════════════════════════════════════════════════════════════════════

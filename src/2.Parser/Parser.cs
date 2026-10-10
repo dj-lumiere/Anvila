@@ -1154,6 +1154,14 @@ public partial class Parser
             case TokenType.Todo:
                 Advance();
                 return ParseTodoStatement();
+            case TokenType.Becomes:
+            {
+                SourceLocation becomesAt = GetLocation();
+                Advance();
+                Expression value = ParseExpression();
+                ConsumeStatementTerminator();
+                return new ExpressionStatement(Expression: value, Location: becomesAt) { IsBecomes = true };
+            }
             case TokenType.Using:
                 Advance();
                 return ParseUsingStatement();

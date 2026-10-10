@@ -606,6 +606,15 @@ public sealed partial class SemanticVerifier
                 AnalyzeDeclarationStatement(decl: decl);
                 break;
 
+            case ExpressionStatement { IsBecomes: true } becomes:
+                // A `becomes` the block arm of a value-giving `when` takes is analyzed there; any other is misplaced.
+                ReportError(code: SemanticDiagnosticCode.BecomesOutsideWhenArm,
+                    message: "'becomes' gives a block arm of a 'when' that gives a value its value, as the arm's last " +
+                             "line. Here it isn't one: return the value, or assign it.",
+                    location: becomes.Location);
+                _ = AnalyzeExpression(expression: becomes.Expression);
+                break;
+
             case ExpressionStatement expr:
                 AnalyzeExpressionStatement(expr: expr);
                 break;

@@ -1140,6 +1140,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                     ? new BlockStatement(Statements: [.. h, assignment], Location: loc)
                     : assignment;
             }
+            else if (c.Body is BlockStatement { Statements: [.., ExpressionStatement { IsBecomes: true } becomes] } block)
+            {
+                // A block arm ends with `becomes value`: its lines run, then the value goes into the result.
+                var assignment = new AssignmentStatement(Target: tempRef, Value: becomes.Expression, Location: becomes.Location);
+                clauseBody = LowerStatementFull(stmt: block with { Statements = [.. block.Statements.SkipLast(count: 1), assignment] });
+            }
             else
             {
                 // Body is already a statement; run LowerStatementFull on it.

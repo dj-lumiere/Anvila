@@ -44,6 +44,10 @@ public abstract record Statement(SourceLocation Location) : SyntaxTreeNode(Locat
 public record ExpressionStatement(Expression Expression, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>True for <c>becomes value</c>: the last line of a block arm of a <c>when</c> that gives a value,
+    /// whose value the arm gives.</summary>
+    public bool IsBecomes { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

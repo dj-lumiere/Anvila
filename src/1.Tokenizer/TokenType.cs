@@ -437,6 +437,9 @@ public enum TokenType
     /// the routine. Like `pierce`, it never makes the routine failable and ends its path.</summary>
     Todo,
 
+    /// <summary>Becomes statement keyword - the value of a block arm of a `when` that gives a value, as its last line.</summary>
+    Becomes,
+
 
     /// <summary>`try` prefix keyword — recover a failable call into Maybe[T] (present|absent, no crash info).</summary>
     Try,

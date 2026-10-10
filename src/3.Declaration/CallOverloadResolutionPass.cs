@@ -441,6 +441,20 @@ internal sealed class CallOverloadResolutionPass
             case InsertedTextExpression fstr:
                 WalkInsertedTextExpression(fstr: fstr);
                 break;
+
+            // A `when` that gives a value: its subject and every arm, a block arm's lines included.
+            case WhenExpression valueWhen:
+                if (valueWhen.Expression != null)
+                {
+                    WalkExpression(expr: valueWhen.Expression);
+                }
+
+                foreach (WhenClause c in valueWhen.Clauses)
+                {
+                    WalkStatement(stmt: c.Body);
+                }
+
+                break;
         }
     }
 
