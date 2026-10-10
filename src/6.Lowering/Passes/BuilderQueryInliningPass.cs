@@ -338,16 +338,27 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
     //  Type resolution
 
+    /// <summary>Whether <paramref name="type"/> still has a type parameter in its arguments, at any depth.</summary>
+    private static bool ContainsTypeParameter(TypeSymbol type)
+    {
+        return type is GenericParameterTypeSymbol ||
+               type.TypeArguments is { Count: > 0 } args && args.Any(predicate: ContainsTypeParameter);
+    }
+
     /// <summary>
     /// Resolves the <see cref="TypeSymbol"/> for the receiver of a potential BS call.
     /// Returns null when the receiver is an unbound generic type parameter (can't fold).
     /// </summary>
     private TypeSymbol? ResolveReceiverType(Expression receiver)
     {
-        // 1. Use the expression's ResolvedType if it's a concrete (non-generic-param) type.
+        // 1. Use the expression's ResolvedType if it's a concrete (non-generic-param) type. A type built over a
+        //    parameter (`Check[T]` in a generic body) is not concrete yet: its `T` arm would count no bytes, so it
+        //    DEFERS like a bare parameter, and the fold re-runs on the concrete body after monomorphization.
         if (receiver.ResolvedType is { } rt and not GenericParameterTypeSymbol)
         {
-            return rt;
+            return ContainsTypeParameter(type: rt)
+                ? null
+                : rt;
         }
 
         // 1b. ResolvedType is a generic param -> look it up in the current body's TypeSubs

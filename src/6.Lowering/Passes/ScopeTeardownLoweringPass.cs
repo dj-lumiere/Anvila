@@ -67,12 +67,29 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     {
         foreach (string key in ctx.VariantBodies.Keys.ToList())
         {
-            // Variant/synthesized bodies have no parameter list available here; teardown applies to
-            // their block-local owned vars only.
+            // A variant body has no declaration of its own: its parameters come from the variant's routine. An
+            // entity parameter is owned (passed with `steal`), as in the routine it recovers, and is torn down at
+            // every exit (`check produce(out: steal tx)` closes the channel when `produce` ends).
             _meType = null;
             _movedNames.Clear();
             CollectMovedNames(stmt: ctx.VariantBodies[key: key]);
             var live = new List<Owned>();
+            // A recovery composition's base (`__recover_N`, synthesized) takes the caller's locals as borrowed
+            // parameters, so its variant tears none of them down.
+            if (ctx.Registry.RoutineByRegistryKey(registryKey: key) is { } variant &&
+                variant.RecoveryOf is not { IsSynthesized: true } &&
+                !ctx.Registry.EntitiesAreSharedIn(filePath: variant.Location?.FileName ?? ""))
+            {
+                foreach (ParamInfo p in variant.Parameters)
+                {
+                    if (p.Name != "me" && !_movedNames.Contains(item: p.Name) && p.Type is EntityTypeSymbol pt &&
+                        TryResolveDestroy(type: pt, destroy: out RoutineInfo? d) && d != null)
+                    {
+                        live.Add(item: new Owned(Name: p.Name, Type: pt, Destroy: d));
+                    }
+                }
+            }
+
             Statement lowered = LowerStatement(stmt: ctx.VariantBodies[key: key],
                 live: live,
                 loopBoundary: 0);

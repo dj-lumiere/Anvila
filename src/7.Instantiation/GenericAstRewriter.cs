@@ -2143,7 +2143,14 @@ internal static class GenericAstRewriter
             return null;
         }
 
-        TypeSymbol? typeInfo = ctx.Registry!.LookupType(name: typeName);
+        // A receiver type with arguments (`Check[T].data_size()`) is the instance its substituted arguments name, not
+        // the generic definition its bare name is (whose `T` arm would count no bytes).
+        TypeSymbol? typeInfo = callee.Object switch
+        {
+            TypeExpression { GenericArguments.Count: > 0 } generic => ctx.ResolveTypeExpressionPublic(typeExpr: generic),
+            { ResolvedType: { TypeArguments.Count: > 0 } instance } => ctx.ResolveType(original: instance) ?? instance,
+            _ => ctx.Registry!.LookupType(name: typeName)
+        };
         if (typeInfo == null)
         {
             return null;

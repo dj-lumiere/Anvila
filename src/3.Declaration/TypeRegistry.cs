@@ -567,6 +567,13 @@ public sealed partial class TypeRegistry
     /// <summary>All registered routines by their full name.</summary>
     private readonly Dictionary<string, RoutineInfo> _routines = new();
 
+    /// <summary>The routine registered under <paramref name="registryKey"/> (its <see cref="RoutineInfo.RegistryKey"/>),
+    /// or null.</summary>
+    public RoutineInfo? RoutineByRegistryKey(string registryKey)
+    {
+        return _routines.GetValueOrDefault(key: registryKey);
+    }
+
     /// <summary>Routines indexed by module-qualified name for unambiguous lookup.</summary>
     private readonly Dictionary<string, RoutineInfo> _routinesByQualifiedName = new();
 

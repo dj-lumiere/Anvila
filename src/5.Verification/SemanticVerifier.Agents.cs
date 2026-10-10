@@ -26,8 +26,9 @@ public sealed partial class SemanticVerifier
     /// <summary>Numbers the routines written for <c>agent</c> calls, unique per build.</summary>
     private int _agentSeq;
 
-    /// <summary>The routines written for <c>agent</c> calls whose bodies are not analyzed yet.</summary>
-    private readonly List<RoutineDeclaration> _pendingAgentRoutines = [];
+    /// <summary>The routines written for <c>agent</c> calls whose bodies are not analyzed yet, each with the module
+    /// of the routine its call is written in.</summary>
+    private readonly List<(RoutineDeclaration Routine, string? Module)> _pendingAgentRoutines = [];
 
     private TypeSymbol AnalyzeAgentExpression(AgentExpression agent)
     {
@@ -91,35 +92,44 @@ public sealed partial class SemanticVerifier
             });
         }
 
-        bool returnsNothing = resultType.Name == NoneTypeName;
-        List<Statement> workBody = returnsNothing
-            ? [new ExpressionStatement(Expression: deferred, Location: loc), new ReturnStatement(Value: null, Location: loc)]
-            : [new ReturnStatement(Value: deferred, Location: loc)];
+        // The work returns what the chain came to: `check` keeps its failure, which surfaces where the Agent is
+        // retrieved instead of ending the program where the work runs.
         var work = new RoutineDeclaration(Name: baseName + "_work",
             Parameters: parameters,
-            ReturnType: returnsNothing
-                ? null
-                : Known(type: resultType, loc: loc),
-            Body: new BlockStatement(Statements: workBody, Location: loc),
+            ReturnType: new TypeExpression(Name: "Check", GenericArguments: [Known(type: resultType, loc: loc)],
+                Location: loc),
+            Body: new BlockStatement(Statements:
+                [
+                    new ReturnStatement(Value: new RecoveryExpression(Kind: RecoveryKind.Check, Inner: deferred,
+                        Location: loc), Location: loc)
+                ], Location: loc),
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
             Location: loc) { IsBuilderWritten = true };
         string spawnName = baseName + "_spawn";
+        TypeExpression agentResult = Known(type: resultType, loc: loc);
         RoutineDeclaration spawn = AgentRecipe.BuildSpawn(routine: work, spawnName: spawnName,
-            runName: baseName + "_run");
-        RoutineDeclaration run = AgentRecipe.BuildRun(routine: work, runName: baseName + "_run");
+            runName: baseName + "_run", resultType: agentResult);
+        RoutineDeclaration run = AgentRecipe.BuildRun(routine: work, runName: baseName + "_run",
+            resultType: agentResult);
 
         // Desugar them as every routine is before analysis, then register their signatures now: the call binds
         // to the spawn routine.
+        // They belong to the module of the routine the call is written in, which sees the routines the chain calls.
         var written = new Program(Declarations: [work, spawn, run], Location: loc);
         RunPhase4SyntaxPrepass(program: written);
+        string? module = _currentRoutine?.Module ?? GetCurrentModuleName();
+        string? previousModule = _currentModuleName;
+        _currentModuleName = module;
         foreach (RoutineDeclaration routine in written.Declarations.OfType<RoutineDeclaration>())
         {
             CollectRoutineDeclaration(routine: routine);
         }
 
         _signatureResolver.ResolveAndRegisterPendingRoutines();
-        _pendingAgentRoutines.AddRange(collection: written.Declarations.OfType<RoutineDeclaration>());
+        _currentModuleName = previousModule;
+        _pendingAgentRoutines.AddRange(
+            collection: written.Declarations.OfType<RoutineDeclaration>().Select(selector: r => (r, module)));
 
         RoutineInfo? workInfo = written.Declarations.OfType<RoutineDeclaration>()
                                        .First(predicate: r => r.Name == work.Name)
@@ -168,12 +178,15 @@ public sealed partial class SemanticVerifier
 
         while (_pendingAgentRoutines.Count > 0)
         {
-            List<RoutineDeclaration> batch = [.._pendingAgentRoutines];
+            List<(RoutineDeclaration Routine, string? Module)> batch = [.._pendingAgentRoutines];
             _pendingAgentRoutines.Clear();
-            program.Declarations.AddRange(collection: batch);
-            foreach (RoutineDeclaration routine in batch)
+            program.Declarations.AddRange(collection: batch.Select(selector: b => b.Routine));
+            foreach ((RoutineDeclaration routine, string? module) in batch)
             {
+                string? previousModule = _currentModuleName;
+                _currentModuleName = module;
                 AnalyzeDeclaration(node: routine);
+                _currentModuleName = previousModule;
             }
         }
 

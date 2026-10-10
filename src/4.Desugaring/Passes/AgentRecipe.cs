@@ -8,7 +8,8 @@ namespace Builder.Desugaring.Passes;
 /// <summary>
 /// Builds the two routines behind an <c>agent</c> call (see <c>SemanticVerifier.AnalyzeAgentExpression</c>): one that
 /// turns the call's arguments into an Agent recipe and one that runs that recipe. Given the call's work routine
-/// <c>__agent_N_work(p0: A, p1: B) -> R</c> (the deferred call chain over its parameters), it builds:
+/// <c>__agent_N_work(p0: A, p1: B) -> Check[R]</c> (<c>check</c> over the deferred call chain, written over its
+/// parameters), it builds:
 /// <code>
 /// routine __agent_N_spawn(p0: A, p1: B) -> Agent[R]
 ///     danger
@@ -20,7 +21,8 @@ namespace Builder.Desugaring.Passes;
 /// routine __agent_N_run(recipe: CPtr)
 ///     danger
 ///         var r = recipe.get_address()
-///         agent_finish[R](recipe: r, value: __agent_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...))
+///         var outcome = __agent_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...)
+///         agent_finish[R](recipe: r, outcome: outcome.hijack())
 ///     return
 /// </code>
 /// <para>The <c>agent</c> call becomes a call of the spawn routine, so the arguments are computed where it is
@@ -35,10 +37,10 @@ namespace Builder.Desugaring.Passes;
 internal static class AgentRecipe
 {
     /// <summary>The spawn routine: boxes each argument into a fresh recipe and returns the Agent built over it.</summary>
-    internal static RoutineDeclaration BuildSpawn(RoutineDeclaration routine, string spawnName, string runName)
+    internal static RoutineDeclaration BuildSpawn(RoutineDeclaration routine, string spawnName, string runName,
+        TypeExpression resultType)
     {
         SourceLocation loc = routine.Location;
-        TypeExpression resultType = ResultType(routine: routine);
 
         var statements = new List<Statement>
         {
@@ -102,7 +104,7 @@ internal static class AgentRecipe
 
     /// <summary>The run routine <c>(recipe: CPtr)</c>, the entry of the fiber or thread that runs the Agent: moves the
     /// arguments out of the recipe, calls the work routine and completes the task with its result.</summary>
-    internal static RoutineDeclaration BuildRun(RoutineDeclaration routine, string runName)
+    internal static RoutineDeclaration BuildRun(RoutineDeclaration routine, string runName, TypeExpression resultType)
     {
         SourceLocation loc = routine.Location;
         var cptr = new TypeExpression(Name: "CPtr", GenericArguments: null, Location: loc);
@@ -149,29 +151,30 @@ internal static class AgentRecipe
                 Location: loc)
         };
 
-        if (routine.ReturnType == null)
-        {
-            statements.Add(item: new ExpressionStatement(Expression: direct, Location: loc));
-            statements.Add(item: new ExpressionStatement(
-                Expression: Call(name: "agent_finish_none",
-                    typeArguments: null,
-                    arguments: [Named(name: "recipe", value: Id(name: "r", loc: loc))],
-                    loc: loc),
-                Location: loc));
-        }
-        else
-        {
-            statements.Add(item: new ExpressionStatement(
-                Expression: Call(name: "agent_finish",
-                    typeArguments: [routine.ReturnType],
-                    arguments:
-                    [
-                        Named(name: "recipe", value: Id(name: "r", loc: loc)),
-                        Named(name: "value", value: direct)
-                    ],
-                    loc: loc),
-                Location: loc));
-        }
+        // The work returns what it came to (`check` over the call chain): a failure stays in the Agent and surfaces
+        // where the Agent is retrieved. The outcome is a local that `agent_finish` moves into the task's box.
+        statements.Add(item: new DeclarationStatement(
+            Declaration: new VariableDeclaration(Name: "outcome",
+                Type: null,
+                Initializer: direct,
+                Visibility: VisibilityModifier.Open,
+                Location: loc),
+            Location: loc));
+        statements.Add(item: new ExpressionStatement(
+            Expression: Call(name: "agent_finish",
+                typeArguments: [resultType],
+                arguments:
+                [
+                    Named(name: "recipe", value: Id(name: "r", loc: loc)),
+                    Named(name: "outcome",
+                        value: new CallExpression(
+                            Callee: new MemberExpression(Object: Id(name: "outcome", loc: loc), MemberName: "hijack",
+                                Location: loc),
+                            Arguments: [],
+                            Location: loc))
+                ],
+                loc: loc),
+            Location: loc));
 
         return new RoutineDeclaration(Name: runName,
             Parameters: parameters,
@@ -199,13 +202,6 @@ internal static class AgentRecipe
             ? new TypeExpression(Name: RuntimeContract.Hijacked, GenericArguments: [parameter.Type!],
                 Location: parameter.Location)
             : parameter.Type!;
-    }
-
-    /// <summary>The Agent's result type: the routine's return type, or <c>None</c> when it returns nothing.</summary>
-    private static TypeExpression ResultType(RoutineDeclaration routine)
-    {
-        return routine.ReturnType ??
-               new TypeExpression(Name: "None", GenericArguments: null, Location: routine.Location);
     }
 
     internal static Expression Call(string name, List<TypeExpression>? typeArguments, List<Expression> arguments,

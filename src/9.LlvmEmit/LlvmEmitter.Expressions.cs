@@ -622,7 +622,8 @@ public partial class LlvmEmitter
         }
         else if (concreteType != null)
         {
-            loadType = GetLlvmType(type: concreteType);
+            // A None payload (`Check[None]`) is the empty record `{}`, as a None value is everywhere.
+            loadType = GetValueLlvmType(type: concreteType);
         }
         else
         {
