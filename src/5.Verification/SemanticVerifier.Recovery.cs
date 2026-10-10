@@ -32,6 +32,9 @@ public sealed partial class SemanticVerifier
     /// <summary>Prefix for hoisted per-sub-call temporaries in a composition base body.</summary>
     private const string RecoveryTempPrefix = "__rc_t";
 
+    /// <summary>The parameter a composition base body reads the enclosing routine's <c>me</c> through.</summary>
+    private const string RecoveryMeAlias = "__rc_me";
+
     /// <summary>
     /// Analyzes a <c>try</c>/<c>check</c> <see cref="RecoveryExpression"/> as a whole-expression
     /// composition (see the class remarks). Returns the carrier type (Maybe/Check[T], None-collapsed);
@@ -148,6 +151,12 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
+            if (name == RecoveryMeAlias && hoister.MeType is { } meType)
+            {
+                freeParams.Add(item: new ParamInfo(name: name, type: meType));
+                continue;
+            }
+
             VariableInfo? local = _registry.LookupVariable(name: name);
             if (local != null)
             {
@@ -229,7 +238,9 @@ public sealed partial class SemanticVerifier
         List<Expression> args = freeParams
                                 .Select(selector: p =>
                                  {
-                                     var value = new IdentifierExpression(Name: p.Name, Location: recovery.Location);
+                                     var value = new IdentifierExpression(
+                                         Name: p.Name == RecoveryMeAlias ? "me" : p.Name,
+                                         Location: recovery.Location);
                                      AnalyzeExpression(expression: value);
                                      return (Expression)new NamedArgumentExpression(Name: p.Name,
                                          Value: value,
@@ -387,8 +398,20 @@ public sealed partial class SemanticVerifier
         /// <summary>Every identifier name seen while walking the expression.</summary>
         public HashSet<string> ReferencedNames { get; } = new(comparer: StringComparer.Ordinal);
 
+        /// <summary>The type of the enclosing routine's <c>me</c> when the expression reads it, else null.</summary>
+        public TypeSymbol? MeType { get; private set; }
+
         public override Expression VisitExpression(Expression expr)
         {
+            // `me` is the enclosing member routine's receiver, not a local: the synthesized base routine is a free
+            // routine, so it takes the receiver as an ordinary parameter under another name.
+            if (expr is IdentifierExpression { Name: "me" } me)
+            {
+                MeType = me.ResolvedType;
+                ReferencedNames.Add(item: RecoveryMeAlias);
+                return me with { Name = RecoveryMeAlias };
+            }
+
             if (expr is IdentifierExpression id)
             {
                 ReferencedNames.Add(item: id.Name);
