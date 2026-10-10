@@ -21,7 +21,7 @@ internal static class ControlFlowExits
         {
             ReturnStatement => true,
             ThrowStatement => true,
-            BlockStatement block => block.Statements.Any(predicate: s =>
+            BlockStatement block => block.HadParseError || block.Statements.Any(predicate: s =>
                 AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: s)),
             IfStatement { ElseStatement: not null } ifStmt =>
                 AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: ifStmt.ThenStatement) &&

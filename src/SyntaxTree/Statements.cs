@@ -688,6 +688,10 @@ public record BlockStatement(List<Statement> Statements, SourceLocation Location
     /// </summary>
     public bool IntroducesScope { get; init; } = true;
 
+    /// <summary>True when a statement of the block did not parse (the parser reported it and went on): what the block
+    /// does is not known, so a check like "every path returns" takes it as returning instead of adding to the report.</summary>
+    public bool HadParseError { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

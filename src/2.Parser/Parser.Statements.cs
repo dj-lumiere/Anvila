@@ -238,6 +238,12 @@ public partial class Parser
         else
         {
             variable = ConsumeIdentifier(errorMessage: "Expected variable name");
+            if (Check(type: TokenType.Comma))
+            {
+                throw ThrowParseError(message:
+                    $"Several names after 'each' go in parentheses, as a tuple: 'each ({variable}, ...) in ...'. A " +
+                    "dictionary's pairs are 'each (key, value) in d.items()'.");
+            }
         }
 
         Consume(type: TokenType.In, errorMessage: "Expected 'in' in for loop");
@@ -1542,6 +1548,7 @@ public partial class Parser
         // Process the indent token
         ProcessIndentToken();
 
+        bool hadParseError = false;
         // Parse statements until we hit a dedent
         while (!Check(type: TokenType.Dedent) && !IsAtEnd)
         {
@@ -1565,6 +1572,7 @@ public partial class Parser
                 _errors.Add(item: ex.Message);
                 DiagnosticRenderer.Print(ex: ex, writer: Console.Error);
                 SynchronizeWithinBlock();
+                hadParseError = true;
             }
         }
 
@@ -1579,7 +1587,7 @@ public partial class Parser
                 message: "Expected dedent to close indented block");
         }
 
-        return new BlockStatement(Statements: statements, Location: location);
+        return new BlockStatement(Statements: statements, Location: location) { HadParseError = hadParseError };
     }
 
     /// <summary>

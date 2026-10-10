@@ -269,10 +269,17 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             // `drop xs.remove_last()` drops a value the call handed over, so it is torn down when the
             // statement ends (a record a member routine returns is its own, never an alias of the receiver).
             case DropStatement dropped:
-                return SpillAround(owner: dropped,
+            {
+                // An entity a call hands over is its own (a RazorForge routine never returns one it still keeps), so
+                // the dropped one is torn down too.
+                _droppedEntityTop = dropped.Expression is CallExpression or CreatorExpression;
+                Statement lowered = SpillAround(owner: dropped,
                     root: dropped.Expression,
                     rebuildWithCondition: e => dropped with { Expression = e },
                     topOwning: false);
+                _droppedEntityTop = false;
+                return lowered;
+            }
 
             case DeclarationStatement { Declaration: VariableDeclaration v } ds
                 when v.Initializer != null:
@@ -758,8 +765,19 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// <summary>Spills <paramref name="e"/> when it sits in a discard/borrow position and is a
     /// spillable owned producer (the discarded-value case — no aliasing concern since the value is
     /// not stored anywhere).</summary>
+    /// <summary>True while the value a <c>drop</c> statement throws away is visited: an entity a call there hands over
+    /// (the dropped one, or a receiver made for one call) is spilled and torn down when the statement ends.</summary>
+    private bool _droppedEntityTop;
+
     private Expression MaybeSpillTop(Expression e, bool objectPos, List<Spill> spills)
     {
+        if (objectPos && _droppedEntityTop && e is CallExpression or CreatorExpression &&
+            e.ResolvedType is EntityTypeSymbol droppedEntity &&
+            ctx.Registry.GetLifecycle(type: droppedEntity) is { IsBorrow: false, Destroy: not null })
+        {
+            return MakeSpill(producer: e, spills: spills);
+        }
+
         if (objectPos && IsSpillableProducer(e: e))
         {
             return MakeSpill(producer: e, spills: spills);
