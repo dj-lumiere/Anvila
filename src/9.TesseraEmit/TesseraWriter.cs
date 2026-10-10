@@ -256,9 +256,9 @@ internal sealed class TesseraWriter
         _definitions.Append(value: $$"""
             /// A crash message as UTF-8.
             private routine {{_textBytes}}(text: {{TypeText(type: TextType)}}) -> Bytes
-                shared data  : @U32        = text.data
-                shared count : U64         = text.count
-                shared utf8  : @List[Byte] <- .construct()
+                local data: @U32 = text.data
+                local count: U64 = text.count
+                local utf8: @List[Byte] <- .construct()
 
                 block entry()
                     jump each(0)

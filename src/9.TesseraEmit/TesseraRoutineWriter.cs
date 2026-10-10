@@ -739,10 +739,10 @@ internal sealed class TesseraRoutineWriter
             }
             case AddressOfExpression address:
             {
+                // A value without storage of its own (a call's result, a field of one) is spilled into a slot of
+                // the routine, as the LLVM emitter spills it, and that slot is the address.
                 Operand storage = Evaluate(expression: address.Target);
-                return storage.IsPlace
-                    ? new Operand(Text: storage.Text, Type: address.ResolvedType, IsPlace: false)
-                    : throw Unsupported(what: "the address of a value that has no storage");
+                return new Operand(Text: Place(operand: storage), Type: address.ResolvedType, IsPlace: false);
             }
             case BinaryExpression { Operator: BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual } identity:
                 return EvaluateIdentity(identity: identity);
@@ -1195,7 +1195,8 @@ internal sealed class TesseraRoutineWriter
         }
 
         // Tessera names each argument of a routine taking two or more, `me` included: its parameters are `arg_<name>`.
-        if (arguments.Count >= 2)
+        // A C routine takes its arguments in order.
+        if (arguments.Count >= 2 && routine.CallingConvention != "C")
         {
             List<string> names = (hasReceiver ? ["arg_me"] : new List<string>())
                                  .Concat(second: routine.Parameters.Select(selector: p => $"arg_{p.Name}"))
