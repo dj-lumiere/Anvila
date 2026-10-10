@@ -63,6 +63,9 @@ public sealed partial class SemanticVerifier
         bool elseExits = ifStmt.ElseStatement != null &&
                          ControlFlowExits.HasDefiniteExit(statement: ifStmt.ElseStatement);
         var afterElse = new HashSet<string>(collection: _deadrefVariables);
+        CheckTakenOnEveryPath(paths: [(afterThen, thenExits), (afterElse, elseExits)], before: deadrefBefore,
+            construct: "if", at: ifStmt.Location);
+
         // Merge: a variable is dead after the `if` iff it is dead on some path that FALLS
         // THROUGH. Steals confined to an exiting branch are dropped. (With no else branch,
         // `afterElse` is the pre-if state, i.e. the condition-false fall-through.)
@@ -82,6 +85,40 @@ public sealed partial class SemanticVerifier
         if (ifStmt.ElseStatement == null && ControlFlowExits.HasDefiniteExit(statement: ifStmt.ThenStatement))
         {
             ApplyGuardClauseNarrowing(narrowing: narrowing, variantNarrowing: variantNarrowing);
+        }
+    }
+
+    /// <summary>
+    /// Reports a binding from outside a branching statement that <c>steal</c> takes on some of the paths going on past
+    /// it and not on others (RF-S616). Only the bindings still in scope after it count: one declared inside a branch
+    /// ends with that branch anyway.
+    /// </summary>
+    private void CheckTakenOnEveryPath(List<(HashSet<string> Dead, bool Exits)> paths, HashSet<string> before,
+        string construct, SourceLocation at)
+    {
+        List<HashSet<string>> onward = paths.Where(predicate: p => !p.Exits)
+                                            .Select(selector: p => p.Dead)
+                                            .ToList();
+        if (onward.Count < 2)
+        {
+            return;
+        }
+
+        foreach (string name in onward.SelectMany(selector: d => d)
+                                      .Where(predicate: n => !before.Contains(item: n))
+                                      .Distinct()
+                                      .Order(comparer: StringComparer.Ordinal))
+        {
+            if (_registry.LookupVariable(name: name) is null || onward.All(predicate: d => d.Contains(item: name)))
+            {
+                continue;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.StealOnSomePaths,
+                message: $"'{name}' is taken with 'steal' on some paths through this '{construct}' and kept on " +
+                         $"others. What a scope holds is torn down at its end by one rule, so take '{name}' on every " +
+                         $"path that goes on past the '{construct}', or on none.",
+                location: at);
         }
     }
 
@@ -398,8 +435,18 @@ public sealed partial class SemanticVerifier
         bool handledCrashable = false;
         bool handledValue = false;
 
+        // Each arm runs from the state before the `when`: one arm's `steal` is not seen by the next.
+        var deadrefBefore = new HashSet<string>(collection: _deadrefVariables);
+        var armEnds = new List<(HashSet<string> Dead, bool Exits)>();
+
         foreach (WhenClause clause in whenStmt.Clauses)
         {
+            if (armEnds.Count > 0 || clause != whenStmt.Clauses[index: 0])
+            {
+                _deadrefVariables.Clear();
+                _deadrefVariables.UnionWith(other: deadrefBefore);
+            }
+
             _registry.EnterScope(kind: ScopeKind.Block, name: "when_clause");
             bool handled = AnalyzeWhenClause(clause: clause,
                 matchedType: matchedType,
@@ -410,12 +457,22 @@ public sealed partial class SemanticVerifier
                 handledNoneValue: ref handledNoneValue,
                 handledCrashable: ref handledCrashable,
                 handledValue: ref handledValue);
+            armEnds.Add(item: (new HashSet<string>(collection: _deadrefVariables),
+                ControlFlowExits.HasDefiniteExit(statement: clause.Body)));
             if (handled)
             {
                 continue;
             }
 
             _registry.ExitScope();
+        }
+
+        CheckTakenOnEveryPath(paths: armEnds, before: deadrefBefore, construct: "when", at: whenStmt.Location);
+        _deadrefVariables.Clear();
+        _deadrefVariables.UnionWith(other: deadrefBefore);
+        foreach ((HashSet<string> dead, bool exits) in armEnds.Where(predicate: a => !a.Exits))
+        {
+            _deadrefVariables.UnionWith(other: dead);
         }
 
         if (matchedType is ChoiceTypeSymbol or VariantTypeSymbol || IsCarrierType(type: matchedType) ||

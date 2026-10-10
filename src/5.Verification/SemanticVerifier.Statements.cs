@@ -636,6 +636,8 @@ public sealed partial class SemanticVerifier
                 break;
 
             case LoopStatement loopStmt:
+            {
+                var deadBeforeLoop = new HashSet<string>(collection: _deadrefVariables);
                 _registry.EnterScope(kind: ScopeKind.Loop, name: "loop");
                 // A lowered `each x in a` loop carries the surface source name so the
                 // reshaping-during-iteration check can fire even though the EachStatement was
@@ -650,7 +652,9 @@ public sealed partial class SemanticVerifier
                 }
 
                 _registry.ExitScope();
+                ReportTakenInLoop(loop: loopStmt, before: deadBeforeLoop);
                 break;
+            }
 
             case EachStatement eachStmt:
                 AnalyzeEachStatement(eachStmt: eachStmt);
@@ -1289,6 +1293,34 @@ public sealed partial class SemanticVerifier
     {
         return "This agent call builds an Agent that nothing starts, so its work never runs. Start it at once " +
                "with `(agent ...).start_now()`, or keep it in a variable, start it, and `.retrieve()` it later.";
+    }
+
+    /// <summary>
+    /// Reports a binding from outside a loop that a turn of the loop takes with <c>steal</c> and goes on without: the
+    /// next turn would find it gone (RF-S616). A take followed by leaving the loop (`return`, `break`) is fine: the
+    /// branch that leaves does not reach the loop's next turn.
+    /// </summary>
+    private void ReportTakenInLoop(LoopStatement loop, HashSet<string> before)
+    {
+        if (ControlFlowExits.HasDefiniteExit(statement: loop.Body))
+        {
+            return; // every turn leaves the loop: there is no next turn
+        }
+
+        foreach (string name in _deadrefVariables.Where(predicate: n => !before.Contains(item: n))
+                                                 .Order(comparer: StringComparer.Ordinal))
+        {
+            if (_registry.LookupVariable(name: name) is null)
+            {
+                continue;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.StealOnSomePaths,
+                message: $"'{name}' is taken with 'steal' in a turn of this loop that goes on to the next turn, where " +
+                         $"it is gone. Take it where the loop ends ('return', 'break' right after), or declare it " +
+                         "inside the loop so each turn has its own.",
+                location: loop.Location);
+        }
     }
 
     private void AnalyzeExpressionStatement(ExpressionStatement expr)
