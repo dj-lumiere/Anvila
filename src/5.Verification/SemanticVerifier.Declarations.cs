@@ -1412,9 +1412,6 @@ public sealed partial class SemanticVerifier
             CheckParentProtocols(proto: protoSymbol, targetName: marker));
     }
 
-    /// <summary>The name a protocol gives a creator requirement (<c>routine Me!(text: Text)</c>).</summary>
-    private const string ProtocolCreatorRequirementName = "Me";
-
     /// <summary>
     /// A protocol's creator requirement (<c>routine Me!(text: Text)</c>) is met by a creator of the type that
     /// takes the same parameters, by name and type, with <c>Me</c> standing for the type. A creator that
@@ -1488,7 +1485,7 @@ public sealed partial class SemanticVerifier
         }
 
         // `routine Me!(text: Text)` requires a creator, which the type writes under its own name.
-        if (requiredMemberRoutine is { Name: ProtocolCreatorRequirementName, IsInstanceMemberRoutine: false })
+        if (requiredMemberRoutine.IsCreatorRequirement)
         {
             ValidateRequiredProtocolCreator(type: type,
                 protocol: protocol,

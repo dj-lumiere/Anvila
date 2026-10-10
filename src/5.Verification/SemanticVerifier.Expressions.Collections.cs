@@ -1168,7 +1168,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private List<TypeSymbol>? InferMemberRoutineGenericTypeArguments(
         RoutineInfo genericMemberRoutine, List<Expression> arguments,
-        TypeSymbol? receiverType = null)
+        TypeSymbol? receiverType = null, TypeSymbol? expectedType = null)
     {
         if (genericMemberRoutine.GenericParameters == null ||
             genericMemberRoutine.GenericParameters.Count == 0)
@@ -1215,6 +1215,16 @@ public sealed partial class SemanticVerifier
 
         // Infer still-unbound generics from `needs` constraints (e.g. U from `S obeys Iterable[U]`).
         InferGenericsFromConstraints(routine: genericMemberRoutine, inferred: inferred);
+
+        // A type parameter only the result mentions (`count.to() -> T`) binds from where the result goes: the
+        // declared variable, the return type, the parameter, or the payload of a `try`/`check` carrier.
+        if (expectedType is not (null or ErrorTypeSymbol) && genericMemberRoutine.ReturnType is { } returnType)
+        {
+            InferMemberRoutineTypeArgumentsFromTypes(paramType: returnType,
+                argType: expectedType,
+                genericParameters: genericMemberRoutine.GenericParameters,
+                inferred: inferred);
+        }
 
         for (int i = 0; i < inferred.Length; i++)
         {

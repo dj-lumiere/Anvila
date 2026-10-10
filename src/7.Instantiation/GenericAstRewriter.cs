@@ -522,7 +522,7 @@ internal static class GenericAstRewriter
                         ? ResolveFreeRoutine(original: recovered, resolvedParamTypes: resolvedParamTypes)
                         : null;
                 return resolvedBase is { IsRecoveryVariant: false }
-                    ? Registry.LookupRecoveryVariant(recovered: resolvedBase, kind: recovery)
+                    ? RecoveryVariantOrPlain(resolved: resolvedBase, kind: recovery)
                     : null;
             }
 
@@ -818,8 +818,20 @@ internal static class GenericAstRewriter
                 _ => null
             };
             return recovery is { } kind && resolved is { IsRecoveryVariant: false }
-                ? Registry.LookupRecoveryVariant(recovered: resolved, kind: kind)
+                ? RecoveryVariantOrPlain(resolved: resolved, kind: kind)
                 : resolved;
+        }
+
+        /// <summary>
+        /// The variant of <paramref name="resolved"/> a call bound to a recovery variant takes once its target is
+        /// concrete. A target that cannot fail (`T(from: x)` that became the widening `S64(from: S32)`) has no
+        /// variant: the call is the plain one, and the variant return around it wraps its value
+        /// (<see cref="RewriteVariantReturn"/>).
+        /// </summary>
+        internal RoutineInfo? RecoveryVariantOrPlain(RoutineInfo resolved, RecoveryKind kind)
+        {
+            RoutineInfo? variant = Registry!.LookupRecoveryVariant(recovered: resolved, kind: kind);
+            return variant ?? (Registry.CanFailUnderRecovery(routine: resolved) ? null : resolved);
         }
 
         private RoutineInfo? ResolveMemberCallRoutine(MemberExpression member,
@@ -2003,9 +2015,18 @@ internal static class GenericAstRewriter
             GenericMemberExpression gme => gme.TypeArguments,
             _ => call.TypeArguments
         };
-        return ctx.ResolveMemberRoutineGenericFromTypeArgs(
+        RoutineInfo? instance = ctx.ResolveMemberRoutineGenericFromTypeArgs(
             routine: resolved ?? call.ResolvedRoutine,
-            typeArgExprs: typeArgs) ?? resolved;
+            typeArgExprs: typeArgs);
+        // A call bound to a recovery variant (`check total.to[U64]()` inside a recovery body) keeps recovering:
+        // the instance is the failable routine, and the call takes its variant.
+        if (instance is { IsRecoveryVariant: false } &&
+            (resolved ?? call.ResolvedRoutine)?.Recovery is { } recovery)
+        {
+            instance = ctx.RecoveryVariantOrPlain(resolved: instance, kind: recovery);
+        }
+
+        return instance ?? resolved;
     }
 
     /// <summary>
@@ -2473,12 +2494,7 @@ internal static class GenericAstRewriter
                 Initializer = RewriteExpression(expr: destruct.Initializer, ctx: ctx)
             },
 
-            VariantReturnStatement vr => vr with
-            {
-                Value = vr.Value != null
-                    ? RewriteExpression(expr: vr.Value, ctx: ctx)
-                    : null
-            },
+            VariantReturnStatement vr => RewriteVariantReturn(vr: vr, ctx: ctx),
 
             // Leaf statements
             BreakStatement or ContinueStatement or PassStatement => stmt,
@@ -3157,6 +3173,28 @@ internal static class GenericAstRewriter
                 };
             }
         }
+    }
+
+    /// <summary>
+    /// Rewrites a variant return. A passthrough of an inner call's variant whose target turned out not to fail
+    /// (it was rebound to the plain routine, see <c>RecoveryVariantOrPlain</c>) returns that call's value as a
+    /// success instead.
+    /// </summary>
+    private static Statement RewriteVariantReturn(VariantReturnStatement vr, RewriteContext ctx)
+    {
+        Expression? value = vr.Value != null
+            ? RewriteExpression(expr: vr.Value, ctx: ctx)
+            : null;
+        if (vr.SiteKind == VariantSiteKind.FromVariantPassthrough &&
+            value is CallExpression { ResolvedRoutine: { IsRecoveryVariant: false } plain } plainCall &&
+            vr.Value is CallExpression { ResolvedRoutine.IsRecoveryVariant: true } &&
+            ctx.Registry?.CanFailUnderRecovery(routine: plain) == false)
+        {
+            plainCall.ResolvedType = plain.ReturnType ?? plainCall.ResolvedType;
+            return vr with { SiteKind = VariantSiteKind.FromReturn, Value = plainCall };
+        }
+
+        return vr with { Value = value };
     }
 
     /// <summary>

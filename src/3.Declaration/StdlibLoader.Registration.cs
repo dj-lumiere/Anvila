@@ -994,7 +994,8 @@ public sealed partial class StdlibLoader
             DeclaredMutation =
                 Verification.Enums.MutationCategoryExtensions.FromAnnotations(
                     annotations: routine.Annotations),
-            IsDangerous = routine.IsDangerous
+            IsDangerous = routine.IsDangerous,
+            Visibility = routine.Visibility
         };
 
         if (routineKind == RoutineKind.Creator &&

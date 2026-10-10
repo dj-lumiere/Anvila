@@ -17,6 +17,13 @@ public sealed class ProtocolMemberRoutineInfo
     /// </summary>
     public bool IsInstanceMemberRoutine { get; init; } = true;
 
+    /// <summary>The name a protocol writes its creator requirement under (<c>routine Me!(from: S) -> Me</c>).</summary>
+    public const string CreatorRequirementName = "Me";
+
+    /// <summary>True for a creator requirement (<c>routine Me!(from: S) -> Me</c>): the implementer writes it as its
+    /// own creator, and a type parameter bound by the protocol builds through it (<c>T(from: x)</c>).</summary>
+    public bool IsCreatorRequirement => !IsInstanceMemberRoutine && Name == CreatorRequirementName;
+
     /// <summary>The mutation category for this memberRoutine.</summary>
     public MutationCategory Mutation { get; init; } = MutationCategory.Reshaping;
 

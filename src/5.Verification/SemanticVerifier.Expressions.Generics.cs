@@ -125,6 +125,10 @@ public sealed partial class SemanticVerifier
                 return ErrorTypeSymbol.Instance;
             }
 
+            ValidateCreatorRequirementConstraints(routine: memberRoutine,
+                bindings: CallTypeBindings(routine: memberRoutine, receiverType: objectType, typeArgs: typeArgs),
+                location: generic.Location);
+
             memberRoutine = mono;
         }
 
@@ -147,6 +151,7 @@ public sealed partial class SemanticVerifier
         generic.ResolvedRoutine = memberRoutine;
         generic.LoweringKind = ClassifyMemberRoutineCall(memberRoutine: memberRoutine);
         generic.IsInFlight = memberRoutine.IsInFlightReturn;
+        TrackFailableMemberRoutineCall(memberRoutine: memberRoutine, location: generic.Location);
 
         if (memberRoutine.ReturnType == null)
         {
@@ -177,6 +182,38 @@ public sealed partial class SemanticVerifier
         return SubstituteGenericParamsInReturnType(returnType: returnType,
             memberRoutine: memberRoutine,
             typeArgs: typeArgs);
+    }
+
+    /// <summary>
+    /// What a call binds <paramref name="routine"/>'s type parameters to: its own, from <paramref name="typeArgs"/>,
+    /// the receiver's parameters from <paramref name="receiverType"/>, and the receiver itself for a routine of any
+    /// type (<c>N</c> of <c>routine N.to[T]()</c>).
+    /// </summary>
+    private static Dictionary<string, TypeSymbol> CallTypeBindings(RoutineInfo routine, TypeSymbol receiverType,
+        List<TypeSymbol> typeArgs)
+    {
+        // A routine of any type binds only its receiver parameter (`N`): the receiver's own parameters (`T` of
+        // `List[T]`) are not its, whatever their names.
+        Dictionary<string, TypeSymbol> bindings;
+        if ((routine.GenericDefinition ?? routine).OwnerType is GenericParameterTypeSymbol receiverParameter)
+        {
+            bindings = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal)
+            {
+                [key: receiverParameter.Name] = receiverType
+            };
+        }
+        else
+        {
+            bindings = BuildOwnerBindingMap(ownerType: receiverType);
+        }
+
+        List<string> own = routine.GenericParameters?.Where(predicate: p => !bindings.ContainsKey(key: p)).ToList() ?? [];
+        for (int i = 0; i < own.Count && i < typeArgs.Count; i++)
+        {
+            bindings[key: own[index: i]] = typeArgs[index: i];
+        }
+
+        return bindings;
     }
 
     /// <summary>
@@ -222,8 +259,12 @@ public sealed partial class SemanticVerifier
         GenericMemberRoutineCallExpression generic, TypeSymbol objectType,
         RoutineInfo memberRoutine, List<TypeSymbol> typeArgs)
     {
+        // A routine of any type (`routine N.to[T]()`) owns all of its parameters: the receiver's own parameters
+        // (`T` of `List[T]`) are not among them, whatever their names.
         HashSet<string> ownerGenericParamNames =
-            GetOwnerGenericParameterNames(ownerType: objectType);
+            (memberRoutine.GenericDefinition ?? memberRoutine).OwnerType is GenericParameterTypeSymbol
+                ? []
+                : GetOwnerGenericParameterNames(ownerType: objectType);
         List<string> memberRoutineOnlyParams = memberRoutine.GenericParameters
                                                            ?.Where(predicate: gp =>
                                                                  !ownerGenericParamNames.Contains(

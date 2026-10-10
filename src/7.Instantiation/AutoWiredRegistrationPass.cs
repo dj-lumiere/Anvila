@@ -590,25 +590,7 @@ internal sealed class AutoWiredRegistrationPass
             returnType: type,
             existingMemberRoutines: existingMemberRoutines);
 
-        // S64.create(from: ChoiceType) — choice_val.S64() desugars to S64.create(from: choice_val)
-        if (s64Type != null && !type.IsGenericDefinition &&
-            _registry.LookupCreatorOverload(type: s64Type, argTypes: [type]) == null)
-        {
-            _registry.RegisterRoutine(routine: new RoutineInfo(name: RoutineInfo.CreatorName)
-            {
-                Kind = RoutineKind.Creator,
-                OwnerType = s64Type,
-                Parameters = [new ParamInfo(name: "from", type: type)],
-                ReturnType = s64Type,
-                IsFailable = false,
-                DeclaredMutation = MutationCategory.Readonly,
-                MutationCategory = MutationCategory.Readonly,
-                Visibility = VisibilityModifier.Open,
-                IsSynthesized = true
-            });
-        }
-
-        // `S32(from: ChoiceType)` is NOT registered as a phantom creator here. A choice IS its S32
+        // `S32(from: ChoiceType)` and `S64(from: ChoiceType)` are NOT registered as phantom creators here. A choice IS its S32
         // discriminant (both i32), so reading it back as S32 is a representation no-op — modelled as the
         // universal template `routine S32(from: ChoiceType T)` in Derivation.rf (`LLVM::reinterpret_bits`),
         // which the demand collector materializes into a real bitcast body per concrete choice. A bodyless

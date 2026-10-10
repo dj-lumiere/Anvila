@@ -289,7 +289,7 @@ public static class RuntimeContract
     /// declared stdlib type, so it cannot be resolution-checked.</summary>
     public static readonly IReadOnlyList<string> StdlibTypeContracts =
     [
-        Atomic, Controlling, Accessing
+        Atomic, Controlling, Accessing, ConvertibleFrom
     ];
 
     // =====================================================================================
@@ -436,6 +436,18 @@ public static class RuntimeContract
 
     /// <summary>Atomic value wrapper.</summary>
     public const string Atomic = "Atomic";
+
+    /// <summary>The number types a program converts to with <c>x.to[T]()</c> only (their conversion creators are
+    /// secret to the library, and the migrate tool rewrites the old creator calls into <c>to</c>).</summary>
+    public static readonly IReadOnlySet<string> ConversionNumberTypes = new HashSet<string>(comparer: StringComparer.Ordinal)
+    {
+        "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256",
+        "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256"
+    };
+
+    /// <summary>The protocol a conversion's target obeys (<c>T obeys ConvertibleFrom[N]</c> for <c>n.to[T]()</c>):
+    /// its creator requirement <c>Me!(from: S)</c> is the conversion.</summary>
+    public const string ConvertibleFrom = "ConvertibleFrom";
 
     /// <summary>Marker protocol whose coercion mints a controlling borrow (<see cref="Control"/>).</summary>
     public const string Controlling = "Controlling";

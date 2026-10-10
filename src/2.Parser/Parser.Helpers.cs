@@ -80,7 +80,8 @@ public partial class Parser
     /// <param name="type">The token type to test.</param>
     private static bool IsKeywordValidAsMemberRoutineName(TokenType type)
     {
-        return type == TokenType.NoneValue;
+        // `none` (`BitArray[N].none()`) and `to` (`count.to[U8]()`, the conversion) read as names after a dot.
+        return type is TokenType.NoneValue or TokenType.To;
     }
 
     /// <summary>

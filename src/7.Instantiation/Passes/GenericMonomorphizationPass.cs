@@ -1139,8 +1139,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             // TaskSpawnError lowers to a non-Creator node), so the CreatorExpression case below misses it.
             // Catch the ThrowStatement directly and MarkOwner its error TYPE — ForceSeedOwner then seeds
             // the crash formatter closure. Mirrors EmitThrow exactly (every reached throw ⇒ crash_message).
-            AstWalker.Walk(root: body,
-                visit: n =>
+            // The nodes are collected before anything is discovered: a discovery can analyze a library file on
+            // demand, and that lowers bodies in place, this one included.
+            var walkedNodes = new List<object>();
+            AstWalker.Walk(root: body, visit: walkedNodes.Add);
+            walkedNodes.ForEach(
+                action: n =>
                 {
                     // A recovery variant's throw lands in its carrier: no crash_report, but the caught error's
                     // type is a reached crashable, so the carrier's dispatches (crash_message, destroy) reach it.
@@ -1191,8 +1195,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                         _ => null
                     });
                 });
-            AstWalker.WalkExpressions(root: body,
-                visit: expr =>
+            var walkedExpressions = new List<Expression>();
+            AstWalker.WalkExpressions(root: body, visit: walkedExpressions.Add);
+            walkedExpressions.ForEach(
+                action: expr =>
                 {
                     // A carrier built around a caught crashable: its heap object points at the crashable's mold,
                     // which names these routines.

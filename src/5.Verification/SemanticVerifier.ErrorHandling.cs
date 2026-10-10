@@ -197,20 +197,19 @@ public sealed partial class SemanticVerifier
                    EnsureVariantsForRecoverableBody(routine: baseRoutine, body: recoverable);
         }
 
-        if (baseRoutine is { OwnerType: ProtocolTypeSymbol, IsFailable: true })
+        // A protocol's routine, or a protocol's requirement reached through a type parameter it binds (`T(from: x)`
+        // under `needs T obeys ConvertibleFrom[N]`): the variant is a signature that instantiation rebinds to the
+        // concrete routine's own variant.
+        if (baseRoutine is { OwnerType: ProtocolTypeSymbol, IsFailable: true } or
+            { OwnerType: GenericParameterTypeSymbol, IsSynthesized: true, IsFailable: true })
         {
             if (_synthesizedVariantBases.Add(item: baseRoutine.RegistryKey))
             {
-                _registry.RegisterRoutine(
-                    routine: new ErrorHandlingGenerator(registry: _registry).GenerateTryVariantStub(
-                        original: baseRoutine));
-                // An iterator's step in a recovery variant takes the check variant (RoutineValueCalls).
-                if (baseRoutine.Name == EmitRoutineName)
-                {
-                    _registry.RegisterRoutine(
-                        routine: new ErrorHandlingGenerator(registry: _registry).GenerateCheckVariantStub(
-                            original: baseRoutine));
-                }
+                // Both keywords: under `check` the concrete routine's own error must come through, not the
+                // absent-value error a `try` stub would leave.
+                var generator = new ErrorHandlingGenerator(registry: _registry);
+                _registry.RegisterRoutine(routine: generator.GenerateTryVariantStub(original: baseRoutine));
+                _registry.RegisterRoutine(routine: generator.GenerateCheckVariantStub(original: baseRoutine));
             }
 
             return true;
@@ -537,6 +536,11 @@ public sealed partial class SemanticVerifier
             {
                 AnalyzeCompilerGeneratedBody(routineInfo: baseRoutine, body: baseBody);
             }
+
+            // A call written with type arguments (`x.to[U8]()`) is a plain call once analyzed: lower it so the
+            // variant's rewrite sees it as the failable call it is and recovers it.
+            baseBody = new Builder.Desugaring.Passes.GenericCallLoweringPass(registry: _registry,
+                variantBodies: new Dictionary<string, Statement>()).VisitStatement(stmt: baseBody);
 
             foreach (GeneratedVariant variant in variants)
             {
@@ -972,7 +976,10 @@ public sealed partial class SemanticVerifier
     {
         // A routine of another realm's type, or a realm's surface routine, shares its name with the shared
         // routine the lookups below find: the info registered for the declaration itself is its own.
+        // A routine of any type (`routine N.to[T]()`, whose receiver is a type parameter) has no owner to look up by
+        // name either.
         if (decl.ResolvedInfo is { } own && (own.SurfaceRealm != null ||
+                                             own.OwnerType is GenericParameterTypeSymbol ||
                                              own.OwnerType is { } ownOwner && ownOwner.Realm != _registry.AmbientRealm))
         {
             return _registry.GetRoutineByExactKey(registryKey: own.RegistryKey) ?? own;

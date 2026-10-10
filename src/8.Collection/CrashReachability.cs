@@ -80,7 +80,12 @@ internal sealed class CrashReachability
     // Local crash sources of one body; each call to a routine with a body in this build becomes an edge.
     private bool CrashesLocally(RoutineInfo routine, Statement body, List<string> edges)
     {
-        if (routine.IsFailable || routine.HasFailableCalls)
+        // An instance of a generic routine is judged by its own body: `N.to[T]()` is failable as written, but
+        // `U32.to[U64]` calls a widening that cannot fail. Its throws and calls are in the body walked below. A
+        // failable callee that is such an instance with a body here is an edge, not a crash.
+        bool instance = routine.GenericDefinition is { } definition && !ReferenceEquals(objA: definition, objB: routine);
+        if (routine.IsFailable && !instance ||
+            routine.HasFailableCalls && routine.FailableCallees.Any(predicate: callee => !IsJudgedByBody(callee: callee)))
         {
             return true;
         }
@@ -111,6 +116,9 @@ internal sealed class CrashReachability
                     case BinaryExpression binary when !IsPlainOperand(type: binary.Left.ResolvedType):
                         crashes = true;
                         break;
+                    case ThrowStatement:
+                        crashes = true;
+                        break;
                     // A recovery variant's throw, before or after it is lowered to a carrier holding the error: the
                     // error keeps a copy of the trace, which should show this routine.
                     case VariantReturnStatement { SiteKind: VariantSiteKind.FromThrow }:
@@ -122,6 +130,13 @@ internal sealed class CrashReachability
                 }
             });
         return crashes;
+    }
+
+    // A generic instance emitted with a body here: whether it can crash is the fixpoint's answer for it.
+    private bool IsJudgedByBody(RoutineInfo callee)
+    {
+        return callee.GenericDefinition is { } definition && !ReferenceEquals(objA: definition, objB: callee) &&
+               _bodies.ContainsKey(key: callee.RegistryKey);
     }
 
     // True when the call can crash no matter what else is known; otherwise records the edge.

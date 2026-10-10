@@ -1756,12 +1756,19 @@ public sealed partial class TypeRegistry
             return null;
         }
 
+        // The owner first (a universal `N.to[T]` recovered as `S64.to[U8]` binds `N`), then the routine's own type
+        // arguments (`T`), the same two steps the call itself took.
         RoutineInfo? substituted = recovered.OwnerType is { } owner &&
                                    !ReferenceEquals(objA: owner, objB: definitionVariant.OwnerType)
             ? SubstituteMemberRoutineForOwner(memberRoutine: definitionVariant, resolvedOwner: owner)
-            : recovered.TypeArguments is { Count: > 0 } typeArguments && definitionVariant.IsGenericDefinition
-                ? GetOrCreateRoutineResolution(genericDef: definitionVariant, typeArguments: typeArguments)
-                : null;
+            : definitionVariant;
+        substituted = recovered.TypeArguments is { Count: > 0 } typeArguments &&
+                      substituted is { IsGenericDefinition: true } open &&
+                      open.GenericParameters!.Count == typeArguments.Count
+            ? GetOrCreateRoutineResolution(genericDef: open, typeArguments: typeArguments)
+            : ReferenceEquals(objA: substituted, objB: definitionVariant)
+                ? null
+                : substituted;
         // A definition whose parameters do not follow the owner's (a protocol's default routine re-homed
         // onto an implementer: the protocol's `V` is not the owner's) cannot be substituted this way. A
         // parameter the owner itself still carries (`ListEmittable[Agent[V]]` inside a routine of
@@ -1928,7 +1935,8 @@ public sealed partial class TypeRegistry
     public RoutineInfo? LookupMemberRoutineViaConstraints(GenericParameterTypeSymbol param,
         string memberRoutineName, bool? isFailable,
         IEnumerable<GenericConstraintDeclaration> constraints,
-        Func<string, TypeSymbol?>? protocolResolver = null)
+        Func<string, TypeSymbol?>? protocolResolver = null,
+        Func<TypeExpression, TypeSymbol?>? typeArgumentResolver = null)
     {
         foreach (GenericConstraintDeclaration c in constraints)
         {
@@ -1944,7 +1952,8 @@ public sealed partial class TypeRegistry
                     memberRoutineName: memberRoutineName,
                     isFailable: isFailable,
                     protocolExpr: protocolExpr,
-                    protocolResolver: protocolResolver);
+                    protocolResolver: protocolResolver,
+                    typeArgumentResolver: typeArgumentResolver);
                 if (hit != null)
                 {
                     return hit;
@@ -1961,7 +1970,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     private RoutineInfo? LookupMemberRoutineViaProtocolExpr(GenericParameterTypeSymbol param,
         string memberRoutineName, bool? isFailable, TypeExpression protocolExpr,
-        Func<string, TypeSymbol?>? protocolResolver)
+        Func<string, TypeSymbol?>? protocolResolver, Func<TypeExpression, TypeSymbol?>? typeArgumentResolver = null)
     {
         // Resolve the constraint's protocol IMPORT-aware (a user protocol like `Greetable`
         // lives in the referring module, not Core) — the bare registry lookup only resolved it
@@ -1973,6 +1982,23 @@ public sealed partial class TypeRegistry
             return null;
         }
 
+        // A constraint naming the protocol's type arguments (`needs T obeys ConvertibleFrom[N]`) binds them, so
+        // the requirement's signature reads `from: N`, not the protocol's own `from: S`. The arguments are read in
+        // the constrained routine's scope (its own `N` is its parameter even where a `record N` exists), which
+        // only the caller's resolver knows.
+        if (protoInfo.IsGenericDefinition && typeArgumentResolver != null &&
+            protocolExpr.GenericArguments is { Count: > 0 } protocolArgs)
+        {
+            List<TypeSymbol> boundArgs = protocolArgs
+                                        .Select(selector: a => typeArgumentResolver(arg: a) ??
+                                                               new GenericParameterTypeSymbol(name: a.Name))
+                                        .ToList();
+            if (GetOrCreateResolution(genericDef: protoInfo, typeArguments: boundArgs) is ProtocolTypeSymbol bound)
+            {
+                protoInfo = bound;
+            }
+        }
+
         // Synthesize directly with the generic parameter as ownerType so that
         // Me-self-type slots in the protocol signature substitute to `param`
         // (e.g. `T`), not to the protocol itself. Going through LookupMemberRoutine
@@ -1980,7 +2006,9 @@ public sealed partial class TypeRegistry
         // `combine(you: Combinable) -> Combinable` instead of `-> T`.
         ProtocolMemberRoutineInfo? protoMemberRoutine =
             protoInfo.MemberRoutines.FirstOrDefault(predicate: m =>
-                m.Name == memberRoutineName && (isFailable == null || m.IsFailable == isFailable));
+                (m.Name == memberRoutineName ||
+                 memberRoutineName == RoutineInfo.CreatorName && m.IsCreatorRequirement) &&
+                (isFailable == null || m.IsFailable == isFailable));
         if (protoMemberRoutine != null)
         {
             return SynthesizeProtocolMemberRoutine(proto: protoInfo,
@@ -2250,18 +2278,22 @@ public sealed partial class TypeRegistry
             protoMemberRoutine: protoMemberRoutine,
             substitution: substitution,
             ownerType: ownerType);
-        return new RoutineInfo(name: protoMemberRoutine.Name)
+        return new RoutineInfo(name: protoMemberRoutine.IsCreatorRequirement
+            ? RoutineInfo.CreatorName
+            : protoMemberRoutine.Name)
         {
             OwnerType = ownerType,
             Parameters = parameters,
             ReturnType = resolvedReturn,
             IsFailable = protoMemberRoutine.IsFailable,
             MutationCategory = protoMemberRoutine.Mutation,
-            // Instance protocol member → MemberRoutine; a non-instance (type-level) one is CommonRoutine
-            // (the former StorageClass.Common, now folded into RoutineKind).
+            // Instance protocol member → MemberRoutine, the creator requirement → Creator, any other
+            // type-level one → CommonRoutine.
             Kind = protoMemberRoutine.IsInstanceMemberRoutine
                 ? RoutineKind.MemberRoutine
-                : RoutineKind.CommonRoutine,
+                : protoMemberRoutine.IsCreatorRequirement
+                    ? RoutineKind.Creator
+                    : RoutineKind.CommonRoutine,
             IsSynthesized = true,
             Location = protoMemberRoutine.Location
         };

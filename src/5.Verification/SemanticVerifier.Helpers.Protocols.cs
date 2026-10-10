@@ -70,6 +70,124 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// Reports RF-S150 when a routine's <c>needs T obeys P[A]</c> names a protocol with a creator requirement
+    /// (<c>routine Me!(from: S)</c>) that the bound <c>T</c> has no creator for: <c>count.to[U8]()</c> on an
+    /// <c>Integer</c> needs <c>U8(from: Integer)</c>. <paramref name="bindings"/> maps the routine's and its
+    /// receiver's type parameters to what the call binds them to; a constraint over a parameter still open is
+    /// checked where it becomes concrete.
+    /// </summary>
+    private void ValidateCreatorRequirementConstraints(RoutineInfo routine, Dictionary<string, TypeSymbol> bindings,
+        SourceLocation location)
+    {
+        // A routine of any type keeps its constraints on the definition once its receiver is bound.
+        IEnumerable<GenericConstraintDeclaration> constraints = (routine.GenericConstraints ?? [])
+           .Concat(second: routine.GenericDefinition?.GenericConstraints ?? [])
+           .Distinct();
+        foreach (GenericConstraintDeclaration c in constraints)
+        {
+            if (c.ConstraintType != ConstraintKind.Obeys || c.ConstraintTypes == null ||
+                !bindings.TryGetValue(key: c.ParameterName, value: out TypeSymbol? target) ||
+                ContainsOpenTypeParameter(type: target))
+            {
+                continue;
+            }
+
+            foreach (TypeExpression protocolExpr in c.ConstraintTypes)
+            {
+                if (protocolExpr.GenericArguments is not { Count: > 0 } protocolArgs ||
+                    LookupTypeWithImports(name: protocolExpr.Name) is not ProtocolTypeSymbol
+                    {
+                        GenericParameters: { } protocolParams
+                    } protocol ||
+                    protocol.MemberRoutines.FirstOrDefault(predicate: m => m.IsCreatorRequirement) is not
+                        { } requirement)
+                {
+                    continue;
+                }
+
+                // The routine's own parameters come from the call's bindings, anything else is a type in scope.
+                List<TypeSymbol?> args = protocolArgs
+                                        .Select(selector: a => bindings.GetValueOrDefault(key: a.Name) ??
+                                                               (a.GenericArguments is { Count: > 0 }
+                                                                   ? null
+                                                                   : LookupTypeWithImports(name: a.Name)))
+                                        .ToList();
+                if (args.Any(predicate: a => a is null || ContainsOpenTypeParameter(type: a)))
+                {
+                    continue;
+                }
+
+                List<TypeSymbol> fromTypes = requirement.ParameterTypes
+                                                        .Select(selector: t =>
+                                                             t is GenericParameterTypeSymbol g &&
+                                                             protocolParams.IndexOf(item: g.Name) is >= 0 and var i &&
+                                                             i < args.Count
+                                                                 ? args[index: i]!
+                                                                 : t)
+                                                        .ToList();
+                if (_registry.LookupCreatorOverload(type: target, argTypes: fromTypes) != null ||
+                    HasFreeCreator(target: target, fromTypes: fromTypes, location: location))
+                {
+                    continue;
+                }
+
+                string from = string.Join(separator: ", ", values: fromTypes.Select(selector: t => $"'{t.Name}'"));
+                ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
+                    message: protocol.BareName == Declaration.RuntimeContract.ConvertibleFrom
+                        ? $"There is no conversion from {from} to '{target.Name}'."
+                        : $"'{target.Name}' cannot be built from {from}, which '{protocolExpr.Name}' needs.",
+                    location: location);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a generic creator builds <paramref name="target"/> from <paramref name="fromTypes"/>: a type's
+    /// readers written as templates (<c>routine S32(from: T) needs ChoiceType T</c>), which the by-type creator
+    /// lookup does not match. Visibility
+    /// does not matter here: the conversion routine calls it from inside the library.
+    /// </summary>
+    private bool HasFreeCreator(TypeSymbol target, List<TypeSymbol> fromTypes, SourceLocation location)
+    {
+        if (fromTypes is not [var from])
+        {
+            return false;
+        }
+
+        return _registry.GetAllRoutines().Any(predicate: r =>
+            r is { IsRecoveryVariant: false, Parameters: [{ Name: "from" } parameter] } &&
+            (r.OwnerType == null && r.Name == target.Name || r.IsCreator && r.OwnerType?.FullName == target.FullName) &&
+            r.ReturnType?.FullName == target.FullName &&
+            (parameter.Type.FullName == from.FullName ||
+             parameter.Type is GenericParameterTypeSymbol generic && KindGatesAdmit(
+                 constraints: (r.GenericConstraints ?? []).Where(predicate: c => c.ParameterName == generic.Name),
+                 type: from)));
+    }
+
+    /// <summary>Whether the kind gates among <paramref name="constraints"/> (<c>needs ChoiceType T</c>, ...) let
+    /// <paramref name="type"/> through. An <c>obeys</c> constraint is not a kind gate.</summary>
+    private static bool KindGatesAdmit(IEnumerable<GenericConstraintDeclaration> constraints, TypeSymbol type)
+    {
+        return constraints.All(predicate: c => c.ConstraintType switch
+        {
+            ConstraintKind.ChoiceType => type is ChoiceTypeSymbol,
+            ConstraintKind.FlagsType => type is FlagsTypeSymbol,
+            ConstraintKind.RecordType => type is RecordTypeSymbol,
+            ConstraintKind.EntityType => type is EntityTypeSymbol,
+            ConstraintKind.VariantType => type is VariantTypeSymbol,
+            ConstraintKind.Obeys => true,
+            ConstraintKind.AnyType => true,
+            _ => false
+        });
+    }
+
+    private static bool ContainsOpenTypeParameter(TypeSymbol? type)
+    {
+        return type is GenericParameterTypeSymbol ||
+               (type?.TypeArguments?.Any(predicate: ContainsOpenTypeParameter) ?? false);
+    }
+
+    /// <summary>
     /// Reports RF-S150 for each <c>needs &lt;param&gt; obeys P</c> constraint on a generic ROUTINE that the
     /// resolved explicit type arguments violate — the clean call-site diagnostic that replaces the
     /// over-prune codegen crash (the body's <c>x.duplicate()</c> etc. would otherwise be pruned when the

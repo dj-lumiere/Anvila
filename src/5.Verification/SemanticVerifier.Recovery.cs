@@ -67,11 +67,24 @@ public sealed partial class SemanticVerifier
         return true;
     }
 
-    private TypeSymbol AnalyzeRecoveryExpression(RecoveryExpression recovery)
+    /// <summary>The payload type a <c>try</c> (<c>Maybe[T]</c>) or <c>check</c> (<c>Check[T]</c>) carrier holds, or
+    /// null when <paramref name="carrier"/> is not that keyword's carrier.</summary>
+    private static TypeSymbol? CarrierPayload(TypeSymbol? carrier, RecoveryKind kind)
+    {
+        string expectedBase = kind == RecoveryKind.Try ? "Maybe" : "Check";
+        return carrier is RecordTypeSymbol { GenericDefinition: { } definition, TypeArguments: [var payload] } &&
+               definition.Name == expectedBase
+            ? payload
+            : null;
+    }
+
+    private TypeSymbol AnalyzeRecoveryExpression(RecoveryExpression recovery, TypeSymbol? expectedType = null)
     {
         // Analyze the inner expression first so every sub-call carries its ResolvedRoutine and ResolvedType.
-        // The decomposition below keys failable-ness off the ResolvedRoutine IsFailable flag.
-        TypeSymbol innerType = AnalyzeExpression(expression: recovery.Inner);
+        // The decomposition below keys failable-ness off the ResolvedRoutine IsFailable flag. The inner expression
+        // expects the carrier's payload: `var n: S64? = try count.to()` converts to `S64`.
+        TypeSymbol innerType = AnalyzeExpression(expression: recovery.Inner,
+            expectedType: CarrierPayload(carrier: expectedType, kind: recovery.Kind));
         if (innerType is ErrorTypeSymbol)
         {
             return ErrorTypeSymbol.Instance;

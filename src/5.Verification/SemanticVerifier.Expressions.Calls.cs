@@ -110,16 +110,26 @@ public sealed partial class SemanticVerifier
         // resolving the name again would bind the failable routine.
         if (call.ResolvedRoutine is { IsRecoveryVariant: true, ReturnType: { } carrier })
         {
-            if (call.Callee is MemberExpression { Object: var receiver })
+            // Only what is not analyzed yet: a body built before analysis carries raw arguments, an analyzed one
+            // keeps the types its context gave (a literal typed by its parameter).
+            if (call.Callee is MemberExpression { Object: { ResolvedType: null } receiver })
             {
                 AnalyzeExpression(expression: receiver);
             }
 
-            foreach (Expression argument in call.Arguments)
+            for (int i = 0; i < call.Arguments.Count; i++)
             {
-                AnalyzeExpression(expression: argument is NamedArgumentExpression named
-                    ? named.Value
-                    : argument);
+                Expression argument = call.Arguments[index: i];
+                Expression value = argument is NamedArgumentExpression named ? named.Value : argument;
+                if (value.ResolvedType != null)
+                {
+                    continue;
+                }
+
+                TypeSymbol? parameterType = i < call.ResolvedRoutine.Parameters.Count
+                    ? call.ResolvedRoutine.Parameters[index: i].Type
+                    : null;
+                AnalyzeExpression(expression: value, expectedType: parameterType);
                 if (argument is NamedArgumentExpression namedArgument)
                 {
                     namedArgument.ResolvedType = namedArgument.Value.ResolvedType;
@@ -132,6 +142,23 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
         EnforceUnsafeCallAllowed(resolved: call.ResolvedRoutine, location: call.Location);
+        if (call is { Callee: IdentifierExpression, ResolvedRoutine: { IsCreator: true, OwnerType: { } built } creator })
+        {
+            ValidateCreatorAccess(call: call, creator: creator.GenericDefinition ?? creator, type: built);
+        }
+        // A number type built from one value with no creator behind it is a built-in reinterpret (`S64(from: c)` on
+        // a choice): a program converts with `to`.
+        else if (call is { Callee: IdentifierExpression, ResolvedRoutine: null, ConstructedType: { } numberType } &&
+                 call.Arguments.Count == 1 &&
+                 Declaration.RuntimeContract.ConversionNumberTypes.Contains(item: numberType.Name) &&
+                 !call.IsSynthesizedLowering && !_isInCompilerGeneratedBody && !IsStdlibFile(filePath: _currentFilePath))
+        {
+            ReportError(code: SemanticDiagnosticCode.SecretMemberAccess,
+                message: $"You built a '{numberType.Name}' from a value. To convert a value, write " +
+                         $"'value.to[{numberType.Name}]()'.",
+                location: call.Location);
+        }
+
         return result;
     }
 
@@ -318,7 +345,7 @@ public sealed partial class SemanticVerifier
             IdentifierExpression id => AnalyzeIdentifierCall(call: call,
                 id: id,
                 expectedType: expectedType),
-            MemberExpression member => AnalyzeMemberCall(call: call, member: member),
+            MemberExpression member => AnalyzeMemberCall(call: call, member: member, expectedType: expectedType),
             _ => null
         };
         if (resolved != null)
@@ -471,6 +498,14 @@ public sealed partial class SemanticVerifier
         // `LookupTypeWithImports("U32!")` returns null and the call falls through to
         // non-creator paths, eventually mis-picking a non-failable overload by name.
         TypeSymbol? callableType = LookupTypeWithImports(name: callName);
+        // `T(from: x)` inside a generic routine builds the type parameter `T` (the instantiation's type). A parameter
+        // of the definition in scope shadows a type of the same name (`record T` elsewhere), as in type positions.
+        if (id.Realm == null && _typeResolver.IsGenericParameter(name: callName) &&
+            (callableType == null || _typeResolver.IsGenericDefinitionScopeParam(name: callName)))
+        {
+            callableType = new GenericParameterTypeSymbol(name: callName,
+                slot: _typeResolver.GenericParameterSlot(name: callName));
+        }
         // Honor an explicit `RF::`/`SF::` realm on a constructor call (`RF::Core.List[T]()`): the
         // lookup above is realm-blind (prefers the file's resolution realm), so inside an SF file
         // `RF::Core.List[T]()` would resolve to the SF-realm list and the SF wrapper's constructor
@@ -693,7 +728,8 @@ public sealed partial class SemanticVerifier
         return AnalyzeFallbackFreeRoutine(call: call, id: id, routine: routine);
     }
 
-    private TypeSymbol? AnalyzeMemberCall(CallExpression call, MemberExpression member)
+    private TypeSymbol? AnalyzeMemberCall(CallExpression call, MemberExpression member,
+        TypeSymbol? expectedType = null)
     {
         // Module-qualified routine call: `Module.routine(...)`. When the callee's object is a
         // bare identifier that names an imported module — and is neither a value nor a type in
@@ -774,7 +810,8 @@ public sealed partial class SemanticVerifier
                 member: member,
                 objectType: objectType,
                 dispatchType: dispatchType,
-                memberRoutine: memberRoutine) is { } resultAnalyzeResolvedMemberCall)
+                memberRoutine: memberRoutine,
+                expectedType: expectedType) is { } resultAnalyzeResolvedMemberCall)
         {
             return resultAnalyzeResolvedMemberCall;
         }
@@ -1270,6 +1307,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol? AnalyzeArgumentConstruction(CallExpression call,
         ref TypeSymbol? callableType)
     {
+
         if (callableType == null || call.Arguments.Count == 0)
         {
             return null;
@@ -1320,6 +1358,19 @@ public sealed partial class SemanticVerifier
         // names. Keeps field-init construction resolving for EVERY type regardless of whether each arg
         // type resolved; a no-op in the full pipeline, where the by-type lookup already succeeds.
         creator ??= FallbackMemberwiseCreatorByFieldNames(callableType: callableType, call: call);
+
+        // `T(from: x)` on a type parameter builds through the creator a protocol it obeys requires
+        // (`needs T obeys ConvertibleFrom[N]`). Binding that requirement tells a recovery variant the call can
+        // fail, and instantiation rebinds it to the concrete type's creator.
+        if (creator == null && callableType is GenericParameterTypeSymbol creatorParameter)
+        {
+            creator = _registry.LookupMemberRoutineViaConstraints(param: creatorParameter,
+                memberRoutineName: RoutineInfo.CreatorName,
+                isFailable: null,
+                constraints: ActiveConstraintsFor(paramName: creatorParameter.Name).ToList(),
+                protocolResolver: LookupTypeWithImports,
+                typeArgumentResolver: typeArgument => ResolveType(typeExpr: typeArgument));
+        }
 
         TryInferGenericDefinitionCreatorType(callableType: ref callableType,
             creator: creator,
@@ -1388,8 +1439,10 @@ public sealed partial class SemanticVerifier
 
         // Route through a *user-declared* `create` so its body/side-effects run.
         // The synthesized memberwise creator (IsSynthesized) is pure field-init and
-        // is left to inline construction in codegen.
-        if (!insideOwnCreate && (!creator.IsSynthesized || isVariantArmExtractor))
+        // is left to inline construction in codegen. A type parameter's creator (bound through a protocol it
+        // obeys) is a real call that instantiation rebinds.
+        if (!insideOwnCreate &&
+            (!creator.IsSynthesized || isVariantArmExtractor || callableType is GenericParameterTypeSymbol))
         {
             call.ResolvedRoutine = creator;
             TrackFailableConstructorCall(creator: creator,
@@ -2407,6 +2460,18 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
+        // A program converts with `to`. Taking a variant's arm out (`sv.Dict()`) is not a conversion, and the
+        // library and builder-written bodies keep the member form.
+        if (objectType is not VariantTypeSymbol && !call.IsSynthesizedLowering && !_isInCompilerGeneratedBody &&
+            !IsStdlibFile(filePath: _currentFilePath))
+        {
+            ReportError(code: SemanticDiagnosticCode.ConversionWrittenAsMember,
+                message: $"You wrote '.{potentialTypeName}()' to convert a '{objectType.Name}'. A conversion is " +
+                         $"written '.to[{potentialTypeName}]()'.",
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         // Look up the creator on the target type, using memberRoutine-overload resolution
         // to match the object type (e.g., Text -> S32!(from_text: Text)). IsFailable is a separate
         // flag on the result. A creator is owner-scoped, so LookupMemberRoutineOverload (not
@@ -2471,6 +2536,7 @@ public sealed partial class SemanticVerifier
         // is the conversion source — codegen passes it as the `from:` argument.
         call.ResolvedRoutine = creator;
 
+        ValidateCreatorAccess(call: call, creator: creator, type: targetType);
         TypeSymbol? validationError = ValidateMemberConversionCreator(call: call,
             objectType: objectType,
             potentialTypeName: potentialTypeName,
@@ -2485,6 +2551,26 @@ public sealed partial class SemanticVerifier
         // `create` returns the target type. `call.ConstructedType` stays the target so codegen's
         // TypeConstructor path passes the receiver as the `from:` arg.
         return targetType;
+    }
+
+    /// <summary>
+    /// A creator written by the program has to be visible from where it is called. A number type's conversion
+    /// creators are secret: a program converts with <c>x.to[T]()</c>, which the error points at.
+    /// </summary>
+    private void ValidateCreatorAccess(CallExpression call, RoutineInfo creator, TypeSymbol type)
+    {
+        if (creator.Visibility != VisibilityModifier.Secret || call.IsSynthesizedLowering ||
+            _isInCompilerGeneratedBody || IsAccessingFromSameModule(memberModule: type.Module ?? creator.Module))
+        {
+            return;
+        }
+
+        string hint = creator.Parameters.Count(predicate: p => p.Name != "me") == 1
+            ? $" To convert a value, write 'value.to[{type.Name}]()'."
+            : "";
+        ReportError(code: SemanticDiagnosticCode.SecretMemberAccess,
+            message: $"You called a creator of '{type.Name}' that is secret to its module.{hint}",
+            location: call.Location);
     }
 
     /// <summary>
@@ -2540,7 +2626,8 @@ public sealed partial class SemanticVerifier
     }
 
     private TypeSymbol? AnalyzeResolvedMemberCall(CallExpression call, MemberExpression member,
-        TypeSymbol objectType, TypeSymbol dispatchType, RoutineInfo? memberRoutine)
+        TypeSymbol objectType, TypeSymbol dispatchType, RoutineInfo? memberRoutine,
+        TypeSymbol? expectedType = null)
     {
         if (memberRoutine == null)
         {
@@ -2635,9 +2722,28 @@ public sealed partial class SemanticVerifier
             List<TypeSymbol>? inferredMemberRoutineTypeArgs =
                 InferMemberRoutineGenericTypeArguments(genericMemberRoutine: memberRoutine,
                     arguments: call.Arguments,
-                    receiverType: dispatchType);
+                    receiverType: dispatchType,
+                    expectedType: expectedType);
+            if (inferredMemberRoutineTypeArgs == null &&
+                ResultOnlyTypeParameter(routine: memberRoutine,
+                    ownerParameters: GetOwnerGenericParameterNames(ownerType: dispatchType)
+                       .Union(second: GetOwnerGenericParameterNames(ownerType: memberRoutine.OwnerType))
+                       .ToHashSet()) is { } resultOnly)
+            {
+                ReportError(code: SemanticDiagnosticCode.ResultTypeArgumentUnknown,
+                    message: $"You called '{member.MemberName}()', which needs its type argument '{resultOnly}' " +
+                             "from where the result goes, but nothing here gives that type. Write it in the call " +
+                             $"('.{member.MemberName}[S64]()'), or give the variable a type.",
+                    location: call.Location);
+                return ErrorTypeSymbol.Instance;
+            }
+
             if (inferredMemberRoutineTypeArgs != null)
             {
+                ValidateCreatorRequirementConstraints(routine: memberRoutine,
+                    bindings: CallTypeBindings(routine: memberRoutine, receiverType: dispatchType,
+                        typeArgs: inferredMemberRoutineTypeArgs),
+                    location: call.Location);
                 memberRoutine = _registry.GetOrCreateRoutineResolution(
                     genericDef: memberRoutine,
                     typeArguments: inferredMemberRoutineTypeArgs);
@@ -2668,6 +2774,31 @@ public sealed partial class SemanticVerifier
             dispatchType: dispatchType);
         call.IsInFlight = memberRoutine.IsInFlightReturn;
         return callReturnType;
+    }
+
+    /// <summary>
+    /// The first of <paramref name="routine"/>'s own type parameters that only its result mentions (no parameter, no
+    /// receiver pattern), so only the expected type can bind it (<c>N.to[T]() -> T</c>). A parameter of the owner
+    /// (<c>T</c> of <c>List[T]</c>) is not the routine's own: the receiver binds it. Null when there is none.
+    /// </summary>
+    private static string? ResultOnlyTypeParameter(RoutineInfo routine, HashSet<string> ownerParameters)
+    {
+        if (routine.GenericParameters is not { Count: > 0 } parameters || routine.ReturnType is not { } result)
+        {
+            return null;
+        }
+
+        return parameters.FirstOrDefault(predicate: name =>
+            !ownerParameters.Contains(item: name) &&
+            MentionsTypeParameter(type: result, name: name) &&
+            !routine.Parameters.Any(predicate: p => MentionsTypeParameter(type: p.Type, name: name)) &&
+            !(routine.MeType is { } me && MentionsTypeParameter(type: me, name: name)));
+    }
+
+    private static bool MentionsTypeParameter(TypeSymbol type, string name)
+    {
+        return type is GenericParameterTypeSymbol parameter && parameter.Name == name ||
+               (type.TypeArguments?.Any(predicate: a => MentionsTypeParameter(type: a, name: name)) ?? false);
     }
 
     /// <summary>

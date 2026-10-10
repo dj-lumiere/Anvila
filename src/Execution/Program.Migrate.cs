@@ -575,6 +575,15 @@ internal partial class Program
                 continue;
             }
 
+            // A number conversion or a text parse is `x.to[T]()`: `S64(from: n)`, `S64(n)`, `S64(from_text: t)`,
+            // `Integer(text: t)` and `n.S64()` all become it.
+            if (Declaration.RuntimeContract.ConversionNumberTypes.Contains(item: token.Text) &&
+                ConversionEdits(tokens: tokens, index: i) is { Count: > 0 } conversion)
+            {
+                edits.AddRange(collection: conversion);
+                continue;
+            }
+
             // The teardown routine `destroy` is `destruct` (`x.destroy()`, `routine T.destroy()`).
             if (token.Text == "destroy" && i > 0 && tokens[index: i - 1].Type == TokenType.Dot)
             {
@@ -923,6 +932,139 @@ internal partial class Program
             Replacement: "] = ", Line: tokens[index: valueAt].Line, What: "d.add(key: k, value: v) → d[k] = v");
         yield return new MigrationEdit(Start: closing.Position, Length: 1, Replacement: "", Line: closing.Line,
             What: "d.add(key: k, value: v) → d[k] = v");
+    }
+
+    /// <summary>The argument labels a conversion creator was written with.</summary>
+    private static readonly HashSet<string> ConversionLabels = ["from", "from_text", "text"];
+
+    /// <summary>
+    /// The edits that write the conversion at <paramref name="index"/> (a number type's name) as <c>x.to[T]()</c>, or
+    /// none when it is not one: a creator call with a single <c>from</c>/<c>from_text</c>/<c>text</c> or unlabeled
+    /// argument (<c>S64(from: n)</c>), or the member form <c>n.S64()</c>. A definition is left alone.
+    /// </summary>
+    private static List<MigrationEdit> ConversionEdits(List<Token> tokens, int index)
+    {
+        var edits = new List<MigrationEdit>();
+        Token name = tokens[index: index];
+        if (index + 1 >= tokens.Count || tokens[index: index + 1].Type != TokenType.LeftParen ||
+            OnDefinitionLine(tokens: tokens, index: index))
+        {
+            return edits;
+        }
+
+        string target = $"to[{name.Text}]";
+        Token? before = index > 0 ? tokens[index: index - 1] : null;
+        int close = SkipBalanced(tokens: tokens, start: index + 1, open: TokenType.LeftParen,
+            close: TokenType.RightParen) - 1;
+        if (close >= tokens.Count || tokens[index: close].Position < 0)
+        {
+            return edits;
+        }
+
+        // `n.S64()`: the member name becomes `to[S64]`.
+        if (before?.Type == TokenType.Dot)
+        {
+            if (close == index + 2)
+            {
+                edits.Add(item: new MigrationEdit(Start: name.Position, Length: name.Text.Length, Replacement: target,
+                    Line: name.Line, What: $"x.{name.Text}() → x.{target}()"));
+            }
+
+            return edits;
+        }
+
+        // A creator call: one argument, unlabeled or labeled `from`/`from_text`/`text`.
+        int valueStart = index + 2;
+        if (valueStart >= close || before?.Type is TokenType.Routine or TokenType.LeftBracket)
+        {
+            return edits;
+        }
+
+        if (tokens[index: valueStart].Type == TokenType.Identifier && valueStart + 1 < close &&
+            tokens[index: valueStart + 1].Type == TokenType.Colon)
+        {
+            if (!ConversionLabels.Contains(item: tokens[index: valueStart].Text))
+            {
+                return edits;
+            }
+
+            valueStart += 2;
+        }
+
+        int depth = 0;
+        bool plainChain = true;
+        // A call broken over lines ends its one argument with a comma: `U32(\n    x,\n)`.
+        int valueEnd = close;
+        for (int k = valueStart; k < close; k++)
+        {
+            Token t = tokens[index: k];
+            if (t.Type is TokenType.LeftParen or TokenType.LeftBracket)
+            {
+                depth++;
+            }
+            else if (t.Type is TokenType.RightParen or TokenType.RightBracket)
+            {
+                depth--;
+            }
+            else if (depth == 0 && t.Type == TokenType.Comma)
+            {
+                int after = k + 1;
+                while (after < close && tokens[index: after].Type is TokenType.Newline or TokenType.Indent or
+                           TokenType.Dedent)
+                {
+                    after++;
+                }
+
+                if (after != close)
+                {
+                    return edits;
+                }
+
+                valueEnd = k;
+                break;
+            }
+            else if (depth == 0 && !IsChainToken(token: t))
+            {
+                plainChain = false;
+            }
+        }
+
+        // A receiver that is more than a name, a literal or a call chain keeps its parentheses: `(a + b).to[U8]()`.
+        Token value = tokens[index: valueStart];
+        edits.Add(item: new MigrationEdit(Start: name.Position, Length: value.Position - name.Position,
+            Replacement: plainChain ? "" : "(", Line: name.Line, What: $"{name.Text}(x) → x.{target}()"));
+        // The argument of a call broken over lines sat one level deeper than it does as the receiver.
+        if (value.Line != name.Line)
+        {
+            for (int at = _migrationSource.IndexOf(value: '\n', startIndex: value.Position);
+                 at >= 0 && at < tokens[index: valueEnd].Position;
+                 at = _migrationSource.IndexOf(value: '\n', startIndex: at + 1))
+            {
+                if (string.CompareOrdinal(strA: _migrationSource, indexA: at + 1, strB: "    ", indexB: 0, length: 4) == 0)
+                {
+                    edits.Add(item: new MigrationEdit(Start: at + 1, Length: 4, Replacement: "", Line: name.Line,
+                        What: $"{name.Text}(x) → x.{target}()"));
+                }
+            }
+        }
+
+        Token closing = tokens[index: close];
+        int tailStart = tokens[index: valueEnd].Position;
+        edits.Add(item: new MigrationEdit(Start: tailStart, Length: closing.Position + 1 - tailStart,
+            Replacement: plainChain ? $".{target}()" : $").{target}()", Line: closing.Line,
+            What: $"{name.Text}(x) → x.{target}()"));
+        return edits;
+    }
+
+    /// <summary>Whether <paramref name="token"/> may sit at the top level of a call chain a method call can follow
+    /// without parentheses (a name, <c>me</c>, a literal, a dot).</summary>
+    private static bool IsChainToken(Token token)
+    {
+        string kind = token.Type.ToString();
+        return token.Type is TokenType.Identifier or TokenType.Me or TokenType.Dot or TokenType.True or
+                   TokenType.False or TokenType.FormattedText or TokenType.RawFormattedText ||
+               kind.EndsWith(value: "Literal", comparisonType: StringComparison.Ordinal) ||
+               kind.StartsWith(value: "Undecided", comparisonType: StringComparison.Ordinal);
     }
 
     /// <summary>Whether <paramref name="token"/> can begin the expression a recovery keyword or <c>discard</c> takes.</summary>

@@ -33,15 +33,16 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// <paramref name="call"/> bound to <paramref name="variant"/>, the recovery variant of the failable
-    /// routine it called. The variant has that routine's name and parameters, so the call keeps its shape;
-    /// it takes the variant's carrier type and is marked analyzed, since a re-analysis by name would bind
-    /// the failable routine again.
+    /// routine it called. The variant has that routine's name and parameters, so the call keeps its shape and
+    /// takes the variant's carrier type. Analysis keeps a call bound to a recovery variant (it analyzes only the
+    /// receiver and the arguments), which a body built before analysis needs: an argument may itself be a call
+    /// still to resolve (<c>U32(xs.stride(count: i.to[S64]()))</c>).
     /// </summary>
     private static CallExpression BindToVariant(CallExpression call, RoutineInfo variant)
     {
         CallExpression bound = call with
         {
-            ResolvedRoutine = variant, ResolvedType = variant.ReturnType, IsFailable = false, IsPreAnalyzed = true
+            ResolvedRoutine = variant, ResolvedType = variant.ReturnType, IsFailable = false
         };
         return bound.Callee is MemberExpression member
             ? bound with { Callee = member with { IsFailable = false } }
@@ -291,13 +292,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 {
                     _valueCallsStayPlain = false;
                 }
-                // Memo content: a variant body RESTORED from the captured stdlib is already lowered +
-                // analyzed — keep it instead of overwriting with a fresh un-analyzed regeneration (the
-                // restored ones are what AnalyzeVariantBodies skips; overwriting would leave them
-                // unanalyzed). Branch on memo CONTENT ("was this key restored?"), not on registry mode:
-                // a cold compile has an empty RestoredVariantKeys so it always keeps the fresh body.
-                if (ctx.RestoredVariantKeys.Contains(item: variant.Routine.RegistryKey) &&
-                    ctx.VariantBodies.ContainsKey(key: variant.Routine.RegistryKey))
+                // A variant body already built is kept: a warm-restored one is lowered and analyzed, and one built
+                // earlier in this build may be analyzed by now (this pass runs again for every stdlib file reached on
+                // demand). A fresh regeneration would replace it with an unanalyzed copy.
+                if (ctx.VariantBodies.ContainsKey(key: variant.Routine.RegistryKey))
                 {
                     continue;
                 }

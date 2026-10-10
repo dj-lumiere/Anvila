@@ -825,6 +825,15 @@ public enum SemanticDiagnosticCode
     /// a field, or returned. It is used in the statement that makes it (an `each`, a terminal call, an argument).</summary>
     SourceIterableKept = 644,
 
+    /// <summary>A generic routine whose type argument appears only in its result (<c>x.to()</c>) is called where
+    /// nothing gives that result's type (no declared variable type, return type, parameter type, or
+    /// <c>try</c>/<c>check</c> carrier around it): the type argument has to be written (<c>x.to[S64]()</c>).</summary>
+    ResultTypeArgumentUnknown = 645,
+
+    /// <summary>A conversion is written as a member named after the target type (<c>n.S64()</c>,
+    /// <c>f.Celsius()</c>): a conversion is written <c>n.to[S64]()</c>.</summary>
+    ConversionWrittenAsMember = 646,
+
     /// <summary>An <c>agent</c> call's argument is neither trivially copyable (passed by value), stolen, nor a
     /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias unsynchronized state
     /// across work running in parallel.</summary>
