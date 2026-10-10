@@ -888,24 +888,12 @@ internal sealed class AutoWiredRegistrationPass
     private void MaybeRegisterDestroy(TypeSymbol owner, TypeSymbol noneType,
         List<RoutineInfo> existingMemberRoutines)
     {
-        // `dispose` and `roam_dispose` (what an owner and the cycle collector run to end a value, its box included)
-        // ride along: every type that has a teardown has them, derived from the templates.
-        foreach (string name in new[] { RuntimeContract.Destroy, RuntimeContract.Dispose, RuntimeContract.RoamDispose })
-        {
-            MaybeRegisterTeardown(owner: owner, name: name, noneType: noneType,
-                existingMemberRoutines: existingMemberRoutines);
-        }
-    }
-
-    private void MaybeRegisterTeardown(TypeSymbol owner, string name, TypeSymbol noneType,
-        List<RoutineInfo> existingMemberRoutines)
-    {
-        if (existingMemberRoutines.Any(predicate: m => m.Name == name))
+        if (existingMemberRoutines.Any(predicate: m => m.Name == "destruct"))
         {
             return;
         }
 
-        _registry.RegisterRoutine(routine: new RoutineInfo(name: name)
+        _registry.RegisterRoutine(routine: new RoutineInfo(name: "destruct")
         {
             Kind = RoutineKind.MemberRoutine,
             OwnerType = owner,

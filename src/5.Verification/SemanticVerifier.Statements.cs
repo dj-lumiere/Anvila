@@ -206,6 +206,14 @@ public sealed partial class SemanticVerifier
 
         RoutineInfo? previousRoutine = _currentRoutine;
         _currentRoutine = routineInfo;
+        // One `destruct` call ends an entity: a written body tears down what the entity owns, and the builder gives
+        // back the entity's own box before each of its returns (the derived bodies already end that way).
+        if (routineInfo is { Name: "destruct" or "roam_free", OwnerType: EntityTypeSymbol, IsSynthesized: false } &&
+            routine.Body is BlockStatement destructBody)
+        {
+            GiveBackBoxBeforeReturns(statement: destructBody);
+        }
+
         _deadrefVariables.Clear();
         _everStolenVariables.Clear();
 
@@ -1585,6 +1593,103 @@ public sealed partial class SemanticVerifier
 
     #endregion
 
+    /// <summary>
+    /// Puts <c>me.hijack().invalidate()</c> (give back the entity's own box) right before every <c>return</c> of a
+    /// written entity <c>destruct</c>/<c>roam_free</c>. A return already preceded by it is left alone, so running this
+    /// twice, or over a body that still frees its box by hand, frees the box once.
+    /// </summary>
+    private static Statement GiveBackBoxBeforeReturns(Statement statement)
+    {
+        switch (statement)
+        {
+            case BlockStatement block:
+                for (int i = 0; i < block.Statements.Count; i++)
+                {
+                    if (block.Statements[index: i] is ReturnStatement ret)
+                    {
+                        if (i == 0 || !IsBoxGiveBack(statement: block.Statements[index: i - 1]))
+                        {
+                            block.Statements.Insert(index: i, item: BoxGiveBack(location: ret.Location));
+                            i++;
+                        }
+
+                        continue;
+                    }
+
+                    block.Statements[index: i] = GiveBackBoxBeforeReturns(statement: block.Statements[index: i]);
+                }
+
+                return block;
+            case ReturnStatement ret:
+                return new BlockStatement(Statements: [BoxGiveBack(location: ret.Location), ret], Location: ret.Location);
+            case IfStatement ifs:
+                return ifs with
+                {
+                    ThenStatement = GiveBackBoxBeforeReturns(statement: ifs.ThenStatement),
+                    ElseStatement = ifs.ElseStatement == null ? null : GiveBackBoxBeforeReturns(statement: ifs.ElseStatement)
+                };
+            case WhileStatement w:
+                return w with { Body = GiveBackBoxBeforeReturns(statement: w.Body) };
+            case LoopStatement loop:
+                return loop with { Body = GiveBackBoxBeforeReturns(statement: loop.Body) };
+            case DangerStatement danger:
+                GiveBackBoxBeforeReturns(statement: danger.Body);
+                return danger;
+            case UsingStatement u:
+                return u with { Body = GiveBackBoxBeforeReturns(statement: u.Body) };
+            case WhenStatement whenStatement:
+                for (int c = 0; c < whenStatement.Clauses.Count; c++)
+                {
+                    WhenClause clause = whenStatement.Clauses[index: c];
+                    whenStatement.Clauses[index: c] = clause with { Body = GiveBackBoxBeforeReturns(statement: clause.Body) };
+                }
+
+                return whenStatement;
+            default:
+                return statement;
+        }
+    }
+
+    /// <summary>The statement <c>me.hijack().invalidate()</c>.</summary>
+    private static ExpressionStatement BoxGiveBack(SourceLocation location)
+    {
+        var me = new IdentifierExpression(Name: "me", Location: location);
+        var hijack = new CallExpression(
+            Callee: new MemberExpression(Object: me, MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
+                Location: location),
+            Arguments: [],
+            Location: location);
+        var invalidate = new CallExpression(
+            Callee: new MemberExpression(Object: hijack, MemberName: Declaration.RuntimeContract.RawPointer.Invalidate,
+                Location: location),
+            Arguments: [],
+            Location: location);
+        return new ExpressionStatement(Expression: invalidate, Location: location);
+    }
+
+    /// <summary>Whether <paramref name="statement"/> is <c>me.hijack().invalidate()</c>.</summary>
+    private static bool IsBoxGiveBack(Statement statement)
+    {
+        return statement is ExpressionStatement
+        {
+            Expression: CallExpression
+            {
+                Callee: MemberExpression
+                {
+                    MemberName: Declaration.RuntimeContract.RawPointer.Invalidate,
+                    Object: CallExpression
+                    {
+                        Callee: MemberExpression
+                        {
+                            MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
+                            Object: IdentifierExpression { Name: "me" }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
     private void ValidateDestroyDeclaration(RoutineDeclaration routine)
     {
         bool isDestroyDecl = routine.Name == "destruct" ||
@@ -1594,7 +1699,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.DestroyMustBeDangerous,
                 message: "You write `destruct` here without `dangerous`. It tears down what the value owns " +
-                         "by hand (the box itself is given back by whoever allocated it), so mark it `dangerous`.",
+                         "by hand (the builder gives back the entity's box after it), so mark it `dangerous`.",
                 location: routine.Location);
         }
     }

@@ -2327,22 +2327,18 @@ public sealed partial class TypeRegistry
         // field otherwise resolves that call to nothing, so codegen mangles + references `Callable[...].destroy`
         // with no definition (link-undefined). Register the no-op leaf destroy here (BODY = bare `return`,
         // synthesized in WiredRoutinePass's routine-type loop) so the invariant holds and the field-walk links.
-        // A member walk ends a routine-typed member through `dispose`/`roam_dispose`, so those leaf no-ops exist too.
-        foreach (string teardown in new[] { "destruct", RuntimeContract.Dispose, RuntimeContract.RoamDispose })
+        RegisterRoutine(routine: new RoutineInfo(name: "destruct")
         {
-            RegisterRoutine(routine: new RoutineInfo(name: teardown)
-            {
-                Kind = RoutineKind.MemberRoutine,
-                OwnerType = newType,
-                Parameters = [],
-                ReturnType = LookupType(name: "None"),
-                IsFailable = false,
-                DeclaredMutation = MutationCategory.Readonly,
-                MutationCategory = MutationCategory.Readonly,
-                Visibility = VisibilityModifier.Open,
-                IsSynthesized = true
-            });
-        }
+            Kind = RoutineKind.MemberRoutine,
+            OwnerType = newType,
+            Parameters = [],
+            ReturnType = LookupType(name: "None"),
+            IsFailable = false,
+            DeclaredMutation = MutationCategory.Readonly,
+            MutationCategory = MutationCategory.Readonly,
+            Visibility = VisibilityModifier.Open,
+            IsSynthesized = true
+        });
 
         return newType;
     }

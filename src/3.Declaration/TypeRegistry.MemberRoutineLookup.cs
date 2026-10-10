@@ -3320,14 +3320,9 @@ public sealed partial class TypeRegistry
 
         var own = GetOwnMemberRoutinesResolved(type: type)
            .ToList();
-        // An owner ends an entity with `dispose` (its `destruct`, then its box given back): `destruct` alone only
-        // tears down what the entity owns.
-        string teardown = type is EntityTypeSymbol
-            ? RuntimeContract.Dispose
-            : RuntimeContract.Destroy;
         RoutineInfo? destroy = own
                               .Where(predicate: m =>
-                                   m.Name == teardown && m.Parameters.Count == 0)
+                                   m.Name == "destruct" && m.Parameters.Count == 0)
                               .OrderBy(keySelector: m => m.IsSynthesized
                                    ? 1
                                    : 0)

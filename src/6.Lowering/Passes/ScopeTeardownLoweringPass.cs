@@ -689,7 +689,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             {
                 ResolvedType = owned.Type
             };
-        var callee = new MemberExpression(Object: ident, MemberName: owned.Destroy.Name, Location: loc)
+        var callee = new MemberExpression(Object: ident, MemberName: "destruct", Location: loc)
         {
             ResolvedType = _blankType
         };
@@ -713,7 +713,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private ExpressionStatement MakeMemberDestroyStmt(Expression receiver, RoutineInfo destroy,
         SourceLocation loc)
     {
-        var callee = new MemberExpression(Object: receiver, MemberName: destroy.Name, Location: loc)
+        var callee = new MemberExpression(Object: receiver, MemberName: "destruct", Location: loc)
         {
             ResolvedType = _blankType
         };
@@ -973,7 +973,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             {
                 Callee: MemberExpression
                 {
-                    MemberName: "destruct" or "dispose", Object: IdentifierExpression dv
+                    MemberName: "destruct", Object: IdentifierExpression dv
                 }
             }:
                 _movedNames.Add(item: dv.Name);

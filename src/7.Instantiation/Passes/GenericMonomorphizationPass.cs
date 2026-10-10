@@ -921,10 +921,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// </summary>
     private void SeedLifecycleHooks(Queue<MonomorphizedBody> worklist, ref int totalBuilt)
     {
-        string[] lifecycleHooks =
-        [
-            DestroyMemberRoutineName, RuntimeContract.Dispose, RuntimeContract.RoamDispose, "roam_free", "roam_trace"
-        ];
+        string[] lifecycleHooks = [DestroyMemberRoutineName, "roam_free", "roam_trace"];
         foreach (TypeSymbol t in ctx.Registry
                                   .AllConcreteGenericInstancesUnfiltered
                                   .ToArray())
@@ -1430,12 +1427,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             rewritten = _ctx.AnalyzeMaterializedDeriveBody?.Invoke(arg1: r, arg2: rewritten) ??
                         rewritten;
 
-            // v0.2.0 cycle-collector contract: an entity's DERIVED roam_free must ALSO run the side-effects of
-            // a USER-AUTHORED destroy (e.g. a logging / beacon `@override destroy`), so a value reaped by the
-            // cycle collector still observes its authored teardown. A user `@override` REPLACES the derived
-            // destroy entirely, and roam_free is a SEPARATE derived template (member roam_free walk + heap
-            // free), so without this the custom destroy is never reached during collection. Only a USER destroy
-            // is prepended — a DERIVED entity destroy walks Roamed members and would double-free, and this clone
+            // Cycle-collector contract: an entity with a USER-AUTHORED destruct (e.g. a logging / beacon
+            // `@override destruct`) is reaped through that destruct, so a value the collector frees still
+            // observes its authored teardown. The written destruct is the entity's whole teardown (the builder
+            // gives back the box before each of its returns), so the derived roam_free becomes that one call.
+            // Only a USER destruct takes this path: a DERIVED entity destruct walks Roamed members and would
+            // double-free, and this clone
             // path only runs when roam_free itself is NOT hand-written (a container that hand-writes roam_free to
             // manage a raw buffer never reaches here). "User-authored" = the destroy has a hand-written source
             // body (present in programBodies); a template-derived destroy never does.
@@ -1446,7 +1443,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     { RegistryKey: { } destroyKey } &&
                 programBodies.ContainsKey(key: destroyKey))
             {
-                rewritten = PrependReceiverCall(block: roamFreeBlock,
+                rewritten = ReplaceWithReceiverCall(block: roamFreeBlock,
                     memberRoutineName: DestroyMemberRoutineName,
                     owner: owner);
             }
@@ -1658,7 +1655,13 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         /// <see cref="Declaration.CallOverloadResolutionPass"/> resolves the call. Used to graft a user-authored
         /// <c>destruct</c>'s side-effects onto an entity's derived <c>roam_free</c>.
         /// </summary>
-        private static BlockStatement PrependReceiverCall(BlockStatement block,
+        /// <summary>
+        /// The body becomes <c>me.&lt;member&gt;()</c> and its own closing <c>return</c>. A written entity
+        /// <c>destruct</c> is the entity's whole teardown (the builder gives back its box before each of its
+        /// returns), so the derived <c>roam_free</c> of such an entity is that call alone: walking the members and
+        /// freeing the box again after it would end them twice.
+        /// </summary>
+        private static BlockStatement ReplaceWithReceiverCall(BlockStatement block,
             string memberRoutineName, TypeSymbol owner)
         {
             SourceLocation loc = block.Location;
@@ -1669,11 +1672,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     Location: loc),
                 Arguments: [],
                 Location: loc);
-            var stmts = new List<Statement>(capacity: block.Statements.Count + 1)
+            var stmts = new List<Statement> { new ExpressionStatement(Expression: call, Location: loc) };
+            if (block.Statements is [.., ReturnStatement closing])
             {
-                new ExpressionStatement(Expression: call, Location: loc)
-            };
-            stmts.AddRange(collection: block.Statements);
+                stmts.Add(item: closing);
+            }
+
             return block with { Statements = stmts };
         }
 
@@ -1932,8 +1936,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             foreach (string hook in new[]
                      {
                          DestroyMemberRoutineName,
-                         RuntimeContract.Dispose,
-                         RuntimeContract.RoamDispose,
                          "roam_free",
                          "roam_trace"
                      })
@@ -2039,15 +2041,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 }
 
                 break;
-            case DestroyMemberRoutineName or "share" or "hash" or "eq" or "roam_free":
-                // A teardown walk ends each member through its `dispose` (`roam_dispose` for the collector's).
-                string verb = routine.Name switch
-                {
-                    DestroyMemberRoutineName => RuntimeContract.Dispose,
-                    "roam_free" => RuntimeContract.RoamDispose,
-                    _ => routine.Name
-                };
-                foreach (RoutineInfo fc in MemberVariableWiredCallees(owner: owner, verb: verb))
+            case DestroyMemberRoutineName or "share" or "hash" or "eq":
+                foreach (RoutineInfo fc in MemberVariableWiredCallees(owner: owner,
+                             verb: routine.Name))
                 {
                     yield return fc;
                 }

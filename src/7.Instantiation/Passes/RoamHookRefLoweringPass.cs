@@ -27,8 +27,7 @@ internal sealed class RoamHookRefLoweringPass
     private const string FreeRef = "roam_free_ref";
     private const string DropRef = "roam_drop_ref";
     private const string TraceImpl = "roam_trace";
-    // The collector's free hook and the last release's drop hook end the entity, its box included.
-    private const string FreeImpl = RuntimeContract.RoamDispose;
+    private const string FreeImpl = "roam_free";
 
     private readonly TypeRegistry _registry;
 
@@ -272,7 +271,7 @@ internal sealed class RoamHookRefLoweringPass
         {
             TraceRef => TraceImpl,
             FreeRef => FreeImpl,
-            _ => RuntimeContract.Dispose
+            _ => RuntimeContract.Destroy
         };
         RoutineInfo? impl = _registry.LookupMemberRoutineOverload(type: ent, memberRoutineName: implName,
             argTypes: []);
