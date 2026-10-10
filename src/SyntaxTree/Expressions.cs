@@ -507,6 +507,10 @@ public record CallExpression(
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
 
+    /// <summary>For the call that builds an Agent (an <c>agent</c> call once analyzed): why the Agent may only run on the
+    /// thread that made it (<see cref="AgentExpression.OneThreadArgument"/>), or null.</summary>
+    public string? AgentOneThreadArgument { get; init; }
+
     /// <summary>True for a call written between its two operands, <c>a dot b</c> (a routine marked <c>@infix</c>).</summary>
     public bool IsInfix { get; init; }
 

@@ -23,6 +23,13 @@ public record AgentExpression(Expression Inner, SourceLocation Location) : Expre
     /// Every pass after analysis sees this call in the node's place. Null until analyzed.
     /// </summary>
     public Expression? LoweredCall { get; set; }
+
+    /// <summary>
+    /// Why this Agent may only run on the thread that made it: an argument that only one thread may use (a token,
+    /// a <c>Retained</c>), described for a message. Such an Agent is started with <c>start_here()</c> and stays in
+    /// the routine that made it (RF-S632 otherwise). Null when any verb may start it.
+    /// </summary>
+    public string? OneThreadArgument { get; set; }
 }
 
 #endregion

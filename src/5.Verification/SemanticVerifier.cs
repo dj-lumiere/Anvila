@@ -661,6 +661,7 @@ public sealed partial class SemanticVerifier
         if (_registry.Rules.ChecksOwnership)
         {
             (_shapeEffects ??= new ShapeEffectChecker(report: ReportError)).Check(programs: list);
+            new AgentOneThreadChecker(report: ReportError).Check(programs: list);
         }
 
         if (!_userBodyCheckMade)

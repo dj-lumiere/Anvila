@@ -73,7 +73,7 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        ValidateAgentArguments(arguments: arguments);
+        agent.OneThreadArgument = ValidateAgentArguments(arguments: arguments);
 
         // The routines written for this call.
         SourceLocation loc = agent.Location;
@@ -159,7 +159,8 @@ public sealed partial class SemanticVerifier
             ResolvedRoutine = spawnInfo,
             ResolvedType = spawnInfo.ReturnType,
             LoweringKind = ClassifyStandaloneRoutineCall(routine: spawnInfo),
-            IsPreAnalyzed = true
+            IsPreAnalyzed = true,
+            AgentOneThreadArgument = agent.OneThreadArgument
         };
         return spawnInfo.ReturnType ?? ErrorTypeSymbol.Instance;
     }

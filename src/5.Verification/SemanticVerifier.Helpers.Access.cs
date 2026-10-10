@@ -157,25 +157,41 @@ public sealed partial class SemanticVerifier
     /// across work running in parallel, so it is rejected (RF-S632). Synchronization must be MARKED, never
     /// implied.
     /// </summary>
-    private void ValidateAgentArguments(IReadOnlyList<(Expression Value, TypeSymbol Type)> arguments)
+    /// <returns>The first argument that only one thread may use (a token, a <c>Retained</c>), described for a message,
+    /// or null: an Agent holding one is started with <c>start_here()</c> only, which the checks after analysis
+    /// enforce (<see cref="AgentOneThreadChecker"/>).</returns>
+    private string? ValidateAgentArguments(IReadOnlyList<(Expression Value, TypeSymbol Type)> arguments)
     {
         if (!ChecksOwnershipHere)
         {
-            return;
+            return null;
         }
 
+        string? oneThread = null;
         foreach ((Expression value, TypeSymbol type) in arguments)
         {
-            ValidateAgentArgument(value: value, type: type);
+            oneThread ??= ValidateAgentArgument(value: value, type: type);
         }
+
+        return oneThread;
     }
 
+    /// <summary>The wrappers only one thread may use that an Agent started on its own thread (<c>start_here()</c>) may
+    /// still hold: tokens and the single-thread reference-counted handles.</summary>
+    private static readonly HashSet<string> OneThreadWrappers = new(comparer: StringComparer.Ordinal)
+    {
+        Declaration.RuntimeContract.Viewing,
+        Declaration.RuntimeContract.Modifying,
+        Declaration.RuntimeContract.Retained,
+        Declaration.RuntimeContract.Tracked
+    };
+
     /// <summary>Checks one argument of an <c>agent</c> call (see <see cref="ValidateAgentArguments"/>).</summary>
-    private void ValidateAgentArgument(Expression value, TypeSymbol type)
+    private string? ValidateAgentArgument(Expression value, TypeSymbol type)
     {
         if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type))
         {
-            return;
+            return null;
         }
 
         // A `Roamed` handle crosses the boundary by being PROMOTED, not rejected: passing it into an Agent IS the
@@ -184,7 +200,7 @@ public sealed partial class SemanticVerifier
         // touches it.
         if (type.BareName == Declaration.RuntimeContract.Roamed)
         {
-            return;
+            return null;
         }
 
         // A bare entity is a heap handle: passing it by copy copies the pointer, so the same object would be
@@ -194,7 +210,7 @@ public sealed partial class SemanticVerifier
         bool isEntity = type is EntityTypeSymbol;
         if (isEntity && value is StealExpression)
         {
-            return;
+            return null;
         }
 
         (string Wrapper, string Path)? offender = isEntity
@@ -202,12 +218,21 @@ public sealed partial class SemanticVerifier
             : Wrappers.FindThreadUnsafeWrapper(type: type);
         if (!isEntity && offender == null)
         {
-            return;
+            return null;
         }
 
-        string what = value is IdentifierExpression id
-            ? $"`{id.Name}` ({type.Name})"
+        string what = value is IdentifierExpression named
+            ? $"`{named.Name}` ({type.Name})"
             : $"this {type.Name} argument";
+        // A token or a single-thread handle is fine on the thread that made the Agent: it is noted, and the verb that
+        // starts the Agent decides.
+        if (offender is { Wrapper: var wrapper, Path: var at } && OneThreadWrappers.Contains(item: wrapper))
+        {
+            return at == "<value>"
+                ? what
+                : $"{what}, which holds a `{wrapper}` at `{at}`";
+        }
+
         string reason = isEntity
             ? "a bare entity would be the same object in the caller and in the running work"
             : $"it owns `{offender!.Value.Wrapper}` at `{offender.Value.Path}`, which only one thread may use";
@@ -218,6 +243,7 @@ public sealed partial class SemanticVerifier
         ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
             message: $"You pass {what} to an agent, but {reason}. {fix}.",
             location: value.Location);
+        return null;
     }
 
     /// <summary>
