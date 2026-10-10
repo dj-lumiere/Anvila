@@ -22,6 +22,13 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     /// <summary>The suggestion suffix for an unknown type name.</summary>
     internal string ForType(string typeName)
     {
+        // The binary floating-point types are B16, B32, B64 and B128: F64 names B64, not the S64 or U64 an edit away.
+        if (typeName is "F16" or "F32" or "F64" or "F128" &&
+            TypeSuggestionCandidates().Contains(value: $"B{typeName[1..]}"))
+        {
+            return $" Did you mean 'B{typeName[1..]}'?";
+        }
+
         return DidYouMean(target: typeName, candidates: TypeSuggestionCandidates());
     }
 
