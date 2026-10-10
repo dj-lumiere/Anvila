@@ -434,6 +434,17 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             GenericMemberRoutineCallExpression gmc => LowerGenericMemberRoutineCall(gmc: gmc,
                 expr: expr),
             CompoundAssignmentExpression compound => LowerCompoundAssignment(compound: compound),
+            // `steal handle` takes the entity out through the handle's release_inner.
+            StealExpression { TakesInnerThrough: { } release } steal => LowerExpr(expr: new CallExpression(
+                Callee: new MemberExpression(Object: steal.Operand, MemberName: release.Name, Location: steal.Location),
+                Arguments: [],
+                Location: steal.Location)
+            {
+                ResolvedRoutine = release,
+                ResolvedType = steal.ResolvedType,
+                ConsumesReceiver = true,
+                LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: release)
+            }),
             StealExpression steal =>
                 // Strip the wrapper -- ownership transfer semantics are only needed during SA.
                 LowerExpr(expr: steal.Operand),

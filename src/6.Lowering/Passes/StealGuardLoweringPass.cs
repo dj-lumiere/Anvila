@@ -49,6 +49,11 @@ internal static class StealGuardLoweringPass
                         break;
                     case CallExpression call:
                         MarkConsumed(operands: call.Arguments, everStolen: everStolen);
+                        if (call is { ConsumesReceiver: true, Callee: MemberExpression ended })
+                        {
+                            MarkConsumed(operand: ended.Object, everStolen: everStolen);
+                        }
+
                         break;
                     case CreatorExpression creator:
                         foreach ((string _, Expression value) in creator.MemberVariables)

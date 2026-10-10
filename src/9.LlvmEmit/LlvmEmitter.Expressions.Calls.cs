@@ -375,7 +375,7 @@ public partial class LlvmEmitter
         TypeSymbol? resolvedReturnType = ResolveReturnTypeAndDeclareSymbol(memberRoutine: memberRoutine,
             mangledName: mangledName, receiverType: receiverType, argTypes: argTypes);
 
-        return EmitMemberRoutineCallInstruction(sb: sb,
+        string callResult = EmitMemberRoutineCallInstruction(sb: sb,
             arguments: arguments,
             spec: new MemberCallSpec(MemberRoutine: memberRoutine,
                 MemberRoutineTakesReceiver: memberRoutineTakesReceiver,
@@ -384,6 +384,8 @@ public partial class LlvmEmitter
             argValues: argValues,
             argTypes: argTypes,
             argTypeInfos: argTypeInfos);
+        NullStampStolenLocal(sb: sb, expr: member.Object);
+        return callResult;
     }
 
     private readonly record struct MemberCallSpec(

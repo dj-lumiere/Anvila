@@ -507,6 +507,10 @@ public record CallExpression(
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
 
+    /// <summary>True when the call ends its receiver (a handle's <c>release_inner</c> for <c>steal handle</c>): the
+    /// receiver's slot is cleared after the call, like a moved-out argument's.</summary>
+    public bool ConsumesReceiver { get; init; }
+
     /// <summary>
     /// True for the call inside a routine that runs a recipe: an <c>agent</c> call's run routine calling its work
     /// routine (<see cref="Builder.Desugaring.Passes.AgentRecipe"/>), or a <c>@blocking</c> foreign routine's run
@@ -1515,6 +1519,12 @@ public record StealExpression(Expression Operand, SourceLocation Location)
     /// left behind.
     /// </summary>
     public bool IsPlaceMove { get; init; }
+
+    /// <summary>
+    /// For <c>steal</c> on a <c>Retained</c> or <c>Guarded</c> handle: the handle's <c>release_inner</c>, which takes the
+    /// entity out of the handle (the value of the expression is the entity, and the handle ends).
+    /// </summary>
+    public RoutineInfo? TakesInnerThrough { get; set; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
