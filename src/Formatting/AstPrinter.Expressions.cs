@@ -32,8 +32,9 @@ internal sealed partial class AstPrinter
     private const int PEquality = 8;
     private const int PComparison = 9;
     private const int PIs = 10;
-    private const int PRange = 11;
-    private const int PBitwise = 12;
+    private const int PInfix = 11;
+    private const int PRange = 12;
+    private const int PBitwise = 13;
     private const int PAdditive = 15;
     private const int PMultiplicative = 16;
     private const int PUnary = 17;
@@ -116,6 +117,7 @@ internal sealed partial class AstPrinter
             UnaryExpression or StealExpression or BackIndexExpression or RecoveryExpression
                 or AgentExpression => PUnary,
             LiteralExpression { Value: string text } when text.StartsWith(value: '-') => PUnary,
+            CallExpression { IsInfix: true } => PInfix,
             CallExpression or MemberExpression or IndexExpression or GenericMemberExpression
                 or GenericMemberRoutineCallExpression or SpliceMemberExpression => PPostfix,
             _ => PPrimary
@@ -151,6 +153,14 @@ internal sealed partial class AstPrinter
     /// <summary><paramref name="expression"/> without parentheses of its own.</summary>
     private Doc Bare(Expression expression, int follow, bool comma)
     {
+        // An infix routine call is written between its operands, left to right: `a dot b cross c`.
+        if (expression is CallExpression { IsInfix: true, Callee: MemberExpression infix, Arguments: [var operand] })
+        {
+            return Doc.Concat(Expr(expression: infix.Object, min: PInfix, follow: PInfix, comma: false),
+                Doc.Text(text: " " + NameText(name: infix.MemberName) + " "),
+                Expr(expression: operand, min: PRange, follow: follow, comma: comma));
+        }
+
         if (CallChainDoc(expression: expression) is { } callChain)
         {
             return callChain;
@@ -280,7 +290,7 @@ internal sealed partial class AstPrinter
         {
             switch (current)
             {
-                case CallExpression { IsFailable: false, TypeArguments: null } call:
+                case CallExpression { IsFailable: false, TypeArguments: null, IsInfix: false } call:
                     segments.Add(item: (false, call));
                     current = call.Callee;
                     continue;
@@ -437,7 +447,7 @@ internal sealed partial class AstPrinter
             // `**`: the base is a postfix expression and the exponent may carry a sign (`2 ** -1`).
             PPower => (PPostfix, PUnary),
             PComparison => (PIs, PIs),
-            PIs => (PIs, PRange),
+            PIs => (PIs, PInfix),
             _ => (level, level + 1)
         };
         // Different bitwise operators on one level are grouped in parentheses: `(a & b) | c`.
@@ -877,7 +887,9 @@ internal sealed partial class AstPrinter
                 try
                 {
                     List<Token> tokens = Lexers.Tokenize(source: n, fileName: "", language: language);
-                    return tokens.Count > 0 && tokens[index: 0] is { Type: TokenType.Identifier } first &&
+                    // `me` and `Me` are words of their own that the parser reads as names.
+                    return tokens.Count > 0 &&
+                           tokens[index: 0] is { Type: TokenType.Identifier or TokenType.Me or TokenType.MyType } first &&
                            first.Text == n && tokens.Skip(count: 1).All(predicate: t =>
                                t.Type is TokenType.Newline or TokenType.Eof);
                 }

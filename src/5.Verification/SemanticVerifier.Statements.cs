@@ -1345,10 +1345,17 @@ public sealed partial class SemanticVerifier
     /// <c>@discardable</c> (<c>Set.add</c>'s Bool): dropping it needs no <c>drop</c>.</summary>
     private static bool IsDiscardable(RoutineInfo? routine)
     {
+        return DeclaredWith(routine: routine, annotation: "discardable");
+    }
+
+    /// <summary>Whether the routine a call reaches was declared with <paramref name="annotation"/>, looking through a
+    /// recovery variant, a generic instance and a wrapper's forwarder to the routine as written.</summary>
+    private static bool DeclaredWith(RoutineInfo? routine, string annotation)
+    {
         for (RoutineInfo? declared = routine?.RecoveryOf ?? routine; declared != null;
              declared = declared.WrapperForwarderInnerMemberRoutine)
         {
-            if ((declared.GenericDefinition ?? declared).Annotations.Contains(value: "discardable"))
+            if ((declared.GenericDefinition ?? declared).Annotations.Contains(value: annotation))
             {
                 return true;
             }

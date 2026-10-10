@@ -507,6 +507,9 @@ public record CallExpression(
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
 
+    /// <summary>True for a call written between its two operands, <c>a dot b</c> (a routine marked <c>@infix</c>).</summary>
+    public bool IsInfix { get; init; }
+
     /// <summary>True when the call ends its receiver (a handle's <c>release_inner</c> for <c>steal handle</c>): the
     /// receiver's slot is cleared after the call, like a moved-out argument's.</summary>
     public bool ConsumesReceiver { get; init; }

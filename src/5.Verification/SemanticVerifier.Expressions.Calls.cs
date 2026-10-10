@@ -157,6 +157,14 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
         EnforceUnsafeCallAllowed(resolved: call.ResolvedRoutine, location: call.Location);
+        if (call is { IsInfix: true, Callee: MemberExpression infix, ResolvedRoutine: { } called } &&
+            !DeclaredWith(routine: called, annotation: "infix"))
+        {
+            ReportError(code: SemanticDiagnosticCode.InvalidAnnotation,
+                message: $"'{infix.MemberName}' is written between two values, which only a routine marked '@infix' " +
+                         $"is. Call it as 'a.{infix.MemberName}(b)', or mark '{infix.MemberName}' '@infix'.",
+                location: call.Location);
+        }
 
         return result;
     }

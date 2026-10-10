@@ -185,7 +185,8 @@ public partial class Parser
     /// <c>as</c> <c>and</c> <c>or</c>) are keywords only where an operator stands: right after something that ends an
     /// expression (<c>0 to 10</c>, <c>xs have v</c>, <c>each x in xs</c>). Anywhere else the word is a name
     /// (<c>var to = 3</c>, <c>routine step(by: S64)</c>, <c>by + to</c>), so it is turned into an identifier here,
-    /// before parsing. A pattern arm still starts with <c>is</c> (<c>is S64 as n =&gt;</c>) and an <c>else</c> arm
+    /// before parsing. A pattern arm still starts with <c>is</c> (<c>is S64 as n =&gt;</c>) or a flags arm with
+    /// <c>have</c>/<c>lack</c> (<c>have READ =&gt;</c>), and an <c>else</c> arm
     /// still binds with <c>as</c>, so those two stay keywords there. <c>not</c> starts an expression, so it stays a
     /// keyword everywhere.
     /// </summary>
@@ -206,7 +207,7 @@ public partial class Parser
             bool afterExpression = before < TokenType.Identifier || before is TokenType.Identifier or TokenType.Me
                 or TokenType.MyType or TokenType.True or TokenType.False or TokenType.None or TokenType.NoneValue
                 or TokenType.RightParen or TokenType.RightBracket or TokenType.RightBrace or TokenType.Question;
-            bool patternArm = token.Type is TokenType.Is or TokenType.IsNot &&
+            bool patternArm = token.Type is TokenType.Is or TokenType.IsNot or TokenType.Have or TokenType.Lack &&
                               before is TokenType.Newline or TokenType.Indent or TokenType.Dedent;
             bool elseBinding = token.Type == TokenType.As && before == TokenType.Else;
             if (!afterExpression && !patternArm && !elseBinding)

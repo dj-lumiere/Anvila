@@ -1095,6 +1095,16 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
+        // @infix: a member routine with one parameter besides me, written between its two operands (`a dot b`).
+        if (routine.Annotations.Contains(item: "infix") &&
+            (kind != RoutineKind.MemberRoutine || routine.Parameters.Count(predicate: p => p.Name != "me") != 1))
+        {
+            ReportError(code: SemanticDiagnosticCode.InvalidAnnotation,
+                message: $"'@infix' puts a routine between two values ('a {routineName} b'), so it takes a receiver and " +
+                         $"one parameter: 'routine T.{routineName}(you: T)'.",
+                location: routine.Location);
+        }
+
         // @crash_only is only valid on failable (!) routines (#76)
         if (routine.Annotations.Contains(item: "crash_only") && !routine.IsFailable)
         {

@@ -242,6 +242,38 @@ public partial class Parser
     }
 
     /// <summary>
+    /// Parses calls of infix routines: <c>a dot b</c> is <c>a.dot(b)</c> for a routine marked <c>@infix</c> (analysis
+    /// checks the mark). They bind looser than ranges and tighter than comparisons, left to right:
+    /// <c>a dot b cross c</c> is <c>(a dot b) cross c</c>. A name right after an operand, on the same line and
+    /// followed by something that starts an operand, is such a call: nothing else in the grammar puts a name there.
+    /// </summary>
+    private Expression ParseInfix()
+    {
+        Expression expr = ParseRange();
+        while (CurrentToken.Type == TokenType.Identifier && StartsInfixOperand(token: PeekToken(offset: 1)))
+        {
+            Token name = CurrentToken;
+            Advance();
+            Expression right = ParseRange();
+            SourceLocation at = GetLocation(token: name);
+            expr = new CallExpression(Callee: new MemberExpression(Object: expr, MemberName: name.Text, Location: at),
+                Arguments: [right],
+                Location: at) { IsInfix = true };
+        }
+
+        return expr;
+    }
+
+    private static bool StartsInfixOperand(Token token)
+    {
+        return token.Type is TokenType.Identifier or TokenType.Me or TokenType.True or TokenType.False
+                   or TokenType.NoneValue or TokenType.LeftParen or TokenType.LeftBracket or TokenType.Minus
+                   or TokenType.UndecidedInteger or TokenType.FormattedText or TokenType.RawText
+                   or TokenType.RawFormattedText ||
+               token.Type.ToString().EndsWith(value: "Literal", comparisonType: StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Parses equality expressions.
     /// Syntax: <c>a != b</c>
     /// Note: <c>==</c> is handled in ParseComparison for chaining support.
@@ -337,7 +369,7 @@ public partial class Parser
     /// <returns>The parsed expression.</returns>
     private Expression ParseIsExpression()
     {
-        Expression expr = ParseRange();
+        Expression expr = ParseInfix();
 
         // `x in coll` as a test: containment is written container-first. `in` only introduces a loop
         // source (`each x in xs`, `expand m in ...`), which those headers consume themselves.
@@ -372,7 +404,7 @@ public partial class Parser
             else
             {
                 // Handle obeys as a binary operator
-                Expression right = ParseRange();
+                Expression right = ParseInfix();
                 expr = new BinaryExpression(Left: expr,
                     Operator: TokenToBinaryOperator(tokenType: op.Type),
                     Right: right,
@@ -407,7 +439,7 @@ public partial class Parser
                 location: location);
         }
 
-        Expression element = ParseRange();
+        Expression element = ParseInfix();
         return new BinaryExpression(Left: container,
             Operator: isNegated
                 ? BinaryOperator.Lack
