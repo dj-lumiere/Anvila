@@ -14,7 +14,7 @@ namespace Builder.TesseraEmit;
 /// <summary>
 /// Writes one routine as Tessera. Every local lives in a stack slot, as in the LLVM emitter's
 /// alloca-per-local output (LLVM promotes the slots to registers): a read is a <c>load</c>, a write a
-/// <c>store</c>. Each slot is shared in the routine's head (<c>shared x : @T &lt;- uninit</c>), so every block
+/// <c>store</c>. Each slot is local to the whole routine, declared in its head (<c>local x : @T &lt;- .hollow()</c>), so every block
 /// sees it without taking it as a parameter, and the local's first value is stored where it is declared
 /// (<c>x.store(value)</c>). A parameter's slot starts with the parameter in the head itself. Slot names are
 /// unique in the routine, so a local of an inner scope never meets another of its name. Each value a statement
@@ -201,11 +201,11 @@ internal sealed class TesseraRoutineWriter
         // Before entry has done anything, the value can only name a parameter or be a literal: it goes in the head.
         if (initial is not null && (inHead || (_current == _blocks[0] && _current.Lines.Count == 0)))
         {
-            _head.Add(item: $"shared {local.Place} : {slotType} <- {initial}");
+            _head.Add(item: $"local {local.Place} : {slotType} <- {initial}");
             return local;
         }
 
-        _head.Add(item: $"shared {local.Place} : {slotType} <- uninit");
+        _head.Add(item: $"local {local.Place} : {slotType} <- .hollow()");
         if (initial is not null)
         {
             Emit(line: $"{local.Place}.store({initial})");
@@ -220,7 +220,7 @@ internal sealed class TesseraRoutineWriter
         return $"{kind}_{_labels++}";
     }
 
-    /// <summary>A jump target. Blocks take no parameters: every slot is shared in the head.</summary>
+    /// <summary>A jump target. Blocks take no parameters: every slot is declared in the head.</summary>
     private static string Target(string label)
     {
         return $"{label}()";
@@ -279,7 +279,7 @@ internal sealed class TesseraRoutineWriter
                 break;
             case BlockStatement block:
             {
-                // A scope's locals stop being visible where the scope ends. Their slots stay shared under names no
+                // A scope's locals stop being visible where the scope ends. Their slots stay in the head under names no
                 // other local has.
                 _scopes.Add(item: new Dictionary<string, Local>(comparer: StringComparer.Ordinal));
                 foreach (Statement s in block.Statements)
@@ -567,9 +567,9 @@ internal sealed class TesseraRoutineWriter
             return from == to
                 ? inner with { Type = target }
                 : to is ['@', .. var pointee]
-                    ? new Operand(Text: Temp(type: target, expression: $"{Value(operand: inner)}.to<@{pointee}>()"),
+                    ? new Operand(Text: Temp(type: target, expression: $"{Value(operand: inner)}.to[@{pointee}]()"),
                         Type: target, IsPlace: false)
-                    : new Operand(Text: Temp(type: target, expression: $"bitcast<{from}, {to}>({Value(operand: inner)})"),
+                    : new Operand(Text: Temp(type: target, expression: $"bitcast[{from}, {to}]({Value(operand: inner)})"),
                         Type: target, IsPlace: false);
         }
 
@@ -589,7 +589,7 @@ internal sealed class TesseraRoutineWriter
             RepresentationConversion.UnsignedToFloat => "uitofp",
             _ => throw Unsupported(what: $"the representation conversion {cast.Conversion}")
         };
-        return new Operand(Text: Temp(type: target, expression: $"{operation}<{from}, {to}>({Value(operand: inner)})"),
+        return new Operand(Text: Temp(type: target, expression: $"{operation}[{from}, {to}]({Value(operand: inner)})"),
             Type: target, IsPlace: false);
     }
 
@@ -608,7 +608,7 @@ internal sealed class TesseraRoutineWriter
     private string Typed(string value, TypeSymbol? from, TypeSymbol? to)
     {
         return TypeText(type: from) == "Addr" && TypeText(type: to) is ['@', .. var pointee]
-            ? $"{value}.to<@{pointee}>()"
+            ? $"{value}.to[@{pointee}]()"
             : value;
     }
 
@@ -647,7 +647,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"zero{_temps++}";
-        Emit(line: $"claim {slot} : @{text} <- uninit");
+        Emit(line: $"claim {slot} : @{text} <- .hollow()");
         Emit(line: $"{slot}.zeroinit(1)");
         return $"{slot}.load()";
     }
@@ -670,7 +670,7 @@ internal sealed class TesseraRoutineWriter
                 string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
                     returnType: "Addr");
                 string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
-                Emit(line: $"{block}.to<@{_module.EntityRecord(entity: entity)}>().zeroinit(1)");
+                Emit(line: $"{block}.to[@{_module.EntityRecord(entity: entity)}]().zeroinit(1)");
                 return new Operand(Text: block, Type: entity, IsPlace: false);
             }
             case ZeroValueExpression { ResolvedType: { } zeroType }:
@@ -724,7 +724,7 @@ internal sealed class TesseraRoutineWriter
                 return new Operand(Text: Temp(type: address.ResolvedType, expression: $"{_module.RoutineName(routine: native)}.addr()"),
                     Type: address.ResolvedType, IsPlace: false);
             case ListLiteralExpression { ResolvedType: { } emptyType, Elements.Count: 0 }:
-                // An empty fixed array: its zero value (`Array<T, 0> {}` would read as a record literal).
+                // An empty fixed array: its zero value (`Array[T, 0] {}` would read as a record literal).
                 return new Operand(Text: Temp(type: emptyType, expression: ZeroValue(type: emptyType)), Type: emptyType,
                     IsPlace: false);
             case ListLiteralExpression { ResolvedType: { } arrayType } list:
@@ -883,7 +883,7 @@ internal sealed class TesseraRoutineWriter
                 string pointer = Receiver(operand: wrapper);
                 return new Operand(Text: TypeText(type: wrapper.Type).StartsWith(value: '@')
                         ? pointer
-                        : $"{pointer}.to<@{TypeText(type: inner)}>()",
+                        : $"{pointer}.to[@{TypeText(type: inner)}]()",
                     Type: inner, IsPlace: true);
             }
             case WrapperProjectionKind.ControllerData:
@@ -893,7 +893,7 @@ internal sealed class TesseraRoutineWriter
                 string block = Receiver(operand: wrapper);
                 return new Operand(
                     Text: Temp(type: inner,
-                        expression: $"{block}.to<@{_module.EntityRecord(entity: controller)}>()." +
+                        expression: $"{block}.to[@{_module.EntityRecord(entity: controller)}]()." +
                                     $"{Declaration.RuntimeContract.ControllerData}.load()"),
                     Type: inner, IsPlace: false);
             }
@@ -919,7 +919,7 @@ internal sealed class TesseraRoutineWriter
         {
             Operand operand = Evaluate(expression: side);
             return Temp(type: _module.AddressType,
-                expression: $"ptrtoint<{TypeText(type: operand.Type)}, U64>({Value(operand: operand)})");
+                expression: $"ptrtoint[{TypeText(type: operand.Type)}, U64]({Value(operand: operand)})");
         }
 
         string left = Address(side: identity.Left);
@@ -945,7 +945,7 @@ internal sealed class TesseraRoutineWriter
         if (owner.Type is EntityTypeSymbol entity)
         {
             string block = Receiver(operand: owner);
-            return new Operand(Text: $"{block}.to<@{_module.EntityRecord(entity: entity)}>().{member.MemberName}",
+            return new Operand(Text: $"{block}.to[@{_module.EntityRecord(entity: entity)}]().{member.MemberName}",
                 Type: fieldType, IsPlace: true);
         }
 
@@ -1310,7 +1310,7 @@ internal sealed class TesseraRoutineWriter
         string block = Temp(type: entity, expression: $"{allocate}({entity.HeapBlockSize(pointerSize: 8)})");
         for (int i = 0; i < values.Count; i++)
         {
-            Emit(line: $"{block}.to<@{_module.EntityRecord(entity: entity)}>()." +
+            Emit(line: $"{block}.to[@{_module.EntityRecord(entity: entity)}]()." +
                        $"{entity.MemberVariables[index: i].Name}.store({values[index: i]})");
         }
 
@@ -1331,7 +1331,7 @@ internal sealed class TesseraRoutineWriter
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
         string slot = $"carrier{_temps++}";
-        Emit(line: $"claim {slot} : @{TypeText(type: carrier)} <- uninit");
+        Emit(line: $"claim {slot} : @{TypeText(type: carrier)} <- .hollow()");
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
         Emit(line: $"{slot}.{tagField}.store({tag})");
@@ -1344,26 +1344,26 @@ internal sealed class TesseraRoutineWriter
                 returnType: "Addr");
             string objectRecord = _module.CrashObjectRecord(crashable: crashable);
             string size = $"t{_temps++}";
-            Emit(line: $"{size} : U64 = sizeof<{objectRecord}>().to<U64>()");
+            Emit(line: $"{size} : U64 = sizeof[{objectRecord}]().to[U64]()");
             string errorObject = $"t{_temps++}";
             Emit(line: $"{errorObject} : Addr = {allocate}({size})");
             string typeId = $"t{_temps++}";
             Emit(line: $"{typeId} : U64 = 0x{TypeIdHelper.ComputeTypeId(fullName: crashable.FullName):X}");
-            Emit(line: $"{errorObject}.to<@{objectRecord}>().type_id.store({typeId})");
+            Emit(line: $"{errorObject}.to[@{objectRecord}]().type_id.store({typeId})");
             // The trace's top frame moves to the throw, so the copy the error keeps points at it.
             if (_traced && tagged.Location is { } at && (at.Line > 0 || at.Column > 0))
             {
                 Emit(line: $"{TesseraTrace.UpdateLocation}({at.Line}, {at.Column})");
             }
 
-            Emit(line: $"{TesseraTrace.Snapshot}({errorObject}.to<@{objectRecord}>().trace)");
-            Emit(line: $"{errorObject}.to<@{objectRecord}>().error.store({value})");
-            Emit(line: $"{slot}.{payloadField}.to<@Addr>().store({errorObject})");
+            Emit(line: $"{TesseraTrace.Snapshot}({errorObject}.to[@{objectRecord}]().trace)");
+            Emit(line: $"{errorObject}.to[@{objectRecord}]().error.store({value})");
+            Emit(line: $"{slot}.{payloadField}.to[@Addr]().store({errorObject})");
         }
         else if (tagged.Payload is { } payload)
         {
             string value = Value(operand: Evaluate(expression: payload));
-            Emit(line: $"{slot}.{payloadField}.to<@{TypeText(type: payload.ResolvedType)}>()" +
+            Emit(line: $"{slot}.{payloadField}.to[@{TypeText(type: payload.ResolvedType)}]()" +
                        $".store({value})");
         }
 
@@ -1396,12 +1396,12 @@ internal sealed class TesseraRoutineWriter
         {
             // The error slot holds the address of the object the caught crashable lives in.
             string errorObject = $"t{_temps++}";
-            Emit(line: $"{errorObject} : Addr = {Place(operand: carrier)}.{payloadField}.to<@Addr>().load()");
+            Emit(line: $"{errorObject} : Addr = {Place(operand: carrier)}.{payloadField}.to[@Addr]().load()");
             string objectRecord = _module.CrashObjectRecord(crashable: (CrashableTypeSymbol)valueType);
-            return new Operand(Text: $"{errorObject}.to<@{objectRecord}>().error", Type: valueType, IsPlace: true);
+            return new Operand(Text: $"{errorObject}.to[@{objectRecord}]().error", Type: valueType, IsPlace: true);
         }
 
-        return new Operand(Text: $"{Place(operand: carrier)}.{payloadField}.to<@{TypeText(type: valueType)}>()",
+        return new Operand(Text: $"{Place(operand: carrier)}.{payloadField}.to[@{TypeText(type: valueType)}]()",
             Type: valueType, IsPlace: true);
     }
 
@@ -1420,9 +1420,9 @@ internal sealed class TesseraRoutineWriter
         }
 
         string address = $"t{_temps++}";
-        Emit(line: $"{address} : Addr = {Place(operand: crashables)}.{record.MemberVariables[index: 0].Name}.to<@Addr>().load()");
+        Emit(line: $"{address} : Addr = {Place(operand: crashables)}.{record.MemberVariables[index: 0].Name}.to[@Addr]().load()");
         TypeSymbol typeIdType = _module.U64Type;
-        string typeId = Temp(type: typeIdType, expression: $"{address}.to<@U64>().load()");
+        string typeId = Temp(type: typeIdType, expression: $"{address}.to[@U64]().load()");
         if (dispatch.MemberName == Declaration.RuntimeContract.CrashTypeId)
         {
             return new Operand(Text: typeId, Type: typeIdType, IsPlace: false);

@@ -218,7 +218,7 @@ internal sealed class TesseraWriter
         module.Append(value: library.Header);
         if (_textBytes != null)
         {
-            module.Append(value: "import Standard::Collections\nimport Standard::Format\nimport Standard::Os\n\n");
+            module.Append(value: "import Standard/Collections\nimport Standard/Format\nimport Standard/Os\n\n");
         }
 
         module.Append(value: _records);
@@ -258,7 +258,7 @@ internal sealed class TesseraWriter
             private routine {{_textBytes}}(text: {{TypeText(type: TextType)}}) -> Bytes
                 shared data  : @U32        = text.data
                 shared count : U64         = text.count
-                shared utf8  : @List<Byte> <- .construct()
+                shared utf8  : @List[Byte] <- .construct()
 
                 block entry()
                     jump each(0)
@@ -266,10 +266,10 @@ internal sealed class TesseraWriter
                 block each(i: U64)
                     done : Bool = i.ge(count)
                     branch done
-                        ? return(utf8.to<Bytes>())
+                        ? return(utf8.to[Bytes]())
                         : continue
-                    code      : U32  = data.stride(i.to<USize>()).load()
-                    character : Char = code.to<Char>()
+                    code      : U32  = data.stride(i.to[USize]()).load()
+                    character : Char = code.to[Char]()
                     utf8.write("{character}")
                     jump each(i.add(1))
 
@@ -440,7 +440,7 @@ internal sealed class TesseraWriter
             (ulong id, RoutineInfo routine) = arms[index: i];
             string receiver = CrashObjectReceiver(routine: routine);
             text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
-                .Append(value: $"        is_{i} : Bool = ieq<{idType}>(type_id, 0x{id:X})\n")
+                .Append(value: $"        is_{i} : Bool = ieq[{idType}](type_id, 0x{id:X})\n")
                 .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
                 .Append(value: $"    block case_{i}()\n")
                 .Append(value: $"        r_{i} : {resultType} = {RoutineName(routine: routine)}({receiver})\n")
@@ -475,7 +475,7 @@ internal sealed class TesseraWriter
                 message: $"The Tessera backend dispatches a caught error's members only on crashables, not on {routine.OwnerType?.FullName}.");
         }
 
-        string error = $"error.to<@{CrashObjectRecord(crashable: crashable)}>().error";
+        string error = $"error.to[@{CrashObjectRecord(crashable: crashable)}]().error";
         return Declaration.ReceiverFacts.MeByReference(ownerType: crashable)
             ? error
             : $"{error}.load()";
@@ -529,7 +529,7 @@ internal sealed class TesseraWriter
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
             text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
-                .Append(value: $"        is_{i} : Bool = ieq<{idType}>(type_id, 0x{id:X})\n")
+                .Append(value: $"        is_{i} : Bool = ieq[{idType}](type_id, 0x{id:X})\n")
                 .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
                 .Append(value: $"    block case_{i}()\n")
                 .Append(value: $"        {RoutineName(routine: routine)}({CrashObjectReceiver(routine: routine)})\n")
@@ -640,7 +640,7 @@ internal sealed class TesseraWriter
         _variantRecords[key: variant.FullName] = name;
         List<string> payloads = variant.Members
                                        .Where(predicate: m => m is { IsNone: false, Type: not null })
-                                       .Select(selector: m => $"sizeof<{TypeText(type: m.Type)}>()")
+                                       .Select(selector: m => $"sizeof[{TypeText(type: m.Type)}]()")
                                        .ToList();
         var text = new StringBuilder();
         if (payloads.Count == 0)
@@ -652,7 +652,7 @@ internal sealed class TesseraWriter
         text.Append(value: $"{Private}record {name}\n    tag : U64\n");
         if (payloads.Count > 0)
         {
-            text.Append(value: $"    payload : Array<Byte, max({string.Join(separator: ", ", values: payloads)})>\n");
+            text.Append(value: $"    payload : Array[Byte, max({string.Join(separator: ", ", values: payloads)})]\n");
         }
 
         _records.Append(value: text)
@@ -697,7 +697,7 @@ internal sealed class TesseraWriter
         string list = parameters.Count == 1
             ? $"({parameters[index: 0]},)"
             : $"({string.Join(separator: ", ", values: parameters)})";
-        return $"Callable<{list}, {TypeText(type: routineType.ReturnType)}>";
+        return $"Callable[{list}, {TypeText(type: routineType.ReturnType)}]";
     }
 
     private readonly Dictionary<string, string> _routineValueCalls = new(comparer: StringComparer.Ordinal);
@@ -736,7 +736,7 @@ internal sealed class TesseraWriter
             .Append(value: "    block entry()\n")
             .Append(value: "        fn : Addr = value.fn\n")
             .Append(value: "        bound : Addr = value.bound\n")
-            .Append(value: "        address : U64 = ptrtoint<Addr, U64>(bound)\n")
+            .Append(value: "        address : U64 = ptrtoint[Addr, U64](bound)\n")
             .Append(value: "        unbound : Bool = address.eq(0)\n")
             .Append(value: $"        branch unbound ? plain(fn{Names(prefix: "a")}) : bound(fn, bound{Names(prefix: "a")})\n\n");
         foreach ((string block, string callable, string extra, string prefix) in new[]
@@ -756,7 +756,7 @@ internal sealed class TesseraWriter
             // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
             text.Append(value: $"    block {block}(code: Addr{extra}{Parameters(prefix: prefix)})\n")
                 .Append(value: "        claim slot : @Addr <- code\n")
-                .Append(value: $"        callee : {callable} = slot.to<@{callable}>().load()\n");
+                .Append(value: $"        callee : {callable} = slot.to[@{callable}]().load()\n");
             if (returns)
             {
                 text.Append(value: $"        result : {returnType} = callee.call({arguments})\n")
@@ -799,7 +799,7 @@ internal sealed class TesseraWriter
             return "null";
         }
 
-        string type = $"Array<{TypeText(type: data.ElementType)}, {data.Elements.Count}>";
+        string type = $"Array[{TypeText(type: data.ElementType)}, {data.Elements.Count}]";
         // Each element is given as the long with its bits: a U64 element (an Integer literal's limbs) is written
         // unsigned.
         bool unsigned64 = data.ElementType.Name == "U64";
@@ -814,7 +814,7 @@ internal sealed class TesseraWriter
         _texts[key: initial] = name;
         _globals.Append(value: $"{Private}preset {name}: @{type} <- {initial}\n\n");
         // The value is a pointer to the first element.
-        name = $"{name}.to<@{TypeText(type: data.ElementType)}>()";
+        name = $"{name}.to[@{TypeText(type: data.ElementType)}]()";
         _texts[key: initial] = name;
         return name;
     }
@@ -890,7 +890,7 @@ internal sealed class TesseraWriter
     /// `self`/`Self` (words Tessera doesn't read as names): a value of such a name is written between backticks.</summary>
     private static readonly HashSet<string> TesseraKeywords =
     [
-        "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "uninit",
+        "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "local", "todo", "and", "or", "is", "as",
         "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
         "define", "private", "internal", "module", "import", "Me", "self", "Self",
     ];
@@ -1083,7 +1083,7 @@ internal sealed class TesseraWriter
         if (backend.StartsWith(value: '[') &&
             record.TypeArguments is [var element, ConstGenericValueTypeSymbol { Value: var count }])
         {
-            return $"Array<{TypeText(type: element)}, {count}>";
+            return $"Array[{TypeText(type: element)}, {count}]";
         }
 
         // Any other integer-backed type (a choice, flags, Address, Char, a C integer alias) is the integer
@@ -1161,7 +1161,7 @@ internal sealed class TesseraWriter
                // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
                "        c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
                $"        {RoutineName(routine: start)}()\n" +
-               "        Standard::Os::set_exit_code(c_rf_exit_code())\n" +
+               "        Standard/Os/set_exit_code(c_rf_exit_code())\n" +
                "        return()\n";
     }
 }

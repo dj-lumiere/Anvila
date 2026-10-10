@@ -408,7 +408,24 @@ public sealed partial class TypeRegistry
             return null;
         }
 
-        return LookupRoutine(fullName: baseName);
+        // The single routine of that name still has to take this many arguments: a zero-parameter `Text()`
+        // is not the overload of a three-argument call, whatever its name.
+        return LookupRoutine(fullName: baseName) is { } single && AcceptsArgumentCount(routine: single, count: argTypes.Count)
+            ? single
+            : null;
+    }
+
+    /// <summary>Whether <paramref name="routine"/> can take <paramref name="count"/> arguments: its parameter count,
+    /// fewer when the rest have defaults, or any number past a variadic parameter.</summary>
+    private static bool AcceptsArgumentCount(RoutineInfo routine, int count)
+    {
+        List<ParamInfo> parameters = routine.Parameters;
+        if (parameters.Any(predicate: p => p.IsVariadicParam))
+        {
+            return true;
+        }
+
+        return count <= parameters.Count && parameters.Skip(count: count).All(predicate: p => p.HasDefaultValue);
     }
 
     /// <summary>
