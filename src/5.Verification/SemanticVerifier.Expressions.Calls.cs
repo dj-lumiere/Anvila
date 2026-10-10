@@ -911,7 +911,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.ArithmeticOnFlagsType,
                 message:
                 $"Operator '{member.MemberName}' cannot be used with flags type '{objectType.Name}'. " +
-                "Use 'but' to remove flags and 'is'/'isnot' to test flags.",
+                "Combine flags with 'and' (READ and WRITE), take some off with 'without' (perms.without(WRITE)), and test them with 'have' / 'lack'.",
                 location: call.Location);
             return ErrorTypeSymbol.Instance;
         }

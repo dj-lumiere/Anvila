@@ -1296,7 +1296,7 @@ public sealed partial class SemanticVerifier
     {
         // Check for operator prohibitions on choice and flags types
         // Choices do not support ANY overloadable operators — use 'is' for case matching
-        // Flags do not support arithmetic/comparison/bitwise operators — use 'is'/'isnot'/'but'
+        // Flags do not support arithmetic/comparison/bitwise operators: 'and' combines, 'have'/'lack' test, 'without' takes off
         switch (leftType)
         {
             // Choices support `==`/`!=` (discriminant equality, lowered to an S32 tag compare by
@@ -1781,7 +1781,7 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.ArithmeticOnFlagsType,
                     message:
                     $"Operator '{compound.Operator.ToStringRepresentation()}=' cannot be used with flags type '{targetType.Name}'. " +
-                    "Use 'but' to remove flags and 'is'/'isnot' to test flags.",
+                    "Combine flags with 'and' (READ and WRITE), take some off with 'without' (perms.without(WRITE)), and test them with 'have' / 'lack'.",
                     location: compound.Location);
                 return ErrorTypeSymbol.Instance;
         }

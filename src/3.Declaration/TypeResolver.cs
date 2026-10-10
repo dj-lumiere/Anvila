@@ -321,6 +321,14 @@ internal sealed class TypeResolver
             return ResolveMeType(meOwner: meOwner);
         }
 
+        // In a routine written for every type of a kind (`routine T.without(you: T) -> Me` with `needs FlagsType T`),
+        // `Me` is that `T`, so an instance for `Perm` reads it as `Perm`.
+        if (typeExpr is { Name: "Me", GenericArguments: not { Count: > 0 } } &&
+            _sa._currentRoutine is { OwnerType: GenericParameterTypeSymbol universalOwner })
+        {
+            return universalOwner;
+        }
+
         // Handle tuple types from parser: Tuple(T, U, ...)
         if (typeExpr is { Name: "Tuple", GenericArguments.Count: > 0 })
         {
