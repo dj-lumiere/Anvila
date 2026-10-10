@@ -18,9 +18,11 @@ public sealed partial class SemanticVerifier
     /// transparent protocol, and the entity behind a Suflae entity handle (<c>h.kids[0]</c> with <c>kids</c> a
     /// <c>Roamed[List[Integer]]</c> field indexes the list, as a member call on the handle calls the list's routine).
     /// </summary>
-    private static TypeSymbol IndexLookupType(TypeSymbol type)
+    private TypeSymbol IndexLookupType(TypeSymbol type)
     {
-        TypeSymbol target = type;
+        // An iterator's `Item` in a generic body reads as its element type for indexing, as it does for member
+        // access (`each part in parts` over `Iterable[Text]`, then `part[i]`).
+        TryUnwrapMarkerReceiver(type: type, innerType: out TypeSymbol target);
         return target is RecordTypeSymbol
         {
             GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol entity]
