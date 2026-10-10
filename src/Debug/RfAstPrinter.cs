@@ -1301,6 +1301,13 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         return $"{I}#crash {node.Report.Accept(visitor: this)}";
     }
 
+    /// <inheritdoc/>
+    public string VisitPlaceSwapStatement(PlaceSwapStatement node)
+    {
+        return $"{I}({string.Join(separator: ", ", values: node.Places.Select(selector: p => p.Accept(visitor: this)))}) = " +
+               $"({string.Join(separator: ", ", values: node.Sources.Select(selector: s => node.Places[index: s].Accept(visitor: this)))})";
+    }
+
 
     /// <inheritdoc/>
     public string VisitPassStatement(PassStatement node)

@@ -453,6 +453,16 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(e: node.Report);
         return false;
     }
+
+    public bool VisitPlaceSwapStatement(PlaceSwapStatement node)
+    {
+        foreach (Expression place in node.Places)
+        {
+            Visit(e: place);
+        }
+
+        return false;
+    }
     public bool VisitIfStatement(IfStatement node)
     {
         Visit(e: node.Condition);

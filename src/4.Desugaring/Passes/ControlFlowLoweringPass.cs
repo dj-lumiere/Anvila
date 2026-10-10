@@ -140,6 +140,18 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             WhenStatement w => LowerWhen(w: w),
             UsingStatement u => LowerUsing(u: u),
             DangerStatement d => LowerDanger(d: d),
+            AssignmentStatement { Target: TupleLiteralExpression left, Value: TupleLiteralExpression right } assign
+                when SwapSources(left: left.Elements, right: right.Elements) is { } sources =>
+                Swap(left: left.Elements, right: right.Elements, sources: sources, loc: assign.Location),
+            ExpressionStatement
+                {
+                    Expression: BinaryExpression
+                    {
+                        Operator: BinaryOperator.Assign, Left: TupleLiteralExpression left,
+                        Right: TupleLiteralExpression right
+                    }
+                } written when SwapSources(left: left.Elements, right: right.Elements) is { } sources =>
+                Swap(left: left.Elements, right: right.Elements, sources: sources, loc: written.Location),
             _ => stmt
         };
     }
@@ -311,6 +323,82 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 IfNotRan(name: ranName, elseBranch: LowerStatement(stmt: elseBranch), loc: loc)
             ],
             Location: loc);
+    }
+
+    /// <summary>
+    /// <c>(a, b) = (b, a)</c>. Where entities are single-owner, the values move between the places as they are (a
+    /// <see cref="PlaceSwapStatement"/>: no copy, no teardown, the owners stay the same). Where entities are shared
+    /// handles and records are copied, every value is read into a temporary first and then assigned, which is the
+    /// same swap through the ordinary assignment rules.
+    /// </summary>
+    private Statement Swap(List<Expression> left, List<Expression> right, List<int> sources, SourceLocation loc)
+    {
+        if (!ctx.Registry.EntitiesAreShared)
+        {
+            return new PlaceSwapStatement(Places: left, Sources: sources, Location: loc);
+        }
+
+        int n = _iterCount++;
+        var statements = new List<Statement>(capacity: left.Count * 2);
+        for (int i = 0; i < right.Count; i++)
+        {
+            statements.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: $"_lf_swap_{n}_{i}",
+                    Type: null,
+                    Initializer: right[index: i],
+                    Visibility: VisibilityModifier.Secret,
+                    Location: loc),
+                Location: loc));
+        }
+
+        for (int i = 0; i < left.Count; i++)
+        {
+            statements.Add(item: new ExpressionStatement(Expression: new BinaryExpression(Left: left[index: i],
+                    Operator: BinaryOperator.Assign,
+                    Right: new IdentifierExpression(Name: $"_lf_swap_{n}_{i}", Location: loc),
+                    Location: loc),
+                Location: loc));
+        }
+
+        return new BlockStatement(Statements: statements, Location: loc);
+    }
+
+    /// <summary>
+    /// When <paramref name="right"/> names the places of <paramref name="left"/> in another order (<c>(a, b) =
+    /// (b, a)</c>), the index of the left place each right element names, else null.
+    /// </summary>
+    private static List<int>? SwapSources(List<Expression> left, List<Expression> right)
+    {
+        if (left.Count != right.Count || left.Count < 2)
+        {
+            return null;
+        }
+
+        var sources = new List<int>(capacity: right.Count);
+        foreach (Expression element in right)
+        {
+            int at = left.FindIndex(match: place => SamePlace(a: place, b: element));
+            if (at < 0 || sources.Contains(item: at))
+            {
+                return null;
+            }
+
+            sources.Add(item: at);
+        }
+
+        return sources;
+    }
+
+    /// <summary>Whether two expressions name the same place, as written: a name, or a member variable of one.</summary>
+    private static bool SamePlace(Expression a, Expression b)
+    {
+        return (a, b) switch
+        {
+            (IdentifierExpression x, IdentifierExpression y) => x.Name == y.Name,
+            (MemberExpression x, MemberExpression y) => x.MemberName == y.MemberName && SamePlace(a: x.Object, b: y.Object),
+            (IndexExpression x, IndexExpression y) => SamePlace(a: x.Object, b: y.Object) && SamePlace(a: x.Index, b: y.Index),
+            (LiteralExpression x, LiteralExpression y) => Equals(objA: x.Value, objB: y.Value),
+            _ => false
+        };
     }
 
     /// <summary>

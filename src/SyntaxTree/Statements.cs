@@ -230,6 +230,24 @@ public record CrashStatement(CallExpression Report, SourceLocation Location) : S
 }
 
 /// <summary>
+/// A swap of places, from <c>(a, b) = (b, a)</c>: the right side names the left side's places in another order.
+/// <c>Places[i]</c> receives the value <c>Places[Sources[i]]</c> held before the statement. Values move between the
+/// places as they are: nothing is copied, shared or torn down, so the owners stay the same.
+/// </summary>
+/// <param name="Places">The places, as the left side lists them: locals, parameters, member variables.</param>
+/// <param name="Sources">For each place, the index of the place whose value it receives.</param>
+/// <param name="Location">Source location of the assignment.</param>
+public record PlaceSwapStatement(List<Expression> Places, List<int> Sources, SourceLocation Location)
+    : Statement(Location: Location)
+{
+    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitPlaceSwapStatement(node: this);
+    }
+}
+
+/// <summary>
 /// Pass statement that acts as an empty placeholder in records, protocols, or other bodies.
 /// Used when a body is syntactically required but no operations are needed.
 /// </summary>

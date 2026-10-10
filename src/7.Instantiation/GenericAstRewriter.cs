@@ -2582,6 +2582,11 @@ internal static class GenericAstRewriter
 
             CrashStatement cs => cs with { Report = (CallExpression)RewriteExpression(expr: cs.Report, ctx: ctx) },
 
+            PlaceSwapStatement swap => swap with
+            {
+                Places = swap.Places.Select(selector: p => RewriteExpression(expr: p, ctx: ctx)).ToList()
+            },
+
             StealStatement stolen => stolen with
             {
                 Place = RewriteExpression(expr: stolen.Place, ctx: ctx),

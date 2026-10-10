@@ -417,6 +417,11 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the crash statement</returns>
     T VisitCrashStatement(CrashStatement node);
 
+    /// <summary>Visits a swap of places (<c>(a, b) = (b, a)</c>)</summary>
+    /// <param name="node">The swap to visit</param>
+    /// <returns>Result of visiting the swap</returns>
+    T VisitPlaceSwapStatement(PlaceSwapStatement node);
+
 
     /// <summary>Visits an if statement node (conditional branching)</summary>
     /// <param name="node">The if statement to visit</param>

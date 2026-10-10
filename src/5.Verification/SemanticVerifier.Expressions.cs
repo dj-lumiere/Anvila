@@ -636,6 +636,17 @@ public sealed partial class SemanticVerifier
         // gated wired op (eq/cmp) — it needs the enclosing template's `needs P everywhere` guarantee.
         EnforceBinaryBuildtimeMemberGate(binary: binary);
 
+        // A tuple of places on the left that the right doesn't reorder (a swap is a PlaceSwapStatement by now) would
+        // need each value worked out first and then put in order, which the builder doesn't do.
+        if (binary is { Operator: BinaryOperator.Assign, Left: TupleLiteralExpression })
+        {
+            ReportError(code: SemanticDiagnosticCode.InvalidAssignmentTarget,
+                message: "A tuple on the left takes the same places in another order on the right: '(a, b) = (b, a)'. " +
+                         "To put other values in, assign each place on its own line.",
+                location: binary.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         // Re-binding (lhs = rhs) revives a stolen-from identifier: clear deadref
         // BEFORE analyzing the LHS so the deadref-read check doesn't fire.
         if (binary is { Operator: BinaryOperator.Assign, Left: IdentifierExpression rebindId })

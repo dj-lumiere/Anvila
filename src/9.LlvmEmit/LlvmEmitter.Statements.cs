@@ -97,6 +97,30 @@ public partial class LlvmEmitter
                         message:
                         "UsingStatement reached codegen -> UsingLoweringPass must run before codegen.");
 
+                case PlaceSwapStatement swap:
+                {
+                    // Every place's value is read first, then each place takes the value it is given: the values
+                    // move as they are (no copy, no teardown).
+                    var addresses = swap.Places.Select(selector: place => EmitLvalueAddress(sb: sb, expr: place)).ToList();
+                    var types = swap.Places.Select(selector: place => GetValueLlvmType(type: place.ResolvedType ??
+                        throw new InvalidOperationException(message: "A swapped place reached the LLVM emitter without a type."))).ToList();
+                    var values = new List<string>(capacity: addresses.Count);
+                    for (int i = 0; i < addresses.Count; i++)
+                    {
+                        string value = NextTemp();
+                        EmitLine(sb: sb, line: $"  {value} = load {types[index: i]}, ptr {addresses[index: i]}");
+                        values.Add(item: value);
+                    }
+
+                    for (int i = 0; i < addresses.Count; i++)
+                    {
+                        EmitLine(sb: sb,
+                            line: $"  store {types[index: i]} {values[index: swap.Sources[index: i]]}, ptr {addresses[index: i]}");
+                    }
+
+                    return false;
+                }
+
                 case CrashStatement crash:
                     // crash_report never returns: the call ends the block.
                     EmitExpression(sb: sb, expr: crash.Report);

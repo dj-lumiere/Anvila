@@ -42,6 +42,10 @@ public abstract class AstRewriter
             ReturnStatement s => VisitReturn(s: s),
             ThrowStatement s => VisitThrow(s: s),
             CrashStatement s => VisitCrash(s: s),
+            PlaceSwapStatement s => RewriteList(items: s.Places, rewrite: VisitExpression) is var places &&
+                                    !ReferenceEquals(objA: places, objB: s.Places)
+                ? s with { Places = places }
+                : s,
             VariantReturnStatement s => VisitVariantReturn(s: s),
             AtomicRmwStatement s => VisitAtomicRmw(s: s),
             DropStatement s => VisitDrop(s: s),

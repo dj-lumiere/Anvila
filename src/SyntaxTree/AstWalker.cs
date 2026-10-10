@@ -119,6 +119,7 @@ public static class AstWalker
             {
                 s.Report
             },
+            PlaceSwapStatement s => s.Places.Cast<object>().ToArray(),
             VariantReturnStatement s => s.Value != null
                 ? new object[]
                 {

@@ -623,6 +623,10 @@ public sealed partial class SemanticVerifier
                 AnalyzeAssignmentStatement(assign: assign);
                 break;
 
+            case PlaceSwapStatement swap:
+                AnalyzePlaceSwap(swap: swap);
+                break;
+
             case IfStatement ifStmt:
                 AnalyzeIfStatement(ifStmt: ifStmt);
                 break;
@@ -1427,6 +1431,76 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// <c>(a, b) = (b, a)</c>: each place is written, so it must be a place that can be (a local, a parameter, a
+    /// member variable), and each takes the value of another, so the places that trade values have one type.
+    /// </summary>
+    private void AnalyzePlaceSwap(PlaceSwapStatement swap)
+    {
+        var types = new List<TypeSymbol>(capacity: swap.Places.Count);
+        foreach (Expression place in swap.Places)
+        {
+            TypeSymbol type = AnalyzeExpression(expression: place);
+
+            types.Add(item: type);
+            if (place is IndexExpression)
+            {
+                ReportError(code: SemanticDiagnosticCode.InvalidAssignmentTarget,
+                    message: "An element of a collection is no place a swap can move a value into: swap two " +
+                             "elements with 'xs.swap(first: i, second: j)'.",
+                    location: place.Location);
+                continue;
+            }
+
+            if (!IsAssignableTarget(target: place))
+            {
+                ReportError(code: SemanticDiagnosticCode.InvalidAssignmentTarget,
+                    message: "Every element on the left of '(a, b) = (b, a)' is a place: a variable or a member " +
+                             "variable.",
+                    location: place.Location);
+                continue;
+            }
+
+            if (place is IdentifierExpression id && _registry.LookupVariable(name: id.Name) is { IsModifiable: false })
+            {
+                ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
+                    message: $"Cannot assign to preset variable '{id.Name}'.",
+                    location: place.Location);
+            }
+
+            if (place is MemberExpression member)
+            {
+                ValidateMemberAssignmentTarget(assign: new AssignmentStatement(Target: place, Value: place,
+                    Location: swap.Location), member: member);
+            }
+        }
+
+        for (int i = 0; i < swap.Places.Count; i++)
+        {
+            TypeSymbol into = types[index: i];
+            TypeSymbol from = types[index: swap.Sources[index: i]];
+            if (into is not ErrorTypeSymbol && from is not ErrorTypeSymbol && into.FullName != from.FullName)
+            {
+                ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
+                    message: $"'{PlaceText(place: swap.Places[index: i])}' is a '{into.Name}' and would take the value of " +
+                             $"'{PlaceText(place: swap.Places[index: swap.Sources[index: i]])}', a '{from.Name}': places that swap " +
+                             "values have one type.",
+                    location: swap.Places[index: i].Location);
+            }
+        }
+    }
+
+    /// <summary>A place as it is written: <c>a</c>, <c>me.next</c>.</summary>
+    private static string PlaceText(Expression place)
+    {
+        return place switch
+        {
+            IdentifierExpression id => id.Name,
+            MemberExpression member => $"{PlaceText(place: member.Object)}.{member.MemberName}",
+            _ => "the place"
+        };
+    }
+
+    /// <summary>
     /// #173: Analyzes a tuple-destructuring assignment `(a, b) = expr` — each LHS element must be an
     /// assignable, modifiable target, and the RHS tuple arity must match the target count.
     /// </summary>
@@ -1459,6 +1533,13 @@ public sealed partial class SemanticVerifier
                 }
             }
         }
+
+        // A tuple of places takes the same places in another order (a swap, PlaceSwapStatement). Anything else
+        // would need each value worked out first and then put in order, which the builder doesn't do.
+        ReportError(code: SemanticDiagnosticCode.InvalidAssignmentTarget,
+            message: "A tuple on the left takes the same places in another order on the right: '(a, b) = (b, a)'. " +
+                     "To put other values in, assign each place on its own line.",
+            location: assign.Location);
 
         // Check that RHS is a tuple with matching arity
         if (rhsType is TupleTypeSymbol tupleType &&

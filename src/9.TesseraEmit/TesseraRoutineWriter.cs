@@ -318,6 +318,23 @@ internal sealed class TesseraRoutineWriter
                 // `danger` only lifts the build's safety checks: its body runs like any block.
                 WriteStatement(statement: danger.Body);
                 break;
+            case PlaceSwapStatement swap:
+            {
+                // Each place's value is read first, then each place takes the value it is given, as it is.
+                var places = swap.Places.Select(selector: place => Evaluate(expression: place)).ToList();
+                if (places.Any(predicate: p => !p.IsPlace))
+                {
+                    throw Unsupported(what: "a swap of something that is not a place");
+                }
+
+                var values = places.Select(selector: p => Value(operand: p)).ToList();
+                for (int i = 0; i < places.Count; i++)
+                {
+                    Emit(line: $"{places[index: i].Text}.poke({values[index: swap.Sources[index: i]]})");
+                }
+
+                break;
+            }
             case CrashStatement crash when _module.IsLibrary:
                 WriteLibraryCrash(crash: crash);
                 break;
