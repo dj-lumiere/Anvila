@@ -58,6 +58,25 @@ public sealed partial class SemanticVerifier
             RoutineInfo? chosen = family.FirstOrDefault(predicate: r =>
                 r.TypeArguments is { } args && args.Count == typeArgs.Count &&
                 args.Zip(second: typeArgs).All(predicate: pair => pair.First.FullName == pair.Second.FullName));
+
+            // In a generic body (`line.to[T]()`), which member of the family it is depends on `T`: the call is bound to
+            // one of them for now (they share their name, parameters and failability), and monomorphization picks
+            // the one for the concrete type arguments. Its value has the type the written arguments say.
+            if (chosen == null && typeArgs.Any(predicate: t => t is GenericParameterTypeSymbol) &&
+                family.FirstOrDefault(predicate: r => r.TypeArguments?.Count == typeArgs.Count) is { } stand)
+            {
+                _ = AnalyzeGenericReceiverMemberRoutineCall(generic: generic,
+                    objectType: objectType,
+                    memberRoutine: stand,
+                    typeArgs: typeArgs);
+                int slot = stand.TypeArguments!.FindIndex(match: t => t.FullName == stand.ReturnType?.FullName);
+                TypeSymbol value = slot >= 0
+                    ? typeArgs[index: slot]
+                    : stand.ReturnType ?? ErrorTypeSymbol.Instance;
+                generic.ResolvedType = value;
+                return value;
+            }
+
             if (chosen == null)
             {
                 ReportSpecializationNotFound(name: generic.MemberRoutineName, owner: objectType,

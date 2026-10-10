@@ -149,8 +149,10 @@ public sealed partial class SemanticVerifier
                 }
             }
 
-            call.ResolvedType = carrier;
-            return carrier;
+            // The binding already gave the carrier of what the call returns here (`Maybe[T]` for a call bound to one
+            // member of a specialization family), which the variant's own return may not be.
+            call.ResolvedType = call.ResolvedType is { } here and not ErrorTypeSymbol ? here : carrier;
+            return call.ResolvedType;
         }
 
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);

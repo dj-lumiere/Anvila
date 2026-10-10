@@ -38,15 +38,40 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// receiver and the arguments), which a body built before analysis needs: an argument may itself be a call
     /// still to resolve (<c>U32(xs.stride(count: i.to[S64]()))</c>).
     /// </summary>
-    private static CallExpression BindToVariant(CallExpression call, RoutineInfo variant)
+    private static CallExpression BindToVariant(CallExpression call, RoutineInfo variant, TypeRegistry registry)
     {
         CallExpression bound = call with
         {
-            ResolvedRoutine = variant, ResolvedType = variant.ReturnType, IsFailable = false
+            ResolvedRoutine = variant, ResolvedType = CarrierHere(call: call, variant: variant, registry: registry),
+            IsFailable = false
         };
         return bound.Callee is MemberExpression member
             ? bound with { Callee = member with { IsFailable = false } }
             : bound;
+    }
+
+    /// <summary>
+    /// The carrier a call bound to <paramref name="variant"/> gives: of what the call returns HERE. The variant's own
+    /// return names its owner's parameter (<c>List[T].getitem</c> gives <c>Check[T]</c>), which in a routine on a
+    /// specialized receiver (<c>List[Agent[T]]</c>) is that routine's <c>T</c> by name only, a different slot, and a
+    /// call bound to one member of a specialization family (<c>line.to[T]()</c>) returns the <c>T</c> the call
+    /// names, not that member's.
+    /// </summary>
+    private static TypeSymbol? CarrierHere(CallExpression call, RoutineInfo variant, TypeRegistry registry)
+    {
+        if (variant.ReturnType is { TypeArguments: [_] } carrierType &&
+            call.ResolvedType is { IsNone: false } payload and not ErrorTypeSymbol &&
+            carrierType switch
+            {
+                VariantTypeSymbol v => v.GenericDefinition,
+                RecordTypeSymbol r => r.GenericDefinition,
+                _ => null
+            } is { } carrierDef)
+        {
+            return registry.GetOrCreateResolution(genericDef: carrierDef, typeArguments: [payload]);
+        }
+
+        return variant.ReturnType;
     }
 
     /// <summary>The call of a failable creator's recovery variant that a creator expression stands for.</summary>
@@ -370,7 +395,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 case CallExpression { ResolvedRoutine: { } callee } call
                     when registry.CanFailUnderRecovery(routine: callee) &&
                          registry.LookupRecoveryVariant(recovered: callee, kind: recovery) is { } variant:
-                    rewritten = BindToVariant(call: call, variant: variant);
+                    rewritten = BindToVariant(call: call, variant: variant, registry: registry);
                     return true;
                 case CreatorExpression { ResolvedCreatorRoutine: { IsFailable: true } creatorRoutine } creator
                     when registry.LookupRecoveryVariant(recovered: creatorRoutine, kind: recovery) is { } variant:
@@ -1445,7 +1470,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         string tempName = $"__rf_prop_{Interlocked.Increment(location: ref _propTemp)}";
 
         // Retarget the failable call to its try variant, typed as the carrier.
-        CallExpression safeCall = BindToVariant(call: failCall, variant: variant);
+        CallExpression safeCall = BindToVariant(call: failCall, variant: variant, registry: registry);
         safeCall.ResolvedType = carrier;
 
         tempDecl = new DeclarationStatement(Declaration: new VariableDeclaration(Name: tempName,
@@ -1647,22 +1672,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             return false;
         }
 
-        safeCall = BindToVariant(call: failCall, variant: variant);
-        // The carrier holds what the call returns HERE. The variant's own return names its owner's parameter
-        // (`List[T].getitem` gives `Check[T]`), which in a routine on a specialized receiver (`List[Agent[T]]`)
-        // is that routine's `T` by name only, a different slot.
-        if (variant.ReturnType is { TypeArguments: [_] } carrierType &&
-            failCall.ResolvedType is { IsNone: false } payload &&
-            carrierType switch
-            {
-                VariantTypeSymbol v => v.GenericDefinition,
-                RecordTypeSymbol r => r.GenericDefinition,
-                _ => null
-            } is { } carrierDef)
-        {
-            safeCall.ResolvedType = registry.GetOrCreateResolution(genericDef: carrierDef, typeArguments: [payload]);
-        }
-
+        safeCall = BindToVariant(call: failCall, variant: variant, registry: registry);
         return true;
     }
 
@@ -1844,7 +1854,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 return false;
             }
 
-            rewritten = BindToVariant(call: call, variant: variant);
+            rewritten = BindToVariant(call: call, variant: variant, registry: registry);
             return true;
         };
     }

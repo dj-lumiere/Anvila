@@ -1023,6 +1023,50 @@ internal static class GenericAstRewriter
                    args.Any(predicate: a => HasGenericParam(t: a));
         }
 
+        /// <summary>
+        /// The member of <paramref name="current"/>'s specialization family that the call's own type arguments,
+        /// resolved here, name (its recovery variant when the call was bound to one), or null when
+        /// <paramref name="current"/> is no specialization or the call already names it.
+        /// </summary>
+        public RoutineInfo? PickSpecializationByCallTypeArgs(RoutineInfo? current, TypeSymbol? owner,
+            IReadOnlyList<TypeExpression>? typeArgExprs)
+        {
+            RoutineInfo? specialization = current?.RecoveryOf ?? current;
+            if (specialization is not { IsSpecialization: true, TypeArguments: { } fixedArgs } ||
+                typeArgExprs is not { Count: > 0 } || typeArgExprs.Count != fixedArgs.Count)
+            {
+                return null;
+            }
+
+            TypeSymbol? concreteOwner = owner == null ? null : ResolveTypeForLookup(original: owner) ?? owner;
+            var args = new List<TypeSymbol>(capacity: typeArgExprs.Count);
+            foreach (TypeExpression te in typeArgExprs)
+            {
+                TypeSymbol? arg = te.ResolvedType is { } rt and not ErrorTypeSymbol and not GenericParameterTypeSymbol
+                    ? ResolveType(original: rt) ?? rt
+                    : ResolveTypeExpression(typeExpr: te);
+                if (arg == null || arg is GenericParameterTypeSymbol)
+                {
+                    return null;
+                }
+
+                args.Add(item: arg);
+            }
+
+            if (concreteOwner == null ||
+                args.Zip(second: fixedArgs).All(predicate: pair => pair.First.FullName == pair.Second.FullName))
+            {
+                return null;
+            }
+
+            RoutineInfo? picked = Registry!.LookupSpecializedMemberRoutine(owner: concreteOwner,
+                name: specialization.Name,
+                typeArguments: args);
+            return picked != null && current!.Recovery is { } recovery
+                ? RecoveryVariantOrPlain(resolved: picked, kind: recovery)
+                : picked;
+        }
+
         public TypeSymbol? ResolveTypeExpressionPublic(TypeExpression typeExpr)
         {
             return ResolveTypeExpression(typeExpr: typeExpr);
@@ -1947,6 +1991,28 @@ internal static class GenericAstRewriter
             ctx: ctx);
 
         call.ResolvedRoutine = rewrittenRoutine ?? call.ResolvedRoutine;
+
+        // A member of a specialization family (`line.to[T]()` bound to one `Text.to[...]`) is picked again by the
+        // call's own type arguments, now concrete.
+        if (call.Callee is MemberExpression or GenericMemberExpression &&
+            ctx.PickSpecializationByCallTypeArgs(current: call.ResolvedRoutine,
+                owner: call.Callee switch
+                {
+                    GenericMemberExpression gme => gme.Object.ResolvedType,
+                    MemberExpression me => me.Object.ResolvedType,
+                    _ => null
+                },
+                typeArgExprs: call.Callee is GenericMemberExpression { TypeArguments.Count: > 0 } calleeGeneric
+                    ? calleeGeneric.TypeArguments
+                    : call.TypeArguments) is { } picked)
+        {
+            call.ResolvedRoutine = picked;
+            if (picked.Recovery == null && picked.ReturnType is { } pickedReturn)
+            {
+                call.ResolvedType = pickedReturn;
+            }
+        }
+
         HandTokenArguments(call: call, registry: ctx.Registry);
     }
 
@@ -2092,6 +2158,20 @@ internal static class GenericAstRewriter
                                           originalGenericCall
                                           ? originalGenericCall.ConstructedType
                                           : null);
+        // A member of a specialization family (`line.to[T]()` bound to one `Text.to[...]`) is picked again by the
+        // call's own type arguments, now concrete.
+        if (ctx.PickSpecializationByCallTypeArgs(current: genericCall.ResolvedRoutine,
+                owner: genericCall.Object.ResolvedType,
+                typeArgExprs: genericCall.TypeArguments) is { } picked)
+        {
+            genericCall.ResolvedRoutine = picked;
+            genericCall.ResolvedType = (picked.RecoveryOf ?? picked).ReturnType is { } pickedReturn &&
+                                       picked.Recovery == null
+                ? pickedReturn
+                : genericCall.ResolvedType;
+            return;
+        }
+
         RoutineInfo? gcResolved = ctx.ResolveRoutine(original: genericCall.ResolvedRoutine,
             expressionType: routineResultType);
         // If the routine is a memberRoutine-generic (`recast_as[U]`) whose `U` comes from the
