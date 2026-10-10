@@ -241,14 +241,43 @@ public partial class LlvmEmitter
     /// <summary>Generates a unique LLVM local name for <paramref name="name"/>, handling shadowing.</summary>
     private string NextUniqueLocalName(string name)
     {
+        string llvm = LlvmLocalName(name: name);
         if (_varNameCounts.TryGetValue(key: name, value: out int count))
         {
             _varNameCounts[key: name] = count + 1;
-            return $"{name}.{count + 1}";
+            return $"{llvm}.{count + 1}";
         }
 
         _varNameCounts[key: name] = 1;
-        return name;
+        return llvm;
+    }
+
+    /// <summary>
+    /// A source name as an unquoted LLVM local name: letters, digits, <c>_</c>, <c>$</c> and <c>.</c> as they are, any
+    /// other character (the space of <c>`total count`</c>, a letter outside ASCII) as <c>-</c> and its code in hex.
+    /// A name in the source has no <c>-</c>, so the result names nothing else.
+    /// </summary>
+    private static string LlvmLocalName(string name)
+    {
+        if (name.All(predicate: c => char.IsAsciiLetterOrDigit(c: c) || c is '_' or '$' or '.'))
+        {
+            return name;
+        }
+
+        var sb = new StringBuilder(capacity: name.Length + 8);
+        foreach (char c in name)
+        {
+            if (char.IsAsciiLetterOrDigit(c: c) || c is '_' or '$' or '.')
+            {
+                sb.Append(value: c);
+            }
+            else
+            {
+                sb.Append(value: $"-{(int)c:x}");
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>

@@ -62,7 +62,7 @@ internal partial class Program
                 concurrentRoutines: concurrentRoutines, source: source);
             foreach (Token name in KeywordsUsedAsNames(tokens: tokens))
             {
-                Console.WriteLine(value: $"{file}:{name.Line}: '{name.Text}' is a keyword now, rename it by hand");
+                Console.WriteLine(value: $"{file}:{name.Line}: '{name.Text}' is a keyword now: rename it, or write it between backticks (`{name.Text}`)");
                 namesToRename++;
             }
 

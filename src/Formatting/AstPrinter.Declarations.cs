@@ -345,7 +345,7 @@ internal sealed partial class AstPrinter
         var parts = new List<Doc>
         {
             Doc.Text(text: VisibilityPrefix(visibility: variable.Visibility, at: variable.Location, printer: this) +
-                           keyword + variable.Name)
+                           keyword + NameText(name: variable.Name))
         };
         if (variable.Type != null)
         {
@@ -859,7 +859,7 @@ internal sealed partial class AstPrinter
 
         var parts = new List<Doc>
         {
-            Doc.Text(text: parameter.Name + (parameter.IsVariadic
+            Doc.Text(text: NameText(name: parameter.Name) + (parameter.IsVariadic
                 ? "..."
                 : ""))
         };

@@ -405,15 +405,16 @@ public partial class LlvmEmitter
         }
 
         string emittedName;
+        string llvmParamName = LlvmLocalName(name: param.Name);
         if (byReference || byval)
         {
-            emittedName = $"{param.Name}.addr";
+            emittedName = $"{llvmParamName}.addr";
         }
         else
         {
             emittedName = param.Name == "entry"
                 ? "entry_"
-                : param.Name;
+                : llvmParamName;
         }
 
         return $"{paramType} %{emittedName}";
@@ -661,6 +662,12 @@ public partial class LlvmEmitter
     private void RegisterParameterAsLocal(StringBuilder sb, RoutineInfo routine,
         ParamInfo param)
     {
+        // A name LLVM can't take as it is (`some value`, a letter outside ASCII) is looked up by its LLVM spelling.
+        if (LlvmLocalName(name: param.Name) is var llvmName && llvmName != param.Name)
+        {
+            _localVarLlvmNames[key: param.Name] = llvmName;
+        }
+
         // By-reference / ABI-Indirect byval param: `%<name>.addr` IS the parameter (a pointer to the
         // caller's storage / the callee's copy). No alloca/store — field/memberRoutine access resolves
         // through the address directly.
@@ -674,8 +681,8 @@ public partial class LlvmEmitter
         // Use "entry_" instead of "entry" to avoid conflict with the entry: block label
         string emittedParamName = param.Name == "entry"
             ? "entry_"
-            : param.Name;
-        string paramPtr = $"%{param.Name}.addr";
+            : LlvmLocalName(name: param.Name);
+        string paramPtr = $"%{LlvmLocalName(name: param.Name)}.addr";
 
         // ABI-Coerce small struct value param: the parameter arrives as an integer register value.
         // Allocate a slot of the ABI type (≥ the struct), store the register value into it, and bind

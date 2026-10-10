@@ -176,7 +176,7 @@ internal sealed partial class AstPrinter
                 ? "preset "
                 : (variable.IsLateInit
                     ? "lateinit "
-                    : "") + "var ") + variable.Name)
+                    : "") + "var ") + NameText(name: variable.Name))
         };
         if (variable.Type != null)
         {

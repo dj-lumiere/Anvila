@@ -196,7 +196,7 @@ internal sealed partial class AstPrinter
                 }
 
                 return Doc.Concat(Expr(expression: member.Object, min: PPostfix, follow: PPostfix, comma: false),
-                    Doc.Text(text: "." + member.MemberName));
+                    Doc.Text(text: "." + NameText(name: member.MemberName)));
             case IndexExpression index:
                 return Doc.Concat(Expr(expression: index.Object, min: PPostfix, follow: PPostfix, comma: false),
                     InBrackets(open: "[", close: "]",
@@ -380,7 +380,7 @@ internal sealed partial class AstPrinter
         return node switch
         {
             CallExpression call => ArgumentList(arguments: call.Arguments),
-            MemberExpression member => Doc.Text(text: "." + member.MemberName),
+            MemberExpression member => Doc.Text(text: "." + NameText(name: member.MemberName)),
             IndexExpression index => InBrackets(open: "[", close: "]",
                 content: () => Expr(expression: index.Index, min: 0, follow: 0, comma: false)),
             SpliceMemberExpression spliceMember => Doc.Text(text: "." + SpliceText(inner: spliceMember.Selector.Inner)),
@@ -698,7 +698,7 @@ internal sealed partial class AstPrinter
                     throw Unsupported(node: named, at: named.Location);
                 }
 
-                return Doc.Concat(Doc.Text(text: named.Name + ": "), ArgumentValue(value: named.Value));
+                return Doc.Concat(Doc.Text(text: NameText(name: named.Name) + ": "), ArgumentValue(value: named.Value));
             case DictEntryLiteralExpression entry:
                 // `name: value` would read as a named argument, so an identifier key keeps parentheses.
                 Doc key = entry.Key is IdentifierExpression
@@ -859,8 +859,34 @@ internal sealed partial class AstPrinter
         }
 
         return identifier.Realm != null
-            ? identifier.Realm + "::" + identifier.Name
-            : identifier.Name;
+            ? identifier.Realm + "::" + NameText(name: identifier.Name)
+            : NameText(name: identifier.Name);
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> PlainNames = new();
+
+    /// <summary>
+    /// A name as it is written: between backticks when it isn't a plain name in both languages (a keyword such as
+    /// <c>`check`</c>, or words with a space, <c>`total count`</c>), as it is otherwise.
+    /// </summary>
+    private static string NameText(string name)
+    {
+        bool plain = PlainNames.GetOrAdd(key: name, valueFactory: static n =>
+            new[] { TypeModel.Enums.Language.RazorForge, TypeModel.Enums.Language.Suflae }.All(predicate: language =>
+            {
+                try
+                {
+                    List<Token> tokens = Lexers.Tokenize(source: n, fileName: "", language: language);
+                    return tokens.Count > 0 && tokens[index: 0] is { Type: TokenType.Identifier } first &&
+                           first.Text == n && tokens.Skip(count: 1).All(predicate: t =>
+                               t.Type is TokenType.Newline or TokenType.Eof);
+                }
+                catch (Exception)
+                {
+                    return true; // a language this build doesn't have says nothing about the name
+                }
+            }));
+        return plain ? name : $"`{name}`";
     }
 
     /// <summary>A splice: brace-less (<c>$nameof(m)</c>) where that form holds the inner expression, braced otherwise.</summary>

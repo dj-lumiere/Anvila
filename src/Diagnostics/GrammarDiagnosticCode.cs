@@ -33,6 +33,9 @@ public enum GrammarDiagnosticCode
     /// <summary>A duration literal (e.g., 500ms, 2s) is malformed or uses an unrecognized unit.</summary>
     InvalidDurationLiteral = 8,
 
+    /// <summary>A name between backticks is empty, spans a line, or has spaces at its ends or two in a row.</summary>
+    InvalidBacktickName = 9,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // INDENTATION ERRORS (050 - 079)
     // ═══════════════════════════════════════════════════════════════════════════

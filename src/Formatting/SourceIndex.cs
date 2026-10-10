@@ -228,7 +228,17 @@ internal sealed class SourceIndex
             return Math.Min(val1: i + 1, val2: Source.Length);
         }
 
-        return token.Position + token.Text.Length;
+        // A name written between backticks spans them too.
+        return IsBacktickName(token: token)
+            ? token.Position + token.Text.Length + 2
+            : token.Position + token.Text.Length;
+    }
+
+    /// <summary>Whether the token is a name written between backticks (`` `check` ``, `` `total count` ``).</summary>
+    private bool IsBacktickName(Token token)
+    {
+        return token.Type == TokenType.Identifier && token.Position < Source.Length &&
+               Source[index: token.Position] == '`';
     }
 
     /// <summary>
@@ -267,6 +277,7 @@ internal sealed class SourceIndex
         {
             TokenType.TextLiteral or TokenType.RawText or TokenType.BytesLiteral or TokenType.BytesRawLiteral =>
                 Source[token.Position..TokenEnd(tokenIndex: tokenIndex)],
+            _ when IsBacktickName(token: token) => Source[token.Position..TokenEnd(tokenIndex: tokenIndex)],
             _ => token.Text
         };
     }
