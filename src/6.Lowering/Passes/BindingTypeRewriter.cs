@@ -634,7 +634,13 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         switch (p)
         {
             case ExpressionPattern e: Visit(e: e.Expression); break;
-            case ComparisonPattern c: Visit(e: c.Value); break;
+            case ComparisonPattern c:
+                foreach (Expression value in c.AllValues)
+                {
+                    Visit(e: value);
+                }
+
+                break;
             case GuardPattern g:
                 VisitPattern(p: g.InnerPattern);
                 Visit(e: g.Guard);

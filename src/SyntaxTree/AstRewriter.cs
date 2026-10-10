@@ -210,9 +210,11 @@ public abstract class AstRewriter
             case ComparisonPattern c:
             {
                 Expression value = VisitExpression(expr: c.Value);
-                return ReferenceEquals(objA: value, objB: c.Value)
+                List<Expression> more = c.MoreValues.Select(selector: VisitExpression).ToList();
+                return ReferenceEquals(objA: value, objB: c.Value) &&
+                       more.Zip(second: c.MoreValues).All(predicate: pair => ReferenceEquals(objA: pair.First, objB: pair.Second))
                     ? c
-                    : c with { Value = value };
+                    : c with { Value = value, MoreValues = more };
             }
             case ExpressionPattern ep:
             {

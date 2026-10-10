@@ -503,12 +503,22 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
             case ComparisonPattern cmp:
             {
-                var cond = new BinaryExpression(
-                    Left: subject,
-                    Operator: TokenTypeToBinaryOp(op: cmp.Operator),
-                    Right: cmp.Value,
-                    Location: loc) { ResolvedType = boolType };
-                return (cond, null);
+                // `== a, b, c`: equal to any of them, the comparisons joined with `or` in order.
+                Expression? cond = null;
+                foreach (Expression value in cmp.AllValues)
+                {
+                    var one = new BinaryExpression(
+                        Left: subject,
+                        Operator: TokenTypeToBinaryOp(op: cmp.Operator),
+                        Right: value,
+                        Location: loc) { ResolvedType = boolType };
+                    cond = cond == null
+                        ? one
+                        : new BinaryExpression(Left: cond, Operator: BinaryOperator.Or, Right: one, Location: loc)
+                            { ResolvedType = boolType };
+                }
+
+                return (cond!, null);
             }
 
             case ElsePattern ep:

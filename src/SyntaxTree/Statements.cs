@@ -905,7 +905,15 @@ public record ExpressionPattern(Expression Expression, SourceLocation Location)
 /// </list>
 /// </remarks>
 public record ComparisonPattern(TokenType Operator, Expression Value, SourceLocation Location)
-    : Pattern(Location: Location);
+    : Pattern(Location: Location)
+{
+    /// <summary>The values after the first in <c>== 4, 6, 9, 11 =></c>: the arm matches a subject equal to any of
+    /// them. Only <c>==</c> takes more than one.</summary>
+    public List<Expression> MoreValues { get; init; } = [];
+
+    /// <summary>Every value the arm compares against, the first one included.</summary>
+    public IEnumerable<Expression> AllValues => MoreValues.Prepend(element: Value);
+}
 
 /// <summary>
 /// Pattern for matching variant cases with optional destructuring.

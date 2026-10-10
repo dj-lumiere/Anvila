@@ -935,7 +935,11 @@ internal sealed class IteratorInlineLoweringPass
             {
                 Expression = CloneExpression(expr: ep.Expression, ctx: ctx)
             },
-            ComparisonPattern cp => cp with { Value = CloneExpression(expr: cp.Value, ctx: ctx) },
+            ComparisonPattern cp => cp with
+            {
+                Value = CloneExpression(expr: cp.Value, ctx: ctx),
+                MoreValues = cp.MoreValues.Select(selector: v => CloneExpression(expr: v, ctx: ctx)).ToList()
+            },
             GuardPattern gp => gp with
             {
                 InnerPattern = ClonePattern(pattern: gp.InnerPattern, ctx: ctx),

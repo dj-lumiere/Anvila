@@ -3585,7 +3585,8 @@ internal static class GenericAstRewriter
 
             ComparisonPattern cp => cp with
             {
-                Value = RewriteExpression(expr: cp.Value, ctx: ctx)
+                Value = RewriteExpression(expr: cp.Value, ctx: ctx),
+                MoreValues = cp.MoreValues.Select(selector: v => RewriteExpression(expr: v, ctx: ctx)).ToList()
             },
 
             VariantPattern vp => vp with

@@ -1105,8 +1105,20 @@ internal sealed partial class AstPrinter
                     : "have ") + FlagsText(names: flags.FlagNames, connective: flags.Connective,
                     excluded: flags.ExcludedFlags, at: flags.Location));
             case ComparisonPattern comparison:
-                return Doc.Concat(Doc.Text(text: ComparisonOperator(type: comparison.Operator) + " "),
-                    ComparisonValueDoc(value: comparison.Value));
+            {
+                var parts = new List<Doc> { Doc.Text(text: ComparisonOperator(type: comparison.Operator) + " ") };
+                foreach ((Expression value, int i) in comparison.AllValues.Select(selector: (v, i) => (v, i)))
+                {
+                    if (i > 0)
+                    {
+                        parts.Add(item: Doc.Text(text: ", "));
+                    }
+
+                    parts.Add(item: ComparisonValueDoc(value: value));
+                }
+
+                return Doc.Concat(parts.ToArray());
+            }
             case GuardPattern guard:
                 return Doc.Concat(PatternDoc(pattern: guard.InnerPattern, conditionBased: conditionBased),
                     Doc.Text(text: " and "),

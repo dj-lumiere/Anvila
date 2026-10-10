@@ -528,6 +528,26 @@ public partial class Parser
         Statement body;
         bool savedInWhenClauseBody = _inWhenClauseBody;
         _inWhenClauseBody = true;
+        // `1, 2 => ...`: several values in one arm are listed after `==`. Say so, skip to the arm's `=>`, and go on
+        // with its body, so the rest of the `when` still parses.
+        if (Check(type: TokenType.Comma))
+        {
+            var ex = new GrammarException(code: GrammarDiagnosticCode.ExpectedFatArrow,
+                message: "One arm takes several values with '==' in front of them: '== 1, 2 => ...'. " +
+                         "Without it, the arm is the one value before the comma.",
+                fileName: FileName,
+                line: CurrentToken.Line,
+                column: CurrentToken.Column,
+                language: _language);
+            _errors.Add(item: ex.Message);
+            _structuredErrors.Add(item: ex);
+            DiagnosticRenderer.Print(ex: ex, writer: Console.Error);
+            while (!Check(type: TokenType.FatArrow) && !Check(type: TokenType.Newline) && !IsAtEnd)
+            {
+                Advance();
+            }
+        }
+
         if (CheckAndAdvance(type: TokenType.FatArrow))
         {
             // After =>, check for block form: => \n INDENT block DEDENT
@@ -1083,34 +1103,47 @@ public partial class Parser
         // Parse the value to compare against
         // Set context flag to prevent lambda parsing
         _inWhenPatternContext = true;
-        Expression value = ParsePrimary();
-
-        // Allow member access and calls on the primary expression (e.g., Status.ACTIVE, get_user())
-        while (Check(type: TokenType.Dot) || Check(type: TokenType.LeftParen))
+        Expression ParseValue()
         {
-            if (CheckAndAdvance(type: TokenType.Dot))
+            Expression value = ParsePrimary();
+
+            // Allow member access and calls on the primary expression (e.g., Status.ACTIVE, get_user())
+            while (Check(type: TokenType.Dot) || Check(type: TokenType.LeftParen))
             {
-                string memberName =
-                    ConsumeIdentifier(errorMessage: "Expected member name after '.'");
-                value = new MemberExpression(Object: value,
-                    MemberName: memberName,
-                    Location: GetLocation());
+                if (CheckAndAdvance(type: TokenType.Dot))
+                {
+                    string memberName =
+                        ConsumeIdentifier(errorMessage: "Expected member name after '.'");
+                    value = new MemberExpression(Object: value,
+                        MemberName: memberName,
+                        Location: GetLocation());
+                }
+                else if (CheckAndAdvance(type: TokenType.LeftParen))
+                {
+                    List<Expression> args = ParseArgumentList();
+                    Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after arguments");
+                    value = new CallExpression(Callee: value,
+                        Arguments: args,
+                        Location: GetLocation());
+                }
             }
-            else if (CheckAndAdvance(type: TokenType.LeftParen))
-            {
-                List<Expression> args = ParseArgumentList();
-                Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after arguments");
-                value = new CallExpression(Callee: value,
-                    Arguments: args,
-                    Location: GetLocation());
-            }
+
+            return value;
+        }
+
+        Expression first = ParseValue();
+        // `== 4, 6, 9, 11 =>`: one arm for several values. Only equality lists them.
+        var more = new List<Expression>();
+        while (op == TokenType.Equal && CheckAndAdvance(type: TokenType.Comma))
+        {
+            more.Add(item: ParseValue());
         }
 
         _inWhenPatternContext = false;
 
         // Comparison patterns (`< 0`, `== 5`) start with an operator, so `and` after the value is
         // unambiguously a guard (no flags collision). The guard typically tests outer variables.
-        var pattern = new ComparisonPattern(Operator: op, Value: value, Location: location);
+        var pattern = new ComparisonPattern(Operator: op, Value: first, Location: location) { MoreValues = more };
         return TryParseAndGuard(innerPattern: pattern, guardAllowed: true, location: location);
     }
 

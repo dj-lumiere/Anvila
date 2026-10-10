@@ -117,14 +117,22 @@ public sealed partial class SemanticVerifier
                     break;
                 }
 
-                _ = AnalyzeExpression(expression: cmp.Value, expectedType: matchedType);
+                foreach (Expression value in cmp.AllValues)
+                {
+                    _ = AnalyzeExpression(expression: value, expectedType: matchedType);
+                }
+
                 break;
 
             case ComparisonPattern cmp:
                 // `== 0 =>` / `< 0x20u32 =>`: the value is compared against the subject, so it takes the
                 // subject's type (a bare literal conforms to it, like any other comparison operand).
                 // Left unanalyzed, the literal reached the emitter untyped once `when` was lowered.
-                _ = AnalyzeExpression(expression: cmp.Value, expectedType: matchedType);
+                foreach (Expression value in cmp.AllValues)
+                {
+                    _ = AnalyzeExpression(expression: value, expectedType: matchedType);
+                }
+
                 break;
         }
     }
@@ -692,9 +700,12 @@ public sealed partial class SemanticVerifier
     private static ExhaustivenessResult CheckChoiceExhaustiveness(List<WhenClause> clauses,
         ChoiceTypeSymbol choice)
     {
+        // `== RED, GREEN =>` covers both cases it lists.
         var coveredCases = clauses
-                          .Select(selector: clause =>
-                               ExtractChoiceCaseName(pattern: clause.Pattern, choice: choice))
+                          .SelectMany(selector: clause => clause.Pattern is ComparisonPattern { MoreValues.Count: > 0 } several
+                               ? several.AllValues.Select(selector: v => ExtractChoiceCaseName(
+                                   pattern: several with { Value = v, MoreValues = [] }, choice: choice))
+                               : [ExtractChoiceCaseName(pattern: clause.Pattern, choice: choice)])
                           .OfType<string>()
                           .ToHashSet();
 

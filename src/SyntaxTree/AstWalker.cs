@@ -556,10 +556,7 @@ public static class AstWalker
             {
                 p.Expression
             },
-            ComparisonPattern p => new object[]
-            {
-                p.Value
-            },
+            ComparisonPattern p => p.AllValues.Cast<object>().ToArray(),
             VariantPattern p => VariantPatternChildren(p: p),
             GuardPattern p => new object[]
             {

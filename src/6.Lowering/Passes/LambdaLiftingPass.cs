@@ -1405,7 +1405,12 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     scope: scope,
                     inheritedGenericParameters: inheritedGenericParameters,
                     inheritedGenericConstraints: inheritedGenericConstraints,
-                    includeMe: includeMe)
+                    includeMe: includeMe),
+                MoreValues = comparison.MoreValues.Select(selector: value => RewritePatternExpression(expression: value,
+                    scope: scope,
+                    inheritedGenericParameters: inheritedGenericParameters,
+                    inheritedGenericConstraints: inheritedGenericConstraints,
+                    includeMe: includeMe)).ToList()
             },
             GuardPattern guard => guard with
             {
@@ -2141,10 +2146,14 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     captures: captures);
                 break;
             case ComparisonPattern comparison:
-                CollectLocalCapturesRecursive(expression: comparison.Value,
-                    outerScope: outerScope,
-                    parameterNames: parameterNames,
-                    captures: captures);
+                foreach (Expression value in comparison.AllValues)
+                {
+                    CollectLocalCapturesRecursive(expression: value,
+                        outerScope: outerScope,
+                        parameterNames: parameterNames,
+                        captures: captures);
+                }
+
                 break;
             case GuardPattern guard:
                 CollectLocalCapturesInPattern(pattern: guard.InnerPattern,
