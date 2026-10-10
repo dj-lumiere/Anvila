@@ -195,7 +195,7 @@ internal sealed class WrapperForwardingPass
 
         // Representation-unified Suflae entity member routine: its me is ALREADY Roamed[E]
         // (SignatureResolver sets MeType), so the "bare" routine IS the Roamed routine — it does its
-        // own lock_enter + project through RoamController.data. Wrapping it in the projecting forwarder
+        // own lock_enter + project through RoamManager.data. Wrapping it in the projecting forwarder
         // below would project the controller to the entity and hand a BARE entity to a routine that
         // projects AGAIN → double projection → the controller header is read as entity fields → crash.
         // Resolve a Roamed[E] receiver call straight to the inner routine (passing the Roamed handle
@@ -834,7 +834,7 @@ internal sealed class WrapperForwardingPass
     /// Without this, the pointer-wrapper path would emit
     /// <c>Hijacked[T](me).as_entity().MemberRoutine(...)</c>, treating the controller's strong+weak
     /// counts (first 8 bytes) as if they were T's first 8 bytes. A `Roaming` guard indirects through
-    /// <c>RoamController.data_ptr()</c>; Retained/Tracked through <c>RetainManager.raw_data()</c>.
+    /// <c>RoamManager.data_ptr()</c>; Retained/Tracked through <c>RetainManager.raw_data()</c>.
     /// Both just reach the inner entity — for `Roaming` the lock is already held by the enclosing
     /// `using` (enter), so the forwarder only reaches + calls (release happens at exit on every path).
     /// </summary>
@@ -842,11 +842,11 @@ internal sealed class WrapperForwardingPass
         string genericParamName, ForwarderCallContext ctx)
     {
         bool isRoamed = wrapperType.BareName == RuntimeContract.Roamed;
-        bool viaRoamController = isRoamed;
-        string controllerName = viaRoamController
-            ? "RoamController"
+        bool viaRoamManager = isRoamed;
+        string controllerName = viaRoamManager
+            ? "RoamManager"
             : "RetainManager";
-        string dataRevealName = viaRoamController
+        string dataRevealName = viaRoamManager
             ? "data_ptr"
             : RuntimeContract.RefCount.RawData;
         var controllerTypeExpr = new TypeExpression(Name: controllerName,

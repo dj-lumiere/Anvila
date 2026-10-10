@@ -205,7 +205,7 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
            .RunOnInstantiatedGenericBodies(bodies: freshBodies);
         // Lower the cycle-collector hook intrinsics (`<entity>.roam_trace_ref()` /
         // `.roam_free_ref()`) into explicit routine-VALUE references now that GMP has substituted the
-        // generic `RoamController[T]` receiver to a concrete entity. Codegen then materializes the
+        // generic `RoamManager[T]` receiver to a concrete entity. Codegen then materializes the
         // closure from the stamped ResolvedRoutine — it no longer picks the impl via LookupMemberRoutine.
         new RoamHookRefLoweringPass(registry: ctx.Registry).RunOnInstantiatedGenericBodies(
             bodies: freshBodies);

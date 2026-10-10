@@ -653,7 +653,7 @@ public partial class LlvmEmitter
         // the retain-new `.share()` on the RHS, and the release-old (snapshot-then-`.destruct()`)
         // inserted by ScopeTeardownLoweringPass. So this method just emits the raw store — the RC balance
         // lives in the AST, keeping codegen out of refcount business (and letting the cycle-collector
-        // lock cover field-write releases through the single RoamController.unhold chokepoint).
+        // lock cover field-write releases through the single RoamManager.unhold chokepoint).
         EmitLine(sb: sb, line: $"  store {memberVariableType} {value}, ptr {memberVariablePtr}");
     }
 

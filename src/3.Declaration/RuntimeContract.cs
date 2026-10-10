@@ -411,7 +411,7 @@ public static class RuntimeContract
     public const string GuardManager = "GuardManager";
 
     /// <summary>Controller behind <c>Roamed[T]</c>.</summary>
-    public const string RoamController = "RoamController";
+    public const string RoamManager = "RoamManager";
 
     /// <summary>The controller field that holds the entity behind a controller-backed wrapper.</summary>
     public const string ControllerData = "data";
@@ -428,7 +428,7 @@ public static class RuntimeContract
         {
             Retained or Tracked => RetainManager,
             Guarded or Witnessed or Consulting or Amending => GuardManager,
-            Roamed => RoamController,
+            Roamed => RoamManager,
             _ => null
         };
     }

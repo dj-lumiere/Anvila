@@ -10,7 +10,7 @@ namespace Builder.Lowering.Passes;
 /// <c>Roamed[E]</c> (post-SA) reaches its inner value's memberRoutines through the wrapper handle:
 /// operator-lowered calls (<c>x in d</c> -> <c>d.contains(x)</c>, <c>d[i]</c> -> <c>d.getitem(i)</c>,
 /// <c>==</c>/<c>&lt;</c>) and f-string <c>represent</c>/<c>diagnose</c> arrive holding the
-/// <c>RoamController</c> handle.
+/// <c>RoamManager</c> handle.
 ///
 /// <para>This pass makes the transparency a REAL AST rewrite instead of a codegen-inserted call:
 /// for every <see cref="CallExpression"/> whose callee is a <see cref="MemberExpression"/> on a

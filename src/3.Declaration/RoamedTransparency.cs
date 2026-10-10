@@ -7,7 +7,7 @@ namespace Builder.Declaration;
 /// The single decision point for Suflae <c>Roamed[T]</c> display/receiver transparency at codegen.
 /// A Suflae local promoted to <c>Roamed[E]</c> (post-SA) reaches its inner value's memberRoutines through
 /// the wrapper handle; codegen must (a) re-resolve a wrapper-shadowed <c>represent</c>/<c>diagnose</c>
-/// to the inner value's, and (b) project the <c>RoamController</c> handle to the bare inner pointer
+/// to the inner value's, and (b) project the <c>RoamManager</c> handle to the bare inner pointer
 /// via <c>raw_inner()</c> for a bare-<c>me</c> inner memberRoutine (a Roamed-<c>me</c> inner memberRoutine — an SF
 /// entity's own — takes the handle directly). Both the codegen member-call path and
 /// <c>OperatorLoweringPass</c> route their Roamed receivers through here so the rule lives in one

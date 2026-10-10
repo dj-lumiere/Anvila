@@ -231,7 +231,7 @@ internal sealed class TypeResolver
         // An entity DEFINED in a user module of another language (an imported RazorForge `.rf`, not
         // stdlib) keeps that language's ownership semantics (bare, deterministic teardown), exactly like an
         // `RF::`-qualified reference. It must NOT be auto-roamed (that silently wraps an RF entity in a
-        // RoamController whose ABI the RF constructor/methods don't expect → crash). It is held as a bare
+        // RoamManager whose ABI the RF constructor/methods don't expect → crash). It is held as a bare
         // local, or wrapped in an entity of this language for persistence (the RF:: wrapper pattern).
         if (resolved is TypeSymbol { Location.FileName: { } defFile } &&
             Builder.Frontends.Languages.HasSourceExtension(fileName: defFile) &&

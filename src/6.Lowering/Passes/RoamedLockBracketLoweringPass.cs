@@ -17,7 +17,7 @@ namespace Builder.Lowering.Passes;
 /// instead: for every statement that directly contains a Roamed[E] field access, a
 /// <c>handle.lock_enter()</c> <see cref="ExpressionStatement"/> is inserted immediately BEFORE the
 /// statement and a matching <c>handle.lock_exit()</c> immediately AFTER it. The read/write itself keeps
-/// its value — codegen now just projects through <c>RoamController.data</c> and emits the load/store,
+/// its value — codegen now just projects through <c>RoamManager.data</c> and emits the load/store,
 /// with the lock bracket already present as ordinary calls surrounding the whole statement.</para>
 ///
 /// <para><b>Bracket-count decision: per-statement (once per field-access receiver), NOT per-access.</b>

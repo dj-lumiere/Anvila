@@ -543,7 +543,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
 
         // Inside a copy-verb body (`store` / variant `copy` / an RC-wrapper's refcount verb like `roam`),
         // `me` is the identity-copy primitive in EVERY position — not just `return me`. E.g. `Roamed.roam`
-        // reinterprets `me` via `Hijacked[RoamController[T]](me)`; retain-copying that `me` argument would
+        // reinterprets `me` via `Hijacked[RoamManager[T]](me)`; retain-copying that `me` argument would
         // make `roam` call `roam` → infinite recursion (StackOverflow). Never retain-copy `me` here.
         if (_inCopyRoutine && expr is IdentifierExpression { Name: "me" })
         {

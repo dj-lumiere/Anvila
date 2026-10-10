@@ -9,7 +9,7 @@ namespace Builder.Instantiation.Passes;
 /// Lowers the Roamed hook intrinsics <c>&lt;entity&gt;.roam_trace_ref()</c> / <c>.roam_free_ref()</c> /
 /// <c>.roam_drop_ref()</c> into the routine's native code address. Runs post-monomorphization
 /// (inside <see cref="GenericClosurePass"/>), where the receiver's concrete entity type is known —
-/// the source call lives in the generic <c>RoamController[T]</c> body, so the receiver is a plain
+/// the source call lives in the generic <c>RoamManager[T]</c> body, so the receiver is a plain
 /// generic parameter until GMP substitutes it.
 ///
 /// <para>The call <c>data.as_entity().roam_trace_ref()</c> is replaced by a
