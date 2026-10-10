@@ -1202,26 +1202,9 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
 
     /// <inheritdoc/>
-    public string VisitWaitforExpression(WaitforExpression node)
+    public string VisitAgentExpression(AgentExpression node)
     {
-        string timeout = node.Timeout != null
-            ? $" within {node.Timeout.Accept(visitor: this)}"
-            : "";
-        return $"waitfor {node.Operand.Accept(visitor: this)}{timeout}";
-    }
-
-
-    /// <inheritdoc/>
-    public string VisitDependentWaitforExpression(DependentWaitforExpression node)
-    {
-        string deps = string.Join(separator: ", ",
-            values: node.Dependencies.Select(selector: d => d.BindingName != null
-                ? $"{d.DependencyExpr.Accept(visitor: this)} as {d.BindingName}"
-                : d.DependencyExpr.Accept(visitor: this)));
-        string timeout = node.Timeout != null
-            ? $" within {node.Timeout.Accept(visitor: this)}"
-            : "";
-        return $"after {deps} waitfor {node.Operand.Accept(visitor: this)}{timeout}";
+        return node.LoweredCall?.Accept(visitor: this) ?? $"agent {node.Inner.Accept(visitor: this)}";
     }
 
 

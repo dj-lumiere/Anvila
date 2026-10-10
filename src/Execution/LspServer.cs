@@ -993,7 +993,7 @@ public static class LspServer
     }
 
     private static readonly System.Text.RegularExpressions.Regex DeclarationWords = new(
-        pattern: @"^(?:(?:secret|posted|external|dangerous|common|suspended|threaded)\s+)*" +
+        pattern: @"^(?:(?:secret|posted|external|dangerous|common)\s+)*" +
                  @"(?:routine|record|entity|bundle|variant|protocol|choice|flags|crashable)\s+");
 
     /// <summary>
@@ -1059,7 +1059,7 @@ public static class LspServer
     }
 
     /// <summary>The words a routine's declaration puts before <c>routine</c> to say what kind it is, in source order:
-    /// <c>dangerous</c>, <c>common</c>, <c>suspended</c> or <c>threaded</c>.</summary>
+    /// <c>dangerous</c> or <c>common</c>.</summary>
     private static string RoutineModifiers(RoutineInfo routine)
     {
         var words = new List<string>();
@@ -1071,15 +1071,6 @@ public static class LspServer
         if (routine.IsCommon)
         {
             words.Add(item: "common");
-        }
-
-        if (routine.IsSuspended)
-        {
-            words.Add(item: "suspended");
-        }
-        else if (routine.IsThreaded)
-        {
-            words.Add(item: "threaded");
         }
 
         return words.Count > 0

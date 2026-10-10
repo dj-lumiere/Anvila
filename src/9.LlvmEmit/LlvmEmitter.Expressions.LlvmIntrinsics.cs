@@ -80,11 +80,13 @@ public partial class LlvmEmitter
             c.ParameterName == paramName && c.ConstraintType == ConstraintKind.ConstGeneric);
     }
 
+    /// <summary>A template's type argument: a value type (a None is the empty record <c>{}</c>, so
+    /// <c>LLVM::load[None]</c> is a legal empty load), or a const-generic's number.</summary>
     private string GetLlvmIntrinsicTypeArgument(TypeSymbol type)
     {
         return type is ConstGenericValueTypeSymbol constValue
             ? constValue.Value.ToString()
-            : GetLlvmType(type: type);
+            : GetValueLlvmType(type: type);
     }
 
     /// <summary>

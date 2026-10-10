@@ -631,32 +631,14 @@ public partial class Parser
     private ISyntaxTreeNode ParseRoutineOrTypeDeclaration(VisibilityModifier visibility,
         List<string> annotations, bool isCommon, bool isDangerous)
     {
-        AsyncStatus asyncStatus = ParseAsyncStatusModifier();
+        RejectRetiredConcurrencyModifier();
 
         if (CheckAndAdvance(type: TokenType.Routine))
         {
             return ParseRoutineOrForeignDeclaration(visibility: visibility,
                 annotations: annotations,
                 isCommon: isCommon,
-                asyncStatus: asyncStatus,
                 isDangerous: isDangerous);
-        }
-
-        if (asyncStatus != AsyncStatus.None)
-        {
-            string modifier = asyncStatus switch
-            {
-                AsyncStatus.Suspended => "suspended",
-                AsyncStatus.Threaded => "threaded",
-                _ => asyncStatus.ToString()
-                                .ToLower()
-            };
-            throw new GrammarException(code: GrammarDiagnosticCode.UnexpectedToken,
-                message: $"'{modifier}' must be followed by 'routine'",
-                fileName: FileName,
-                line: CurrentToken.Line,
-                column: CurrentToken.Column,
-                language: _language);
         }
 
         RejectCommonOnTypeDeclaration(isCommon: isCommon);
@@ -813,27 +795,28 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Consumes an optional async-status concurrency modifier (<c>threaded</c> — RF only — or
-    /// <c>suspended</c>) preceding a <c>routine</c> declaration and returns the resulting status.
+    /// Reports a routine declaration written with the concurrency words the language no longer has
+    /// (<c>suspended routine</c>, <c>threaded routine</c>): any routine runs concurrently when its caller writes
+    /// <c>agent</c> before the call.
     /// </summary>
-    private AsyncStatus ParseAsyncStatusModifier()
+    private void RejectRetiredConcurrencyModifier()
     {
-        // Concurrency modifier: threaded routine foo()
-        if (Rules.HasThreadedRoutines && CheckAndAdvance(type: TokenType.Threaded))
+        if (CurrentToken.Type != TokenType.Identifier ||
+            CurrentToken.Text is not ("suspended" or "threaded") ||
+            PeekToken(offset: 1).Type != TokenType.Routine)
         {
-            return AsyncStatus.Threaded;
+            return;
         }
 
-        // Concurrency modifier: suspended routine foo() — a stackful coroutine. SHARED between RF and
-        // SF (SUFLAE-FOR-AI §2.8 lists `suspended` as an identical keyword; only `threaded` is RF-only,
-        // since SF's Roamed/cycle-collected model has no raw shared-memory threading). SF's single-
-        // thread/REPL model is exactly where cooperative coroutines fit.
-        if (CheckAndAdvance(type: TokenType.Suspended))
-        {
-            return AsyncStatus.Suspended;
-        }
-
-        return AsyncStatus.None;
+        throw new GrammarException(code: GrammarDiagnosticCode.UnexpectedToken,
+            message: $"You wrote '{CurrentToken.Text} routine', but a routine declares nothing about where it runs: " +
+                     "any routine can run concurrently. Remove " +
+                     $"'{CurrentToken.Text}', and write 'agent' before a call to get an Agent you start: " +
+                     "'agent work(x: 1)'.",
+            fileName: FileName,
+            line: CurrentToken.Line,
+            column: CurrentToken.Column,
+            language: _language);
     }
 
     /// <summary>
@@ -901,7 +884,7 @@ public partial class Parser
     }
 
     private ISyntaxTreeNode ParseRoutineOrForeignDeclaration(VisibilityModifier visibility,
-        List<string> annotations, bool isCommon, AsyncStatus asyncStatus,
+        List<string> annotations, bool isCommon,
         bool isDangerous)
     {
         // Realm-qualified FOREIGN routine: `routine C::malloc(...)` / `routine LLVM::sqrt(...)`. The
@@ -923,9 +906,6 @@ public partial class Parser
                              $"('{visibility.ToString().ToLowerInvariant()}' would be ignored). Remove it.");
                 RejectNoEffect(when: isCommon, at: CurrentToken,
                     message: $"'common' has no effect on a foreign routine ({CurrentToken.Text}::). Remove it.");
-                RejectNoEffect(when: asyncStatus != AsyncStatus.None, at: CurrentToken,
-                    message: $"A foreign routine ({CurrentToken.Text}::) cannot be " +
-                             $"'{asyncStatus.ToString().ToLowerInvariant()}'. Remove it.");
                 Advance(); // realm tag (C / LLVM)
                 Advance(); // ::
                 return ParseExternalDeclaration(callingConvention: conv,
@@ -937,7 +917,6 @@ public partial class Parser
         return ParseRoutineDeclaration(visibility: visibility,
             annotations: annotations,
             isCommon: isCommon,
-            asyncStatus: asyncStatus,
             isDangerous: isDangerous);
     }
 

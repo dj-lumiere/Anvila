@@ -349,17 +349,10 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the recovery expression</returns>
     T VisitRecoveryExpression(RecoveryExpression node);
 
-    /// <summary>Visits a waitfor expression node (await async computation)</summary>
-    /// <param name="node">The waitfor expression to visit</param>
-    /// <returns>Result of visiting the waitfor expression</returns>
-    /// <remarks>Used in suspended/threaded routines to await Task-like values</remarks>
-    T VisitWaitforExpression(WaitforExpression node);
-
-    /// <summary>Visits a dependent waitfor expression node (waitfor with task dependencies)</summary>
-    /// <param name="node">The dependent waitfor expression to visit</param>
-    /// <returns>Result of visiting the dependent waitfor expression</returns>
-    /// <remarks>Used for declarative task dependency graphs with 'after' clause</remarks>
-    T VisitDependentWaitforExpression(DependentWaitforExpression node);
+    /// <summary>Visits an agent expression node (a call chain deferred into an Agent)</summary>
+    /// <param name="node">The agent expression to visit</param>
+    /// <returns>Result of visiting the agent expression</returns>
+    T VisitAgentExpression(AgentExpression node);
 
     /// <summary>Visits a back index expression node (end-relative indexing like '^1')</summary>
     /// <param name="node">The back index expression to visit</param>

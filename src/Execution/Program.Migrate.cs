@@ -30,6 +30,7 @@ internal partial class Program
 
         int changedFiles = 0;
         int namesToRename = 0;
+        HashSet<string> concurrentRoutines = ConcurrentRoutineNames(files: MigrationSources(paths: paths));
         foreach (string file in MigrationSources(paths: paths))
         {
             string source = File.ReadAllText(path: file);
@@ -45,7 +46,8 @@ internal partial class Program
                 continue;
             }
 
-            List<MigrationEdit> edits = MigrationEdits(tokens: tokens, file: file, language: language);
+            List<MigrationEdit> edits = MigrationEdits(tokens: tokens, file: file, language: language,
+                concurrentRoutines: concurrentRoutines);
             foreach (Token name in KeywordsUsedAsNames(tokens: tokens))
             {
                 Console.WriteLine(value: $"{file}:{name.Line}: '{name.Text}' is a keyword now, rename it by hand");
@@ -72,6 +74,40 @@ internal partial class Program
         string verb = check ? "would change" : "changed";
         Console.WriteLine(value: $"{changedFiles} file(s) {verb}, {namesToRename} name(s) to rename by hand");
         return check && changedFiles > 0 || namesToRename > 0 ? 1 : 0;
+    }
+
+    /// <summary>
+    /// The names of the routines declared <c>suspended routine</c> or <c>threaded routine</c> in any of
+    /// <paramref name="files"/>: a call of one built an Agent, which <c>agent</c> before the call does now.
+    /// </summary>
+    private static HashSet<string> ConcurrentRoutineNames(IEnumerable<string> files)
+    {
+        var names = new HashSet<string>(comparer: StringComparer.Ordinal);
+        foreach (string file in files)
+        {
+            List<Token> tokens;
+            try
+            {
+                tokens = Lexers.Tokenize(source: File.ReadAllText(path: file), fileName: file,
+                    language: SourceLanguage(path: file));
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            for (int i = 0; i + 2 < tokens.Count; i++)
+            {
+                if (tokens[index: i] is { Type: TokenType.Identifier, Text: "suspended" or "threaded" } &&
+                    tokens[index: i + 1].Type == TokenType.Routine &&
+                    tokens[index: i + 2].Type == TokenType.Identifier)
+                {
+                    names.Add(item: tokens[index: i + 2].Text);
+                }
+            }
+        }
+
+        return names;
     }
 
     /// <summary>The source files of this language under <paramref name="paths"/> (files as given, directories walked).</summary>
@@ -109,9 +145,24 @@ internal partial class Program
     /// a statement is <c>drop</c> in RazorForge and goes away in Suflae (a result is dropped without a marker there).
     /// A <c>.share()</c> call goes too, because <c>=</c> does what it did.
     /// </summary>
-    private static List<MigrationEdit> MigrationEdits(List<Token> tokens, string file, Language language)
+    private static List<MigrationEdit> MigrationEdits(List<Token> tokens, string file, Language language,
+        HashSet<string> concurrentRoutines)
     {
         bool inStandardLibrary = file.Replace(oldChar: '\\', newChar: '/').Contains(value: "/Standard/");
+        // A name this file declares decides for itself: a `suspended`/`threaded` routine is called through
+        // `agent`, a plain one is not, whatever another file declares under the same name.
+        var ownConcurrent = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var ownPlain = new HashSet<string>(comparer: StringComparer.Ordinal);
+        for (int i = 0; i + 1 < tokens.Count; i++)
+        {
+            if (tokens[index: i].Type == TokenType.Routine && tokens[index: i + 1].Type == TokenType.Identifier)
+            {
+                bool concurrent = i > 0 && tokens[index: i - 1] is
+                    { Type: TokenType.Identifier, Text: "suspended" or "threaded" };
+                (concurrent ? ownConcurrent : ownPlain).Add(item: tokens[index: i + 1].Text);
+            }
+        }
+
         var edits = new List<MigrationEdit>();
         for (int i = 0; i < tokens.Count; i++)
         {
@@ -140,6 +191,47 @@ internal partial class Program
             if (token.Text == "onlyif")
             {
                 edits.AddRange(collection: ConditionalConformanceEdits(tokens: tokens, index: i));
+                continue;
+            }
+
+            // `suspended routine f()` / `threaded routine f()` is a plain routine: where it runs is the caller's choice.
+            if (token.Text is "suspended" or "threaded" && next.Type == TokenType.Routine && next.Position >= 0)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: next.Position - token.Position,
+                    Replacement: "", Line: token.Line, What: $"{token.Text} routine → routine"));
+                continue;
+            }
+
+            // A call of a routine that was `suspended`/`threaded` built an Agent: `agent` before the call does now.
+            bool callsConcurrent = ownConcurrent.Contains(item: token.Text) ||
+                                   !ownPlain.Contains(item: token.Text) && concurrentRoutines.Contains(item: token.Text);
+            if (callsConcurrent && next.Type == TokenType.LeftParen &&
+                (i == 0 || tokens[index: i - 1].Type is not (TokenType.Dot or TokenType.Routine or TokenType.Agent)))
+            {
+                // `agent` takes the whole call chain after it, so a chain that goes on (`f(x).retrieve()`) keeps only
+                // the call inside: `(agent f(x)).retrieve()`.
+                int afterCall = SkipBalanced(tokens: tokens, start: i + 1, open: TokenType.LeftParen,
+                    close: TokenType.RightParen);
+                bool chainGoesOn = afterCall < tokens.Count && tokens[index: afterCall].Type == TokenType.Dot &&
+                                   tokens[index: afterCall - 1].Position >= 0;
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: 0,
+                    Replacement: chainGoesOn ? "(agent " : "agent ", Line: token.Line,
+                    What: $"{token.Text}(…) → agent {token.Text}(…)"));
+                if (chainGoesOn)
+                {
+                    edits.Add(item: new MigrationEdit(Start: tokens[index: afterCall - 1].Position + 1, Length: 0,
+                        Replacement: ")", Line: token.Line, What: "(agent …) before the rest of the chain"));
+                }
+
+                continue;
+            }
+
+            // `job.execute()` (start and never collect) is `job.start_now()`: collect it later with `retrieve`/`gather`.
+            if (token.Text == "execute" && i > 0 && tokens[index: i - 1].Type == TokenType.Dot &&
+                next.Type == TokenType.LeftParen && i + 2 < tokens.Count && tokens[index: i + 2].Type == TokenType.RightParen)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "start_now",
+                    Line: token.Line, What: ".execute() → .start_now() (collect it with retrieve or gather)"));
                 continue;
             }
 

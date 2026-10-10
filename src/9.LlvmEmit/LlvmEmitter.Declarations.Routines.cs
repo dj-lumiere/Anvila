@@ -681,7 +681,7 @@ public partial class LlvmEmitter
         // Allocate a slot of the ABI type (≥ the struct), store the register value into it, and bind
         // `%<name>.addr` to it — field access then reads the struct out. (records only)
         string? coerceType = ParameterCoerceType(routine: routine, paramType: param.Type);
-        string storeType = coerceType ?? GetLlvmType(type: param.Type);
+        string storeType = coerceType ?? GetValueLlvmType(type: param.Type);
         EmitEntryAlloca(llvmName: paramPtr, llvmType: storeType);
         EmitLine(sb: sb, line: $"  store {storeType} %{emittedParamName}, ptr {paramPtr}");
         _localVariables[key: param.Name] = param.Type;
@@ -803,22 +803,12 @@ public partial class LlvmEmitter
         // module-private regardless of its own modifier (owner-secrecy cap), so decorate `secret`
         // when EITHER the routine or its owner type is secret. `open` is the default → not emitted.
         // (`posted` is member-variable-only — routines are only secret/open/external.)
-        // Suspended/threaded are mutually exclusive concurrency markers.
         static void AddVisibilityAndConcurrencyAttrs(RoutineInfo r, List<string> attrs)
         {
             if (r is { Visibility: VisibilityModifier.Secret } or
                 { OwnerType.Visibility: VisibilityModifier.Secret })
             {
                 attrs.Add(item: "secret");
-            }
-
-            if (r.IsSuspended)
-            {
-                attrs.Add(item: "suspended");
-            }
-            else if (r.IsThreaded)
-            {
-                attrs.Add(item: "threaded");
             }
         }
 

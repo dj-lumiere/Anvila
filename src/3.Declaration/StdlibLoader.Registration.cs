@@ -982,7 +982,6 @@ public sealed partial class StdlibLoader
                 routine: routine,
                 moduleName: moduleName),
             GenericConstraints = routine.GenericConstraints,
-            AsyncStatus = routine.Async,
             Annotations = routine.Annotations,
             // StdlibLoader is a PARALLEL routine-registration path to SignatureResolver; it derives the
             // mutation category from @readonly/@reshaping through the SAME shared helper so the two paths

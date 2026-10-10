@@ -445,6 +445,15 @@ public partial class Parser
             return ParseRecoveryPrefix();
         }
 
+        // `agent f(x)`: the whole following call chain is deferred into an Agent, as `try` takes the whole
+        // expression after it: `agent serve(s).start_now()` defers `start_now()` too, so a caller that starts it
+        // at once writes `(agent serve(s)).start_now()`.
+        if (CheckAndAdvance(type: TokenType.Agent))
+        {
+            SourceLocation agentLocation = GetLocation(token: PeekToken(offset: -1));
+            return new AgentExpression(Inner: ParsePostfix(), Location: agentLocation);
+        }
+
         // Handle steal expression (steal expr = ownership transfer, RazorForge only)
         if (CheckAndAdvance(type: TokenType.Steal))
         {
@@ -580,9 +589,17 @@ public partial class Parser
         // No CallExpression requirement: the inner may be any expression (a bare call, a member chain, or
         // a checked-arith composition like `a + b`). An operand with no failable call or operator degenerates
         // to an always-present carrier in SA — harmless, and keeping the surface uniform.
-        Expression recovery = new RecoveryExpression(Kind: recoveryKind,
-            Inner: callSpine,
-            Location: GetLocation(token: recoveryKw));
+        // `try agent f()` recovers inside the deferred work: an Agent over the recovery (`Agent[Maybe[T]]`).
+        Expression recovery = callSpine is AgentExpression agent
+            ? agent with
+            {
+                Inner = new RecoveryExpression(Kind: recoveryKind,
+                    Inner: agent.Inner,
+                    Location: GetLocation(token: recoveryKw))
+            }
+            : new RecoveryExpression(Kind: recoveryKind,
+                Inner: callSpine,
+                Location: GetLocation(token: recoveryKw));
 
         // Re-apply the peeled `!!`s outermost-last so `try route()!!` → `(try route())!!`.
         for (int i = forceUnwraps.Count - 1; i >= 0; i--)

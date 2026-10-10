@@ -227,7 +227,6 @@ public record ExpandMemberDeclaration(
 /// <param name="GenericConstraints">Optional generic constraints.</param>
 /// <param name="IsFailable">Whether the routine has a failable <c>!</c> suffix.</param>
 /// <param name="IsCommon">Whether the routine is a <c>common</c> (type-level static) member routine.</param>
-/// <param name="Async">Suspended or threaded routine mode.</param>
 /// <param name="IsDangerous">Whether the routine requires a <c>danger</c> context.</param>
 /// <param name="IsWiredMemberRoutine">Whether the routine is a wired (builder-synthesized) member routine.</param>
 /// <remarks>
@@ -238,7 +237,6 @@ public record ExpandMemberDeclaration(
 /// <item>Type inference: parameters and return types can be inferred</item>
 /// <item>Annotations: @inline,etc.</item>
 /// <item>Visibility: public, private, internal</item>
-/// <item>Suspended: async function that can use waitfor</item>
 /// </list>
 /// </remarks>
 public record RoutineDeclaration(
@@ -253,7 +251,6 @@ public record RoutineDeclaration(
     List<GenericConstraintDeclaration>? GenericConstraints = null,
     bool IsFailable = false,
     bool IsCommon = false,
-    AsyncStatus Async = AsyncStatus.None,
     bool IsDangerous = false,
     bool IsWiredMemberRoutine = false) : Declaration(Location: Location)
 {
@@ -705,33 +702,7 @@ public record ImportDeclaration(
 #region Supporting Types and Enums
 
 /// <summary>
-/// Specifies the async execution model for a routine. This is ORTHOGONAL to
-/// <see cref="FailableVariant"/> (the builder-generated failable-wrapper kind): a routine has an
-/// async model AND, independently, may be a generated failable variant. The two used to be mixed
-/// into one enum; they are now separate.
-/// </summary>
-public enum AsyncStatus
-{
-    /// <summary>Regular synchronous routine</summary>
-    None,
-
-    /// <summary>
-    /// Lightweight async (suspended) - cooperative multitasking using green threads.
-    /// Best for I/O-bound operations. Uses waitfor to await results.
-    /// </summary>
-    Suspended,
-
-    /// <summary>
-    /// OS-level threading for CPU-bound parallel work.
-    /// Uses real threads with higher overhead but true parallelism.
-    /// </summary>
-    Threaded
-}
-
-/// <summary>
-/// Which builder-generated failable wrapper a routine is, if any. Orthogonal to
-/// <see cref="AsyncStatus"/> (the async execution model). A routine is at most one of these; the
-/// failable variants were previously mixed into <see cref="AsyncStatus"/> and are now separated out.
+/// Which builder-generated failable wrapper a routine is, if any. A routine is at most one of these.
 /// </summary>
 public enum FailableVariant
 {

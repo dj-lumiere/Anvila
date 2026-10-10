@@ -489,24 +489,11 @@ public sealed class RoutineInfo
     /// </summary>
     public TypeSymbol? WrapperForwarderInnerGenericDef { get; init; }
 
-    /// <summary>The suspended or threaded status of this routine (None, Suspended, Threaded).</summary>
-    public AsyncStatus AsyncStatus { get; init; } = AsyncStatus.None;
-
     /// <summary>
     /// Which builder-generated failable wrapper this routine is, if any (None for ordinary
-    /// routines). Orthogonal to <see cref="AsyncStatus"/> — previously the lookup/check/try
-    /// variants were mixed into AsyncStatus and are now tracked separately here.
+    /// routines).
     /// </summary>
     public FailableVariant FailableVariant { get; init; } = FailableVariant.None;
-
-    /// <summary>Whether this routine is a suspended routine.</summary>
-    public bool IsSuspended => AsyncStatus is AsyncStatus.Suspended;
-
-    /// <summary>Whether this routine is a threaded (OS-thread) routine.</summary>
-    public bool IsThreaded => AsyncStatus is AsyncStatus.Threaded;
-
-    /// <summary>Whether this routine is any kind of suspended or threaded routine.</summary>
-    public bool IsAsync => IsSuspended || IsThreaded;
 
     /// <summary>
     /// For the routine that builds the Agent recipe of a <c>threaded</c>/<c>suspended</c> routine (a call of
@@ -640,7 +627,6 @@ public sealed class RoutineInfo
             IsSynthesized = IsSynthesized,
             WrapperForwarderInnerMemberRoutine = WrapperForwarderInnerMemberRoutine,
             WrapperForwarderInnerGenericDef = WrapperForwarderInnerGenericDef,
-            AsyncStatus = AsyncStatus,
             FailableVariant = FailableVariant,
             RecoveryOf = RecoveryOf,
             Recovery = Recovery,

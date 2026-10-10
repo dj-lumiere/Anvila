@@ -169,6 +169,11 @@ internal sealed class TypeResolver
             return ErrorTypeSymbol.Instance;
         }
 
+        if (typeExpr.KnownType is { } known)
+        {
+            return known;
+        }
+
         TypeSymbol resolved = ResolveTypeCore(typeExpr: typeExpr);
         // Effective realm = the explicit `RF::`/`SF::` qualifier, else the realm of the file being analyzed:
         // a bare `List` in a `.sf` file is Suflae's own list when Suflae declares one. Name resolution above
@@ -246,6 +251,11 @@ internal sealed class TypeResolver
 
     private TypeSymbol ResolveTypeCore(TypeExpression typeExpr)
     {
+        if (typeExpr.KnownType is { } known)
+        {
+            return known;
+        }
+
         // Buildtime type-position splice `${m.type}` in a decl-position expand column template: resolve
         // to the synthetic per-field placeholder. The registry substitutes it with each concrete
         // field's type when the SoA container is instantiated.
@@ -600,13 +610,14 @@ internal sealed class TypeResolver
             return ErrorTypeSymbol.Instance;
         }
 
-        // Reject None as a type argument except Check<None>.
-        // Lookup<None> is ambiguous in the type_id carrier model because None is also the absent sentinel.
+        // Reject None as a type argument except Check[None] and Agent[None] (the Agent of work that returns
+        // nothing).
         string? genericDefCarrierName = GetCarrierBaseName(type: genericDef);
 
         if (ResolveNoneTypeArguments(typeExpr: typeExpr,
                 typeArgs: typeArgs,
-                genericDefCarrierName: genericDefCarrierName) is { } noneResult)
+                genericDefCarrierName: genericDefCarrierName,
+                allowsNone: genericDefCarrierName is "Check" || genericDef.BareName == "Agent") is { } noneResult)
         {
             return noneResult;
         }
@@ -642,19 +653,17 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// Handles <c>None</c> type arguments for a carrier generic: the carrier None-collapse identities
-    /// (<c>Maybe[None]</c> ≡ <c>Bool</c>, <c>Lookup[None]</c> ≡ <c>Check[None]</c>) and the rejection of
-    /// <c>None</c> as a type argument for any non-<c>Check</c> carrier. Returns the substitute/error type to
-    /// short-circuit with, or null when no <c>None</c>-specific handling applies.
+    /// Handles <c>None</c> type arguments: the carrier None-collapse identity (<c>Maybe[None]</c> ≡ <c>Bool</c>)
+    /// and the rejection of <c>None</c> as a type argument for any type that does not allow it. Returns the
+    /// substitute/error type to short-circuit with, or null when no <c>None</c>-specific handling applies.
     /// </summary>
     private TypeSymbol? ResolveNoneTypeArguments(TypeExpression typeExpr,
-        List<TypeSymbol> typeArgs, string? genericDefCarrierName)
+        List<TypeSymbol> typeArgs, string? genericDefCarrierName, bool allowsNone)
     {
         // Carrier None-collapse (design invariant): a recovery carrier over the unit type None degenerates —
         //   Maybe[None]  ≡ Bool          (present|absent with no payload = a 2-state = Bool)
-        //   Lookup[None] ≡ Check[None]   (Lookup's extra absent state is meaningless with no success payload)
-        // Check[None] is the canonical no-payload carrier and stays. These arise from `try`/`lookup` over a
-        // unit-returning call. Enforce the identity in resolution so the carrier type is uniform.
+        // Check[None] is the canonical no-payload carrier and stays. These arise from `try` over a unit-returning
+        // call. Enforce the identity in resolution so the carrier type is uniform.
         if (typeArgs.Count == 1 && typeArgs[index: 0] is { Name: "None" })
         {
             if (genericDefCarrierName == MaybeTypeName)
@@ -666,7 +675,7 @@ internal sealed class TypeResolver
 
         foreach (TypeSymbol arg in typeArgs)
         {
-            if (arg is not { Name: "None" } || genericDefCarrierName is "Check")
+            if (arg is not { Name: "None" } || allowsNone)
             {
                 continue;
             }

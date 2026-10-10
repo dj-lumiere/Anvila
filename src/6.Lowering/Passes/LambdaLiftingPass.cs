@@ -821,53 +821,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                         includeMe: includeMe)
                 },
                 original: steal),
-            WaitforExpression waitfor => CopyResolvedType(rewritten: waitfor with
-                {
-                    Operand = RewriteExpression(expression: waitfor.Operand,
-                        scope: scope,
-                        inheritedGenericParameters: inheritedGenericParameters,
-                        inheritedGenericConstraints: inheritedGenericConstraints,
-                        includeMe: includeMe),
-                    Timeout = waitfor.Timeout != null
-                        ? RewriteExpression(expression: waitfor.Timeout,
-                            scope: scope,
-                            inheritedGenericParameters: inheritedGenericParameters,
-                            inheritedGenericConstraints: inheritedGenericConstraints,
-                            includeMe: includeMe)
-                        : null
-                },
-                original: waitfor),
-            DependentWaitforExpression dependentWaitfor => CopyResolvedType(
-                rewritten: dependentWaitfor with
-                {
-                    Operand = RewriteExpression(expression: dependentWaitfor.Operand,
-                        scope: scope,
-                        inheritedGenericParameters: inheritedGenericParameters,
-                        inheritedGenericConstraints: inheritedGenericConstraints,
-                        includeMe: includeMe),
-                    Dependencies = dependentWaitfor.Dependencies
-                                                   .Select(selector: dependency => dependency with
-                                                    {
-                                                        DependencyExpr = RewriteExpression(
-                                                            expression:
-                                                            dependency.DependencyExpr,
-                                                            scope: scope,
-                                                            inheritedGenericParameters:
-                                                            inheritedGenericParameters,
-                                                            inheritedGenericConstraints:
-                                                            inheritedGenericConstraints,
-                                                            includeMe: includeMe)
-                                                    })
-                                                   .ToList(),
-                    Timeout = dependentWaitfor.Timeout != null
-                        ? RewriteExpression(expression: dependentWaitfor.Timeout,
-                            scope: scope,
-                            inheritedGenericParameters: inheritedGenericParameters,
-                            inheritedGenericConstraints: inheritedGenericConstraints,
-                            includeMe: includeMe)
-                        : null
-                },
-                original: dependentWaitfor),
             CarrierPayloadExpression payload => CopyResolvedType(rewritten: payload with
                 {
                     Carrier = RewriteExpression(expression: payload.Carrier,
@@ -1023,7 +976,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             GenericConstraints: genericConstraints,
             IsFailable: false,
             IsCommon: false,
-            Async: AsyncStatus.None,
             IsDangerous: false);
         _liftedRoutines.Add(item: liftedRoutine);
 
@@ -1189,7 +1141,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             GenericConstraints: genericConstraints,
             IsFailable: false,
             IsCommon: false,
-            Async: AsyncStatus.None,
             IsDangerous: false);
         _liftedRoutines.Add(item: liftedRoutine);
 
@@ -1939,28 +1890,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     captures: captures);
                 break;
 
-            case WaitforExpression waitfor:
-                CollectLocalCapturesRecursive(expression: waitfor.Operand,
-                    outerScope: outerScope,
-                    parameterNames: parameterNames,
-                    captures: captures);
-                if (waitfor.Timeout != null)
-                {
-                    CollectLocalCapturesRecursive(expression: waitfor.Timeout,
-                        outerScope: outerScope,
-                        parameterNames: parameterNames,
-                        captures: captures);
-                }
-
-                break;
-
-            case DependentWaitforExpression dependentWaitfor:
-                CollectCapturesInDependentWaitfor(dependentWaitfor: dependentWaitfor,
-                    outerScope: outerScope,
-                    parameterNames: parameterNames,
-                    captures: captures);
-                break;
-
             case CarrierPayloadExpression payload:
                 CollectLocalCapturesRecursive(expression: payload.Carrier,
                     outerScope: outerScope,
@@ -2000,31 +1929,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     parameterNames: parameterNames,
                     captures: captures);
             }
-        }
-    }
-
-    private static void CollectCapturesInDependentWaitfor(
-        DependentWaitforExpression dependentWaitfor, HashSet<string> outerScope,
-        HashSet<string> parameterNames, HashSet<string> captures)
-    {
-        CollectLocalCapturesRecursive(expression: dependentWaitfor.Operand,
-            outerScope: outerScope,
-            parameterNames: parameterNames,
-            captures: captures);
-        foreach (TaskDependency dependency in dependentWaitfor.Dependencies)
-        {
-            CollectLocalCapturesRecursive(expression: dependency.DependencyExpr,
-                outerScope: outerScope,
-                parameterNames: parameterNames,
-                captures: captures);
-        }
-
-        if (dependentWaitfor.Timeout != null)
-        {
-            CollectLocalCapturesRecursive(expression: dependentWaitfor.Timeout,
-                outerScope: outerScope,
-                parameterNames: parameterNames,
-                captures: captures);
         }
     }
 

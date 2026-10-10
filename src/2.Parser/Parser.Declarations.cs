@@ -295,12 +295,11 @@ public partial class Parser
     /// <param name="visibility">Access modifier for the routine.</param>
     /// <param name="annotations">List of annotations applied to the routine.</param>
     /// <param name="isCommon">Whether this is a <c>common</c> (type-level static) member routine.</param>
-    /// <param name="asyncStatus">Suspended or threaded status of the routine.</param>
     /// <param name="isDangerous">Whether the routine is marked as dangerous (RF only).</param>
     /// <returns>A <see cref="RoutineDeclaration"/> AST node.</returns>
     private RoutineDeclaration ParseRoutineDeclaration(
         VisibilityModifier visibility = VisibilityModifier.Open, List<string>? annotations = null,
-        bool isCommon = false, AsyncStatus asyncStatus = AsyncStatus.None,
+        bool isCommon = false,
         bool isDangerous = false)
     {
         // ===============================================================================
@@ -463,7 +462,6 @@ public partial class Parser
             GenericConstraints: constraints,
             IsFailable: isFailable,
             IsCommon: isCommon,
-            Async: asyncStatus,
             IsDangerous: isDangerous,
             IsWiredMemberRoutine: _routineNameWired)
         {

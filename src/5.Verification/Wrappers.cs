@@ -230,7 +230,7 @@ internal static class Wrappers
     /// single-thread borrow raced across parallel workers). DERIVED from <see cref="IsThreadShareableName"/>
     /// (the single thread-safe source): it is exactly the forwarding wrappers MINUS the thread-shareable ones
     /// MINUS <c>Roamed</c> (which crosses via <c>promote()</c>, handled at the call site in
-    /// <c>ValidateAsyncRoutineParameter</c>). The raw-ptr <c>Hijacked</c> escape hatch is excluded by
+    /// <c>ValidateAgentArgument</c>). The raw-ptr <c>Hijacked</c> escape hatch is excluded by
     /// <see cref="Declaration.RuntimeContract.ForwardingWrapperTypes"/> (the user owns that unsafety). Resolves to
     /// {Retained, Tracked, Viewing, Modifying}.
     /// </summary>

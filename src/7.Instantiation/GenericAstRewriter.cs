@@ -1511,28 +1511,10 @@ internal static class GenericAstRewriter
                 Value = RewriteExpression(expr: del.Value, ctx: ctx)
             },
 
-            WaitforExpression wf => wf with
-            {
-                Operand = RewriteExpression(expr: wf.Operand, ctx: ctx),
-                Timeout = wf.Timeout != null
-                    ? RewriteExpression(expr: wf.Timeout, ctx: ctx)
-                    : null
-            },
-
-            DependentWaitforExpression dwf => dwf with
-            {
-                Dependencies = dwf.Dependencies
-                                  .Select(selector: d => d with
-                                   {
-                                       DependencyExpr =
-                                       RewriteExpression(expr: d.DependencyExpr, ctx: ctx)
-                                   })
-                                  .ToList(),
-                Operand = RewriteExpression(expr: dwf.Operand, ctx: ctx),
-                Timeout = dwf.Timeout != null
-                    ? RewriteExpression(expr: dwf.Timeout, ctx: ctx)
-                    : null
-            },
+            AgentExpression agent => agent.LoweredCall is { } loweredAgent
+                ? RewriteExpression(expr: loweredAgent, ctx: ctx)
+                : new AgentExpression(Inner: RewriteExpression(expr: agent.Inner, ctx: ctx),
+                    Location: agent.Location),
 
             BackIndexExpression bi => bi with
             {

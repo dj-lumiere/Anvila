@@ -3,82 +3,26 @@ namespace SyntaxTree;
 #region Async Expressions
 
 /// <summary>
-/// Expression that waits for a suspended computation to complete.
-/// Used in suspended/threaded routines to await Task-like values.
+/// <c>agent EXPR</c>: computes the arguments of the call chain <paramref name="Inner"/> now and defers the calls
+/// into an <c>Agent[T]</c> that a verb starts (<c>start_now()</c>, <c>start_here()</c>, <c>start_apart()</c>, or
+/// <c>retrieve()</c>, which starts it with <c>start_now()</c>). <c>try agent f()</c> / <c>check agent f()</c> parse
+/// as an agent over the recovery, so the failure is caught inside the work.
 /// </summary>
-/// <param name="Operand">The suspended computation to wait for</param>
-/// <param name="Timeout">Optional timeout duration (with 'within' keyword)</param>
-/// <param name="Location">Source location information</param>
-/// <remarks>
-/// Waitfor expression examples:
-/// <list type="bullet">
-/// <item>waitfor task - wait for task to complete</item>
-/// <item>waitfor task within 5s - wait with 5 second timeout</item>
-/// <item>waitfor http.get(url) within 30s - wait for HTTP request with timeout</item>
-/// </list>
-/// Waitfor can only be used inside suspended/threaded routines.
-/// </remarks>
-public record WaitforExpression(Expression Operand, Expression? Timeout, SourceLocation Location)
-    : Expression(Location: Location)
+/// <param name="Inner">The deferred call chain.</param>
+/// <param name="Location">Source location of the <c>agent</c> keyword.</param>
+public record AgentExpression(Expression Inner, SourceLocation Location) : Expression(Location: Location)
 {
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
-        return visitor.VisitWaitforExpression(node: this);
+        return visitor.VisitAgentExpression(node: this);
     }
-}
 
-/// <summary>
-/// Represents a single task dependency in an 'after' clause.
-/// Specifies a Lookup&lt;T&gt; variable to depend on and an optional binding name.
-/// </summary>
-/// <param name="DependencyExpr">The Lookup&lt;T&gt; variable to depend on</param>
-/// <param name="BindingName">Optional 'as' binding name for the unwrapped value (null if no 'as')</param>
-/// <param name="Location">Source location information</param>
-/// <remarks>
-/// Task dependency examples:
-/// <list type="bullet">
-/// <item>after a - dependency without value binding (ordering only)</item>
-/// <item>after a as val - dependency with value binding</item>
-/// <item>after (a, b) as (va, vb) - tuple dependencies with bindings</item>
-/// </list>
-/// The binding name introduces a variable of type T (unwrapped from Lookup&lt;T&gt;)
-/// that is only valid within the associated waitfor expression.
-/// </remarks>
-public record TaskDependency(
-    Expression DependencyExpr,
-    string? BindingName,
-    SourceLocation Location);
-
-/// <summary>
-/// Expression that waits for a suspended computation with explicit task dependencies.
-/// Extends waitfor with 'after' clause for declarative task dependency graphs.
-/// </summary>
-/// <param name="Dependencies">List of 'after' dependencies (empty means no dependencies)</param>
-/// <param name="Operand">The suspended computation to wait for</param>
-/// <param name="Timeout">Optional timeout duration (with 'within' keyword)</param>
-/// <param name="Location">Source location information</param>
-/// <remarks>
-/// Dependent waitfor expression examples:
-/// <list type="bullet">
-/// <item>after a as val waitfor step2!(val) within 5s - single dependency with timeout</item>
-/// <item>after (a, b) as (va, vb) waitfor step3!(va, vb) - multiple dependencies</item>
-/// <item>after a waitfor step2!() - ordering-only dependency (no value binding)</item>
-/// </list>
-/// If any dependency fails (error/None), dependent tasks are not spawned (short-circuit).
-/// The result type is Lookup&lt;R&gt; where R is the return type of the awaited task.
-/// </remarks>
-public record DependentWaitforExpression(
-    List<TaskDependency> Dependencies,
-    Expression Operand,
-    Expression? Timeout,
-    SourceLocation Location) : Expression(Location: Location)
-{
-    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
-    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
-    {
-        return visitor.VisitDependentWaitforExpression(node: this);
-    }
+    /// <summary>
+    /// The analyzed lowering: a call of the routine that builds this Agent's recipe from the chain's arguments.
+    /// Every pass after analysis sees this call in the node's place. Null until analyzed.
+    /// </summary>
+    public Expression? LoweredCall { get; set; }
 }
 
 #endregion

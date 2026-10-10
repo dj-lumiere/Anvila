@@ -1,5 +1,4 @@
 using Builder.Declaration;
-using Builder.Diagnostics;
 using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Enums;
@@ -7,107 +6,38 @@ using TypeModel.Enums;
 namespace Builder.Desugaring.Passes;
 
 /// <summary>
-/// Builds, for every <c>threaded</c> or <c>suspended</c> routine, the two ordinary routines that turn a call
-/// into an Agent recipe and run that recipe. Runs on the user programs at the start of semantic analysis,
-/// before declarations are collected, so the synthesized routines are analyzed, lowered and emitted like any
-/// other routine.
-///
-/// <para>For <c>threaded routine work(a: A, b: B) -> R</c> it appends:</para>
+/// Builds the two routines behind an <c>agent</c> call (see <c>SemanticVerifier.AnalyzeAgentExpression</c>): one that
+/// turns the call's arguments into an Agent recipe and one that runs that recipe. Given the call's work routine
+/// <c>__agent_N_work(p0: A, p1: B) -> R</c> (the deferred call chain over its parameters), it builds:
 /// <code>
-/// routine __async_spawn_work(a: A, b: B) -> Agent[R]
+/// routine __agent_N_spawn(p0: A, p1: B) -> Agent[R]
 ///     danger
 ///         var recipe = recipe_new(slots: 3)
-///         recipe_put[A](recipe: recipe, slot: 1, value: a)
-///         recipe_put[B](recipe: recipe, slot: 2, value: b)
-///         return agent_threaded[R](entry: __async_run_work, recipe: recipe)
+///         recipe_put[A](recipe: recipe, slot: 1, value: p0)
+///         recipe_put[B](recipe: recipe, slot: 2, value: p1)
+///         return agent_recipe[R](entry: __agent_N_run, recipe: recipe)
 ///
-/// routine __async_run_work(task: CPtr, recipe: CPtr)
+/// routine __agent_N_run(recipe: CPtr)
 ///     danger
 ///         var r = recipe.get_address()
-///         agent_finish[R](recipe: r, value: work(a: recipe_take[A](recipe: r, slot: 1), b: ...))
+///         agent_finish[R](recipe: r, value: __agent_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...))
 ///     return
 /// </code>
-/// <para>Semantic analysis sends every call of <c>work</c> to <c>__async_spawn_work</c> (a call builds the
-/// recipe and starts nothing), except the call inside <c>__async_run_work</c>, which is marked
-/// <see cref="CallExpression.IsDirectAsyncInvoke"/>. A <c>suspended</c> routine's run routine takes only
-/// <c>recipe: CPtr</c> (a coroutine entry has one argument). Slot 0 of the recipe holds the task, written by
-/// <c>agent_threaded</c>/<c>agent_suspended</c>. An argument moves into the recipe with an implicit
-/// <c>steal</c>, which moves an entity and leaves any other value as it is.</para>
+/// <para>The <c>agent</c> call becomes a call of the spawn routine, so the arguments are computed where it is
+/// written and the call itself runs wherever the verb that starts the Agent puts it. Slot 0 of the recipe holds
+/// the task, written by that verb. An argument moves into the recipe with an implicit <c>steal</c>, which moves an
+/// entity and leaves any other value as it is.</para>
 ///
-/// <para>A <c>threaded</c> routine's <c>Atomic</c> parameter is shared with the worker, not copied: it is
-/// marked by-reference on the routine and on its spawn routine, the recipe holds <c>cell.hijack()</c>, and
-/// the run routine passes <c>recipe_take[Hijacked[Atomic[..]]](..).peek()</c>, which the wrapper projection
-/// turns into the cell's address.</para>
-///
-/// <para>Member and generic <c>threaded</c>/<c>suspended</c> routines are reported (RF-S642): a recipe holds
-/// no receiver, and the run routine of a generic one would need its instance's address.</para>
+/// <para>An <c>Atomic</c> argument is shared with the work, not copied: its parameter is by-reference, the recipe
+/// holds <c>cell.hijack()</c>, and the run routine passes <c>recipe_take[Hijacked[Atomic[..]]](..).peek()</c>,
+/// which the wrapper projection turns into the cell's address.</para>
 /// </summary>
-internal static class AsyncRecipeSynthesisPass
+internal static class AgentRecipe
 {
-    /// <summary>Prefix of the routine that builds a recipe from a call's arguments.</summary>
-    internal const string SpawnPrefix = "__async_spawn_";
-
-    /// <summary>Prefix of the routine a coroutine or worker thread runs to execute a recipe.</summary>
-    internal const string RunPrefix = "__async_run_";
-
-    /// <summary>Appends the spawn and run routines of each async routine to its program.</summary>
-    internal static void Run(List<(SyntaxTree.Program Program, string FilePath)> files,
-        Action<SemanticDiagnosticCode, string, SourceLocation> report)
-    {
-        foreach ((SyntaxTree.Program program, string _) in files)
-        {
-            var synthesized = new List<ISyntaxTreeNode>();
-            foreach (ISyntaxTreeNode node in program.Declarations)
-            {
-                if (node is not RoutineDeclaration { Async: AsyncStatus.Threaded or AsyncStatus.Suspended } routine)
-                {
-                    continue;
-                }
-
-                if (routine.ReceiverType != null || routine.GenericParameters is { Count: > 0 })
-                {
-                    report(arg1: SemanticDiagnosticCode.AsyncRoutineNotFree,
-                        arg2: $"'{routine.Name}' is a {(routine.ReceiverType != null ? "member" : "generic")} " +
-                              $"{(routine.Async == AsyncStatus.Threaded ? "threaded" : "suspended")} routine. " +
-                              "Only a non-generic free routine can be threaded or suspended: make it a free " +
-                              "routine that takes the receiver as a parameter, or a non-generic one.",
-                        arg3: routine.Location);
-                    continue;
-                }
-
-                MarkSharedParameters(routine: routine);
-                synthesized.Add(item: BuildSpawn(routine: routine));
-                synthesized.Add(item: BuildRun(routine: routine));
-            }
-
-            program.Declarations.AddRange(collection: synthesized);
-        }
-    }
-
-    /// <summary>Marks each <c>Atomic</c> parameter of a <c>threaded</c> routine by-reference: every worker
-    /// works on the spawner's one cell.</summary>
-    private static void MarkSharedParameters(RoutineDeclaration routine)
-    {
-        if (routine.Async != AsyncStatus.Threaded)
-        {
-            return;
-        }
-
-        for (int i = 0; i < routine.Parameters.Count; i++)
-        {
-            if (routine.Parameters[index: i] is { Type.Name: RuntimeContract.Atomic } p)
-            {
-                routine.Parameters[index: i] = p with { IsByReference = true };
-            }
-        }
-    }
-
-    /// <summary><c>__async_spawn_foo(params) -> Agent[R]</c>: boxes each argument into a fresh recipe and
-    /// returns the Agent built over it.</summary>
-    private static RoutineDeclaration BuildSpawn(RoutineDeclaration routine)
+    /// <summary>The spawn routine: boxes each argument into a fresh recipe and returns the Agent built over it.</summary>
+    internal static RoutineDeclaration BuildSpawn(RoutineDeclaration routine, string spawnName, string runName)
     {
         SourceLocation loc = routine.Location;
-        bool threaded = routine.Async == AsyncStatus.Threaded;
         TypeExpression resultType = ResultType(routine: routine);
 
         var statements = new List<Statement>
@@ -148,17 +78,17 @@ internal static class AsyncRecipeSynthesisPass
         }
 
         statements.Add(item: new ReturnStatement(
-            Value: Call(name: threaded ? "agent_threaded" : "agent_suspended",
+            Value: Call(name: "agent_recipe",
                 typeArguments: [resultType],
                 arguments:
                 [
-                    Named(name: "entry", value: Id(name: RunPrefix + routine.Name, loc: loc)),
+                    Named(name: "entry", value: Id(name: runName, loc: loc)),
                     Named(name: "recipe", value: Id(name: "recipe", loc: loc))
                 ],
                 loc: loc),
             Location: loc));
 
-        return new RoutineDeclaration(Name: SpawnPrefix + routine.Name,
+        return new RoutineDeclaration(Name: spawnName,
             Parameters: routine.Parameters.ToList(),
             ReturnType: new TypeExpression(Name: "Agent", GenericArguments: [resultType], Location: loc),
             Body: new BlockStatement(
@@ -170,17 +100,13 @@ internal static class AsyncRecipeSynthesisPass
             Location: loc) { IsBuilderWritten = true };
     }
 
-    /// <summary><c>__async_run_foo(task: CPtr, recipe: CPtr)</c> (threaded) or <c>(recipe: CPtr)</c>
-    /// (suspended): moves the arguments out of the recipe, calls the routine directly and completes the
-    /// task with its result.</summary>
-    private static RoutineDeclaration BuildRun(RoutineDeclaration routine)
+    /// <summary>The run routine <c>(recipe: CPtr)</c>, the entry of the fiber or thread that runs the Agent: moves the
+    /// arguments out of the recipe, calls the work routine and completes the task with its result.</summary>
+    internal static RoutineDeclaration BuildRun(RoutineDeclaration routine, string runName)
     {
         SourceLocation loc = routine.Location;
         var cptr = new TypeExpression(Name: "CPtr", GenericArguments: null, Location: loc);
-        List<Parameter> parameters = routine.Async == AsyncStatus.Threaded
-            ? [new Parameter(Name: "task", Type: cptr, DefaultValue: null, Location: loc),
-                new Parameter(Name: "recipe", Type: cptr, DefaultValue: null, Location: loc)]
-            : [new Parameter(Name: "recipe", Type: cptr, DefaultValue: null, Location: loc)];
+        List<Parameter> parameters = [new Parameter(Name: "recipe", Type: cptr, DefaultValue: null, Location: loc)];
 
         var arguments = new List<Expression>();
         for (int i = 0; i < routine.Parameters.Count; i++)
@@ -204,7 +130,7 @@ internal static class AsyncRecipeSynthesisPass
 
         var direct = new CallExpression(Callee: Id(name: routine.Name, loc: loc), Arguments: arguments, Location: loc)
         {
-            IsDirectAsyncInvoke = true
+            IsRecipeRunCall = true
         };
 
         var statements = new List<Statement>
@@ -247,7 +173,7 @@ internal static class AsyncRecipeSynthesisPass
                 Location: loc));
         }
 
-        return new RoutineDeclaration(Name: RunPrefix + routine.Name,
+        return new RoutineDeclaration(Name: runName,
             Parameters: parameters,
             ReturnType: null,
             Body: new BlockStatement(

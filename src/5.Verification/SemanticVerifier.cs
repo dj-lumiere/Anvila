@@ -470,8 +470,6 @@ public sealed partial class SemanticVerifier
             return AbortedResult();
         }
 
-        // Each threaded/suspended routine gets the routines that build and run its Agent recipe.
-        AsyncRecipeSynthesisPass.Run(files: [(program, _currentFilePath)], report: ReportError);
         BlockingCallSynthesisPass.Run(files: [(program, _currentFilePath)]);
 
         RunPhase1Declarations(program: program);
@@ -2345,8 +2343,6 @@ public sealed partial class SemanticVerifier
             return AbortedResult();
         }
 
-        // Each threaded/suspended routine gets the routines that build and run its Agent recipe.
-        AsyncRecipeSynthesisPass.Run(files: files, report: ReportError);
         BlockingCallSynthesisPass.Run(files: files);
 
         // Every file in the build graph contributes its declarations via Phase 1 below.

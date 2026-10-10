@@ -276,27 +276,13 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     }
 
     /// <summary>
-    /// Extends the base expression dispatch with the two node kinds the base does not cover
-    /// (<see cref="WaitforExpression"/>, <see cref="CarrierPayloadExpression"/>) so BuilderQuery calls
-    /// nested inside them are still folded — the original hand-rolled walker recursed into these.
+    /// Extends the base expression dispatch with the node kind the base does not cover
+    /// (<see cref="CarrierPayloadExpression"/>) so BuilderQuery calls nested inside it are still folded.
     /// </summary>
     public override Expression VisitExpression(Expression expr)
     {
         switch (expr)
         {
-            case WaitforExpression wf:
-            {
-                Expression o = VisitExpression(expr: wf.Operand);
-                Expression? timeout = wf.Timeout != null
-                    ? VisitExpression(expr: wf.Timeout)
-                    : null;
-                bool changed = !ReferenceEquals(objA: o, objB: wf.Operand) ||
-                               !ReferenceEquals(objA: timeout, objB: wf.Timeout);
-                return changed
-                    ? wf with { Operand = o, Timeout = timeout }
-                    : expr;
-            }
-
             case CarrierPayloadExpression cpe:
             {
                 Expression c = VisitExpression(expr: cpe.Carrier);

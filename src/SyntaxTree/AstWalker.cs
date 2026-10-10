@@ -347,8 +347,7 @@ public static class AstWalker
             {
                 e.Operand
             },
-            WaitforExpression e => WaitforExpressionChildren(e: e),
-            DependentWaitforExpression e => DependentWaitforExpressionChildren(e: e),
+            AgentExpression e => AgentExpressionChildren(e: e),
             BackIndexExpression e => new object[]
             {
                 e.Operand
@@ -529,28 +528,9 @@ public static class AstWalker
         }
     }
 
-    private static IEnumerable<object> WaitforExpressionChildren(WaitforExpression e)
+    private static IEnumerable<object> AgentExpressionChildren(AgentExpression e)
     {
-        yield return e.Operand;
-        if (e.Timeout != null)
-        {
-            yield return e.Timeout;
-        }
-    }
-
-    private static IEnumerable<object> DependentWaitforExpressionChildren(
-        DependentWaitforExpression e)
-    {
-        foreach (TaskDependency dep in e.Dependencies)
-        {
-            yield return dep;
-        }
-
-        yield return e.Operand;
-        if (e.Timeout != null)
-        {
-            yield return e.Timeout;
-        }
+        yield return e.LoweredCall ?? e.Inner;
     }
 
     // -------- Patterns --------
@@ -802,10 +782,6 @@ public static class AstWalker
                 m.Type
             },
             RoutineSignature r => RoutineSignatureChildren(r: r),
-            TaskDependency d => new object[]
-            {
-                d.DependencyExpr
-            },
             ExpressionPart ep => new object[]
             {
                 ep.Expression

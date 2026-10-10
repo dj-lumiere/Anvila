@@ -24,6 +24,8 @@ public sealed partial class SemanticVerifier
         {
             AnalyzeDeclaration(node: declaration);
         }
+
+        AnalyzeAgentRoutines(program: program);
     }
 
     private void AnalyzeDeclaration(ISyntaxTreeNode node)
@@ -1106,6 +1108,13 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>The warning for an <c>agent</c> call whose Agent nothing starts.</summary>
+    private static string AgentNeverStartedMessage()
+    {
+        return "This agent call builds an Agent that nothing starts, so its work never runs. Start it at once " +
+               "with `(agent ...).start_now()`, or keep it in a variable, start it, and `.retrieve()` it later.";
+    }
+
     private void AnalyzeExpressionStatement(ExpressionStatement expr)
     {
         // Analyze the expression for side effects and type validation
@@ -1113,6 +1122,15 @@ public sealed partial class SemanticVerifier
 
         // Note: UnhandledCrashableCall check moved to AnalyzeCallExpression to catch all contexts
         // (return values, assignments, nested expressions — not just expression statements)
+
+        // `agent f()` on its own builds an Agent nothing starts: the call never runs.
+        if (expr.Expression is AgentExpression agent && IsAgentType(type: exprType))
+        {
+            ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
+                message: AgentNeverStartedMessage(),
+                location: agent.Location);
+            return;
+        }
 
         // Check if this is a call expression with a non-None return value
         // If so, warn that the return value is unused (use 'drop' to drop it on purpose)
@@ -1126,16 +1144,14 @@ public sealed partial class SemanticVerifier
                 _ => "routine"
             };
 
-            // An `Agent[T]` result dropped on the floor is the lazy-async footgun: a `suspended`/
-            // `threaded` call only builds a recipe — dropping it means the routine BODY never runs
-            // (in the old eager model it would have). Point at the verbs that actually start it.
+            // An `Agent[T]` result thrown away is never started: nothing runs its work. Point at the verbs
+            // that start it.
             if (IsAgentType(type: exprType))
             {
                 ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
                     message:
-                    $"Agent from '{routineName}()' is never launched — the routine will NOT " +
-                    "run. Call `.execute()` to run it in the background, or `.retrieve()` to " +
-                    "run it and await the value.",
+                    $"The Agent '{routineName}()' returns is never started, so its work never runs. Call " +
+                    "`.start_now()` on it to start it, and `.retrieve()` later to wait for its value.",
                     location: call.Location);
             }
             else if (Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: _currentFilePath))

@@ -1,6 +1,6 @@
 using Builder.Declaration;
 using SyntaxTree;
-using static Builder.Desugaring.Passes.AsyncRecipeSynthesisPass;
+using static Builder.Desugaring.Passes.AgentRecipe;
 
 namespace Builder.Desugaring.Passes;
 
@@ -8,7 +8,7 @@ namespace Builder.Desugaring.Passes;
 /// A foreign routine marked <c>@blocking</c> (<c>@blocking routine C::read_line(...) -> T</c>) may block its thread
 /// for a long time. A coroutine that calls it must not hold its worker meanwhile: the call runs on one of the
 /// runtime's I/O threads while the coroutine parks, and anywhere else it runs right there (Ingrid's
-/// <c>rf_blocking_call</c>). Runs on the user programs with <see cref="AsyncRecipeSynthesisPass"/>, before
+/// <c>rf_blocking_call</c>). Runs on the user programs with <see cref="AgentRecipe"/>, before
 /// declarations are collected.
 ///
 /// <para>For <c>@blocking routine C::f(a: A) -> R</c> it appends:</para>
@@ -215,7 +215,7 @@ internal static class BlockingCallSynthesisPass
         var foreign = new CallExpression(
             Callee: new IdentifierExpression(Name: external.Name, Location: loc, Realm: "C"),
             Arguments: arguments,
-            Location: loc) { IsDirectAsyncInvoke = true };
+            Location: loc) { IsRecipeRunCall = true };
 
         var statements = new List<Statement>
         {
@@ -275,7 +275,7 @@ internal static class BlockingCallSynthesisPass
     }
 
     /// <summary>Sends each call of a blocking foreign routine to its <c>__blocking_</c> routine, except the one
-    /// that makes the foreign call (<see cref="CallExpression.IsDirectAsyncInvoke"/>).</summary>
+    /// that makes the foreign call (<see cref="CallExpression.IsRecipeRunCall"/>).</summary>
     private sealed class Redirect(Dictionary<string, ExternalDeclaration> blocking) : AstRewriter
     {
         protected override Expression VisitCall(CallExpression e)
@@ -283,7 +283,7 @@ internal static class BlockingCallSynthesisPass
             Expression visited = base.VisitCall(e: e);
             return visited is CallExpression
                    {
-                       IsDirectAsyncInvoke: false, Callee: IdentifierExpression { Realm: "C" } callee
+                       IsRecipeRunCall: false, Callee: IdentifierExpression { Realm: "C" } callee
                    } call && blocking.ContainsKey(key: callee.Name)
                 ? call with { Callee = Id(name: CallPrefix + callee.Name, loc: callee.Location) }
                 : visited;

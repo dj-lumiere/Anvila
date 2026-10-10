@@ -44,11 +44,8 @@ public enum SemanticWarningCode
     /// <summary>Routine call's return value is unused. Use 'drop' to drop it on purpose.</summary>
     UnusedRoutineReturnValue = 7,
 
-    /// <summary>An <c>Agent[T]</c> (from a <c>suspended</c>/<c>threaded</c> call) is created but never
-    /// launched — no verb (<c>retrieve</c>/<c>execute</c>/<c>gather</c>/<c>race</c>) is ever called on
-    /// it, so the routine BODY never runs. Under the lazy model the call only builds a recipe; a verb
-    /// starts it. Call <c>.execute()</c> to run it in the background, or <c>.retrieve()</c> to run and
-    /// await the value.</summary>
+    /// <summary>An <c>Agent[T]</c> (from an <c>agent</c> call) is thrown away before any verb
+    /// (<c>start_now</c>/<c>retrieve</c>/<c>gather</c>/<c>race</c>) starts it, so its work never runs.</summary>
     AsyncAgentNeverLaunched = 8,
 
     // ═══════════════════════════════════════════════════════════════════════════

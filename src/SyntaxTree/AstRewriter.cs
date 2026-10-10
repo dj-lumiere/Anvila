@@ -468,6 +468,7 @@ public abstract class AstRewriter
             TypeConversionExpression e => VisitTypeConversion(e: e),
             StealExpression e => VisitSteal(e: e),
             RecoveryExpression e => VisitRecovery(e: e),
+            AgentExpression e => VisitAgent(e: e),
             BackIndexExpression e => VisitBackIndex(e: e),
             RangeExpression e => VisitRange(e: e),
             ChainedComparisonExpression e => VisitChainedComparison(e: e),
@@ -813,6 +814,25 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: o, objB: e.Operand)
             ? e
             : e with { Operand = o };
+    }
+
+    /// <summary>
+    /// Rewrites an <see cref="AgentExpression"/>: after analysis, its lowering (the call that builds the recipe)
+    /// takes its place. Before analysis it stays, recursing into the deferred chain.
+    /// </summary>
+    /// <param name="e">The agent expression to rewrite.</param>
+    /// <returns>The lowering, the rewritten agent expression, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitAgent(AgentExpression e)
+    {
+        if (e.LoweredCall is { } lowered)
+        {
+            return VisitExpression(expr: lowered);
+        }
+
+        Expression inner = VisitExpression(expr: e.Inner);
+        return ReferenceEquals(objA: inner, objB: e.Inner)
+            ? e
+            : new AgentExpression(Inner: inner, Location: e.Location);
     }
 
     /// <summary>

@@ -341,9 +341,11 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Gets the LLVM type for a function parameter or return type.
+    /// Gets the LLVM type for a function parameter.
     /// For entities, this returns ptr (all entities are pointers).
     /// For records, this returns the struct type (passed by value).
+    /// A None parameter (a generic routine instantiated over None, as <c>List[None].add_last</c> for the results
+    /// of Agents whose work returns nothing) is the empty record <c>{}</c>, as a None local is.
     /// </summary>
     private string GetParameterLlvmType(TypeSymbol type)
     {
@@ -353,7 +355,7 @@ public partial class LlvmEmitter
             EntityTypeSymbol => "ptr",
 
             // Other types use normal mapping
-            _ => GetLlvmType(type: type)
+            _ => GetValueLlvmType(type: type)
         };
     }
 

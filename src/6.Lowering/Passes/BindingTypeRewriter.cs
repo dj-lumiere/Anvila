@@ -388,16 +388,9 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(e: node.Inner);
         return false;
     }
-    public bool VisitWaitforExpression(WaitforExpression node)
+    public bool VisitAgentExpression(AgentExpression node)
     {
-        Visit(e: node.Operand);
-        Visit(e: node.Timeout);
-        return false;
-    }
-    public bool VisitDependentWaitforExpression(DependentWaitforExpression node)
-    {
-        Visit(e: node.Operand);
-        Visit(e: node.Timeout);
+        Visit(e: node.LoweredCall ?? node.Inner);
         return false;
     }
     public bool VisitBackIndexExpression(BackIndexExpression node)

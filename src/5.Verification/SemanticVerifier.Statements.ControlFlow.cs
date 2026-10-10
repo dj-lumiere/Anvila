@@ -899,7 +899,7 @@ public sealed partial class SemanticVerifier
         // A `try`/`check` recovery (`drop check feeder.send(...)`) is likewise a call under the
         // hood — it lowers to the failable call's recovery variant — so discarding its carrier is valid.
         if (dropped.Expression is not (CallExpression or GenericMemberRoutineCallExpression
-            or RecoveryExpression))
+            or RecoveryExpression or AgentExpression))
         {
             ReportError(code: SemanticDiagnosticCode.InvalidDropTarget,
                 message: "'drop' can only be used with routine calls. " +
@@ -911,22 +911,15 @@ public sealed partial class SemanticVerifier
         // The result is intentionally discarded
         TypeSymbol discardedType = AnalyzeExpression(expression: dropped.Expression);
 
-        // `drop foo()` on an Agent is the lazy-async footgun: `drop` only throws away the value,
-        // it does NOT run the routine — an un-launched Agent's body never executes. (In the old eager
-        // model `drop foo()` still ran the work.) So warn even though the value was explicitly ignored.
+        // `drop agent f()` throws the Agent away before anything starts it: its work never runs. Warn even though
+        // the value was dropped on purpose.
         if (IsAgentType(type: discardedType))
         {
-            string routineName = dropped.Expression switch
-            {
-                CallExpression { Callee: IdentifierExpression id } => id.Name,
-                CallExpression { Callee: MemberExpression m } => m.MemberName,
-                _ => "routine"
-            };
             ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
-                message:
-                $"`drop {routineName}()` does NOT run the routine — `drop` only drops " +
-                "the value, and an un-launched Agent never executes. Call `.execute()` to run " +
-                "it in the background, or `.retrieve()` to run it and await the value.",
+                message: dropped.Expression is AgentExpression
+                    ? AgentNeverStartedMessage()
+                    : "`drop` throws this Agent away before anything starts it, so its work never runs. Call " +
+                      "`.start_now()` on it to start it, and `.retrieve()` later to wait for its value.",
                 location: dropped.Location);
         }
     }

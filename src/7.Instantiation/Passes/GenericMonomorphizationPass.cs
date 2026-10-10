@@ -3098,7 +3098,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     WrapperForwarderInnerMemberRoutine = concreteInnerMemberRoutine,
                     WrapperForwarderInnerGenericDef =
                         genMemberRoutine.WrapperForwarderInnerGenericDef,
-                    AsyncStatus = genMemberRoutine.AsyncStatus,
                     FailableVariant = genMemberRoutine.FailableVariant,
                     RecoveryOf = genMemberRoutine.RecoveryOf,
                     SurfaceRealm = genMemberRoutine.SurfaceRealm,
@@ -3155,7 +3154,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             CallingConvention = genMemberRoutine.CallingConvention,
             IsVariadic = genMemberRoutine.IsVariadic,
             IsDangerous = genMemberRoutine.IsDangerous,
-            AsyncStatus = genMemberRoutine.AsyncStatus,
             FailableVariant = genMemberRoutine.FailableVariant,
             RecoveryOf = genMemberRoutine.RecoveryOf,
             SurfaceRealm = genMemberRoutine.SurfaceRealm,

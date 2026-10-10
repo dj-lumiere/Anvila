@@ -508,10 +508,11 @@ public record CallExpression(
     public bool IsSynthesizedLowering { get; set; }
 
     /// <summary>
-    /// True for the call of a <c>threaded</c>/<c>suspended</c> routine inside the routine that runs its
-    /// recipe (AsyncRecipeSynthesisPass): it invokes the routine itself instead of building another recipe.
+    /// True for the call inside a routine that runs a recipe: an <c>agent</c> call's run routine calling its work
+    /// routine (<see cref="Builder.Desugaring.Passes.AgentRecipe"/>), or a <c>@blocking</c> foreign routine's run
+    /// routine making the foreign call itself instead of building another recipe.
     /// </summary>
-    public bool IsDirectAsyncInvoke { get; init; }
+    public bool IsRecipeRunCall { get; init; }
 
     /// <summary>
     /// True for a call through a routine VALUE made beneath a recovery keyword: it calls the value's recovering
@@ -932,8 +933,8 @@ public record Parameter(
 {
     /// <summary>
     /// True when the argument is passed by its address, so the routine works on the caller's storage
-    /// (set by AsyncRecipeSynthesisPass on a <c>threaded</c> routine's <c>Atomic</c> parameter, shared
-    /// with the worker thread).
+    /// (set on an <c>agent</c> call's <c>Atomic</c> argument, shared with the work, see
+    /// <see cref="Builder.Desugaring.Passes.AgentRecipe"/>).
     /// </summary>
     public bool IsByReference { get; init; }
 }
@@ -990,6 +991,13 @@ public record TypeExpression(
     /// substituted conditions resolve true — the visible, legible form of the structural cascade.
     /// </summary>
     public List<GenericConstraintDeclaration>? ConformanceConditions { get; set; }
+
+    /// <summary>
+    /// A type the builder already knows, for a routine it writes during analysis (an <c>agent</c> call's work
+    /// routine takes its parameter types from the analyzed arguments). The resolver returns it as it is: such a
+    /// type may live in a module the file does not import, or have no spelling in the file's language.
+    /// </summary>
+    public TypeSymbol? KnownType { get; init; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)

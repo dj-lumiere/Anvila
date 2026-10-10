@@ -738,12 +738,7 @@ internal sealed partial class AstPrinter
                                ? "common "
                                : "") + (routine.IsDangerous
                                ? "dangerous "
-                               : "") + routine.Async switch
-                           {
-                               AsyncStatus.Suspended => "suspended ",
-                               AsyncStatus.Threaded => "threaded ",
-                               _ => ""
-                           };
+                               : "");
         var kept = new List<(int From, int To)>();
         Doc head = Doc.Concat(Doc.Text(text: modifiers + "routine " + RoutineNameText(first: keyword + 1,
                 last: open - 1, kept: kept)),

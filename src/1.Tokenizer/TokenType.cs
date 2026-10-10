@@ -510,11 +510,9 @@ public enum TokenType
     /// </summary>
     Drop,
 
-    /// <summary>Threaded modifier - marks a routine to run on an OS thread (v0.1 concurrency)</summary>
-    Threaded,
-
-    /// <summary>Suspended modifier - marks a routine to run as a stackful coroutine (v0.2 async)</summary>
-    Suspended,
+    /// <summary>Agent prefix: <c>agent f(x)</c> computes the arguments now and defers the call into an
+    /// <c>Agent[T]</c> that a verb starts</summary>
+    Agent,
 
     #endregion
 

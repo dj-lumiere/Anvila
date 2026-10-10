@@ -63,7 +63,7 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
         if (e.Callee is not MemberExpression callee)
         {
             Expression rewritten = base.VisitCall(e: e);
-            return rewritten is CallExpression { IsDirectAsyncInvoke: true } direct
+            return rewritten is CallExpression { IsRecipeRunCall: true } direct
                 ? ProjectByReferenceArguments(call: direct)
                 : rewritten;
         }
@@ -96,7 +96,7 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
 
     /// <summary>
     /// In the routine that runs an Agent recipe, a by-reference argument arrives as
-    /// <c>pointer.peek()</c> on the <c>Hijacked</c> the recipe kept (AsyncRecipeSynthesisPass). The routine
+    /// <c>pointer.peek()</c> on the <c>Hijacked</c> the recipe kept (AgentRecipe). The routine
     /// works on the caller's storage, so the argument becomes the pointee itself: a record-address
     /// projection whose address is the pointer, instead of a loaded copy.
     /// </summary>

@@ -782,7 +782,7 @@ public partial class LlvmEmitter
                 }
 
                 reorderedValues.Add(item: boundValue);
-                reorderedTypes.Add(item: GetLlvmType(type: boundType));
+                reorderedTypes.Add(item: GetValueLlvmType(type: boundType));
                 reorderedTypeInfos.Add(item: boundType);
                 continue;
             }
@@ -819,7 +819,7 @@ public partial class LlvmEmitter
             }
 
             argValues.Add(item: value);
-            argTypes.Add(item: GetLlvmType(type: argType));
+            argTypes.Add(item: GetValueLlvmType(type: argType));
         }
     }
 

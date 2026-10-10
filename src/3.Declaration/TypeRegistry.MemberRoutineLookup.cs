@@ -779,7 +779,6 @@ public sealed partial class TypeRegistry
             CallingConvention = routine.CallingConvention,
             IsVariadic = routine.IsVariadic,
             IsDangerous = routine.IsDangerous,
-            AsyncStatus = routine.AsyncStatus,
             FailableVariant = routine.FailableVariant,
             RecoveryOf = routine.RecoveryOf,
             SurfaceRealm = routine.SurfaceRealm,
@@ -2263,7 +2262,6 @@ public sealed partial class TypeRegistry
             Kind = protoMemberRoutine.IsInstanceMemberRoutine
                 ? RoutineKind.MemberRoutine
                 : RoutineKind.CommonRoutine,
-            AsyncStatus = AsyncStatus.None,
             IsSynthesized = true,
             Location = protoMemberRoutine.Location
         };
@@ -2442,7 +2440,6 @@ public sealed partial class TypeRegistry
             WrapperForwarderInnerMemberRoutine =
                 memberRoutine.WrapperForwarderInnerMemberRoutine,
             WrapperForwarderInnerGenericDef = memberRoutine.WrapperForwarderInnerGenericDef,
-            AsyncStatus = memberRoutine.AsyncStatus,
             FailableVariant = memberRoutine.FailableVariant,
             RecoveryOf = memberRoutine.RecoveryOf,
             SurfaceRealm = memberRoutine.SurfaceRealm,
@@ -2532,7 +2529,6 @@ public sealed partial class TypeRegistry
                 GenericDefinition = memberRoutine.GenericDefinition ?? memberRoutine,
                 WrapperForwarderInnerMemberRoutine = concreteInnerMemberRoutine,
                 WrapperForwarderInnerGenericDef = memberRoutine.WrapperForwarderInnerGenericDef,
-                AsyncStatus = memberRoutine.AsyncStatus,
                 FailableVariant = memberRoutine.FailableVariant,
                 RecoveryOf = memberRoutine.RecoveryOf,
                 SurfaceRealm = memberRoutine.SurfaceRealm,
@@ -2705,7 +2701,6 @@ public sealed partial class TypeRegistry
             GenericDefinition = memberRoutine.GenericDefinition ?? memberRoutine,
             WrapperForwarderInnerMemberRoutine = memberRoutine.WrapperForwarderInnerMemberRoutine,
             WrapperForwarderInnerGenericDef = memberRoutine.WrapperForwarderInnerGenericDef,
-            AsyncStatus = memberRoutine.AsyncStatus,
             FailableVariant = memberRoutine.FailableVariant,
             RecoveryOf = memberRoutine.RecoveryOf,
             SurfaceRealm = memberRoutine.SurfaceRealm,

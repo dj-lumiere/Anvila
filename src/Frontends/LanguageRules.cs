@@ -69,9 +69,6 @@ public abstract class LanguageRules
     /// <summary>The <c>pass</c> placeholder statement and declaration.</summary>
     public abstract bool HasPassStatement { get; }
 
-    /// <summary><c>threaded</c> routines.</summary>
-    public abstract bool HasThreadedRoutines { get; }
-
     /// <summary>Module-level mutable state (<c>global name: Type = init</c>).</summary>
     public abstract bool HasModuleGlobals { get; }
 

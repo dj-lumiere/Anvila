@@ -1160,8 +1160,7 @@ public sealed partial class SemanticVerifier
                                 _registry.LookupType(name: NoneTypeName) ?? ErrorTypeSymbol.Instance;
         call.IsInFlight = routine.IsInFlightReturn;
 
-        // A `threaded`/`suspended` module routine builds an Agent recipe, exactly like a bare async call.
-        return WrapAsyncReturnType(call: call, routine: routine, returnType: returnType);
+        return returnType;
     }
 
     private static CallLoweringKind ClassifyStandaloneRoutineCall(RoutineInfo routine)
@@ -1970,8 +1969,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Already the overload for the default types: nothing to rebind. (Looking it up again could hand back
-        // a same-signature sibling, e.g. a `threaded routine`'s raw body instead of its handle-returning
-        // wrapper.)
+        // a same-signature sibling.)
         if (routine.Parameters.Count == defaultArgTypes.Count &&
             routine.Parameters.Select(selector: p => p.Type.FullName)
                    .SequenceEqual(second: defaultArgTypes.Select(selector: t => t.FullName)))
@@ -3901,7 +3899,7 @@ public sealed partial class SemanticVerifier
                                 ErrorTypeSymbol.Instance;
         call.IsInFlight = routine.IsInFlightReturn;
 
-        return WrapAsyncReturnType(call: call, routine: routine, returnType: returnType);
+        return returnType;
     }
 
     /// <summary>
@@ -3932,48 +3930,5 @@ public sealed partial class SemanticVerifier
             $"{routine.BaseName}[{genericNames}](...).",
             location: call.Location);
         return true;
-    }
-
-    /// <summary>
-    /// A call of a <c>threaded</c>/<c>suspended</c> routine builds its Agent recipe and starts nothing: after
-    /// checking the async-boundary argument rule (RF-S632), the call is bound to the routine that builds the
-    /// recipe (AsyncRecipeSynthesisPass), whose result is the <c>Agent[T]</c>. The call inside the routine
-    /// that runs the recipe (<see cref="CallExpression.IsDirectAsyncInvoke"/>) and a synchronous call keep
-    /// <paramref name="returnType"/>.
-    /// </summary>
-    private TypeSymbol WrapAsyncReturnType(CallExpression call, RoutineInfo routine,
-        TypeSymbol returnType)
-    {
-        if (!routine.IsAsync || call.IsDirectAsyncInvoke)
-        {
-            return returnType;
-        }
-
-        // Under M:N a coroutine may run on any worker in parallel with its siblings, so the same crossing
-        // rule as `threaded` applies to a `suspended` routine's arguments.
-        ValidateAsyncRoutineArguments(routine: routine,
-            arguments: call.Arguments,
-            boundaryKind: routine.IsThreaded
-                ? "threaded"
-                : "suspended",
-            location: call.Location);
-
-        // A member or generic async routine has no recipe routines (RF-S642, reported at its declaration).
-        string spawnName = Builder.Desugaring.Passes.AsyncRecipeSynthesisPass.SpawnPrefix + routine.Name;
-        RoutineInfo? spawn = _registry.LookupRoutineOverload(
-            baseName: string.IsNullOrEmpty(value: routine.Module)
-                ? spawnName
-                : $"{routine.Module}.{spawnName}",
-            argTypes: routine.Parameters
-                             .Select(selector: p => p.Type)
-                             .ToList());
-        if (spawn == null)
-        {
-            return ErrorTypeSymbol.Instance;
-        }
-
-        spawn.AsyncSpawnOf = routine;
-        call.ResolvedRoutine = spawn;
-        return spawn.ReturnType ?? ErrorTypeSymbol.Instance;
     }
 }

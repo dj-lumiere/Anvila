@@ -269,14 +269,8 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     }
 
     /// <summary>
-    /// Two node kinds this pass rewrites are NOT part of the shared <see cref="AstRewriter"/> spine, so
-    /// they are dispatched here on top of the base:
-    /// <list type="bullet">
-    ///   <item><see cref="IdentifierExpression"/> — a leaf to the base, but the whole POINT of this pass:
-    ///   inline a preset identifier to its literal value (via <see cref="LowerIdentifier"/>).</item>
-    ///   <item><see cref="WaitforExpression"/> — the base treats it as a leaf (no <c>VisitWaitfor</c> hook),
-    ///   but a preset may appear in its operand/timeout, so recurse into those parts explicitly.</item>
-    /// </list>
+    /// <see cref="IdentifierExpression"/> is a leaf to the shared <see cref="AstRewriter"/> spine, but the whole
+    /// POINT of this pass: a preset identifier is inlined to its literal value (via <see cref="LowerIdentifier"/>).
     /// Every other node kind is left to the base's structural recursion.
     /// </summary>
     public override Expression VisitExpression(Expression expr)
@@ -284,19 +278,6 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
         if (expr is IdentifierExpression id)
         {
             return LowerIdentifier(expr: expr, id: id);
-        }
-
-        if (expr is WaitforExpression wf)
-        {
-            Expression o = VisitExpression(expr: wf.Operand);
-            Expression? timeout = wf.Timeout != null
-                ? VisitExpression(expr: wf.Timeout)
-                : null;
-            bool changed = !ReferenceEquals(objA: o, objB: wf.Operand) ||
-                           !ReferenceEquals(objA: timeout, objB: wf.Timeout);
-            return changed
-                ? wf with { Operand = o, Timeout = timeout }
-                : expr;
         }
 
         return base.VisitExpression(expr: expr);

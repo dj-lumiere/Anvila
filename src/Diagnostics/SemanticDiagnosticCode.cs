@@ -812,9 +812,9 @@ public enum SemanticDiagnosticCode
     /// handle that crashes when read or torn down.</summary>
     ArrayElementHasNoZeroValue = 641,
 
-    /// <summary>A member or generic routine is marked <c>threaded</c>/<c>suspended</c>: an Agent recipe binds
-    /// the arguments of a non-generic free routine only.</summary>
-    AsyncRoutineNotFree = 642,
+    /// <summary><c>agent</c> is written before something that is not a call chain, or over values whose types are
+    /// still a generic routine's parameters (an Agent's run routine is one concrete routine).</summary>
+    AgentNotSupportedHere = 642,
 
     /// <summary>An access token is used after the object it was taken from was replaced, moved out, or went
     /// out of scope (or, for an element token, after its container could have moved its elements): the token
@@ -825,9 +825,9 @@ public enum SemanticDiagnosticCode
     /// a field, or returned. It is used in the statement that makes it (an `each`, a terminal call, an argument).</summary>
     SourceIterableKept = 644,
 
-    /// <summary>A `threaded routine` parameter is neither trivially copyable (passed by value) nor a
-    /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias
-    /// unsynchronized state across the thread boundary.</summary>
+    /// <summary>An <c>agent</c> call's argument is neither trivially copyable (passed by value), stolen, nor a
+    /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias unsynchronized state
+    /// across work running in parallel.</summary>
     ThreadArgNotShareable = 632,
 
     // ═══════════════════════════════════════════════════════════════════════════

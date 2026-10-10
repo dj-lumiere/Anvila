@@ -353,7 +353,6 @@ internal sealed class SignatureResolver
             DeclaredMutation = declaredModification,
             MutationCategory = declaredModification,
             IsDangerous = routine.IsDangerous,
-            AsyncStatus = routine.Async
         };
     }
 
@@ -442,13 +441,13 @@ internal sealed class SignatureResolver
     }
 
     /// <summary>
-    /// Reports <c>ErrorHandlingTypeAsReturnType</c> when a non-stdlib routine returns a carrier type
-    /// (Maybe/Result/Lookup — builder-generated wrappers for failable routines). Maybe is excluded via
-    /// <see cref="IsCarrierType"/>'s callers elsewhere; here the full carrier set is rejected.
+    /// Reports <c>ErrorHandlingTypeAsReturnType</c> when a routine written in a program returns a carrier type
+    /// (Maybe/Check, builder-generated wrappers for failable routines). A routine the builder writes (the work
+    /// routine of <c>try agent f()</c> returns the carrier) is exempt.
     /// </summary>
     private void ValidateReturnTypeNotCarrier(TypeSymbol? returnType, RoutineDeclaration routine)
     {
-        if (returnType != null && IsCarrierType(type: returnType) &&
+        if (returnType != null && IsCarrierType(type: returnType) && !routine.IsBuilderWritten &&
             !_sa.IsStdlibFile(filePath: _sa._currentFilePath))
         {
             string carrierName = GetCarrierBaseName(type: returnType)!;
@@ -508,8 +507,9 @@ internal sealed class SignatureResolver
         // Variants ARE valid parameter types — pass-by-value transfers ownership of
         // the payload (same rule as records containing entity fields).
 
-        // Validate that Result<T> and Lookup<T> are not used as parameter types
-        if (IsCarrierType(type: paramType) && !IsMaybeType(type: paramType))
+        // Validate that a Check[T] is not used as a parameter type. A type the builder already knows (a routine it
+        // writes for an `agent` call takes the call's values as they are) is exempt.
+        if (IsCarrierType(type: paramType) && !IsMaybeType(type: paramType) && param.Type?.KnownType == null)
         {
             string carrierName = GetCarrierBaseName(type: paramType)!;
             _sa.ReportError(code: SemanticDiagnosticCode.ErrorHandlingTypeAsParameter,
@@ -555,7 +555,11 @@ internal sealed class SignatureResolver
             {
                 DefaultValue = param.DefaultValue,
                 IsVariadicParam = param.IsVariadic,
-                IsByReference = param.IsByReference,
+                // An Atomic is a cell that is shared, never copied: a routine taking one works on the
+                // caller's cell (a copy would be a second, silent cell, and an agent's work would count
+                // into it alone).
+                IsByReference = param.IsByReference ||
+                                paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Atomic },
                 // A Suflae `E?` parameter resolves to a bare Roamed[E] handle (the null handle is none), so
                 // the `?` survives only in the written type, as for an entity field (TypeBodyResolver).
                 IsNullable = _sa._registry.EntitiesAreShared && param.Type is { Name: "Maybe" } &&

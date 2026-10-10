@@ -113,9 +113,6 @@ public enum GrammarDiagnosticCode
     /// <summary>The 'as' keyword was expected (e.g., in import aliasing or cast expressions) but not found.</summary>
     ExpectedAs = 121,
 
-    /// <summary>The 'waitfor' keyword was expected after a 'dependencies' block but not found.</summary>
-    ExpectedWaitforAfterDependencies = 122,
-
     // ═══════════════════════════════════════════════════════════════════════════
     // UNEXPECTED TOKEN ERRORS (150 - 199)
     // ═══════════════════════════════════════════════════════════════════════════

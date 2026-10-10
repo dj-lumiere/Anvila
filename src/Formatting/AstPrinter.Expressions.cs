@@ -115,7 +115,8 @@ internal sealed partial class AstPrinter
             ChainedComparisonExpression => PComparison,
             IsPatternExpression or FlagsTestExpression => PIs,
             UnaryExpression { Operator: UnaryOperator.ForceUnwrap } => PPostfix,
-            UnaryExpression or StealExpression or BackIndexExpression or RecoveryExpression => PUnary,
+            UnaryExpression or StealExpression or BackIndexExpression or RecoveryExpression
+                or AgentExpression => PUnary,
             LiteralExpression { Value: string text } when text.StartsWith(value: '-') => PUnary,
             CallExpression or MemberExpression or IndexExpression or GenericMemberExpression
                 or GenericMemberRoutineCallExpression or SpliceMemberExpression => PPostfix,
@@ -189,6 +190,8 @@ internal sealed partial class AstPrinter
                     Expr(expression: back.Operand, min: PUnary, follow: follow, comma: comma));
             case RecoveryExpression recovery:
                 return RecoveryDoc(recovery: recovery);
+            case AgentExpression agent:
+                return AgentDoc(agent: agent);
             case CallExpression call:
                 return CallDoc(call: call);
             case MemberExpression member:
@@ -581,6 +584,24 @@ internal sealed partial class AstPrinter
             default:
                 throw Unsupported(node: unary, at: unary.Location);
         }
+    }
+
+    /// <summary>`agent f(x)`, or `try agent f(x)` for an agent over a recovery (the parser's own shape).</summary>
+    private Doc AgentDoc(AgentExpression agent)
+    {
+        if (agent.Inner is RecoveryExpression recovery)
+        {
+            string keyword = recovery.Kind switch
+            {
+                RecoveryKind.Try => "try agent ",
+                _ => "check agent "
+            };
+            return Doc.Concat(Doc.Text(text: keyword),
+                Expr(expression: recovery.Inner, min: PPostfix, follow: 0, comma: false));
+        }
+
+        return Doc.Concat(Doc.Text(text: "agent "),
+            Expr(expression: agent.Inner, min: PPostfix, follow: 0, comma: false));
     }
 
     private Doc RecoveryDoc(RecoveryExpression recovery)

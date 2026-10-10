@@ -273,10 +273,9 @@ public sealed class BackendEntryValidator
     /// </summary>
     private static bool TryCreateResidualNodeError(ISyntaxTreeNode node, out SemanticError? error)
     {
-        // Async nodes still have an active backend/codegen path today; validate those in a later
-        // hardening step after AsyncLoweringPass owns them.
         string? requiredPass = node switch
         {
+            AgentExpression => "SemanticVerifier.AnalyzeAgentExpression",
             GenericMemberRoutineCallExpression => "GenericCallLoweringPass",
             LambdaExpression => "LambdaLiftingPass",
             InsertedTextExpression => "FStringLoweringPass",

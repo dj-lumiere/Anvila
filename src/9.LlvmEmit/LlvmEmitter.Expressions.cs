@@ -207,7 +207,8 @@ public partial class LlvmEmitter
             _localVarLlvmNames.TryGetValue(key: identifier.Name, value: out string? unique)
                 ? unique
                 : identifier.Name;
-        string llvmType = GetLlvmType(type: varType);
+        // A None local is the empty record `{}` in its slot (see GetValueLlvmType), never `void`.
+        string llvmType = GetValueLlvmType(type: varType);
         string tmp = NextTemp();
         EmitLine(sb: sb, line: $"  {tmp} = load {llvmType}, ptr %{llvmName}.addr");
 

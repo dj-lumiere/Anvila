@@ -142,83 +142,57 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Validates that every argument crossing an async spawn boundary can do so soundly. Under M:N
-    /// both a <c>threaded routine</c> (OS thread) and a <c>suspended routine</c> (coroutine that may
-    /// migrate to any worker) are potentially parallel, so the SAME crossing rule applies to both:
-    /// an argument is safe when it is
+    /// Checks the arguments an <c>agent</c> call computes now against the rule for crossing into concurrently
+    /// running work. Each argument must be one of:
     /// <list type="bullet">
-    /// <item><c>steal</c>-moved — exclusive transfer, the caller loses access (safe regardless of
-    /// type — a moved bare entity / <c>Retained</c> leaves exactly one live handle);</item>
-    /// <item>trivially copyable — passed BY VALUE as an independent copy;</item>
+    /// <item><c>steal</c>-moved: exclusive transfer, the caller loses access (a moved bare entity leaves exactly
+    /// one live handle);</item>
+    /// <item>trivially copyable: passed BY VALUE as an independent copy;</item>
     /// <item>a thread-shareable wrapper (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>/<c>Consulting</c>/
-    /// <c>Claiming</c>) — carries its own synchronization (atomic refcount or lock).</item>
+    /// <c>Claiming</c>), which carries its own synchronization (atomic refcount or lock);</item>
+    /// <item>a <c>Roamed</c> handle, which is promoted before the Agent is built.</item>
     /// </list>
-    /// A parameter that is none of these <em>and</em> is not steal-moved at the call site — e.g. a
-    /// bare entity or a record transitively owning a single-threaded wrapper
-    /// (<c>Retained</c>/<c>Tracked</c>/<c>Viewing</c>/<c>Modifying</c>) passed by copy — would
-    /// silently alias unsynchronized state across parallel coroutines (non-atomic refcount / unsynced
-    /// access = UAF), so it is rejected (RF-S632). Synchronization must be MARKED, never implied
-    /// (same ethos as <c>steal</c>/<c>!</c>/overflow). Applying this at the <c>suspended</c> boundary
-    /// (previously unchecked — harmless when single-threaded) is required for M:N soundness; crediting
-    /// <c>steal</c> also removes the old over-strictness at the <c>threaded</c> boundary.
+    /// Anything else (a bare entity passed by copy, a record transitively owning a single-threaded wrapper
+    /// such as <c>Retained</c>/<c>Tracked</c>/<c>Viewing</c>/<c>Modifying</c>) would alias unsynchronized state
+    /// across work running in parallel, so it is rejected (RF-S632). Synchronization must be MARKED, never
+    /// implied.
     /// </summary>
-    private void ValidateAsyncRoutineArguments(RoutineInfo routine,
-        IReadOnlyList<Expression> arguments, string boundaryKind, SourceLocation location)
+    private void ValidateAgentArguments(IReadOnlyList<(Expression Value, TypeSymbol Type)> arguments)
     {
         if (!ChecksOwnershipHere)
         {
             return;
         }
 
-        HashSet<string> stolenParams = CollectStolenParameters(routine: routine,
-            arguments: arguments);
-
-        foreach (ParamInfo param in routine.Parameters)
+        foreach ((Expression value, TypeSymbol type) in arguments)
         {
-            ValidateAsyncRoutineParameter(param: param,
-                stolenParams: stolenParams,
-                boundaryKind: boundaryKind,
-                location: location);
+            ValidateAgentArgument(value: value, type: type);
         }
     }
 
-    /// <summary>
-    /// Validates a single parameter of an async-spawn routine against the M:N crossing rule, reporting
-    /// RF-S632 when the parameter can neither be trivially copied, steal-moved, nor carries its own
-    /// synchronization. Extracted from <see cref="ValidateAsyncRoutineArguments"/>.
-    /// </summary>
-    private void ValidateAsyncRoutineParameter(ParamInfo param, HashSet<string> stolenParams,
-        string boundaryKind, SourceLocation location)
+    /// <summary>Checks one argument of an <c>agent</c> call (see <see cref="ValidateAgentArguments"/>).</summary>
+    private void ValidateAgentArgument(Expression value, TypeSymbol type)
     {
-        TypeSymbol type = param.Type;
         if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type))
         {
             return;
         }
 
-        // A `Roamed` handle crosses the boundary by being PROMOTED, not rejected: passing it across
-        // a concurrency boundary IS the escape event, and codegen inserts `promote()` on the arg
-        // before the spawn (LOCAL -> ESCAPED: atomic refcount + armed reentrant lock). So the same
-        // object is thread-safe by the time the callee touches it — accepted here, no RF-S632.
+        // A `Roamed` handle crosses the boundary by being PROMOTED, not rejected: passing it into an Agent IS the
+        // escape event, and the builder inserts `promote()` on the argument before the Agent is built (LOCAL ->
+        // ESCAPED: atomic refcount + armed reentrant lock). So the same object is thread-safe by the time the work
+        // touches it.
         if (type.BareName == Declaration.RuntimeContract.Roamed)
         {
             return;
         }
 
-        // A bare entity is a heap handle; passing it by copy copies the pointer, so the same
-        // object would be aliased across parallel coroutines/threads. A record/tuple that
-        // transitively owns a single-threaded RC wrapper (Retained/Tracked) or a scoped token
-        // would alias its interior the same way. Pure value data has neither and is copied
-        // safely. (Structural walk — does NOT depend on `Assignable` protocol population, which
-        // is not attached to the resolved parameter-type instances reached here.)
+        // A bare entity is a heap handle: passing it by copy copies the pointer, so the same object would be
+        // aliased across work running in parallel. `steal` credits ONLY a bare entity: it is single-owner, so a
+        // move leaves exactly one live handle. It does NOT credit a type that (transitively) owns a
+        // single-threaded RC wrapper: moving one `Retained`/`Tracked` handle does not prove no siblings exist.
         bool isEntity = type is EntityTypeSymbol;
-
-        // `steal` credits ONLY a bare entity: it is single-owner, so a move leaves exactly one
-        // live handle (provably exclusive — the caller loses access). It does NOT credit a type
-        // that (transitively) owns a single-threaded RC wrapper: moving one `Retained`/`Tracked`
-        // handle does not prove no siblings exist, and a bare `Retained`/`Tracked` cannot be
-        // `steal`-moved at all (RF-S617). Such a value must cross via `Guarded`/`Witnessed` (atomic).
-        if (isEntity && stolenParams.Contains(item: param.Name))
+        if (isEntity && value is StealExpression)
         {
             return;
         }
@@ -231,53 +205,19 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        string what = value is IdentifierExpression id
+            ? $"`{id.Name}` ({type.Name})"
+            : $"this {type.Name} argument";
         string reason = isEntity
-            ? "a bare entity aliases the same object across parallel coroutines"
-            : $"it transitively owns `{offender!.Value.Wrapper}` at `{offender.Value.Path}`";
+            ? "a bare entity would be the same object in the caller and in the running work"
+            : $"it owns `{offender!.Value.Wrapper}` at `{offender.Value.Path}`, which only one thread may use";
         string fix = isEntity
-            ? "`steal`-move it, share it with `Guarded`/`Witnessed`/`Atomic`/`Consulting`/`Claiming`, " +
-              "or pass a copyable value"
-            : "share it with `Guarded`/`Witnessed`/`Atomic`/`Consulting`/`Claiming`, or pass a copyable value";
+            ? "Write `steal` before it to move it into the agent, share it with `Guarded`/`Witnessed`/`Atomic`/" +
+              "`Consulting`/`Claiming`, or pass a copyable value"
+            : "Share it with `Guarded`/`Witnessed`/`Atomic`/`Consulting`/`Claiming`, or pass a copyable value";
         ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
-            message:
-            $"Parameter `{param.Name}: {type.Name}` of a {boundaryKind} routine cannot cross the " +
-            $"spawn boundary safely — {reason}. {fix}.",
-            location: location);
-    }
-
-    /// <summary>
-    /// Returns the set of parameter names whose call-site argument is a <c>steal</c> move (an
-    /// exclusive ownership transfer). Such arguments cross an async spawn boundary safely regardless
-    /// of type, because the caller loses access — exactly one live handle survives. Handles both
-    /// positional arguments (matched by position) and <c>NamedArgumentExpression</c> (matched by
-    /// name); named and positional are never mixed in a single call (RF-S512).
-    /// </summary>
-    private static HashSet<string> CollectStolenParameters(RoutineInfo routine,
-        IReadOnlyList<Expression> arguments)
-    {
-        var stolen = new HashSet<string>(comparer: StringComparer.Ordinal);
-        int positional = 0;
-        foreach (Expression arg in arguments)
-        {
-            if (arg is NamedArgumentExpression named)
-            {
-                if (named.Value is StealExpression)
-                {
-                    stolen.Add(item: named.Name);
-                }
-
-                continue;
-            }
-
-            if (positional < routine.Parameters.Count && arg is StealExpression)
-            {
-                stolen.Add(item: routine.Parameters[index: positional].Name);
-            }
-
-            positional++;
-        }
-
-        return stolen;
+            message: $"You pass {what} to an agent, but {reason}. {fix}.",
+            location: value.Location);
     }
 
     /// <summary>

@@ -328,20 +328,11 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Whether <paramref name="routine"/> returns its value through a hidden <c>sret</c> pointer
-    /// (the <see cref="AbiKind.Indirect"/> return form). Async variants return carriers
-    /// (Result/Lookup/i1) through their own lowering and are never plain-sret.
+    /// (the <see cref="AbiKind.Indirect"/> return form). Try variants return carriers through their own
+    /// lowering and are never plain-sret.
     /// </summary>
     private bool ReturnsViaSret(RoutineInfo routine, TypeSymbol? overrideReturnType = null)
     {
-        // Async routines (suspended/threaded) hand their result back through their own ABI — the
-        // Task[T] result cell / continuation, NOT a plain sret pointer. Forcing sret here breaks the
-        // thread-boundary aggregate handoff (a threaded routine returning a record segfaulted). Leave
-        // them on the existing by-value path.
-        if (routine.AsyncStatus is AsyncStatus.Suspended or AsyncStatus.Threaded)
-        {
-            return false;
-        }
-
         if (routine.FailableVariant is FailableVariant.TryBool or FailableVariant.Try)
         {
             return false;
@@ -357,18 +348,13 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// The ABI register type a routine's struct return is COERCED to (e.g. <c>i64</c> /
-    /// <c>{ i64, i32 }</c>), or null when the return is not coerced (Direct, Indirect, or an async /
-    /// failable-variant routine whose result uses its own lowering). The function header then returns
+    /// <c>{ i64, i32 }</c>), or null when the return is not coerced (Direct, Indirect, or a failable-variant
+    /// routine whose result uses its own lowering). The function header then returns
     /// this type, every <c>return</c> reinterprets the struct value into it, and the caller
     /// reinterprets the result back into the struct.
     /// </summary>
     private string? ReturnCoerceType(RoutineInfo routine)
     {
-        if (routine.AsyncStatus is AsyncStatus.Suspended or AsyncStatus.Threaded)
-        {
-            return null;
-        }
-
         if (routine.FailableVariant is FailableVariant.TryBool or FailableVariant.Try)
         {
             return null;
@@ -440,14 +426,12 @@ public partial class LlvmEmitter
     /// <see cref="AbiKind.Indirect"/> argument form). Requires the type to be trivially Assignable (see
     /// <see cref="IsTriviallyAssignableRecord"/>) — byval is a bitwise copy and is unsound for managed
     /// records (which keep the existing by-value path that the copy-lowering pass balances with an
-    /// explicit <c>store</c>). EXCLUDES async routines: suspended/threaded workers receive their args
-    /// through their own handoff (the thread cell / closure), not the C calling convention, so byval
-    /// at that boundary mismatches the worker's value-typed parameter. Callers consult this only AFTER
+    /// explicit <c>store</c>). Callers consult this only AFTER
     /// excluding by-ref receivers (<c>me</c>) and thread-shareable args.
     /// </summary>
     private bool ParameterPassedByval(RoutineInfo routine, TypeSymbol paramType)
     {
-        return !routine.IsAsync && AbiClassify(type: paramType)
+        return AbiClassify(type: paramType)
            .Kind == AbiKind.Indirect && IsTriviallyAssignableRecord(type: paramType);
     }
 
@@ -472,16 +456,10 @@ public partial class LlvmEmitter
     /// or null when the parameter is not register-coerced. Unlike byval, coercion needs NO trivial-
     /// copyability gate: it passes the struct's VALUE (reinterpreted as integers) and the callee
     /// reconstructs the same value, so ownership is identical to the existing by-value path (the
-    /// copy-lowering pass already balances any managed <c>store</c>/<c>destruct</c>). Excludes async
-    /// routines, whose workers receive args through their own cell/closure handoff.
+    /// copy-lowering pass already balances any managed <c>store</c>/<c>destruct</c>).
     /// </summary>
     private string? ParameterCoerceType(RoutineInfo routine, TypeSymbol paramType)
     {
-        if (routine.IsAsync)
-        {
-            return null;
-        }
-
         AbiPassing p = AbiClassify(type: paramType);
         return p.Kind == AbiKind.Coerce
             ? p.CoerceType
