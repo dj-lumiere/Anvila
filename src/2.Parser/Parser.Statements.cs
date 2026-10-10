@@ -928,8 +928,8 @@ public partial class Parser
                 errorMessage: "Expected ')' after destructuring bindings");
         }
 
-        // The value it matched takes a name after `as` (only if no destructuring).
-        string? variableName = bindings == null ? ParsePatternBindingName(typeName: name) : null;
+        // The value it matched takes a name after `as`, after its member variables too: `is Monster(hp: 0) as m`.
+        string? variableName = ParsePatternBindingName(typeName: name);
 
         TypeExpression type = new(Name: name, GenericArguments: null, Location: location);
         Pattern typePattern = new TypePattern(Type: type,
@@ -1048,8 +1048,8 @@ public partial class Parser
                 errorMessage: "Expected ')' after destructuring bindings");
         }
 
-        // The value it matched takes a name after `as` (only if no destructuring).
-        string? variableName = bindings == null ? ParsePatternBindingName(typeName: name) : null;
+        // The value it matched takes a name after `as`, after its member variables too: `is Monster(hp: 0) as m`.
+        string? variableName = ParsePatternBindingName(typeName: name);
 
         var type = new TypeExpression(Name: name,
             GenericArguments: genericArguments,

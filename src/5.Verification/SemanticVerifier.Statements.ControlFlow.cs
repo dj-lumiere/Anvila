@@ -628,9 +628,14 @@ public sealed partial class SemanticVerifier
             handledArms.Add(item: matchedArm.Name);
         }
 
-        Pattern armPattern = clause.Pattern is GuardPattern gp
-            ? gp.InnerPattern
-            : clause.Pattern;
+        // The arm's body sees the subject as the arm's type even when the arm tests more (a guard, a member
+        // variable's value): the body only runs once those passed.
+        Pattern armPattern = clause.Pattern switch
+        {
+            GuardPattern gp => gp.InnerPattern,
+            TypePattern { Bindings: not null } tp => tp with { Bindings = null },
+            _ => clause.Pattern
+        };
         if (ResolveVariantArm(pattern: armPattern, variant: whenVariant) is
             { Type: not null } bodyArm)
         {

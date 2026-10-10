@@ -525,9 +525,13 @@ public partial class Parser
             // Check for destructuring pattern: is Type (...)
             case false when Check(type: TokenType.LeftParen):
             {
-                // Destructuring pattern: is Point (x, y) or is Point (x: a, y: b)
+                // A record pattern: `is Point(x: 0, y: as y)`, and the whole value may take a name after it.
                 List<DestructuringBinding> bindings = ParseDestructuringBindings();
-                var pattern = new TypeDestructuringPattern(Type: type,
+                string? wholeName = CheckAndAdvance(type: TokenType.As)
+                    ? ConsumeIdentifier(errorMessage: "Expected a name after 'as'")
+                    : null;
+                var pattern = new TypePattern(Type: type,
+                    VariableName: wholeName,
                     Bindings: bindings,
                     Location: location);
                 return new IsPatternExpression(Expression: expr,

@@ -503,9 +503,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             return false;
         }
 
-        // Only a name-introducing pattern qualifies: `is T p` or a destructuring `is T (a, b)`.
+        // Only a pattern that names or tests more qualifies: `is T as p`, or a record pattern `is T(a, hp: 0)`.
         // A bare `is T` (no binding) stays a plain boolean condition.
-        bool introducesBinding = ipe.Pattern is TypePattern { VariableName: not null }
+        bool introducesBinding = ipe.Pattern is TypePattern { VariableName: not null } or TypePattern { Bindings: not null }
             or TypeDestructuringPattern;
         if (!introducesBinding)
         {

@@ -73,6 +73,11 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private VariantMemberInfo? ResolveVariantArm(Pattern pattern, VariantTypeSymbol variant)
     {
+        if (PatternFacts.IsConditional(pattern: pattern))
+        {
+            return null;
+        }
+
         // `is None` matches the payload-less None arm.
         if (IsNonePattern(pattern: pattern))
         {

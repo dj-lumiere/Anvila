@@ -1109,6 +1109,36 @@ public record DestructuringPattern(List<DestructuringBinding> Bindings, SourceLo
 /// </list>
 /// Destructuring is only allowed when ALL member variables of the type are public.
 /// </remarks>
+/// <summary>What a pattern leaves to chance.</summary>
+public static class PatternFacts
+{
+    /// <summary>
+    /// Whether a pattern can fail on a value of the type it names: a guard (<c>is T as t and …</c>), or a type pattern
+    /// that tests one of its member variables (<c>is Monster(hp: 0)</c>, <c>is Chest(item: is Weapon as w)</c>).
+    /// Such an arm neither covers its type for exhaustiveness nor repeats another arm of the same type.
+    /// </summary>
+    public static bool IsConditional(Pattern pattern)
+    {
+        return pattern switch
+        {
+            GuardPattern => true,
+            TypePattern { Bindings: { } bindings } => bindings.Any(predicate: TestsMember),
+            TypeDestructuringPattern td => td.Bindings.Any(predicate: TestsMember),
+            _ => false
+        };
+    }
+
+    private static bool TestsMember(DestructuringBinding binding)
+    {
+        return binding.NestedPattern switch
+        {
+            null => false,
+            DestructuringPattern nested => nested.Bindings.Any(predicate: TestsMember),
+            _ => true
+        };
+    }
+}
+
 public record TypeDestructuringPattern(
     TypeExpression Type,
     List<DestructuringBinding> Bindings,

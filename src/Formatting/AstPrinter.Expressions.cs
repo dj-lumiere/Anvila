@@ -971,6 +971,8 @@ internal sealed partial class AstPrinter
             : " is ";
         switch (isPattern.Pattern)
         {
+            case TypePattern { Bindings: not null } recordPattern when !isPattern.IsNegated:
+                return Doc.Concat(subject, Doc.Text(text: op + TypePatternText(typePattern: recordPattern)));
             case TypePattern { Bindings: null } typePattern:
                 return Doc.Concat(subject, Doc.Text(text: op + IsTypeText(type: typePattern.Type) +
                                                            (typePattern.VariableName != null
@@ -1070,7 +1072,13 @@ internal sealed partial class AstPrinter
 
             if (binding.NestedPattern is not DestructuringPattern nested)
             {
-                throw Unsupported(node: binding.NestedPattern, at: binding.Location);
+                // A member variable of a record pattern tested in place: `hp: 0`, `hp: < 5`, `item: is Weapon as w`.
+                if (binding.MemberVariableName == null)
+                {
+                    throw Unsupported(node: binding.NestedPattern, at: binding.Location);
+                }
+
+                return NameText(name: binding.MemberVariableName) + ": " + FieldPatternText(pattern: binding.NestedPattern);
             }
 
             return binding.MemberVariableName != null
@@ -1085,7 +1093,21 @@ internal sealed partial class AstPrinter
 
         return binding.MemberVariableName == binding.BindingName
             ? binding.BindingName
-            : binding.MemberVariableName + ": " + binding.BindingName;
+            : binding.MemberVariableName + ": as " + binding.BindingName;
+    }
+
+    /// <summary>The pattern after a member variable's colon in a record pattern.</summary>
+    private string FieldPatternText(Pattern pattern)
+    {
+        return pattern switch
+        {
+            ComparisonPattern { Operator: TokenType.Equal, MoreValues.Count: 0 } equal =>
+                Expr(expression: equal.Value, min: PRange, follow: 0, comma: true).Flat(),
+            TypePattern typePattern => "is " + TypePatternText(typePattern: typePattern),
+            NegatedTypePattern negated => "isnot " + TypeDoc(type: negated.Type).Flat(),
+            ComparisonPattern or LiteralPattern => PatternDoc(pattern: pattern, conditionBased: false).Flat(),
+            _ => throw Unsupported(node: pattern, at: pattern.Location)
+        };
     }
 
     private Doc PatternDoc(Pattern pattern, bool conditionBased)
@@ -1166,10 +1188,10 @@ internal sealed partial class AstPrinter
 
         if (typePattern.Bindings != null)
         {
-            text.Append(value: ' ')
-                .Append(value: BindingsText(bindings: typePattern.Bindings));
+            text.Append(value: BindingsText(bindings: typePattern.Bindings));
         }
-        else if (typePattern.VariableName != null)
+
+        if (typePattern.VariableName != null)
         {
             text.Append(value: " as ")
                 .Append(value: typePattern.VariableName);

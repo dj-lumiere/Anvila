@@ -235,9 +235,48 @@ public abstract class AstRewriter
                     ? g
                     : g with { InnerPattern = inner, Guard = guard };
             }
+            // A record pattern's member variables hold patterns of their own (`hp: 0`, `item: is Weapon as w`).
+            case TypePattern { Bindings: { } bindings } tp:
+            {
+                List<DestructuringBinding> visited = VisitBindings(bindings: bindings);
+                return ReferenceEquals(objA: visited, objB: bindings) ? tp : tp with { Bindings = visited };
+            }
+            case DestructuringPattern dp:
+            {
+                List<DestructuringBinding> visited = VisitBindings(bindings: dp.Bindings);
+                return ReferenceEquals(objA: visited, objB: dp.Bindings) ? dp : dp with { Bindings = visited };
+            }
+            case TypeDestructuringPattern tdp:
+            {
+                List<DestructuringBinding> visited = VisitBindings(bindings: tdp.Bindings);
+                return ReferenceEquals(objA: visited, objB: tdp.Bindings) ? tdp : tdp with { Bindings = visited };
+            }
             default:
                 return p;
         }
+    }
+
+    /// <summary>The bindings of a record or tuple pattern with each member's own pattern visited, or the same list when
+    /// nothing changed.</summary>
+    private List<DestructuringBinding> VisitBindings(List<DestructuringBinding> bindings)
+    {
+        List<DestructuringBinding>? changed = null;
+        for (int i = 0; i < bindings.Count; i++)
+        {
+            if (bindings[index: i].NestedPattern is not { } nested)
+            {
+                continue;
+            }
+
+            Pattern visited = VisitPattern(p: nested);
+            if (!ReferenceEquals(objA: visited, objB: nested))
+            {
+                changed ??= [..bindings];
+                changed[index: i] = bindings[index: i] with { NestedPattern = visited };
+            }
+        }
+
+        return changed ?? bindings;
     }
 
     /// <summary>
@@ -1021,7 +1060,7 @@ public abstract class AstRewriter
 
     /// <summary>
     /// Rewrites an <see cref="IsPatternExpression"/> (a pattern-test such as <c>x is T t</c>) by visiting
-    /// the scrutinee expression. The pattern itself is not rewritten.
+    /// the scrutinee expression and the expressions its pattern holds.
     /// Returns the original node when the scrutinee is unchanged.
     /// </summary>
     /// <param name="e">The is-pattern expression to rewrite.</param>
@@ -1029,9 +1068,10 @@ public abstract class AstRewriter
     protected virtual Expression VisitIsPattern(IsPatternExpression e)
     {
         Expression o = VisitExpression(expr: e.Expression);
-        return ReferenceEquals(objA: o, objB: e.Expression)
+        Pattern pattern = VisitPattern(p: e.Pattern);
+        return ReferenceEquals(objA: o, objB: e.Expression) && ReferenceEquals(objA: pattern, objB: e.Pattern)
             ? e
-            : e with { Expression = o };
+            : e with { Expression = o, Pattern = pattern };
     }
 
     /// <summary>

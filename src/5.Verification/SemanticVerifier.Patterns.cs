@@ -791,7 +791,7 @@ public sealed partial class SemanticVerifier
                                     .ToHashSet();
         // A type pattern resolved to a type covers the member of that type: a generic arm (`List[S64]`) is
         // spelled with its arguments, which the bare pattern name leaves out.
-        var coveredTypes = clauses.Select(selector: clause => clause.Pattern is GuardPattern
+        var coveredTypes = clauses.Select(selector: clause => PatternFacts.IsConditional(pattern: clause.Pattern)
                                        ? null
                                        : (clause.Pattern as TypePattern)?.Type.ResolvedType?.FullName)
                                   .OfType<string>()
@@ -814,6 +814,11 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static string? ExtractVariantMemberName(Pattern pattern, string typeName)
     {
+        if (PatternFacts.IsConditional(pattern: pattern))
+        {
+            return null;
+        }
+
         switch (pattern)
         {
             case TypePattern typePat:
@@ -959,6 +964,11 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static string? GetPatternKey(Pattern pattern)
     {
+        if (PatternFacts.IsConditional(pattern: pattern))
+        {
+            return null;
+        }
+
         return pattern switch
         {
             LiteralPattern lit => $"literal:{lit.Value}",
