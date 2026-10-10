@@ -224,14 +224,19 @@ internal sealed class ProtocolConformanceAnalyzer
 
         foreach (TypeSymbol type in _sa._registry.GetTypesWithMemberRoutines())
         {
-            if (type.IsGenericDefinition)
+            List<TypeSymbol> existing = GetImplementedProtocols(type: type);
+            if (existing.Any(predicate: p => p.Name is CopyableProtocol))
             {
                 continue;
             }
 
-            List<TypeSymbol> existing = GetImplementedProtocols(type: type);
-            if (existing.Any(predicate: p => p.Name is CopyableProtocol) ||
-                !_sa._registry.CanAutoDeriveAssignable(type: type))
+            if (type.IsGenericDefinition)
+            {
+                ApplyGenericCopyableConformance(type: type, existing: existing, copyable: copyable);
+                continue;
+            }
+
+            if (!_sa._registry.CanAutoDeriveAssignable(type: type))
             {
                 continue;
             }
@@ -240,6 +245,50 @@ internal sealed class ProtocolConformanceAnalyzer
             _sa._implicitProtocolConformances.Add(item: (type.FullName, copyable.Name));
             UpdateTypeProtocols(type: type, protocols: merged);
         }
+    }
+
+    /// <summary>
+    /// Places <c>Copyable</c> on a generic record or bundle DEFINITION (<c>Pair[T]</c>, <c>DictEntry[K, V]</c>) on the
+    /// condition that each parameter a field holds is <c>Copyable</c> too (<c>Copyable when T obeys Copyable</c>). An
+    /// instance made later folds in its definition's protocols, so it has <c>duplicate()</c> exactly when its
+    /// arguments do. A field of another type must be <c>Copyable</c> itself, or the definition is left alone.
+    /// </summary>
+    private void ApplyGenericCopyableConformance(TypeSymbol type, List<TypeSymbol> existing, ProtocolTypeSymbol copyable)
+    {
+        if (type is not RecordTypeSymbol { MemberVariables: { Count: > 0 } fields } record ||
+            type is VariantTypeSymbol || Wrappers.IsWrapperType(type: type))
+        {
+            return;
+        }
+
+        var conditions = new List<(string ParamName, string ProtocolName)>();
+        foreach (MemberVariableInfo field in fields)
+        {
+            if (field.Type is GenericParameterTypeSymbol param)
+            {
+                if (!conditions.Any(predicate: c => c.ParamName == param.Name))
+                {
+                    conditions.Add(item: (param.Name, CopyableProtocol));
+                }
+
+                continue;
+            }
+
+            bool concrete = !field.Type.IsGenericDefinition &&
+                            field.Type.TypeArguments?.Any(predicate: a => a is GenericParameterTypeSymbol) != true;
+            if (!concrete || !(_sa._registry.CanAutoDeriveAssignable(type: field.Type) ||
+                               _sa._registry.TypeObeysProtocol(type: field.Type, protocolName: CopyableProtocol)))
+            {
+                return;
+            }
+        }
+
+        record.ConditionalObeys ??= new Dictionary<string, List<(string ParamName, string ProtocolName)>>(
+            comparer: StringComparer.Ordinal);
+        record.ConditionalObeys[key: CopyableProtocol] = conditions;
+        var merged = new List<TypeSymbol>(collection: existing) { copyable };
+        _sa._implicitProtocolConformances.Add(item: (type.FullName, copyable.Name));
+        UpdateTypeProtocols(type: type, protocols: merged);
     }
 
     // RC wrappers (Retained/Tracked/Guarded/Witnessed/Roamed) now permit `var b = rc` (2026-09-21): an RC

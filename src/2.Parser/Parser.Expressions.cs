@@ -438,18 +438,17 @@ public partial class Parser
     /// </summary>
     private ElsePattern ParseElseClausePattern(SourceLocation clauseLocation)
     {
-        if (Check(type: TokenType.Identifier))
+        // `else as other =>` names the value the earlier arms did not match.
+        if (CheckAndAdvance(type: TokenType.As))
         {
-            TokenType nextAfterIdent = PeekToken(offset: 1)
-               .Type;
-            if (nextAfterIdent is TokenType.FatArrow or TokenType.Newline)
-            {
-                string varName =
-                    ConsumeIdentifier(errorMessage: "Expected variable name after 'else'");
-                return new ElsePattern(VariableName: varName, Location: clauseLocation);
-            }
+            string varName = ConsumeIdentifier(errorMessage: "Expected a name after 'else as'");
+            return new ElsePattern(VariableName: varName, Location: clauseLocation);
+        }
 
-            return new ElsePattern(VariableName: null, Location: clauseLocation);
+        if (Check(type: TokenType.Identifier) && PeekToken(offset: 1).Type is TokenType.FatArrow or TokenType.Newline)
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
+                message: $"A name for the value 'else' catches goes after 'as': write 'else as {CurrentToken.Text}'.");
         }
 
         return new ElsePattern(VariableName: null, Location: clauseLocation);

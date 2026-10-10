@@ -402,7 +402,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
                 return FormatLiteralValue(value: lit.Value, literalType: lit.LiteralType);
             case TypePattern tp:
                 string tpVarSuffix = tp.VariableName != null
-                    ? " " + tp.VariableName
+                    ? " as " + tp.VariableName
                     : "";
                 return $"is {tp.Type.Accept(visitor: this)}{tpVarSuffix}";
             case NonePattern:
@@ -412,12 +412,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
                     ? cp.ErrorType.Accept(visitor: this)
                     : "Crashables";
                 string cpVarSuffix = cp.VariableName != null
-                    ? " " + cp.VariableName
+                    ? " as " + cp.VariableName
                     : "";
                 return $"is {cpErrorType}{cpVarSuffix}";
             case ElsePattern ep:
                 return ep.VariableName != null
-                    ? $"else {ep.VariableName}"
+                    ? $"else as {ep.VariableName}"
                     : "else";
             case WildcardPattern:
                 return "_";

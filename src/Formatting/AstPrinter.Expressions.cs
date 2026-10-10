@@ -925,7 +925,7 @@ internal sealed partial class AstPrinter
             case TypePattern { Bindings: null } typePattern:
                 return Doc.Concat(subject, Doc.Text(text: op + IsTypeText(type: typePattern.Type) +
                                                            (typePattern.VariableName != null
-                                                               ? " " + typePattern.VariableName
+                                                               ? " as " + typePattern.VariableName
                                                                : "")));
             case TypeDestructuringPattern destructuring when !isPattern.IsNegated:
                 return Doc.Concat(subject, Doc.Text(text: op + IsTypeText(type: destructuring.Type) + " " +
@@ -1045,7 +1045,7 @@ internal sealed partial class AstPrinter
         {
             case ElsePattern elsePattern:
                 return Doc.Text(text: elsePattern.VariableName != null
-                    ? "else " + elsePattern.VariableName
+                    ? "else as " + elsePattern.VariableName
                     : "else");
             case ExpressionPattern expressionPattern when conditionBased:
                 _whenCondition = true;
@@ -1078,7 +1078,7 @@ internal sealed partial class AstPrinter
                 return Doc.Text(text: BindingsText(bindings: tuple.Bindings));
             case SpliceTypePattern splice:
                 return Doc.Text(text: "is " + Splices.TypeOf(handle: splice.HandleName) + (splice.VariableName != null
-                    ? " " + splice.VariableName
+                    ? " as " + splice.VariableName
                     : ""));
             default:
                 throw Unsupported(node: pattern, at: pattern.Location);
@@ -1110,7 +1110,7 @@ internal sealed partial class AstPrinter
         }
         else if (typePattern.VariableName != null)
         {
-            text.Append(value: ' ')
+            text.Append(value: " as ")
                 .Append(value: typePattern.VariableName);
         }
 

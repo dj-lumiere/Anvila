@@ -535,12 +535,11 @@ public partial class Parser
                     IsNegated: false,
                     Location: location);
             }
-            // Check for single binding: is Type identifier (only for 'is', not 'isnot')
-            case false when Check(type: TokenType.Identifier) &&
-                            !IsKeywordToken(token: CurrentToken):
+            // A single binding: `is Type as name` (only for 'is', not 'isnot').
+            case false when Check(type: TokenType.As):
             {
-                string variableName = Advance()
-                   .Text;
+                Advance();
+                string variableName = ConsumeIdentifier(errorMessage: "Expected a name after 'as'");
                 var pattern = new TypePattern(Type: type,
                     VariableName: variableName,
                     Bindings: null,

@@ -116,6 +116,14 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
+            // `is Weapon w` is `is Weapon as w`, and `else p =>` is `else as p =>`.
+            if (token.Type is TokenType.Is or TokenType.Else && PatternBindingAfter(tokens: tokens, index: i) is { } bound)
+            {
+                edits.Add(item: new MigrationEdit(Start: bound.Position, Length: 0, Replacement: "as ", Line: bound.Line,
+                    What: token.Type == TokenType.Is ? "is T x → is T as x" : "else p → else as p"));
+                continue;
+            }
+
             if (token.Type is TokenType.FormattedText or TokenType.RawFormattedText && token.Position >= 0)
             {
                 edits.AddRange(collection: InsertionEdits(token: token, keepShare: inStandardLibrary));
@@ -265,6 +273,82 @@ internal partial class Program
                     What: "onlyif comma → and");
             }
         }
+    }
+
+    /// <summary>
+    /// The name a pattern binds the old way, written straight after the type of <c>is</c> (<c>is Weapon w</c>,
+    /// <c>is RF::Core.List[S64] xs</c>, <c>is $typeof(m) v</c>) or straight after <c>else</c> (<c>else p =></c>), or
+    /// null. The type is skipped over: names joined by <c>.</c> or <c>::</c>, a <c>$</c> splice with its
+    /// parentheses, and a bracketed argument list.
+    /// </summary>
+    private static Token? PatternBindingAfter(List<Token> tokens, int index)
+    {
+        int line = tokens[index: index].Line;
+        int j = index + 1;
+        if (tokens[index: index].Type == TokenType.Is)
+        {
+            if (j < tokens.Count && tokens[index: j].Type == TokenType.Dollar)
+            {
+                j += 2;
+                j = SkipBalanced(tokens: tokens, start: j, open: TokenType.LeftParen, close: TokenType.RightParen);
+            }
+            else if (j < tokens.Count && tokens[index: j].Type is TokenType.Identifier or TokenType.None)
+            {
+                j++;
+                while (j + 1 < tokens.Count && tokens[index: j].Type is TokenType.Dot or TokenType.DoubleColon &&
+                       tokens[index: j + 1].Type == TokenType.Identifier)
+                {
+                    j += 2;
+                }
+
+                j = SkipBalanced(tokens: tokens, start: j, open: TokenType.LeftBracket, close: TokenType.RightBracket);
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        if (j >= tokens.Count || tokens[index: j].Type != TokenType.Identifier || tokens[index: j].Line != line)
+        {
+            return null;
+        }
+
+        // `else p` binds only in a `when` arm: the arrow follows, or the line ends with `else` starting it (an
+        // `if … then a else b` expression has `else` mid-line), and `is T x` whatever follows the name.
+        Token? after = j + 1 < tokens.Count ? tokens[index: j + 1] : null;
+        if (tokens[index: index].Type == TokenType.Else && after?.Type is not TokenType.FatArrow &&
+            !(after?.Type == TokenType.Newline && StartsStatement(tokens: tokens, index: index)))
+        {
+            return null;
+        }
+
+        return after?.Type is TokenType.Dot or TokenType.LeftParen or TokenType.LeftBracket ? null : tokens[index: j];
+    }
+
+    /// <summary>Skips one balanced <paramref name="open"/>…<paramref name="close"/> group starting at
+    /// <paramref name="start"/>, or returns <paramref name="start"/> when none starts there.</summary>
+    private static int SkipBalanced(List<Token> tokens, int start, TokenType open, TokenType close)
+    {
+        if (start >= tokens.Count || tokens[index: start].Type != open)
+        {
+            return start;
+        }
+
+        int depth = 0;
+        for (int k = start; k < tokens.Count; k++)
+        {
+            if (tokens[index: k].Type == open)
+            {
+                depth++;
+            }
+            else if (tokens[index: k].Type == close && --depth == 0)
+            {
+                return k + 1;
+            }
+        }
+
+        return tokens.Count;
     }
 
     /// <summary>Whether <paramref name="token"/> can begin the expression a recovery keyword or <c>discard</c> takes.</summary>

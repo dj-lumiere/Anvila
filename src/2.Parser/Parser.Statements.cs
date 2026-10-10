@@ -528,23 +528,21 @@ public partial class Parser
 
     /// <summary>
     /// Parses a when-STATEMENT <c>else</c> clause pattern after the <c>else</c> keyword has been
-    /// consumed, with an optional variable binding (<c>else name</c>).
+    /// consumed, with an optional binding (<c>else as name</c>).
     /// </summary>
     private ElsePattern ParseElseStatementPattern(SourceLocation clauseLocation)
     {
-        // Check for variable binding: else varName => ... or else varName\n INDENT
-        if (Check(type: TokenType.Identifier))
+        // A name for the value: `else as name => …` or `else as name` with an indented body.
+        if (CheckAndAdvance(type: TokenType.As))
         {
-            TokenType nextAfterIdent = PeekToken(offset: 1)
-               .Type;
-            if (nextAfterIdent is TokenType.FatArrow or TokenType.Newline)
-            {
-                string varName =
-                    ConsumeIdentifier(errorMessage: "Expected variable name after 'else'");
-                return new ElsePattern(VariableName: varName, Location: clauseLocation);
-            }
+            string varName = ConsumeIdentifier(errorMessage: "Expected a name after 'else as'");
+            return new ElsePattern(VariableName: varName, Location: clauseLocation);
+        }
 
-            return new ElsePattern(VariableName: null, Location: clauseLocation);
+        if (Check(type: TokenType.Identifier) && PeekToken(offset: 1).Type is TokenType.FatArrow or TokenType.Newline)
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
+                message: $"A name for the value 'else' catches goes after 'as': write 'else as {CurrentToken.Text}'.");
         }
 
         // Plain else without variable binding
@@ -629,7 +627,9 @@ public partial class Parser
         ParseAndValidateArmExpansionSplice(handle: handle);
 
         string? binding = Check(type: TokenType.Identifier)
-            ? ConsumeIdentifier(errorMessage: "Expected payload binding name")
+            ? ThrowOldPatternBinding(typeName: "$typeof(...)")
+            : CheckAndAdvance(type: TokenType.As)
+                ? ConsumeIdentifier(errorMessage: "Expected a name after 'as'")
             : null;
         var pattern = new SpliceTypePattern(HandleName: handle,
             VariableName: binding,
@@ -907,7 +907,7 @@ public partial class Parser
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
                 message: $"This arm binds '{name}' without a type, and a 'when' arm needs one. Write " +
-                         $"'is <Type> {name} and …' to bind a value of that type, or 'else {name} =>' to catch " +
+                         $"'is <Type> as {name} and …' to bind a value of that type, or 'else as {name} =>' to catch " +
                          "everything else.");
         }
 
@@ -925,13 +925,8 @@ public partial class Parser
                 errorMessage: "Expected ')' after destructuring bindings");
         }
 
-        // Check for variable binding (only if no destructuring)
-        string? variableName = null;
-        if (bindings == null && Check(type: TokenType.Identifier))
-        {
-            variableName =
-                ConsumeIdentifier(errorMessage: "Expected variable name for type pattern");
-        }
+        // The value it matched takes a name after `as` (only if no destructuring).
+        string? variableName = bindings == null ? ParsePatternBindingName(typeName: name) : null;
 
         TypeExpression type = new(Name: name, GenericArguments: null, Location: location);
         Pattern typePattern = new TypePattern(Type: type,
@@ -941,6 +936,28 @@ public partial class Parser
         return TryParseAndGuard(innerPattern: typePattern,
             guardAllowed: variableName != null || bindings != null,
             location: location);
+    }
+
+    /// <summary>
+    /// Reads the name a type pattern binds: <c>as name</c> after the type, or nothing. A bare name right after the
+    /// type (<c>is Weapon w</c>) is the old spelling and is rejected with the fix.
+    /// </summary>
+    private string? ParsePatternBindingName(string typeName)
+    {
+        if (CheckAndAdvance(type: TokenType.As))
+        {
+            return ConsumeIdentifier(errorMessage: "Expected a name after 'as'");
+        }
+
+        return Check(type: TokenType.Identifier) ? ThrowOldPatternBinding(typeName: typeName) : null;
+    }
+
+    /// <summary>Rejects a name written straight after a pattern's type (<c>is Weapon w</c>), naming the fix.</summary>
+    private string ThrowOldPatternBinding(string typeName)
+    {
+        string name = CurrentToken.Text;
+        throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
+            message: $"A name for the matched value goes after 'as': write 'is {typeName} as {name}'.");
     }
 
     /// <summary>
@@ -1028,13 +1045,8 @@ public partial class Parser
                 errorMessage: "Expected ')' after destructuring bindings");
         }
 
-        // Check for variable binding (only if no destructuring)
-        string? variableName = null;
-        if (bindings == null && Check(type: TokenType.Identifier))
-        {
-            variableName =
-                ConsumeIdentifier(errorMessage: "Expected variable name for type pattern");
-        }
+        // The value it matched takes a name after `as` (only if no destructuring).
+        string? variableName = bindings == null ? ParsePatternBindingName(typeName: name) : null;
 
         var type = new TypeExpression(Name: name,
             GenericArguments: genericArguments,
