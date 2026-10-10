@@ -340,7 +340,7 @@ public sealed partial class SemanticVerifier
         SourceLocation accessLocation)
     {
         // A recovery carrier's layout (`Maybe.present`/`value`, `Check`/`Lookup` `type_id`/`payload`) is what the
-        // builder builds and reads when it lowers `try`/`check`/`lookup`. Its own bodies reach those secret fields
+        // builder builds and reads when it lowers `try`/`check`. Its own bodies reach those secret fields
         // by construction, whichever module they land in.
         if (_isInCompilerGeneratedBody && IsCarrierLayoutField(memberVariable: memberVariable))
         {
@@ -428,7 +428,7 @@ public sealed partial class SemanticVerifier
     private static bool IsCarrierLayoutField(MemberVariableInfo memberVariable)
     {
         string? carrier = memberVariable.Owner?.BareName;
-        return carrier is "Maybe" or "Check" or "Lookup" &&
+        return carrier is "Maybe" or "Check" &&
                memberVariable.Name is Declaration.RuntimeContract.Carrier.PresentField
                    or Declaration.RuntimeContract.Carrier.ValueField
                    or Declaration.RuntimeContract.Carrier.TypeIdField

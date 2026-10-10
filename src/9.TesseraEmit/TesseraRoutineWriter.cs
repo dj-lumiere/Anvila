@@ -1128,7 +1128,7 @@ internal sealed class TesseraRoutineWriter
 
         if (call.RecoversThroughValue)
         {
-            throw Unsupported(what: "a call through a routine value beneath try, check or lookup");
+            throw Unsupported(what: "a call through a routine value beneath try or check");
         }
 
         if (IndirectCallee(call: call) is var (callee, routineType))
@@ -1386,7 +1386,7 @@ internal sealed class TesseraRoutineWriter
     /// </summary>
     private static bool HoldsErrorObject(TypeSymbol? carrier)
     {
-        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup };
+        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result };
     }
 
     /// <summary>The value a carrier (or variant) holds in its payload, read at the type the arm matched.</summary>

@@ -9,14 +9,14 @@ using TypeModel.Types;
 namespace Builder.Verification;
 
 /// <summary>
-/// Phase 5: whole-expression <c>try</c>/<c>check</c>/<c>lookup</c> recovery composition.
+/// Phase 5: whole-expression <c>try</c>/<c>check</c> recovery composition.
 ///
 /// A recovery keyword wraps an ENTIRE expression and short-circuits to its carrier on the FIRST failure
 /// (evaluation order: inner→outer, left→right). Rather than lower this inline (which, lacking a non-local
 /// break, would nest a <c>when</c> per hop), we synthesize a failable BASE routine
 /// <c>__recover_N!(freevars) -&gt; T</c> whose body is the inner expression in A-normal form (each failable
 /// sub-call hoisted to its own <c>var</c>, in evaluation order), then take that base's
-/// <c>try</c>/<c>check</c>/<c>lookup</c> variant. The variant's <see cref="Builder.Instantiation.ErrorHandlingVariantPass.TransformBody"/>
+/// <c>try</c>/<c>check</c> variant. The variant's <see cref="Builder.Instantiation.ErrorHandlingVariantPass.TransformBody"/>
 /// turns every hoisted failable <c>var</c> into its own recovery variant + unwrap + early <c>return</c> —
 /// i.e. the existing per-routine variant machinery does all the threading. The <see cref="RecoveryExpression"/>'s
 /// <see cref="RecoveryExpression.LoweredCall"/> becomes a call to that variant (Phase-6 splices it in).
@@ -33,8 +33,8 @@ public sealed partial class SemanticVerifier
     private const string RecoveryTempPrefix = "__rc_t";
 
     /// <summary>
-    /// Analyzes a <c>try</c>/<c>check</c>/<c>lookup</c> <see cref="RecoveryExpression"/> as a whole-expression
-    /// composition (see the class remarks). Returns the carrier type (Maybe/Check/Lookup[T], None-collapsed);
+    /// Analyzes a <c>try</c>/<c>check</c> <see cref="RecoveryExpression"/> as a whole-expression
+    /// composition (see the class remarks). Returns the carrier type (Maybe/Check[T], None-collapsed);
     /// stashes the synthesized variant call on <see cref="RecoveryExpression.LoweredCall"/>.
     /// </summary>
     /// <summary>
@@ -159,7 +159,7 @@ public sealed partial class SemanticVerifier
         //  - lookup → lookup (Lookup): pessimistic (throw+absent) generates lookup.
         //  - check   → check  (Check): check collapses the WHOLE crashable set (and, per the design, promotes
         //    a sub-call's absent to AbsentValueError) into Check's single Crashable arm. The variant rules
-        //    only mint check for a THROW-ONLY shape, so mark check's base throw-only (HasThrow, no HasAbsent,
+        //    only mint check for a THROW-ONLY shape, so mark check's base throw-only (HasThrow,
         //    non-pessimistic) — otherwise the both-shape yields lookup and no check exists.
         bool check = recovery.Kind == RecoveryKind.Check;
         string baseName = $"__recover_{_recoveryCompositionSeq++}";
@@ -253,7 +253,7 @@ public sealed partial class SemanticVerifier
         // CONVERSION recovery (`try x.S8()`): the base is a failable free reader `S8!(from:)` bound as a
         // TypeConstructor; its variant is the reader's recovery variant. Keep the member-call shape — the
         // construction passes the receiver as the `from:` argument and dispatches on ResolvedRoutine — and
-        // stamp the variant + carrier return (the variant's ReturnType is Maybe/Check/Lookup[T]).
+        // stamp the variant + carrier return (the variant's ReturnType is Maybe/Check[T]).
         if (call.LoweringKind == CallLoweringKind.TypeConstructor)
         {
             var conv = call with { IsFailable = false, IsPreAnalyzed = true };
@@ -354,7 +354,6 @@ public sealed partial class SemanticVerifier
     private static string RecoveryKeyword(RecoveryKind kind) => kind switch
     {
         RecoveryKind.Check => "check",
-        RecoveryKind.Lookup => "lookup",
         _ => "try"
     };
 
@@ -390,9 +389,9 @@ public sealed partial class SemanticVerifier
             // Rewrite children first (post-order) so any inner failable calls are already hoisted + replaced.
             Expression rewritten = base.VisitCall(e: e);
             // A sub-call is failable when its resolved routine is failable. IsFailable is only DERIVED from
-            // HasThrow/HasAbsent by a later pass, so during Phase-5 an INFERRED-failable callee (a body that
+            // HasThrow by a later pass, so during Phase-5 an INFERRED-failable callee (a body that
             // `throw`/`absent`s with no explicit `!`, already analyzed before this call site) carries
-            // HasThrow/HasAbsent but not yet IsFailable: CanFailUnderRecovery checks all three, and also takes
+            // HasThrow but not yet IsFailable: CanFailUnderRecovery checks all three, and also takes
             // a user routine that is not failable but can fail beneath its call (a checked operator or a bare
             // failable call in its body), which is recovered through its own variant.
             // A call through a routine value is hoisted too: the lambda may fail, and the variant built from the

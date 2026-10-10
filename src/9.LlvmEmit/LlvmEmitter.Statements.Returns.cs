@@ -134,32 +134,4 @@ public partial class LlvmEmitter
 
     #endregion
 
-    #region Throw / Absent
-
-    private void EmitAbsent(StringBuilder sb, AbsentStatement absentStmt)
-    {
-        // An `absent` in a failable routine is a crash (CrashLoweringPass); here it is a recovery
-        // variant's empty carrier.
-        if (_currentRoutineIsFailable)
-        {
-            throw new InvalidOperationException(
-                message:
-                $"An absent in failable routine '{_currentEmittingRoutine?.RegistryKey}' reached codegen -> CrashLoweringPass must lower it.");
-        }
-
-        TypeSymbol absentRetType = _currentEmittingRoutine!.ReturnType!;
-        string absentCarrierType = GetLlvmType(type: absentRetType);
-        // Balance the routine-entry trace_push. Missing this leaks a frame on the shadow stack
-        // every time a `try_X` variant returns absent (which happens at every for-loop exit).
-        // Subsequent `_rf_trace_update_loc` calls in the caller then update the leaked frame's
-        // slot instead of the caller's, corrupting the stack trace.
-        if (_traceCurrentRoutine)
-        {
-            EmitLine(sb: sb, line: TracePop);
-        }
-
-        EmitLine(sb: sb, line: $"  ret {absentCarrierType} zeroinitializer");
-    }
-
-    #endregion
 }

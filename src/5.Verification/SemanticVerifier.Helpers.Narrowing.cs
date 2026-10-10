@@ -210,7 +210,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol varType = _registry.GetNarrowedType(name: id.Name) ?? varInfo.Type;
 
         string? carrierBase = GetCarrierBaseName(type: varType);
-        bool carrierUsesNoneForAbsent = carrierBase is "Maybe" or "Lookup";
+        bool carrierUsesNoneForAbsent = carrierBase is "Maybe";
         bool eliminateNone = carrierUsesNoneForAbsent && IsNonePattern(pattern: isPat.Pattern);
         bool eliminateNoneValue =
             carrierBase == "Check" && IsNoneTypePattern(pattern: isPat.Pattern);
@@ -286,10 +286,6 @@ public sealed partial class SemanticVerifier
             // Result<T>: eliminate Crashable -> T
             "Check" when eliminateCrashable => valueType,
 
-            // Lookup<T>: must eliminate both absent (None) and Crashable -> T
-            "Lookup" when eliminateNone && eliminateCrashable => valueType,
-
-            // Partial elimination on Lookup is not sufficient
             _ => null
         };
     }

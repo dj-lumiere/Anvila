@@ -218,33 +218,6 @@ public record CrashStatement(CallExpression Report, SourceLocation Location) : S
 }
 
 /// <summary>
-/// Statement indicating that a value is not found/absent, triggering Lookup[T] generation.
-/// Used when a search operation finds no matching value (distinct from an error condition).
-/// </summary>
-/// <param name="Location">Source location information</param>
-/// <remarks>
-/// The absent statement is used to indicate "not found" in search/lookup operations:
-/// <code>
-/// routine get_user!(id: u64) -> User
-///   unless database.connected()
-///     throw DatabaseError(message: "Not connected")
-///   unless database.has(id)
-///     absent  # Value not found
-///   return database.get(id)
-/// </code>
-/// Builder generates variants for `try get_user()` -> User? and `lookup get_user()` -> Lookup[User]
-/// Pattern matching: is Crashable e / is None / else user
-/// </remarks>
-public record AbsentStatement(SourceLocation Location) : Statement(Location: Location)
-{
-    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
-    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
-    {
-        return visitor.VisitAbsentStatement(node: this);
-    }
-}
-
-/// <summary>
 /// Pass statement that acts as an empty placeholder in records, protocols, or other bodies.
 /// Used when a body is syntactically required but no operations are needed.
 /// </summary>
@@ -1115,7 +1088,7 @@ public enum VariantSiteKind
     /// <summary>Transformed from a <see cref="ThrowStatement"/>.</summary>
     FromThrow,
 
-    /// <summary>Transformed from an <see cref="AbsentStatement"/>.</summary>
+    /// <summary>Transformed from an <c>absent</c> (no longer written).</summary>
     FromAbsent,
 
     /// <summary>Transformed from a <see cref="ReturnStatement"/>.</summary>
@@ -1133,7 +1106,7 @@ public enum VariantSiteKind
 /// <summary>
 /// Synthesized return statement inserted into error-handling variant bodies by
 /// <see cref="ErrorHandlingVariantPass"/>.
-/// Replaces <see cref="ThrowStatement"/>, <see cref="AbsentStatement"/>, and
+/// Replaces <see cref="ThrowStatement"/> and
 /// <see cref="ReturnStatement"/> so that codegen can emit carrier construction via
 /// <c>EmitVariantReturn</c> without relying on mutable flags.
 /// </summary>

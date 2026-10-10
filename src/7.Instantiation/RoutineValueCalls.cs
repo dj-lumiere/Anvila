@@ -11,7 +11,7 @@ namespace Builder.Instantiation;
 /// the iterator steps that may reach one, as recovery sees them. A routine value carries a recovering entry next
 /// to its routine (<see cref="IdentifierExpression.RecoverRoutine"/>): the lookup-shaped recovery variant of the
 /// routine, which returns <c>Lookup[T]</c> (<c>Check[None]</c> for a routine that returns nothing). A call of the
-/// value made beneath <c>try</c>/<c>check</c>/<c>lookup</c> goes through that entry
+/// value made beneath <c>try</c>/<c>check</c> goes through that entry
 /// (<see cref="CallExpression.RecoversThroughValue"/>), and its carrier is propagated like the carrier of any other
 /// failable call, so a failure inside the lambda is recovered by the keyword above it. A call of the value made
 /// with no keyword above it calls the routine itself and still crashes on failure.
@@ -49,14 +49,14 @@ internal static class RoutineValueCalls
 
     /// <summary>
     /// The carrier a recovering call through a value of <paramref name="routineType"/> yields: what the routine's
-    /// lookup recovery variant returns (<see cref="ErrorHandlingGenerator"/>), <c>Lookup[T]</c>, or
-    /// <c>Check[None]</c> for a routine that returns nothing.
+    /// check recovery variant returns (<see cref="ErrorHandlingGenerator"/>), <c>Check[T]</c> (<c>Check[None]</c>
+    /// for a routine that returns nothing).
     /// </summary>
     public static TypeSymbol? Carrier(RoutineTypeSymbol routineType, TypeRegistry registry)
     {
         TypeSymbol? returned = routineType.ReturnType;
         bool none = returned == null || returned.IsNone;
-        TypeSymbol? definition = registry.LookupType(name: none ? "Check" : "Lookup");
+        TypeSymbol? definition = registry.LookupType(name: "Check");
         TypeSymbol? payload = none ? registry.LookupType(name: "None") : returned;
         return definition == null || payload == null
             ? null
@@ -130,32 +130,32 @@ internal static class RoutineValueCalls
     /// it can be propagated instead of ending the loop. Null when <paramref name="subject"/> is no such step, or
     /// the iterator holds no routine value.
     /// </summary>
-    public static Expression? LookupIterationStep(Expression subject, TypeRegistry registry)
+    public static Expression? CheckIterationStep(Expression subject, TypeRegistry registry)
     {
         switch (subject)
         {
             // A step written in an analyzed body: the analysis bound it to the iterator's own try variant.
             case RecoveryExpression { Kind: RecoveryKind.Try, LoweredCall: CallExpression lowered }:
-                return LookupIterationStep(subject: lowered, registry: registry);
+                return CheckIterationStep(subject: lowered, registry: registry);
             case CallExpression
             {
                 IsSynthesizedLowering: true, Callee: MemberExpression { Object: var receiver },
                 ResolvedRoutine: { Recovery: RecoveryKind.Try, RecoveryOf: { Name: "emit" } emit }
             } step when MayHoldRoutineValue(type: receiver.ResolvedType ?? emit.OwnerType):
-                return registry.LookupRecoveryVariant(recovered: emit, kind: RecoveryKind.Lookup) is
-                    { ReturnType: { } carrier } lookup && carrier.TypeArguments is { Count: > 0 }
-                    ? step with { ResolvedRoutine = lookup, ResolvedType = carrier }
+                return registry.LookupRecoveryVariant(recovered: emit, kind: RecoveryKind.Check) is
+                    { ReturnType: { } carrier } check && carrier.TypeArguments is { Count: > 0 }
+                    ? step with { ResolvedRoutine = check, ResolvedType = carrier }
                     : null;
             case RecoveryExpression
             {
                 Kind: RecoveryKind.Try, LoweredCall: null,
                 Inner: CallExpression { IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "emit" } },
                 ResolvedType.TypeArguments: [{ } element]
-            } generic when registry.LookupType(name: "Lookup") is { } lookupDefinition:
+            } generic when registry.LookupType(name: "Check") is { } checkDefinition:
                 return generic with
                 {
-                    Kind = RecoveryKind.Lookup,
-                    ResolvedType = registry.GetOrCreateResolution(genericDef: lookupDefinition,
+                    Kind = RecoveryKind.Check,
+                    ResolvedType = registry.GetOrCreateResolution(genericDef: checkDefinition,
                         typeArguments: [element])
                 };
             default:
@@ -165,13 +165,13 @@ internal static class RoutineValueCalls
 
     /// <summary>
     /// The arm a lookup-shaped iteration step gets in a recovery variant of <paramref name="kind"/>: a failure
-    /// beneath the step (its error state) returns as the variant's failure, the error itself for check and lookup,
+    /// beneath the step (its error state) returns as the variant's failure, the error itself for check,
     /// an absent result for try.
     /// </summary>
     public static WhenClause StepFailureClause(ErrorHandlingVariantKind kind, TypeRegistry registry,
         SourceLocation loc)
     {
-        bool keepsError = kind is ErrorHandlingVariantKind.Check or ErrorHandlingVariantKind.Lookup;
+        bool keepsError = kind is ErrorHandlingVariantKind.Check;
         const string errName = "__rf_step_err";
         return new WhenClause(
             Pattern: new CrashablePattern(ErrorType: null,
@@ -205,7 +205,7 @@ internal static class RoutineValueCalls
     }
 
     /// <summary>Whether <paramref name="expr"/> is an <c>each</c> loop's step over an iterator that may call a
-    /// routine value (see <see cref="LookupIterationStep"/>).</summary>
+    /// routine value (see <see cref="CheckIterationStep"/>).</summary>
     public static bool IsRecoverableIterationStep(Expression expr)
     {
         return expr switch

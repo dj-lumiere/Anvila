@@ -588,8 +588,7 @@ internal sealed partial class AstPrinter
         string keyword = recovery.Kind switch
         {
             RecoveryKind.Try => "try ",
-            RecoveryKind.Check => "check ",
-            _ => "lookup "
+            _ => "check "
         };
         // A trailing `!!` on the inner expression would be read as applying to the recovery.
         Doc inner = recovery.Inner is UnaryExpression { Operator: UnaryOperator.ForceUnwrap }

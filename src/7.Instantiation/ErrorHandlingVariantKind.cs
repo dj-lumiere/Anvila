@@ -12,8 +12,5 @@ public enum ErrorHandlingVariantKind
     TryBool,
 
     /// <summary>check variant - returns Result&lt;T&gt;, preserves error info.</summary>
-    Check,
-
-    /// <summary>lookup variant - returns Lookup&lt;T&gt;, distinguishes error from absence.</summary>
-    Lookup
+    Check
 }

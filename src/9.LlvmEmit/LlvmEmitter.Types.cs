@@ -306,7 +306,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Returns the named LLVM type for an error-handling carrier (Maybe[T], Result[T], Lookup[T]).
+    /// Returns the named LLVM type for an error-handling carrier (Maybe[T], Check[T]).
     /// Delegates to GetLLVMType -> carrier layouts come from their Standard library definitions.
     /// </summary>
     private string GetCarrierLlvmType(TypeSymbol type)
@@ -314,7 +314,7 @@ public partial class LlvmEmitter
         return GetLlvmType(type: type);
     }
 
-    /// <summary>Returns true if <paramref name="type"/> is a Maybe[T], Result[T], or Lookup[T] carrier.</summary>
+    /// <summary>Returns true if <paramref name="type"/> is a Maybe[T] or Check[T] carrier.</summary>
     private static bool IsCarrierType(TypeSymbol type)
     {
         return type is RecordTypeSymbol { CarrierKind: not CarrierKind.None };

@@ -323,7 +323,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     }
 
     /// <summary>
-    /// Materializes every REACHED variant body (<c>try</c>/<c>check</c>/<c>lookup</c>/the <c>try</c> variant of <c>emit</c>) that
+    /// Materializes every REACHED variant body (<c>try</c>/<c>check</c>/the <c>try</c> variant of <c>emit</c>) that
     /// nothing else placed into <c>InstantiatedGenericBodies</c> — the FREE, NON-generic variant case.
     /// A generic or member-of-generic variant is materialized during the demand walk by
     /// <c>GenericMonomorphizationPass.TryBuildAndStoreVariantBody</c> (it has a <c>GenericDefinition</c>), so it

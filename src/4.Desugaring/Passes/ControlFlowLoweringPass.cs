@@ -621,13 +621,26 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     /// <summary>The iterator step an <c>each</c> loop recovers with <c>try</c>.</summary>
     private const string EmitRoutineName = "emit";
 
-    /// <summary>The recovery an <c>each</c> loop's step takes: <c>try</c>, or <c>lookup</c> in a recovery variant
-    /// whose loop may reach a routine value (<see cref="EachStatement.StepFailureKind"/>).</summary>
+    /// <summary>The recovery an <c>each</c> loop's step takes: <c>try</c>, or <c>check</c> in a recovery variant
+    /// whose loop may reach a routine value (<see cref="EachStatement.StepFailureKind"/>): there the walk's end
+    /// (<c>AbsentValueError</c>) ends the loop and any other failure is the variant's.</summary>
     private static RecoveryKind StepKind(EachStatement eachStmt)
     {
         return eachStmt.StepFailureKind != null
-            ? RecoveryKind.Lookup
+            ? RecoveryKind.Check
             : RecoveryKind.Try;
+    }
+
+    /// <summary>The arm that ends an <c>each</c> loop: <c>is None</c> after a <c>try</c> step, or
+    /// <c>is AbsentValueError</c> after a <c>check</c> step (a loop with a <paramref name="failureClause"/>).</summary>
+    private static Pattern EndOfWalkPattern(WhenClause? failureClause, SourceLocation loc)
+    {
+        return failureClause == null
+            ? new NonePattern(Location: loc)
+            : new TypePattern(Type: new TypeExpression(Name: "AbsentValueError", GenericArguments: null, Location: loc),
+                VariableName: null,
+                Bindings: null,
+                Location: loc);
     }
 
     /// <summary>
@@ -750,7 +763,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         string ranName = names.RanName;
         string? iterationSourceName = names.IterationSourceName;
         string? iterationSourcePath = names.IterationSourcePath;
-        var noneClause = new WhenClause(Pattern: new NonePattern(Location: loc),
+        var noneClause = new WhenClause(Pattern: EndOfWalkPattern(failureClause: failureClause, loc: loc),
             Body: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
             Location: loc);
         // The value arm marks the body as run before it runs.
@@ -819,7 +832,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             [new BreakStatement(Location: loc)],
             Location: loc);
 
-        var noneClause = new WhenClause(Pattern: new NonePattern(Location: loc),
+        var noneClause = new WhenClause(Pattern: EndOfWalkPattern(failureClause: failureClause, loc: loc),
             Body: noneBody,
             Location: loc);
         var elseClause = new WhenClause(

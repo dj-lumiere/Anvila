@@ -102,10 +102,10 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Re-derives <see cref="RoutineInfo.IsFailable"/> for every registered routine from INFERENCE,
     /// after Phase-4 body analysis has populated <see cref="RoutineInfo.HasThrow"/> /
-    /// <see cref="RoutineInfo.HasAbsent"/> / <see cref="RoutineInfo.FailableCallees"/>.
+    /// <see cref="RoutineInfo.FailableCallees"/>.
     ///
     /// <para>A routine is failable iff it was DECLARED <c>!</c> OR its body directly <c>throw</c>s /
-    /// <c>absent</c>s. User and stdlib routines that throw/absent must be declared <c>!</c> (RF-S750 /
+    /// <c>absent</c>s. User and stdlib routines that throw must be declared <c>!</c> (RF-S750 /
     /// RF-S751), so for them this is a no-op; it still gives synthesized bodies their failability.</para>
     ///
     /// <para>Failability is NOT propagated through the call graph here: a non-failable routine calling
@@ -114,7 +114,7 @@ public sealed partial class SemanticVerifier
     /// rewrite the failable-carrier ABI of a large fraction of the stdlib for no behavioural gain.
     /// (Purely-PROPAGATED failability of a routine that IS declared <c>!</c> — e.g. a <c>!</c> wrapper
     /// whose body only returns an inner <c>!</c> call — is preserved because its declared <c>!</c>
-    /// seeds it here; <c>ErrorHandlingVariantPass</c> still fans throw/absent through
+    /// seeds it here; <c>ErrorHandlingVariantPass</c> still fans throw through
     /// <see cref="RoutineInfo.FailableCallees"/> for variant generation.)</para>
     ///
     /// <para>Runs after ALL bodies are analyzed and BEFORE codegen, which keys the failable-carrier ABI
@@ -127,7 +127,7 @@ public sealed partial class SemanticVerifier
     {
         foreach (RoutineInfo r in _registry.GetAllRoutines())
         {
-            if (r.HasThrow || r.HasAbsent)
+            if (r.HasThrow)
             {
                 r.IsFailable = true;
             }

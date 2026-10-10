@@ -148,7 +148,7 @@ public static class AstWalker
                 s.Body
             },
             UsingStatement s => UsingStatementChildren(s: s),
-            AbsentStatement or PassStatement or BreakStatement or ContinueStatement => Enumerable
+            PassStatement or BreakStatement or ContinueStatement => Enumerable
                .Empty<object>(),
             _ => null
         };

@@ -97,11 +97,6 @@ internal sealed class CrashLoweringPass : AstRewriter
                 Crash(title: CrashTitle(error: error, errorType: crashable),
                     message: CrashMessage(error: error, errorType: crashable),
                     location: ret.Location),
-            AbsentStatement absent when _routine is { IsFailable: true } =>
-                Crash(title: Text(value: CrashableTypeSymbol.SynthesizeCrashTitle(typeName: AbsentValueError),
-                        location: absent.Location),
-                    message: Text(value: $"Routine '{_routine.BaseName}' signaled absent.", location: absent.Location),
-                    location: absent.Location),
             _ => base.VisitStatement(stmt: stmt)
         };
     }

@@ -2,7 +2,7 @@ namespace Builder.Documentation;
 
 /// <summary>
 /// A <c>###</c> doc comment parsed into its summary prose and the reStructuredText-style field lists the docs
-/// use: <c>:param name:</c>, <c>:typeparam Name:</c>, <c>:returns:</c>, <c>:throws:</c>, <c>:absent:</c>,
+/// use: <c>:param name:</c>, <c>:typeparam Name:</c>, <c>:returns:</c>, <c>:throws:</c>,
 /// <c>:note:</c>, <c>:see:</c>. The editor hover and the API reference pages both read doc comments through it.
 /// </summary>
 public sealed record DocComment(
@@ -11,7 +11,6 @@ public sealed record DocComment(
     List<(string Name, string Desc)> TypeParams,
     string? Returns,
     List<string> Throws,
-    List<string> Absent,
     List<string> Notes,
     List<string> Sees)
 {
@@ -27,7 +26,6 @@ public sealed record DocComment(
         var typePars = new List<(string Name, string Desc)>();
         string? returns = null;
         var throws = new List<string>();
-        var absent = new List<string>();
         var notes = new List<string>();
         var sees = new List<string>();
 
@@ -68,9 +66,6 @@ public sealed record DocComment(
                     case "throws":
                         append = AppendTo(list: throws, entry: desc);
                         break;
-                    case "absent":
-                        append = AppendTo(list: absent, entry: desc);
-                        break;
                     case "note":
                         append = AppendTo(list: notes, entry: desc);
                         break;
@@ -100,7 +95,6 @@ public sealed record DocComment(
             TypeParams: typePars,
             Returns: returns,
             Throws: throws,
-            Absent: absent,
             Notes: notes,
             Sees: sees);
     }

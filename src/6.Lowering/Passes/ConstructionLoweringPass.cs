@@ -161,7 +161,7 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
                          $"{creator.MemberVariables.Count} values, not one arm.");
         }
 
-        VariantMemberInfo arm = (variant.CarrierKind is CarrierKind.Result or CarrierKind.Lookup
+        VariantMemberInfo arm = (variant.CarrierKind is CarrierKind.Result
                                     ? CarrierArm(carrier: variant, armName: armName)
                                     : variant.Members.FirstOrDefault(predicate: m => m.Name == armName)) ??
                                 throw new InvalidOperationException(
@@ -188,13 +188,10 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
     {
         VariantMemberInfo? error = carrier.Members.FirstOrDefault(predicate: m =>
             m.Type?.Name == RuntimeContract.Crashables);
-        VariantMemberInfo? absent = carrier.CarrierKind == CarrierKind.Lookup
-            ? carrier.Members.FirstOrDefault(predicate: m => m.IsNone)
-            : null;
-        VariantMemberInfo? success = carrier.Members.FirstOrDefault(predicate: m => m != error && m != absent);
+        VariantMemberInfo? success = carrier.Members.FirstOrDefault(predicate: m => m != error);
         return armName switch
         {
-            "None" => absent ?? success,
+            "None" => success,
             RuntimeContract.Crashables => error,
             VariantReturnLoweringPass.SuccessArm => success,
             _ => carrier.Members.FirstOrDefault(predicate: m => m.Name == armName)

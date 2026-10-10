@@ -437,7 +437,7 @@ internal sealed class WrapperForwardingPass
     }
 
     /// <summary>
-    /// The <c>try</c>/<c>check</c>/<c>lookup</c> variants of <paramref name="forwarder"/> (a forwarder on a wrapper's
+    /// The <c>try</c>/<c>check</c> variants of <paramref name="forwarder"/> (a forwarder on a wrapper's
     /// generic definition whose inner routine can fail beneath its call): forwarders of the inner routine's own
     /// variants, so a recovery keyword over <c>xs[i]</c> on a <c>Viewing[List[T]]</c> recovers the inner failure.
     /// Built once. False when there is nothing to recover.
@@ -466,7 +466,7 @@ internal sealed class WrapperForwardingPass
             ? "data"
             : null;
         bool any = false;
-        foreach (RecoveryKind kind in (RecoveryKind[])[RecoveryKind.Try, RecoveryKind.Check, RecoveryKind.Lookup])
+        foreach (RecoveryKind kind in (RecoveryKind[])[RecoveryKind.Try, RecoveryKind.Check])
         {
             if (_registry.LookupRecoveryVariant(recovered: inner, kind: kind) is not { } innerVariant)
             {

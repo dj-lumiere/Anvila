@@ -749,12 +749,12 @@ internal sealed class TypeBodyResolver
             caseName: memberTypeName,
             location: member.Location);
 
-        // #59: Variant members cannot hold Result[T] or Lookup[T]. Nested variants are allowed.
+        // #59: Variant members cannot hold Check[T]. Nested variants are allowed.
         if (IsCarrierType(type: memberType) && !IsMaybeType(type: memberType))
         {
             _sa.ReportError(code: SemanticDiagnosticCode.VariantCaseContainsInvalidType,
                 message: $"Variant member '{memberTypeName}' cannot be '{memberType.Name}'. " +
-                         "Use failable routines (!) instead of storing Result/Lookup in variants.",
+                         "Use failable routines (!) instead of storing Check in variants.",
                 location: member.Location);
         }
         // Post-Owned-retirement: bare entity T IS the bound/lvalue form (record-shaped
@@ -1053,7 +1053,7 @@ internal sealed class TypeBodyResolver
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is "Maybe" or "Check" or "Lookup"
+        return baseName is "Maybe" or "Check"
             ? baseName
             : null;
     }

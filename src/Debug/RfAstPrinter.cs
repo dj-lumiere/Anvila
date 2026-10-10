@@ -1187,7 +1187,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         return $"steal {node.Operand.Accept(visitor: this)}";
     }
     /// <summary>
-    /// Renders a recovery expression (<c>try</c>/<c>check</c>/<c>lookup</c>) as its keyword
+    /// Renders a recovery expression (<c>try</c>/<c>check</c>) as its keyword
     /// followed by the printed inner expression.
     /// </summary>
     public string VisitRecoveryExpression(RecoveryExpression node)
@@ -1195,7 +1195,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         string keyword = node.Kind switch
         {
             RecoveryKind.Check => "check",
-            RecoveryKind.Lookup => "lookup",
             _ => "try"
         };
         return $"{keyword} {node.Inner.Accept(visitor: this)}";
@@ -1317,13 +1316,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     public string VisitCrashStatement(CrashStatement node)
     {
         return $"{I}#crash {node.Report.Accept(visitor: this)}";
-    }
-
-
-    /// <inheritdoc/>
-    public string VisitAbsentStatement(AbsentStatement node)
-    {
-        return $"{I}absent";
     }
 
 

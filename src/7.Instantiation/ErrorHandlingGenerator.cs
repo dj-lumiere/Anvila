@@ -9,12 +9,12 @@ namespace Builder.Instantiation;
 /// <summary>
 /// Generates error handling variants for failable (!) routines.
 ///
-/// Generation rules based on throw/absent usage:
+/// Generation rules based on throw usage:
 /// - Only absent: try (returns T?)
 /// - Only throw: try (returns T?) + check (returns Result&lt;T&gt;)
 /// - Both: try (returns T?) + lookup (returns Lookup&lt;T&gt;)
 ///
-/// Phase 1: Keyword Detection - scan for throw/absent in body
+/// Phase 1: Keyword Detection - scan for throw in body
 /// Phase 2: Variant Generation - determine which variants to create
 /// Phase 3: Code Transformation - generate variant routines
 /// </summary>
@@ -76,21 +76,21 @@ public sealed class ErrorHandlingGenerator
 
     /// <summary>
     /// Generates wrapper variants. When <paramref name="pessimistic"/> is true, the analysis is
-    /// forced to <c>HasThrow=true, HasAbsent=true</c> regardless of body contents — used by
-    /// pre-registration for failable routines whose body has no direct <c>throw</c>/<c>absent</c>
-    /// (failability is propagated from called <c>!</c> routines) so that <c>try</c>/<c>lookup</c>
+    /// forced to <c>HasThrow=true</c> regardless of body contents — used by
+    /// pre-registration for failable routines whose body has no direct <c>throw</c>
+    /// (failability is propagated from called <c>!</c> routines) so that <c>try</c>
     /// stub variants exist by name for SA resolution. <see cref="ErrorHandlingVariantPass"/>
     /// later refines them after fixpoint propagation.
     /// </summary>
-    /// <param name="everyKind">Generate try, check and lookup whatever the body's own throw/absent say, and
+    /// <param name="everyKind">Generate try, check and lookup whatever the body's own throw say, and
     /// accept a routine that is not failable. A user routine gets every kind: what can fail beneath it (a
     /// checked operator, a subscript, a call of a routine that is not failable but fails beneath its own call)
     /// is only known once its body is built, and each keyword must keep that failure's error.</param>
-    /// <param name="withLookup">Generate the lookup variant as well whatever the body says: an iterator's
-    /// <c>emit</c> needs it for an <c>each</c> loop beneath a recovery keyword, whose step must tell the end of the
-    /// iteration (absent) apart from a failure beneath it (an error).</param>
+    /// <param name="withCheck">Generate the check variant as well whatever the body says: an iterator's <c>emit</c>
+    /// needs it for an <c>each</c> loop beneath a recovery keyword, whose step must tell the end of the iteration
+    /// (<c>AbsentValueError</c>) apart from a failure beneath it (any other error).</param>
     public ErrorHandlingResult GenerateVariants(RoutineInfo routine, Statement body,
-        bool pessimistic, bool everyKind = false, bool withLookup = false)
+        bool pessimistic, bool everyKind = false, bool withCheck = false)
     {
         if (!routine.IsFailable && !everyKind)
         {
@@ -102,31 +102,29 @@ public sealed class ErrorHandlingGenerator
             BuildFailabilityAnalysis(routine: routine, body: body, pessimistic: pessimistic);
 
         // Validate: ! functions must use throw, absent, or call other failable functions
-        if (analysis is { HasThrow: false, HasAbsent: false })
+        if (analysis is { HasThrow: false })
         {
             return new ErrorHandlingResult
             {
-                Error = $"Failable function '{routine.Name}!' must use 'throw' or 'absent'",
-                HasThrow = false,
-                HasAbsent = false
+                Error = $"Failable function '{routine.Name}!' must throw or call a routine that can fail",
+                HasThrow = false
             };
         }
 
         // Phase 2: Variant Generation
         List<GeneratedVariant> variants =
-            BuildVariants(routine: routine, analysis: analysis, everyKind: everyKind, withLookup: withLookup);
+            BuildVariants(routine: routine, analysis: analysis, everyKind: everyKind, withCheck: withCheck);
 
         return new ErrorHandlingResult
         {
             Variants = variants,
             HasThrow = analysis.HasThrow,
-            HasAbsent = analysis.HasAbsent,
             ThrownTypes = analysis.ThrownTypes.ToList()
         };
     }
 
     /// <summary>
-    /// Phase 1: builds the throw/absent analysis for a failable routine — scans the body,
+    /// Phase 1: builds the throw analysis for a failable routine — scans the body,
     /// applies the <paramref name="pessimistic"/> override, merges propagated failability from
     /// called <c>!</c> routines, and applies the failable-calls fallback.
     /// </summary>
@@ -138,12 +136,11 @@ public sealed class ErrorHandlingGenerator
         if (pessimistic)
         {
             analysis.HasThrow = true;
-            analysis.HasAbsent = true;
         }
 
-        // Propagated failability: callees' HasThrow/HasAbsent/ThrowableTypes are merged in
+        // Propagated failability: callees' HasThrow/ThrowableTypes are merged in
         // here. ErrorHandlingVariantPass runs a fixpoint over FailableCallees beforehand
-        // so by the time we land here, routine.HasThrow/HasAbsent already reflect the
+        // so by the time we land here, routine.HasThrow already reflect the
         // transitive closure for routines whose failability is purely propagated
         // (e.g. `routine S64_from_text!(t: Text) -> S64 return S64!(from_text: t)`).
         if (routine.HasThrow)
@@ -151,17 +148,12 @@ public sealed class ErrorHandlingGenerator
             analysis.HasThrow = true;
         }
 
-        if (routine.HasAbsent)
-        {
-            analysis.HasAbsent = true;
-        }
-
         analysis.ThrownTypes.UnionWith(other: routine.ThrowableTypes);
 
-        // If no direct or propagated throw/absent info but the routine calls failable
+        // If no direct or propagated throw info but the routine calls failable
         // routines, conservatively assume throw (legacy behavior for arithmetic-overflow
         // crashable calls etc.).
-        if (analysis is { HasThrow: false, HasAbsent: false } && routine.HasFailableCalls)
+        if (analysis is { HasThrow: false } && routine.HasFailableCalls)
         {
             analysis.HasThrow = true;
         }
@@ -170,13 +162,12 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Phase 2: builds the list of wrapper variants (try always; check for throw-only;
-    /// lookup for throw+absent) for a failable routine from its <paramref name="analysis"/>. With
-    /// <paramref name="everyKind"/> (a routine recovered beneath its call, whose failures are only known once its
-    /// body is built) all three are generated: its check turns an absence beneath it into AbsentValueError.
+    /// Phase 2: builds the list of wrapper variants (try always, check when it can throw) for a failable routine
+    /// from its <paramref name="analysis"/>. With <paramref name="everyKind"/> (a routine recovered beneath its
+    /// call, whose failures are only known once its body is built) both are generated.
     /// </summary>
     private List<GeneratedVariant> BuildVariants(RoutineInfo routine,
-        ErrorHandlingAnalysis analysis, bool everyKind = false, bool withLookup = false)
+        ErrorHandlingAnalysis analysis, bool everyKind = false, bool withCheck = false)
     {
         var variants = new List<GeneratedVariant>();
 
@@ -185,37 +176,22 @@ public sealed class ErrorHandlingGenerator
         variants.Add(item: new GeneratedVariant(Kind: ErrorHandlingVariantKind.Try,
             Routine: tryVariant));
 
-        // check variant if only throw (no absent)
-        if (analysis is { HasThrow: true, HasAbsent: false } || everyKind)
+        // check variant when the routine can throw, and always for a recovered body or an iterator step
+        if (analysis.HasThrow || everyKind || withCheck)
         {
             RoutineInfo checkVariant = GenerateCheckVariant(original: routine);
             variants.Add(item: new GeneratedVariant(Kind: ErrorHandlingVariantKind.Check,
                 Routine: checkVariant));
         }
 
-        // lookup variant if both throw and absent
-        if (analysis is { HasThrow: true, HasAbsent: true } || everyKind || withLookup)
-        {
-            RoutineInfo lookupVariant = GenerateLookupVariant(original: routine);
-            // Lookup[None] degenerates to check (Result[None]) when the return type is None:
-            // absent and return are both None so only throw vs no-throw matters.
-            // Use Check kind so TransformBody emits Result carriers in the variant body —
-            // if Lookup kind is used, the body emits Lookup[None] but the declaration says Result[None].
-            ErrorHandlingVariantKind lookupKind =
-                routine.ReturnType == null || routine.ReturnType.Name == NoneTypeName
-                    ? ErrorHandlingVariantKind.Check
-                    : ErrorHandlingVariantKind.Lookup;
-            variants.Add(item: new GeneratedVariant(Kind: lookupKind, Routine: lookupVariant));
-        }
-
         return variants;
     }
 
     /// <summary>
-    /// Phase 1: Analyzes the body for throw/absent keywords.
+    /// Phase 1: Analyzes the body for throw keywords.
     /// </summary>
     /// <param name="body">The statement body to analyze.</param>
-    /// <returns>Analysis result with throw/absent flags.</returns>
+    /// <returns>Analysis result with throw flags.</returns>
     public static ErrorHandlingAnalysis AnalyzeBody(Statement body)
     {
         var analysis = new ErrorHandlingAnalysis();
@@ -230,11 +206,11 @@ public sealed class ErrorHandlingGenerator
     public static bool BodyHasThrowOrAbsent(Statement body)
     {
         ErrorHandlingAnalysis analysis = AnalyzeBody(body: body);
-        return analysis.HasThrow || analysis.HasAbsent;
+        return analysis.HasThrow;
     }
 
     /// <summary>
-    /// Recursively analyzes statements for throw/absent keywords.
+    /// Recursively analyzes statements for throw keywords.
     /// </summary>
     /// <param name="statement">The statement to analyze.</param>
     /// <param name="analysis">The analysis result to update.</param>
@@ -255,10 +231,6 @@ public sealed class ErrorHandlingGenerator
                     analysis.ThrownTypes.Add(item: thrownType);
                 }
 
-                break;
-
-            case AbsentStatement:
-                analysis.HasAbsent = true;
                 break;
 
             case BlockStatement block:
@@ -321,14 +293,10 @@ public sealed class ErrorHandlingGenerator
         return GenerateTryVariant(original: original);
     }
 
-    /// <summary>
-    /// Generates only a lookup variant for a bodyless protocol <c>emit</c>: the step of an <c>each</c> loop in a
-    /// recovery variant of a generic routine, over an iterator typed as the bare protocol, takes it (its absent
-    /// state ends the loop, its error state is a failure beneath the step).
-    /// </summary>
-    public RoutineInfo GenerateLookupVariantStub(RoutineInfo original)
+    /// <summary>Generates the check variant of <paramref name="original"/> on its own.</summary>
+    public RoutineInfo GenerateCheckVariantStub(RoutineInfo original)
     {
-        return GenerateLookupVariant(original: original);
+        return GenerateCheckVariant(original: original);
     }
 
     private RoutineInfo GenerateTryVariant(RoutineInfo original)
@@ -453,92 +421,7 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Generates the lookup variant (returns Lookup&lt;T&gt;).
-    /// throw -> return error
-    /// absent -> return None
-    /// </summary>
-    /// <param name="original">The original routine.</param>
-    /// <returns>The lookup variant routine info.</returns>
-    private RoutineInfo GenerateLookupVariant(RoutineInfo original)
-    {
-        TypeSymbol noneType = _registry.LookupType(name: NoneTypeName) ??
-                            throw new InvalidOperationException(
-                                message: "None type not registered");
-        TypeSymbol returnType = original.ReturnType ?? noneType;
-
-        // Lookup[None] degenerates to Result[None]: absent and return are both None,
-        // so the only distinction is throw vs no-throw — same as check.
-        if (returnType.Name == NoneTypeName)
-        {
-            TypeSymbol resultDef = _registry.LookupType(name: "Check") ??
-                                 throw new InvalidOperationException(
-                                     message: "Result type not registered");
-            TypeSymbol resultType = _registry.GetOrCreateResolution(
-                genericDef: resultDef,
-                typeArguments: [noneType]);
-
-            // Degenerated: Lookup[None] -> Result[None], and the API name becomes check not lookup
-            return new RoutineInfo(name: original.Name)
-            {
-                Kind = VariantKind(original: original),
-                OwnerType = original.OwnerType,
-                MeType = VariantMeType(original: original),
-                Parameters = original.Parameters,
-                ReturnType = resultType,
-                IsFailable = false,
-                IsSynthesized = true,
-                DeclaredMutation = original.DeclaredMutation,
-                MutationCategory = original.MutationCategory,
-                GenericParameters = original.GenericParameters,
-                GenericConstraints = original.GenericConstraints,
-                Visibility = original.Visibility,
-                Location = original.Location,
-                Module = original.Module,
-                ModulePath = original.ModulePath,
-                Annotations = original.Annotations,
-                CallingConvention = original.CallingConvention,
-                RecoveryOf = original,
-                SurfaceRealm = original.SurfaceRealm,
-                Recovery = RecoveryKind.Check
-            };
-        }
-
-        TypeSymbol carrierInner = WrapBareEntityForCarrier(type: returnType, original: original);
-
-        TypeSymbol lookupDef = _registry.LookupType(name: "Lookup") ??
-                             throw new InvalidOperationException(
-                                 message: "Lookup type not registered");
-        TypeSymbol lookupType = _registry.GetOrCreateResolution(
-            genericDef: lookupDef,
-            typeArguments: [carrierInner]);
-
-        return new RoutineInfo(name: original.Name)
-        {
-            Kind = VariantKind(original: original),
-            OwnerType = original.OwnerType,
-            MeType = VariantMeType(original: original),
-            Parameters = original.Parameters,
-            ReturnType = lookupType,
-            IsFailable = false, // lookup variants don't fail
-            IsSynthesized = true,
-            DeclaredMutation = original.DeclaredMutation,
-            MutationCategory = original.MutationCategory,
-            GenericParameters = original.GenericParameters,
-            GenericConstraints = original.GenericConstraints,
-            Visibility = original.Visibility,
-            Location = original.Location,
-            Module = original.Module,
-            ModulePath = original.ModulePath,
-            Annotations = original.Annotations,
-            CallingConvention = original.CallingConvention,
-            RecoveryOf = original,
-            SurfaceRealm = original.SurfaceRealm,
-            Recovery = RecoveryKind.Lookup
-        };
-    }
-
-    /// <summary>
-    /// The value a recovery variant's carrier (<c>Maybe[T]</c> / <c>Check[T]</c> / <c>Lookup[T]</c>) holds. A
+    /// The value a recovery variant's carrier (<c>Maybe[T]</c> / <c>Check[T]</c>) holds. A
     /// bare entity is held as such, except in a file of a language that shares entities: there a creator builds
     /// the bare entity and its caller makes the handle, but the variant hands the value on inside the carrier,
     /// so the carrier holds the handle, as every other value of that language does.

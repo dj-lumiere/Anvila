@@ -1635,7 +1635,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Verifier-installed hook that generates and registers the recovery variants of a failable routine
-    /// (its <c>try</c>/<c>check</c>/<c>lookup</c> forms) the first time one is needed. Returns false when
+    /// (its <c>try</c>/<c>check</c> forms) the first time one is needed. Returns false when
     /// the routine has none (it is not failable, or is <c>@crash_only</c>).
     /// </summary>
     public Func<RoutineInfo, bool>? EnsureRecoveryVariants { get; set; }
@@ -1643,7 +1643,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Verifier-installed hook: whether a routine that is not failable can still fail beneath a call of it
     /// (a user routine whose body divides by zero, overflows, indexes out of range or calls a failable
-    /// routine bare). Under <c>try</c>/<c>check</c>/<c>lookup</c> such a call goes through the routine's own
+    /// routine bare). Under <c>try</c>/<c>check</c> such a call goes through the routine's own
     /// recovery variant, so its failure is recovered instead of crashing.
     /// </summary>
     public Func<RoutineInfo, bool>? MayFailBeneath { get; set; }
@@ -1661,7 +1661,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool CanFailUnderRecovery(RoutineInfo? routine)
     {
-        return routine is { IsFailable: true } or { HasThrow: true } or { HasAbsent: true } ||
+        return routine is { IsFailable: true } or { HasThrow: true } ||
                routine != null && MayFailBeneath?.Invoke(arg: routine) == true;
     }
 
@@ -1686,7 +1686,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The recovery variant of <paramref name="recovered"/> for <paramref name="kind"/>: the routine a
-    /// <c>try</c>, <c>check</c> or <c>lookup</c> call of it binds to. A routine of a concrete owner or a
+    /// <c>try</c> or <c>check</c> call of it binds to. A routine of a concrete owner or a
     /// concrete instance of a generic routine gets its definition's variant substituted the same way.
     /// The variant is generated on first use (<see cref="EnsureRecoveryVariants"/>). Null when the
     /// routine has no such variant.

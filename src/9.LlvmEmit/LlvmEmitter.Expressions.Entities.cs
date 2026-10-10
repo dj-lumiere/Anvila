@@ -86,7 +86,7 @@ public partial class LlvmEmitter
         return type switch
         {
             // A variant or Check/Lookup carrier is a TaggedCreatorExpression (ConstructionLoweringPass).
-            VariantTypeSymbol or RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup } =>
+            VariantTypeSymbol or RecordTypeSymbol { CarrierKind: CarrierKind.Result } =>
                 throw new InvalidOperationException(
                     message: $"A creator of '{type.FullName}' reached the LLVM emitter in [{_currentRoutineDiagName}]."),
             EntityTypeSymbol entity => EmitEntityConstruction(sb: sb, entity: entity, expr: expr),
@@ -159,7 +159,7 @@ public partial class LlvmEmitter
     /// </summary>
     private static bool HoldsErrorObject(TypeSymbol carrier)
     {
-        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup };
+        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result };
     }
 
     /// <summary>

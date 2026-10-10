@@ -3,15 +3,12 @@ using TypeModel.Types;
 namespace Builder.Instantiation;
 
 /// <summary>
-/// Result of analyzing throw/absent keywords in a failable function body.
+/// Result of analyzing throw keywords in a failable function body.
 /// </summary>
 public sealed class ErrorHandlingAnalysis
 {
     /// <summary>Whether the body contains any throw statements.</summary>
     public bool HasThrow { get; set; }
-
-    /// <summary>Whether the body contains any absent statements.</summary>
-    public bool HasAbsent { get; set; }
 
     /// <summary>
     /// Concrete crashable types directly thrown in this body (from <c>throw</c> statements

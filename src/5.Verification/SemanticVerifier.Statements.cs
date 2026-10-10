@@ -359,61 +359,42 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // A routine whose body throws or goes absent must say so on its declaration: `routine f!(...)`.
+        // A routine whose body throws must say so on its declaration: `routine f!(...)`.
         // Call sites never write the `!`, so the declaration is the one place a reader learns the
         // routine can fail. Synthesized routines carry their failability from the routine they derive from.
-        if ((routineInfo.HasThrow || routineInfo.HasAbsent) && !routine.IsFailable &&
-            !routineInfo.IsSynthesized)
+        if (routineInfo.HasThrow && !routine.IsFailable && !routineInfo.IsSynthesized)
         {
-            string what = routineInfo.HasThrow
-                ? "throws"
-                : "can go absent";
-            ReportError(code: routineInfo.HasThrow
-                    ? SemanticDiagnosticCode.ThrowOutsideFailableFunction
-                    : SemanticDiagnosticCode.AbsentOutsideFailableFunction,
+            ReportError(code: SemanticDiagnosticCode.ThrowOutsideFailableFunction,
                 message:
-                $"'{routine.Name}' {what}, so its declaration needs '!': write 'routine {routine.Name}!(...)'. " +
+                $"'{routine.Name}' throws, so its declaration needs '!': write 'routine {routine.Name}!(...)'. " +
                 $"Callers still call it as '{routine.Name}(...)'.",
                 location: routine.Location);
         }
 
-        // Failable routine with no throw/absent — error: a ! routine that can't fail is misleading. An
+        // Failable routine with no throw — error: a ! routine that can't fail is misleading. An
         // implementation of a protocol's failable requirement (`Enterable.enter!`) keeps the `!` the protocol
         // asks for even when this implementation never fails.
         if (routineInfo is
-                { IsFailable: true, HasThrow: false, HasAbsent: false, HasFailableCalls: false } &&
+                { IsFailable: true, HasThrow: false, HasFailableCalls: false } &&
             !ImplementsFailableRequirement(routine: routineInfo))
         {
-            ReportError(code: SemanticDiagnosticCode.FailableWithoutThrowOrAbsent,
+            ReportError(code: SemanticDiagnosticCode.FailableWithoutThrow,
                 message:
-                $"Failable routine '{routine.Name}!' contains neither 'throw' nor 'absent'. " +
+                $"Failable routine '{routine.Name}!' never throws and calls nothing that can fail. " +
                 "Remove '!' or add a failure path.",
                 location: routine.Location);
         }
 
         // Store routine body for error handling variant generation (Phase 4).
-        // Only store if the body actually has throw/absent/failable-calls — routines
+        // Only store if the body actually has throw/failable-calls — routines
         // implemented via @llvm_ir have no such AST nodes and can't have variants generated.
         // A protocol-extension routine (`routine Sized.doubled()`) is stored too: each type obeying the
         // protocol gets its own copy of the body (ProtocolDefaultImplLoweringPass), as for the library's.
-        if (routineInfo.IsFailable && (routineInfo.HasThrow || routineInfo.HasAbsent ||
-                                       routineInfo.HasFailableCalls) ||
+        if (routineInfo.IsFailable && (routineInfo.HasThrow || routineInfo.HasFailableCalls) ||
             routineInfo.OwnerType is ProtocolTypeSymbol)
         {
             StoreRoutineBody(routine: routineInfo, body: routine.Body);
         }
-
-        // Report undismantled Lookup variables at routine scope exit (#161).
-        foreach ((string Name, SourceLocation Location) pending in _pendingLookupVars)
-        {
-            ReportError(code: SemanticDiagnosticCode.LookupNotDismantled,
-                message:
-                $"Lookup variable '{pending.Name}' must be dismantled before end of scope. " +
-                "Use 'when', '??', or 'if is' to handle the lookup result.",
-                location: pending.Location);
-        }
-
-        _pendingLookupVars.Clear();
 
         // Snapshot the per-routine "out of scope via steal/consumption" set onto the declaration so
         // the scope-exit teardown pass can exclude these bindings from `destruct`.
@@ -666,8 +647,6 @@ public sealed partial class SemanticVerifier
                 AnalyzeThrowStatement(throwStmt: throwStmt);
                 break;
 
-            case AbsentStatement absent:
-                AnalyzeAbsentStatement(absent: absent);
                 break;
 
             case BreakStatement breakStmt:
@@ -739,7 +718,7 @@ public sealed partial class SemanticVerifier
         _registry.EnterScope(kind: ScopeKind.Block, name: null);
 
 
-        // Once a statement unconditionally diverges (return / throw / absent / break / continue),
+        // Once a statement unconditionally diverges (return / throw / break / continue),
         // any following statement in the same block can never execute — report the first such dead
         // statement. (Conditional divergence inside a nested if/when does NOT terminate this block.)
         bool diverged = false;
@@ -749,13 +728,13 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.UnreachableStatement,
                     message: "Unreachable statement: the previous statement always diverges " +
-                             "(return / throw / absent / break / continue), so this code can never run.",
+                             "(return / throw / break / continue), so this code can never run.",
                     location: stmt.Location);
                 break;
             }
 
             AnalyzeStatement(statement: stmt);
-            diverged = stmt is ReturnStatement or ThrowStatement or AbsentStatement
+            diverged = stmt is ReturnStatement or ThrowStatement
                 or BreakStatement or ContinueStatement;
         }
 
@@ -995,12 +974,6 @@ public sealed partial class SemanticVerifier
             RecordSharedHandleIdentity(name: varDecl.Name, initializer: varDecl.Initializer);
         }
 
-        // #161: Track Lookup variables that must be dismantled before scope exit
-        if (GetCarrierBaseName(type: varType) == "Lookup" &&
-            varDecl.Initializer is not IdentifierExpression)
-        {
-            _pendingLookupVars.Add(item: (varDecl.Name, varDecl.Location));
-        }
     }
 
     /// <summary>

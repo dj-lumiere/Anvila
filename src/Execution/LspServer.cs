@@ -3530,7 +3530,7 @@ public static class LspServer
 
     // A field: `:param name:` and `:typeparam Name:` name what they describe, the others (`:returns:`) don't.
     private static readonly System.Text.RegularExpressions.Regex DocField =
-        new(pattern: @"^\s*(:(?:param|typeparam)(?=\s)|:(?:returns|throws|absent|note|see)(?=:))(?:\s+(\S+?))?(:)");
+        new(pattern: @"^\s*(:(?:param|typeparam)(?=\s)|:(?:returns|throws|note|see)(?=:))(?:\s+(\S+?))?(:)");
 
     private static readonly System.Text.RegularExpressions.Regex DocReference = new(pattern: @"\{[^{}\s][^{}]*\}");
 
@@ -4191,7 +4191,7 @@ public static class LspServer
     }
 
     /// <summary>Renders a parsed doc-comment as hover/completion markdown: the summary prose, then a
-    /// bulleted parameters/type-parameters block and labelled Returns/Throws/Absent/Note/See lines.</summary>
+    /// bulleted parameters/type-parameters block and labelled Returns/Throws/Note/See lines.</summary>
     private static string RenderDoc(string doc)
     {
         DocComment d = DocComment.Parse(doc: doc);
@@ -4242,11 +4242,6 @@ public static class LspServer
         foreach (string throws in d.Throws)
         {
             Line(label: Ko(english: "Throws", korean: "throw"), text: throws);
-        }
-
-        foreach (string absent in d.Absent)
-        {
-            Line(label: Ko(english: "Absent", korean: "absent"), text: absent);
         }
 
         foreach (string note in d.Notes)

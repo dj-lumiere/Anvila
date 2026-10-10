@@ -1082,15 +1082,11 @@ public sealed partial class TypeRegistry
         {
             GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Maybe
         });
-        // Check and Lookup are variants (`T | Crashables`, `None | T | Crashables`): their arms come from the stdlib
+        // Check is a variant (`T | Crashables`): its arms come from the stdlib
         // declarations the same way.
         RegisterType(type: new VariantTypeSymbol(name: "Check")
         {
             GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Result
-        });
-        RegisterType(type: new VariantTypeSymbol(name: "Lookup")
-        {
-            GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Lookup
         });
     }
 
@@ -2266,7 +2262,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     /// <param name="parameterTypes">The parameter types.</param>
     /// <param name="returnType">The return type (null for None/void).</param>
-    /// <param name="isFailable">Whether the function can throw/absent.</param>
+    /// <param name="isFailable">Whether the function can throw.</param>
     /// <returns>The cached or newly created function type.</returns>
     public RoutineTypeSymbol GetOrCreateRoutineType(List<TypeSymbol> parameterTypes,
         TypeSymbol? returnType, bool isFailable = false)

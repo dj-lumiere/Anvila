@@ -421,7 +421,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Computes the LLVM return type for a routine definition. A recovery variant's return type is its carrier
-    /// (<c>Check[T]</c>, <c>Lookup[T]</c>, <c>Maybe[T]</c>, <c>Bool</c>).
+    /// (<c>Check[T]</c>, <c>Maybe[T]</c>, <c>Bool</c>).
     /// </summary>
     private string ComputeDefinitionReturnType(RoutineInfo info)
     {

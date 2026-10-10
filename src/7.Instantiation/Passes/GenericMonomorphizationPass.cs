@@ -503,7 +503,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             TaggedCreatorExpression { Payload: { } tagged } => tagged,
             CreatorExpression
             {
-                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result or CarrierKind.Lookup },
+                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result },
                 MemberVariables: [(_, var arm)]
             } => arm,
             _ => null
@@ -516,7 +516,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// here), or a <c>steal</c>, whose moved-out binding gets use-after-steal guards.</summary>
     internal static bool MayBecomeCrash(object? node)
     {
-        return node is ThrowStatement or AbsentStatement or StealExpression ||
+        return node is ThrowStatement or StealExpression ||
                node is ReturnStatement { Value.ResolvedType: CrashableTypeSymbol };
     }
 
@@ -2944,12 +2944,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         if (concreteInfo.ReturnType?.TypeArguments is { Count: > 0 })
         {
             string? baseName = GetGenericBaseName(type: concreteInfo.ReturnType);
-            if (baseName == "Lookup")
-            {
-                variantStatus = FailableVariant.Lookup;
-                variantInnerType = concreteInfo.ReturnType.TypeArguments[index: 0];
-            }
-            else if (baseName == "Check")
+            if (baseName == "Check")
             {
                 variantStatus = FailableVariant.Check;
                 variantInnerType = concreteInfo.ReturnType.TypeArguments[index: 0];
@@ -2962,7 +2957,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             variantStatus = FailableVariant.TryBool;
         }
 
-        // The variant returns its carrier (Check[T], Lookup[T], Bool), as a non-generic variant does: its
+        // The variant returns its carrier (Check[T], Bool), as a non-generic variant does: its
         // RoutineInfo already says so, and the backends read the return type from it.
         RoutineInfo emitInfo = concreteInfo;
 
@@ -3028,7 +3023,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         ErrorHandlingVariantKind? fallbackKind = variantStatus switch
         {
             FailableVariant.Check => ErrorHandlingVariantKind.Check,
-            FailableVariant.Lookup => ErrorHandlingVariantKind.Lookup,
             FailableVariant.TryBool => ErrorHandlingVariantKind.TryBool,
             _ when emitInfo.ReturnType != null &&
                    GetGenericBaseName(type: emitInfo.ReturnType) == "Maybe" =>

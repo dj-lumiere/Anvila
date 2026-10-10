@@ -2426,7 +2426,7 @@ public sealed partial class SemanticVerifier
         // null for a bare reinterpret, which codegen inlines (EmitMemberRoutineCall's TypeConstructor path).
         //
         // A failable conversion `x.S8()` resolves to the failable free reader `S8!(from: S64)` here (bare,
-        // crash-on-failure). Its RECOVERY (`try x.S8()`) is handled by the `try`/`check`/`lookup` keyword,
+        // crash-on-failure). Its RECOVERY (`try x.S8()`) is handled by the `try`/`check` keyword,
         // which analyzes this bare conversion and then binds the reader's variant by RESOLVED reference in
         // BindResolvedVariantCall — no `try_S8` string is ever formed.
         if (creator == null && call.Arguments.Count == 0 &&

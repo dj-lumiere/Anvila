@@ -1087,15 +1087,12 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             return null;
         }
 
-        RecoveryKind kind = lifted.ReturnType is { IsNone: false }
-            ? RecoveryKind.Lookup
-            : RecoveryKind.Check;
-        return ctx.Registry.LookupRecoveryVariant(recovered: lifted, kind: kind);
+        return ctx.Registry.LookupRecoveryVariant(recovered: lifted, kind: RecoveryKind.Check);
     }
 
     /// <summary>
     /// The recovering entry of a routine named as a value (<c>xs.select(transform: halve)</c>): its own
-    /// lookup-shaped recovery variant when it can fail beneath its call. A lifted lambda already has its own
+    /// check recovery variant when it can fail beneath its call. A lifted lambda already has its own
     /// (<see cref="RecoverEntryFor"/>), and a generic or member routine taken as a value keeps none.
     /// </summary>
     private RoutineInfo? RecoverEntryForNamed(RoutineInfo named)
@@ -1106,10 +1103,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             return null;
         }
 
-        RecoveryKind kind = named.ReturnType is { IsNone: false }
-            ? RecoveryKind.Lookup
-            : RecoveryKind.Check;
-        return ctx.Registry.LookupRecoveryVariant(recovered: named, kind: kind);
+        return ctx.Registry.LookupRecoveryVariant(recovered: named, kind: RecoveryKind.Check);
     }
 
     private Expression LiftCapturingLambdaIife(CallExpression call, LambdaExpression lambda,

@@ -282,7 +282,7 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
     /// For a routine-value reference (<see cref="ResolvedRoutine"/> set): the routine the value carries as its
     /// recovering entry, the lookup-shaped recovery variant of <see cref="ResolvedRoutine"/> (same parameters,
     /// returns <c>Lookup[T]</c>, or <c>Check[None]</c> for a routine that returns nothing). A call of the value
-    /// made beneath <c>try</c>/<c>check</c>/<c>lookup</c> goes through it, so a failure inside the routine is
+    /// made beneath <c>try</c>/<c>check</c> goes through it, so a failure inside the routine is
     /// recovered. Null when the routine cannot fail beneath its call.
     /// </summary>
     public RoutineInfo? RecoverRoutine { get; set; }
@@ -1321,7 +1321,7 @@ public record BitPackExpression(List<Expression> Bits, SourceLocation Location) 
 /// <summary>
 /// Runtime dispatch of a zero-arg <c>Crashable</c> protocol member (<c>represent</c>/<c>diagnose</c>/
 /// <c>crash_message</c>/<c>crash_title</c>, all <c>-&gt; Text</c>) on a type-erased error stored in a
-/// <c>Result[T]</c>/<c>Lookup[T]</c> carrier. Replaces the build-time <c>is Crashable</c> fan-out: instead
+/// <c>Check[T]</c> carrier. Replaces the build-time <c>is Crashable</c> fan-out: instead
 /// of baking one clause per registered crashable type into the (snapshot-frozen) carrier body, codegen
 /// emits a <c>type_id</c> switch over the LIVE crashable set at build time, so a warm daemon compile picks
 /// up user-defined crashables registered after the stdlib snapshot.
@@ -1501,24 +1501,21 @@ public record StealExpression(Expression Operand, SourceLocation Location)
     }
 }
 
-/// <summary>The recovery mode a <c>try</c>/<c>check</c>/<c>lookup</c> prefix selects for its carrier.</summary>
+/// <summary>The recovery mode a <c>try</c>/<c>check</c> prefix selects for its carrier.</summary>
 public enum RecoveryKind
 {
     /// <summary><c>try</c> → <c>Maybe[T]</c> (present|absent, discards crash info).</summary>
     Try,
 
     /// <summary><c>check</c> → <c>Check[T]</c> (T | the Crashable error).</summary>
-    Check,
-
-    /// <summary><c>lookup</c> → <c>Lookup[T]</c> (T | absent | Crashable).</summary>
-    Lookup
+    Check
 }
 
 /// <summary>
-/// A <c>try</c>/<c>check</c>/<c>lookup</c> recovery prefix wrapping a failable-call expression. Lowered to
+/// A <c>try</c>/<c>check</c> recovery prefix wrapping a failable-call expression. Lowered to
 /// the matching generated recovery variant(s): a single failable call becomes a call to its
-/// <c>try</c>/<c>check</c>/<c>lookup</c> variant; a composition of failable calls short-circuits to the
-/// carrier on the first failure. The carrier is <c>Maybe[T]</c>/<c>Check[T]</c>/<c>Lookup[T]</c> where
+/// <c>try</c>/<c>check</c> variant; a composition of failable calls short-circuits to the
+/// carrier on the first failure. The carrier is <c>Maybe[T]</c>/<c>Check[T]</c> where
 /// <c>T</c> is <see cref="Inner"/>'s type (with the None-collapse: <c>Maybe[None]≡Bool</c>).
 /// </summary>
 public record RecoveryExpression(RecoveryKind Kind, Expression Inner, SourceLocation Location)
@@ -1532,7 +1529,7 @@ public record RecoveryExpression(RecoveryKind Kind, Expression Inner, SourceLoca
 
     /// <summary>
     /// The analyzed lowering SA computed for this recovery (single-call: a call to the resolved
-    /// <c>try</c>/<c>check</c>/<c>lookup</c> variant carrying the same arguments). Phase-6 replaces the
+    /// <c>try</c>/<c>check</c> variant carrying the same arguments). Phase-6 replaces the
     /// node with this. Null until analyzed.
     /// </summary>
     public Expression? LoweredCall { get; set; }

@@ -1161,22 +1161,6 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses an absent statement (return none/null).
-    /// Syntax: <c>absent</c>
-    /// Indicates the function returns no value (for optional types).
-    /// </summary>
-    /// <returns>An <see cref="AbsentStatement"/> AST node.</returns>
-    private AbsentStatement ParseAbsentStatement()
-    {
-        SourceLocation location = GetLocation(token: PeekToken(offset: -1));
-
-        // absent takes no arguments
-        ConsumeStatementTerminator();
-
-        return new AbsentStatement(Location: location);
-    }
-
-    /// <summary>
     /// Parses a break statement for exiting loops.
     /// Syntax: <c>break</c>
     /// </summary>

@@ -438,10 +438,9 @@ public partial class Parser
         // lowering — rewrite the wrapped call's name to the existing generated recovery variant:
         //   try foo(a)      -> foo's try variant    (Maybe[T])
         //   check x.foo()    -> x.foo's check variant (Check[T])
-        //   lookup foo()    -> foo's lookup variant (Lookup[T])
         // Bare-word keywords only (`try_foo` etc. tokenize as single identifiers). Whole-expression
         // monadic composition + a dedicated RecoveryExpression node replace this rewrite later.
-        if (CheckAndAdvance(TokenType.Try, TokenType.Check, TokenType.Lookup))
+        if (CheckAndAdvance(TokenType.Try, TokenType.Check))
         {
             return ParseRecoveryPrefix();
         }
@@ -552,7 +551,6 @@ public partial class Parser
         RecoveryKind recoveryKind = recoveryKw.Type switch
         {
             TokenType.Check => RecoveryKind.Check,
-            TokenType.Lookup => RecoveryKind.Lookup,
             _ => RecoveryKind.Try
         };
         // The keyword takes the WHOLE following expression (down to — but not including — `??`, which

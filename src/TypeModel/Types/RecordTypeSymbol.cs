@@ -125,9 +125,9 @@ public class RecordTypeSymbol : TypeSymbol
             return SizeOfLlvmType(llvmType: be, pointerSize: pointerSize);
         }
 
-        // Result[T] / Lookup[T]: 8-byte type-id tag + max(payload, 8). Maybe is handled by
+        // Result[T]: 8-byte type-id tag + max(payload, 8). Maybe is handled by
         // the member-sum path since its layout is just {i1, T}.
-        if (CarrierKind is CarrierKind.Result or CarrierKind.Lookup &&
+        if (CarrierKind is CarrierKind.Result &&
             TypeArguments is { Count: 1 } args)
         {
             return 8 + Math.Max(val1: args[index: 0]
@@ -182,7 +182,7 @@ public class RecordTypeSymbol : TypeSymbol
             return AlignOfLlvmType(llvmType: be, pointerSize: pointerSize);
         }
 
-        if (CarrierKind is CarrierKind.Result or CarrierKind.Lookup &&
+        if (CarrierKind is CarrierKind.Result &&
             TypeArguments is { Count: 1 } args)
         {
             return Math.Max(val1: 8,

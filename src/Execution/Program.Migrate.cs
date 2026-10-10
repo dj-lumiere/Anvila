@@ -143,6 +143,15 @@ internal partial class Program
                 continue;
             }
 
+            // `absent` (the old empty-handed failure) is `throw AbsentValueError()`.
+            if (token.Text == "absent" && StartsStatement(tokens: tokens, index: i) &&
+                next.Type is TokenType.Newline or TokenType.Dedent)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length,
+                    Replacement: "throw AbsentValueError()", Line: token.Line, What: "absent → throw AbsentValueError()"));
+                continue;
+            }
+
             // `d.add(key: k, value: v)` on a statement of its own (after `drop` too) is `d[k] = v`.
             if (token.Text == "add" && i > 0 && tokens[index: i - 1].Type == TokenType.Dot &&
                 next.Type == TokenType.LeftParen && i + 3 < tokens.Count && tokens[index: i + 2].Text == "key" &&
@@ -197,6 +206,15 @@ internal partial class Program
             }
 
             bool startsExpression = next.Line == token.Line && StartsMigratedExpression(token: next);
+            // `lookup f()` is `check f()`: its missing value is the AbsentValueError arm now (an `is None` arm on it
+            // needs a hand rewrite to `is AbsentValueError`).
+            if (token.Text == "lookup" && startsExpression)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "check",
+                    Line: token.Line, What: "lookup → check (rewrite an is None arm by hand)"));
+                continue;
+            }
+
             if (!startsExpression)
             {
                 continue;
@@ -499,7 +517,7 @@ internal partial class Program
         string kind = token.Type.ToString();
         return token.Type is TokenType.Identifier or TokenType.Me or TokenType.MyType or TokenType.LeftParen or
                    TokenType.LeftBracket or TokenType.Minus or TokenType.Not or TokenType.True or TokenType.False or
-                   TokenType.InsertionStart or TokenType.Try or TokenType.Check or TokenType.Lookup or TokenType.Steal ||
+                   TokenType.InsertionStart or TokenType.Try or TokenType.Check or TokenType.Steal ||
                kind.EndsWith(value: "Literal", comparisonType: StringComparison.Ordinal) ||
                kind.StartsWith(value: "Undecided", comparisonType: StringComparison.Ordinal);
     }

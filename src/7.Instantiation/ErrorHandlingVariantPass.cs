@@ -9,12 +9,12 @@ using TypeModel.Types;
 namespace Builder.Instantiation;
 
 /// <summary>
-/// Generates the recovery variants (the routines `try`, `check` and `lookup` bind to) of failable routines.
+/// Generates the recovery variants (the routines `try` and `check` bind to) of failable routines.
 /// A variant has its failable routine's name and parameters and is reached through it
 /// (<see cref="TypeRegistry.LookupRecoveryVariant"/>), never by a name.
 /// Runs once globally after Phase 4 body analysis.
 ///
-/// Generation rules (based on throw/absent found in body):
+/// Generation rules (based on throw found in body):
 /// - Only absent:       try
 /// - Only throw:        try + check
 /// - Both:              try + lookup
@@ -27,7 +27,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         return kind switch
         {
             ErrorHandlingVariantKind.Check => RecoveryKind.Check,
-            ErrorHandlingVariantKind.Lookup => RecoveryKind.Lookup,
             _ => RecoveryKind.Try
         };
     }
@@ -100,8 +99,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Phase A: populate per-routine HasThrow/HasAbsent/ThrowableTypes from direct body
-    /// scan. (Verifier sets HasThrow/HasAbsent for direct cases; we also need ThrowableTypes
+    /// Phase A: populate per-routine HasThrow/ThrowableTypes from direct body
+    /// scan. (Verifier sets HasThrow for direct cases; we also need ThrowableTypes
     /// populated before propagation can fan them out through the call graph.)
     /// </summary>
     private void PopulateDirectFailability(List<RoutineInfo> routines)
@@ -116,11 +115,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 routine.HasThrow = true;
             }
 
-            if (analysis.HasAbsent)
-            {
-                routine.HasAbsent = true;
-            }
-
             foreach (TypeSymbol t in analysis.ThrownTypes.Where(predicate: t =>
                          !routine.ThrowableTypes.Contains(item: t)))
             {
@@ -133,25 +127,24 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Phase A2: stdlib bodies are stored by CollectStdlibBodiesForVariantGeneration
     /// without running SA, so propagated-failability routines (e.g. stdlib
     /// `common routine S64.from_digit_bytes!` returning `S64.from_digit_bytes_at!`) have
-    /// empty FailableCallees and no direct throw/absent. Detect them and mark pessimistic
+    /// empty FailableCallees and no direct throw. Detect them and mark pessimistic
     /// so variant generation produces try + lookup — matching what the pre-register
     /// pass registered as stubs.
     /// </summary>
     private void MarkPessimisticStdlibFailability(List<RoutineInfo> routines)
     {
         foreach (RoutineInfo routine in routines.Where(predicate: r =>
-                     r.IsFailable && !r.HasThrow && !r.HasAbsent && r.FailableCallees.Count == 0 &&
+                     r.IsFailable && !r.HasThrow && r.FailableCallees.Count == 0 &&
                      ctx.RoutineBodies.ContainsKey(key: r.RegistryKey)))
         {
             routine.HasThrow = true;
-            routine.HasAbsent = true;
         }
     }
 
     /// <summary>
     /// Phase B: fixpoint propagation through FailableCallees. A routine whose failability
     /// is purely propagated (e.g. routine S64_from_text! returning S64.create!(from_text: t))
-    /// has HasThrow=HasAbsent=false but FailableCallees containing S64.create!.
+    /// has HasThrow=false but FailableCallees containing S64.create!.
     /// We OR the callees' state into the caller until no further change.
     /// </summary>
     private static void PropagateFailabilityFixpoint(List<RoutineInfo> routines)
@@ -171,7 +164,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Merges one callee's HasThrow, HasAbsent, and ThrowableTypes flags into the caller routine.
+    /// Merges one callee's HasThrow and ThrowableTypes flags into the caller routine.
     /// Returns true when any flag was newly set (signals that the fixpoint should continue).
     /// </summary>
     private static bool PropagateCalleeFailability(RoutineInfo routine, RoutineInfo callee)
@@ -181,12 +174,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         if (callee.HasThrow && !routine.HasThrow)
         {
             routine.HasThrow = true;
-            changed = true;
-        }
-
-        if (callee.HasAbsent && !routine.HasAbsent)
-        {
-            routine.HasAbsent = true;
             changed = true;
         }
 
@@ -246,26 +233,24 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         ErrorHandlingGenerator generator,
         List<(RoutineInfo routine, Statement body, List<GeneratedVariant> variants)> pending)
     {
-        // @crash_only: still analyze throw/absent but suppress safe variant generation
+        // @crash_only: still analyze throw but suppress safe variant generation
         if (routine.Annotations.Contains(item: "crash_only"))
         {
             ErrorHandlingResult crashOnlyResult =
                 generator.GenerateVariants(routine: routine, body: body);
             routine.HasThrow = crashOnlyResult.HasThrow;
-            routine.HasAbsent = crashOnlyResult.HasAbsent;
             return;
         }
 
-        // The lookup variant is the step of an `each` loop beneath a recovery keyword (RoutineValueCalls).
+        // The check variant is the step of an `each` loop beneath a recovery keyword (RoutineValueCalls).
         ErrorHandlingResult result =
-            generator.GenerateVariants(routine: routine, body: body, pessimistic: false, withLookup: true);
+            generator.GenerateVariants(routine: routine, body: body, pessimistic: false, withCheck: true);
         if (result.Error != null)
         {
             return;
         }
 
         routine.HasThrow = result.HasThrow;
-        routine.HasAbsent = result.HasAbsent;
         routine.ThrowableTypes = result.ThrownTypes;
 
         foreach (RoutineInfo variantRoutine in result.Variants.Select(selector: v => v.Routine))
@@ -357,14 +342,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         {
             variantSourceBody = FailurePointCalls.Resolve(body: variantSourceBody, registry: registry);
         }
-        // A check carrier has no absent state: an `absent` in the body is caught as AbsentValueError, the same
-        // error an absence beneath a check becomes.
-        if (variant.Routine.Recovery == RecoveryKind.Check &&
-            registry.LookupType(name: "AbsentValueError") is { } absentError)
-        {
-            variantSourceBody = new AbsentAsThrow(absentError: absentError).VisitStatement(stmt: variantSourceBody);
-        }
-
         return TransformBody(body: variantSourceBody,
             kind: kind,
             rewriter: MakeOnDemandVariantRewriter(registry: registry),
@@ -415,7 +392,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         out Expression? rewritten);
 
     /// <summary>
-    /// Recursively walks a routine body and replaces throw/absent/return statements with
+    /// Recursively walks a routine body and replaces throw/return statements with
     /// <see cref="VariantReturnStatement"/> nodes appropriate for the given variant kind.
     /// All other statements are passed through unchanged (structurally cloned via record-with).
     /// When <paramref name="rewriter"/> succeeds on a tail-position return value, the value is
@@ -435,7 +412,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// propagated — reachability then sees the introduced <c>try_X</c> calls and emits them. Path-1
     /// MUST propagate broadly so a try variant whose failability is purely propagated through a
     /// non-tail call (e.g. the try variant of <c>from_digit_bytes</c> → <c>from_digit_bytes_at!</c>) actually catches
-    /// the inner throw/absent instead of letting it escape uncaught.
+    /// the inner throw instead of letting it escape uncaught.
     /// </param>
     internal static Statement TransformBody(Statement body, ErrorHandlingVariantKind kind,
         VariantCallRewriter? rewriter = null, TypeRegistry? registry = null,
@@ -485,11 +462,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 SiteKind: VariantSiteKind.FromThrow,
                 Value: ts.Error,
                 Location: ts.Location),
-
-            AbsentStatement abs => new VariantReturnStatement(VariantKind: kind,
-                SiteKind: VariantSiteKind.FromAbsent,
-                Value: null,
-                Location: abs.Location),
 
             ReturnStatement ret when rewriter != null && rewriter(value: ret.Value,
                 kind: kind,
@@ -553,13 +525,13 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     nextOnly: nextOnly),
 
             // The step of an `each` loop over an iterator that may call a routine value (an adapter holding a
-            // lambda): it takes the iterator's lookup variant, whose absent state still ends the loop and whose
-            // error state, a failure inside the lambda, becomes this variant's failure instead of a crash.
+            // lambda): it takes the iterator's check variant, whose AbsentValueError still ends the loop and whose
+            // other errors, a failure inside the lambda, become this variant's failure instead of a crash.
             WhenStatement ws when registry != null && ValueCallsRecover(kind: kind, nextOnly: nextOnly) &&
-                                  RoutineValueCalls.LookupIterationStep(subject: ws.Expression, registry: registry) is
-                                      { } lookupStep =>
+                                  RoutineValueCalls.CheckIterationStep(subject: ws.Expression, registry: registry) is
+                                      { } checkStep =>
                 TransformRecoverableIteration(ws: ws,
-                    lookupStep: lookupStep,
+                    checkStep: checkStep,
                     kind: kind,
                     rewriter: rewriter,
                     registry: registry),
@@ -657,7 +629,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     private static bool ValueCallsRecover(ErrorHandlingVariantKind kind, bool nextOnly)
     {
         return !_valueCallsStayPlain &&
-               (!nextOnly || kind is ErrorHandlingVariantKind.Check or ErrorHandlingVariantKind.Lookup);
+               (!nextOnly || kind is ErrorHandlingVariantKind.Check);
     }
 
     /// <summary>Whether <paramref name="call"/> can fail beneath a recovery keyword: a routine that can fail
@@ -670,15 +642,25 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// The <c>when</c> of an <c>each</c> loop over an iterator that may call a routine value, stepping with the
-    /// iterator's lookup variant (<paramref name="lookupStep"/>): its absent arm still ends the loop, and an arm
-    /// for the error state, a failure beneath the step, returns it as this variant's failure.
+    /// iterator's check variant (<paramref name="checkStep"/>): its <c>AbsentValueError</c> (the walk is over) ends
+    /// the loop where the <c>try</c> step's empty arm did, and an arm for any other error, a failure beneath the
+    /// step, returns it as this variant's failure.
     /// </summary>
-    private static Statement TransformRecoverableIteration(WhenStatement ws, Expression lookupStep,
+    private static Statement TransformRecoverableIteration(WhenStatement ws, Expression checkStep,
         ErrorHandlingVariantKind kind, VariantCallRewriter? rewriter, TypeRegistry registry)
     {
+        TypeSymbol? walkOver = registry.LookupType(name: "AbsentValueError");
         var clauses = ws.Clauses
                         .Select(selector: c => c with
                          {
+                             Pattern = c.Pattern is NonePattern none && walkOver != null
+                                 ? new TypePattern(Type: new TypeExpression(Name: walkOver.Name,
+                                         GenericArguments: null,
+                                         Location: none.Location) { ResolvedType = walkOver },
+                                     VariableName: null,
+                                     Bindings: null,
+                                     Location: none.Location)
+                                 : c.Pattern,
                              Body = TransformBodyCore(body: c.Body,
                                  kind: kind,
                                  rewriter: rewriter,
@@ -689,7 +671,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         SourceLocation loc = ws.Location;
         return ws with
         {
-            Expression = lookupStep,
+            Expression = checkStep,
             Clauses = RoutineValueCalls.WithStepFailureClause(clauses: clauses,
                 kind: kind,
                 registry: registry,
@@ -766,21 +748,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     Location: loc)
             ],
             Location: loc);
-    }
-
-    /// <summary>Rewrites each <c>absent</c> into <c>throw AbsentValueError()</c>.</summary>
-    private sealed class AbsentAsThrow(TypeSymbol absentError) : AstRewriter
-    {
-        public override Statement VisitStatement(Statement stmt)
-        {
-            return stmt is AbsentStatement absent
-                ? new ThrowStatement(Error: new CreatorExpression(TypeName: absentError.Name,
-                        TypeArguments: null,
-                        MemberVariables: [],
-                        Location: absent.Location) { ResolvedType = absentError },
-                    Location: absent.Location)
-                : base.VisitStatement(stmt: stmt);
-        }
     }
 
     /// <summary><c>return f()</c> as <c>var __rf_tail_N = f()</c> then <c>return __rf_tail_N</c> (an entity
@@ -1025,11 +992,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 return result; // remainder consumed into the if's then-branch
             }
 
-            // Check/Lookup variants: Result/Lookup carriers are tag-based (not the flat {present,value}
+            // Check variants: Result carriers are tag-based (not the flat {present,value}
             // of Maybe), so propagate a non-tail failable call through a `when` over the inner's
             // same-kind variant. A variant built from a monomorphized body (nextOnly) does it for an inner `emit`
             // only, as for try (see TryBuildTryPropagation).
-            if (kind is ErrorHandlingVariantKind.Check or ErrorHandlingVariantKind.Lookup &&
+            if (kind is ErrorHandlingVariantKind.Check &&
                 registry != null && TryBuildCarrierSafeCall(stmt: s,
                     nextOnly: nextOnly,
                     registry: registry,
@@ -1659,11 +1626,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         // Prefer the outer kind's variant, then fall back to the most-informative available (free or member
-        // bases: a whole-expression `check`/`lookup` composition body — SemanticVerifier.Recovery — hoists FREE
+        // bases: a whole-expression `check` composition body — SemanticVerifier.Recovery — hoists FREE
         // failable calls, which have no OwnerType).
-        RecoveryKind[] order = kind == ErrorHandlingVariantKind.Check
-            ? [RecoveryKind.Check, RecoveryKind.Lookup, RecoveryKind.Try]
-            : [RecoveryKind.Lookup, RecoveryKind.Check, RecoveryKind.Try];
+        RecoveryKind[] order = [RecoveryKind.Check, RecoveryKind.Try];
         (RoutineInfo? variant, RecoveryKind chosen) =
             ChooseInnerVariant(registry: registry, failRoutine: failRoutine, order: order);
 
@@ -1672,14 +1637,13 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             return false;
         }
 
-        innerCanNone = chosen is RecoveryKind.Try or RecoveryKind.Lookup;
-        innerCanError = chosen is RecoveryKind.Check or RecoveryKind.Lookup;
+        innerCanNone = chosen is RecoveryKind.Try;
+        innerCanError = chosen is RecoveryKind.Check;
 
-        // A Lookup outer represents None natively; a Check outer has no None state but ABSORBS a caught
-        // absent by promoting it to AbsentValueError (a Crashable) — check collapses "not found" into the
-        // single Crashable arm. Both outers represent an error. If neither failure the inner can produce
-        // maps onto the outer, propagation is meaningless — leave the call raw.
-        bool outerAbsorbsNone = kind is ErrorHandlingVariantKind.Lookup or ErrorHandlingVariantKind.Check;
+        // A Check outer has no None state but ABSORBS a caught absent by promoting it to AbsentValueError (a
+        // Crashable): check collapses "not found" into the single Crashable arm. If neither failure the inner
+        // can produce maps onto the outer, propagation is meaningless: leave the call raw.
+        bool outerAbsorbsNone = kind is ErrorHandlingVariantKind.Check;
         if (!(innerCanNone && outerAbsorbsNone || innerCanError))
         {
             return false;
@@ -1788,16 +1752,6 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                         Location: loc),
                     Location: loc));
             }
-        }
-        else if (innerCanNone && kind == ErrorHandlingVariantKind.Lookup)
-        {
-            // Lookup natively carries an absent state.
-            clauses.Add(item: new WhenClause(Pattern: new NonePattern(Location: loc),
-                Body: new VariantReturnStatement(VariantKind: kind,
-                    SiteKind: VariantSiteKind.FromAbsent,
-                    Value: null,
-                    Location: loc),
-                Location: loc));
         }
         else if (innerCanNone && kind == ErrorHandlingVariantKind.Check)
         {

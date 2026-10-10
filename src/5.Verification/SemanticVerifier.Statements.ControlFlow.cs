@@ -381,11 +381,6 @@ public sealed partial class SemanticVerifier
 
         AddImplicitErrorArm(whenStmt: whenStmt, matchedType: matchedType);
 
-        // #161: Mark Lookup variable as dismantled when targeted by 'when'.
-        if (whenStmt.Expression is IdentifierExpression whenTarget)
-        {
-            _pendingLookupVars.RemoveAll(match: v => v.Name == whenTarget.Name);
-        }
 
         CheckWhenPatternOrder(whenStmt: whenStmt);
         CheckWhenDuplicatePatterns(whenStmt: whenStmt);
@@ -503,11 +498,11 @@ public sealed partial class SemanticVerifier
 
         if (clause.Pattern is ElsePattern elsePat && IsCarrierType(type: matchedType))
         {
-            // Every earlier arm already covers the value (and None for a Lookup), so the only case
+            // Every earlier arm already covers the value, so the only case
             // left is the caught error: bind it as `is Crashables e` would, not the carrier itself.
             string? carrierBase = GetCarrierBaseName(type: matchedType);
             bool onlyErrorLeft = handledValue && !handledCrashable &&
-                                 (carrierBase == "Check" || carrierBase == "Lookup" && handledNone);
+                                 carrierBase == "Check";
             if (onlyErrorLeft && elsePat.VariableName != null)
             {
                 elsePat.BindsCarrierError = true;
@@ -583,7 +578,7 @@ public sealed partial class SemanticVerifier
         ref bool handledNone, ref bool handledNoneValue, ref bool handledCrashable)
     {
         string? carrierBase = GetCarrierBaseName(type: matchedType);
-        bool carrierUsesNoneForAbsent = carrierBase is "Maybe" or "Lookup";
+        bool carrierUsesNoneForAbsent = carrierBase is "Maybe";
         if (carrierUsesNoneForAbsent && IsNonePattern(pattern: clause.Pattern))
         {
             handledNone = true;
@@ -604,7 +599,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private bool IsCarrierValueArm(Pattern pattern, TypeSymbol carrierType)
     {
-        if (GetCarrierBaseName(type: carrierType) is not ("Check" or "Lookup") ||
+        if (GetCarrierBaseName(type: carrierType) is not "Check" ||
             carrierType.TypeArguments is not { Count: > 0 } ||
             pattern is not TypePattern tp ||
             (tp.Type.ResolvedType ?? _registry.LookupType(name: tp.Type.Name)) is not { } armType)
@@ -865,21 +860,6 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    private void AnalyzeAbsentStatement(AbsentStatement absent)
-    {
-        if (_currentRoutine == null)
-        {
-            ReportWarning(code: SemanticWarningCode.ThrowAbsentInNonFailable,
-                message: "Absent statement outside any routine.",
-                location: absent.Location);
-            return;
-        }
-
-        // An `absent` requires the routine to be declared `!` (RF-S751, checked after the body is
-        // analyzed). Mark routine as having absent statements for that check and variant generation.
-        _currentRoutine.HasAbsent = true;
-    }
-
     private void AnalyzeBreakStatement(BreakStatement breakStmt)
     {
         if (!_registry.CurrentScope.IsInLoop)
@@ -916,7 +896,7 @@ public sealed partial class SemanticVerifier
     {
         // drop must target a routine call, not an arbitrary expression like a literal or variable.
         // Explicit-generic calls (`f[T](...)`) parse to GenericMemberRoutineCallExpression — also a call.
-        // A `try`/`check`/`lookup` recovery (`drop check feeder.send(...)`) is likewise a call under the
+        // A `try`/`check` recovery (`drop check feeder.send(...)`) is likewise a call under the
         // hood — it lowers to the failable call's recovery variant — so discarding its carrier is valid.
         if (dropped.Expression is not (CallExpression or GenericMemberRoutineCallExpression
             or RecoveryExpression))

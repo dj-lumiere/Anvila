@@ -3161,7 +3161,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return null;
     }
 
-    /// <summary>Returns true if the type is <c>Result[T]</c> or <c>Lookup[T]</c>.</summary>
+    /// <summary>Returns true if the type is <c>Check[T]</c>.</summary>
     private static bool IsResultOrLookup(TypeSymbol? type)
     {
         if (type == null)
@@ -3174,7 +3174,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             RecordTypeSymbol { GenericDefinition: not null } r => r.GenericDefinition.Name,
             _ => type.Name
         };
-        return baseName is "Check" or "Lookup";
+        return baseName is "Check";
     }
 
     /// <summary>

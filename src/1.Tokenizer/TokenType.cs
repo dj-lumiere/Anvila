@@ -433,8 +433,6 @@ public enum TokenType
     /// through every handler. The crash counterpart to the recoverable `throw`.</summary>
     Pierce,
 
-    /// <summary>Absent statement keyword - indicates value not found (triggers Lookup generation)</summary>
-    Absent,
 
     /// <summary>`try` prefix keyword — recover a failable call into Maybe[T] (present|absent, no crash info).</summary>
     Try,
@@ -442,8 +440,6 @@ public enum TokenType
     /// <summary>`check` prefix keyword — recover a failable call into Check[T] (carries the Crashable error).</summary>
     Check,
 
-    /// <summary>`lookup` prefix keyword — recover a failable call into Lookup[T] (value | absent | Crashable).</summary>
-    Lookup,
     #endregion
 
     #region Keywords - Module System
@@ -547,7 +543,7 @@ public enum TokenType
     /// <summary>`None` keyword — the absent-arm *type* (used in patterns: `is None`, and as variant member declaration).</summary>
     None,
 
-    /// <summary>`none` keyword — the absent *value* literal (only legal where the target type is Maybe[T] / Lookup[T] / Result[None] / a variant with a None arm).</summary>
+    /// <summary>`none` keyword — the absent *value* literal (only legal where the target type is Maybe[T] / Result[None] / a variant with a None arm).</summary>
     NoneValue,
 
     #endregion

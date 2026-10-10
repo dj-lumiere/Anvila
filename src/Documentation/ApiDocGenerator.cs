@@ -560,11 +560,6 @@ internal sealed class ApiDocGenerator
             AppendLine(sb: sb, page: page, label: "Throws", text: throws);
         }
 
-        foreach (string absent in parsed.Absent)
-        {
-            AppendLine(sb: sb, page: page, label: "Absent", text: absent);
-        }
-
         foreach (string note in parsed.Notes)
         {
             AppendLine(sb: sb, page: page, label: "Note", text: note);

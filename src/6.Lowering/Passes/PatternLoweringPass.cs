@@ -1239,7 +1239,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         return type.TypeArguments[index: 0] is EntityTypeSymbol;
     }
 
-    /// <summary>Returns true if the type is <c>Result[T]</c> or <c>Lookup[T]</c>.</summary>
+    /// <summary>Returns true if the type is <c>Check[T]</c>.</summary>
     private static bool IsResultOrLookup(TypeSymbol? type)
     {
         if (type == null)
@@ -1248,7 +1248,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         }
 
         string baseName = GetCarrierBaseName(type: type);
-        return baseName is "Check" or "Lookup";
+        return baseName is "Check";
     }
 
     /// <summary>
@@ -1523,7 +1523,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Rethrowing a carrier's caught error (<c>throw e</c> in a <c>check</c>/<c>lookup</c> variant, which returns it in
+    /// Rethrowing a carrier's caught error (<c>throw e</c> in a <c>check</c> variant, which returns it in
     /// the routine's own carrier) MOVES the error's object out: the return carries the <c>Crashables</c> read out of
     /// the carrier, and the carrier's tag is cleared first so its teardown does not free the object the returned
     /// carrier now holds.
@@ -1540,7 +1540,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     {
                         ResolvedType: RecordTypeSymbol
                         {
-                            CarrierKind: TypeModel.Enums.CarrierKind.Result or TypeModel.Enums.CarrierKind.Lookup
+                            CarrierKind: TypeModel.Enums.CarrierKind.Result
                         },
                         MemberVariables: [(Builder.Declaration.RuntimeContract.Crashables, IdentifierExpression id)]
                     } creator
@@ -1560,7 +1560,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             return s is
                    {
                        SiteKind: VariantSiteKind.FromThrow,
-                       VariantKind: Builder.Instantiation.ErrorHandlingVariantKind.Check or Builder.Instantiation.ErrorHandlingVariantKind.Lookup,
+                       VariantKind: Builder.Instantiation.ErrorHandlingVariantKind.Check,
                        Value: IdentifierExpression id
                    } && id.Name == errorName
                 ? Moved(location: s.Location, rethrow: moved => s with { Value = moved })

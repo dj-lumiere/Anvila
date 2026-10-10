@@ -243,24 +243,21 @@ public sealed class RoutineInfo
     /// <summary>Whether this routine contains throw statements.</summary>
     public bool HasThrow { get; set; }
 
-    /// <summary>Whether this routine contains absent statements.</summary>
-    public bool HasAbsent { get; set; }
-
     /// <summary>Whether this routine calls other failable routines (propagated failability).</summary>
     public bool HasFailableCalls { get; set; }
 
     /// <summary>
     /// Failable routines directly called by this routine. Populated during Phase 4 verification.
     /// Used by <c>ErrorHandlingVariantPass</c> to propagate <see cref="HasThrow"/> /
-    /// <see cref="HasAbsent"/> / <see cref="ThrowableTypes"/> through the call graph so that
+    /// <see cref="ThrowableTypes"/> through the call graph so that
     /// routines whose failability is purely propagated (e.g. <c>return Foo!(...)</c>) get the
-    /// right wrapper variants (<c>try</c> / <c>check</c> / <c>lookup</c>) generated.
+    /// right wrapper variants (<c>try</c> / <c>check</c>) generated.
     /// </summary>
     public HashSet<RoutineInfo> FailableCallees { get; } = [];
 
     /// <summary>
     /// Concrete crashable types directly thrown by this routine (or its corresponding
-    /// <c>check</c>/<c>lookup</c> variant). Populated after Phase 4 body analysis.
+    /// <c>check</c> variant). Populated after Phase 4 body analysis.
     /// Does not include types thrown by called routines (propagated throws).
     /// </summary>
     public List<TypeSymbol> ThrowableTypes { get; set; } = [];
@@ -524,7 +521,7 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// For a recovery variant the builder generates for a failable routine (the routine a <c>try</c>,
-    /// <c>check</c> or <c>lookup</c> call binds to): the failable routine it recovers. The variant has that
+    /// <c>check</c> call binds to): the failable routine it recovers. The variant has that
     /// routine's name and parameters and is told apart by <see cref="Recovery"/>, never by its name. On a
     /// variant substituted onto a concrete owner this may still be the generic definition's routine.
     /// </summary>
@@ -551,8 +548,7 @@ public sealed class RoutineInfo
         return kind switch
         {
             RecoveryKind.Try => "try",
-            RecoveryKind.Check => "check",
-            _ => "lookup"
+            _ => "check"
         };
     }
 

@@ -54,7 +54,7 @@ public sealed partial class SemanticVerifier
     #region Carrier Type Helpers
 
     /// <summary>
-    /// Returns the base name ("Maybe", "Check", or "Lookup") for a carrier type,
+    /// Returns the base name ("Maybe" or "Check") for a carrier type,
     /// or null if the type is not a carrier type.
     /// Works for both generic definitions (name == "Maybe") and resolved instances (GenericDefinition.Name == "Maybe").
     /// </summary>
@@ -66,7 +66,7 @@ public sealed partial class SemanticVerifier
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is MaybeTypeName or "Check" or "Lookup"
+        return baseName is MaybeTypeName or "Check"
             ? baseName
             : null;
     }
@@ -89,13 +89,13 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Returns true if the type is a legal target for the value-position `none` literal:
-    /// Maybe[T] or Lookup[T] (both have an absent arm matched by `is None`), or a variant
+    /// Maybe[T] (its absent arm is matched by `is None`), or a variant
     /// that declares a None member. Result[T] is NOT included — Result's two arms are Ok/Err.
     /// </summary>
     private static bool IsNoneCarrierSlot(TypeSymbol type)
     {
         string? carrier = GetCarrierBaseName(type: type);
-        if (carrier is MaybeTypeName or "Lookup")
+        if (carrier is MaybeTypeName)
         {
             return true;
         }
@@ -123,14 +123,14 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Checks if a pattern is the absent arm for a carrier type.
-    /// Maybe[T] and Lookup[T] use `is None`. Result[T] has no absent state
+    /// Maybe[T] uses `is None`. Result[T] has no absent state
     /// (only Crashable | T); when T == None, success matches `is None` in value position.
     /// </summary>
     private static bool IsAbsentPattern(Pattern pattern, TypeSymbol carrierType)
     {
         return GetCarrierBaseName(type: carrierType) switch
         {
-            MaybeTypeName or "Lookup" => IsNonePattern(pattern: pattern),
+            MaybeTypeName => IsNonePattern(pattern: pattern),
             _ => false
         };
     }

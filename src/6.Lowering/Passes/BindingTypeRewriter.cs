@@ -146,10 +146,6 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
     {
         return false;
     }
-    public bool VisitAbsentStatement(AbsentStatement node)
-    {
-        return false;
-    }
     public bool VisitPassStatement(PassStatement node)
     {
         return false;

@@ -52,7 +52,7 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
 
     /// <summary>
     /// Lowers the error-handling variant bodies (<see cref="PostprocessingContext.VariantBodies"/>): a non-tail
-    /// failable call in a <c>check</c>/<c>lookup</c> variant propagates through an <c>is Crashables e</c> arm.
+    /// failable call in a <c>check</c> variant propagates through an <c>is Crashables e</c> arm.
     /// </summary>
     public void RunOnVariantBodies()
     {
@@ -173,7 +173,7 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
         {
             return type is RecordTypeSymbol
             {
-                CarrierKind: TypeModel.Enums.CarrierKind.Result or TypeModel.Enums.CarrierKind.Lookup
+                CarrierKind: TypeModel.Enums.CarrierKind.Result
             };
         }
     }

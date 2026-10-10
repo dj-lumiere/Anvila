@@ -170,8 +170,6 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private readonly HashSet<WhenStatement> _exhaustiveWhens = [];
 
-    /// <summary>Tracks Lookup variables that must be dismantled before scope exit (#161).</summary>
-    private readonly List<(string Name, SourceLocation Location)> _pendingLookupVars = [];
 
     /// <summary>Tracks variables invalidated by steal/ownership transfer (#11).</summary>
     private readonly HashSet<string> _deadrefVariables = [];
@@ -487,7 +485,7 @@ public sealed partial class SemanticVerifier
         Mark(label: "Phase 4 Syntax prepass");
         RunPhase5SemanticAnalysis(program: program);
         Mark(label: "Phase 5 Semantic analysis");
-        // Failability inference: recompute RoutineInfo.IsFailable from throw/absent + propagated
+        // Failability inference: recompute RoutineInfo.IsFailable from throw + propagated
         // failable callees now that all bodies (incl. synthesized) are analyzed, BEFORE variant
         // generation and codegen key the failable-carrier ABI on it.
         InferFailableRoutines();
@@ -1564,7 +1562,7 @@ public sealed partial class SemanticVerifier
         AnalyzeSynthesizedBodies();
 
         // Index failable stdlib routines for on-demand variant synthesis (no eager GenerateVariants),
-        // then install the by-RESOLVED-base synthesizer hook so a stdlib body's `try`/`check`/`lookup` (or
+        // then install the by-RESOLVED-base synthesizer hook so a stdlib body's `try`/`check` (or
         // the variant-body rewriter) mints a base's variant during analysis. AST-level detection — no full
         // body analysis required.
         PreRegisterStdlibVariants();
@@ -2017,7 +2015,7 @@ public sealed partial class SemanticVerifier
             new PostprocessingPipeline(ctx: pctx).Run(program: entry.Program);
             new TemporaryTeardownPass(ctx: pctx).Run(program: entry.Program);
 
-            // A failable `try`/`check`/`lookup` variant synthesized DURING this file's on-demand
+            // A failable `try`/`check` variant synthesized DURING this file's on-demand
             // analysis (e.g. `proc_result_of` calls `try term_signal_value(...)`) enqueues its raw body onto
             // _variantBodyGenQueue but is NEVER finalized: the eager DrainVariantBodyGenQueue /
             // AnalyzeVariantBodies / RunGlobal variant-body sweep already ran (before demand collection),
@@ -2584,7 +2582,7 @@ public sealed partial class SemanticVerifier
         EagerSynthesizeAllWrapperForwarders();
         Mark(label: $"Phase 5 global -> {nameof(EagerSynthesizeAllWrapperForwarders)}");
 
-        // Failability inference: recompute RoutineInfo.IsFailable from throw/absent + propagated
+        // Failability inference: recompute RoutineInfo.IsFailable from throw + propagated
         // failable callees now that all bodies (user + stdlib + synthesized) are analyzed, BEFORE
         // variant generation and codegen key the failable-carrier ABI on it.
         InferFailableRoutines();

@@ -12,8 +12,5 @@ public enum CarrierKind
     Maybe,
 
     /// <summary>Result[T] — error or value.</summary>
-    Result,
-
-    /// <summary>Lookup[T] — three-way: error, absent, or value.</summary>
-    Lookup
+    Result
 }

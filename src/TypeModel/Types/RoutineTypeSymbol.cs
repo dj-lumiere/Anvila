@@ -14,7 +14,7 @@ public sealed class RoutineTypeSymbol : TypeSymbol
     /// <summary>
     /// A Routine value is <c>{ ptr fn, ptr bound, ptr recover }</c> = THREE pointers: the routine, its
     /// bound payload (null when it captures nothing) and its recovering entry (the lookup-shaped
-    /// recovery variant a call beneath <c>try</c>/<c>check</c>/<c>lookup</c> goes through, null when the
+    /// recovery variant a call beneath <c>try</c>/<c>check</c> goes through, null when the
     /// routine cannot fail beneath its call). Its alignment is pointer-alignment. A stale size here
     /// under-allocates any entity/record that stores a Routine field (the store overruns the heap block).
     /// </summary>
@@ -35,7 +35,7 @@ public sealed class RoutineTypeSymbol : TypeSymbol
     /// <summary>Return type for this function type. Null means no return (None).</summary>
     public TypeSymbol? ReturnType { get; }
 
-    /// <summary>Whether this function type is failable (can throw/absent).</summary>
+    /// <summary>Whether this function type is failable (can throw).</summary>
     public bool IsFailable { get; init; }
 
     /// <summary>

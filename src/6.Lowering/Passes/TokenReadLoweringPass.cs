@@ -104,7 +104,7 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
                 ResolvedType: RecordTypeSymbol { TypeArguments: [{ } held] } carrier,
                 MemberVariables: var members
             } creator &&
-            carrier.BareName is "Maybe" or "Check" or "Lookup" && !IsToken(type: held))
+            carrier.BareName is "Maybe" or "Check" && !IsToken(type: held))
         {
             var readMembers = members.Select(selector: m => (m.Name, m.Value is null ? m.Value : ReadAs(expr: m.Value, target: held))).ToList();
             return readMembers.Select(selector: m => m.Item2)

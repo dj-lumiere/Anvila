@@ -23,7 +23,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol? expectedType = null)
     {
         // `none` value literal: needs a carrier-slot expected type
-        // (Maybe[T] / Lookup[T] / variant-with-None). Anything else is a hard error.
+        // (Maybe[T] / variant-with-None). Anything else is a hard error.
         if (literal.LiteralType == TokenType.NoneValue)
         {
             return AnalyzeNoneValueLiteral(literal: literal, expectedType: expectedType);
@@ -161,7 +161,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Resolves the type of a bare <c>none</c> value literal against its expected carrier slot
-    /// (Maybe[T] / Lookup[T] / variant-with-None, or a Suflae <c>Roamed[E]</c> optional entity slot).
+    /// (Maybe[T] / variant-with-None, or a Suflae <c>Roamed[E]</c> optional entity slot).
     /// Reports RF-S if no valid carrier context is present.
     /// </summary>
     private TypeSymbol AnalyzeNoneValueLiteral(LiteralExpression literal, TypeSymbol? expectedType)
@@ -184,7 +184,7 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.NoneOutsideCarrierSlot,
             message:
-            $"'none' is only valid where the expected type is Maybe[T], Lookup[T], or a variant with a None arm; got {expectedType?.Name ?? "no contextual type"}.",
+            $"'none' is only valid where the expected type is Maybe[T] or a variant with a None arm; got {expectedType?.Name ?? "no contextual type"}.",
             location: literal.Location);
         return ErrorTypeSymbol.Instance;
     }

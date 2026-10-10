@@ -19,7 +19,7 @@ namespace Builder.Lowering.Passes;
 ///
 /// <para>Insertion rules per exit (locals destroyed in reverse declaration order):</para>
 /// <list type="bullet">
-///   <item><see cref="ReturnStatement"/> / <see cref="AbsentStatement"/> / <see cref="ThrowStatement"/>
+///   <item><see cref="ReturnStatement"/> / <see cref="ThrowStatement"/>
 ///         / <see cref="VariantReturnStatement"/> — destroy ALL live owned locals/params, except the
 ///         value being returned.</item>
 ///   <item><see cref="BreakStatement"/> / <see cref="ContinueStatement"/> — destroy owned locals
@@ -211,7 +211,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             case UsingStatement u:
                 return LowerUsingStatement(u: u, live: live, loopBoundary: loopBoundary);
 
-            case ReturnStatement or AbsentStatement or ThrowStatement or VariantReturnStatement:
+            case ReturnStatement or ThrowStatement or VariantReturnStatement:
                 return PrefixDestroys(exit: stmt,
                     live: live,
                     from: 0,
@@ -351,7 +351,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // (LIFO) — a later-declared local may reference an earlier one, so destroying dependents
         // before dependencies is the safe RAII order (and matches this pass's documented contract).
         // Skip entirely when the block already unconditionally terminates (its last statement is a
-        // return/throw/absent/break/continue, possibly wrapped by PrefixDestroys): the fall-through
+        // return/throw/break/continue, possibly wrapped by PrefixDestroys): the fall-through
         // is unreachable, and the terminator's own PrefixDestroys already tore these locals down.
         // Emitting them here anyway produced redundant post-terminator `x.destruct()` calls that
         // codegen silently dropped but that polluted the AST (and the dump).
@@ -728,7 +728,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// True when control cannot fall off the end of <paramref name="s"/> — every path terminates via
-    /// return/throw/absent/variant-return/break/continue. Used to suppress the unreachable fall-through
+    /// return/throw/variant-return/break/continue. Used to suppress the unreachable fall-through
     /// teardown of a block whose last statement is itself a terminator (bare, or wrapped by
     /// <see cref="PrefixDestroys"/> into a trailing-return block, or an if/else where both arms exit).
     /// Conservative: anything not provably terminating returns false (fall-through teardown kept).
@@ -737,7 +737,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     {
         return s switch
         {
-            ReturnStatement or AbsentStatement or ThrowStatement or VariantReturnStatement
+            ReturnStatement or ThrowStatement or VariantReturnStatement
                 or BreakStatement or ContinueStatement => true,
             BlockStatement b => b.Statements.Count > 0 && AlwaysTerminates(s: b.Statements[^1]),
             IfStatement { ElseStatement: { } elseS } ifs =>
@@ -774,7 +774,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             {
                 Value: CreatorExpression
                 {
-                    ResolvedType.BareName: "Maybe" or "Check" or "Lookup",
+                    ResolvedType.BareName: "Maybe" or "Check",
                     MemberVariables: var members
                 }
             } => members.Select(selector: m => m.Value)

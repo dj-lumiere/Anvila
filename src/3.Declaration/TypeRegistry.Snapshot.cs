@@ -76,7 +76,7 @@ partial class TypeRegistry
 
         /// <summary>Deferred failable-variant bases (base RegistryKey → base routine, AST body, pessimistic)
         /// captured so a snapshot-restored build — which skips variant pre-registration — can still
-        /// synthesize stdlib <c>try</c>/<c>check</c>/<c>lookup</c> variants on demand. See
+        /// synthesize stdlib <c>try</c>/<c>check</c> variants on demand. See
         /// <see cref="DeferredVariantBases"/>.</summary>
         public Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
             pessimistic)> DeferredVariantBases { get; init; } = null!;
@@ -95,7 +95,7 @@ partial class TypeRegistry
     /// <summary>
     /// Deferred failable-variant bases: base <see cref="RoutineInfo.RegistryKey"/> → (base routine, its AST
     /// body, pessimistic flag). Populated by variant pre-registration; consumed by the on-demand variant
-    /// synthesizer (a call to <c>try_X</c>/<c>check_X</c>/<c>lookup_X</c> generates the base's variants from
+    /// synthesizer (a call to a <c>try</c>/<c>check</c> call generates the base's variants from
     /// this index). Lives on the registry (not the verifier) so it rides the stdlib snapshot — a
     /// snapshot-restored build SKIPS pre-registration, so without this the index would be empty and stdlib
     /// variant calls would fail to resolve. AST bodies in a snapshot are already precedented by

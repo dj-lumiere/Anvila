@@ -108,7 +108,7 @@ public partial class LlvmEmitter
             return;
         }
 
-        // Result[T] / Lookup[T] now declare their inline payload buffer as a real RF field
+        // Check[T] now declare their inline payload buffer as a real RF field
         // (`payload: Array[U8, ${max(T.data_size().byte_size(), 8)}]`), so the ordinary record layout
         // below produces the same `{ i64 type_id, [N x i8] payload }` the codegen-owned synthesis used
         // to build. No carrier special-case here anymore.

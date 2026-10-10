@@ -526,6 +526,18 @@ internal sealed class IteratorInlineLoweringPass
         }
     }
 
+    /// <summary>Whether <paramref name="error"/> builds the <c>AbsentValueError</c> an iterator throws when it has
+    /// nothing more to hand out.</summary>
+    private static bool IsWalkOver(Expression error)
+    {
+        return error switch
+        {
+            CreatorExpression { TypeName: "AbsentValueError" } => true,
+            CallExpression { Callee: IdentifierExpression { Name: "AbsentValueError" } } => true,
+            _ => false
+        };
+    }
+
     private static Statement RewriteNextStatement(Statement stmt, NextBodyRewriteContext ctx)
     {
         return stmt switch
@@ -533,8 +545,8 @@ internal sealed class IteratorInlineLoweringPass
             ReturnStatement ret => BuildReturnReplacement(retValue: ret.Value,
                 ctx: ctx,
                 loc: ret.Location),
-            AbsentStatement =>
-                // Clone the loop's none-clause body so the two inline sites never share a node.
+            // `throw AbsentValueError()` is how an iterator says its walk is over: the loop ends there.
+            ThrowStatement { Error: var error } when IsWalkOver(error: error) =>
                 CloneStatement(stmt: ctx.NoneClauseBody, ctx: ctx),
             ThrowStatement =>
                 // Propagates unchanged (but still rename identifiers inside the error expression).
@@ -738,7 +750,6 @@ internal sealed class IteratorInlineLoweringPass
             case DangerStatement d:
                 return d with { Body = (BlockStatement)CloneStatement(stmt: d.Body, ctx: ctx) };
 
-            case AbsentStatement:
             case PassStatement:
             case BreakStatement:
             case ContinueStatement:

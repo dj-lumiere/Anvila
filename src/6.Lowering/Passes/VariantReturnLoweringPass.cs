@@ -210,8 +210,8 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             // CreatorExpression: present carries the value; throw / absent / return-a-crashable = absent.
             { VariantKind: ErrorHandlingVariantKind.Try } when
                 _carrierReturn is RecordTypeSymbol maybe => LowerTryVariant(vr: s, maybe: maybe),
-            // Check / Lookup: a variant built from the arm the value goes in.
-            { VariantKind: ErrorHandlingVariantKind.Check or ErrorHandlingVariantKind.Lookup } when
+            // Check: a variant built from the arm the value goes in.
+            { VariantKind: ErrorHandlingVariantKind.Check } when
                 _carrierReturn is RecordTypeSymbol carrier => LowerCheckLookupVariant(statement: s,
                     vr: s,
                     carrier: carrier),

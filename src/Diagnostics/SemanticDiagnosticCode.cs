@@ -23,7 +23,7 @@ namespace Builder.Diagnostics;
 /// - RF-S600-RF-S649: Memory Token Errors (RazorForge-specific)
 /// - RF-S650-RF-S699: Modification Inference Errors
 /// - RF-S700-RF-S749: Protocol Conformance Errors
-/// - RF-S750-RF-S799: Error Handling Errors (throw/absent)
+/// - RF-S750-RF-S799: Error Handling Errors (throw)
 /// - RF-S800-RF-S849: Language Restriction Errors
 /// - RF-S850-RF-S899: Intrinsic and Native Call Errors
 /// - RF-S900-RF-S949: Concurrency and Task Dependency Errors
@@ -81,7 +81,7 @@ public enum SemanticDiagnosticCode
 
     /// <summary>
     /// The value literal 'none' was used outside a carrier or variant slot.
-    /// Legal contexts: target type is Maybe[T], Lookup[T], or a variant with a None arm.
+    /// Legal contexts: target type is Maybe[T] or a variant with a None arm.
     /// </summary>
     NoneOutsideCarrierSlot = 16,
 
@@ -910,20 +910,17 @@ public enum SemanticDiagnosticCode
     /// <summary>Throw statement only allowed in failable functions.</summary>
     ThrowOutsideFailableFunction = 750,
 
-    /// <summary>Absent statement only allowed in failable functions.</summary>
-    AbsentOutsideFailableFunction = 751,
-
     /// <summary>Error during variant generation.</summary>
     VariantGenerationError = 752,
 
-    /// <summary>Error handling type (Result/Lookup) cannot be used as parameter type.</summary>
+    /// <summary>Error handling type (Check) cannot be used as parameter type.</summary>
     ErrorHandlingTypeAsParameter = 754,
 
-    /// <summary>Error handling type (Result/Lookup) cannot be used as member variable type.</summary>
+    /// <summary>Error handling type (Check) cannot be used as member variable type.</summary>
     ErrorHandlingTypeAsMemberVariable = 755,
 
-    /// <summary>Failable routine (!) contains neither 'throw' nor 'absent'.</summary>
-    FailableWithoutThrowOrAbsent = 756,
+    /// <summary>Failable routine (!) never throws and calls nothing that can fail.</summary>
+    FailableWithoutThrow = 756,
 
     /// <summary>@crash_only annotation applied to a non-failable routine.</summary>
     CrashOnlyOnNonFailable = 757,
@@ -931,11 +928,11 @@ public enum SemanticDiagnosticCode
     /// <summary>Result/Lookup stored in variable beyond immediate dismantling.</summary>
     ErrorHandlingTypeStoredInVariable = 758,
 
-    /// <summary>A <c>try</c>/<c>check</c>/<c>lookup</c> written over a call of a <c>@crash_only</c> routine, which
+    /// <summary>A <c>try</c>/<c>check</c> written over a call of a <c>@crash_only</c> routine, which
     /// may only be called bare.</summary>
     CrashOnlyRecovered = 759,
 
-    /// <summary>Variant member cannot be Result[T], Lookup[T], a token, or a duplicate type.</summary>
+    /// <summary>Variant member cannot be Check[T], a token, or a duplicate type.</summary>
     VariantCaseContainsInvalidType = 764,
 
     /// <summary>RETIRED: index-operator legality is governed by protocol conformance
@@ -983,7 +980,7 @@ public enum SemanticDiagnosticCode
     AnnotationArgNotLiteral = 784,
 
     /// <summary>A statement is unreachable: a preceding statement in the same block always diverges
-    /// (return / throw / absent / break / continue), so control can never reach this one.</summary>
+    /// (return / throw / break / continue), so control can never reach this one.</summary>
     UnreachableStatement = 786,
 
     /// <summary>Deprecated — ValueTuple distinction removed, all tuples are inline structs.</summary>
@@ -1059,8 +1056,6 @@ public enum SemanticDiagnosticCode
     // CONCURRENCY AND TASK DEPENDENCY ERRORS (RF-S900 - RF-S949)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Lookup&lt;T&gt; value not dismantled before end of scope.</summary>
-    LookupNotDismantled = 901,
 
     /// <summary>BuilderQuery routine called without 'import BuilderQuery'.</summary>
     BuilderQueryImportRequired = 950,

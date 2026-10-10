@@ -621,7 +621,7 @@ internal sealed class TypeResolver
         }
 
         // Post-Owned-retirement: bare entity T IS the lvalue/bound form, so Maybe[T] /
-        // Result[T] / Lookup[T] over a bare entity is now a valid carrier shape — the
+        // Check[T] over a bare entity is now a valid carrier shape — the
         // carrier owns the bound entity directly. The previous S953 rejection of this
         // case was removed alongside Maybe's `needs T is RecordType` constraint.
         // The identity/ownership-transfer semantics of `Maybe[Entity].unwrap() -> T`
@@ -662,11 +662,6 @@ internal sealed class TypeResolver
                 return LookupTypeWithImports(name: "Bool") ?? ErrorTypeSymbol.Instance;
             }
 
-            if (genericDefCarrierName is "Lookup" &&
-                LookupTypeWithImports(name: "Check") is { IsGenericDefinition: true } checkDef)
-            {
-                return _sa._registry.GetOrCreateResolution(genericDef: checkDef, typeArguments: typeArgs);
-            }
         }
 
         foreach (TypeSymbol arg in typeArgs)
@@ -1567,7 +1562,7 @@ internal sealed class TypeResolver
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is MaybeTypeName or "Check" or "Lookup"
+        return baseName is MaybeTypeName or "Check"
             ? baseName
             : null;
     }

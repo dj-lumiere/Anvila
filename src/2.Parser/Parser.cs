@@ -1136,9 +1136,6 @@ public partial class Parser
             case TokenType.Using:
                 Advance();
                 return ParseUsingStatement();
-            case TokenType.Absent:
-                Advance();
-                return ParseAbsentStatement();
             case TokenType.Drop:
                 Advance();
                 return ParseDropStatement();

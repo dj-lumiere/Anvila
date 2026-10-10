@@ -146,7 +146,7 @@ public enum SemanticWarningCode
     /// <summary>Failable routine (!) contains no throw or absent — will never crash.</summary>
     FailableRoutineNeverCrashes = 254,
 
-    /// <summary>throw/absent in a non-failable routine — add ! suffix or remove the statement.</summary>
+    /// <summary>throw in a non-failable routine — add ! suffix or remove the statement.</summary>
     ThrowAbsentInNonFailable = 255,
 
     /// <summary>Bare entity type in variant member — use an RC wrapper (Retained[T], etc.) instead.</summary>

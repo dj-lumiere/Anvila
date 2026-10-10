@@ -97,9 +97,6 @@ internal sealed partial class AstPrinter
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "drop "),
                     Expr(expression: dropped.Expression, context: ExprContext.Statement)));
                 break;
-            case AbsentStatement:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "absent")));
-                break;
             case BreakStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "break")));
                 break;

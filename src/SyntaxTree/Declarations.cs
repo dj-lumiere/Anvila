@@ -738,11 +738,6 @@ public enum FailableVariant
     /// <summary>Not a builder-generated failable variant (the common case).</summary>
     None,
 
-    /// <summary>
-    /// Builder-generated lookup variant: wraps a failable routine to return Lookup[T].
-    /// throw -> error carrier, absent -> zeroinitializer, return -> success carrier.
-    /// </summary>
-    Lookup,
 
     /// <summary>
     /// Builder-generated check variant: wraps a failable routine to return Result[None].

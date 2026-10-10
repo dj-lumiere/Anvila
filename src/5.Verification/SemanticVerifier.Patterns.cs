@@ -208,7 +208,6 @@ public sealed partial class SemanticVerifier
     private void HandleNoneTypePattern(TypePattern typePat, TypeSymbol matchedType)
     {
         bool allowsNone = matchedType is ErrorTypeSymbol || IsMaybeType(type: matchedType) ||
-                          GetCarrierBaseName(type: matchedType) == "Lookup" ||
                           // A Check is a variant without an absent arm.
                           matchedType is VariantTypeSymbol && GetCarrierBaseName(type: matchedType) != "Check"
                           // A `Result[None]` (void-success crashable) is matched on its None success arm
@@ -228,7 +227,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.PatternTypeMismatch,
                 message:
-                $"Type pattern 'is None' can only match Maybe[T], Lookup[T], or a variant type — not '{matchedType.Name}'.",
+                $"Type pattern 'is None' can only match Maybe[T] or a variant type — not '{matchedType.Name}'.",
                 location: typePat.Location);
         }
     }
@@ -893,23 +892,6 @@ public sealed partial class SemanticVerifier
 
                 break;
             case "Check":
-                if (!hasCrashableCatchAll)
-                {
-                    missing.Add(item: Builder.Declaration.RuntimeContract.Crashables);
-                }
-
-                if (!hasValue)
-                {
-                    missing.Add(item: "value");
-                }
-
-                break;
-            case "Lookup":
-                if (!hasAbsent)
-                {
-                    missing.Add(item: "None");
-                }
-
                 if (!hasCrashableCatchAll)
                 {
                     missing.Add(item: Builder.Declaration.RuntimeContract.Crashables);

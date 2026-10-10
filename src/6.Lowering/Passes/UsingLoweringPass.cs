@@ -23,7 +23,7 @@ namespace Builder.Lowering.Passes;
 ///
 /// <para>Escape injection rules (loopDepth = loops enclosing the point inside the using body):</para>
 /// <list type="bullet">
-///   <item><see cref="ReturnStatement"/>, <see cref="AbsentStatement"/>, <see cref="ThrowStatement"/>,
+///   <item><see cref="ReturnStatement"/>, <see cref="ThrowStatement"/>,
 ///         <see cref="VariantReturnStatement"/> — always inject.</item>
 ///   <item><see cref="BreakStatement"/>, <see cref="ContinueStatement"/> at loopDepth 0 — inject
 ///         (break/continue escapes the using's enclosing loop).</item>
@@ -281,7 +281,6 @@ internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
         switch (stmt)
         {
             case ReturnStatement:
-            case AbsentStatement:
             case ThrowStatement:
             case VariantReturnStatement:
                 return MakeBlock(stmts: [exitStmt, stmt], loc: stmt.Location);

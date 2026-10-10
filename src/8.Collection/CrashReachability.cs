@@ -14,7 +14,7 @@ namespace Builder.Collection;
 /// a routine VALUE or a routine whose body is not in this build (a C function, a routine in the JIT base),
 /// uses an operator on a type that is not a plain number (its operator routine is not visible as a call
 /// here), or calls a routine that can crash. A <c>danger</c> block is not a crash source by itself: the trace
-/// reports RazorForge crashes (throw/absent and failable calls), and a bad memory access inside `danger` is
+/// reports RazorForge crashes (throw and failable calls), and a bad memory access inside `danger` is
 /// outside that model. Solved as a
 /// fixpoint over all bodies, so recursive cycles get the cycle's answer. Anything unknown counts as able to
 /// crash, which only keeps a frame that was not needed.</para>

@@ -115,7 +115,7 @@ internal static class FailurePointCalls
     /// <summary>Whether a call of <paramref name="routine"/> can fail (declared or inferred).</summary>
     private static bool CanFail(RoutineInfo? routine)
     {
-        return routine is { IsFailable: true } or { HasThrow: true } or { HasAbsent: true };
+        return routine is { IsFailable: true } or { HasThrow: true };
     }
 
     private static CallExpression MemberCall(Expression receiver, string memberName, List<Expression> arguments,
@@ -177,7 +177,7 @@ internal static class FailurePointCalls
                 return stmt;
             }
 
-            if (stmt is ThrowStatement { IsFatal: false } or AbsentStatement)
+            if (stmt is ThrowStatement { IsFatal: false })
             {
                 Found = true;
                 return stmt;

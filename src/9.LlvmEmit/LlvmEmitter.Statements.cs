@@ -108,10 +108,6 @@ public partial class LlvmEmitter
                         message:
                         "ThrowStatement reached codegen -> CrashLoweringPass must turn it into a crash_report call.");
 
-                case AbsentStatement absentStmt:
-                    EmitAbsent(sb: sb, absentStmt: absentStmt);
-                    return true; // Absent terminates the block
-
                 case VariantReturnStatement variantRet:
                     throw new InvalidOperationException(
                         message:

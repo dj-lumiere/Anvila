@@ -19,9 +19,6 @@ public sealed class ErrorHandlingResult
     /// <summary>Whether the routine body contains throw statements.</summary>
     public bool HasThrow { get; init; }
 
-    /// <summary>Whether the routine body contains absent statements.</summary>
-    public bool HasAbsent { get; init; }
-
     /// <summary>
     /// Concrete crashable types directly thrown by this routine (from <c>throw</c> statements).
     /// Populated from <see cref="ErrorHandlingAnalysis.ThrownTypes"/>.

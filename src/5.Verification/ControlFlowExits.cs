@@ -21,7 +21,6 @@ internal static class ControlFlowExits
         {
             ReturnStatement => true,
             ThrowStatement => true,
-            AbsentStatement => true,
             BlockStatement block => block.Statements.Any(predicate: s =>
                 AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: s)),
             IfStatement { ElseStatement: not null } ifStmt =>
@@ -88,7 +87,6 @@ internal static class ControlFlowExits
         {
             ReturnStatement => true,
             ThrowStatement => true,
-            AbsentStatement => true,
             BreakStatement => true,
             ContinueStatement => true,
             BlockStatement block => block.Statements.Any(predicate: s =>
