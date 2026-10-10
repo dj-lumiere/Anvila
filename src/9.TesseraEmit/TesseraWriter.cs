@@ -643,12 +643,6 @@ internal sealed class TesseraWriter
                                        .Select(selector: m => $"sizeof[{TypeText(type: m.Type)}]()")
                                        .ToList();
         var text = new StringBuilder();
-        if (payloads.Count == 0)
-        {
-            // Only payload-less cases: the type id alone, still a record as in the LLVM emitter.
-            text.Append(value: "#aggregate\n");
-        }
-
         text.Append(value: $"{Private}record {name}\n    tag: U64\n");
         if (payloads.Count > 0)
         {
@@ -872,11 +866,6 @@ internal sealed class TesseraWriter
         name = VerbatimName(text: entity.FullName + " block");
         _entityRecords[key: entity.FullName] = name;
         var text = new StringBuilder();
-        if (entity.MemberVariables.Count < 2)
-        {
-            text.Append(value: "#aggregate\n");
-        }
-
         text.Append(value: $"{Private}record {name}\n");
         foreach (MemberVariableInfo field in entity.MemberVariables)
         {
@@ -1114,12 +1103,6 @@ internal sealed class TesseraWriter
         _recordNames[key: record.FullName] = name;
         var text = new StringBuilder();
         text.Append(value: $"{Private}record {name}\n");
-        if (record.MemberVariables.Count < 2)
-        {
-            // Tessera gives a one-field record the field's own representation unless it is #aggregate. The
-            // builder lays every struct record out as a struct, so keep that.
-            text.Insert(index: 0, value: "#aggregate\n");
-        }
 
         foreach (MemberVariableInfo field in record.MemberVariables)
         {
