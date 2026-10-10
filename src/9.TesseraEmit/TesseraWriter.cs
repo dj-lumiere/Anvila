@@ -803,19 +803,21 @@ internal sealed class TesseraWriter
         // Each element is given as the long with its bits: a U64 element (an Integer literal's limbs) is written
         // unsigned.
         bool unsigned64 = data.ElementType.Name == "U64";
-        string initial = $"{type} {{ {string.Join(separator: ", ", values: data.Elements.Select(selector: e =>
-            unsigned64 ? unchecked((ulong)e).ToString(provider: CultureInfo.InvariantCulture) : e.ToString(provider: CultureInfo.InvariantCulture)))} }}";
-        if (_texts.TryGetValue(key: initial, value: out string? name))
+        string initial = $"[{string.Join(separator: ", ", values: data.Elements.Select(selector: e =>
+            unsigned64 ? unchecked((ulong)e).ToString(provider: CultureInfo.InvariantCulture) : e.ToString(provider: CultureInfo.InvariantCulture)))}]";
+        // The same elements of another element type are another table.
+        string key = $"{type} {initial}";
+        if (_texts.TryGetValue(key: key, value: out string? name))
         {
             return name;
         }
 
         name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
-        _texts[key: initial] = name;
+        _texts[key: key] = name;
         _globals.Append(value: $"{Private}preset {name}: @{type} <- {initial}\n\n");
         // The value is a pointer to the first element.
         name = $"{name}.to[@{TypeText(type: data.ElementType)}]()";
-        _texts[key: initial] = name;
+        _texts[key: key] = name;
         return name;
     }
 
@@ -854,7 +856,7 @@ internal sealed class TesseraWriter
             ? TesseraRoutineWriter.ConstantText(literal: literal)
             : throw new NotSupportedException(
                 message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
-        _globals.Append(value: $"{Private}preset {global}: @{type} <- {type} {{ {string.Join(separator: ", ", values: values)} }}\n\n");
+        _globals.Append(value: $"{Private}preset {global}: @{type} <- [{string.Join(separator: ", ", values: values)}]\n\n");
         return (global, preset.Type);
     }
 

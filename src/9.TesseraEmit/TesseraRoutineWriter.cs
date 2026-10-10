@@ -734,7 +734,7 @@ internal sealed class TesseraRoutineWriter
                                             .ToList();
                 return new Operand(
                     Text: Temp(type: arrayType,
-                        expression: $"{TypeText(type: arrayType)} {{ {string.Join(separator: ", ", values: elements)} }}"),
+                        expression: $"[{string.Join(separator: ", ", values: elements)}]"),
                     Type: arrayType, IsPlace: false);
             }
             case AddressOfExpression address:
@@ -780,7 +780,7 @@ internal sealed class TesseraRoutineWriter
     {
         string record = _module.RoutineValueRecord;
         string name = $"t{_temps++}";
-        Emit(line: $"{name} : {record} = {record} {{ fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: null }}");
+        Emit(line: $"{name} : {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: null)");
         return new Operand(Text: name, Type: null, IsPlace: false);
     }
 
@@ -1237,7 +1237,7 @@ internal sealed class TesseraRoutineWriter
             fields.Add(item: $"{named.Name}: {Value(operand: Evaluate(expression: named.Value))}");
         }
 
-        return $"{TypeText(type: record)} {{ {string.Join(separator: ", ", values: fields)} }}";
+        return $"{TypeText(type: record)}({string.Join(separator: ", ", values: fields)})";
     }
 
     /// <summary>A record built from its field values, given in field order: a Tessera record literal.</summary>
@@ -1281,7 +1281,7 @@ internal sealed class TesseraRoutineWriter
             fields.Add(item: $"{field.Name}: {value}");
         }
 
-        string literal = $"{TypeText(type: record)} {{ {string.Join(separator: ", ", values: fields)} }}";
+        string literal = $"{TypeText(type: record)}({string.Join(separator: ", ", values: fields)})";
         return new Operand(Text: Temp(type: record, expression: literal), Type: record, IsPlace: false);
     }
 

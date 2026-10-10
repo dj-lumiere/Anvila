@@ -230,7 +230,7 @@ internal sealed class TesseraIntrinsics
         _emit(obj: $"{previous}_swapped : Bool = {Argument(index: 0)}.to[@{type}]()" +
                    $".atomic_compare_exchange_raw({Argument(index: 1)}, {Argument(index: 2)}, {previous})");
         _emit(obj: $"{previous}_held : {type} = {previous}.load()");
-        return $"{_typeText(arg: _resultType)} {{ item0: {previous}_held, item1: {previous}_swapped }}";
+        return $"{_typeText(arg: _resultType)}(item0: {previous}_held, item1: {previous}_swapped)";
     }
 
     /// <summary>A sequentially consistent atomic operation on the value at the address, of the value's type.</summary>
@@ -305,8 +305,8 @@ internal sealed class TesseraIntrinsics
     private string Checked(string operation, string overflows)
     {
         string type = Type(index: 0);
-        return $"{_typeText(arg: _resultType)} {{ item0: {operation}[{type}]({Argument(index: 0)}, {Argument(index: 1)}), " +
-               $"item1: {overflows}[{type}]({Argument(index: 0)}, {Argument(index: 1)}) }}";
+        return $"{_typeText(arg: _resultType)}(item0: {operation}[{type}]({Argument(index: 0)}, {Argument(index: 1)}), " +
+               $"item1: {overflows}[{type}]({Argument(index: 0)}, {Argument(index: 1)}))";
     }
 
     /// <summary>
