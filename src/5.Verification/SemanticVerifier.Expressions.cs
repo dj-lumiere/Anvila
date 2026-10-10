@@ -1230,6 +1230,18 @@ public sealed partial class SemanticVerifier
     /// that does not structurally obey the operator's required protocol. Returns true when a violation
     /// was reported (the caller returns <see cref="ErrorTypeSymbol"/>); false when the operator is allowed.
     /// </summary>
+    private bool DeclaresOperatorRoutine(TypeSymbol receiverType, string operatorMemberRoutine,
+        TypeSymbol argType)
+    {
+        // A type may define an operator whose result is another type (Suflae's `Integer / Integer` gives a
+        // `Decimal`), so it obeys no `Me`-returning operator protocol. The operator binds when the type itself
+        // declares the operator routine with the operand parameter `you` taking the other side.
+        return _registry.LookupMemberRoutineOverload(type: receiverType,
+                memberRoutineName: operatorMemberRoutine,
+                argTypes: [argType]) is
+            { OwnerType: { } owner, Parameters: [{ Name: "you" }] } && owner.Name == receiverType.Name;
+    }
+
     private bool TryReportOperatorTypeViolation(BinaryExpression binary, TypeSymbol leftType,
         TypeSymbol rightType, string operatorMemberRoutine)
     {
@@ -1279,7 +1291,10 @@ public sealed partial class SemanticVerifier
             operatorReceiverType is RecordTypeSymbol or EntityTypeSymbol &&
             GetRequiredProtocols(wiredName: operatorMemberRoutine) is
                 { Count: > 0 } requiredProtocols && !requiredProtocols.Any(predicate: p =>
-                ImplementsProtocol(type: operatorReceiverType, protocolName: p)))
+                ImplementsProtocol(type: operatorReceiverType, protocolName: p)) &&
+            !DeclaresOperatorRoutine(receiverType: operatorReceiverType,
+                operatorMemberRoutine: operatorMemberRoutine,
+                argType: operatorIsReversed ? leftType : rightType))
         {
             string protoText = requiredProtocols.Count == 1
                 ? $"'{requiredProtocols[index: 0]}'"

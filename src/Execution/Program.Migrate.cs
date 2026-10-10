@@ -54,6 +54,20 @@ internal partial class Program
                 namesToRename++;
             }
 
+            // A Suflae channel (`make_channel` and its sender and receiver) is one `Queue[T]` now: the pair a call
+            // gave back and its uses change shape, so they are listed for a hand rewrite.
+            if (language == Language.Suflae)
+            {
+                foreach (Token channel in tokens.Where(predicate: t =>
+                             t.Text is "make_channel" or "make_shared_channel"))
+                {
+                    Console.WriteLine(value: $"{file}:{channel.Line}: '{channel.Text}' is a Queue[T] now " +
+                                             "(var q = Queue[T](capacity: n), q.put(item: x), each x in q, " +
+                                             "q.close()), rewrite it by hand");
+                    namesToRename++;
+                }
+            }
+
             if (edits.Count == 0)
             {
                 continue;
@@ -604,6 +618,15 @@ internal partial class Program
             {
                 edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "Callable",
                     Line: token.Line, What: "Routine[…] → Callable[…]"));
+                continue;
+            }
+
+            // Suflae's row of places under every collection, `Buffer[T]`, is `Memory[T]`.
+            if (language == Language.Suflae && token.Text is "Buffer" or "BufferViewShapeError")
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length,
+                    Replacement: token.Text == "Buffer" ? "Memory" : "MemoryViewShapeError", Line: token.Line,
+                    What: $"{token.Text} → {(token.Text == "Buffer" ? "Memory" : "MemoryViewShapeError")}"));
                 continue;
             }
 

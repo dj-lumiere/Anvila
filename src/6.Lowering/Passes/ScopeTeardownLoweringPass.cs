@@ -600,7 +600,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // field of `me` then takes its declared type from the routine's owner.
         TypeSymbol? fieldType = target.ResolvedType ?? DeclaredFieldOfMe(target: target);
         if (fieldType is null ||
-            TypeRegistry.GetRcWrapperBaseName(type: fieldType) != RuntimeContract.Roamed ||
+            !(TypeRegistry.GetRcWrapperBaseName(type: fieldType) == RuntimeContract.Roamed ||
+              OwnsReplacedEntity(fieldType: fieldType, location: original.Location)) ||
             !TryResolveDestroy(type: fieldType, destroy: out RoutineInfo? destroy) ||
             destroy is null)
         {
@@ -632,6 +633,24 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             loc: original.Location));
         stmts.Add(item: rebuild(arg: finalRhs));
         return new BlockStatement(Statements: stmts, Location: original.Location);
+    }
+
+    /// <summary>
+    /// Whether a member variable of <paramref name="fieldType"/> owns its entity, so writing a new one over it
+    /// (<c>slot.item = Item(name: "b")</c>) tears the old one down: a single-owner entity, bare or optional
+    /// (<c>Item?</c>), written in a program. A shared entity is a handle (the Roamed case), and the standard library
+    /// places and moves its entities by hand.
+    /// </summary>
+    private bool OwnsReplacedEntity(TypeSymbol fieldType, SourceLocation location)
+    {
+        string file = location.FileName ?? "";
+        if (ctx.Registry.IsStandardLibraryFile(filePath: file) || ctx.Registry.EntitiesAreSharedIn(filePath: file))
+        {
+            return false;
+        }
+
+        return fieldType is EntityTypeSymbol ||
+               fieldType is RecordTypeSymbol { GenericDefinition.Name: "Maybe", TypeArguments: [EntityTypeSymbol] };
     }
 
     /// <summary>The declared type of the field <paramref name="target"/> names when it is a field of <c>me</c>.</summary>
