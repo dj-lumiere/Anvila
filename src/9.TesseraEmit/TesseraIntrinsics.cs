@@ -228,7 +228,7 @@ internal sealed class TesseraIntrinsics
         string type = Type(index: 1);
         string previous = _spill(arg1: Argument(index: 1), arg2: _arguments[index: 1].Type);
         _emit(obj: $"{previous}_swapped: Bool = {Argument(index: 0)}.to[@{type}]()" +
-                   $".atomic_compare_exchange_raw({Argument(index: 1)}, {Argument(index: 2)}, {previous})");
+                   $".atomic_compare_exchange_raw(expected: {Argument(index: 1)}, new: {Argument(index: 2)}, previous: {previous})");
         _emit(obj: $"{previous}_held: {type} = {previous}.peek()");
         return $"{_typeText(arg: _resultType)}(item0: {previous}_held, item1: {previous}_swapped)";
     }
@@ -275,6 +275,12 @@ internal sealed class TesseraIntrinsics
     /// <summary>A raw generic operation over the first operand's type: <c>add&lt;S32&gt;(a, b)</c>.</summary>
     private string Generic(string operation)
     {
+        // A shift names its value and amount. The other operations take operands alike (`#positional`).
+        if (operation is "shl" or "lshr" or "ashr" && _arguments.Count == 2)
+        {
+            return $"{operation}[{Type(index: 0)}](val: {Argument(index: 0)}, amt: {Argument(index: 1)})";
+        }
+
         return $"{operation}[{Type(index: 0)}]({string.Join(separator: ", ", values: _arguments.Select(selector: a => a.Value))})";
     }
 

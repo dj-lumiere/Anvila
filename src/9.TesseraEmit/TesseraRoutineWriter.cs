@@ -101,9 +101,9 @@ internal sealed class TesseraRoutineWriter
         _traced = _module.TracesRoutine(routine: _routine);
         if (_traced)
         {
-            Emit(line: $"{TesseraTrace.Push}({TesseraTrace.CString(text: Collection.TraceFrames.Name(routine: _routine))}, " +
-                       $"{TesseraTrace.CString(text: _routine.Location?.FileName ?? "")}, " +
-                       $"{_routine.Location?.Line ?? 0}, {_routine.Location?.Column ?? 0})");
+            Emit(line: $"{TesseraTrace.Push}(routine_name: {TesseraTrace.CString(text: Collection.TraceFrames.Name(routine: _routine))}, " +
+                       $"file: {TesseraTrace.CString(text: _routine.Location?.FileName ?? "")}, " +
+                       $"line: {_routine.Location?.Line ?? 0}, column: {_routine.Location?.Column ?? 0})");
         }
 
         WriteStatement(statement: _body);
@@ -405,7 +405,7 @@ internal sealed class TesseraRoutineWriter
         SourceLocation at = crash.Location;
         Emit(line: $"#source({TesseraTrace.CString(text: _module.SourceName(file: at.FileName))}, {at.Line}, {at.Column})");
         // `crash` never returns, so it ends the block.
-        Terminate(line: $"crash({name}, {message})");
+        Terminate(line: $"crash(name: {name}, message: {message})");
     }
 
     /// <summary>The slot name of a local's cancellation node.</summary>
@@ -1113,7 +1113,7 @@ internal sealed class TesseraRoutineWriter
         // The trace's top frame moves to this call, so a crash under it points here.
         if (_traced && call.Location is { } at && (at.Line > 0 || at.Column > 0))
         {
-            Emit(line: $"{TesseraTrace.UpdateLocation}({at.Line}, {at.Column})");
+            Emit(line: $"{TesseraTrace.UpdateLocation}(line: {at.Line}, column: {at.Column})");
         }
 
         if (call.RecoversThroughValue)
@@ -1192,6 +1192,18 @@ internal sealed class TesseraRoutineWriter
             arguments.Add(item: routine.Parameters[index: i].IsByReference
                 ? Place(operand: operand)
                 : Typed(value: Value(operand: operand), from: operand.Type, to: routine.Parameters[index: i].Type));
+        }
+
+        // Tessera names each argument of a routine taking two or more, `me` included: its parameters are `arg_<name>`.
+        if (arguments.Count >= 2)
+        {
+            List<string> names = (hasReceiver ? ["arg_me"] : new List<string>())
+                                 .Concat(second: routine.Parameters.Select(selector: p => $"arg_{p.Name}"))
+                                 .ToList();
+            arguments = arguments.Select(selector: (argument, i) => argument == names[index: i]
+                                     ? argument
+                                     : $"{names[index: i]}: {argument}")
+                                 .ToList();
         }
 
         string text = $"{_module.RoutineName(routine: routine)}({string.Join(separator: ", ", values: arguments)})";
@@ -1353,7 +1365,7 @@ internal sealed class TesseraRoutineWriter
             // The trace's top frame moves to the throw, so the copy the error keeps points at it.
             if (_traced && tagged.Location is { } at && (at.Line > 0 || at.Column > 0))
             {
-                Emit(line: $"{TesseraTrace.UpdateLocation}({at.Line}, {at.Column})");
+                Emit(line: $"{TesseraTrace.UpdateLocation}(line: {at.Line}, column: {at.Column})");
             }
 
             Emit(line: $"{TesseraTrace.Snapshot}({errorObject}.to[@{objectRecord}]().trace)");
