@@ -144,11 +144,12 @@ public sealed partial class SemanticVerifier
     /// Reports errors for too-few arguments, too-many arguments (on non-variadic routines), and type mismatches.
     /// </summary>
     /// <summary>
-    /// Named-argument punning (field-init shorthand): when EVERY argument is a bare identifier that
-    /// matches a distinct target parameter/field name, rewrite each into <c>name: name</c> in place.
-    /// So <c>Point(x, y)</c> == <c>Point(x: x, y: y)</c> — bound by NAME (reorder-safe) and valid even
-    /// under the RF-S510 "3+ params need names" rule. All-or-nothing: a partial match is left untouched
-    /// so it still follows the normal positional rules instead of becoming a mixed-args S512 error.
+    /// Named-argument punning (field-init shorthand): a bare identifier that matches a target parameter/field name is
+    /// that name's argument, <c>name: name</c>. So <c>Point(x, y)</c> == <c>Point(x: x, y: y)</c> and
+    /// <c>make_user(name, age: 31)</c> == <c>make_user(name: name, age: 31)</c> — bound by NAME (reorder-safe) and valid
+    /// under the RF-S510 "3+ params need names" rule. All-or-nothing over the arguments written without a name: when one
+    /// of them is not a bare identifier matching a distinct name nobody else takes, none is punned, so the call follows
+    /// the normal positional rules (and a mix of names and positions stays the S512 error it is).
     /// </summary>
     private static void PunMatchingNamedArgs(List<Expression> arguments,
         IReadOnlyList<string> targetNames)
@@ -159,21 +160,36 @@ public sealed partial class SemanticVerifier
         }
 
         var names = new HashSet<string>(collection: targetNames, comparer: StringComparer.Ordinal);
-        var seen = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var taken = new HashSet<string>(
+            collection: arguments.OfType<NamedArgumentExpression>().Select(selector: n => n.Name),
+            comparer: StringComparer.Ordinal);
+        bool any = false;
         foreach (Expression arg in arguments)
         {
-            if (arg is not IdentifierExpression id || !names.Contains(item: id.Name) ||
-                !seen.Add(item: id.Name))
+            if (arg is NamedArgumentExpression)
             {
-                return; // not all bare-identifier-and-distinct-matching → do not pun
+                continue;
             }
+
+            if (arg is not IdentifierExpression id || !names.Contains(item: id.Name) || !taken.Add(item: id.Name))
+            {
+                return; // an argument without a name that is no pun: leave the call as written
+            }
+
+            any = true;
+        }
+
+        if (!any)
+        {
+            return;
         }
 
         for (int i = 0; i < arguments.Count; i++)
         {
-            var id = (IdentifierExpression)arguments[index: i];
-            arguments[index: i] =
-                new NamedArgumentExpression(Name: id.Name, Value: id, Location: id.Location);
+            if (arguments[index: i] is IdentifierExpression id)
+            {
+                arguments[index: i] = new NamedArgumentExpression(Name: id.Name, Value: id, Location: id.Location);
+            }
         }
     }
 
