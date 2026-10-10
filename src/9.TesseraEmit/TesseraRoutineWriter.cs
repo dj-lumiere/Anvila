@@ -201,11 +201,11 @@ internal sealed class TesseraRoutineWriter
         // Before entry has done anything, the value can only name a parameter or be a literal: it goes in the head.
         if (initial is not null && (inHead || (_current == _blocks[0] && _current.Lines.Count == 0)))
         {
-            _head.Add(item: $"local {local.Place} : {slotType} <- {initial}");
+            _head.Add(item: $"local {local.Place}: {slotType} <- {initial}");
             return local;
         }
 
-        _head.Add(item: $"local {local.Place} : {slotType} <- .hollow()");
+        _head.Add(item: $"local {local.Place}: {slotType} <- .hollow()");
         if (initial is not null)
         {
             Emit(line: $"{local.Place}.store({initial})");
@@ -254,7 +254,7 @@ internal sealed class TesseraRoutineWriter
     private string Temp(TypeSymbol? type, string expression)
     {
         string name = $"t{_temps++}";
-        Emit(line: $"{name} : {TypeText(type: type)} = {expression}");
+        Emit(line: $"{name}: {TypeText(type: type)} = {expression}");
         return name;
     }
 
@@ -396,7 +396,7 @@ internal sealed class TesseraRoutineWriter
 
             string text = Value(operand: Evaluate(expression: value));
             string bytes = $"t{_temps++}";
-            Emit(line: $"{bytes} : Bytes = {_module.TextBytes()}({text})");
+            Emit(line: $"{bytes}: Bytes = {_module.TextBytes()}({text})");
             return bytes;
         }
 
@@ -621,7 +621,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"spill{_temps++}";
-        Emit(line: $"claim {slot} : @{TypeText(type: operand.Type)} <- {operand.Text}");
+        Emit(line: $"claim {slot}: @{TypeText(type: operand.Type)} <- {operand.Text}");
         return slot;
     }
 
@@ -647,7 +647,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"zero{_temps++}";
-        Emit(line: $"claim {slot} : @{text} <- .hollow()");
+        Emit(line: $"claim {slot}: @{text} <- .hollow()");
         Emit(line: $"{slot}.zeroinit(1)");
         return $"{slot}.load()";
     }
@@ -780,7 +780,7 @@ internal sealed class TesseraRoutineWriter
     {
         string record = _module.RoutineValueRecord;
         string name = $"t{_temps++}";
-        Emit(line: $"{name} : {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: null)");
+        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: null)");
         return new Operand(Text: name, Type: null, IsPlace: false);
     }
 
@@ -1331,7 +1331,7 @@ internal sealed class TesseraRoutineWriter
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
         string slot = $"carrier{_temps++}";
-        Emit(line: $"claim {slot} : @{TypeText(type: carrier)} <- .hollow()");
+        Emit(line: $"claim {slot}: @{TypeText(type: carrier)} <- .hollow()");
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
         Emit(line: $"{slot}.{tagField}.store({tag})");
@@ -1344,11 +1344,11 @@ internal sealed class TesseraRoutineWriter
                 returnType: "Addr");
             string objectRecord = _module.CrashObjectRecord(crashable: crashable);
             string size = $"t{_temps++}";
-            Emit(line: $"{size} : U64 = sizeof[{objectRecord}]().to[U64]()");
+            Emit(line: $"{size}: U64 = sizeof[{objectRecord}]().to[U64]()");
             string errorObject = $"t{_temps++}";
-            Emit(line: $"{errorObject} : Addr = {allocate}({size})");
+            Emit(line: $"{errorObject}: Addr = {allocate}({size})");
             string typeId = $"t{_temps++}";
-            Emit(line: $"{typeId} : U64 = 0x{TypeIdHelper.ComputeTypeId(fullName: crashable.FullName):X}");
+            Emit(line: $"{typeId}: U64 = 0x{TypeIdHelper.ComputeTypeId(fullName: crashable.FullName):X}");
             Emit(line: $"{errorObject}.to[@{objectRecord}]().type_id.store({typeId})");
             // The trace's top frame moves to the throw, so the copy the error keeps points at it.
             if (_traced && tagged.Location is { } at && (at.Line > 0 || at.Column > 0))
@@ -1396,7 +1396,7 @@ internal sealed class TesseraRoutineWriter
         {
             // The error slot holds the address of the object the caught crashable lives in.
             string errorObject = $"t{_temps++}";
-            Emit(line: $"{errorObject} : Addr = {Place(operand: carrier)}.{payloadField}.to[@Addr]().load()");
+            Emit(line: $"{errorObject}: Addr = {Place(operand: carrier)}.{payloadField}.to[@Addr]().load()");
             string objectRecord = _module.CrashObjectRecord(crashable: (CrashableTypeSymbol)valueType);
             return new Operand(Text: $"{errorObject}.to[@{objectRecord}]().error", Type: valueType, IsPlace: true);
         }
@@ -1420,7 +1420,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string address = $"t{_temps++}";
-        Emit(line: $"{address} : Addr = {Place(operand: crashables)}.{record.MemberVariables[index: 0].Name}.to[@Addr]().load()");
+        Emit(line: $"{address}: Addr = {Place(operand: crashables)}.{record.MemberVariables[index: 0].Name}.to[@Addr]().load()");
         TypeSymbol typeIdType = _module.U64Type;
         string typeId = Temp(type: typeIdType, expression: $"{address}.to[@U64]().load()");
         if (dispatch.MemberName == Declaration.RuntimeContract.CrashTypeId)

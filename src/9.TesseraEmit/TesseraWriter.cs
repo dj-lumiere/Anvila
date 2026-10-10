@@ -264,12 +264,12 @@ internal sealed class TesseraWriter
                     jump each(0)
 
                 block each(i: U64)
-                    done : Bool = i.ge(count)
+                    done: Bool = i.ge(count)
                     branch done
                         ? return(utf8.to[Bytes]())
                         : continue
-                    code      : U32  = data.stride(i.to[USize]()).load()
-                    character : Char = code.to[Char]()
+                    code: U32 = data.stride(i.to[USize]()).load()
+                    character: Char = code.to[Char]()
                     utf8.write("{character}")
                     jump each(i.add(1))
 
@@ -440,10 +440,10 @@ internal sealed class TesseraWriter
             (ulong id, RoutineInfo routine) = arms[index: i];
             string receiver = CrashObjectReceiver(routine: routine);
             text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
-                .Append(value: $"        is_{i} : Bool = ieq[{idType}](type_id, 0x{id:X})\n")
+                .Append(value: $"        is_{i}: Bool = ieq[{idType}](type_id, 0x{id:X})\n")
                 .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
                 .Append(value: $"    block case_{i}()\n")
-                .Append(value: $"        r_{i} : {resultType} = {RoutineName(routine: routine)}({receiver})\n")
+                .Append(value: $"        r_{i}: {resultType} = {RoutineName(routine: routine)}({receiver})\n")
                 .Append(value: $"        return(r_{i})\n\n");
         }
 
@@ -497,8 +497,8 @@ internal sealed class TesseraWriter
 
         string name = VerbatimName(text: $"crash object {crashable.FullName}");
         _crashObjectRecords[key: crashable.FullName] = name;
-        _records.Append(value: $"{Private}record {name}\n    type_id : U64\n    trace : {TesseraTrace.SnapshotRecord}\n" +
-                               $"    error : {TypeText(type: crashable)}\n\n");
+        _records.Append(value: $"{Private}record {name}\n    type_id: U64\n    trace: {TesseraTrace.SnapshotRecord}\n" +
+                               $"    error: {TypeText(type: crashable)}\n\n");
         return name;
     }
 
@@ -529,7 +529,7 @@ internal sealed class TesseraWriter
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
             text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
-                .Append(value: $"        is_{i} : Bool = ieq[{idType}](type_id, 0x{id:X})\n")
+                .Append(value: $"        is_{i}: Bool = ieq[{idType}](type_id, 0x{id:X})\n")
                 .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
                 .Append(value: $"    block case_{i}()\n")
                 .Append(value: $"        {RoutineName(routine: routine)}({CrashObjectReceiver(routine: routine)})\n")
@@ -649,10 +649,10 @@ internal sealed class TesseraWriter
             text.Append(value: "#aggregate\n");
         }
 
-        text.Append(value: $"{Private}record {name}\n    tag : U64\n");
+        text.Append(value: $"{Private}record {name}\n    tag: U64\n");
         if (payloads.Count > 0)
         {
-            text.Append(value: $"    payload : Array[Byte, max({string.Join(separator: ", ", values: payloads)})]\n");
+            text.Append(value: $"    payload: Array[Byte, max({string.Join(separator: ", ", values: payloads)})]\n");
         }
 
         _records.Append(value: text)
@@ -677,7 +677,7 @@ internal sealed class TesseraWriter
             }
 
             _routineValueRecord = VerbatimName(text: "Routine value");
-            _records.Append(value: $"{Private}record {_routineValueRecord}\n    fn : Addr\n    bound : Addr\n    recover : Addr\n\n");
+            _records.Append(value: $"{Private}record {_routineValueRecord}\n    fn: Addr\n    bound: Addr\n    recover: Addr\n\n");
             return _routineValueRecord;
         }
     }
@@ -734,10 +734,10 @@ internal sealed class TesseraWriter
         var text = new StringBuilder();
         text.Append(value: $"{Private}routine {name}(value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
             .Append(value: "    block entry()\n")
-            .Append(value: "        fn : Addr = value.fn\n")
-            .Append(value: "        bound : Addr = value.bound\n")
-            .Append(value: "        address : U64 = ptrtoint[Addr, U64](bound)\n")
-            .Append(value: "        unbound : Bool = address.eq(0)\n")
+            .Append(value: "        fn: Addr = value.fn\n")
+            .Append(value: "        bound: Addr = value.bound\n")
+            .Append(value: "        address: U64 = ptrtoint[Addr, U64](bound)\n")
+            .Append(value: "        unbound: Bool = address.eq(0)\n")
             .Append(value: $"        branch unbound ? plain(fn{Names(prefix: "a")}) : bound(fn, bound{Names(prefix: "a")})\n\n");
         foreach ((string block, string callable, string extra, string prefix) in new[]
                  {
@@ -755,11 +755,11 @@ internal sealed class TesseraWriter
 
             // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
             text.Append(value: $"    block {block}(code: Addr{extra}{Parameters(prefix: prefix)})\n")
-                .Append(value: "        claim slot : @Addr <- code\n")
-                .Append(value: $"        callee : {callable} = slot.to[@{callable}]().load()\n");
+                .Append(value: "        claim slot: @Addr <- code\n")
+                .Append(value: $"        callee: {callable} = slot.to[@{callable}]().load()\n");
             if (returns)
             {
-                text.Append(value: $"        result : {returnType} = callee.call({arguments})\n")
+                text.Append(value: $"        result: {returnType} = callee.call({arguments})\n")
                     .Append(value: "        return(result)\n\n");
             }
             else
@@ -880,7 +880,7 @@ internal sealed class TesseraWriter
         text.Append(value: $"{Private}record {name}\n");
         foreach (MemberVariableInfo field in entity.MemberVariables)
         {
-            text.Append(value: $"    {field.Name} : {TypeText(type: field.Type)}\n");
+            text.Append(value: $"    {field.Name}: {TypeText(type: field.Type)}\n");
         }
 
         _records.Append(value: text)
@@ -1123,7 +1123,7 @@ internal sealed class TesseraWriter
 
         foreach (MemberVariableInfo field in record.MemberVariables)
         {
-            text.Append(value: $"    {field.Name} : {TypeText(type: field.Type)}\n");
+            text.Append(value: $"    {field.Name}: {TypeText(type: field.Type)}\n");
         }
 
         _records.Append(value: text)
