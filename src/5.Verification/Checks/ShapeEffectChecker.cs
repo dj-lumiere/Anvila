@@ -200,11 +200,11 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                     return;
                 }
 
-                foreach ((Expression arg, string _) in ChangedOperands(call: call))
+                foreach ((Expression arg, string _, string rest) in ChangedOperands(call: call))
                 {
                     if (ShapePath(expr: arg) is { } path && own.Contains(item: RootName(path: path)))
                     {
-                        found.Add(item: RootName(path: path));
+                        found.Add(item: Bounded(path: path + rest));
                     }
                 }
             });
@@ -213,16 +213,17 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
 
     /// <summary>
     /// The operands of <paramref name="call"/> whose shape the call may change, each with the reason's
-    /// callee name: the receiver when the callee changes <c>me</c>, each argument bound to a changed
-    /// parameter, and every argument of a routine-value call (its target is unknown).
+    /// callee name and the part of it that changes (<c>.log</c> when the callee changes <c>me.log</c>, empty for the
+    /// whole operand): the receiver when the callee changes <c>me</c> or a part of it, each argument bound to a
+    /// changed parameter, and every argument of a routine-value call (its target is unknown).
     /// </summary>
-    private IEnumerable<(Expression Operand, string Callee)> ChangedOperands(CallExpression call)
+    private IEnumerable<(Expression Operand, string Callee, string Inside)> ChangedOperands(CallExpression call)
     {
         if (IsRoutineValueCall(call: call))
         {
             foreach (Expression arg in call.Arguments)
             {
-                yield return (Unwrap(expr: arg), "");
+                yield return (Unwrap(expr: arg), "", "");
             }
 
             yield break;
@@ -239,25 +240,52 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
             yield break;
         }
 
-        if (slots.Contains(item: MeSlot) && call.Callee is MemberExpression { Object: var receiver } &&
-            callee.Kind is not (RoutineKind.CommonRoutine or RoutineKind.Creator))
+        foreach (string effect in slots)
         {
-            yield return (receiver, callee.Name);
-        }
-
-        for (int i = 0; i < call.Arguments.Count; i++)
-        {
-            Expression arg = call.Arguments[index: i];
-            string? paramName = arg is NamedArgumentExpression named
-                ? named.Name
-                : i < callee.Parameters.Count
-                    ? callee.Parameters[index: i].Name
-                    : null;
-            if (paramName != null && slots.Contains(item: paramName))
+            string slot = RootName(path: effect);
+            string rest = effect[slot.Length..];
+            if (slot == MeSlot)
             {
-                yield return (Unwrap(expr: arg), callee.Name);
+                if (call.Callee is MemberExpression { Object: var receiver } &&
+                    callee.Kind is not (RoutineKind.CommonRoutine or RoutineKind.Creator))
+                {
+                    yield return (receiver, callee.Name, rest);
+                }
+
+                continue;
+            }
+
+            for (int i = 0; i < call.Arguments.Count; i++)
+            {
+                Expression arg = call.Arguments[index: i];
+                string? paramName = arg is NamedArgumentExpression named
+                    ? named.Name
+                    : i < callee.Parameters.Count
+                        ? callee.Parameters[index: i].Name
+                        : null;
+                if (paramName == slot)
+                {
+                    yield return (Unwrap(expr: arg), callee.Name, rest);
+                }
             }
         }
+    }
+
+    /// <summary>A changed path cut to its first four parts: a routine that recurses down a chain (`me.next.next...`)
+    /// would otherwise grow its effect without end. The cut path names a container around the real one, so it
+    /// guards more, never less.</summary>
+    private static string Bounded(string path)
+    {
+        int parts = 0;
+        for (int i = 0; i < path.Length; i++)
+        {
+            if (path[index: i] is '.' or '[' && ++parts == 4)
+            {
+                return path[..i];
+            }
+        }
+
+        return path;
     }
 
     private static bool IsRoutineValueCall(CallExpression call)
@@ -469,9 +497,9 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
 
     private void CheckCallAgainstGuards(CallExpression call, List<ShapeGuard> guards)
     {
-        foreach ((Expression operand, string callee) in ChangedOperands(call: call))
+        foreach ((Expression operand, string callee, string rest) in ChangedOperands(call: call))
         {
-            string? path = ShapePath(expr: operand);
+            string? path = ShapePath(expr: operand) is { } whole ? whole + rest : null;
             string shown = path != null
                 ? ShownPath(path: path)
                 : "";
