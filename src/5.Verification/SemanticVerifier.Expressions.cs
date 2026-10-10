@@ -638,8 +638,17 @@ public sealed partial class SemanticVerifier
 
         // A tuple of places on the left that the right doesn't reorder (a swap is a PlaceSwapStatement by now) would
         // need each value worked out first and then put in order, which the builder doesn't do.
-        if (binary is { Operator: BinaryOperator.Assign, Left: TupleLiteralExpression })
+        if (binary is { Operator: BinaryOperator.Assign, Left: TupleLiteralExpression places })
         {
+            if (binary.Right is TupleLiteralExpression values && values.Elements.Count != places.Elements.Count)
+            {
+                ReportError(code: SemanticDiagnosticCode.DestructuringArityMismatch,
+                    message: $"The left takes {places.Elements.Count} places and the right gives {values.Elements.Count} " +
+                             "values. A tuple assignment takes the same places in another order: '(a, b) = (b, a)'.",
+                    location: binary.Location);
+                return ErrorTypeSymbol.Instance;
+            }
+
             ReportError(code: SemanticDiagnosticCode.InvalidAssignmentTarget,
                 message: "A tuple on the left takes the same places in another order on the right: '(a, b) = (b, a)'. " +
                          "To put other values in, assign each place on its own line.",

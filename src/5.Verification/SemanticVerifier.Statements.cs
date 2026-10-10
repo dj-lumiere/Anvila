@@ -1331,7 +1331,7 @@ public sealed partial class SemanticVerifier
                     location: call.Location);
             }
             else if (Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: _currentFilePath))
-                    .MarksDroppedResults)
+                         .MarksDroppedResults && !IsDiscardable(routine: call.ResolvedRoutine))
             {
                 ReportWarning(code: SemanticWarningCode.UnusedRoutineReturnValue,
                     message: $"Return value of '{routineName}()' ({exprType.Name}) is unused. " +
@@ -1339,6 +1339,22 @@ public sealed partial class SemanticVerifier
                     location: call.Location);
             }
         }
+    }
+
+    /// <summary>Whether the result of <paramref name="routine"/> is a by-product its author marked
+    /// <c>@discardable</c> (<c>Set.add</c>'s Bool): dropping it needs no <c>drop</c>.</summary>
+    private static bool IsDiscardable(RoutineInfo? routine)
+    {
+        for (RoutineInfo? declared = routine?.RecoveryOf ?? routine; declared != null;
+             declared = declared.WrapperForwarderInnerMemberRoutine)
+        {
+            if ((declared.GenericDefinition ?? declared).Annotations.Contains(value: "discardable"))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Whether <paramref name="type"/> is an Agent: RazorForge's record, or a language's own Agent

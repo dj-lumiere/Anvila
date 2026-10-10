@@ -3222,7 +3222,6 @@ public sealed partial class SemanticVerifier
 
     private static readonly HashSet<SemanticWarningCode> SuppressedWarnings = new()
     {
-        SemanticWarningCode.UnusedRoutineReturnValue,
         SemanticWarningCode.UnhandledCrashableCall
     };
 
