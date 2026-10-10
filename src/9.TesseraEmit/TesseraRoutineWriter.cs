@@ -929,19 +929,9 @@ internal sealed class TesseraRoutineWriter
             Type: identity.ResolvedType, IsPlace: false);
     }
 
-    /// <summary>A marker borrow protocol (Accessing[X], Controlling[X]) stands for its inner X.</summary>
-    private static TypeSymbol? Unmarked(TypeSymbol? type)
-    {
-        return type is ProtocolTypeSymbol { TypeArguments: [{ } inner] } marker &&
-               Declaration.RuntimeContract.IsMarkerProtocol(baseName: (marker.GenericDefinition ?? marker).BareName)
-            ? inner
-            : type;
-    }
-
     private Operand EvaluateField(MemberExpression member)
     {
         Operand owner = Evaluate(expression: member.Object);
-        owner = owner with { Type = Unmarked(type: owner.Type) };
         // The field's declared type, from the type that holds it: a builder-written body (a recovery variant)
         // can leave the access itself untyped.
         TypeSymbol? fieldType = (owner.Type switch

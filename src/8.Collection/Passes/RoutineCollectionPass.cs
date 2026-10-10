@@ -725,6 +725,17 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             {
                 [key: wrapperParamName] = concreteInner
             };
+            // The inner type's own parameters (`TKey`, `TValue` of a `Viewing[BTreeDictNode[TKey, TValue]]`
+            // forwarder) are bound by the inner instance.
+            if (concreteWf.WrapperForwarderInnerGenericDef is { GenericParameters: { Count: > 0 } innerParams } &&
+                concreteInner.TypeArguments is { Count: > 0 } innerArgs)
+            {
+                for (int i = 0; i < innerParams.Count && i < innerArgs.Count; i++)
+                {
+                    wfSubs.TryAdd(key: innerParams[index: i], value: innerArgs[index: i]);
+                }
+            }
+
             Statement rewritten = GenericAstRewriter.RewriteStatement(stmt: synthBody,
                 subs: wfSubs.ToDictionary(keySelector: kv => kv.Key,
                     elementSelector: kv => kv.Value.InstanceArgumentName),

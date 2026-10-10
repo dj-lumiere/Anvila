@@ -198,7 +198,7 @@ public sealed partial class SemanticVerifier
         }
 
         // A protocol's routine, or a protocol's requirement reached through a type parameter it binds (`T(from: x)`
-        // under `needs T obeys ConvertibleFrom[N]`): the variant is a signature that instantiation rebinds to the
+        // under `needs T obeys Parsable`): the variant is a signature that instantiation rebinds to the
         // concrete routine's own variant.
         if (baseRoutine is { OwnerType: ProtocolTypeSymbol, IsFailable: true } or
             { OwnerType: GenericParameterTypeSymbol, IsSynthesized: true, IsFailable: true })
@@ -976,10 +976,12 @@ public sealed partial class SemanticVerifier
     {
         // A routine of another realm's type, or a realm's surface routine, shares its name with the shared
         // routine the lookups below find: the info registered for the declaration itself is its own.
-        // A routine of any type (`routine N.to[T]()`, whose receiver is a type parameter) has no owner to look up by
-        // name either.
+        // A routine of any type (`routine T.hijack()`, whose receiver is a type parameter) has no owner to look
+        // up by name either, and a specialization (`routine S64.to[U8]()`) is told apart from its siblings only by
+        // its type arguments.
         if (decl.ResolvedInfo is { } own && (own.SurfaceRealm != null ||
                                              own.OwnerType is GenericParameterTypeSymbol ||
+                                             own.IsSpecialization ||
                                              own.OwnerType is { } ownOwner && ownOwner.Realm != _registry.AmbientRealm))
         {
             return _registry.GetRoutineByExactKey(registryKey: own.RegistryKey) ?? own;

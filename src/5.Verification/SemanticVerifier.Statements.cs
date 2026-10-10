@@ -266,8 +266,10 @@ public sealed partial class SemanticVerifier
         // realm's surface routine on a shared type (Suflae's `Array.count() -> Integer`), shares its name with
         // the ambient one, and the name lookups below find the ambient one. The info pinned at registration is
         // its own.
+        // A specialization (`routine S64.to[U8]()`) shares its name and parameters with its siblings: only the info
+        // pinned at registration tells which one this body is.
         if (routine.ResolvedInfo is { } realmPinned &&
-            (realmPinned.SurfaceRealm != null ||
+            (realmPinned.SurfaceRealm != null || realmPinned.IsSpecialization ||
              realmPinned.OwnerType is { } pinnedOwner && pinnedOwner.Realm != _registry.AmbientRealm))
         {
             // The registry holds the info as later passes completed it (a signature resolved again once every
@@ -671,6 +673,10 @@ public sealed partial class SemanticVerifier
                 AnalyzeDropStatement(dropped: dropped);
                 break;
 
+            case StealStatement stolen:
+                AnalyzeStealStatement(stolen: stolen);
+                break;
+
             case DangerStatement danger:
                 AnalyzeDangerStatement(danger: danger);
                 break;
@@ -691,6 +697,139 @@ public sealed partial class SemanticVerifier
     #endregion
 
     #region Statement Analysis memberRoutines
+
+    /// <summary>
+    /// Analyzes <c>steal place as old [inject fresh]</c> by expanding it, in its block, into statements the rest of
+    /// the builder already knows:
+    /// <code>
+    /// var __steal_fresh_N = fresh          # first, so a crash leaves the place untouched
+    /// var old = steal place                # a move out of the place, no copy
+    /// place = steal __steal_fresh_N        # tears nothing down: what was there is old's now
+    /// </code>
+    /// Without <c>inject</c> a <c>T?</c> place is left <c>none</c>, and a whole variable simply moves.
+    /// </summary>
+    private void AnalyzeStealStatement(StealStatement stolen)
+    {
+        SourceLocation location = stolen.Location;
+        if (stolen.Place is not (IdentifierExpression or MemberExpression or IndexExpression))
+        {
+            ReportError(code: SemanticDiagnosticCode.StealNotAPlace,
+                message: "'steal … as …' takes a value out of a place: a variable, a member variable or an element. " +
+                         "Write the place it takes from.",
+                location: stolen.Place.Location);
+            return;
+        }
+
+        // Two more uses of the place, cloned before anything is analyzed.
+        Expression movedOut = Instantiation.GenericAstRewriter.DeepCloneExpression(expr: stolen.Place);
+        Expression filled = Instantiation.GenericAstRewriter.DeepCloneExpression(expr: stolen.Place);
+        TypeSymbol placeType = AnalyzeExpression(expression: stolen.Place);
+        if (placeType is ErrorTypeSymbol)
+        {
+            return;
+        }
+
+        bool wholeVariable = stolen.Place is IdentifierExpression;
+        bool optionalPlace = placeType is RecordTypeSymbol { GenericDefinition.Name: "Maybe" };
+        if (stolen.Fresh == null && !wholeVariable && !optionalPlace)
+        {
+            ReportError(code: SemanticDiagnosticCode.StealLeavesEmptyPlace,
+                message: $"Taking the '{placeType.Name}' out would leave nothing in its place. Put a new value in as " +
+                         $"you take it: 'steal … as {stolen.Name} inject <new value>'.",
+                location: location);
+            return;
+        }
+
+        var lowered = new List<Statement>();
+        Expression? putBack = null;
+        if (stolen.Fresh != null)
+        {
+            string freshName = $"__steal_fresh_{++_stealStatementSeq}";
+            lowered.Add(item: new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: freshName,
+                    Type: new TypeExpression(Name: placeType.Name, GenericArguments: null, Location: location)
+                    {
+                        KnownType = placeType
+                    },
+                    Initializer: stolen.Fresh,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: location),
+                Location: location));
+            putBack = new StealExpression(Operand: new IdentifierExpression(Name: freshName, Location: location),
+                Location: location) { IsImplicitMove = true };
+        }
+        else if (!wholeVariable)
+        {
+            putBack = new LiteralExpression(Value: null, LiteralType: Builder.Tokenizer.TokenType.NoneValue, Location: location);
+        }
+
+        // An element is exchanged by its container in one step (`xs.exchange(index: i, value: fresh)`).
+        if (stolen.Place is IndexExpression element && putBack != null)
+        {
+            if (_registry.LookupMemberRoutine(type: element.Object.ResolvedType ?? placeType,
+                    memberRoutineName: Declaration.RuntimeContract.Exchange, isFailable: true) is not
+                { Parameters: [.., { Name: var positionName }, _] })
+            {
+                ReportError(code: SemanticDiagnosticCode.StealNotAPlace,
+                    message: $"'{element.Object.ResolvedType?.Name}' cannot swap an element in place, so " +
+                             "'steal … as …' cannot take one out of it. Use its 'remove' routines.",
+                    location: stolen.Place.Location);
+                return;
+            }
+
+            var exchangeCall = new CallExpression(
+                Callee: new MemberExpression(Object: Instantiation.GenericAstRewriter.DeepCloneExpression(
+                        expr: ((IndexExpression)movedOut).Object),
+                    MemberName: Declaration.RuntimeContract.Exchange,
+                    Location: location),
+                Arguments:
+                [
+                    new NamedArgumentExpression(Name: positionName, Value: ((IndexExpression)movedOut).Index,
+                        Location: location),
+                    new NamedArgumentExpression(Name: "value", Value: putBack, Location: location)
+                ],
+                Location: location) { IsSynthesizedLowering = true };
+            lowered.Add(item: new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: stolen.Name,
+                    Type: null,
+                    Initializer: exchangeCall,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: location),
+                Location: location));
+            putBack = null;
+        }
+        else
+        {
+            lowered.Add(item: new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: stolen.Name,
+                    Type: null,
+                    Initializer: new StealExpression(Operand: movedOut, Location: location)
+                    {
+                        IsPlaceMove = !wholeVariable
+                    },
+                    Visibility: VisibilityModifier.Secret,
+                    Location: location),
+                Location: location));
+        }
+
+        if (putBack != null)
+        {
+            lowered.Add(item: new AssignmentStatement(Target: filled, Value: putBack, Location: location)
+            {
+                KeepsReplacedValue = true
+            });
+        }
+
+        foreach (Statement statement in lowered)
+        {
+            AnalyzeStatement(statement: statement);
+        }
+
+        stolen.Lowered = lowered;
+    }
+
+    /// <summary>Numbers the temporaries <see cref="AnalyzeStealStatement"/> introduces.</summary>
+    private int _stealStatementSeq;
 
     private void AnalyzeVariantReturnStatement(VariantReturnStatement variantReturn)
     {
@@ -738,6 +877,18 @@ public sealed partial class SemanticVerifier
             AnalyzeStatement(statement: stmt);
             diverged = stmt is ReturnStatement or ThrowStatement
                 or BreakStatement or ContinueStatement;
+        }
+
+        // A `steal place as old` statement stands for the statements it was expanded into.
+        if (block.Statements.Any(predicate: s => s is StealStatement { Lowered: not null }))
+        {
+            List<Statement> expanded = block.Statements
+                                            .SelectMany(selector: s => s is StealStatement { Lowered: { } lowered }
+                                                 ? lowered
+                                                 : [s])
+                                            .ToList();
+            block.Statements.Clear();
+            block.Statements.AddRange(collection: expanded);
         }
 
         _registry.ExitScope();

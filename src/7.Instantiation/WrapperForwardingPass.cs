@@ -280,8 +280,9 @@ internal sealed class WrapperForwardingPass
             _ => wrapperType
         };
 
+        // The held value is the first parameter (`Amending[T, TPolicy]` holds a `T`).
         if (wrapperDef == null || !wrapperDef.IsGenericDefinition ||
-            wrapperDef.GenericParameters is not { Count: 1 })
+            wrapperDef.GenericParameters is not { Count: >= 1 })
         {
             return false;
         }
@@ -348,7 +349,7 @@ internal sealed class WrapperForwardingPass
     {
         (TypeSymbol wrapperDef, string genericParamName, TypeSymbol innerType,
             TypeSymbol innerLookupType, RoutineInfo innerMemberRoutine) = ctx;
-        string cacheKey = $"{wrapperDef.Name}.{memberRoutineName}#{(isFailable ? "!" : "")}";
+        string cacheKey = $"{wrapperDef.Name}>{innerLookupType.FullName}.{memberRoutineName}#{(isFailable ? "!" : "")}";
         // One forwarder per inner overload, whichever request built it first.
         string overloadKey = $"{wrapperDef.Name}@{innerMemberRoutine.RegistryKey}";
         bool fresh = overloadOnly
@@ -356,9 +357,7 @@ internal sealed class WrapperForwardingPass
             : _synthesizedForwarderKeys.Add(item: cacheKey) & _synthesizedForwarderKeys.Add(item: overloadKey);
         if (!fresh)
         {
-            return _registry.LookupMemberRoutine(type: wrapperType,
-                memberRoutineName: memberRoutineName,
-                isFailable: isFailable) ?? _registry.LookupMemberRoutine(type: wrapperDef,
+            return _registry.LookupForwarder(wrapperType: wrapperType,
                 memberRoutineName: memberRoutineName,
                 isFailable: isFailable) ?? AnyForwarderOverload(wrapperType: wrapperType,
                 memberRoutineName: memberRoutineName,
@@ -431,7 +430,7 @@ internal sealed class WrapperForwardingPass
         _registry.RegisterRoutine(routine: forwarder);
         _synthesizedBodies[key: forwarder.RegistryKey] = (forwarder, body);
 
-        return _registry.LookupMemberRoutine(type: wrapperType,
+        return _registry.LookupForwarder(wrapperType: wrapperType,
             memberRoutineName: memberRoutineName,
             isFailable: isFailable) ?? forwarder;
     }
@@ -447,7 +446,7 @@ internal sealed class WrapperForwardingPass
         if (forwarder is not
             {
                 WrapperForwarderInnerMemberRoutine: { } inner, Recovery: null,
-                OwnerType: { IsGenericDefinition: true, GenericParameters: [var genericParamName] } wrapperDef
+                OwnerType: { IsGenericDefinition: true, GenericParameters: [var genericParamName, ..] } wrapperDef
             } || wrapperDef.BareName == RuntimeContract.Roamed || !_registry.CanFailUnderRecovery(routine: inner))
         {
             return false;
@@ -682,8 +681,14 @@ internal sealed class WrapperForwardingPass
                 dataFieldName: dataFieldName,
                 ctx: callCtx);
         }
-        else if (wrapperType.BareName is RuntimeContract.Retained or RuntimeContract.Tracked
-                 or RuntimeContract.Roamed)
+        else if (wrapperType.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying
+                 or RuntimeContract.Amending or RuntimeContract.Consulting or RuntimeContract.Retained)
+        {
+            innerStatements = BuildReachForwarderStatements(wrapperType: wrapperType,
+                readOnly: innerMemberRoutine.IsReadOnly,
+                ctx: callCtx);
+        }
+        else if (wrapperType.BareName is RuntimeContract.Tracked or RuntimeContract.Roamed)
         {
             innerStatements = BuildRcWrapperForwarderStatements(wrapperType: wrapperType,
                 genericParamName: genericParamName,
@@ -706,6 +711,61 @@ internal sealed class WrapperForwardingPass
                     Location: _synthLoc)
             ],
             Location: _synthLoc);
+    }
+
+    /// <summary>
+    /// A token reaches its value through its own <c>access()</c> (to read) or <c>control()</c> (to change):
+    /// <c>[return] me.control().MemberRoutine(...)</c>. Any other hold becomes a token first, <c>view()</c> for a
+    /// routine that only reads and <c>modify()</c> otherwise: <c>[return] me.modify().control().MemberRoutine(...)</c>.
+    /// </summary>
+    private List<Statement> BuildReachForwarderStatements(TypeSymbol wrapperType, bool readOnly,
+        ForwarderCallContext ctx)
+    {
+        Expression reached = new IdentifierExpression(Name: "me", Location: _synthLoc) { ResolvedType = wrapperType };
+        string token = wrapperType.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying
+            ? wrapperType.BareName
+            : readOnly
+                ? RuntimeContract.Viewing
+                : RuntimeContract.Modifying;
+        if (wrapperType.BareName != token)
+        {
+            reached = ReachCall(receiver: reached, receiverType: wrapperType,
+                name: token == RuntimeContract.Viewing ? "view" : "modify",
+                resultType: _registry.GetOrCreateWrapperType(wrapperName: token, innerType: ctx.InnerType,
+                    isReadOnly: token == RuntimeContract.Viewing));
+        }
+
+        TypeSymbol tokenType = reached.ResolvedType!;
+        reached = ReachCall(receiver: reached, receiverType: tokenType,
+            name: token == RuntimeContract.Viewing ? RuntimeContract.Access : RuntimeContract.Control,
+            resultType: ctx.InnerType);
+        var innerCall = new CallExpression(
+            Callee: new MemberExpression(Object: reached,
+                MemberName: ctx.CallPropertyName,
+                Location: _synthLoc) { IsFailable = ctx.IsFailable },
+            Arguments: ctx.ForwardedArgs,
+            Location: _synthLoc) { ResolvedType = ctx.InnerMemberRoutine.ReturnType };
+        Statement callStmt = ctx.HasReturnValue
+            ? new ReturnStatement(Value: innerCall, Location: _synthLoc)
+            : new ExpressionStatement(Expression: innerCall, Location: _synthLoc);
+        return [callStmt];
+    }
+
+    /// <summary><c>receiver.name()</c>, bound to the receiver type's routine when there is one routine of that name
+    /// (a routine split by kind is bound when the instance is made).</summary>
+    private CallExpression ReachCall(Expression receiver, TypeSymbol receiverType, string name, TypeSymbol resultType)
+    {
+        RoutineInfo? routine = _registry.LookupMemberRoutine(type: receiverType, memberRoutineName: name);
+        var call = new CallExpression(
+            Callee: new MemberExpression(Object: receiver, MemberName: name, Location: _synthLoc),
+            Arguments: [],
+            Location: _synthLoc) { ResolvedRoutine = routine, ResolvedType = resultType };
+        if (routine != null)
+        {
+            call.LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine);
+        }
+
+        return call;
     }
 
     /// <summary>

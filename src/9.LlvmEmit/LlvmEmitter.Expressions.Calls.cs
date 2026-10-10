@@ -1279,6 +1279,8 @@ public partial class LlvmEmitter
             NamedArgumentExpression named =>
                 // `f(name: lvalue)` — the address of the named argument is the address of its value.
                 EmitLvalueAddress(sb: sb, expr: named.Value),
+            // A value with no storage of its own (`COUNT` of `Array[T, COUNT]`) gets a temporary.
+            IdentifierExpression id when !HasStorage(id: id) => EmitSpillToTempAddress(sb: sb, expr: expr),
             IdentifierExpression id => EmitIdentifierLvalueAddress(id: id),
             MemberExpression member => EmitMemberLvalueAddress(sb: sb, member: member, expr: expr),
             // A record behind a pointer wrapper: the wrapper pointer is the record's storage.
@@ -1286,6 +1288,14 @@ public partial class LlvmEmitter
                 EmitExpression(sb: sb, expr: projection.Wrapper),
             _ => EmitSpillToTempAddress(sb: sb, expr: expr)
         };
+    }
+
+    /// <summary>Whether <paramref name="id"/> names a place: a local, a parameter, a module global or an aggregate
+    /// preset.</summary>
+    private bool HasStorage(IdentifierExpression id)
+    {
+        return _localVariables.ContainsKey(key: id.Name) || _moduleGlobals.ContainsKey(key: id.Name) ||
+               ResolveAggregatePreset(name: id.Name) != null;
     }
 
     /// <summary>Address of a named local/parameter — or an aggregate preset's <c>@preset.*</c> global.</summary>

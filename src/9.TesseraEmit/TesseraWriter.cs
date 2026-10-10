@@ -989,11 +989,6 @@ internal sealed class TesseraWriter
                 return "Addr";
             case RoutineTypeSymbol:
                 return RoutineValueRecord;
-            // A marker borrow protocol (Accessing[X], Controlling[X]) is laid out as its inner X, as in the LLVM
-            // emitter: an entity is its block's address, a value its own layout.
-            case ProtocolTypeSymbol { TypeArguments: [{ } markerInner] } marker when RuntimeContract.IsMarkerProtocol(
-                baseName: (marker.GenericDefinition ?? marker).BareName):
-                return TypeText(type: markerInner);
             case ConstGenericValueTypeSymbol constant:
                 return TypeText(type: ConstantType(constant: constant));
             case RecordTypeSymbol { BackendType: { } backend } record:
@@ -1081,8 +1076,6 @@ internal sealed class TesseraWriter
                 ? target switch
                 {
                     EntityTypeSymbol entity => $"@{EntityRecord(entity: entity)}",
-                    ProtocolTypeSymbol { TypeArguments: [{ } inner] } marker when RuntimeContract.IsMarkerProtocol(
-                        baseName: (marker.GenericDefinition ?? marker).BareName) => $"@{TypeText(type: inner)}",
                     ProtocolTypeSymbol => "Addr",
                     _ => $"@{TypeText(type: target)}"
                 }

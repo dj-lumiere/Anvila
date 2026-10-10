@@ -1330,6 +1330,15 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
     /// <inheritdoc/>
+    public string VisitStealStatement(StealStatement node)
+    {
+        string inject = node.Fresh != null
+            ? $" inject {node.Fresh.Accept(visitor: this)}"
+            : "";
+        return $"{I}steal {node.Place.Accept(visitor: this)} as {node.Name}{inject}";
+    }
+
+    /// <inheritdoc/>
     public string VisitCancellationPushStatement(CancellationPushStatement node)
     {
         return $"cancellation push {node.Local} ({node.Destroy.Name}{(node.PassesAddress ? ", by address" : "")})";

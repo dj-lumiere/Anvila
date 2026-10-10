@@ -281,7 +281,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                     rebuildWithCondition: init =>
                         ds with { Declaration = v with { Initializer = init } });
 
-            case AssignmentStatement { Target: IdentifierExpression t2 } a:
+            case AssignmentStatement { Target: IdentifierExpression t2, KeepsReplacedValue: false } a:
                 return LowerReassign(owner: a,
                     rhs: a.Value,
                     target: t2,

@@ -160,18 +160,10 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
             : call;
     }
 
-    // The bare entity a parameter takes: its own type, or the entity an `Accessing`/`Controlling` token over
-    // one stands for.
+    // The bare entity a parameter takes. A token parameter is handed its token by the call itself.
     private static EntityTypeSymbol? BareEntityOf(TypeSymbol? type)
     {
-        return type switch
-        {
-            EntityTypeSymbol entity => entity,
-            ProtocolTypeSymbol { TypeArguments: [EntityTypeSymbol tokenEntity] } token
-                when (token.GenericDefinition ?? token).BareName is RuntimeContract.Accessing
-                    or RuntimeContract.Controlling => tokenEntity,
-            _ => null
-        };
+        return type as EntityTypeSymbol;
     }
 
     // Build `receiver.control()` : the inner entity, via the Controlling marker-protocol deref (Roamed

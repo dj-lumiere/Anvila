@@ -100,6 +100,13 @@ public sealed class RoutineInfo
                     : $"{Module}.{Name}";
             }
 
+            // A wrapper's forwarder of one inner type's routine and of another's can share name and parameters
+            // (`key_get(i: U64)` of two node types): the inner type tells them apart.
+            if (WrapperForwarderInnerGenericDef is { } forwardedType && OwnerType is { IsGenericDefinition: true })
+            {
+                baseName = $"{baseName}>{GetTypeIdentity(type: forwardedType)}";
+            }
+
             // A recovery variant shares its failable routine's name and parameters: its kind tells the two
             // apart (`?` cannot appear in a routine name).
             if (Recovery is { } recovery)
@@ -285,42 +292,15 @@ public sealed class RoutineInfo
     /// <summary>Whether this is a generic routine definition.</summary>
     public bool IsGenericDefinition => GenericParameters is { Count: > 0 };
 
+    /// <summary>
+    /// True for a specialization (<c>routine S64.to![U8]()</c>): a routine written for concrete type arguments,
+    /// with no generic definition behind it. Its <see cref="TypeArguments"/> are part of its identity and pick it
+    /// among the routines of the same name (<c>x.to[U8]()</c>).
+    /// </summary>
+    public bool IsSpecialization => TypeArguments is { Count: > 0 } && GenericDefinition == null;
+
     /// <summary>For resolved generics, the type arguments used.</summary>
     public List<TypeSymbol>? TypeArguments { get; init; }
-
-    /// <summary>
-    /// Parameter indices whose declared type is a marker protocol (<c>Accessing[T]</c> or
-    /// <c>Controlling[T]</c>). These slots participate in monomorphization: each concrete
-    /// argument type at a call site produces a distinct specialization, so the protocol
-    /// name never appears in mangled symbols or LLVM IR.
-    /// </summary>
-    public List<int> MarkerProtocolParameterIndices
-    {
-        get
-        {
-            var indices = new List<int>();
-            for (int i = 0; i < Parameters.Count; i++)
-            {
-                if (IsMarkerProtocolType(type: Parameters[index: i].Type))
-                {
-                    indices.Add(item: i);
-                }
-            }
-
-            return indices;
-        }
-    }
-
-    private static bool IsMarkerProtocolType(TypeSymbol type)
-    {
-        if (type is not ProtocolTypeSymbol proto || proto.TypeArguments is not { Count: 1 })
-        {
-            return false;
-        }
-
-        string baseName = (proto.GenericDefinition ?? proto).BareName;
-        return RuntimeContract.IsMarkerProtocol(baseName: baseName);
-    }
 
     /// <summary>Visibility modifier.</summary>
     public VisibilityModifier Visibility { get; init; } = VisibilityModifier.Open;

@@ -265,6 +265,13 @@ public record RoutineDeclaration(
     public List<string>? GenericParameters { get; set; } = GenericParameters;
 
     /// <summary>
+    /// The concrete types the routine's own bracket names (<c>routine S64.to![U8]()</c>): a specialization, one
+    /// routine of a family the call picks by type argument, not a generic parameter. Moved here out of
+    /// <see cref="GenericParameters"/> at registration, each with its <see cref="TypeExpression.KnownType"/>.
+    /// </summary>
+    public List<TypeExpression>? SpecializedTypeArguments { get; set; }
+
+    /// <summary>
     /// Generic constraints (incl. implicit <c>obeys</c> constraints synthesized for desugared
     /// protocol parameters). Settable for the same reason as <see cref="GenericParameters"/>.
     /// </summary>

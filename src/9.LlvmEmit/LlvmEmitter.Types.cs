@@ -156,13 +156,6 @@ public partial class LlvmEmitter
             // Entities (and Crashable, an entity subclass) -> pointer to LLVM struct
             EntityTypeSymbol => "ptr",
 
-            // A marker borrow protocol (Accessing[X]/Controlling[X]) is laid out as its inner X (an entity → ptr, a
-            // value → the value's own layout).
-            ProtocolTypeSymbol { TypeArguments: [{ } markerInner] } markerProto when
-                Declaration.RuntimeContract.IsMarkerProtocol(
-                    baseName: (markerProto.GenericDefinition ?? markerProto).BareName) =>
-                GetLlvmType(type: markerInner),
-
             // Any other protocol -> HARD ERROR. A protocol reaching the backend (an iterator's
             // `Emittable[T]` return, a generic-def body, an unsubstituted protocol-typed slot) is an upstream
             // monomorphization gap. codegen never fails silently: surface it loudly so the leak is fixed

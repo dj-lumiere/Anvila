@@ -1112,6 +1112,9 @@ public partial class Parser
             case TokenType.Drop:
                 Advance();
                 return ParseDropStatement();
+            case TokenType.Steal when StealStatementAhead():
+                Advance();
+                return ParseStealStatement();
             default:
                 return null;
         }

@@ -1203,6 +1203,53 @@ public partial class Parser
     /// Used to explicitly indicate that a routine's return value is intentionally ignored.
     /// </summary>
     /// <returns>A <see cref="DropStatement"/> AST node.</returns>
+    /// <summary>
+    /// Whether the line starting at the current <c>steal</c> is the statement <c>steal place as old [inject fresh]</c>
+    /// (an <c>as</c> outside brackets), not an expression statement that moves a variable.
+    /// </summary>
+    private bool StealStatementAhead()
+    {
+        int depth = 0;
+        for (int offset = 1;; offset++)
+        {
+            Token token = PeekToken(offset: offset);
+            switch (token.Type)
+            {
+                case TokenType.Newline or TokenType.Eof or TokenType.Dedent or TokenType.Indent:
+                    return false;
+                case TokenType.LeftParen or TokenType.LeftBracket:
+                    depth++;
+                    break;
+                case TokenType.RightParen or TokenType.RightBracket:
+                    depth--;
+                    break;
+                case TokenType.As when depth == 0:
+                    return true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parses <c>steal place as old</c> or <c>steal place as old inject fresh</c> (the <c>steal</c> is consumed).
+    /// </summary>
+    private StealStatement ParseStealStatement()
+    {
+        SourceLocation location = GetLocation(token: PeekToken(offset: -1));
+        Expression place = ParsePostfix();
+        Consume(type: TokenType.As, errorMessage: "Expected 'as' and a name after the place 'steal' takes from");
+        string name = Consume(type: TokenType.Identifier, errorMessage: "Expected the name of what 'steal' takes out")
+           .Text;
+        Expression? fresh = null;
+        if (CurrentToken.Type is TokenType.Identifier or TokenType.ReservedWord && CurrentToken.Text == "inject")
+        {
+            Advance();
+            fresh = ParseExpression();
+        }
+
+        ConsumeStatementTerminator();
+        return new StealStatement(Place: place, Name: name, Fresh: fresh, Location: location);
+    }
+
     private DropStatement ParseDropStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));

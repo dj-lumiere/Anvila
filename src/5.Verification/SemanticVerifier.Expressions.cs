@@ -1563,15 +1563,6 @@ public sealed partial class SemanticVerifier
             _currentRoutine.FailableCallees.Add(item: setItem);
         }
 
-        if (IsReadOnlyTransparentProtocol(type: indexedObjectType))
-        {
-            ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
-                message:
-                $"Cannot write through index access on read-only protocol '{indexedObjectType.Name}'. " +
-                "Use Controlling[T] or a writable token instead.",
-                location: location);
-        }
-
         // The object being indexed must be modifiable.
         if (index.Object is IdentifierExpression indexedVar)
         {
@@ -1902,15 +1893,6 @@ public sealed partial class SemanticVerifier
             case IndexExpression index:
             {
                 TypeSymbol indexedObjectType = AnalyzeExpression(expression: index.Object);
-                if (IsReadOnlyTransparentProtocol(type: indexedObjectType))
-                {
-                    ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
-                        message:
-                        $"Cannot write through index access on read-only protocol '{indexedObjectType.Name}'. " +
-                        "Use Controlling[T] or a writable token instead.",
-                        location: compound.Location);
-                }
-
                 if (index.Object is IdentifierExpression indexedVar)
                 {
                     VariableInfo? varInfo = _registry.LookupVariable(name: indexedVar.Name);

@@ -142,6 +142,11 @@ internal sealed class SignatureResolver
         // name-as-identity collision (the resolver-side half is TypeResolver's slot-first shadowing).
         HashSet<string> receiverLeaves =
             CollectReceiverLeafParamNames(receiver: routine.ReceiverType);
+        // A bracket of types (`routine Fahrenheit.to[Celsius]()`) is a specialization: its names leave the
+        // generic parameters before anything below reads them.
+        List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
+            receiverLeaves: receiverLeaves,
+            resolve: name => _sa.LookupTypeWithImports(name: name));
         var filteredGenericParams = routine.GenericParameters
                                           ?.Where(predicate: p =>
                                                 !receiverLeaves.Contains(item: p) ||
@@ -176,7 +181,7 @@ internal sealed class SignatureResolver
         int implicitGenericCounter = 0;
         // AST parameter rewrites for protocol-as-generic desugaring: (param index, implicit
         // generic name). Applied to the AST decl after the loop so the decl mirrors the RoutineInfo.
-        var astParamGenericNames = new List<(int Index, string GenericName)>();
+        var astParamGenericNames = new List<(int Index, string GenericName, string? Token)>();
         int paramIndex = -1;
 
         foreach (Parameter param in routine.Parameters)
@@ -273,7 +278,7 @@ internal sealed class SignatureResolver
         MergeAndApplyImplicitGenerics(RoutineDeclaration routine,
             List<string>? filteredGenericParams,
             List<string> implicitGenerics, List<GenericConstraintDeclaration> implicitConstraints,
-            List<(int Index, string GenericName)> astParamGenericNames)
+            List<(int Index, string GenericName, string? Token)> astParamGenericNames)
     {
         List<string> allGenericParams = filteredGenericParams?.ToList() ?? [];
         allGenericParams.AddRange(collection: implicitGenerics);
@@ -289,14 +294,16 @@ internal sealed class SignatureResolver
         // the GMP routine index (built later from program.Declarations).
         if (implicitGenerics.Count > 0)
         {
-            foreach ((int idx, string genericName) in astParamGenericNames)
+            foreach ((int idx, string genericName, string? token) in astParamGenericNames)
             {
                 Parameter astParam = routine.Parameters[index: idx];
+                SourceLocation typeLocation = astParam.Type?.Location ?? astParam.Location;
+                var generic = new TypeExpression(Name: genericName, GenericArguments: null, Location: typeLocation);
                 routine.Parameters[index: idx] = astParam with
                 {
-                    Type = new TypeExpression(Name: genericName,
-                        GenericArguments: null,
-                        Location: astParam.Type?.Location ?? astParam.Location)
+                    Type = token == null
+                        ? generic
+                        : new TypeExpression(Name: token, GenericArguments: [generic], Location: typeLocation)
                 };
             }
 
@@ -339,6 +346,9 @@ internal sealed class SignatureResolver
             GenericParameters = allGenericParams.Count > 0
                 ? allGenericParams
                 : null,
+            TypeArguments = routine.SpecializedTypeArguments?.Select(selector: t => t.KnownType)
+                                   .OfType<TypeSymbol>()
+                                   .ToList(),
             GenericConstraints = allConstraints.Count > 0
                 ? allConstraints
                 : null,
@@ -470,7 +480,7 @@ internal sealed class SignatureResolver
     private void ResolveAndAppendParameter(Parameter param, int paramIndex,
         List<ParamInfo> parameters, List<string> implicitGenerics,
         List<GenericConstraintDeclaration> implicitConstraints,
-        List<(int Index, string GenericName)> astParamGenericNames, ref int implicitGenericCounter)
+        List<(int Index, string GenericName, string? Token)> astParamGenericNames, ref int implicitGenericCounter)
     {
         if (param.Type == null)
         {
@@ -529,7 +539,7 @@ internal sealed class SignatureResolver
             // Generate implicit generic parameter name
             string implicitGenericName = $"__T{implicitGenericCounter++}";
             implicitGenerics.Add(item: implicitGenericName);
-            astParamGenericNames.Add(item: (paramIndex, implicitGenericName));
+            astParamGenericNames.Add(item: (paramIndex, implicitGenericName, null));
 
             // Create "obeys" constraint for the implicit generic
             var constraint = new GenericConstraintDeclaration(ParameterName: implicitGenericName,
@@ -545,6 +555,27 @@ internal sealed class SignatureResolver
             };
 
             parameters.Add(item: new ParamInfo(name: param.Name, type: genericParamType)
+            {
+                DefaultValue = param.DefaultValue, IsVariadicParam = param.IsVariadic
+            });
+        }
+        // A token over a protocol (`you: Viewing[Iterable[T]]`) is a token over whatever conforms:
+        // `[__T0 obeys Iterable[T]](you: Viewing[__T0])`, so the caller's iterable binds `__T0`.
+        else if (ImplicitToken.IsTokenParameter(parameter: paramType, tokenKind: out string tokenKind,
+                     target: out TypeSymbol tokenTarget) && tokenTarget is ProtocolTypeSymbol &&
+                 param.Type?.GenericArguments is [{ } protocolExpr] &&
+                 _sa._registry.LookupType(name: tokenKind) is { } tokenDefinition)
+        {
+            string implicitGenericName = $"__T{implicitGenericCounter++}";
+            implicitGenerics.Add(item: implicitGenericName);
+            astParamGenericNames.Add(item: (paramIndex, implicitGenericName, tokenKind));
+            implicitConstraints.Add(item: new GenericConstraintDeclaration(ParameterName: implicitGenericName,
+                ConstraintType: ConstraintKind.Obeys,
+                ConstraintTypes: [protocolExpr],
+                Location: param.Location));
+            var conformer = new GenericParameterTypeSymbol(name: implicitGenericName) { Location = param.Location };
+            parameters.Add(item: new ParamInfo(name: param.Name,
+                type: _sa._registry.GetOrCreateResolution(genericDef: tokenDefinition, typeArguments: [conformer]))
             {
                 DefaultValue = param.DefaultValue, IsVariadicParam = param.IsVariadic
             });
@@ -1001,9 +1032,9 @@ internal sealed class SignatureResolver
         List<string>? inferableParams = ctx.InferableParams;
         SourceLocation? location = ctx.Location;
 
-        // `you: Accessing[Me]`: the routine only reads the other value (`eq`, `cmp`).
-        if (expectedType is ProtocolTypeSymbol { TypeArguments: [ProtocolSelfTypeSymbol] } readsMe &&
-            (readsMe.GenericDefinition ?? readsMe).BareName == RuntimeContract.Accessing)
+        // `you: Viewing[Me]`: the routine only reads the other value (`eq`, `cmp`).
+        if (expectedType is { TypeArguments: [ProtocolSelfTypeSymbol] } readsMe &&
+            readsMe.BareName == RuntimeContract.Viewing)
         {
             CheckReadsMeParameter(ctx: ctx, paramName: protoMemberRoutine.ParameterNames[index: paramIndex],
                 actualType: actualType);
@@ -1054,8 +1085,8 @@ internal sealed class SignatureResolver
     }
 
     /// <summary>
-    /// Checks a parameter the protocol declares <c>Accessing[Me]</c>: the routine reads the other value and
-    /// never takes it. <c>Accessing[Owner]</c> always fits. A bare <c>Owner</c> fits a value type (a read of a
+    /// Checks a parameter the protocol declares <c>Viewing[Me]</c>: the routine reads the other value and
+    /// never takes it. <c>Viewing[Owner]</c> always fits. A bare <c>Owner</c> fits a value type (a read of a
     /// value is the value) and a Suflae entity (a shared handle). A RazorForge entity must spell the read,
     /// since a bare entity parameter takes the entity from whoever passes it.
     /// </summary>
@@ -1067,7 +1098,7 @@ internal sealed class SignatureResolver
             return;
         }
 
-        if (ReadsOwnerThroughAccessing(routine: routine, paramType: actualType, owner: owner))
+        if (ReadsOwnerThroughToken(paramType: actualType, owner: owner))
         {
             return;
         }
@@ -1081,8 +1112,8 @@ internal sealed class SignatureResolver
         _sa.ReportError(code: SemanticDiagnosticCode.ProtocolMemberRoutineSignatureMismatch,
             message: bareFits
                 ? $"Parameter '{paramName}' of '{routine.Name}' has type '{actualType.Name}', but protocol " +
-                  $"'{ctx.Protocol.Name}' expects '{owner.Name}' (Me), read through 'Accessing[{owner.Name}]'."
-                : $"'{routine.Name}' only reads '{paramName}', so declare it '{paramName}: Accessing[{owner.Name}]'. " +
+                  $"'{ctx.Protocol.Name}' expects '{owner.Name}' (Me), read through 'Viewing[{owner.Name}]'."
+                : $"'{routine.Name}' only reads '{paramName}', so declare it '{paramName}: Viewing[{owner.Name}]'. " +
                   $"As '{actualType.Name}' it would take the entity from whoever passes it.",
             location: ctx.Location ?? new SourceLocation(FileName: "",
                 Line: 0,
@@ -1091,31 +1122,13 @@ internal sealed class SignatureResolver
     }
 
     /// <summary>
-    /// Whether <paramref name="paramType"/> reads <paramref name="owner"/> through <c>Accessing</c>: written
-    /// <c>Accessing[Owner]</c>, which a routine's signature turns into a parameter of its own bound by
-    /// <c>obeys Accessing[Owner]</c> (<c>you: Accessing[Box]</c> becomes <c>[__T0 obeys Accessing[Box]](you: __T0)</c>).
+    /// Whether <paramref name="paramType"/> reads <paramref name="owner"/> through a token: written
+    /// <c>Viewing[Owner]</c>.
     /// </summary>
-    internal static bool ReadsOwnerThroughAccessing(RoutineInfo routine, TypeSymbol paramType, TypeSymbol owner)
+    internal static bool ReadsOwnerThroughToken(TypeSymbol paramType, TypeSymbol owner)
     {
-        if (paramType is ProtocolTypeSymbol { TypeArguments: [{ } read] } readType &&
-            (readType.GenericDefinition ?? readType).BareName == RuntimeContract.Accessing)
-        {
-            return MeTypeMatches(actualType: read, ownerType: owner);
-        }
-
-        if (paramType is not GenericParameterTypeSymbol bound)
-        {
-            return false;
-        }
-
-        string ownerName = TypeSymbol.StripTypeArgs(name: owner.Name);
-        return routine.GenericConstraints?.Any(predicate: c =>
-            c is { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: [{ } constraint] } &&
-            c.ParameterName == bound.Name &&
-            TypeSymbol.StripTypeArgs(name: constraint.Name) == RuntimeContract.Accessing &&
-            constraint.GenericArguments is [{ } readExpr] &&
-            TypeSymbol.StripTypeArgs(name: readExpr.Name) is var readName &&
-            (readName == ownerName || readName == owner.BareName || readName == "Me")) == true;
+        return paramType is { TypeArguments: [{ } read] } readType && readType.BareName == RuntimeContract.Viewing &&
+               MeTypeMatches(actualType: read, ownerType: owner);
     }
 
     /// <summary>

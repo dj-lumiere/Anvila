@@ -338,6 +338,20 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // A builder-written body (a derive cloned onto the program's type) calls the library's own routines, and so
+        // does a call the builder writes into a program (`xs.exchange(...)` for `steal xs[i] as old inject fresh`).
+        if (_isInCompilerGeneratedBody || isCompilerSynthesized)
+        {
+            return;
+        }
+
+        // A routine reached through a token (`node.keys_get(i)` on a `Viewing[Node]`) belongs to the value's type.
+        TypeSymbol? owner = routine.WrapperForwarderInnerMemberRoutine?.OwnerType ?? routine.OwnerType;
+        if (owner != null && IsAccessToken(type: owner) && owner.TypeArguments is [{ } viewed, ..])
+        {
+            owner = viewed;
+        }
+
         ValidateMemberAccess(visibility: routine.Visibility,
             memberKind: routine.Kind switch
             {
@@ -346,9 +360,9 @@ public sealed partial class SemanticVerifier
                 _ => "routine"
             },
             memberName: routine.Name,
-            ownerType: routine.OwnerType,
+            ownerType: owner,
             accessLocation: accessLocation,
-            memberModule: routine.OwnerType?.Module ?? routine.Module);
+            memberModule: owner?.Module ?? routine.Module);
 
         // Dangerous routines can only be called inside danger blocks — EXCEPT a builder-synthesized
         // call (e.g. ScopeTeardownLoweringPass's injected `local.destruct()`), which is the builder's
@@ -465,17 +479,6 @@ public sealed partial class SemanticVerifier
     {
         if (TryUnwrapMarkerReceiver(type: objectType, innerType: out TypeSymbol targetType))
         {
-            if (IsReadOnlyTransparentProtocol(type: objectType) ||
-                IsReadOnlyMarkerBoundParam(type: objectType))
-            {
-                ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
-                    message:
-                    $"Cannot write to member '{memberVariableName}' through read-only protocol '{objectType.Name}'. " +
-                    "Use Controlling[T] or a writable token instead.",
-                    location: location);
-                return;
-            }
-
             objectType = targetType;
         }
 

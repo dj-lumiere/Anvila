@@ -45,6 +45,7 @@ public abstract class AstRewriter
             VariantReturnStatement s => VisitVariantReturn(s: s),
             AtomicRmwStatement s => VisitAtomicRmw(s: s),
             DropStatement s => VisitDrop(s: s),
+            StealStatement s => VisitSteal(s: s),
             ExpressionStatement s => VisitExpressionStatement(s: s),
             AssignmentStatement s => VisitAssignment(s: s),
             DeclarationStatement s => VisitDeclarationStatement(s: s),
@@ -376,6 +377,22 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: e, objB: s.Expression)
             ? s
             : s with { Expression = e };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="StealStatement"/> by visiting its place and the value put in.
+    /// </summary>
+    /// <param name="s">The steal statement to rewrite.</param>
+    /// <returns>The rewritten statement, or the original reference if nothing changed.</returns>
+    protected virtual Statement VisitSteal(StealStatement s)
+    {
+        Expression place = VisitExpression(expr: s.Place);
+        Expression? fresh = s.Fresh != null
+            ? VisitExpression(expr: s.Fresh)
+            : null;
+        return ReferenceEquals(objA: place, objB: s.Place) && ReferenceEquals(objA: fresh, objB: s.Fresh)
+            ? s
+            : s with { Place = place, Fresh = fresh };
     }
 
     /// <summary>

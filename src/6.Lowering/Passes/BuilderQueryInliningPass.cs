@@ -653,6 +653,12 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                 : gp.Name;
         }
 
+        // A routine type's signature is its name (`Callable[(S32,), S32]`), not type arguments.
+        if (type is RoutineTypeSymbol)
+        {
+            return type.Name;
+        }
+
         if (type.TypeArguments is not { Count: > 0 } args)
         {
             return type.BareName;
@@ -684,6 +690,11 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                    _currentTypeSubs.TryGetValue(key: gp.Name, value: out TypeSymbol? sub)
                 ? GetFullTypeName(type: sub)
                 : gp.Name;
+        }
+
+        if (type is RoutineTypeSymbol)
+        {
+            return type.Name;
         }
 
         string baseName = string.IsNullOrEmpty(value: type.Module)

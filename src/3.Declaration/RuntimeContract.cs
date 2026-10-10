@@ -175,6 +175,10 @@ public static class RuntimeContract
     /// <summary>The native pointer record a routine is handed to native code as.</summary>
     public const string CPtr = "CPtr";
 
+    /// <summary>The container routine that puts a value in an element place and gives back the one that was there
+    /// (<c>steal xs[i] as old inject fresh</c>).</summary>
+    public const string Exchange = "exchange";
+
     /// <summary>Carrier record field names on <c>Maybe[T]</c>/<c>Result[T]</c>.</summary>
     /// <remarks>Sites: ExpressionLoweringPass (tuple synthesis), PatternLoweringPass, ErrorHandlingVariantPass,
     /// LlvmEmitter.Statements (field lookup).</remarks>
@@ -289,7 +293,7 @@ public static class RuntimeContract
     /// declared stdlib type, so it cannot be resolution-checked.</summary>
     public static readonly IReadOnlyList<string> StdlibTypeContracts =
     [
-        Atomic, Controlling, Accessing, ConvertibleFrom
+        Atomic
     ];
 
     // =====================================================================================
@@ -437,43 +441,6 @@ public static class RuntimeContract
     /// <summary>Atomic value wrapper.</summary>
     public const string Atomic = "Atomic";
 
-    /// <summary>The number types a program converts to with <c>x.to[T]()</c> only (their conversion creators are
-    /// secret to the library, and the migrate tool rewrites the old creator calls into <c>to</c>).</summary>
-    public static readonly IReadOnlySet<string> ConversionNumberTypes = new HashSet<string>(comparer: StringComparer.Ordinal)
-    {
-        "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256",
-        "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256"
-    };
-
-    /// <summary>The protocol a conversion's target obeys (<c>T obeys ConvertibleFrom[N]</c> for <c>n.to[T]()</c>):
-    /// its creator requirement <c>Me!(from: S)</c> is the conversion.</summary>
-    public const string ConvertibleFrom = "ConvertibleFrom";
-
-    /// <summary>Marker protocol whose coercion mints a controlling borrow (<see cref="Control"/>).</summary>
-    public const string Controlling = "Controlling";
-
-    /// <summary>Marker protocol whose coercion mints a referring borrow (<see cref="Access"/>).</summary>
-    public const string Accessing = "Accessing";
-
-    /// <summary>
-    /// The single classifier for the borrow marker protocols: true when <paramref name="baseName"/> is
-    /// the bare name of <see cref="Accessing"/> or <see cref="Controlling"/>. Use this everywhere instead
-    /// of open-coding <c>x is Accessing or Controlling</c>.
-    /// </summary>
-    public static bool IsMarkerProtocol(string? baseName)
-    {
-        return baseName is Accessing or Controlling;
-    }
-
-    /// <summary>The coercion verb a marker protocol mints: <see cref="Control"/> for
-    /// <see cref="Controlling"/> (read/write), else <see cref="Access"/> (read-only).</summary>
-    public static string MarkerCoercionVerb(string? baseName)
-    {
-        return baseName == Controlling
-            ? Control
-            : Access;
-    }
-
     /// <summary>All wrapper types recognized for layout/dispatch. Mirrors WrapperForwardingPass.WrapperTypes
     /// and LlvmEmitter.WrapperTypeNames.</summary>
     public static readonly IReadOnlySet<string> WrapperTypes =
@@ -531,9 +498,7 @@ public static class RuntimeContract
             Viewing,
             Modifying,
             Consulting,
-            Amending,
-            Accessing,
-            Controlling
+            Amending
         };
 
     /// <summary>The reference-counting wrapper base names: a value of one of these co-owns a

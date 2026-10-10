@@ -629,13 +629,6 @@ public sealed partial class TypeRegistry
     /// </summary>
     internal bool TypeObeysProtocol(TypeSymbol type, string protocolName)
     {
-        // Marker reference protocols (Accessing/Controlling) are obeyed reflexively by any non-entity
-        // type — folded here so every caller (constraint gate + ImplementsProtocol) shares the one rule.
-        if (SatisfiesMarkerProtocolReflexively(implementer: type, protocolName: protocolName))
-        {
-            return true;
-        }
-
         List<TypeSymbol>? implemented = ImplementedProtocolsWithAmbientFold(type: type);
         if (implemented == null)
         {

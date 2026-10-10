@@ -315,6 +315,13 @@ public sealed partial class SemanticVerifier
         // Analyze the operand
         TypeSymbol operandType = AnalyzeExpression(expression: steal.Operand);
 
+        // The move out of a place a `steal place as old` statement makes: the statement fills the place again.
+        if (steal.IsPlaceMove)
+        {
+            steal.ResolvedType = operandType;
+            return operandType;
+        }
+
         // A builder-written move (an argument moved into an Agent recipe) moves an entity and leaves any
         // other value, wrappers included, as it is.
         if (steal.IsImplicitMove && !IsRawEntityType(type: operandType))

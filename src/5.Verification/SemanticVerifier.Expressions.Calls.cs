@@ -142,22 +142,6 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
         EnforceUnsafeCallAllowed(resolved: call.ResolvedRoutine, location: call.Location);
-        if (call is { Callee: IdentifierExpression, ResolvedRoutine: { IsCreator: true, OwnerType: { } built } creator })
-        {
-            ValidateCreatorAccess(call: call, creator: creator.GenericDefinition ?? creator, type: built);
-        }
-        // A number type built from one value with no creator behind it is a built-in reinterpret (`S64(from: c)` on
-        // a choice): a program converts with `to`.
-        else if (call is { Callee: IdentifierExpression, ResolvedRoutine: null, ConstructedType: { } numberType } &&
-                 call.Arguments.Count == 1 &&
-                 Declaration.RuntimeContract.ConversionNumberTypes.Contains(item: numberType.Name) &&
-                 !call.IsSynthesizedLowering && !_isInCompilerGeneratedBody && !IsStdlibFile(filePath: _currentFilePath))
-        {
-            ReportError(code: SemanticDiagnosticCode.SecretMemberAccess,
-                message: $"You built a '{numberType.Name}' from a value. To convert a value, write " +
-                         $"'value.to[{numberType.Name}]()'.",
-                location: call.Location);
-        }
 
         return result;
     }
@@ -747,6 +731,16 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
+        // `x.to()`: a family of specializations (`routine S64.to[U8]()`, `routine S64.to[U16]()`, ...) is picked by
+        // the type the result goes to.
+        if (call.Arguments.Count == 0 && objectType is not (ErrorTypeSymbol or GenericParameterTypeSymbol) &&
+            _registry.LookupSpecializedMemberRoutines(owner: objectType, name: member.MemberName) is
+                { Count: > 0 } family)
+        {
+            return AnalyzeInferredSpecialization(call: call, member: member, objectType: objectType, family: family,
+                expectedType: expectedType);
+        }
+
         // A buildtime `expand` handle has no callable methods — its metadata is read via the
         // function-form intrinsics (`nameof(m)`/`typeof(m)`/…), so `m.foo(...)` is a mistake.
         if (AnalyzeBuildtimeHandleCall(call: call, member: member, objectType: objectType) is
@@ -790,6 +784,15 @@ public sealed partial class SemanticVerifier
             dispatchType: dispatchType,
             memberRoutine: ref memberRoutine,
             ambiguousSeed: ambiguousSeed);
+
+        // A specialization is one routine of a family picked by type, and a type parameter has no family.
+        if (memberRoutine is { IsSpecialization: true } && objectType is GenericParameterTypeSymbol)
+        {
+            ReportSpecializationNotFound(name: member.MemberName, owner: objectType,
+                typeArguments: expectedType is null or ErrorTypeSymbol ? [] : [expectedType],
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
 
         // Clean-diagnostic gate, on the overload the arguments picked: a member routine whose owner-level
         // `needs param obeys P` constraint is unmet by the concrete receiver (e.g. `List[Widget].duplicate()` with
@@ -909,21 +912,32 @@ public sealed partial class SemanticVerifier
             a is not NamedArgumentExpression named || names.Contains(item: named.Name));
     }
 
+    /// <summary>Whether <paramref name="routine"/> is one written for every type (<c>routine T.view()</c>), bound
+    /// to a receiver.</summary>
+    private static bool IsUniversalDefault(RoutineInfo? routine)
+    {
+        return routine is { OwnerType: not GenericParameterTypeSymbol } &&
+               routine.GenericDefinition?.OwnerType is GenericParameterTypeSymbol;
+    }
+
     private void ResolveMemberRoutineCandidate(CallExpression call, MemberExpression member,
         TypeSymbol objectType, bool isFailableMemberRoutineCall,
         ref TypeSymbol dispatchType, out RoutineInfo? memberRoutine, out bool ambiguousSeed)
     {
         string callLookupName = member.MemberName;
         // A shared entity's handle stands for the entity: a call on it is a call on the entity, unless the handle
-        // itself has the routine (`share`, `control`, `lock_enter`, ...). Library code holds such handles where a
-        // program's code still holds the entity at this point, and finds the same routines.
+        // itself has the routine for these arguments (`share`, `destruct`, `lock_enter`, ...): `view(first:, room:)`
+        // of a `Buffer[T]` is the buffer's, `view()` the handle's. Library code holds such handles where a program's
+        // code still holds the entity at this point, and finds the same routines.
         if (dispatchType is RecordTypeSymbol
             {
-                GenericDefinition: { } handleDef, TypeArguments: [EntityTypeSymbol sharedEntity]
-            } && handleDef.Name == Declaration.RuntimeContract.Roamed &&
-            !_registry.GetMemberRoutinesForType(type: handleDef).Any(predicate: r => r.Name == callLookupName))
+                GenericDefinition: { } handleDef, TypeArguments: [EntityTypeSymbol]
+            } sharedHandle && handleDef.Name == Declaration.RuntimeContract.Roamed &&
+            !_registry.GetMemberRoutinesForType(type: handleDef)
+                      .Any(predicate: r => r.Name == callLookupName &&
+                                           r.Parameters.Count(predicate: p => p.Name != "me") == call.Arguments.Count))
         {
-            dispatchType = sharedEntity;
+            dispatchType = sharedHandle.TypeArguments![0];
         }
 
         memberRoutine = _registry.LookupMemberRoutine(type: dispatchType,
@@ -940,6 +954,14 @@ public sealed partial class SemanticVerifier
             memberRoutine = _registry.LookupMemberRoutine(type: dispatchType,
                 memberRoutineName: callLookupName,
                 isFailable: true);
+        }
+        else if (!isFailableMemberRoutineCall && IsUniversalDefault(routine: memberRoutine) &&
+                 _registry.LookupMemberRoutine(type: dispatchType, memberRoutineName: callLookupName,
+                     isFailable: true) is { } ownFailable && !IsUniversalDefault(routine: ownFailable))
+        {
+            // The type's own failable routine (`Buffer[T].view!(first:, room:)`) comes before a routine written for
+            // every type (`T.view()`), as it would if it were not failable.
+            memberRoutine = ownFailable;
         }
 
         // Phase D: Transparent wrapper forwarding — if the memberRoutine isn't found directly on
@@ -977,6 +999,17 @@ public sealed partial class SemanticVerifier
             callLookupName: callLookupName,
             dispatchType: ref dispatchType,
             memberRoutine: ref memberRoutine);
+
+        // A token on a value of a type parameter (`parts: Viewing[TList]`) reaches the value: the call is the
+        // value's, found through the parameter's constraints, and the token's `access()`/`control()` reaches it
+        // once the instance is made (TokenReadLoweringPass).
+        if (memberRoutine == null && dispatchType is RecordTypeSymbol
+            {
+                TypeArguments: [GenericParameterTypeSymbol held]
+            } token && token.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
+        {
+            dispatchType = held;
+        }
 
         // Generic-parameter receiver: resolve via Obeys constraints from the current
         // routine and its owner type. e.g. `key.hash()` where `K obeys Hashable`
@@ -1060,6 +1093,62 @@ public sealed partial class SemanticVerifier
             memberRoutine = byName;
         }
     }
+
+    /// <summary>
+    /// Binds <c>x.to()</c> to the specialization of the family whose result is the expected type (the declared
+    /// variable, the return type, the parameter, or the payload of a <c>try</c>/<c>check</c> carrier).
+    /// </summary>
+    private TypeSymbol AnalyzeInferredSpecialization(CallExpression call, MemberExpression member,
+        TypeSymbol objectType, List<RoutineInfo> family, TypeSymbol? expectedType)
+    {
+        if (expectedType is null or ErrorTypeSymbol or GenericParameterTypeSymbol)
+        {
+            ReportError(code: SemanticDiagnosticCode.ResultTypeArgumentUnknown,
+                message: $"You called '{member.MemberName}()', which needs its type argument from where the result " +
+                         $"goes, but nothing here gives that type. Write it in the call ('.{member.MemberName}[S64]()'), " +
+                         "or give the variable a type.",
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
+        RoutineInfo? chosen = family.FirstOrDefault(predicate: r => r.TypeArguments is [var only] &&
+                                                                    only.FullName == expectedType.FullName);
+        if (chosen == null)
+        {
+            ReportSpecializationNotFound(name: member.MemberName, owner: objectType, typeArguments: [expectedType],
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
+        return AnalyzeResolvedMemberCall(call: call,
+                   member: member,
+                   objectType: objectType,
+                   dispatchType: objectType,
+                   memberRoutine: chosen,
+                   expectedType: expectedType) ??
+               ErrorTypeSymbol.Instance;
+    }
+
+    /// <summary>Reports a call of a specialization the receiver does not have: for <c>to</c>, a missing
+    /// conversion.</summary>
+    private void ReportSpecializationNotFound(string name, TypeSymbol owner, IReadOnlyList<TypeSymbol> typeArguments,
+        SourceLocation location)
+    {
+        string arguments = string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name));
+        string message = name != ToConversionName
+            ? $"'{owner.Name}' has no '{name}[{arguments}]'."
+            : owner is GenericParameterTypeSymbol
+                ? $"'{owner.Name}' is a type parameter, and conversions are written for each concrete type " +
+                  $"('routine S64.to[{arguments}]()'), so a value of '{owner.Name}' has none. Take the " +
+                  $"parameter as '{arguments}', or convert where the type is known."
+                : typeArguments is [{ } only] && (only.FullName == owner.FullName || only.Name == owner.Name)
+                    ? $"The value is already a '{owner.Name}'. Use it as it is, without '.to[{arguments}]()'."
+                    : $"There is no conversion from '{owner.Name}' to '{arguments}'.";
+        ReportError(code: SemanticDiagnosticCode.SpecializationNotFound, message: message, location: location);
+    }
+
+    /// <summary>The routine family conversions are written with: <c>routine S64.to[U8]()</c>.</summary>
+    private const string ToConversionName = "to";
 
     /// <summary>
     /// Handles the member-chain constructor path: `"42".S32!()` → `S32.create!(from: "42")`. Infers generic
@@ -1360,7 +1449,7 @@ public sealed partial class SemanticVerifier
         creator ??= FallbackMemberwiseCreatorByFieldNames(callableType: callableType, call: call);
 
         // `T(from: x)` on a type parameter builds through the creator a protocol it obeys requires
-        // (`needs T obeys ConvertibleFrom[N]`). Binding that requirement tells a recovery variant the call can
+        // (`needs T obeys Parsable`). Binding that requirement tells a recovery variant the call can
         // fail, and instantiation rebinds it to the concrete type's creator.
         if (creator == null && callableType is GenericParameterTypeSymbol creatorParameter)
         {
@@ -2460,18 +2549,6 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
-        // A program converts with `to`. Taking a variant's arm out (`sv.Dict()`) is not a conversion, and the
-        // library and builder-written bodies keep the member form.
-        if (objectType is not VariantTypeSymbol && !call.IsSynthesizedLowering && !_isInCompilerGeneratedBody &&
-            !IsStdlibFile(filePath: _currentFilePath))
-        {
-            ReportError(code: SemanticDiagnosticCode.ConversionWrittenAsMember,
-                message: $"You wrote '.{potentialTypeName}()' to convert a '{objectType.Name}'. A conversion is " +
-                         $"written '.to[{potentialTypeName}]()'.",
-                location: call.Location);
-            return ErrorTypeSymbol.Instance;
-        }
-
         // Look up the creator on the target type, using memberRoutine-overload resolution
         // to match the object type (e.g., Text -> S32!(from_text: Text)). IsFailable is a separate
         // flag on the result. A creator is owner-scoped, so LookupMemberRoutineOverload (not
@@ -2536,7 +2613,6 @@ public sealed partial class SemanticVerifier
         // is the conversion source — codegen passes it as the `from:` argument.
         call.ResolvedRoutine = creator;
 
-        ValidateCreatorAccess(call: call, creator: creator, type: targetType);
         TypeSymbol? validationError = ValidateMemberConversionCreator(call: call,
             objectType: objectType,
             potentialTypeName: potentialTypeName,
@@ -2551,26 +2627,6 @@ public sealed partial class SemanticVerifier
         // `create` returns the target type. `call.ConstructedType` stays the target so codegen's
         // TypeConstructor path passes the receiver as the `from:` arg.
         return targetType;
-    }
-
-    /// <summary>
-    /// A creator written by the program has to be visible from where it is called. A number type's conversion
-    /// creators are secret: a program converts with <c>x.to[T]()</c>, which the error points at.
-    /// </summary>
-    private void ValidateCreatorAccess(CallExpression call, RoutineInfo creator, TypeSymbol type)
-    {
-        if (creator.Visibility != VisibilityModifier.Secret || call.IsSynthesizedLowering ||
-            _isInCompilerGeneratedBody || IsAccessingFromSameModule(memberModule: type.Module ?? creator.Module))
-        {
-            return;
-        }
-
-        string hint = creator.Parameters.Count(predicate: p => p.Name != "me") == 1
-            ? $" To convert a value, write 'value.to[{type.Name}]()'."
-            : "";
-        ReportError(code: SemanticDiagnosticCode.SecretMemberAccess,
-            message: $"You called a creator of '{type.Name}' that is secret to its module.{hint}",
-            location: call.Location);
     }
 
     /// <summary>
@@ -2740,10 +2796,6 @@ public sealed partial class SemanticVerifier
 
             if (inferredMemberRoutineTypeArgs != null)
             {
-                ValidateCreatorRequirementConstraints(routine: memberRoutine,
-                    bindings: CallTypeBindings(routine: memberRoutine, receiverType: dispatchType,
-                        typeArgs: inferredMemberRoutineTypeArgs),
-                    location: call.Location);
                 memberRoutine = _registry.GetOrCreateRoutineResolution(
                     genericDef: memberRoutine,
                     typeArguments: inferredMemberRoutineTypeArgs);
@@ -2834,17 +2886,6 @@ public sealed partial class SemanticVerifier
     private void ValidateMemberCallMutability(CallExpression call, MemberExpression member,
         TypeSymbol objectType, TypeSymbol dispatchType, RoutineInfo memberRoutine)
     {
-        if (!ReferenceEquals(objA: dispatchType, objB: objectType) &&
-            IsReadOnlyTransparentProtocol(type: objectType) && !memberRoutine.IsReadOnly)
-        {
-            ReportError(
-                code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
-                message:
-                $"Cannot call writable member routine '{memberRoutine.Name}' through read-only protocol '{objectType.Name}'. " +
-                "Use Controlling[T] or a writable token instead.",
-                location: call.Location);
-        }
-
         // A read token (`Viewing[T]`, `Consulting[T]`) reaches only the inner value's `@readonly` routines: a call
         // that changes the value goes through a write token. The token's own routines and builder-written calls
         // are left out.
@@ -3069,8 +3110,9 @@ public sealed partial class SemanticVerifier
         }
 
         // #170: Downgrade prohibition — cannot call .view() on Modifying/Amending
-        if (member.MemberName == "view" && (Wrappers.IsModifyingType(type: objectType) ||
-                                            Wrappers.IsAmendingType(type: objectType)))
+        // A Modifying or Amending token handed to a Viewing parameter narrows implicitly: the builder writes that.
+        if (member.MemberName == "view" && !call.IsSynthesizedLowering &&
+            (Wrappers.IsModifyingType(type: objectType) || Wrappers.IsAmendingType(type: objectType)))
         {
             ReportError(code: SemanticDiagnosticCode.TokenDowngradeProhibited,
                 message: $"Cannot downgrade '{objectType.Name}' with '.view()'. " +
@@ -3410,6 +3452,20 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private ProtocolTypeSymbol? ProjectionBound(AssociatedProjectionTypeSymbol projection)
     {
+        return ProjectionSlot(projection: projection).Bound;
+    }
+
+    /// <summary>The protocol that declares an associated type's slot (`Emittable[T]` for `S/Iter/Item`), or
+    /// null.</summary>
+    private ProtocolTypeSymbol? ProjectionOwner(AssociatedProjectionTypeSymbol projection)
+    {
+        return ProjectionSlot(projection: projection).Owner;
+    }
+
+    /// <summary>The protocol declaring an associated type's slot and the protocol bounding it, when found.</summary>
+    private (ProtocolTypeSymbol? Owner, ProtocolTypeSymbol? Bound) ProjectionSlot(
+        AssociatedProjectionTypeSymbol projection)
+    {
         IEnumerable<TypeSymbol> obeyed = projection.Base switch
         {
             GenericParameterTypeSymbol parameter => ActiveConstraintsFor(paramName: parameter.Name)
@@ -3436,15 +3492,14 @@ public sealed partial class SemanticVerifier
 
             foreach (ProtocolTypeSymbol p in new[] { protocol }.Concat(second: protocol.ParentProtocols))
             {
-                if (p.AssociatedTypes.FirstOrDefault(predicate: s => s.Name == projection.SlotName)
-                        ?.Constraint is ProtocolTypeSymbol bound)
+                if (p.AssociatedTypes.FirstOrDefault(predicate: s => s.Name == projection.SlotName) is { } slot)
                 {
-                    return bound;
+                    return (p, slot.Constraint as ProtocolTypeSymbol);
                 }
             }
         }
 
-        return null;
+        return (null, null);
     }
 
     private void ResolveTransparentMemberRoutine(TypeSymbol objectType,

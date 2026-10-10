@@ -1746,6 +1746,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 return;
             }
 
+            // A routine written for every type of a kind (`routine T.hash(...) needs ChoiceType T`) is a derive
+            // template: its body is cloned and analyzed per owner (MaterializeDeriveTemplateBodyIfNeeded), not
+            // instantiated from the unanalyzed source.
+            if (r.GenericDefinition.OwnerType is GenericParameterTypeSymbol &&
+                r.OwnerType is { IsGenericDefinition: false } owner and not GenericParameterTypeSymbol &&
+                _ctx.Registry.GetDeriveTemplate(name: r.Name, arity: r.Parameters.Count, forType: owner) != null)
+            {
+                return;
+            }
+
             if (_ctx.InstantiatedGenericBodies.ContainsKey(key: key))
             {
                 return;
@@ -2528,7 +2538,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             // reaches codegen calling `me.keys` on the fieldless overlay. Pass the owner realm so the SF
             // instance resolves to the SF forwarder decl (mirrors the genDef-realm path above).
             expectedOwnerRealm: resolvedRoutine.OwnerType?.Realm,
-            expectedSurfaceRealm: resolvedRoutine.SurfaceRealm);
+            expectedSurfaceRealm: resolvedRoutine.SurfaceRealm,
+            expectedSpecialization: resolvedRoutine.GenericDefinition.IsSpecialization
+                ? resolvedRoutine.GenericDefinition.TypeArguments
+                : null);
         if (astDecl == null)
         {
             EmitResolvedRoutineBodyFromVariantFallback(resolvedRoutine: resolvedRoutine,
@@ -2874,7 +2887,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 ? TypeSymbol.StripTypeArgs(name: gdFn)
                 : null,
             expectedOwnerRealm: genDef.Realm,
-            expectedSurfaceRealm: genMemberRoutine.SurfaceRealm);
+            expectedSurfaceRealm: genMemberRoutine.SurfaceRealm,
+            expectedSpecialization: genMemberRoutine.IsSpecialization ? genMemberRoutine.TypeArguments : null);
 
         if (astDecl == null)
         {
@@ -3002,7 +3016,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 ? TypeSymbol.StripTypeArgs(name: ownerName)
                 : null,
             expectedOwnerRealm: genMemberRoutine.OwnerType?.Realm,
-            expectedSurfaceRealm: genMemberRoutine.SurfaceRealm);
+            expectedSurfaceRealm: genMemberRoutine.SurfaceRealm,
+            expectedSpecialization: genMemberRoutine.IsSpecialization ? genMemberRoutine.TypeArguments : null);
 
         if (astDecl == null)
         {
@@ -3177,31 +3192,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// <summary>
     /// Resolves a type by applying generic substitutions.
     /// </summary>
-    /// <summary>The inner X of a marker borrow protocol <c>Accessing[X]</c>/<c>Controlling[X]</c>, or null.
-    /// A marker is ABI-transparent to its inner, so during monomorphization it is replaced by X — no marker
-    /// protocol survives into a concrete signature, and the backend never sees a protocol-typed param.</summary>
-    private static TypeSymbol? MarkerInner(TypeSymbol t)
-    {
-        return t is ProtocolTypeSymbol { TypeArguments: [{ } inner] } p &&
-               RuntimeContract.IsMarkerProtocol(baseName: (p.GenericDefinition ?? p).BareName)
-            ? inner
-            : null;
-    }
-
     private TypeSymbol ResolveSubstitutedType(TypeSymbol type, Dictionary<string, TypeSymbol> subs)
     {
-        // A marker borrow protocol (directly, or reached through a substitution below) collapses to its
-        // ABI-transparent inner — recurse so a still-generic inner is resolved too.
-        if (MarkerInner(t: type) is { } directInner)
-        {
-            return ResolveSubstitutedType(type: directInner, subs: subs);
-        }
-
         if (subs.TryGetValue(key: type.Name, value: out TypeSymbol? sub))
         {
-            return MarkerInner(t: sub) is { } subbedInner
-                ? ResolveSubstitutedType(type: subbedInner, subs: subs)
-                : sub;
+            return sub;
         }
 
         // Tuples carry their elements in ElementTypes (not TypeArguments), so the generic-resolution
@@ -3603,7 +3598,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private RoutineDeclaration? FindInStdlib(string genericAstName, int expectedParamCount = -1,
         Dictionary<string, TypeSymbol>? typeSubs = null, List<string>? expectedParamNames = null,
         List<string?>? expectedParamTypeNames = null, string? expectedOwnerModule = null,
-        string? expectedOwnerRealm = null, string? expectedSurfaceRealm = null)
+        string? expectedOwnerRealm = null, string? expectedSurfaceRealm = null,
+        IReadOnlyList<TypeSymbol>? expectedSpecialization = null)
     {
         bool requireGenericSuffix = genericAstName.EndsWith(value: "[generic]");
         string baseName = requireGenericSuffix
@@ -3628,6 +3624,19 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         if (candidates.Any(predicate: d => d.ResolvedInfo?.SurfaceRealm != null))
         {
             candidates = candidates.Where(predicate: d => d.ResolvedInfo?.SurfaceRealm == expectedSurfaceRealm)
+                                   .ToList();
+        }
+
+        // The specializations of one family (`T.to[S32]`, `T.to[S64]`) share the name: the type arguments pick one.
+        if (expectedSpecialization != null)
+        {
+            candidates = candidates.Where(predicate: d =>
+                                        d.SpecializedTypeArguments is { } written &&
+                                        written.Count == expectedSpecialization.Count &&
+                                        written.Zip(second: expectedSpecialization)
+                                               .All(predicate: pair =>
+                                                    pair.First.KnownType?.FullName == pair.Second.FullName ||
+                                                    pair.First.Name == pair.Second.Name))
                                    .ToList();
         }
 
@@ -3824,15 +3833,13 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>Borrow/reference wrapper type names. A parameter declared with one of these
-    /// (e.g. <c>from: Accessing[SortedSet[T]]</c>) reaches the AST as the bare inner type
+    /// (e.g. <c>from: Viewing[SortedSet[T]]</c>) reaches the AST as the bare inner type
     /// (<c>SortedSet</c>), while the resolved <see cref="RoutineInfo"/> keeps the full wrapper —
     /// so overload disambiguation must compare the inner type, not the wrapper.</summary>
     private static readonly HashSet<string> BorrowWrapperNames =
         new(comparer: StringComparer.Ordinal)
         {
-            RuntimeContract.Accessing,
             RuntimeContract.Viewing,
-            RuntimeContract.Controlling,
             RuntimeContract.Modifying,
             RuntimeContract.Hijacked,
             RuntimeContract.Consulting,

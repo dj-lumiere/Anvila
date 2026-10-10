@@ -527,6 +527,17 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         return false;
     }
 
+    public bool VisitStealStatement(StealStatement node)
+    {
+        Visit(e: node.Place);
+        if (node.Fresh != null)
+        {
+            Visit(e: node.Fresh);
+        }
+
+        return false;
+    }
+
     public bool VisitCancellationPushStatement(CancellationPushStatement node)
     {
         return false;

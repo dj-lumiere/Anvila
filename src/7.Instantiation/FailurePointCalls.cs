@@ -99,13 +99,20 @@ internal static class FailurePointCalls
             return null;
         }
 
+        // A key the routine takes through a token (`Dict.getitem(key: Viewing[K])`) goes as the address of its place.
+        TypeSymbol slot = getItem.Parameters[index: 0].Type;
+        bool byToken = Declaration.ImplicitToken.IsTokenParameter(parameter: slot, tokenKind: out _, target: out _) &&
+                       indexType.BareName != slot.BareName && indexType is not EntityTypeSymbol;
+        Expression key = byToken
+            ? new AddressOfExpression(Target: idx.Index, Location: idx.Location) { ResolvedType = slot }
+            : idx.Index;
         return MemberCall(receiver: idx.Object,
             memberName: getItem.Name,
             arguments:
             [
                 new NamedArgumentExpression(Name: getItem.Parameters[index: 0].Name,
-                    Value: idx.Index,
-                    Location: idx.Location) { ResolvedType = indexType }
+                    Value: key,
+                    Location: idx.Location) { ResolvedType = key.ResolvedType ?? indexType }
             ],
             routine: getItem,
             resultType: idx.ResolvedType,

@@ -129,6 +129,15 @@ public static class AstWalker
             {
                 s.Expression
             },
+            StealStatement s => s.Fresh != null
+                ? new object[]
+                {
+                    s.Place, s.Fresh
+                }
+                : new object[]
+                {
+                    s.Place
+                },
             AtomicRmwStatement s => new object[]
             {
                 s.Field,

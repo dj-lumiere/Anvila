@@ -968,27 +968,6 @@ public sealed partial class TypeRegistry
     /// gate a protocol-default body (the kind constraints <c>is variant/choice/flags/record/entity</c>
     /// plus <c>obeys P</c>).
     /// </summary>
-    /// <summary>
-    /// A marker protocol (<c>Accessing[T]</c>/<c>Controlling[T]</c>) is a read/control REFERENCE bound.
-    /// It is satisfied by any non-entity type: a value/record is read/controlled by identity (its own
-    /// value — <c>access()</c>/<c>control()</c> return <c>me</c>), and a concrete access token
-    /// (<c>Viewing</c>/<c>Modifying</c>/…, a record) both self-satisfies here and obeys structurally via
-    /// its parent chain. An ENTITY does NOT self-satisfy — it must be wrapped in a token to be borrowed,
-    /// so a bare entity is rejected (its call site wraps it via <c>.view()</c>/<c>.modify()</c>). This
-    /// gate is permissive by design (like the other kind gates); the concrete type-argument consistency
-    /// is enforced by generic inference + body type-checking.
-    /// </summary>
-    private static bool SatisfiesMarkerProtocolReflexively(TypeSymbol implementer,
-        string protocolName)
-    {
-        if (!RuntimeContract.IsMarkerProtocol(baseName: protocolName))
-        {
-            return false;
-        }
-
-        return implementer is not EntityTypeSymbol and not ProtocolTypeSymbol;
-    }
-
     private bool ImplementerSatisfiesConstraint(TypeSymbol implementer,
         GenericConstraintDeclaration constraint)
     {
@@ -1457,16 +1436,6 @@ public sealed partial class TypeRegistry
     public RoutineInfo? LookupMemberRoutine(TypeSymbol type, string memberRoutineName,
         bool? isFailable = null, TypeSymbol? forImplementer = null)
     {
-        // Transparent-protocol unwrap: Accessing[X] / Controlling[X] are markers that dispatch every
-        // memberRoutine to X — recurse on the inner type if matched.
-        RoutineInfo? viaMarker = TryLookupViaMarkerProtocol(type: type,
-            memberRoutineName: memberRoutineName,
-            isFailable: isFailable);
-        if (viaMarker != null)
-        {
-            return viaMarker;
-        }
-
         // First check the type's own memberRoutines (O(1) by name via the nested store)
         if (LookupOwnMemberRoutine(type: type,
                 memberRoutineName: memberRoutineName,
@@ -1543,34 +1512,6 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Transparent-protocol unwrap for <see cref="LookupMemberRoutine"/>: Accessing[X] /
-    /// Controlling[X] are markers that dispatch every memberRoutine to X. If
-    /// <paramref name="type"/> is one of these single-argument protocol wrappers, recurses on
-    /// the inner type and returns the result; otherwise returns null.
-    /// Without this, for-loops over Accessing[Iterable[T]] parameters cannot resolve their
-    /// iterator at SA time, producing spurious "no resolved member routine" warnings during
-    /// generic monomorphization.
-    /// </summary>
-    private RoutineInfo? TryLookupViaMarkerProtocol(TypeSymbol type, string memberRoutineName,
-        bool? isFailable)
-    {
-        if (type is not ProtocolTypeSymbol { TypeArguments: { Count: 1 } markerArgs } markerProto)
-        {
-            return null;
-        }
-
-        string markerBase = (markerProto.GenericDefinition ?? markerProto).BareName;
-        if (!RuntimeContract.IsMarkerProtocol(baseName: markerBase))
-        {
-            return null;
-        }
-
-        return LookupMemberRoutine(type: markerArgs[index: 0],
-            memberRoutineName: memberRoutineName,
-            isFailable: isFailable);
-    }
-
-    /// <summary>
     /// Checks a protocol type's own declared member routine signatures and synthesizes a
     /// <see cref="RoutineInfo"/> for the first name/failability match.
     /// </summary>
@@ -1610,9 +1551,21 @@ public sealed partial class TypeRegistry
             return null;
         }
 
+        // A wrapper's forwarders are made per inner type: the receiver's inner type picks among them.
+        if (LookupForwarder(wrapperType: type, memberRoutineName: memberRoutineName, isFailable: isFailable) is
+            { } forwarder)
+        {
+            return forwarder;
+        }
+
         RoutineInfo? genericMemberRoutine = LookupMemberRoutine(type: genericDef,
             memberRoutineName: memberRoutineName,
             isFailable: isFailable);
+        if (genericMemberRoutine?.WrapperForwarderInnerGenericDef != null)
+        {
+            return null;
+        }
+
         // Skip the generic-def → concrete substitution path when the inner lookup
         // resolved via the universal-memberRoutine fallback (e.g. `T.hijack()`). In that
         // case `genericMemberRoutine` already has its universal T baked to the generic-def
@@ -1982,8 +1935,9 @@ public sealed partial class TypeRegistry
             return null;
         }
 
-        // A constraint naming the protocol's type arguments (`needs T obeys ConvertibleFrom[N]`) binds them, so
-        // the requirement's signature reads `from: N`, not the protocol's own `from: S`. The arguments are read in
+        // A constraint naming the protocol's type arguments (`needs T obeys Builds[N]`, for a protocol
+        // `Builds[S]` requiring `routine Me!(from: S)`) binds them, so the requirement's signature reads `from: N`, not
+        // the protocol's own `from: S`. The arguments are read in
         // the constrained routine's scope (its own `N` is its parameter even where a `record N` exists), which
         // only the caller's resolver knows.
         if (protoInfo.IsGenericDefinition && typeArgumentResolver != null &&
@@ -2040,26 +1994,6 @@ public sealed partial class TypeRegistry
     public RoutineInfo? LookupMemberRoutineOverload(TypeSymbol type, string memberRoutineName,
         List<TypeSymbol> argTypes)
     {
-        // Transparent-protocol unwrap: Accessing[X] / Controlling[X] forward every memberRoutine
-        // to X. Mirror the unwrap in LookupMemberRoutine so overload-driven resolution (e.g. the
-        // CallOverloadResolutionPass walking f-string-lowered represent calls on a
-        // `Accessing[Text]` receiver) lands on Text's memberRoutine instead of synthesizing a
-        // protocol-dispatch stub on Accessing that has no implementers registered.
-        if (type is ProtocolTypeSymbol { TypeArguments: { Count: 1 } markerArgs } markerProto)
-        {
-            string markerBase = (markerProto.GenericDefinition ?? markerProto).BareName;
-            if (RuntimeContract.IsMarkerProtocol(baseName: markerBase))
-            {
-                RoutineInfo? viaInner = LookupMemberRoutineOverload(type: markerArgs[index: 0],
-                    memberRoutineName: memberRoutineName,
-                    argTypes: argTypes);
-                if (viaInner != null)
-                {
-                    return viaInner;
-                }
-            }
-        }
-
         var candidates = new List<RoutineInfo>();
         CollectMemberRoutineCandidates(type: type,
             memberRoutineName: memberRoutineName,
@@ -2304,96 +2238,6 @@ public sealed partial class TypeRegistry
     /// concrete <paramref name="resolvedOwner"/>: binds <c>T</c>→owner in params + return, drops <c>T</c>
     /// from the memberRoutine generics, keeps memberRoutine-own + owner <c>in [...]</c> constraints, and caches.
     /// </summary>
-    /// <summary>
-    /// Binds a universal routine's marker parameters that read or change the owner (`you: Accessing[T]`, which
-    /// the signature turned into `[__T0 obeys Accessing[T]](you: __T0)`) once the owner is concrete, the way a
-    /// call binds them from its argument: a value is passed as itself, an entity as its token
-    /// (`Viewing[E]` for `Accessing`, `Modifying[E]` for `Controlling`). Returns the bound parameter names.
-    /// </summary>
-    private HashSet<string> BindMarkerParameters(RoutineInfo memberRoutine,
-        GenericParameterTypeSymbol universalOwner, TypeSymbol resolvedOwner, Dictionary<string, TypeSymbol> substitution)
-    {
-        var bound = new HashSet<string>(comparer: StringComparer.Ordinal);
-        foreach (GenericConstraintDeclaration c in memberRoutine.GenericConstraints ?? [])
-        {
-            if (c is not { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: [{ } marker] } ||
-                marker.GenericArguments is not [{ } readExpr] ||
-                TypeSymbol.StripTypeArgs(name: readExpr.Name) != universalOwner.Name)
-            {
-                continue;
-            }
-
-            string markerName = TypeSymbol.StripTypeArgs(name: marker.Name);
-            bool reads = markerName == RuntimeContract.Accessing;
-            if (!reads && markerName != RuntimeContract.Controlling)
-            {
-                continue;
-            }
-
-            substitution[key: c.ParameterName] = TakesOwnerToken(owner: resolvedOwner)
-                ? GetOrCreateWrapperType(wrapperName: reads
-                        ? RuntimeContract.Viewing
-                        : RuntimeContract.Modifying,
-                    innerType: resolvedOwner,
-                    isReadOnly: reads)
-                : resolvedOwner;
-            bound.Add(item: c.ParameterName);
-        }
-
-        return bound;
-    }
-
-    /// <summary>
-    /// The same binding for a parameter a stdlib template spells directly as the marker (`you: Accessing[T]`
-    /// stays `Accessing[Owner]` once substituted): the owner value itself, or its token for an entity.
-    /// </summary>
-    private ParamInfo BindMarkerParameterType(ParamInfo param, TypeSymbol resolvedOwner)
-    {
-        TypeSymbol bound = BindOwnerMarker(type: param.Type, owner: resolvedOwner);
-        return ReferenceEquals(objA: bound, objB: param.Type)
-            ? param
-            : param.WithSubstitutedType(newType: bound);
-    }
-
-    /// <summary>
-    /// Whether a routine that reads or changes <paramref name="owner"/> takes it as a token: a RazorForge
-    /// entity does (`Viewing`/`Modifying`). A value never does, and Suflae has no tokens at all (a record is
-    /// copied, an entity is a shared handle), so there the owner is passed as itself.
-    /// </summary>
-    private bool TakesOwnerToken(TypeSymbol owner)
-    {
-        return CompilationRules.ChecksAccessTokens && IsEntityKind(type: owner);
-    }
-
-    /// <summary>
-    /// A marker that reads or changes <paramref name="owner"/> (`Accessing[Owner]`, `Controlling[Owner]`) bound
-    /// as a call binds it from its argument: the owner value itself, or for an entity its token
-    /// (`Viewing[Owner]`, `Modifying[Owner]`). Any other type comes back unchanged.
-    /// </summary>
-    public TypeSymbol BindOwnerMarker(TypeSymbol type, TypeSymbol owner)
-    {
-        if (type is not ProtocolTypeSymbol { TypeArguments: [{ } inner] } marker ||
-            !ReferenceEquals(objA: inner, objB: owner) && inner.FullName != owner.FullName)
-        {
-            return type;
-        }
-
-        string markerName = (marker.GenericDefinition ?? marker).BareName;
-        bool reads = markerName == RuntimeContract.Accessing;
-        if (!reads && markerName != RuntimeContract.Controlling)
-        {
-            return type;
-        }
-
-        return TakesOwnerToken(owner: owner)
-            ? GetOrCreateWrapperType(wrapperName: reads
-                    ? RuntimeContract.Viewing
-                    : RuntimeContract.Modifying,
-                innerType: owner,
-                isReadOnly: reads)
-            : owner;
-    }
-
     private RoutineInfo? SubstituteUniversalOwnerMemberRoutine(RoutineInfo memberRoutine,
         TypeSymbol resolvedOwner, GenericParameterTypeSymbol universalOwner)
     {
@@ -2402,17 +2246,11 @@ public sealed partial class TypeRegistry
             [key: universalOwner.Name] = resolvedOwner
         };
         BindProtocolSelf(substitution: substitution, resolvedOwner: resolvedOwner);
-        HashSet<string> boundMarkers = BindMarkerParameters(memberRoutine: memberRoutine,
-            universalOwner: universalOwner,
-            resolvedOwner: resolvedOwner,
-            substitution: substitution);
 
         var substitutedParams = memberRoutine.Parameters
                                              .Select(selector: p =>
                                                   RoutineInfo.SubstituteParameterType(param: p,
                                                       substitution: substitution))
-                                             .Select(selector: p => BindMarkerParameterType(param: p,
-                                                  resolvedOwner: resolvedOwner))
                                              .ToList();
         TypeSymbol? substitutedReturn = memberRoutine.ReturnType != null
             ? RoutineInfo.SubstituteType(type: memberRoutine.ReturnType,
@@ -2420,8 +2258,7 @@ public sealed partial class TypeRegistry
             : null;
         var memberRoutineOnlyGenericParams = memberRoutine.GenericParameters
                                                          ?.Where(predicate: gp =>
-                                                               gp != universalOwner.Name &&
-                                                               !boundMarkers.Contains(item: gp))
+                                                               gp != universalOwner.Name)
                                                           .ToList();
         if (memberRoutineOnlyGenericParams?.Count == 0)
         {
@@ -2852,6 +2689,90 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// The specializations named <paramref name="name"/> a value of <paramref name="owner"/> has: the owner's own
+    /// (<c>routine S64.to[U8]()</c>) and those written for any type whose kind gates the owner passes
+    /// (<c>routine T.to[S32]() needs ChoiceType T</c>), bound to the owner. Recovery variants are not among them.
+    /// </summary>
+    public List<RoutineInfo> LookupSpecializedMemberRoutines(TypeSymbol owner, string name)
+    {
+        var candidates = new List<RoutineInfo>();
+        CollectMemberRoutineCandidates(type: owner, memberRoutineName: name, candidates: candidates);
+        var found = candidates.Where(predicate: r => r is { IsSpecialization: true, IsRecoveryVariant: false })
+                              .ToList();
+        if (owner is GenericParameterTypeSymbol)
+        {
+            return found;
+        }
+
+        foreach (RoutineInfo universal in UniversalSpecializations(name: name))
+        {
+            if (universal.OwnerType is not GenericParameterTypeSymbol receiver ||
+                !KindGatesAdmit(constraints: (universal.GenericConstraints ?? [])
+                                   .Where(predicate: c => c.ParameterName == receiver.Name),
+                    type: owner) ||
+                SubstituteMemberRoutineForOwner(memberRoutine: universal, resolvedOwner: owner) is not { } bound)
+            {
+                continue;
+            }
+
+            found.Add(item: bound);
+        }
+
+        return found;
+    }
+
+    private Dictionary<string, List<RoutineInfo>>? _universalSpecializations;
+    private int _universalSpecializationsStamp = -1;
+
+    /// <summary>The specializations named <paramref name="name"/> written for any type (<c>routine T.to[S32]()</c>),
+    /// indexed once per set of registered routines.</summary>
+    private List<RoutineInfo> UniversalSpecializations(string name)
+    {
+        if (_universalSpecializations == null || _universalSpecializationsStamp != _routines.Count)
+        {
+            _universalSpecializations = GetAllRoutines(requireLive: false)
+                                       .Where(predicate: r => r is
+                                        {
+                                            IsSpecialization: true, IsRecoveryVariant: false,
+                                            OwnerType: GenericParameterTypeSymbol
+                                        })
+                                       .GroupBy(keySelector: r => r.Name, comparer: StringComparer.Ordinal)
+                                       .ToDictionary(keySelector: g => g.Key, elementSelector: g => g.ToList(),
+                                            comparer: StringComparer.Ordinal);
+            _universalSpecializationsStamp = _routines.Count;
+        }
+
+        return _universalSpecializations.GetValueOrDefault(key: name) ?? [];
+    }
+
+    /// <summary>The specialization of <paramref name="name"/> on <paramref name="owner"/> written for exactly
+    /// <paramref name="typeArguments"/> (<c>n.to[U8]()</c> picks <c>routine S64.to[U8]()</c>), or null.</summary>
+    public RoutineInfo? LookupSpecializedMemberRoutine(TypeSymbol owner, string name,
+        IReadOnlyList<TypeSymbol> typeArguments)
+    {
+        return LookupSpecializedMemberRoutines(owner: owner, name: name)
+           .FirstOrDefault(predicate: r => r.TypeArguments is { } args && args.Count == typeArguments.Count &&
+                                           args.Zip(second: typeArguments)
+                                               .All(predicate: pair => pair.First.FullName == pair.Second.FullName));
+    }
+
+    /// <summary>Whether the kind gates among <paramref name="constraints"/> (<c>needs ChoiceType T</c>, ...) let
+    /// <paramref name="type"/> through. An <c>obeys</c> constraint is not a kind gate.</summary>
+    internal static bool KindGatesAdmit(IEnumerable<GenericConstraintDeclaration> constraints, TypeSymbol type)
+    {
+        return constraints.All(predicate: c => c.ConstraintType switch
+        {
+            ConstraintKind.ChoiceType => type is ChoiceTypeSymbol,
+            ConstraintKind.FlagsType => type is FlagsTypeSymbol,
+            ConstraintKind.RecordType => type is RecordTypeSymbol,
+            ConstraintKind.EntityType => type is EntityTypeSymbol,
+            ConstraintKind.VariantType => type is VariantTypeSymbol,
+            ConstraintKind.Obeys or ConstraintKind.AnyType => true,
+            _ => false
+        });
+    }
+
+    /// <summary>
     /// EXISTENCE check: true when <paramref name="type"/> hosts at least one CONCRETE (non-protocol-owner)
     /// overload named <paramref name="memberRoutineName"/>. Unlike <see cref="LookupMemberRoutine"/> this
     /// never needs a unique winner, so it stays correct for an overloaded member (e.g. a container's
@@ -2904,9 +2825,10 @@ public sealed partial class TypeRegistry
         // concrete instance collects the default itself (with the right `T -> ListEmittable[S32]`), so skipping
         // it for the generic-def pass loses nothing.
         // Judged against the concrete implementer while walking its protocols (see LookupMemberRoutine).
-        if (!type.IsGenericDefinition &&
-            DefaultMemberRoutine(memberRoutineName: memberRoutineName,
-                forType: forImplementer ?? type) is { } defaultMember)
+        // Only for the type itself: while its protocols are walked (`forImplementer` set) the default was already
+        // added for the implementer, and bound to a protocol it would give `T.hijack()` the protocol as `T`.
+        if (forImplementer == null && !type.IsGenericDefinition &&
+            DefaultMemberRoutine(memberRoutineName: memberRoutineName, forType: type) is { } defaultMember)
         {
             candidates.Add(item: SubstituteMemberRoutineForOwner(memberRoutine: defaultMember,
                 resolvedOwner: type)!);
@@ -2956,6 +2878,15 @@ public sealed partial class TypeRegistry
             candidates: genericCandidates);
         foreach (RoutineInfo genericCandidate in genericCandidates)
         {
+            // A protocol's requirement (`Container.contains(value: T)`, made from the protocol, with no body) is not
+            // the type's routine: rebound to the instance it would pass for one and win over the routine that
+            // implements it. A routine written for the protocol (`Iterable[T].enumerate()`) is.
+            if (genericCandidate is { OwnerType: ProtocolTypeSymbol, IsSynthesized: true } ||
+                !ForwardsTo(forwarder: genericCandidate, wrapperType: type))
+            {
+                continue;
+            }
+
             if (genericCandidate.OwnerType is GenericParameterTypeSymbol)
             {
                 candidates.Add(item: genericCandidate);
@@ -2973,12 +2904,61 @@ public sealed partial class TypeRegistry
         }
     }
 
+    /// <summary>
+    /// The forwarder of <paramref name="memberRoutineName"/> on <paramref name="wrapperType"/> (a <c>Viewing[X]</c>)
+    /// made for its inner type, bound to the receiver, or null when there is none or several (overloads are then
+    /// picked by their arguments).
+    /// </summary>
+    public RoutineInfo? LookupForwarder(TypeSymbol wrapperType, string memberRoutineName, bool? isFailable)
+    {
+        TypeSymbol? wrapperDef = wrapperType switch
+        {
+            RecordTypeSymbol r => r.GenericDefinition,
+            EntityTypeSymbol e => e.GenericDefinition,
+            _ => null
+        };
+        if (wrapperDef == null ||
+            !_routinesByOwner.TryGetValue(key: RealmRegistryKey(type: wrapperDef),
+                value: out Dictionary<string, List<RoutineInfo>>? ownByName) ||
+            !ownByName.TryGetValue(key: memberRoutineName, value: out List<RoutineInfo>? routines))
+        {
+            return null;
+        }
+
+        var fitting = routines.Where(predicate: r => r.WrapperForwarderInnerGenericDef != null &&
+                                                     (isFailable == null || r.IsFailable == isFailable) &&
+                                                     ForwardsTo(forwarder: r, wrapperType: wrapperType))
+                              .ToList();
+        return fitting.Count == 1
+            ? SubstituteMemberRoutineForOwner(memberRoutine: fitting[index: 0], resolvedOwner: wrapperType)
+            : null;
+    }
+
+    /// <summary>Whether <paramref name="forwarder"/> (when it is one) was made for the inner type of
+    /// <paramref name="wrapperType"/>. Any routine that is not a forwarder fits.</summary>
+    private static bool ForwardsTo(RoutineInfo forwarder, TypeSymbol wrapperType)
+    {
+        if (forwarder.WrapperForwarderInnerGenericDef is not { } forwarded ||
+            wrapperType.TypeArguments is not [{ } inner, ..])
+        {
+            return true;
+        }
+
+        TypeSymbol innerDef = inner switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } d } => d,
+            EntityTypeSymbol { GenericDefinition: { } d } => d,
+            _ => inner
+        };
+        return ReferenceEquals(objA: innerDef, objB: forwarded) || innerDef.FullName == forwarded.FullName;
+    }
+
     private static bool IsMemberRoutineArgumentAssignable(TypeSymbol source, TypeSymbol target)
     {
         // Compare by Name (includes generic args, e.g. "List[S64]") rather than FullName
         // because arg types constructed during SA may lack a module prefix while registry
         // types are always module-qualified — FullName comparison would break that pairing.
-        if (source.Name == target.Name)
+        if (source.Name == target.Name || ImplicitToken.Accepts(source: source, parameter: target))
         {
             return true;
         }

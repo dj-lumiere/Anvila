@@ -469,22 +469,56 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private Expression? ImplicitTokenArgument(Expression argExpr, TypeSymbol argType, TypeSymbol paramType)
     {
-        string? verb = paramType.BareName switch
-        {
-            Declaration.RuntimeContract.Viewing => "view",
-            Declaration.RuntimeContract.Modifying => ModifyMemberRoutineName,
-            _ => null
-        };
-        if (!_registry.Rules.ChecksAccessTokens || argType is not EntityTypeSymbol || verb == null ||
-            paramType.TypeArguments is not [{ } tokenTarget] || tokenTarget.FullName != argType.FullName)
+        if (!Declaration.ImplicitToken.IsTokenParameter(parameter: paramType, tokenKind: out string tokenKind,
+                target: out TypeSymbol tokenTarget) || argType is ErrorTypeSymbol || argType.FullName == paramType.FullName)
         {
             return null;
         }
 
-        var mint = new CallExpression(
-            Callee: new MemberExpression(Object: argExpr, MemberName: verb, Location: argExpr.Location),
-            Arguments: [],
-            Location: argExpr.Location);
+        string verb = tokenKind == Declaration.RuntimeContract.Viewing
+            ? "view"
+            : ModifyMemberRoutineName;
+        SourceLocation location = argExpr.Location;
+        Expression mint;
+        if (Declaration.ImplicitToken.HandleOver(source: argType, tokenKind: tokenKind, target: tokenTarget) != null ||
+            argType is EntityTypeSymbol && _registry.Rules.ChecksAccessTokens &&
+            Declaration.ImplicitToken.Matches(value: argType, target: tokenTarget))
+        {
+            // An entity, or a handle or token over the value: its own `view()`/`modify()`.
+            mint = new CallExpression(
+                Callee: new MemberExpression(Object: argExpr, MemberName: verb, Location: location),
+                Arguments: [],
+                Location: location) { IsSynthesizedLowering = true };
+        }
+        else if (Declaration.ImplicitToken.Matches(value: argType, target: tokenTarget))
+        {
+            // A record, or a value of a type parameter: the token is the address of the place it is in (a
+            // temporary gets a place of its own, which lives through the call).
+            var address = new CallExpression(
+                Callee: new MemberExpression(Object: argExpr,
+                    MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
+                    Location: location),
+                Arguments: [],
+                Location: location) { IsSynthesizedLowering = true };
+            mint = new GenericMemberRoutineCallExpression(
+                Object: new IdentifierExpression(Name: tokenKind, Location: location),
+                MemberRoutineName: tokenKind,
+                TypeArguments:
+                [
+                    new TypeExpression(Name: tokenTarget.Name, GenericArguments: null, Location: location)
+                    {
+                        KnownType = tokenTarget
+                    }
+                ],
+                Arguments: [address],
+                IsMemoryOperation: false,
+                Location: location);
+        }
+        else
+        {
+            return null;
+        }
+
         AnalyzeExpression(expression: mint, expectedType: paramType);
         return mint;
     }
@@ -653,16 +687,9 @@ public sealed partial class SemanticVerifier
         TypeSymbol paramType, Expression argExpr, Expression argValue,
         TypeSymbol argType)
     {
-        // Borrow protocols (Accessing[T] / Controlling[T]) accept the source by reference —
-        // no copy/move is happening at the call site, so no verb is required.
-        string paramBase = paramType.BareName;
-        // Detect the marker bound on the ORIGINAL param type (`param.Type`, the generic `V`), not the
-        // post-inference `paramType` which may already be substituted to the concrete token
-        // (Viewing/Modifying) and would no longer look like a generic-param bound.
-        bool paramIsBorrow =
-            paramType.Category == TypeCategory.Protocol &&
-            Declaration.RuntimeContract.IsMarkerProtocol(baseName: paramBase) ||
-            IsMarkerBoundParam(paramType: param.Type, routine: routine);
+        // A token parameter (`Viewing[T]` / `Modifying[T]`) takes the source by reference: no copy or move
+        // happens at the call site, so no verb is required.
+        bool paramIsBorrow = Declaration.ImplicitToken.IsTokenParameter(parameter: paramType, tokenKind: out _, target: out _);
         if (ChecksOwnershipHere &&
             argValue is IdentifierExpression or MemberExpression &&
             !Wrappers.IsTriviallyAssignable(type: argType) && !paramIsBorrow)
@@ -1036,22 +1063,11 @@ public sealed partial class SemanticVerifier
         // Protocol conformance.
         if (target.Category == TypeCategory.Protocol)
         {
-            return IsAssignableToBorrowProtocol(source: source, target: target) ||
-                   ImplementsProtocol(type: source, protocolName: target.Name);
+            return ImplementsProtocol(type: source, protocolName: target.Name);
         }
 
         // A value's token (`Viewing[S64]`) reads the value where an S64 is wanted.
         if (ValueTokenTarget(type: source) is { } tokenValue && IsAssignableTo(source: tokenValue, target: target))
-        {
-            return true;
-        }
-
-        // A read or write borrow (`Accessing[X]` / `Controlling[X]`) has X's representation and forwards to it, as a
-        // member call or a comparison on it does, so it can be handed where an X value is read. An entity is left
-        // out: handing one over moves ownership, which a borrow cannot give.
-        if (TryGetTransparentProtocolTarget(type: source, targetType: out TypeSymbol borrowed) &&
-            !_registry.IsEntityKind(type: borrowed) &&
-            IsAssignableTo(source: borrowed, target: target))
         {
             return true;
         }
@@ -1266,80 +1282,6 @@ public sealed partial class SemanticVerifier
         return false;
     }
 
-    /// <summary>
-    /// Handles the borrow-protocol case of <see cref="IsAssignableTo"/>: an <c>Accessing[T]</c> /
-    /// <c>Controlling[T]</c> target accepts an ownership-carrying or bare source whose inner type
-    /// matches T. Retained/Modifying are accepted by both; Viewing is readonly so accepted only by
-    /// Accessing; Hijacked needs explicit .as_entity() — never accepted by implicit borrow coercion.
-    /// Returns false when the target is not a borrow protocol or no match applies.
-    /// </summary>
-    private static bool IsAssignableToBorrowProtocol(TypeSymbol source, TypeSymbol target)
-    {
-        string targetBase = target.BareName;
-        if (targetBase != Declaration.RuntimeContract.Accessing &&
-            targetBase != Declaration.RuntimeContract.Controlling || target.TypeArguments is not
-                { Count: 1 } borrowArgs)
-        {
-            return false;
-        }
-
-        TypeSymbol borrowInner = borrowArgs[index: 0];
-        if (TryGetOwnershipWrapperInner(type: source,
-                wrapperBase: out string? srcWrapper,
-                inner: out TypeSymbol? srcInner))
-        {
-            bool wrapperAllowed = targetBase == Declaration.RuntimeContract.Accessing
-                ? srcWrapper is Declaration.RuntimeContract.Retained
-                    or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Viewing
-                    or Declaration.RuntimeContract.Controlling
-                    or Declaration.RuntimeContract.Accessing
-                : srcWrapper is Declaration.RuntimeContract.Retained
-                    or Declaration.RuntimeContract.Modifying
-                    or Declaration.RuntimeContract.Controlling;
-            if (wrapperAllowed && srcInner != null && (srcInner.FullName == borrowInner.FullName ||
-                                                       srcInner.Name == borrowInner.Name))
-            {
-                return true;
-            }
-        }
-
-        // A bare T, an entity or a record alike: accepted by both Accessing[T] and Controlling[T].
-        if (source.FullName == borrowInner.FullName || source.Name == borrowInner.Name ||
-            source.BareName == borrowInner.BareName)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// If <paramref name="type"/> is an ownership-carrying or borrow wrapper
-    /// (Retained/Tracked/Modifying/Viewing/Controlling/Accessing/Hijacked) over some inner T,
-    /// returns the base wrapper name and inner T. Returns false for anything else.
-    /// </summary>
-    private static bool TryGetOwnershipWrapperInner(TypeSymbol type, out string? wrapperBase,
-        out TypeSymbol? inner)
-    {
-        string baseName = type.BareName;
-        if (baseName is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked
-            or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Viewing
-            or Declaration.RuntimeContract.Controlling or Declaration.RuntimeContract.Accessing
-            or Declaration.RuntimeContract.Hijacked)
-        {
-            if (type.TypeArguments is { Count: 1 } args)
-            {
-                wrapperBase = baseName;
-                inner = args[index: 0];
-                return true;
-            }
-        }
-
-        wrapperBase = null;
-        inner = null;
-        return false;
-    }
-
     private static bool IsOwnedOf(TypeSymbol type, out TypeSymbol inner)
     {
         if (type.BareName == Declaration.RuntimeContract.Owned &&
@@ -1482,15 +1424,12 @@ public sealed partial class SemanticVerifier
     /// Checks if a type supports a specific binary operator by looking up the operator memberRoutine.
     /// </summary>
     /// <summary>
-    /// Unwraps a transparent borrow protocol (<c>Accessing[T]</c> / <c>Controlling[T]</c>) to its
-    /// referent <c>T</c>; returns the type unchanged otherwise. Used so comparison operands that are
-    /// borrows are treated as their referent (the operator auto-dispatches <c>refer</c>/<c>control</c>).
+    /// Unwraps a token (<c>Viewing[T]</c> / <c>Modifying[T]</c>) to its referent <c>T</c>, returns the type
+    /// unchanged otherwise. Comparison operands that are tokens are treated as their referent.
     /// </summary>
     private static TypeSymbol UnwrapBorrowProtocol(TypeSymbol type)
     {
-        if ((type.Category == TypeCategory.Protocol &&
-             Declaration.RuntimeContract.IsMarkerProtocol(baseName: type.BareName) || IsAccessToken(type: type)) &&
-            type.TypeArguments is { Count: > 0 } args)
+        if (IsAccessToken(type: type) && type.TypeArguments is { Count: > 0 } args)
         {
             return args[index: 0];
         }
@@ -1702,29 +1641,6 @@ public sealed partial class SemanticVerifier
     /// Yields all active generic constraints for the named parameter from the current routine
     /// and its owner type.
     /// </summary>
-    /// <summary>
-    /// True if <paramref name="paramType"/> is a generic parameter of <paramref name="routine"/> whose
-    /// Obeys-constraint is a marker protocol (<c>Accessing[X]</c>/<c>Controlling[X]</c>) — i.e. a param
-    /// desugared from `p: Accessing[X]` to `[V obeys Accessing[X]](p: V)`. Such a param is a borrow slot:
-    /// a token/value argument binds it by reference, so no copy verb (RF-S420) is required and a bare
-    /// entity is not a consuming transfer (RF-S413).
-    /// </summary>
-    private static bool IsMarkerBoundParam(TypeSymbol paramType, RoutineInfo routine)
-    {
-        if (paramType is not GenericParameterTypeSymbol gp || routine.GenericConstraints == null)
-        {
-            return false;
-        }
-
-        return routine.GenericConstraints
-                      .Where(predicate: c =>
-                           c.ParameterName == gp.Name &&
-                           c.ConstraintType == ConstraintKind.Obeys && c.ConstraintTypes != null)
-                      .SelectMany(selector: c => c.ConstraintTypes!)
-                      .Any(predicate: pe => pe.Name is Declaration.RuntimeContract.Accessing
-                           or Declaration.RuntimeContract.Controlling);
-    }
-
     private IEnumerable<GenericConstraintDeclaration> ActiveConstraintsFor(string paramName)
     {
         if (_currentRoutine?.GenericConstraints != null)
@@ -1883,6 +1799,13 @@ public sealed partial class SemanticVerifier
     /// name alone cannot choose among them.</summary>
     private RoutineInfo? LookupContains(TypeSymbol container, TypeSymbol element)
     {
+        // A shared entity's handle answers for the entity (`other have v` on a `Roamed[Set[T]]`).
+        if (container is RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed,
+                TypeArguments: [EntityTypeSymbol shared] })
+        {
+            container = shared;
+        }
+
         return _registry.LookupMemberRoutineOverload(type: container,
                    memberRoutineName: "contains",
                    argTypes: [element]) ??
@@ -2035,12 +1958,11 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol GetIterableElementType(TypeSymbol iterableType, SourceLocation location)
     {
-        // Marker-protocol unwrap: `Accessing[X]` / `Controlling[X]` are transparent
-        // pass-throughs to X. If iterating one, dispatch to X's Iterable conformance.
-        if (TryGetTransparentProtocolTarget(type: iterableType,
-                targetType: out TypeSymbol unwrapped))
+        // A token on an iterable (`items: Viewing[List[T]]`) is iterated as the iterable it points at.
+        if (iterableType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+            iterableType.TypeArguments is [{ } tokenTarget])
         {
-            iterableType = unwrapped;
+            iterableType = tokenTarget;
         }
 
         // A shared entity is iterated through its handle: the entity's own iterator is what walks it.

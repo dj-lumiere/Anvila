@@ -577,7 +577,7 @@ internal partial class Program
 
             // A number conversion or a text parse is `x.to[T]()`: `S64(from: n)`, `S64(n)`, `S64(from_text: t)`,
             // `Integer(text: t)` and `n.S64()` all become it.
-            if (Declaration.RuntimeContract.ConversionNumberTypes.Contains(item: token.Text) &&
+            if (NumericConversionTargets.Contains(item: token.Text) &&
                 ConversionEdits(tokens: tokens, index: i) is { Count: > 0 } conversion)
             {
                 edits.AddRange(collection: conversion);
@@ -933,6 +933,13 @@ internal partial class Program
         yield return new MigrationEdit(Start: closing.Position, Length: 1, Replacement: "", Line: closing.Line,
             What: "d.add(key: k, value: v) → d[k] = v");
     }
+
+    /// <summary>The number types a conversion goes to with <c>to[T]()</c>.</summary>
+    private static readonly HashSet<string> NumericConversionTargets =
+    [
+        "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256",
+        "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256"
+    ];
 
     /// <summary>The argument labels a conversion creator was written with.</summary>
     private static readonly HashSet<string> ConversionLabels = ["from", "from_text", "text"];

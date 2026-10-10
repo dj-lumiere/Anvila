@@ -785,6 +785,13 @@ internal sealed class IteratorInlineLoweringPass
             case MemberExpression m:
                 return m with { Object = CloneExpression(expr: m.Object, ctx: ctx) };
 
+            // An operand handed to a token parameter (`room > me.step` reads `step` through `Viewing[U64]`).
+            case AddressOfExpression address:
+                return address with { Target = CloneExpression(expr: address.Target, ctx: ctx) };
+
+            case WrapperProjectionExpression projection:
+                return projection with { Wrapper = CloneExpression(expr: projection.Wrapper, ctx: ctx) };
+
             case CallExpression call:
                 return call with
                 {
@@ -903,9 +910,19 @@ internal sealed class IteratorInlineLoweringPass
                 return expr;
 
             default:
-                // Unhandled expression kinds are returned as-is (still referencing the original
-                // identifiers). Acceptable because simple emit! bodies don't reach here; guarded by
-                // the simple-gate.
+                // An expression kind this clone does not rebuild is kept as it is, which is right only when it names
+                // nothing the inlined body renames: a `me` left inside would read the enclosing routine's `me`.
+                bool namesRenamed = false;
+                AstWalker.WalkExpressions(root: expr,
+                    visit: e => namesRenamed |= e is IdentifierExpression { Name: var name } &&
+                                                (name == "me" || ctx.LocalRenames.ContainsKey(key: name)));
+                if (namesRenamed)
+                {
+                    throw new InvalidOperationException(
+                        message: $"Inlining an iterator step met a {expr.GetType().Name} at {expr.Location} that names " +
+                                 "the iterator or one of its locals, and it is not rebuilt with the new names.");
+                }
+
                 return expr;
         }
     }

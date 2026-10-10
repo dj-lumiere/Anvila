@@ -242,16 +242,6 @@ internal static class GenericAstRewriter
 
         private TypeSymbol? ResolveSpecialType(TypeSymbol original)
         {
-            // A marker borrow protocol (Accessing[X]/Controlling[X]) is ABI-transparent to its inner X:
-            // collapse it so no protocol type survives on a monomorphized expression's ResolvedType (the
-            // backend then reads the concrete inner — an entity ptr / a value — never a protocol).
-            if (original is ProtocolTypeSymbol { TypeArguments: [{ } markerInner] } markerProto &&
-                RuntimeContract.IsMarkerProtocol(
-                    baseName: (markerProto.GenericDefinition ?? markerProto).BareName))
-            {
-                return ResolveType(original: markerInner) ?? markerInner;
-            }
-
             // Protocol self (`Me`/ProtocolSelf) -> the bound implementer (TypeSubs["Me"]).
             if (original is ProtocolSelfTypeSymbol &&
                 TypeSubs!.TryGetValue(key: "Me", value: out TypeSymbol? meBound))
@@ -497,6 +487,22 @@ internal static class GenericAstRewriter
         {
 
             TypeSymbol? resolvedOwner = ResolveTypeForLookup(original: original.OwnerType);
+
+            // A specialization (`routine S64.to[U8]()`) is one of a family sharing its name and parameters: it is
+            // found again by its type arguments, and a call bound to its recovery variant takes that one's variant.
+            RoutineInfo specializationBase = original.RecoveryOf ?? original;
+            if ((specializationBase.GenericDefinition ?? specializationBase).IsSpecialization &&
+                specializationBase.TypeArguments is { } specializedArguments && resolvedOwner != null)
+            {
+                RoutineInfo? specialization = Registry!.LookupSpecializedMemberRoutine(owner: resolvedOwner,
+                    name: specializationBase.Name,
+                    typeArguments: specializedArguments.Select(selector: t => ResolveTypeForLookup(original: t) ?? t)
+                                                       .ToList());
+                return specialization != null && original.Recovery is { } specializationRecovery
+                    ? RecoveryVariantOrPlain(resolved: specialization, kind: specializationRecovery)
+                    : specialization;
+            }
+
             var resolvedParamTypes = original.Parameters
                                              .Select(selector: selector =>
                                                   ResolveTypeForLookup(original: selector.Type) ??
@@ -865,10 +871,28 @@ internal static class GenericAstRewriter
                 return null;
             }
 
-            return ResolveMemberRoutineOnConcreteOwner(ownerType: receiverType,
+            RoutineInfo? onReceiver = ResolveMemberRoutineOnConcreteOwner(ownerType: receiverType,
                 memberRoutineName: member.MemberName,
                 argTypes: callArgTypes,
                 isFailable: isFailable);
+            // A shared entity's handle stands for the entity (`me.source.emit()` with the source a
+            // `Roamed[BufferEmittable[T]]`), and a token for its value (`parts.iter()` with `parts: Viewing[TList]`),
+            // as analysis binds them: the call is the held value's, reached through the handle or token once the
+            // instance is lowered.
+            if (onReceiver == null && receiverType is RecordTypeSymbol
+                {
+                    GenericDefinition.Name: RuntimeContract.Roamed or RuntimeContract.Viewing
+                        or RuntimeContract.Modifying,
+                    TypeArguments: [{ } shared]
+                } && (shared is EntityTypeSymbol || receiverType.BareName != RuntimeContract.Roamed))
+            {
+                return ResolveMemberRoutineOnConcreteOwner(ownerType: shared,
+                    memberRoutineName: member.MemberName,
+                    argTypes: callArgTypes,
+                    isFailable: isFailable);
+            }
+
+            return onReceiver;
         }
 
         private RoutineInfo? ResolveFreeCallRoutine(CallExpression call,
@@ -1923,7 +1947,94 @@ internal static class GenericAstRewriter
             ctx: ctx);
 
         call.ResolvedRoutine = rewrittenRoutine ?? call.ResolvedRoutine;
+        HandTokenArguments(call: call, registry: ctx.Registry);
     }
+
+    /// <summary>
+    /// A call bound to a concrete routine only now (`me[i] == value` in <c>List[T].contains</c> becomes
+    /// <c>Text.eq(other: Viewing[Text])</c>) hands a record argument to a token parameter as the address of its
+    /// place, as the call would have been written for the concrete type. An entity is its own pointer, and an
+    /// argument already a token stays. The other way round, a token handed to a parameter of its value's type
+    /// (`value: Viewing[T]` given to <c>Text.eq(other: Text)</c>) is read.
+    /// </summary>
+    private static void HandTokenArguments(CallExpression call, TypeRegistry? registry)
+    {
+        if (call.ResolvedRoutine is not { } routine)
+        {
+            return;
+        }
+
+        List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            Expression argument = call.Arguments[index: i];
+            Expression value = argument is NamedArgumentExpression named
+                ? named.Value
+                : argument;
+            // An operator call names its operand `you` whatever the routine calls it, so a name the routine does
+            // not have falls back to the position.
+            ParamInfo? parameter = (argument is NamedArgumentExpression byName
+                                       ? parameters.FirstOrDefault(predicate: p => p.Name == byName.Name)
+                                       : null) ??
+                                   (i < parameters.Count
+                                       ? parameters[index: i]
+                                       : null);
+            if (parameter != null && registry != null &&
+                ReadToken(value: value, parameterType: parameter.Type, registry: registry) is { } read)
+            {
+                call.Arguments[index: i] = argument is NamedArgumentExpression readWrapper
+                    ? readWrapper with { Value = read, ResolvedType = read.ResolvedType }
+                    : read;
+                continue;
+            }
+
+            if (parameter == null ||
+                !Declaration.ImplicitToken.IsTokenParameter(parameter: parameter.Type, tokenKind: out _,
+                    target: out TypeSymbol target) ||
+                value is AddressOfExpression || value.ResolvedType is not { } valueType ||
+                valueType is EntityTypeSymbol || valueType.BareName == parameter.Type.BareName ||
+                !Declaration.ImplicitToken.Matches(value: valueType, target: target))
+            {
+                continue;
+            }
+
+            var address = new AddressOfExpression(Target: value, Location: value.Location)
+            {
+                ResolvedType = parameter.Type
+            };
+            call.Arguments[index: i] = argument is NamedArgumentExpression wrapper
+                ? wrapper with { Value = address, ResolvedType = parameter.Type }
+                : address;
+        }
+    }
+
+    /// <summary>The read of the token <paramref name="value"/> when the parameter takes the record it is a token
+    /// on, or null.</summary>
+    private static Expression? ReadToken(Expression value, TypeSymbol parameterType, TypeRegistry registry)
+    {
+        if (value.ResolvedType is not RecordTypeSymbol { TypeArguments: [RecordTypeSymbol held] } token ||
+            (token.GenericDefinition ?? token).BareName is not (RuntimeContract.Viewing or RuntimeContract.Modifying) ||
+            Declaration.ImplicitToken.IsTokenParameter(parameter: parameterType, tokenKind: out _, target: out _) ||
+            !Declaration.ImplicitToken.Matches(value: held, target: parameterType) ||
+            registry.LookupMemberRoutine(type: token, memberRoutineName: TokenAccessMemberRoutine) is not { } access)
+        {
+            return null;
+        }
+
+        return new CallExpression(
+            Callee: new MemberExpression(Object: value, MemberName: TokenAccessMemberRoutine, Location: value.Location),
+            Arguments: [],
+            Location: value.Location)
+        {
+            ResolvedRoutine = access,
+            ResolvedType = held,
+            LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: access),
+            IsSynthesizedLowering = true
+        };
+    }
+
+    /// <summary>The routine that reads the value a token is on.</summary>
+    private const string TokenAccessMemberRoutine = "access";
 
     /// <summary>Re-binds a cloned <see cref="CallExpression"/> that has no resolved routine yet.</summary>
     private static void RebindPlainCall(CallExpression call, Expression expr, RewriteContext ctx)
@@ -1945,6 +2056,7 @@ internal static class GenericAstRewriter
             ReinstantiateMemberRoutineGenericCallee(call: call,
                 resolved: plainResolved,
                 ctx: ctx) ?? plainResolved;
+        HandTokenArguments(call: call, registry: ctx.Registry);
     }
 
     /// <summary>Re-binds a cloned <see cref="CreatorExpression"/>'s constructed type and creator routine.</summary>
@@ -2469,6 +2581,14 @@ internal static class GenericAstRewriter
             ThrowStatement ts => ts with { Error = RewriteExpression(expr: ts.Error, ctx: ctx) },
 
             CrashStatement cs => cs with { Report = (CallExpression)RewriteExpression(expr: cs.Report, ctx: ctx) },
+
+            StealStatement stolen => stolen with
+            {
+                Place = RewriteExpression(expr: stolen.Place, ctx: ctx),
+                Fresh = stolen.Fresh != null
+                    ? RewriteExpression(expr: stolen.Fresh, ctx: ctx)
+                    : null
+            },
 
             DropStatement disc => disc with
             {

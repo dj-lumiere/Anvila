@@ -50,9 +50,42 @@ public sealed partial class SemanticVerifier
                 typeArgs: typeArgs);
         }
 
+        // A family of specializations (`routine S64.to[U8]()`, ...) is picked by the written type arguments.
+        if (typeArgs.Count > 0 && objectType is not (ErrorTypeSymbol or GenericParameterTypeSymbol) &&
+            _registry.LookupSpecializedMemberRoutines(owner: objectType, name: generic.MemberRoutineName) is
+                { Count: > 0 } family)
+        {
+            RoutineInfo? chosen = family.FirstOrDefault(predicate: r =>
+                r.TypeArguments is { } args && args.Count == typeArgs.Count &&
+                args.Zip(second: typeArgs).All(predicate: pair => pair.First.FullName == pair.Second.FullName));
+            if (chosen == null)
+            {
+                ReportSpecializationNotFound(name: generic.MemberRoutineName, owner: objectType,
+                    typeArguments: typeArgs, location: generic.Location);
+                foreach (Expression argument in generic.Arguments)
+                {
+                    AnalyzeExpression(expression: argument);
+                }
+
+                return ErrorTypeSymbol.Instance;
+            }
+
+            return AnalyzeGenericReceiverMemberRoutineCall(generic: generic,
+                objectType: objectType,
+                memberRoutine: chosen,
+                typeArgs: typeArgs);
+        }
+
         // Look up the memberRoutine on receiver type — LookupMemberRoutine handles generic resolutions
         RoutineInfo? memberRoutine = _registry.LookupMemberRoutine(type: objectType,
             memberRoutineName: generic.MemberRoutineName);
+        if (memberRoutine is { IsSpecialization: true } && objectType is GenericParameterTypeSymbol)
+        {
+            ReportSpecializationNotFound(name: generic.MemberRoutineName, owner: objectType,
+                typeArguments: typeArgs, location: generic.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         if (memberRoutine != null)
         {
             return AnalyzeGenericReceiverMemberRoutineCall(generic: generic,
@@ -125,9 +158,6 @@ public sealed partial class SemanticVerifier
                 return ErrorTypeSymbol.Instance;
             }
 
-            ValidateCreatorRequirementConstraints(routine: memberRoutine,
-                bindings: CallTypeBindings(routine: memberRoutine, receiverType: objectType, typeArgs: typeArgs),
-                location: generic.Location);
 
             memberRoutine = mono;
         }
@@ -182,38 +212,6 @@ public sealed partial class SemanticVerifier
         return SubstituteGenericParamsInReturnType(returnType: returnType,
             memberRoutine: memberRoutine,
             typeArgs: typeArgs);
-    }
-
-    /// <summary>
-    /// What a call binds <paramref name="routine"/>'s type parameters to: its own, from <paramref name="typeArgs"/>,
-    /// the receiver's parameters from <paramref name="receiverType"/>, and the receiver itself for a routine of any
-    /// type (<c>N</c> of <c>routine N.to[T]()</c>).
-    /// </summary>
-    private static Dictionary<string, TypeSymbol> CallTypeBindings(RoutineInfo routine, TypeSymbol receiverType,
-        List<TypeSymbol> typeArgs)
-    {
-        // A routine of any type binds only its receiver parameter (`N`): the receiver's own parameters (`T` of
-        // `List[T]`) are not its, whatever their names.
-        Dictionary<string, TypeSymbol> bindings;
-        if ((routine.GenericDefinition ?? routine).OwnerType is GenericParameterTypeSymbol receiverParameter)
-        {
-            bindings = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal)
-            {
-                [key: receiverParameter.Name] = receiverType
-            };
-        }
-        else
-        {
-            bindings = BuildOwnerBindingMap(ownerType: receiverType);
-        }
-
-        List<string> own = routine.GenericParameters?.Where(predicate: p => !bindings.ContainsKey(key: p)).ToList() ?? [];
-        for (int i = 0; i < own.Count && i < typeArgs.Count; i++)
-        {
-            bindings[key: own[index: i]] = typeArgs[index: i];
-        }
-
-        return bindings;
     }
 
     /// <summary>

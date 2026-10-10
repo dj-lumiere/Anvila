@@ -191,10 +191,27 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
     protected override Expression VisitIndex(IndexExpression e)
     {
         Expression visited = base.VisitIndex(e: e);
-        return visited is IndexExpression index && Read(expr: index.Index) is var position &&
-               !ReferenceEquals(objA: position, objB: index.Index)
-            ? index with { Index = position }
-            : visited;
+        if (visited is not IndexExpression index)
+        {
+            return visited;
+        }
+
+        // A record reached through a token is indexed where it is (`part[i]` with `part: Modifying[Text]` indexes
+        // the text the token points at): the token's pointer is the record's place, so nothing is copied.
+        Expression container = index.Object.ResolvedType is RecordTypeSymbol
+        {
+            TypeArguments: [RecordTypeSymbol record]
+        } token && IsToken(type: token)
+            ? new WrapperProjectionExpression(Wrapper: index.Object,
+                Kind: WrapperProjectionKind.RecordAddress,
+                Controller: null,
+                FieldIndex: 0,
+                Location: index.Object.Location) { ResolvedType = record }
+            : index.Object;
+        Expression position = Read(expr: index.Index);
+        return ReferenceEquals(objA: container, objB: index.Object) && ReferenceEquals(objA: position, objB: index.Index)
+            ? visited
+            : index with { Object = container, Index = position };
     }
 
     protected override Expression VisitCall(CallExpression e)
@@ -214,6 +231,24 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
                 : visited;
         }
 
+        // A token receiver of a routine of the value it is on (`parts.iter()` with `parts: Viewing[List[Text]]`,
+        // bound through the type parameter the token was on) reaches the value: an entity through `access()` /
+        // `control()`, a record where it is.
+        if (call.Callee is MemberExpression { Object: { ResolvedType: RecordTypeSymbol { TypeArguments: [{ } held] } token } receiver } member &&
+            IsToken(type: token) && routine.OwnerType is { } owner && !IsToken(type: owner) &&
+            (owner.FullName == held.FullName || owner.Name == held.Name))
+        {
+            Expression reached = held is RecordTypeSymbol record
+                ? new WrapperProjectionExpression(Wrapper: receiver,
+                    Kind: WrapperProjectionKind.RecordAddress,
+                    Controller: null,
+                    FieldIndex: 0,
+                    Location: receiver.Location) { ResolvedType = record }
+                : ReachHeld(token: receiver, tokenType: token, held: held, write: !routine.IsReadOnly);
+            call = call with { Callee = member with { Object = reached } };
+            visited = call;
+        }
+
         // A parameter of the value's own type takes the value. A parameter typed as a token, or a parameter of
         // its own (a marker parameter `you: Accessing[T]` binds the token itself), keeps the token.
         List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
@@ -227,8 +262,7 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
                 : i < parameters.Count
                     ? parameters[index: i]
                     : null;
-            if (param == null || IsToken(type: param.Type) || param.Type is ProtocolTypeSymbol ||
-                IsMarkerParameter(routine: routine, type: param.Type))
+            if (param == null || IsToken(type: param.Type) || param.Type is ProtocolTypeSymbol)
             {
                 arguments.Add(item: arg);
                 continue;
@@ -251,6 +285,30 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
         return changed
             ? call with { Arguments = arguments }
             : visited;
+    }
+
+    /// <summary><c>token.access()</c> (or <c>token.control()</c> for a change through a <c>Modifying</c>): the entity a
+    /// token is on.</summary>
+    private Expression ReachHeld(Expression token, RecordTypeSymbol tokenType, TypeSymbol held, bool write)
+    {
+        string reach = write && (tokenType.GenericDefinition ?? tokenType).BareName == RuntimeContract.Modifying
+            ? RuntimeContract.Control
+            : RuntimeContract.Access;
+        if (ctx.Registry.LookupMemberRoutine(type: tokenType, memberRoutineName: reach) is not { } routine)
+        {
+            return token;
+        }
+
+        return new CallExpression(
+            Callee: new MemberExpression(Object: token, MemberName: reach, Location: token.Location),
+            Arguments: [],
+            Location: token.Location)
+        {
+            ResolvedRoutine = routine,
+            ResolvedType = held,
+            LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine),
+            IsSynthesizedLowering = true
+        };
     }
 
     /// <summary>The arguments of a call through a routine value, read where its routine type takes the value.</summary>
@@ -351,18 +409,6 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: access),
             IsSynthesizedLowering = true
         };
-    }
-
-    /// <summary>Whether <paramref name="type"/> is a parameter of <paramref name="routine"/>'s own bound by a marker
-    /// (`you: Accessing[T]` is `[__T0 obeys Accessing[T]](you: __T0)`): it takes the token itself. Any other
-    /// parameter of its own (`nested_repr(value: T)`) takes the value.</summary>
-    private static bool IsMarkerParameter(RoutineInfo routine, TypeSymbol type)
-    {
-        return type is GenericParameterTypeSymbol bound &&
-               routine.GenericConstraints?.Any(predicate: c =>
-                   c is { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: [{ } marker] } &&
-                   c.ParameterName == bound.Name &&
-                   RuntimeContract.IsMarkerProtocol(baseName: TypeSymbol.StripTypeArgs(name: marker.Name))) == true;
     }
 
     private static bool IsToken(TypeSymbol? type)

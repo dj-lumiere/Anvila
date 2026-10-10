@@ -100,6 +100,10 @@ public record AssignmentStatement(Expression Target, Expression Value, SourceLoc
     /// task, so its access lock must engage for thread-safe concurrent mutation.</summary>
     public bool IsGlobalInit { get; init; }
 
+    /// <summary>True for the store a <c>steal place as old inject fresh</c> makes: what the place held now belongs
+    /// to <c>old</c>, so the store tears nothing down.</summary>
+    public bool KeepsReplacedValue { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
@@ -268,6 +272,29 @@ public record DropStatement(Expression Expression, SourceLocation Location)
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
         return visitor.VisitDropStatement(node: this);
+    }
+}
+
+/// <summary>
+/// Taking a value out of its place: <c>steal place as old</c>, or <c>steal place as old inject fresh</c>, which puts
+/// <c>fresh</c> in at once so the place is never seen empty. <c>fresh</c> is evaluated first. Without <c>inject</c>
+/// the place must be a <c>T?</c> (it is left <c>none</c>) or a whole variable (it ends there).
+/// </summary>
+/// <param name="Place">The variable, member variable or element taken out of.</param>
+/// <param name="Name">The new variable that holds what was there.</param>
+/// <param name="Fresh">What goes in its place, or null.</param>
+/// <param name="Location">Source location information.</param>
+public record StealStatement(Expression Place, string Name, Expression? Fresh, SourceLocation Location)
+    : Statement(Location: Location)
+{
+    /// <summary>The statements analysis expands this one into, in place in its block (see
+    /// <c>SemanticVerifier.AnalyzeStealStatement</c>).</summary>
+    public List<Statement>? Lowered { get; set; }
+
+    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitStealStatement(node: this);
     }
 }
 

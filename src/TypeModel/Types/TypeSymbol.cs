@@ -192,7 +192,9 @@ public abstract class TypeSymbol
     /// fully-qualified inner args.
     /// </summary>
     public string ShortTypeName =>
-        TypeArguments is { Count: > 0 } args
+        this is RoutineTypeSymbol
+            ? Name
+            : TypeArguments is { Count: > 0 } args
             ? $"{BareName}[{string.Join(separator: ", ",
                 values: args.Select(selector: t => t.ShortTypeName))}]"
             : BareName;
@@ -205,6 +207,12 @@ public abstract class TypeSymbol
     {
         get
         {
+            // A routine type has no module of its own: its signature is its name.
+            if (this is RoutineTypeSymbol)
+            {
+                return Name;
+            }
+
             string qualified = string.IsNullOrEmpty(value: Module)
                 ? BareName
                 : $"{Module}.{BareName}";

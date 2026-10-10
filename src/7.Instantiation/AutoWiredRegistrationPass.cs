@@ -1172,10 +1172,7 @@ internal sealed class AutoWiredRegistrationPass
         var parameters = new List<ParamInfo>();
         for (int i = 0; i < member.ParameterTypes.Count; i++)
         {
-            // `you: Accessing[Me]` reads the other value: bound as a call would (the value, or an entity's token).
-            TypeSymbol pt = _registry.BindOwnerMarker(
-                type: _registry.ReplaceProtocolSelf(type: member.ParameterTypes[index: i], owner: type),
-                owner: type);
+            TypeSymbol pt = _registry.ReplaceProtocolSelf(type: member.ParameterTypes[index: i], owner: type);
             string pn = i < member.ParameterNames.Count
                 ? member.ParameterNames[index: i]
                 : $"arg{i}";

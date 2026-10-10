@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Instantiation;
 using Builder.Tokenizer;
 using Builder.Verification.Enums;
@@ -165,7 +166,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // a wrapper forwarder would after unwrapping. The read/write intent and the container freeze
         // were already checked at analysis (RF-S639). An entity-typed temporary is not torn down, so
         // the element stays owned by the container.
-        return new CallExpression(Callee: callee, Arguments: [index], Location: element.Location)
+        return new CallExpression(Callee: callee, Arguments: [FirstOperand(argument: index, routine: mint)],
+            Location: element.Location)
         {
             ResolvedRoutine = mint,
             ResolvedType = element.ResolvedType,
@@ -396,8 +398,13 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         var member = new MemberExpression(Object: receiver,
             MemberName: SetItemMemberRoutine,
             Location: idx.Location);
+        List<ParamInfo> slots = setItem.Parameters.Where(predicate: p => p.Name != "me").ToList();
         var call = new CallExpression(Callee: member,
-            Arguments: [loweredIdx, value],
+            Arguments:
+            [
+                slots.Count > 0 ? TokenOperand(argument: loweredIdx, parameterType: slots[index: 0].Type) : loweredIdx,
+                slots.Count > 1 ? TokenOperand(argument: value, parameterType: slots[index: 1].Type) : value
+            ],
             Location: idx.Location)
         {
             ResolvedRoutine = setItem,
@@ -416,7 +423,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     private RoutineInfo? ResolveSetItemRoutine(TypeSymbol targetType, TypeSymbol? indexType,
         TypeSymbol? valueType)
     {
-        TypeSymbol owner = MarkerProtocolInner(type: targetType) ?? targetType;
+        TypeSymbol owner = targetType;
         RoutineInfo? setItem = ResolveSetItemOn(targetType: owner,
             indexType: indexType,
             valueType: valueType);
@@ -465,18 +472,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
         return ctx.Registry.LookupMemberRoutine(type: targetType,
             memberRoutineName: SetItemMemberRoutine);
-    }
-
-    /// <summary>
-    /// The inner type X of a marker borrow protocol <c>Accessing[X]</c>/<c>Controlling[X]</c>, else
-    /// null. A marker is representation-transparent: an index write through it targets X.
-    /// </summary>
-    private static TypeSymbol? MarkerProtocolInner(TypeSymbol type)
-    {
-        return type is ProtocolTypeSymbol { TypeArguments: [{ } inner] } proto &&
-               Builder.Declaration.RuntimeContract.IsMarkerProtocol(baseName: (proto.GenericDefinition ?? proto).BareName)
-            ? inner
-            : null;
     }
 
     //  Expression lowering
@@ -928,7 +923,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             Location: idx.Location);
         // `getitem` hands back a holder of its own (the container keeps its element), so the read needs no
         // copy around it.
-        return new CallExpression(Callee: member, Arguments: [loweredIdx], Location: idx.Location)
+        return new CallExpression(Callee: member, Arguments: [FirstOperand(argument: loweredIdx, routine: resolvedGetItem)],
+            Location: idx.Location)
         {
             ResolvedRoutine = resolvedGetItem,
             ResolvedType = idx.ResolvedType,
@@ -1193,6 +1189,11 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         CallLoweringKind lk = ClassifyCallLoweringKind(routine: resolvedMemberRoutine,
             receiverType: receiverType);
 
+        if (resolvedMemberRoutine?.Parameters.FirstOrDefault(predicate: p => p.Name != "me") is { } operand)
+        {
+            argument = TokenOperand(argument: argument, parameterType: operand.Type);
+        }
+
         return new CallExpression(Callee: binCallee,
             Arguments:
             [
@@ -1206,6 +1207,33 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             ResolvedRoutine = resolvedMemberRoutine,
             LoweringKind = lk
         };
+    }
+
+    /// <summary>
+    /// The operand an operator routine reading it through a token takes (<c>eq(you: Viewing[Point])</c>): a record
+    /// is handed as the address of the place it is in (a temporary gets one), an entity is its own pointer. Any
+    /// other operand, or one already a token, stays as it is.
+    /// </summary>
+    /// <summary>The call's first argument as <paramref name="routine"/>'s first parameter takes it (see
+    /// <see cref="TokenOperand"/>): a key handed to <c>Dict.getitem(key: Viewing[K])</c> goes as the address of its
+    /// place.</summary>
+    private static Expression FirstOperand(Expression argument, RoutineInfo? routine)
+    {
+        return routine?.Parameters.FirstOrDefault(predicate: p => p.Name != "me") is { } parameter
+            ? TokenOperand(argument: argument, parameterType: parameter.Type)
+            : argument;
+    }
+
+    private static Expression TokenOperand(Expression argument, TypeSymbol parameterType)
+    {
+        if (!ImplicitToken.IsTokenParameter(parameter: parameterType, tokenKind: out _, target: out _) ||
+            argument.ResolvedType is not { } argumentType || argumentType.BareName == parameterType.BareName ||
+            argumentType is EntityTypeSymbol)
+        {
+            return argument;
+        }
+
+        return new AddressOfExpression(Target: argument, Location: argument.Location) { ResolvedType = parameterType };
     }
 
     /// <summary>
@@ -1572,8 +1600,14 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         BackIndexExpression backIndex, TypeSymbol targetType, SourceLocation location)
     {
         // Resolve the count member routine on the receiver; its return type is U64.
+        // A Suflae collection held by its `Roamed` handle counts as the collection (RoamedProjectionLoweringPass
+        // projects the receiver), as `getitem` does.
         RoutineInfo? countRoutine = ctx.Registry.LookupMemberRoutine(type: targetType,
-            memberRoutineName: Declaration.RuntimeContract.Collection.Count);
+                                        memberRoutineName: Declaration.RuntimeContract.Collection.Count) ??
+                                    (UnwrapRoamedInner(type: targetType) is { } innerTarget
+                                        ? ctx.Registry.LookupMemberRoutine(type: innerTarget,
+                                            memberRoutineName: Declaration.RuntimeContract.Collection.Count)
+                                        : null);
         var countCall = new CallExpression(
             Callee: new MemberExpression(Object: loweredObj,
                 MemberName: Declaration.RuntimeContract.Collection.Count,

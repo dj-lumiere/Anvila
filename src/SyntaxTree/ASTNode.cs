@@ -478,6 +478,9 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the drop statement</returns>
     T VisitDropStatement(DropStatement node);
 
+    /// <summary>Visits a <c>steal place as old</c> statement.</summary>
+    T VisitStealStatement(StealStatement node);
+
     // Declaration visitor memberRoutines - handle all declaration node types
 
     /// <summary>Visits a variable declaration node (var declarations)</summary>

@@ -149,13 +149,6 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
     {
         TypeSymbol? type = wrapper.ResolvedType;
 
-        // A marker borrow protocol receiver (Accessing[X]/Controlling[X]) is transparent to its inner X.
-        if (type is ProtocolTypeSymbol { TypeArguments: [{ } markerInner] } proto &&
-            RuntimeContract.IsMarkerProtocol(baseName: (proto.GenericDefinition ?? proto).BareName))
-        {
-            type = markerInner;
-        }
-
         if (type == null || ContainsGenericParameter(type: type))
         {
             return null;

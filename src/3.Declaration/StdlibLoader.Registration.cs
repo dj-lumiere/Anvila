@@ -895,6 +895,12 @@ public sealed partial class StdlibLoader
         // `T` behaves exactly like a bracket param. Mutates the shared decl; idempotent.
         RoutineGenericParameters.AddConstraintDeclarations(routine: routine);
 
+        // A bracket of types (`routine S64.to![U8]()`) is a specialization, read before the generic context so
+        // `U8` in the signature is the type, not a parameter.
+        List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
+            receiverLeaves: CollectReceiverLeafParamNames(receiver: routine.ReceiverType),
+            resolve: name => registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name));
+
         List<string>? ctx = BuildRoutineGenericContext(registry: registry,
             routine: routine,
             ownerType: ownerType,
@@ -981,6 +987,7 @@ public sealed partial class StdlibLoader
             GenericParameters = RoutineOwnGenericParameters(registry: registry,
                 routine: routine,
                 moduleName: moduleName),
+            TypeArguments = specialization,
             GenericConstraints = routine.GenericConstraints,
             Annotations = routine.Annotations,
             // StdlibLoader is a PARALLEL routine-registration path to SignatureResolver; it derives the

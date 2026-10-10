@@ -1509,6 +1509,13 @@ public record StealExpression(Expression Operand, SourceLocation Location)
     /// </summary>
     public bool IsImplicitMove { get; init; }
 
+    /// <summary>
+    /// True for the move out of a member variable or element that a <c>steal place as old</c> statement makes:
+    /// the statement fills the place again (or leaves a <c>T?</c> at <c>none</c>) in the same step, so no hole is
+    /// left behind.
+    /// </summary>
+    public bool IsPlaceMove { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

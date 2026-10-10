@@ -97,6 +97,16 @@ internal sealed partial class AstPrinter
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "drop "),
                     Expr(expression: dropped.Expression, context: ExprContext.Statement)));
                 break;
+            case StealStatement stolen:
+                EmitHead(start: start, depth: depth, head: stolen.Fresh != null
+                    ? Doc.Concat(prefix, Doc.Text(text: "steal "),
+                        Expr(expression: stolen.Place, context: ExprContext.Statement),
+                        Doc.Text(text: $" as {stolen.Name} inject "),
+                        Expr(expression: stolen.Fresh, context: ExprContext.Statement))
+                    : Doc.Concat(prefix, Doc.Text(text: "steal "),
+                        Expr(expression: stolen.Place, context: ExprContext.Statement),
+                        Doc.Text(text: $" as {stolen.Name}")));
+                break;
             case BreakStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "break")));
                 break;

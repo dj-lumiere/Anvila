@@ -252,7 +252,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             // old value; a bare-identifier RHS is a move and needs no spill. User assignments
             // are still in operator form here (ExpressionStatement of `=` BinaryExpression —
             // codegen's EmitBinaryAssign); AssignmentStatement appears in synthesized bodies.
-            case AssignmentStatement a when a.Target is IdentifierExpression target &&
+            case AssignmentStatement a when !a.KeepsReplacedValue && a.Target is IdentifierExpression target &&
                                             FindOwnedEntity(live: live, name: target.Name) is
                                                 { } owned:
                 return LowerEntityReassign(original: a,
@@ -277,7 +277,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             // handle — it must be released HERE or it leaks. (This is the one job of the deleted
             // RcRetainLoweringPass.ReassignRelease; the retain-NEW on the RHS is SF's implicit `.share()`
             // from SuflaeEntityLoweringPass, which runs before this pass, so `rhs` already carries it.)
-            case AssignmentStatement a when a.Target is MemberExpression mt:
+            case AssignmentStatement a when !a.KeepsReplacedValue && a.Target is MemberExpression mt:
                 return LowerRoamedFieldReassign(original: a,
                     target: mt,
                     rhs: a.Value,

@@ -830,9 +830,17 @@ public enum SemanticDiagnosticCode
     /// <c>try</c>/<c>check</c> carrier around it): the type argument has to be written (<c>x.to[S64]()</c>).</summary>
     ResultTypeArgumentUnknown = 645,
 
-    /// <summary>A conversion is written as a member named after the target type (<c>n.S64()</c>,
-    /// <c>f.Celsius()</c>): a conversion is written <c>n.to[S64]()</c>.</summary>
-    ConversionWrittenAsMember = 646,
+    /// <summary>A call picks a specialization the receiver does not have (<c>flag.to[U8]()</c> where no
+    /// <c>routine Bool.to[U8]()</c> is written): for <c>to</c>, there is no such conversion.</summary>
+    SpecializationNotFound = 646,
+
+    /// <summary><c>steal place as old</c> without <c>inject</c> on a place that cannot be left empty (a member
+    /// variable or element that is not a <c>T?</c>): put a value in with <c>inject</c>.</summary>
+    StealLeavesEmptyPlace = 647,
+
+    /// <summary><c>steal … as …</c> takes from something that is not a place (a variable, a member variable or an
+    /// element).</summary>
+    StealNotAPlace = 648,
 
     /// <summary>An <c>agent</c> call's argument is neither trivially copyable (passed by value), stolen, nor a
     /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias unsynchronized state
@@ -873,13 +881,6 @@ public enum SemanticDiagnosticCode
 
     /// <summary>An annotation was used in an invalid context or with invalid arguments.</summary>
     InvalidAnnotation = 706,
-
-    /// <summary>Type declares 'obeys Accessing[T]' or 'obeys Controlling[T]' but is not in the
-    /// stdlib closed allowlist (Retained/Viewing/Modifying/Hijacked/Tracked + deferred concurrency
-    /// wrappers + entity-T auto-conformance). Marker-protocol obeyers type-erase to ptr layout, so
-    /// the allowlist is the soundness fence preventing user types with incompatible layouts from
-    /// being passed where the routine body assumes T's ptr representation.</summary>
-    MarkerProtocolLayoutViolation = 707,
 
     /// <summary>A record annotated with @llvm("typename") declares member variables. The
     /// annotation IS the LLVM layout; user-declared fields are silently discarded by codegen,

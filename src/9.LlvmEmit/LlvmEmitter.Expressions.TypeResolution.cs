@@ -24,7 +24,7 @@ public partial class LlvmEmitter
                 NamedArgumentExpression named => GetExpressionType(expr: named.Value),
                 StealExpression steal => GetExpressionType(expr: steal.Operand),
                 _ => throw new InvalidOperationException(
-                    message: $"{expr.GetType().Name}{(expr is IdentifierExpression id ? $" '{id.Name}'" : "")} at " +
+                    message: $"{expr.GetType().Name}{(expr is IdentifierExpression id ? $" '{id.Name}'" : "")} DBG[{expr.Accept(visitor: new Builder.RfSyntaxTreePrinter())} r={(expr as CallExpression)?.ResolvedRoutine?.RegistryKey}] at " +
                              $"{expr.Location} reached the LLVM emitter without a type in [{_currentRoutineDiagName}].")
             },
             GenericParameterTypeSymbol parameter => throw new InvalidOperationException(

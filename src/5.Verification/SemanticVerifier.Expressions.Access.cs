@@ -13,19 +13,6 @@ public sealed partial class SemanticVerifier
 {
     private const string GetItemMemberRoutineName = "getitem";
 
-    private static bool TryGetTransparentProtocolTarget(TypeSymbol type, out TypeSymbol targetType)
-    {
-        if (type is ProtocolTypeSymbol { TypeArguments: { Count: > 0 } } proto &&
-            HasOnlyMarkerCoercionMemberRoutines(proto: proto))
-        {
-            targetType = proto.TypeArguments![index: 0];
-            return true;
-        }
-
-        targetType = type;
-        return false;
-    }
-
     /// <summary>
     /// The type whose <c>getitem</c>/<c>setitem</c> an index on <paramref name="type"/> uses: the inner value of a
     /// transparent protocol, and the entity behind a Suflae entity handle (<c>h.kids[0]</c> with <c>kids</c> a
@@ -33,7 +20,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static TypeSymbol IndexLookupType(TypeSymbol type)
     {
-        TryGetTransparentProtocolTarget(type: type, targetType: out TypeSymbol target);
+        TypeSymbol target = type;
         return target is RecordTypeSymbol
         {
             GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol entity]
@@ -43,82 +30,10 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// True if the protocol declares no memberRoutines other than the implicit-coercion markers
-    /// refer/control. Such protocols (Accessing[T], Controlling[T]) are transparent for
-    /// member access — `param.member` falls through to the inner T.
-    /// </summary>
-    private static bool HasOnlyMarkerCoercionMemberRoutines(ProtocolTypeSymbol proto)
-    {
-        return proto.MemberRoutines.All(predicate: m => m.Name == "access" || m.Name == "control");
-    }
-
-    private static bool IsReadOnlyTransparentProtocol(TypeSymbol type)
-    {
-        return type is ProtocolTypeSymbol proto && (proto.GenericDefinition ?? proto).BareName ==
-            Declaration.RuntimeContract.Accessing;
-    }
-
-    /// <summary>
-    /// True if the receiver is a generic parameter whose active Obeys-constraint is the read-only
-    /// marker <c>Accessing[X]</c> (not <c>Controlling[X]</c>) — a write through it is rejected, mirroring
-    /// <see cref="IsReadOnlyTransparentProtocol"/> for a direct-protocol receiver.
-    /// </summary>
-    private bool IsReadOnlyMarkerBoundParam(TypeSymbol type)
-    {
-        if (type is not GenericParameterTypeSymbol gp)
-        {
-            return false;
-        }
-
-        bool sawMarker = false;
-        foreach (GenericConstraintDeclaration c in ActiveConstraintsFor(paramName: gp.Name))
-        {
-            if (c is not { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: not null })
-            {
-                continue;
-            }
-
-            IEnumerable<string> protoNames =
-                c.ConstraintTypes.Select(selector: protoExpr => protoExpr.Name);
-            foreach (string protoName in protoNames)
-            {
-                if (protoName == Declaration.RuntimeContract.Controlling)
-                {
-                    return false;
-                }
-
-                if (protoName == Declaration.RuntimeContract.Accessing)
-                {
-                    sawMarker = true;
-                }
-            }
-        }
-
-        return sawMarker;
-    }
-
-    /// <summary>
-    /// Unwraps a marker-bound receiver to the inner concrete type for member access. Handles a direct
-    /// <c>Accessing[X]</c>/<c>Controlling[X]</c> receiver (transparent protocol) AND a generic parameter
-    /// desugared from a marker-protocol param (<c>p: Accessing[X]</c> becomes
-    /// <c>[V obeys Accessing[X]](p: V)</c>): scans the param's active Obeys-constraints for the marker
-    /// bound and yields its inner <c>X</c>, so a member/field access on the param resolves against
-    /// <c>X</c> — the concrete <c>Viewing</c>/<c>Modifying</c> token (or a value conformer) forwards
-    /// every member to <c>X</c>.
+    /// Unwraps an iterator's `Item` in a generic body to the value it reads as, for member access.
     /// </summary>
     private bool TryUnwrapMarkerReceiver(TypeSymbol type, out TypeSymbol innerType)
     {
-        if (TryGetTransparentProtocolTarget(type: type, targetType: out innerType))
-        {
-            return true;
-        }
-
-        if (type is GenericParameterTypeSymbol gp &&
-            TryUnwrapMarkerBoundParam(gp: gp, innerType: out innerType))
-        {
-            return true;
-        }
-
         if (ProjectionReadTarget(type: type) is { } read)
         {
             innerType = read;
@@ -130,76 +45,24 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The value an associated type reads as when its slot is bound by a marker: an iterator's `Item`
-    /// (`relates Item obeys Accessing[T]`), so `S/Iter/Item` in a generic body reads as `T`. Null for anything
+    /// The value an iterator's `Item` reads as: `Emittable[T]`'s `Item` is a token on a stored element or the value
+    /// itself, and reads as `T` either way, so `S/Iter/Item` in a generic body reads as `T`. Null for anything
     /// else. Monomorphization makes the projection the iterator's concrete `Item` (a token, or the value).
     /// </summary>
     private TypeSymbol? ProjectionReadTarget(TypeSymbol type)
     {
-        return type is AssociatedProjectionTypeSymbol projection &&
-               ProjectionBound(projection: projection) is { TypeArguments: [{ } read] } bound &&
-               Declaration.RuntimeContract.IsMarkerProtocol(baseName: (bound.GenericDefinition ?? bound).BareName)
+        return type is AssociatedProjectionTypeSymbol { SlotName: EmittableItemSlot } projection &&
+               ProjectionOwner(projection: projection) is { TypeArguments: [{ } read] } owner &&
+               (owner.GenericDefinition ?? owner).BareName == EmittableProtocolName
             ? read
             : null;
     }
 
-    /// <summary>
-    /// Scans the active Obeys-constraints of a generic parameter for a marker-protocol bound
-    /// (<c>Accessing[X]</c> or <c>Controlling[X]</c>) and resolves the inner type <c>X</c>.
-    /// Returns true and sets <paramref name="innerType"/> when a bound is found; false otherwise.
-    /// </summary>
-    private bool TryUnwrapMarkerBoundParam(GenericParameterTypeSymbol gp, out TypeSymbol innerType)
-    {
-        foreach (GenericConstraintDeclaration c in ActiveConstraintsFor(paramName: gp.Name))
-        {
-            if (c is not { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: not null })
-            {
-                continue;
-            }
+    /// <summary>The slot an iterator's element is handed out through.</summary>
+    private const string EmittableItemSlot = "Item";
 
-            if (TryMatchMarkerBound(constraintTypes: c.ConstraintTypes, innerType: out innerType))
-            {
-                return true;
-            }
-        }
-
-        innerType = ErrorTypeSymbol.Instance;
-        return false;
-    }
-
-    /// <summary>
-    /// Searches a list of protocol-type expressions for an <c>Accessing[X]</c> or
-    /// <c>Controlling[X]</c> bound with exactly one resolvable type argument, and returns
-    /// that resolved inner type. Returns false when no such bound is present.
-    /// </summary>
-    private bool TryMatchMarkerBound(List<TypeExpression> constraintTypes,
-        out TypeSymbol innerType)
-    {
-        foreach (TypeExpression protoExpr in constraintTypes)
-        {
-            if (protoExpr.Name is not (Declaration.RuntimeContract.Accessing
-                or Declaration.RuntimeContract.Controlling))
-            {
-                continue;
-            }
-
-            if (protoExpr.GenericArguments is not { Count: 1 })
-            {
-                continue;
-            }
-
-            TypeSymbol resolved =
-                _typeResolver.ResolveType(typeExpr: protoExpr.GenericArguments[index: 0]);
-            if (resolved is not (null or ErrorTypeSymbol))
-            {
-                innerType = resolved;
-                return true;
-            }
-        }
-
-        innerType = ErrorTypeSymbol.Instance;
-        return false;
-    }
+    /// <summary>The protocol an iterator obeys.</summary>
+    private const string EmittableProtocolName = "Emittable";
 
     /// <summary>
     /// Analyzes a buildtime splice-selector member access (<c>x.${m.name}</c>). The receiver and
@@ -506,15 +369,12 @@ public sealed partial class SemanticVerifier
             lookupType: lookupType,
             ownerType: getItem.OwnerType) ?? paramType;
 
-        // The index param is frequently a by-reference marker wrapper — `Dict.getitem!(key:
-        // Accessing[K])` / `Controlling[K]` — the `refer`/`control` coercion the container declares on
-        // its key. That wrapper is TRANSPARENT: the caller passes a bare `K`. Unwrap it to the inner key
-        // type so a bare integer key literal (`d[1]`) conforms to e.g. S64 instead of stalling at the
-        // Suflae `Integer` default (RF escapes this only because its default already IS S64). Inferring
-        // the key type through the coercion wrapper is the builder's job.
+        // The index param is often a token (`Dict.getitem!(key: Viewing[K])`) the call makes from a bare `K`.
+        // Unwrap it to the key type so a bare integer key literal (`d[1]`) conforms to e.g. S64 instead of
+        // stalling at the Suflae `Integer` default.
         if (paramType.TypeArguments is { Count: >= 1 } referArgs &&
-            GetTypeBaseName(type: paramType) is Declaration.RuntimeContract.Accessing
-                or Declaration.RuntimeContract.Controlling)
+            GetTypeBaseName(type: paramType) is Declaration.RuntimeContract.Viewing
+                or Declaration.RuntimeContract.Modifying)
         {
             paramType = referArgs[index: 0];
         }

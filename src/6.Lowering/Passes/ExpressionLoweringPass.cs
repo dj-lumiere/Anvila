@@ -252,6 +252,19 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     private (List<Statement> Hoisted, Statement Lowered) LowerAssignmentStatement(
         AssignmentStatement asgn, Statement stmt)
     {
+        // The position an element assignment writes to (`xs[0] = v`) is read like any expression, before the value.
+        if (asgn.Target is IndexExpression target)
+        {
+            (List<Statement> indexHoisted, Expression loweredIndex) = LowerExpr(expr: target.Index);
+            if (indexHoisted.Count > 0 || !ReferenceEquals(objA: loweredIndex, objB: target.Index))
+            {
+                AssignmentStatement retargeted = asgn with { Target = target with { Index = loweredIndex } };
+                (List<Statement> rest, Statement lowered) = LowerAssignmentStatement(asgn: retargeted, stmt: retargeted);
+                indexHoisted.AddRange(collection: rest);
+                return (indexHoisted, lowered);
+            }
+        }
+
         (List<Statement> hoisted, Expression loweredVal) = LowerExpr(expr: asgn.Value);
         // Maybe auto-wrap on a member store: `me.field = x` where `field : Maybe[T]` and
         // `x : T` boxes the bare value into `Maybe[T](present: true, value: x)` as a real
@@ -644,10 +657,18 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         var members = new List<(string Name, Expression Value)>(
             capacity: creator.MemberVariables.Count);
         bool changed = false;
+        TypeSymbol? constructed = creator.ConstructedType ?? creator.ResolvedType;
         foreach ((string name, Expression value) in creator.MemberVariables)
         {
             (List<Statement> h, Expression lowered) = LowerExpr(expr: value);
             hoisted.AddRange(collection: h);
+            // A bare value for a `T?` member variable (`Slot(spare: item)`) goes in as a present `T?`.
+            if (TryWrapMaybe(targetType: FieldTypeOf(constructed: constructed, name: name), value: lowered) is
+                { } wrapped)
+            {
+                lowered = wrapped;
+            }
+
             members.Add(item: (name, lowered));
             if (!ReferenceEquals(objA: lowered, objB: value))
             {
@@ -817,7 +838,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             {
                 Expression loweredNamed = LowerNamedCallArg(namedArg: namedArg,
                     callRoutine: callRoutine,
-                    hoisted: hoisted);
+                    hoisted: hoisted,
+                    constructed: callRoutine == null ? call.ConstructedType : null);
                 args.Add(item: loweredNamed);
                 if (!ReferenceEquals(objA: loweredNamed, objB: arg))
                 {
@@ -845,13 +867,13 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     // Lowers a single named argument, wrapping the value for a variant arm or Maybe parameter if needed.
     private NamedArgumentExpression LowerNamedCallArg(NamedArgumentExpression namedArg,
-        RoutineInfo? callRoutine, List<Statement> hoisted)
+        RoutineInfo? callRoutine, List<Statement> hoisted, TypeSymbol? constructed)
     {
         (List<Statement> h, Expression loweredValue) = LowerExpr(expr: namedArg.Value);
         hoisted.AddRange(collection: h);
         TypeSymbol? paramType = callRoutine?.Parameters
                                           .FirstOrDefault(predicate: p => p.Name == namedArg.Name)
-                                         ?.Type;
+                                         ?.Type ?? FieldTypeOf(constructed: constructed, name: namedArg.Name);
         Expression wrappedValue = TryWrapVariantArm(targetType: paramType, init: loweredValue) ??
                                   TryWrapMaybe(targetType: paramType, value: loweredValue) ??
                                   loweredValue;
@@ -859,6 +881,18 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return ReferenceEquals(objA: wrappedValue, objB: namedArg.Value)
             ? namedArg
             : namedArg with { Value = wrappedValue, ResolvedType = wrappedValue.ResolvedType };
+    }
+
+    /// <summary>The type of the member variable <paramref name="name"/> of the type a creator builds, or null.</summary>
+    private static TypeSymbol? FieldTypeOf(TypeSymbol? constructed, string name)
+    {
+        List<MemberVariableInfo>? fields = constructed switch
+        {
+            EntityTypeSymbol entity => entity.MemberVariables,
+            RecordTypeSymbol record => record.MemberVariables,
+            _ => null
+        };
+        return fields?.FirstOrDefault(predicate: f => f.Name == name)?.Type;
     }
 
     // Lowers a single positional argument, wrapping the value for a variant arm or Maybe parameter if needed.

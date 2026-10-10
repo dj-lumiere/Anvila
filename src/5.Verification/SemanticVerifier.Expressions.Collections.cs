@@ -1028,10 +1028,8 @@ public sealed partial class SemanticVerifier
             argType = MarkerTokenArgumentType(routine: genericRoutine, paramType: paramType, argType: argType);
             argType = SharedEntities.AsHandleForInference(argType: argType, paramType: paramType);
             // A value's token handed to a parameter of the routine's own type (`nested_repr(value: T)` given an
-            // iterated element) binds the value's type: the call reads the value (TokenReadLoweringPass). A marker
-            // parameter (`you: Accessing[T]`) keeps the token.
-            if (paramType is GenericParameterTypeSymbol ownParam &&
-                !IsMarkerBoundParameter(routine: genericRoutine, parameterName: ownParam.Name))
+            // iterated element) binds the value's type: the call reads the value (TokenReadLoweringPass).
+            if (paramType is GenericParameterTypeSymbol)
             {
                 argType = ValueTokenTarget(type: argType) ?? argType;
             }
@@ -1237,52 +1235,26 @@ public sealed partial class SemanticVerifier
         return inferred.ToList()!;
     }
 
-    /// <summary>
-    /// The type an entity argument binds for a parameter bound by a marker protocol: <c>b: Controlling[Box]</c>
-    /// (desugared to <c>[V obeys Controlling[Box]](b: V)</c>) takes <c>c</c> as <c>c.modify()</c>, so V binds
-    /// <c>Modifying[Box]</c>. <c>Accessing[T]</c> takes it as <c>c.view()</c> (<c>Viewing[T]</c>). The call site then
-    /// writes the token in (see ImplicitTokenArgument). Any other argument keeps its own type.
-    /// </summary>
-    /// <summary>Whether <paramref name="parameterName"/> is one of <paramref name="routine"/>'s own parameters bound
-    /// by a marker (`obeys Accessing[X]` / `obeys Controlling[X]`), which takes a token as it is.</summary>
-    private static bool IsMarkerBoundParameter(RoutineInfo routine, string parameterName)
-    {
-        return routine.GenericConstraints?.Any(predicate: c =>
-            c is { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: not null } &&
-            c.ParameterName == parameterName &&
-            c.ConstraintTypes.Any(predicate: t =>
-                Declaration.RuntimeContract.IsMarkerProtocol(baseName: TypeSymbol.StripTypeArgs(name: t.Name)))) == true;
-    }
-
     private TypeSymbol MarkerTokenArgumentType(RoutineInfo routine, TypeSymbol paramType, TypeSymbol argType)
     {
-        if (!_registry.Rules.ChecksAccessTokens || argType is not EntityTypeSymbol ||
-            paramType is not GenericParameterTypeSymbol param || routine.GenericConstraints is not { } constraints)
+        // A token parameter (`value: Viewing[T]`) given a value or a handle binds as the token the call converts
+        // it to: `T` is the value's type (or the handle's inner type).
+        string tokenKind = paramType.BareName;
+        if (tokenKind is not (Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying) ||
+            paramType.TypeArguments is not [_] || argType.BareName == tokenKind ||
+            argType is ErrorTypeSymbol)
         {
             return argType;
         }
 
-        string? token = null;
-        foreach (GenericConstraintDeclaration c in constraints)
-        {
-            if (c.ParameterName != param.Name || c.ConstraintType != ConstraintKind.Obeys)
-            {
-                continue;
-            }
-
-            foreach (TypeExpression bound in c.ConstraintTypes)
-            {
-                token ??= bound.Name switch
-                {
-                    Declaration.RuntimeContract.Controlling => Declaration.RuntimeContract.Modifying,
-                    Declaration.RuntimeContract.Accessing => Declaration.RuntimeContract.Viewing,
-                    _ => null
-                };
-            }
-        }
-
-        return token != null && _registry.LookupType(name: token) is { } tokenDef
-            ? _registry.GetOrCreateResolution(genericDef: tokenDef, typeArguments: [argType])
+        string handle = argType.BareName;
+        TypeSymbol inner = handle is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed
+                               or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Amending
+                               or Declaration.RuntimeContract.Consulting && argType.TypeArguments is [{ } held, ..]
+            ? argType.TypeArguments![index: 0]
+            : argType;
+        return _registry.LookupType(name: tokenKind) is { } tokenDef
+            ? _registry.GetOrCreateResolution(genericDef: tokenDef, typeArguments: [inner])
             : argType;
     }
 
@@ -1300,9 +1272,9 @@ public sealed partial class SemanticVerifier
 
         // Marker borrow wrappers around a BARE generic param (Accessing[S2]/Controlling[S2]) are
         // transparent at call sites: a bare argument `a` passed where `Accessing[S2]` is expected
-        // binds S2 to the WHOLE argument type. Without this, `other: Accessing[S2]` against arg
+        // binds S2 to the WHOLE argument type. Without this, `other: Viewing[S2]` against arg
         // `List[S64]` would wrongly element-wise-bind S2 to S64 (the inner element). Restricted to a
-        // bare-generic inner so wrappers around constructed types (e.g. `Accessing[List[T]]`) keep
+        // bare-generic inner so tokens around constructed types (e.g. `Viewing[List[T]]`) keep
         // the normal element-wise unification that binds their inner params (T) correctly.
         if (TryInferFromMarkerProtocolWrapper(paramType: paramType,
                 argType: argType,
@@ -1363,8 +1335,8 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Handles inference through a marker-protocol wrapper (<c>Accessing[S2]</c> /
-    /// <c>Controlling[S2]</c>) around a bare generic parameter: binds the wrapper's inner param
+    /// Handles inference through a token (<c>Viewing[S2]</c> / <c>Modifying[S2]</c>) around a bare generic
+    /// parameter, given the value the call makes the token from: binds the token's inner param
     /// slot to the WHOLE argument type rather than element-wise. Returns true and binds the slot
     /// when applicable; returns false otherwise so the caller falls through to element-wise unification.
     /// </summary>
@@ -1376,14 +1348,8 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
-        if (!Declaration.RuntimeContract.IsMarkerProtocol(
-                baseName: ProtocolBaseName(type: paramType)))
-        {
-            return false;
-        }
-
-        if (ProtocolBaseName(type: argType) is Declaration.RuntimeContract.Accessing
-            or Declaration.RuntimeContract.Controlling)
+        if (paramType.BareName is not (Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying) ||
+            argType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
         {
             return false;
         }
