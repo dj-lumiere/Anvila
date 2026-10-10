@@ -67,6 +67,10 @@ public abstract class LanguageRules
     /// library may always use it, so this only decides whether the program's own files may.</summary>
     public abstract bool AllowsUnsafeCode { get; }
 
+    /// <summary>Whether a routine that returns nothing must still end with an explicit <c>return</c>. Without the
+    /// rule the builder ends such a body with one itself, so teardown still has its one exit.</summary>
+    public virtual bool RoutinesEndWithReturn => true;
+
     /// <summary>The <c>pass</c> placeholder statement and declaration.</summary>
     public abstract bool HasPassStatement { get; }
 

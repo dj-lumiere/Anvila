@@ -169,9 +169,46 @@ public partial class Parser
     public Parser(List<Token> tokens, Language language, string? fileName = null)
     {
         _tokens = tokens;
+        ReadWordOperatorsAsNames(tokens: tokens);
         _language = language;
         FileName = fileName ?? "unknown";
         _indentationStack.Push(item: 0); // Base indentation level
+    }
+
+    /// <summary>
+    /// The word operators (<c>to</c> <c>til</c> <c>by</c> <c>have</c> <c>lack</c> <c>is</c> <c>isnot</c> <c>in</c>
+    /// <c>as</c> <c>and</c> <c>or</c>) are keywords only where an operator stands: right after something that ends an
+    /// expression (<c>0 to 10</c>, <c>xs have v</c>, <c>each x in xs</c>). Anywhere else the word is a name
+    /// (<c>var to = 3</c>, <c>routine step(by: S64)</c>, <c>by + to</c>), so it is turned into an identifier here,
+    /// before parsing. A pattern arm still starts with <c>is</c> (<c>is S64 as n =&gt;</c>) and an <c>else</c> arm
+    /// still binds with <c>as</c>, so those two stay keywords there. <c>not</c> starts an expression, so it stays a
+    /// keyword everywhere.
+    /// </summary>
+    private static void ReadWordOperatorsAsNames(List<Token> tokens)
+    {
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            Token token = tokens[index: i];
+            if (token.Type is not (TokenType.To or TokenType.Til or TokenType.By or TokenType.Have or TokenType.Lack
+                or TokenType.Is or TokenType.IsNot or TokenType.In or TokenType.As or TokenType.And or TokenType.Or))
+            {
+                continue;
+            }
+
+            TokenType before = i > 0
+                ? tokens[index: i - 1].Type
+                : TokenType.Newline;
+            bool afterExpression = before < TokenType.Identifier || before is TokenType.Identifier or TokenType.Me
+                or TokenType.MyType or TokenType.True or TokenType.False or TokenType.None or TokenType.NoneValue
+                or TokenType.RightParen or TokenType.RightBracket or TokenType.RightBrace or TokenType.Question;
+            bool patternArm = token.Type is TokenType.Is or TokenType.IsNot &&
+                              before is TokenType.Newline or TokenType.Indent or TokenType.Dedent;
+            bool elseBinding = token.Type == TokenType.As && before == TokenType.Else;
+            if (!afterExpression && !patternArm && !elseBinding)
+            {
+                tokens[index: i] = token with { Type = TokenType.Identifier };
+            }
+        }
     }
 
     /// <summary>

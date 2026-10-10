@@ -71,7 +71,7 @@ internal sealed class NoneReturnNormalizationPass(DesugaringContext _)
                                      new TypeExpression(Name: "None",
                                          GenericArguments: null,
                                          Location: r.Location);
-        Statement body = NormalizeStatement(stmt: r.Body);
+        Statement body = EndWithReturn(routine: r, returnType: returnType, body: NormalizeStatement(stmt: r.Body));
         if (ReferenceEquals(objA: returnType, objB: r.ReturnType) &&
             ReferenceEquals(objA: body, objB: r.Body))
         {
@@ -79,6 +79,32 @@ internal sealed class NoneReturnNormalizationPass(DesugaringContext _)
         }
 
         return r with { ReturnType = returnType, Body = body };
+    }
+
+    /// <summary>
+    /// In a language whose routines need no closing <c>return</c> (<c>LanguageRules.RoutinesEndWithReturn</c>
+    /// false, decided by the routine's own file), a routine that returns nothing and whose body does not already
+    /// end in <c>return</c> or <c>throw</c> gets <c>return</c> at its end: the one exit teardown is anchored at.
+    /// A routine that returns a value still returns it on every path itself.
+    /// </summary>
+    private static Statement EndWithReturn(RoutineDeclaration routine, TypeExpression returnType, Statement body)
+    {
+        string? file = routine.Location.FileName;
+        if (!Frontends.Languages.HasSourceExtension(fileName: file) ||
+            Frontends.Languages.For(language: Frontends.Languages.OfFile(fileName: file)).RoutinesEndWithReturn ||
+            returnType is not { Name: "None", GenericArguments: null or [] } ||
+            body is not BlockStatement block ||
+            block.Statements is [.., ReturnStatement or ThrowStatement])
+        {
+            return body;
+        }
+
+        SourceLocation end = block.Statements.Count > 0
+            ? block.Statements[^1].Location
+            : block.Location;
+        var closing = new ReturnStatement(Value: new IdentifierExpression(Name: "None", Location: end),
+            Location: end);
+        return block with { Statements = [.. block.Statements, closing] };
     }
 
     private Statement NormalizeStatement(Statement stmt)
