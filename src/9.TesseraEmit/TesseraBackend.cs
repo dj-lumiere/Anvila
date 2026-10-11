@@ -182,8 +182,10 @@ public sealed class TesseraBackend : IBuilderBackend
     internal static List<Tessera.Decl> Parse(string file, string source, bool isLibrary)
     {
         List<Tessera.Token> tokens = new Tessera.Lexer(file: file, src: source).Lex();
-        return new Tessera.Parser(tokens: tokens, file: file, isLibrary: isLibrary).ParseModule()
-                                                                                   .Decls;
+        // The module this backend writes still uses Tessera's pre-0.5 spellings (`Void`, blocks and jumps), which the
+        // builder reads when asked: a person's own source gets the build error that names the migration instead.
+        return new Tessera.Parser(tokens: tokens, file: file, isLibrary: isLibrary, acceptLegacy: true).ParseModule()
+                                                                                                    .Decls;
     }
 
     /// <summary>

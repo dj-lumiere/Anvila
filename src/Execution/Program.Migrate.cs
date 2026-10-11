@@ -867,7 +867,7 @@ internal partial class Program
                 edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length,
                     Replacement: "check", Line: token.Line, What: "grab → check"));
             }
-            else if (token.Text == "discard" && StartsStatement(tokens: tokens, index: i))
+            else if (token.Text == "discard" && StartsStatement(tokens: tokens, index: i) && !IsDictAddStatement(tokens: tokens, word: i))
             {
                 if (language == Language.Suflae)
                 {
@@ -1143,7 +1143,9 @@ internal partial class Program
             first--;
         }
 
-        bool dropped = tokens[index: first].Type == TokenType.Drop;
+        // `discard d.add(...)` (the older word) drops the result the same way: the rewrite takes the word away, and the
+        // `discard` → `drop` rule leaves such a statement alone.
+        bool dropped = tokens[index: first].Type == TokenType.Drop || tokens[index: first].Text == "discard";
         int valueAt = -1;
         int depth = 0;
         for (int k = open; k <= close; k++)
@@ -1199,6 +1201,21 @@ internal partial class Program
             Replacement: "] = ", Line: tokens[index: valueAt].Line, What: "d.add(key: k, value: v) → d[k] = v");
         yield return new MigrationEdit(Start: closing.Position, Length: 1, Replacement: "", Line: closing.Line,
             What: "d.add(key: k, value: v) → d[k] = v");
+    }
+
+    /// <summary>Whether the statement the word at <paramref name="word"/> starts is a dict's <c>add(key:, value:)</c>
+    /// call, which the dict-add rewrite turns into an assignment (taking the word away with it).</summary>
+    private static bool IsDictAddStatement(List<Token> tokens, int word)
+    {
+        for (int k = word + 1; k + 1 < tokens.Count && tokens[index: k].Type is not (TokenType.Newline or TokenType.Dedent or TokenType.Indent); k++)
+        {
+            if (tokens[index: k].Text == "add" && tokens[index: k - 1].Type == TokenType.Dot && DictAddEdits(tokens: tokens, index: k).Any())
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The types a conversion goes to with <c>to[T]()</c>: a creator that computed its value from one value

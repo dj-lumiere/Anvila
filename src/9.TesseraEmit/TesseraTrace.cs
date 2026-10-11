@@ -28,9 +28,9 @@ internal static class TesseraTrace
 
     /// <summary>The frame stack, the depth, and the routines over them.</summary>
     public const string Support = """
-        /// One frame of the crash trace, laid out as the runtime's printer reads it.
+        ### One frame of the crash trace, laid out as the runtime's printer reads it.
         record RfTraceFrame
-            routine: Addr
+            `routine`: Addr
             file: Addr
             line: S32
             column: S32
@@ -41,12 +41,12 @@ internal static class TesseraTrace
         @threadlocal
         global RF_TRACE_DEPTH: @S32
 
-        /// Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
+        ### Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
             depth: S32 = RF_TRACE_DEPTH.peek()
             index: USize = zext[S32, USize](band[S32](depth, 31))
             frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
-            frame.routine.poke(routine_name)
+            frame.`routine`.poke(routine_name)
             frame.file.poke(file)
             frame.line.poke(line)
             frame.column.poke(column)
@@ -57,7 +57,7 @@ internal static class TesseraTrace
             sub[S32](RF_TRACE_DEPTH.peek(), 1).poke_into(RF_TRACE_DEPTH)
             return
 
-        /// Moves the top frame to the position of the call about to be made.
+        ### Moves the top frame to the position of the call about to be made.
         routine rf_trace_update_loc(line: S32, column: S32) -> Void
             depth: S32 = RF_TRACE_DEPTH.peek()
             if depth.le(0)
@@ -68,26 +68,26 @@ internal static class TesseraTrace
             frame.column.poke(column)
             return
 
-        /// The trace's depth, under the name the LLVM emitter exports it by: Ingrid's crash handler reads it.
+        ### The trace's depth, under the name the LLVM emitter exports it by: Ingrid's crash handler reads it.
         @export("_rf_trace_get_depth_shared")
         routine rf_trace_get_depth() -> S32
             depth: S32 = RF_TRACE_DEPTH.peek()
             return depth
 
-        /// The trace's 32 frames, under the name the LLVM emitter exports them by.
+        ### The trace's 32 frames, under the name the LLVM emitter exports them by.
         @export("_rf_trace_get_frames_shared")
         routine rf_trace_get_frames() -> @RfTraceFrame
             frames: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]()
             return frames
 
-        /// A copy of the trace in a caught error's object, laid out as Core's Crashables reads it: the 32 frames,
-        /// then the depth.
+        ### A copy of the trace in a caught error's object, laid out as Core's Crashables reads it: the 32 frames,
+        ### then the depth.
         record RfTraceSnapshot
             frames: Array[RfTraceFrame, 32]
             depth: S32
 
-        /// Copies the trace into a caught error's object where the error is first thrown, so a report of the error
-        /// thrown again shows where it began.
+        ### Copies the trace into a caught error's object where the error is first thrown, so a report of the error
+        ### thrown again shows where it began.
         routine rf_trace_snapshot(into: @RfTraceSnapshot) -> Void
             RF_TRACE_DEPTH.peek().poke_into(into.depth)
             each i in 0 til 32
