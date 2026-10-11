@@ -225,9 +225,9 @@ internal sealed class TesseraWriter
         module.Append(value: _globals);
         module.Append(value: _externs);
         module.Append(value: _definitions);
-        // The lines after a routine's head are its entry block: `block entry()` is written only where a block jumps
-        // back to it.
-        return Tessera.EntryMigration.Rewrite(text: module.ToString());
+        // Every record says how it is made and released (a construct taking its fields, a destruct), and the lines
+        // after a routine's head are its entry block: `block entry()` is written only where a block jumps back to it.
+        return Tessera.EntryMigration.Rewrite(text: Tessera.ConstructDestructMigration.Rewrite(text: module.ToString()));
     }
 
     /// <summary>Queues a library routine for writing the first time something calls it.</summary>
@@ -311,9 +311,9 @@ internal sealed class TesseraWriter
         module.Append(value: _externs);
         module.Append(value: definitions);
         module.Append(value: main);
-        // The lines after a routine's head are its entry block: `block entry()` is written only where a block jumps
-        // back to it.
-        return Tessera.EntryMigration.Rewrite(text: module.ToString());
+        // Every record says how it is made and released (a construct taking its fields, a destruct), and the lines
+        // after a routine's head are its entry block: `block entry()` is written only where a block jumps back to it.
+        return Tessera.EntryMigration.Rewrite(text: Tessera.ConstructDestructMigration.Rewrite(text: module.ToString()));
     }
 
     /// <summary>Registers every body the LLVM emitter registers for crash reachability: the user routines and
