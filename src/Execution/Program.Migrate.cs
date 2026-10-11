@@ -1712,6 +1712,15 @@ internal partial class Program
             }
 
             chainEnd = j - 1;
+            // A name followed by `.`, `(` or `[` is the start of an operand (`xs have name or name.is_empty()`), not
+            // a flag: then this is no chain.
+            if (chainEnd + 1 < tokens.Count && tokens[index: chainEnd + 1].Type is TokenType.Dot or TokenType.LeftParen or TokenType.LeftBracket)
+            {
+                names.Clear();
+                connective = null;
+                excluded = null;
+                chainEnd = index;
+            }
         }
 
         bool armForm = index > 0 && tokens[index: index - 1].Type is TokenType.Newline or TokenType.Indent or TokenType.Dedent;
