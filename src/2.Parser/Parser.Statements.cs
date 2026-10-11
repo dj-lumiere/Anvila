@@ -147,19 +147,7 @@ public partial class Parser
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
         Expression condition = ParseExpression();
-        Statement body = ParseBody();
-
-        // Check for else clause (runs only when the body never ran)
-        Statement? elseBranch = null;
-        if (CheckAndAdvance(type: TokenType.Else))
-        {
-            elseBranch = ParseBody();
-        }
-
-        return new WhileStatement(Condition: condition,
-            Body: body,
-            ElseBranch: elseBranch,
-            Location: location) { ThenBranch = ParseLoopThen() };
+        return ParseWhileTail(condition: condition, location: location);
     }
 
     /// <summary>
@@ -178,14 +166,90 @@ public partial class Parser
 
     private WhileStatement ParseWhileTail(Expression condition, SourceLocation location)
     {
-        Statement body = ParseBody();
+        List<CarriedValue>? with = ParseCarriedValues();
+        Statement body = ParseCarryingBody(with: with, location: location);
         Statement? elseBranch = CheckAndAdvance(type: TokenType.Else)
             ? ParseBody()
             : null;
         return new WhileStatement(Condition: condition,
             Body: body,
             ElseBranch: elseBranch,
-            Location: location) { ThenBranch = ParseLoopThen() };
+            Location: location) { ThenBranch = ParseLoopThen(), With = with };
+    }
+
+    /// <summary>The carried values of a loop: a loop without `with` carries none (null). Innermost last.</summary>
+    private readonly Stack<List<string>?> _carriedLoops = new();
+
+    /// <summary>
+    /// <c>with a: T = init, b: U = init2</c> after a loop's header: the values it carries, or null when there is no
+    /// <c>with</c>.
+    /// </summary>
+    private List<CarriedValue>? ParseCarriedValues()
+    {
+        if (!CheckAndAdvance(type: TokenType.With))
+        {
+            return null;
+        }
+
+        var carried = new List<CarriedValue>();
+        do
+        {
+            SourceLocation at = GetLocation();
+            string name = Consume(type: TokenType.Identifier, errorMessage: "Expected the name of a carried value: with a: T = init").Text;
+            Consume(type: TokenType.Colon, errorMessage: $"Expected ':' and the type of the carried value '{name}'");
+            TypeExpression type = ParseType();
+            Consume(type: TokenType.Assign, errorMessage: $"Expected '=' and the first value of '{name}'");
+            Expression init = ParseExpression();
+            carried.Add(item: new CarriedValue(Name: name, Type: type, Init: init, Location: at));
+        } while (CheckAndAdvance(type: TokenType.Comma));
+
+        return carried;
+    }
+
+    /// <summary>
+    /// A loop's body, with its carried values known to the <c>continue</c> statements in it. A body that carries
+    /// values must not run off its end: it continues with the next values, breaks, or leaves the routine.
+    /// </summary>
+    private BlockStatement ParseCarryingBody(List<CarriedValue>? with, SourceLocation location)
+    {
+        _carriedLoops.Push(item: with?.Select(selector: c => c.Name).ToList());
+        BlockStatement body;
+        try
+        {
+            body = ParseBody();
+        }
+        finally
+        {
+            _carriedLoops.Pop();
+        }
+
+        if (with != null && !LeavesRound(statement: body))
+        {
+            RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.LoopBodyRunsOff,
+                message: "This loop carries values (`with`), so its body cannot run off its end: end every path with " +
+                         $"'continue with {string.Join(", ", with.Select(selector: c => c.Name + ": …"))}', 'break', or 'return'.",
+                fileName: FileName,
+                line: location.Line,
+                column: location.Column,
+                language: _language));
+        }
+
+        return body;
+    }
+
+    /// <summary>Whether every path through a statement leaves the loop round: a <c>continue</c>, <c>break</c>,
+    /// <c>return</c> or <c>throw</c>, an <c>if</c> whose arms both do, a <c>when</c> whose arms all do.</summary>
+    private static bool LeavesRound(Statement statement)
+    {
+        return statement switch
+        {
+            ContinueStatement or BreakStatement or ReturnStatement or ThrowStatement or VariantReturnStatement => true,
+            BlockStatement { Statements.Count: > 0 } block => LeavesRound(statement: block.Statements[^1]),
+            IfStatement { ElseStatement: { } otherwise } branch => LeavesRound(statement: branch.ThenStatement) &&
+                                                                     LeavesRound(statement: otherwise),
+            WhenStatement arms => arms.Clauses.Count > 0 && arms.Clauses.All(predicate: c => LeavesRound(statement: c.Body)),
+            _ => false
+        };
     }
 
     /// <summary>A loop's <c>then</c> block, run when the loop ends by itself (no <c>break</c>), or null.</summary>
@@ -248,7 +312,8 @@ public partial class Parser
 
         Consume(type: TokenType.In, errorMessage: "Expected 'in' in for loop");
         Expression sequenceable = ParseExpression();
-        Statement body = ParseBody();
+        List<CarriedValue>? with = ParseCarriedValues();
+        Statement body = ParseCarryingBody(with: with, location: location);
 
         // Check for else clause (runs only when the body never ran)
         Statement? elseBranch = null;
@@ -262,7 +327,7 @@ public partial class Parser
             Iterable: sequenceable,
             Body: body,
             ElseBranch: elseBranch,
-            Location: location) with { ThenBranch = ParseLoopThen() };
+            Location: location) with { ThenBranch = ParseLoopThen(), With = with };
     }
 
     /// <summary>
@@ -1288,8 +1353,39 @@ public partial class Parser
     private ContinueStatement ParseContinueStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
+        List<(string Name, Expression Value, SourceLocation Location)>? with = null;
+        if (CheckAndAdvance(type: TokenType.With))
+        {
+            with = [];
+            do
+            {
+                SourceLocation at = GetLocation();
+                string name = Consume(type: TokenType.Identifier, errorMessage: "Expected the name of a carried value: continue with a: v").Text;
+                Consume(type: TokenType.Colon, errorMessage: $"Expected ':' and the next value of '{name}'");
+                with.Add(item: (name, ParseExpression(), at));
+            } while (CheckAndAdvance(type: TokenType.Comma));
+        }
+
         ConsumeStatementTerminator();
-        return new ContinueStatement(Location: location);
+        List<string>? carried = _carriedLoops.Count > 0 ? _carriedLoops.Peek() : null;
+        string? mismatch = carried == null
+            ? with == null ? null : "This loop carries no values (no `with` on it), so `continue` passes none: write a bare 'continue'."
+            : with == null
+                ? $"This loop carries values, so `continue` passes the next ones: 'continue with {string.Join(", ", carried.Select(selector: c => c + ": …"))}'."
+                : with.Select(selector: w => w.Name).OrderBy(keySelector: n => n).SequenceEqual(second: carried.OrderBy(keySelector: n => n))
+                    ? null
+                    : $"`continue with` names each carried value once: {string.Join(", ", carried)}.";
+        if (mismatch != null)
+        {
+            RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.ContinueCarriesWrongValues,
+                message: mismatch,
+                fileName: FileName,
+                line: location.Line,
+                column: location.Column,
+                language: _language));
+        }
+
+        return new ContinueStatement(Location: location) { With = with };
     }
 
     /// <summary>

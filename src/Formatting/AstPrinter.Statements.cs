@@ -117,6 +117,11 @@ internal sealed partial class AstPrinter
             case BreakStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "break")));
                 break;
+            case ContinueStatement { With: { } carried }:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "continue with "),
+                    Doc.Join(separator: Doc.Text(text: ", "), items: carried.Select(selector: c =>
+                        Doc.Concat(Doc.Text(text: c.Name + ": "), Expr(expression: c.Value, context: ExprContext.ListItem))))));
+                break;
             case ContinueStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "continue")));
                 break;
@@ -127,11 +132,11 @@ internal sealed partial class AstPrinter
                 PrintIf(statement: ifStatement, start: start, depth: depth, prefix: prefix, keyword: "if");
                 break;
             case WhileStatement whileStatement:
-                EmitHead(start: start, depth: depth, head: whileStatement is
+                EmitHead(start: start, depth: depth, head: Doc.Concat(whileStatement is
                     { IsUntil: true, Condition: UnaryExpression { Operator: UnaryOperator.Not } written }
                     ? Doc.Concat(prefix, Doc.Text(text: "until "), Expr(expression: written.Operand, context: ExprContext.Statement))
                     : Doc.Concat(prefix, Doc.Text(text: "while "),
-                        Expr(expression: whileStatement.Condition, context: ExprContext.Statement)));
+                        Expr(expression: whileStatement.Condition, context: ExprContext.Statement)), With(carried: whileStatement.With)));
                 PrintBody(body: whileStatement.Body, depth: depth + 1, at: whileStatement.Location);
                 PrintElseBranch(elseBranch: whileStatement.ElseBranch, depth: depth, at: whileStatement.Location);
                 PrintThenBranch(thenBranch: whileStatement.ThenBranch, depth: depth, at: whileStatement.Location);
@@ -269,13 +274,23 @@ internal sealed partial class AstPrinter
         PrintBlock(statements: block.Statements, depth: depth + 1, at: at);
     }
 
+    /// <summary>` with a: T = init, …` on a loop's head, or nothing.</summary>
+    private Doc With(List<CarriedValue>? carried)
+    {
+        return carried is not { Count: > 0 }
+            ? Doc.Empty
+            : Doc.Concat(Doc.Text(text: " with "), Doc.Join(separator: Doc.Text(text: ", "), items: carried.Select(selector: c =>
+                Doc.Concat(Doc.Text(text: c.Name + ": "), TypeDoc(type: c.Type), Doc.Text(text: " = "),
+                    Expr(expression: c.Init, context: ExprContext.ListItem)))));
+    }
+
     private void PrintEach(EachStatement each, int start, int depth, Doc prefix)
     {
         string variable = each.VariablePattern != null
             ? BindingsText(bindings: each.VariablePattern.Bindings)
             : each.Variable ?? throw Refuse(at: each.Location, reason: "an each loop without a variable");
         EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "each " + variable + " in "),
-            Expr(expression: each.Iterable, context: ExprContext.Statement)));
+            Expr(expression: each.Iterable, context: ExprContext.Statement), With(carried: each.With)));
         PrintBody(body: each.Body, depth: depth + 1, at: each.Location);
         PrintElseBranch(elseBranch: each.ElseBranch, depth: depth, at: each.Location);
         PrintThenBranch(thenBranch: each.ThenBranch, depth: depth, at: each.Location);

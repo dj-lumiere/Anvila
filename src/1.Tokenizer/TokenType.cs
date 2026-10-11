@@ -377,6 +377,10 @@ public enum TokenType
     /// <summary>One-liner of conditional expression (if predicate then A else B)</summary>
     Then,
 
+    /// <summary>`with`: the values a loop carries from one round to the next (`while c with a: T = init`), and what
+    /// `continue with a: v` passes on.</summary>
+    With,
+
 
     /// <summary>Pattern matching when keyword</summary>
     When,

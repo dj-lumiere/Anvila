@@ -470,12 +470,20 @@ public record IfStatement(
 /// <item>Python-style else: else branch executes if loop completes without break</item>
 /// </list>
 /// </remarks>
+/// <summary>One value a loop carries from one round to the next: <c>a: T = init</c> after <c>with</c>. It is bound
+/// anew each round from what the round's <c>continue with</c> passes, visible in the loop's condition, body and
+/// <c>then</c>, and nowhere after the loop.</summary>
+public record CarriedValue(string Name, TypeExpression Type, Expression Init, SourceLocation Location);
+
 public record WhileStatement(
     Expression Condition,
     Statement Body,
     Statement? ElseBranch,
     SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The values the loop carries (<c>with a: T = init, …</c>), or null.</summary>
+    public List<CarriedValue>? With { get; init; }
+
     /// <summary>The <c>then</c> block after the loop: it runs when the loop ends by itself, never after a
     /// <c>break</c>.</summary>
     public Statement? ThenBranch { get; init; }
@@ -563,6 +571,9 @@ public record EachStatement(
     Statement? ElseBranch,
     SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The values the loop carries (<c>with a: T = init, …</c>), or null.</summary>
+    public List<CarriedValue>? With { get; init; }
+
     /// <summary>The <c>then</c> block after the loop: it runs when the loop ends by itself, never after a
     /// <c>break</c>.</summary>
     public Statement? ThenBranch { get; init; }
@@ -801,6 +812,10 @@ public record BreakStatement(SourceLocation Location) : Statement(Location: Loca
 /// </remarks>
 public record ContinueStatement(SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>What the next round's carried values are (<c>continue with a: v, b: w</c>), or null for a loop that
+    /// carries nothing.</summary>
+    public List<(string Name, Expression Value, SourceLocation Location)>? With { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

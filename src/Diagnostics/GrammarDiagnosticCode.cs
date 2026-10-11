@@ -177,6 +177,15 @@ public enum GrammarDiagnosticCode
     /// </summary>
     ModifierHasNoEffect = 213,
 
+    /// <summary>The body of a loop with carried values (<c>with a: T = …</c>) can run off its end: every path through
+    /// it must <c>continue with</c> the next values, <c>break</c>, or leave the routine.</summary>
+    LoopBodyRunsOff = 217,
+
+    /// <summary>A <c>continue</c> does not match the loop's carried values: a loop with <c>with</c> takes
+    /// <c>continue with a: v, …</c> naming every carried value once, and a loop without takes a bare
+    /// <c>continue</c>.</summary>
+    ContinueCarriesWrongValues = 218,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

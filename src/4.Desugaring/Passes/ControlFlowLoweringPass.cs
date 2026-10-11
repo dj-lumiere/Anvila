@@ -127,6 +127,12 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     {
         return stmt switch
         {
+            // A loop with carried values is a block: the values as variables, then the loop, whose `continue with`
+            // stores the next values. The `then` block, inside the same block, still sees them.
+            WhileStatement { With.Count: > 0 } w => LowerCarried(loop: w with { With = null }, carried: w.With, body: w.Body,
+                rebuild: b => w with { With = null, Body = b }),
+            EachStatement { With.Count: > 0 } f => LowerCarried(loop: f with { With = null }, carried: f.With, body: f.Body,
+                rebuild: b => f with { With = null, Body = b }),
             EachStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then,
                 body: f.Body, rebuild: b => f with { ThenBranch = null, Body = b }),
             WhileStatement { ThenBranch: { } then } w => LowerLoopThen(loop: w with { ThenBranch = null }, then: then,
@@ -421,6 +427,79 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 IfNotRan(name: brokeName, elseBranch: LowerStatement(stmt: then), loc: loc)
             ],
             Location: loc);
+    }
+
+    /// <summary>
+    /// <c>while c with a: T = init</c> … <c>continue with a: v</c>: a block holding <c>var a: T = init</c>, then the loop
+    /// with each <c>continue with</c> of its own rounds replaced by stores of the next values (all computed first,
+    /// so <c>continue with a: b, b: a</c> swaps) and a bare <c>continue</c>.
+    /// </summary>
+    private BlockStatement LowerCarried(Statement loop, List<CarriedValue> carried, Statement body,
+        Func<Statement, Statement> rebuild)
+    {
+        SourceLocation loc = loop.Location;
+        var statements = new List<Statement>();
+        foreach (CarriedValue c in carried)
+        {
+            statements.Add(item: new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: c.Name,
+                    Type: c.Type,
+                    Initializer: c.Init,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: c.Location),
+                Location: c.Location));
+        }
+
+        int round = _iterCount++;
+        Statement passing = new CarryRewriter(carried: carried, round: round).VisitStatement(stmt: body);
+        statements.Add(item: LowerStatement(stmt: rebuild(arg: passing)));
+        return new BlockStatement(Statements: statements, Location: loc);
+    }
+
+    /// <summary>Replaces each <c>continue with</c> of one loop by the stores of the next values and a bare
+    /// <c>continue</c>, the loops inside it left alone (their <c>continue</c>s are their own).</summary>
+    private sealed class CarryRewriter(List<CarriedValue> carried, int round) : AstRewriter
+    {
+        private int _seq;
+
+        public override Statement VisitStatement(Statement stmt)
+        {
+            return stmt switch
+            {
+                ContinueStatement { With: { } with } c => Stores(with: with, at: c.Location),
+                WhileStatement or EachStatement or LoopStatement => stmt,
+                _ => base.VisitStatement(stmt: stmt)
+            };
+        }
+
+        private BlockStatement Stores(List<(string Name, Expression Value, SourceLocation Location)> with, SourceLocation at)
+        {
+            var statements = new List<Statement>();
+            var temps = new List<(string Name, string Temp)>();
+            foreach ((string name, Expression value, SourceLocation where) in with)
+            {
+                CarriedValue c = carried.First(predicate: k => k.Name == name);
+                string temp = $"_lf_next_{round}_{_seq++}";
+                statements.Add(item: new DeclarationStatement(
+                    Declaration: new VariableDeclaration(Name: temp,
+                        Type: c.Type,
+                        Initializer: value,
+                        Visibility: VisibilityModifier.Secret,
+                        Location: where),
+                    Location: where));
+                temps.Add(item: (name, temp));
+            }
+
+            foreach ((string name, string temp) in temps)
+            {
+                statements.Add(item: new AssignmentStatement(Target: new IdentifierExpression(Name: name, Location: at),
+                    Value: new IdentifierExpression(Name: temp, Location: at),
+                    Location: at));
+            }
+
+            statements.Add(item: new ContinueStatement(Location: at));
+            return new BlockStatement(Statements: statements, Location: at);
+        }
     }
 
     /// <summary>Sets a flag before each <c>break</c> of one loop, the breaks of the loops inside it left alone.</summary>

@@ -32,6 +32,23 @@ internal abstract record Doc
     }
 
     /// <summary>The documents one after another.</summary>
+    /// <summary>The items with the separator between each two.</summary>
+    public static Doc Join(Doc separator, IEnumerable<Doc> items)
+    {
+        var parts = new List<Doc>();
+        foreach (Doc item in items)
+        {
+            if (parts.Count > 0)
+            {
+                parts.Add(item: separator);
+            }
+
+            parts.Add(item: item);
+        }
+
+        return Concat(parts: parts);
+    }
+
     public static Doc Concat(IEnumerable<Doc> parts)
     {
         return new ConcatDoc(Parts: parts.ToArray());
