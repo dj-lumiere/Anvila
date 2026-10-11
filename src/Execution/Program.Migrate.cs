@@ -628,6 +628,14 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
+            // `dangerous routine T.destruct()` is `routine T.destruct()`: the builder calls it.
+            if (token.Type == TokenType.Dangerous && i + 4 < tokens.Count && tokens[index: i + 1].Type == TokenType.Routine &&
+                tokens[index: i + 3].Type == TokenType.Dot && tokens[index: i + 4].Text == "destruct")
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: tokens[index: i + 1].Position - token.Position,
+                    Replacement: "", Line: token.Line, What: "dangerous routine T.destruct → routine T.destruct"));
+                continue;
+            }
             // `is Weapon w` is `is Weapon as w`, and `else p =>` is `else as p =>`.
             if (token.Type is TokenType.Is or TokenType.Else && PatternBindingAfter(tokens: tokens, index: i) is { } bound)
             {

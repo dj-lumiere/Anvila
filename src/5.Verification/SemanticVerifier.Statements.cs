@@ -1847,12 +1847,12 @@ public sealed partial class SemanticVerifier
             Callee: new MemberExpression(Object: me, MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
                 Location: location),
             Arguments: [],
-            Location: location);
+            Location: location) { IsSynthesizedLowering = true };
         var invalidate = new CallExpression(
             Callee: new MemberExpression(Object: hijack, MemberName: Declaration.RuntimeContract.RawPointer.Invalidate,
                 Location: location),
             Arguments: [],
-            Location: location);
+            Location: location) { IsSynthesizedLowering = true };
         return new ExpressionStatement(Expression: invalidate, Location: location);
     }
 
@@ -1884,11 +1884,12 @@ public sealed partial class SemanticVerifier
         bool isDestroyDecl = routine.Name == "destruct" ||
                              routine.Name.EndsWith(value: ".destroy",
                                  comparisonType: StringComparison.Ordinal);
-        if (isDestroyDecl && !routine.IsDangerous)
+        if (isDestroyDecl && routine.IsDangerous)
         {
-            ReportError(code: SemanticDiagnosticCode.DestroyMustBeDangerous,
-                message: "You write `destruct` here without `dangerous`. It tears down what the value owns " +
-                         "by hand (the builder gives back the entity's box after it), so mark it `dangerous`.",
+            ReportError(code: SemanticDiagnosticCode.DestroyNotDangerous,
+                message: "You write `destruct` here with `dangerous`. The builder is the one that calls it (at the " +
+                         "scope's end, or at `drop x`), so it is a plain routine: write `routine " +
+                         $"{routine.Name}()` (`migrate` rewrites it).",
                 location: routine.Location);
         }
     }

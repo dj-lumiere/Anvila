@@ -118,6 +118,20 @@ public sealed partial class SemanticVerifier
 
     private TypeSymbol AnalyzeCallExpression(CallExpression call, TypeSymbol? expectedType = null)
     {
+        // `destruct` is the builder's to call: a program's value is torn down at its scope's end, or now with
+        // `drop x`. Only a type's own `destruct` body calls its members' `destruct`.
+        if (call.Callee is MemberExpression { MemberName: Declaration.RuntimeContract.Destroy, Object: { } torn } &&
+            call.Arguments.Count == 0 && IsProgramFile(filePath: call.Location.FileName) &&
+            _currentRoutine?.Name != Declaration.RuntimeContract.Destroy)
+        {
+            string value = torn is IdentifierExpression named ? named.Name : "the value";
+            ReportError(code: SemanticDiagnosticCode.DestructIsBuilderCalled,
+                message: $"'{value}' is torn down by the builder when its scope ends. To end it here, write " +
+                         (torn is IdentifierExpression ? $"'drop {value}'." : "'drop' with the binding's name."),
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         // `from_serial` is the builder's own: a program reads a value back with `sv.to[T]()`. The call's own file
         // says who wrote it: a library body is analyzed from the program that reaches it, and a body the builder
         // writes has no file.
@@ -169,7 +183,7 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
-        EnforceUnsafeCallAllowed(resolved: call.ResolvedRoutine, location: call.Location);
+        EnforceUnsafeCallAllowed(resolved: call.ResolvedRoutine, builderWritten: call.IsSynthesizedLowering, location: call.Location);
         if (call is { IsInfix: true, Callee: MemberExpression infix, ResolvedRoutine: { } called } &&
             !DeclaredWith(routine: called, annotation: "infix"))
         {
@@ -203,9 +217,10 @@ public sealed partial class SemanticVerifier
     /// surface. This is the one choke point (called from both the plain- and generic-call analyzers). Stdlib files
     /// are exempt.
     /// </summary>
-    private void EnforceUnsafeCallAllowed(RoutineInfo? resolved, SourceLocation location)
+    private void EnforceUnsafeCallAllowed(RoutineInfo? resolved, SourceLocation location, bool builderWritten = false)
     {
-        if (UnsafeSurfaceIsBarred() && !InDangerBlock && resolved is { IsDangerous: true } dangerousRoutine)
+        // The builder's own calls (the box give-back it appends to a `destruct` body) are not the program's.
+        if (UnsafeSurfaceIsBarred() && !InDangerBlock && !builderWritten && resolved is { IsDangerous: true } dangerousRoutine)
         {
             ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
                 message:

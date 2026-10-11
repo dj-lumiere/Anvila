@@ -918,7 +918,7 @@ internal sealed class AutoWiredRegistrationPass
             Parameters = [],
             ReturnType = noneType,
             IsFailable = false,
-            IsDangerous = true,
+            IsDangerous = false,
             DeclaredMutation = MutationCategory.Readonly,
             MutationCategory = MutationCategory.Readonly,
             Visibility = VisibilityModifier.Open,

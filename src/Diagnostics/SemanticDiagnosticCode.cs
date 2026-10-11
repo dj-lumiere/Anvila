@@ -1024,9 +1024,13 @@ public enum SemanticDiagnosticCode
     /// <summary>None cannot be used as a generic type argument (it has no value).</summary>
     NoneAsTypeArgument = 805,
 
-    /// <summary>A user-defined `destruct` overrides the builder's memory teardown, so it must be
-    /// marked `dangerous` — the author takes responsibility for freeing `me` and its fields.</summary>
-    DestroyMustBeDangerous = 807,
+    /// <summary>`destruct` is written as a plain routine: the builder calls it at the scope's end or at `drop x`,
+    /// so `dangerous` on it is the old spelling.</summary>
+    DestroyNotDangerous = 807,
+
+    /// <summary>A program does not call `destruct` itself: a value is torn down at its scope's end, or now with
+    /// `drop x`. Only a type's own `destruct` body calls its members' `destruct`.</summary>
+    DestructIsBuilderCalled = 812,
 
     /// <summary>Suflae cannot use C interop directly.</summary>
     SuflaeNoCInterop = 810,
