@@ -243,9 +243,9 @@ internal sealed class TesseraWriter
     private string? _textBytes;
 
     /// <summary>
-    /// The library routine that turns a builder Text (one U32 code point per character) into the UTF-8 Bytes
-    /// Tessera's <c>crash</c> takes, for a crash message the program computes. Written once, on first use. The
-    /// memory stays allocated: the crash ends the program.
+    /// The library routine that turns a builder Text (one U32 code point per character) into the UTF-8 bytes (a
+    /// <c>Span[Byte]</c>) Tessera's <c>crash</c> takes, for a crash message the program computes. Written once, on
+    /// first use. The memory stays allocated: the crash ends the program.
     /// </summary>
     public string TextBytes()
     {
@@ -257,7 +257,7 @@ internal sealed class TesseraWriter
         _textBytes = VerbatimName(text: "text bytes");
         _definitions.Append(value: $$"""
             /// A crash message as UTF-8.
-            private routine {{_textBytes}}(text: {{TypeText(type: TextType)}}) -> Bytes
+            private routine {{_textBytes}}(text: {{TypeText(type: TextType)}}) -> Span[Byte]
                 local data: @U32 = text.data
                 local count: U64 = text.count
                 local utf8: @List[Byte] <- .construct()
@@ -268,7 +268,7 @@ internal sealed class TesseraWriter
                 block each(i: U64)
                     done: Bool = i.ge(count)
                     branch done
-                        ? return(utf8.to[Bytes]())
+                        ? return(utf8.getview())
                         : continue
                     code: U32 = data.stride(i.to[USize]()).peek()
                     character: Char = code.to[Char]()

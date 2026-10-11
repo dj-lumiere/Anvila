@@ -384,7 +384,7 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary>
     /// A crash in a library: Tessera's <c>crash</c> with the crash's name and message, which Ingrid's crash handler
-    /// reports the way RazorForge's crash report does. The report call's text arguments become Bytes (a literal as
+    /// reports the way RazorForge's crash report does. The report call's text arguments become a Span[Byte] (a literal as
     /// it is, a computed text through <see cref="TesseraWriter.TextBytes"/>), and a <c>#source</c> line gives the
     /// crash the RazorForge place the report would have named.
     /// </summary>
@@ -404,7 +404,7 @@ internal sealed class TesseraRoutineWriter
                 value = named.Value;
             }
 
-            // A text literal (TextLiteralLoweringPass wrote it as its code points) is the same text as a Bytes literal.
+            // A text literal (TextLiteralLoweringPass wrote it as its code points) is the same text as a string literal.
             if (value is CreatorExpression { MemberVariables: [("data", ConstantDataExpression codePoints), ..] })
             {
                 return TesseraTrace.CString(text: string.Concat(
@@ -413,7 +413,7 @@ internal sealed class TesseraRoutineWriter
 
             string text = Value(operand: Evaluate(expression: value));
             string bytes = $"t{_temps++}";
-            Emit(line: $"{bytes}: Bytes = {_module.TextBytes()}({text})");
+            Emit(line: $"{bytes}: Span[Byte] = {_module.TextBytes()}({text})");
             return bytes;
         }
 
