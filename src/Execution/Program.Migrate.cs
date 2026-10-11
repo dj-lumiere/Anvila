@@ -1185,7 +1185,7 @@ internal partial class Program
     [
         "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256",
         "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256",
-        "CStr", "CLong", "CULong", "CWChar", "Q128", "Q256", "Moment", "Bool", "Address"
+        "CStr", "CLong", "CULong", "CWChar", "Q128", "Q256", "Moment", "Bool", "Address", "List", "Set"
     ];
 
     /// <summary>The argument labels a conversion creator was written with.</summary>

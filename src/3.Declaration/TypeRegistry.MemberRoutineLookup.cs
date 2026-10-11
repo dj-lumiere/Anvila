@@ -2100,6 +2100,27 @@ public sealed partial class TypeRegistry
             : null;
     }
 
+    /// <summary>The <c>me</c> type of <paramref name="memberRoutine"/> once bound to <paramref name="resolvedOwner"/>:
+    /// its written <c>me</c> with the owner's parameters substituted, a protocol's <c>Me</c> as the owner itself, and
+    /// a shared entity's as the handle (<c>Roamed[E]</c>) its own routines take. Null when the routine has none.</summary>
+    private TypeSymbol? BoundMeType(RoutineInfo memberRoutine, TypeSymbol resolvedOwner,
+        Dictionary<string, TypeSymbol> substitution)
+    {
+        // A routine written on a protocol or a type parameter records no `me` of its own: its `me` is the owner it
+        // is bound to.
+        TypeSymbol bound = memberRoutine.MeType is not { } written ||
+                           written is ProtocolSelfTypeSymbol || written.FullName == memberRoutine.OwnerType?.FullName
+            ? resolvedOwner
+            : RoutineInfo.SubstituteType(type: written, substitution: substitution);
+        if (memberRoutine.MeType == null && memberRoutine.OwnerType is not (ProtocolTypeSymbol or GenericParameterTypeSymbol))
+        {
+            return null;
+        }
+        // A protocol's member bound to a shared entity takes the entity itself as `me`, like the entity's own
+        // members: the caller projects its handle (and holds the lock) at the call.
+        return bound;
+    }
+
     /// <summary>
     /// Re-homes a universal (generic-param-owner) candidate onto the concrete receiver type.
     /// Non-universal candidates are returned unchanged.
@@ -2565,7 +2586,11 @@ public sealed partial class TypeRegistry
             // Suflae entity `me`=Roamed[E] handle is substituted downstream in
             // GenericMonomorphizationPass, so it does not need owner substitution here — and doing it
             // here mistyped some stdlib Hijacked `me` receivers, tripping RF-S627.)
-            MeType = memberRoutine.MeType,
+            // `me` is the owner's own `me` form: a protocol's `Me` (or a universal `T`) bound to the concrete owner, and
+            // for a shared entity its handle (the form the entity's own routines take), so a call through the handle
+            // reaches the right body with the right receiver.
+            MeType = BoundMeType(memberRoutine: memberRoutine, resolvedOwner: resolvedOwner,
+                substitution: substitution2),
             Parameters = substitutedParams2,
             ReturnType = substitutedReturn2,
             IsFailable = memberRoutine.IsFailable,
@@ -2583,7 +2608,12 @@ public sealed partial class TypeRegistry
             IsVariadic = memberRoutine.IsVariadic,
             IsDangerous = memberRoutine.IsDangerous,
             IsSynthesized = memberRoutine.IsSynthesized,
-            TypeArguments = memberRoutine.TypeArguments,
+            // A specialization's bracket names types in the owner's parameters (`Iterable[T].to[List[T]]`): it is
+            // bound with them (`to[List[S64]]` on `Iterable[S64]`).
+            TypeArguments = memberRoutine.TypeArguments
+                                        ?.Select(selector: t => RoutineInfo.SubstituteType(type: t,
+                                             substitution: substitution2))
+                                         .ToList(),
             GenericDefinition = memberRoutine.GenericDefinition ?? memberRoutine,
             WrapperForwarderInnerMemberRoutine = memberRoutine.WrapperForwarderInnerMemberRoutine,
             WrapperForwarderInnerGenericDef = memberRoutine.WrapperForwarderInnerGenericDef,
@@ -2735,7 +2765,48 @@ public sealed partial class TypeRegistry
             found.Add(item: bound);
         }
 
+        // A family written on a protocol (`routine Iterable[T].to[List[T]]()`) reaches every type that obeys it. A
+        // member the type writes for the same target wins.
+        if (owner is not GenericParameterTypeSymbol)
+        {
+            List<TypeSymbol> protocols = owner switch
+            {
+                RecordTypeSymbol r => r.ImplementedProtocols,
+                EntityTypeSymbol e => e.ImplementedProtocols,
+                ProtocolTypeSymbol p => [.. p.ParentProtocols],
+                _ => []
+            };
+            foreach (TypeSymbol protocol in protocols)
+            {
+                List<RoutineInfo> ofProtocol = LookupSpecializedMemberRoutines(owner: protocol, name: name);
+                // A family on a generic protocol is written on its definition: bind it to this instance.
+                if (ofProtocol.Count == 0 && protocol is ProtocolTypeSymbol { GenericDefinition: { } protocolDef })
+                {
+                    var written = new List<RoutineInfo>();
+                    CollectMemberRoutineCandidates(type: protocolDef, memberRoutineName: name, candidates: written);
+                    ofProtocol = written.Where(predicate: r => r is { IsSpecialization: true, IsRecoveryVariant: false })
+                                        .Select(selector: r => SubstituteMemberRoutineForOwner(memberRoutine: r,
+                                             resolvedOwner: protocol))
+                                        .OfType<RoutineInfo>()
+                                        .ToList();
+                }
+
+                found.AddRange(collection: ofProtocol.Where(predicate: r =>
+                    found.All(predicate: f => f.RegistryKey != r.RegistryKey && !SameTargets(a: f, b: r))));
+            }
+        }
+
         return found;
+    }
+
+    /// <summary>Whether two specializations go to the same types (the same name in the same language).</summary>
+    private static bool SameTargets(RoutineInfo a, RoutineInfo b)
+    {
+        return a.TypeArguments is { } x && b.TypeArguments is { } y && x.Count == y.Count &&
+               Enumerable.Range(start: 0, count: x.Count).All(predicate: i =>
+                   Builder.Verification.SemanticVerifier.SameTypeInRealm(
+                       a: Builder.Verification.SemanticVerifier.FamilyTarget(routine: a, index: i),
+                       b: Builder.Verification.SemanticVerifier.FamilyTarget(routine: b, index: i)));
     }
 
     private Dictionary<string, List<RoutineInfo>>? _universalSpecializations;

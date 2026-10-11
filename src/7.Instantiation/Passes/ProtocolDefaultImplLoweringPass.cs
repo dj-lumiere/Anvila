@@ -149,7 +149,10 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         // memberRoutine-level params (U, S2); rr.TypeArguments holds only the memberRoutine args. Align them
         // from the END so the trailing memberRoutine generics bind, while the owner param (T) is
         // supplied separately by BuildProtocolGenericSubs (T→Text from the conformance).
-        if (rr.TypeArguments is { Count: > 0 } memberRoutineArgs &&
+        // A specialization's bracket (`Iterable[T].to[Set[T]]`, resolved as `to[Set[S64]]`) picks the member of its
+        // family and binds no parameter: it is carried on the synthesized routine's name, never read as `T`.
+        bool specialization = (rr.RecoveryOf ?? rr).IsSpecialization || pr.IsSpecialization;
+        if (!specialization && rr.TypeArguments is { Count: > 0 } memberRoutineArgs &&
             pr.GenericParameters is { Count: > 0 } allParams &&
             memberRoutineArgs.Count <= allParams.Count)
         {
@@ -159,7 +162,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
                 allParams: allParams);
         }
 
-        return SynthesizeStandardBody(pr: pr, impl: impl);
+        return SynthesizeStandardBody(pr: pr, impl: impl,
+            typeArguments: specialization ? rr.TypeArguments : null);
     }
 
     /// <summary>
@@ -223,7 +227,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     /// Synthesizes the per-(protocolRoutine, implementer) body for the standard (non-member-generic)
     /// case. Returns true if a new body was added.
     /// </summary>
-    private bool SynthesizeStandardBody(RoutineInfo pr, TypeSymbol impl)
+    private bool SynthesizeStandardBody(RoutineInfo pr, TypeSymbol impl, List<TypeSymbol>? typeArguments = null)
     {
         (string RegistryKey, string FullName) key = (pr.RegistryKey, impl.FullName);
         if (_synthesized.ContainsKey(key: key))
@@ -239,7 +243,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
 
         RoutineInfo synthesized = SynthesizePerImplementer(protocolRoutine: pr,
             implementer: impl,
-            protoSubs: protoSubs);
+            protoSubs: protoSubs,
+            typeArguments: typeArguments);
 
         Statement? clonedBody = CloneProtocolRoutineBody(protocolRoutine: pr,
             implementer: impl,

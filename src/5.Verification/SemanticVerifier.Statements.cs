@@ -1716,10 +1716,19 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
+        // A realm qualifier (`SF::Core.List[T]`) is the expression's realm, not part of its name.
+        string? realm = null;
+        int realmIdx = text.IndexOf(value: "::", comparisonType: StringComparison.Ordinal);
+        if (realmIdx > 0 && (text.IndexOf(value: '[') < 0 || realmIdx < text.IndexOf(value: '[')))
+        {
+            realm = text[..realmIdx];
+            text = text[(realmIdx + 2)..];
+        }
+
         int bracketIdx = text.IndexOf(value: '[');
         if (bracketIdx < 0)
         {
-            return new TypeExpression(Name: text, GenericArguments: null, Location: location);
+            return new TypeExpression(Name: text, GenericArguments: null, Location: location, Realm: realm);
         }
 
         if (!text.EndsWith(value: ']'))
@@ -1768,7 +1777,7 @@ public sealed partial class SemanticVerifier
 
         args.Add(item: lastArg);
 
-        return new TypeExpression(Name: head, GenericArguments: args, Location: location);
+        return new TypeExpression(Name: head, GenericArguments: args, Location: location, Realm: realm);
     }
 
     #endregion

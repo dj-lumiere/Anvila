@@ -1099,6 +1099,17 @@ public sealed partial class SemanticVerifier
     private void ValidateRoutineDeclarationConstraints(RoutineDeclaration routine,
         RoutineKind kind, TypeSymbol? ownerType, string routineName)
     {
+        // `from_serial` is the builder's own: it writes one per type, and the library's hand-written ones are the
+        // leaves. A program reads a value back with `sv.to[T]()`.
+        if (routineName == Instantiation.AutoWiredRegistrationPass.FromSerialRoutineName &&
+            IsProgramFile(filePath: routine.Location.FileName))
+        {
+            ReportError(code: SemanticDiagnosticCode.FromSerialIsBuilderInternal,
+                message: $"'{routineName}' is the builder's own routine: it writes one for every type. A value is " +
+                         "read back from its serialized form with 'sv.to[T]()'.",
+                location: routine.Location);
+        }
+
         // Validate that choice types cannot define any operator wired member routines
         if (ownerType is ChoiceTypeSymbol && kind == RoutineKind.MemberRoutine &&
             IsOperatorWired(name: routineName))

@@ -19,11 +19,12 @@ internal static class RoutineSpecialization
     /// so asking again (a second realm registering the same declaration) gives the same answer.
     /// </summary>
     public static List<TypeSymbol>? Apply(RoutineDeclaration routine, HashSet<string> receiverLeaves,
-        Func<string, TypeSymbol?> resolve)
+        Func<string, TypeSymbol?> resolve, Func<TypeExpression, TypeSymbol?>? resolveExpression = null)
     {
         if (routine.SpecializedTypeArguments is { Count: > 0 } done)
         {
-            return done.Select(selector: t => t.KnownType ?? resolve(arg: t.Name))
+            return done.Select(selector: t => t.KnownType ?? ResolveEntry(name: t.Name, resolve: resolve,
+                           resolveExpression: resolveExpression, location: routine.Location))
                        .OfType<TypeSymbol>()
                        .ToList();
         }
@@ -56,7 +57,8 @@ internal static class RoutineSpecialization
         foreach (string name in own)
         {
             if (routine.Parameters.Any(predicate: p => Mentions(type: p.Type, name: name)) ||
-                resolve(arg: name) is not { } type || type is GenericParameterTypeSymbol)
+                ResolveEntry(name: name, resolve: resolve, resolveExpression: resolveExpression,
+                    location: routine.Location) is not { } type || type is GenericParameterTypeSymbol)
             {
                 return null;
             }
@@ -75,6 +77,30 @@ internal static class RoutineSpecialization
             ? remaining
             : null;
         return types;
+    }
+
+    /// <summary>
+    /// The type a bracket entry names: a plain name by <paramref name="resolve"/>, an entry with type arguments or a
+    /// realm (`SF::Core.List[T]`, the serialized form the parser keeps) by <paramref name="resolveExpression"/>
+    /// over the parsed expression. Null when the entry is not a type.
+    /// </summary>
+    private static TypeSymbol? ResolveEntry(string name, Func<string, TypeSymbol?> resolve,
+        Func<TypeExpression, TypeSymbol?>? resolveExpression, SourceLocation location)
+    {
+        if (!name.Contains(value: '[') && !name.Contains(value: "::"))
+        {
+            return resolve(arg: name);
+        }
+
+        if (resolveExpression == null ||
+            Builder.Verification.SemanticVerifier.ParseTypeExpressionString(text: name, location: location) is not
+                { } parsed)
+        {
+            return null;
+        }
+
+        TypeSymbol? resolved = resolveExpression(arg: parsed);
+        return resolved is ErrorTypeSymbol ? null : resolved;
     }
 
     private static bool Mentions(TypeExpression? type, string name)

@@ -35,56 +35,50 @@ internal static class TesseraTrace
             line: S32
             column: S32
 
-        #threadlocal
+        @threadlocal
         global RF_TRACE_STACK: @Array[RfTraceFrame, 32]
 
-        #threadlocal
+        @threadlocal
         global RF_TRACE_DEPTH: @S32
 
         /// Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
-            block entry()
-                depth: S32 = RF_TRACE_DEPTH.peek()
-                index: USize = zext[S32, USize](band[S32](depth, 31))
-                frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
-                frame.routine.poke(routine_name)
-                frame.file.poke(file)
-                frame.line.poke(line)
-                frame.column.poke(column)
-                add[S32](depth, 1).poke_into(RF_TRACE_DEPTH)
-                return()
+            depth: S32 = RF_TRACE_DEPTH.peek()
+            index: USize = zext[S32, USize](band[S32](depth, 31))
+            frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
+            frame.routine.poke(routine_name)
+            frame.file.poke(file)
+            frame.line.poke(line)
+            frame.column.poke(column)
+            add[S32](depth, 1).poke_into(RF_TRACE_DEPTH)
+            return
 
         routine rf_trace_pop() -> Void
-            block entry()
-                sub[S32](RF_TRACE_DEPTH.peek(), 1).poke_into(RF_TRACE_DEPTH)
-                return()
+            sub[S32](RF_TRACE_DEPTH.peek(), 1).poke_into(RF_TRACE_DEPTH)
+            return
 
         /// Moves the top frame to the position of the call about to be made.
         routine rf_trace_update_loc(line: S32, column: S32) -> Void
-            block entry()
-                depth: S32 = RF_TRACE_DEPTH.peek()
-                branch depth.gt(0) ? update(depth) : return()
-
-            block update(depth: S32)
-                index: USize = zext[S32, USize](band[S32](sub[S32](depth, 1), 31))
-                frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
-                frame.line.poke(line)
-                frame.column.poke(column)
-                return()
+            depth: S32 = RF_TRACE_DEPTH.peek()
+            if depth.le(0)
+                return
+            index: USize = zext[S32, USize](band[S32](sub[S32](depth, 1), 31))
+            frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
+            frame.line.poke(line)
+            frame.column.poke(column)
+            return
 
         /// The trace's depth, under the name the LLVM emitter exports it by: Ingrid's crash handler reads it.
-        #export("_rf_trace_get_depth_shared")
+        @export("_rf_trace_get_depth_shared")
         routine rf_trace_get_depth() -> S32
-            block entry()
-                depth: S32 = RF_TRACE_DEPTH.peek()
-                return(depth)
+            depth: S32 = RF_TRACE_DEPTH.peek()
+            return depth
 
         /// The trace's 32 frames, under the name the LLVM emitter exports them by.
-        #export("_rf_trace_get_frames_shared")
+        @export("_rf_trace_get_frames_shared")
         routine rf_trace_get_frames() -> @RfTraceFrame
-            block entry()
-                frames: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]()
-                return(frames)
+            frames: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]()
+            return frames
 
         /// A copy of the trace in a caught error's object, laid out as Core's Crashables reads it: the 32 frames,
         /// then the depth.
@@ -95,18 +89,12 @@ internal static class TesseraTrace
         /// Copies the trace into a caught error's object where the error is first thrown, so a report of the error
         /// thrown again shows where it began.
         routine rf_trace_snapshot(into: @RfTraceSnapshot) -> Void
-            block entry()
-                RF_TRACE_DEPTH.peek().poke_into(into.depth)
-                jump copy(0)
-
-            block copy(i: USize)
-                branch i.lt(32) ? one(i) : return()
-
-            block one(i: USize)
+            RF_TRACE_DEPTH.peek().poke_into(into.depth)
+            each i in 0 til 32
                 from: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(i)
                 to: @RfTraceFrame = into.frames.to[@RfTraceFrame]().stride(i)
                 to.poke(from.peek())
-                jump copy(i.add(1))
+            return
 
 
         """;

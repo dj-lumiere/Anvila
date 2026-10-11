@@ -32,14 +32,22 @@ internal sealed class TesseraRoutineWriter
     private int _slotCount;
 
     private readonly List<Dictionary<string, Local>> _scopes = [];
-    private readonly List<Block> _blocks = [];
-    private readonly Stack<(string Continue, string Break)> _loops = new();
-    private Block _current = null!;
+
+    /// <summary>The loops being written, innermost last: whether each has a <c>break</c> so far.</summary>
+    private readonly Stack<LoopFrame> _loops = new();
+    private Body _current = null!;
+
+    /// <summary>How far in the next line sits: 0 at the routine's own lines, one more per body opened.</summary>
+    private int _indent;
+
+    private sealed class LoopFrame
+    {
+        public bool Breaks { get; set; }
+    }
 
     /// <summary>Whether this routine keeps a crash trace frame.</summary>
     private bool _traced;
     private int _temps;
-    private int _labels;
 
     /// <summary>A local: the place (pointer) that holds it, and its type.</summary>
     private sealed record Local(string Place, TypeSymbol Type);
@@ -47,9 +55,10 @@ internal sealed class TesseraRoutineWriter
     /// <summary>A computed operand: a value, or a place to read it from.</summary>
     private sealed record Operand(string Text, TypeSymbol? Type, bool IsPlace);
 
-    private sealed class Block(string header)
+    /// <summary>The routine's lines, each already indented for the body it is in, and whether the lines being
+    /// written have left (returned, broken out, gone on with the next round).</summary>
+    private sealed class Body
     {
-        public string Header { get; } = header;
         public List<string> Lines { get; } = [];
         public bool Terminated { get; set; }
     }
@@ -77,9 +86,7 @@ internal sealed class TesseraRoutineWriter
         var parameters = new List<string>();
         var scope = new Dictionary<string, Local>(comparer: StringComparer.Ordinal);
         _scopes.Add(item: scope);
-        var entry = new Block(header: "entry()");
-        _blocks.Add(item: entry);
-        _current = entry;
+        _current = new Body();
 
         if (HasMe)
         {
@@ -109,7 +116,7 @@ internal sealed class TesseraRoutineWriter
         WriteStatement(statement: _body);
         if (!_current.Terminated)
         {
-            Terminate(line: IsVoidReturn ? "return()" : "unreachable");
+            Terminate(line: IsVoidReturn ? "return" : "unreachable");
         }
 
         var text = new StringBuilder();
@@ -125,17 +132,12 @@ internal sealed class TesseraRoutineWriter
             text.Append(value: '\n');
         }
 
-        foreach (Block block in _blocks)
+        foreach (string line in _current.Lines)
         {
-            text.Append(value: $"    block {block.Header}\n");
-            foreach (string line in block.Lines)
-            {
-                text.Append(value: $"        {line}\n");
-            }
-
-            text.Append(value: '\n');
+            text.Append(value: $"    {line}\n");
         }
 
+        text.Append(value: '\n');
         return text.ToString();
     }
 
@@ -154,7 +156,7 @@ internal sealed class TesseraRoutineWriter
         parameters.AddRange(collection: _routine.Parameters.Select(selector: ParameterText));
         return $"{_module.RoutinePrefix(routine: _routine)}routine {_module.RoutineName(routine: _routine)}" +
                $"({string.Join(separator: ", ", values: parameters)}) -> {ReturnTypeText}\n" +
-               "    block entry()\n        unreachable\n\n";
+               "    unreachable\n\n";
     }
 
     /// <summary>The receiver parameter, <c>arg_me</c>: a pointer by reference, the value by value. The emitted routines are
@@ -199,7 +201,7 @@ internal sealed class TesseraRoutineWriter
         var local = new Local(Place: $"{name}_{_slotCount++}", Type: type);
         string slotType = $"@{TypeText(type: type)}";
         // Before entry has done anything, the value can only name a parameter or be a literal: it goes in the head.
-        if (initial is not null && (inHead || (_current == _blocks[0] && _current.Lines.Count == 0)))
+        if (initial is not null && (inHead || _current.Lines.Count == 0))
         {
             _head.Add(item: $"local {local.Place}: {slotType} <- {initial}");
             return local;
@@ -214,41 +216,40 @@ internal sealed class TesseraRoutineWriter
         return local;
     }
 
-    /// <summary>A label for a block made at this point.</summary>
-    private string NewLabel(string kind)
-    {
-        return $"{kind}_{_labels++}";
-    }
-
-    /// <summary>A jump target. Blocks take no parameters: every slot is declared in the head.</summary>
-    private static string Target(string label)
-    {
-        return $"{label}()";
-    }
-
-    /// <summary>Starts writing into a new block named <paramref name="label"/>.</summary>
-    private void StartBlock(string label)
-    {
-        var block = new Block(header: $"{label}()");
-        _blocks.Add(item: block);
-        _current = block;
-    }
-
     private void Emit(string line)
     {
-        _current.Lines.Add(item: line);
+        _current.Lines.Add(item: new string(c: ' ', count: 4 * _indent) + line);
     }
 
     private void Terminate(string line)
     {
         // Every return pops the frame the routine pushed. (The value is already computed: it is a temporary.)
-        if (_traced && line.StartsWith(value: "return(", comparisonType: StringComparison.Ordinal))
+        if (_traced && line.StartsWith(value: "return", comparisonType: StringComparison.Ordinal))
         {
             Emit(line: $"{TesseraTrace.Pop}()");
         }
 
         Emit(line: line);
         _current.Terminated = true;
+    }
+
+    /// <summary>Writes <paramref name="body"/> one level further in, as the lines under the line just written, and
+    /// says whether every path through it left. A body with nothing to write says <c>pass</c>.</summary>
+    private bool Nested(Statement body)
+    {
+        _indent++;
+        _current.Terminated = false;
+        int before = _current.Lines.Count;
+        WriteStatement(statement: body);
+        if (_current.Lines.Count == before)
+        {
+            Emit(line: "pass");
+        }
+
+        bool left = _current.Terminated;
+        _indent--;
+        _current.Terminated = false;
+        return left;
     }
 
     private string Temp(TypeSymbol? type, string expression)
@@ -347,10 +348,12 @@ internal sealed class TesseraRoutineWriter
                 // `pass` holds a place where a statement is required, and does nothing.
                 break;
             case BreakStatement:
-                Terminate(line: $"jump {Target(label: CurrentLoop.Break)}");
+                CurrentLoop.Breaks = true;
+                Terminate(line: "break");
                 break;
             case ContinueStatement:
-                Terminate(line: $"jump {Target(label: CurrentLoop.Continue)}");
+                _ = CurrentLoop;
+                Terminate(line: "continue");
                 break;
             case CancellationPushStatement push:
                 WriteCancellationPush(push: push);
@@ -420,7 +423,7 @@ internal sealed class TesseraRoutineWriter
         string name = Text(parameter: "type_name");
         string message = Text(parameter: "message");
         SourceLocation at = crash.Location;
-        Emit(line: $"#source({TesseraTrace.CString(text: _module.SourceName(file: at.FileName))}, {at.Line}, {at.Column})");
+        Emit(line: $"@source({TesseraTrace.CString(text: _module.SourceName(file: at.FileName))}, {at.Line}, {at.Column})");
         // `crash` never returns, so it ends the block.
         Terminate(line: $"crash(name: {name}, message: {message})");
     }
@@ -431,7 +434,7 @@ internal sealed class TesseraRoutineWriter
         return $"cfnode_{local}";
     }
 
-    private (string Continue, string Break) CurrentLoop => _loops.Count > 0
+    private LoopFrame CurrentLoop => _loops.Count > 0
         ? _loops.Peek()
         : throw Unsupported(what: "a break or continue outside a loop");
 
@@ -481,84 +484,82 @@ internal sealed class TesseraRoutineWriter
                 WriteCall(call: call, asStatement: true);
             }
 
-            Terminate(line: "return()");
+            Terminate(line: "return");
             return;
         }
 
         string value = Value(operand: Evaluate(expression: statement.Value));
         Terminate(line: IsVoidReturn
-            ? "return()"
-            : $"return({value})");
+            ? "return"
+            : $"return {value}");
     }
 
+    /// <summary><c>if c</c> with its body under it, then <c>else</c> and its body. The lines after the if can't run
+    /// when both bodies leave.</summary>
     private void WriteIf(IfStatement statement)
     {
         string condition = Value(operand: Evaluate(expression: statement.Condition));
-        string thenLabel = NewLabel(kind: "then");
-        string elseLabel = NewLabel(kind: "else");
-        string endLabel = NewLabel(kind: "after_if");
-        bool reachesEnd = false;
-
-        Terminate(line: $"branch {condition} ? {Target(label: thenLabel)} : {Target(label: statement.ElseStatement is null ? endLabel : elseLabel)}");
-
-        StartBlock(label: thenLabel);
-        WriteStatement(statement: statement.ThenStatement);
-        if (!_current.Terminated)
-        {
-            Terminate(line: $"jump {Target(label: endLabel)}");
-            reachesEnd = true;
-        }
-
+        Emit(line: $"if {condition}");
+        bool thenLeaves = Nested(body: statement.ThenStatement);
+        bool elseLeaves = false;
         if (statement.ElseStatement is { } elseStatement)
         {
-            StartBlock(label: elseLabel);
-            WriteStatement(statement: elseStatement);
-            if (!_current.Terminated)
-            {
-                Terminate(line: $"jump {Target(label: endLabel)}");
-                reachesEnd = true;
-            }
-        }
-        else
-        {
-            reachesEnd = true;
+            Emit(line: "else");
+            elseLeaves = Nested(body: elseStatement);
         }
 
-        StartBlock(label: endLabel);
-        if (!reachesEnd)
-        {
-            Terminate(line: "unreachable");
-        }
+        _current.Terminated = thenLeaves && elseLeaves;
     }
 
+    /// <summary>
+    /// <c>while c</c> with the body under it. A condition that takes lines of its own to compute is tested inside
+    /// a <c>while true</c>, so it is computed again on every round: <c>if not c</c> / <c>break</c>. The lines after
+    /// a <c>while true</c> that never breaks can't run.
+    /// </summary>
     private void WriteWhile(Expression? condition, Statement body)
     {
-        string headLabel = NewLabel(kind: "loop");
-        string bodyLabel = NewLabel(kind: "loop_body");
-        string endLabel = NewLabel(kind: "after_loop");
-
-        Terminate(line: $"jump {Target(label: headLabel)}");
-        StartBlock(label: headLabel);
-        if (condition is null)
+        int before = _current.Lines.Count;
+        string? test = condition is null ? null : Value(operand: Evaluate(expression: condition));
+        var frame = new LoopFrame();
+        if (test is not null && _current.Lines.Count == before)
         {
-            Terminate(line: $"jump {Target(label: bodyLabel)}");
+            Emit(line: $"while {test}");
+            _indent++;
         }
         else
         {
-            string test = Value(operand: Evaluate(expression: condition));
-            Terminate(line: $"branch {test} ? {Target(label: bodyLabel)} : {Target(label: endLabel)}");
+            // The condition's own lines move under `while true`, where they run on every round.
+            var computed = _current.Lines.GetRange(index: before, count: _current.Lines.Count - before);
+            _current.Lines.RemoveRange(index: before, count: computed.Count);
+            Emit(line: "while true");
+            _indent++;
+            foreach (string line in computed)
+            {
+                Emit(line: line.TrimStart());
+            }
+
+            if (test is not null)
+            {
+                Emit(line: $"if not {test}");
+                _indent++;
+                Emit(line: "break");
+                _indent--;
+            }
         }
 
-        StartBlock(label: bodyLabel);
-        _loops.Push(item: (headLabel, endLabel));
+        _loops.Push(item: frame);
+        _current.Terminated = false;
+        int bodyStart = _current.Lines.Count;
         WriteStatement(statement: body);
-        _loops.Pop();
-        if (!_current.Terminated)
+        if (_current.Lines.Count == bodyStart)
         {
-            Terminate(line: $"jump {Target(label: headLabel)}");
+            Emit(line: "pass");
         }
 
-        StartBlock(label: endLabel);
+        _loops.Pop();
+        _indent--;
+        // A loop on `true` that never breaks only leaves through a return: nothing after it runs.
+        _current.Terminated = test is null && !frame.Breaks;
     }
 
     // ── Expressions ───────────────────────────────────────────────────────────
@@ -638,7 +639,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"spill{_temps++}";
-        Emit(line: $"claim {slot}: @{TypeText(type: operand.Type)} <- {operand.Text}");
+        Emit(line: $"local {slot}: @{TypeText(type: operand.Type)} <- {operand.Text}");
         return slot;
     }
 
@@ -664,7 +665,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"zero{_temps++}";
-        Emit(line: $"claim {slot}: @{text} <- .hollow()");
+        Emit(line: $"local {slot}: @{text} <- .hollow()");
         Emit(line: $"{slot}.zeroinit(1)");
         return $"{slot}.peek()";
     }
@@ -1363,7 +1364,7 @@ internal sealed class TesseraRoutineWriter
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
         string slot = $"carrier{_temps++}";
-        Emit(line: $"claim {slot}: @{TypeText(type: carrier)} <- .hollow()");
+        Emit(line: $"local {slot}: @{TypeText(type: carrier)} <- .hollow()");
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
         Emit(line: $"{slot}.{tagField}.poke({tag})");

@@ -399,8 +399,8 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         // here — the type relies on a real create() overload that SA failed to bind, and
         // forging an empty CreatorExpression would just re-issue the bug as S455
         // (missing field). Leave that case to the SA fix path.
-        // A construction whose named arguments are not all fields of the type (the variant-arm extractor
-        // `Dict[Text, SerialValue](from: sv)`) is a creator call, not a field-init: leave it as a GMC so
+        // A construction whose named arguments are not all fields of the type (a written creator
+        // `Buffer[T](count: n, fill: x)`) is a creator call, not a field-init: leave it as a GMC so
         // SA resolves the creator; SA-time lowering (below, once ResolvedRoutine is set) or the
         // creator-routing path handles it.
         if (gmc.Object is IdentifierExpression literalId &&

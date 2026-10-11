@@ -293,18 +293,20 @@ internal sealed class AutoWiredRegistrationPass
             existingMemberRoutines: existingMemberRoutines);
     }
 
-    /// <summary>The parameter name of the universal <c>T!(from: SerialValue)</c> constructor.</summary>
-    public const string FromSerialParameterName = "from";
+    /// <summary>The name of the routine that rebuilds a value from its serialized form, the per-type step of
+    /// <c>sv.to[T]()</c>: <c>common routine T.from_serial!(value: SerialValue) -> T</c>.</summary>
+    public const string FromSerialRoutineName = "from_serial";
+
+    /// <summary>The parameter name of <see cref="FromSerialRoutineName"/>.</summary>
+    public const string FromSerialParameterName = "value";
 
     /// <summary>
-    /// Registers the universal failable constructor <c>T!(from: SerialValue)</c>, the reverse of
-    /// <c>serialize</c>, on every choice, flags and variant type and on every record or entity whose member
-    /// variables are all publicly readable (<c>serialize</c> writes only those, so a <c>secret</c> member
-    /// could never be rebuilt). The body is built per type when the demand collector reaches the constructor
+    /// Registers <c>common routine T.from_serial!(value: SerialValue) -> T</c>, the reverse of <c>serialize</c> and
+    /// the per-type step of <c>sv.to[T]()</c>, on every choice, flags and variant type and on every record or entity
+    /// whose member variables are all publicly readable (<c>serialize</c> writes only those, so a <c>secret</c> member
+    /// could never be rebuilt). The body is built per type when the demand collector reaches it
     /// (<c>GenericMonomorphizationPass</c>'s from-serial materialization). Leaf types (scalars, <c>Text</c>,
-    /// collections) hand-write theirs in the stdlib, and a type that is a <c>SerialValue</c> arm already has
-    /// its variant-arm extractor with this exact signature, so any existing creator taking a lone
-    /// <c>SerialValue</c> (a routine's identity is its parameter types, not their names) is left alone.
+    /// collections) write theirs in the library, and a type that writes its own is left alone.
     /// </summary>
     private void MaybeRegisterFromSerialCreator(TypeSymbol type, TypeSymbol? serialValueType,
         List<RoutineInfo> existingMemberRoutines)
@@ -312,16 +314,14 @@ internal sealed class AutoWiredRegistrationPass
         if (serialValueType == null || type.IsGenericDefinition ||
             !IsFromSerialCandidate(type: type) ||
             existingMemberRoutines.Concat(second: _registry.GetMemberRoutinesForType(type: type))
-                                  .Any(predicate: m =>
-                                       m.IsCreator && m.Parameters.Count == 1 &&
-                                       m.Parameters[index: 0].Type.FullName == serialValueType.FullName))
+                                  .Any(predicate: m => m.Name == FromSerialRoutineName))
         {
             return;
         }
 
-        _registry.RegisterRoutine(routine: new RoutineInfo(name: RoutineInfo.CreatorName)
+        _registry.RegisterRoutine(routine: new RoutineInfo(name: FromSerialRoutineName)
         {
-            Kind = RoutineKind.Creator,
+            Kind = RoutineKind.CommonRoutine,
             OwnerType = type,
             Parameters = [new ParamInfo(name: FromSerialParameterName, type: serialValueType)],
             ReturnType = type,
@@ -381,6 +381,24 @@ internal sealed class AutoWiredRegistrationPass
                 name: RuntimeContract.Display.Diagnose,
                 returnType: bundle.TextType,
                 existingMemberRoutines: universalExisting);
+        }
+
+        // `T.from_serial(value:)` resolves on a generic `T`: the generic `sv.to[T]()` calls it, and each concrete type
+        // brings its own.
+        if (bundle.SerialValueType != null)
+        {
+            _registry.RegisterRoutine(routine: new RoutineInfo(name: FromSerialRoutineName)
+            {
+                Kind = RoutineKind.CommonRoutine,
+                OwnerType = tParam,
+                Parameters = [new ParamInfo(name: FromSerialParameterName, type: bundle.SerialValueType)],
+                ReturnType = tParam,
+                IsFailable = true,
+                DeclaredMutation = MutationCategory.Readonly,
+                MutationCategory = MutationCategory.Readonly,
+                Visibility = VisibilityModifier.Open,
+                IsSynthesized = true
+            });
         }
 
         // destroy as a universal member routine so v.destruct() resolves on a generic T.
@@ -1223,10 +1241,10 @@ internal sealed class AutoWiredRegistrationPass
     }
 
     /// <summary>
-    /// Registers the two auto-generated constructors for each non-<c>None</c> arm of a variant:
-    /// <c>V.create(from: Arm) -> V</c> (box) and <c>Arm.create!(from: V) -> Arm</c> (failable extract).
-    /// Each is overloaded by the <c>from:</c> parameter type, so an arm type shared across variants gets a
-    /// distinct constructor per variant, and no arm-name/type-name collision (RF-S770) arises.
+    /// Registers, for each non-<c>None</c> arm of a variant, the box constructor <c>V.create(from: Arm) -> V</c>
+    /// (overloaded by the <c>from:</c> parameter type, so an arm type shared across variants gets a distinct
+    /// constructor per variant) and the extraction <c>V.to![Arm]() -> Arm</c>, one member of the variant's
+    /// <c>to</c> family per arm, failing when another arm is active.
     /// </summary>
     private void RegisterVariantArmConstructors(VariantTypeSymbol variant)
     {
@@ -1261,30 +1279,26 @@ internal sealed class AutoWiredRegistrationPass
                 });
             }
 
-            // Arm.create!(from: V) -> Arm  (name "create" + IsFailable; a `.create!(…)` call resolves
-            // against "create" and the `from: V` param type disambiguates from numeric conversions). Not for an arm
-            // of a generic definition: its owner would be the definition's own parameter.
+            // V.to![Arm]() -> Arm: the arm taken out. Not for an arm of a generic definition: its type would be
+            // the definition's own parameter.
             if (variant.IsGenericDefinition)
             {
                 continue;
             }
 
-            bool extractExists = _registry.GetMemberRoutinesForType(type: armType)
-                                          .Any(predicate: m =>
-                                               m is
-                                               {
-                                                   IsCreator: true, Parameters.Count: 1,
-                                                   IsFailable: true
-                                               } && m.Parameters[index: 0].Type?.FullName ==
-                                               variant.FullName);
+            bool extractExists = _registry.GetMemberRoutinesForType(type: variant)
+                                          .Any(predicate: m => IsVariantArmExtractor(routine: m) &&
+                                                               m.TypeArguments![index: 0].FullName == armType.FullName);
             if (!extractExists)
             {
-                _registry.RegisterRoutine(routine: new RoutineInfo(name: RoutineInfo.CreatorName)
+                _registry.RegisterRoutine(routine: new RoutineInfo(name: ConversionRoutineName)
                 {
-                    Kind = RoutineKind.Creator,
-                    OwnerType = armType,
-                    Parameters = [new ParamInfo(name: "from", type: variant)],
+                    Kind = RoutineKind.MemberRoutine,
+                    OwnerType = variant,
+                    MeType = variant,
+                    Parameters = [],
                     ReturnType = armType,
+                    TypeArguments = [armType],
                     IsFailable = true,
                     DeclaredMutation = MutationCategory.Readonly,
                     MutationCategory = MutationCategory.Readonly,
@@ -1293,6 +1307,20 @@ internal sealed class AutoWiredRegistrationPass
                 });
             }
         }
+    }
+
+    /// <summary>The name of a conversion (<c>x.to[T]()</c>): the family a variant's arm extractions join.</summary>
+    public const string ConversionRoutineName = "to";
+
+    /// <summary>True when <paramref name="routine"/> is a variant's arm extraction <c>V.to![Arm]()</c>: the builder's
+    /// failable member of the <c>to</c> family on a variant, taking nothing, whose bracket names one of its arms.</summary>
+    public static bool IsVariantArmExtractor(RoutineInfo routine)
+    {
+        return routine is
+               {
+                   IsSynthesized: true, IsFailable: true, IsCreator: false, Name: ConversionRoutineName,
+                   Parameters.Count: 0, TypeArguments: [{ } arm], OwnerType: VariantTypeSymbol variant
+               } && variant.Members.Any(predicate: m => m.Type?.FullName == arm.FullName);
     }
 
     private void MaybeRegisterWiredFailable(TypeSymbol owner, string name, TypeSymbol returnType,

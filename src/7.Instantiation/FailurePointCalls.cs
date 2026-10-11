@@ -242,6 +242,26 @@ internal static class FailurePointCalls
     {
         protected override Expression VisitBinary(BinaryExpression e)
         {
+            // `d[k] = v` writes through `setitem`, not a `getitem` read: the target keeps its subscript (only what
+            // it indexes and the key are rewritten), or the write would first read a key that is not there yet.
+            if (e is { Operator: BinaryOperator.Assign, Left: IndexExpression written })
+            {
+                Expression indexed = VisitExpression(expr: written.Object);
+                Expression key = VisitExpression(expr: written.Index);
+                Expression value = VisitExpression(expr: e.Right);
+                if (ReferenceEquals(objA: indexed, objB: written.Object) &&
+                    ReferenceEquals(objA: key, objB: written.Index) && ReferenceEquals(objA: value, objB: e.Right))
+                {
+                    return e;
+                }
+
+                IndexExpression kept = written with { Object = indexed, Index = key };
+                kept.ResolvedType = written.ResolvedType;
+                BinaryExpression assigned = e with { Left = kept, Right = value };
+                assigned.ResolvedType = e.ResolvedType;
+                return assigned;
+            }
+
             Expression rewritten = base.VisitBinary(e: e);
             return rewritten is BinaryExpression bin && ForBinary(bin: bin, registry: registry) is { } call
                 ? call

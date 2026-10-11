@@ -94,7 +94,7 @@ internal sealed class TesseraWriter
     public string RoutinePrefix(RoutineInfo routine)
     {
         return _exports.TryGetValue(key: LlvmEmitter.MangleRoutineName(routine: routine), value: out string? symbol)
-            ? $"#export(\"{symbol}\")\n"
+            ? $"@export(\"{symbol}\")\n"
             : Private;
     }
 
@@ -262,18 +262,11 @@ internal sealed class TesseraWriter
                 local count: U64 = text.count
                 local utf8: @List[Byte] <- .construct()
 
-                block entry()
-                    jump each(0)
-
-                block each(i: U64)
-                    done: Bool = i.ge(count)
-                    branch done
-                        ? return(utf8.getview())
-                        : continue
+                each i in 0 til count
                     code: U32 = data.stride(i.to[USize]()).peek()
                     character: Char = code.to[Char]()
                     utf8.write("{character}")
-                    jump each(i.add(1))
+                return utf8.getview()
 
 
             """);
@@ -443,15 +436,13 @@ internal sealed class TesseraWriter
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
             string receiver = CrashObjectReceiver(routine: routine);
-            text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
-                .Append(value: $"        is_{i}: Bool = ieq[{idType}](type_id, 0x{id:X})\n")
-                .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
-                .Append(value: $"    block case_{i}()\n")
+            text.Append(value: $"    is_{i}: Bool = ieq[{idType}](type_id, 0x{id:X})\n")
+                .Append(value: $"    if is_{i}\n")
                 .Append(value: $"        r_{i}: {resultType} = {RoutineName(routine: routine)}({receiver})\n")
-                .Append(value: $"        return(r_{i})\n\n");
+                .Append(value: $"        return r_{i}\n");
         }
 
-        text.Append(value: $"    block next_{arms.Count}()\n        unreachable\n\n");
+        text.Append(value: "    unreachable\n\n");
         _definitions.Append(value: text);
         return (name, result);
     }
@@ -532,16 +523,14 @@ internal sealed class TesseraWriter
         for (int i = 0; i < arms.Count; i++)
         {
             (ulong id, RoutineInfo routine) = arms[index: i];
-            text.Append(value: $"    block {(i == 0 ? "entry" : $"next_{i}")}()\n")
-                .Append(value: $"        is_{i}: Bool = ieq[{idType}](type_id, 0x{id:X})\n")
-                .Append(value: $"        branch is_{i} ? case_{i}() : next_{i + 1}()\n\n")
-                .Append(value: $"    block case_{i}()\n")
+            text.Append(value: $"    is_{i}: Bool = ieq[{idType}](type_id, 0x{id:X})\n")
+                .Append(value: $"    if is_{i}\n")
                 .Append(value: $"        {RoutineName(routine: routine)}({CrashObjectReceiver(routine: routine)})\n")
-                .Append(value: "        jump free()\n\n");
+                .Append(value: $"        {free}(error)\n")
+                .Append(value: "        return\n");
         }
 
-        text.Append(value: $"    block {(arms.Count == 0 ? "entry" : $"next_{arms.Count}")}()\n        jump free()\n\n")
-            .Append(value: $"    block free()\n        {free}(error)\n        return()\n\n");
+        text.Append(value: $"    {free}(error)\n    return\n\n");
         _definitions.Append(value: text);
         return name;
     }
@@ -619,7 +608,7 @@ internal sealed class TesseraWriter
             // A C parameter's name is only a label, and Tessera reserves `me` for a receiver.
             values: routine.Parameters.Select(selector: p =>
                 $"{(p.Name == "me" ? "me_" : ValueName(name: p.Name))}: {TypeText(type: p.Type)}"));
-        _externs.Append(value: $"#[external(\"c\"), symbol(\"{symbol}\")]\n" +
+        _externs.Append(value: $"@external(\"c\")\n@symbol(\"{symbol}\")\n" +
                                $"{Private}routine {name}({parameters}) -> {TypeText(type: routine.ReturnType)}\n\n");
         return name;
     }
@@ -731,39 +720,37 @@ internal sealed class TesseraWriter
 
         var text = new StringBuilder();
         text.Append(value: $"{Private}routine {name}(value: {RoutineValueRecord}{Parameters(prefix: "a")}) -> {returnType}\n")
-            .Append(value: "    block entry()\n")
-            .Append(value: "        fn: Addr = value.fn\n")
-            .Append(value: "        bound: Addr = value.bound\n")
-            .Append(value: "        address: U64 = ptrtoint[Addr, U64](bound)\n")
-            .Append(value: "        unbound: Bool = address.eq(0)\n")
-            .Append(value: $"        branch unbound ? plain(fn{Names(prefix: "a")}) : bound(fn, bound{Names(prefix: "a")})\n\n");
-        foreach ((string block, string callable, string extra, string prefix) in new[]
+            .Append(value: "    fn: Addr = value.fn\n")
+            .Append(value: "    bound: Addr = value.bound\n")
+            .Append(value: "    address: U64 = ptrtoint[Addr, U64](bound)\n")
+            .Append(value: "    unbound: Bool = address.eq(0)\n")
+            // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
+            .Append(value: "    local slot: @Addr <- fn\n");
+        foreach ((string keyword, string callable, bool withPayload) in new[]
                  {
-                     ("plain", plain, "", "p"),
-                     ("bound", bound, ", payload: Addr", "b")
+                     ("if unbound", plain, false),
+                     ("else", bound, true)
                  })
         {
-            string arguments = Arguments(prefix: prefix);
-            if (extra.Length > 0)
+            string arguments = Arguments(prefix: "a");
+            if (withPayload)
             {
                 arguments = arguments.Length > 0
-                    ? $"{arguments}, payload"
-                    : "payload";
+                    ? $"{arguments}, bound"
+                    : "bound";
             }
 
-            // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
-            text.Append(value: $"    block {block}(code: Addr{extra}{Parameters(prefix: prefix)})\n")
-                .Append(value: "        claim slot: @Addr <- code\n")
+            text.Append(value: $"    {keyword}\n")
                 .Append(value: $"        callee: {callable} = slot.to[@{callable}]().peek()\n");
             if (returns)
             {
                 text.Append(value: $"        result: {returnType} = callee.call({arguments})\n")
-                    .Append(value: "        return(result)\n\n");
+                    .Append(value: "        return result\n");
             }
             else
             {
                 text.Append(value: $"        callee.call({arguments})\n")
-                    .Append(value: "        return()\n\n");
+                    .Append(value: "        return\n");
             }
         }
 
@@ -780,7 +767,7 @@ internal sealed class TesseraWriter
 
         name = UniqueName(wanted: "c_" + Sanitize(text: symbol));
         _externNames[key: symbol] = name;
-        _externs.Append(value: $"#[external(\"c\"), symbol(\"{symbol}\")]\n" +
+        _externs.Append(value: $"@external(\"c\")\n@symbol(\"{symbol}\")\n" +
                                $"{Private}routine {name}({parameters}) -> {returnType}\n\n");
         return name;
     }
@@ -886,6 +873,7 @@ internal sealed class TesseraWriter
     private static readonly HashSet<string> TesseraKeywords =
     [
         "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "local", "todo", "and", "or", "is", "as",
+        "not", "if", "each", "while", "until", "becomes", "break", "pass", "needs", "obeys", "protocol",
         "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
         "define", "private", "internal", "module", "import", "Me", "self", "Self",
     ];
@@ -1131,26 +1119,25 @@ internal sealed class TesseraWriter
                             throw new NotSupportedException(
                                 message: $"The Tessera backend found no start() routine in the entry module '{entry}'.");
 
-        return "#[external(\"c\"), symbol(\"rf_runtime_init\")]\n" +
+        return "@external(\"c\")\n@symbol(\"rf_runtime_init\")\n" +
                "routine rf_runtime_init() -> Void\n\n" +
-               "#[external(\"c\"), symbol(\"__rf_set_trace_mode\")]\n" +
+               "@external(\"c\")\n@symbol(\"__rf_set_trace_mode\")\n" +
                "routine c_rf_set_trace_mode(mode: S32) -> Void\n\n" +
-               "#[external(\"c\"), symbol(\"rf_set_stack_overflow_report\")]\n" +
+               "@external(\"c\")\n@symbol(\"rf_set_stack_overflow_report\")\n" +
                "routine c_rf_set_stack_overflow_report(report: Addr) -> Void\n\n" +
                // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
-               $"#[external(\"c\"), symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Suflae ? "tessera_deep_calls_report" : "tessera_stack_overflow_report")}\")]\n" +
+               $"@external(\"c\")\n@symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Suflae ? "tessera_deep_calls_report" : "tessera_stack_overflow_report")}\")\n" +
                "routine c_tessera_stack_overflow_report(stack_size: U64) -> Void\n\n" +
-               "#[external(\"c\"), symbol(\"rf_exit_code\")]\n" +
+               "@external(\"c\")\n@symbol(\"rf_exit_code\")\n" +
                "routine c_rf_exit_code() -> S32\n\n" +
                "routine start() -> Void\n" +
-               "    block entry()\n" +
-               "        rf_runtime_init()\n" +
+               "    rf_runtime_init()\n" +
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
-               $"        c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +
+               $"    c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +
                // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
-               "        c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
-               $"        {RoutineName(routine: start)}()\n" +
-               "        Standard/Os/set_exit_code(c_rf_exit_code())\n" +
-               "        return()\n";
+               "    c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
+               $"    {RoutineName(routine: start)}()\n" +
+               "    Standard/Os/set_exit_code(c_rf_exit_code())\n" +
+               "    return\n";
     }
 }

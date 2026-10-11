@@ -297,7 +297,8 @@ public sealed class RoutineInfo
     /// with no generic definition behind it. Its <see cref="TypeArguments"/> are part of its identity and pick it
     /// among the routines of the same name (<c>x.to[U8]()</c>).
     /// </summary>
-    public bool IsSpecialization => TypeArguments is { Count: > 0 } && GenericDefinition == null;
+    public bool IsSpecialization => TypeArguments is { Count: > 0 } &&
+                                    (GenericDefinition == null || GenericDefinition.IsSpecialization);
 
     /// <summary>For resolved generics, the type arguments used.</summary>
     public List<TypeSymbol>? TypeArguments { get; init; }

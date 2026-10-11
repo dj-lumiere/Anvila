@@ -897,9 +897,14 @@ public sealed partial class StdlibLoader
 
         // A bracket of types (`routine S64.to![U8]()`) is a specialization, read before the generic context so
         // `U8` in the signature is the type, not a parameter.
+        HashSet<string> receiverLeaves = CollectReceiverLeafParamNames(receiver: routine.ReceiverType);
         List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
-            receiverLeaves: CollectReceiverLeafParamNames(receiver: routine.ReceiverType),
-            resolve: name => registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name));
+            receiverLeaves: receiverLeaves,
+            resolve: name => registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name),
+            // A bracket entry with type arguments (`to[SF::Core.List[T]]`) resolves as the written type, the
+            // receiver's own parameters (`T`) in scope.
+            resolveExpression: typeExpr => ResolveSimpleType(registry: registry, typeExpr: typeExpr,
+                genericParams: receiverLeaves.ToList(), moduleName: moduleName));
 
         List<string>? ctx = BuildRoutineGenericContext(registry: registry,
             routine: routine,

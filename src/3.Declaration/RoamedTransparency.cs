@@ -80,7 +80,11 @@ internal static class RoamedTransparency
         // Only an inner-owned memberRoutine is transparent. A bare-`me` inner memberRoutine needs the handle
         // projected to the real inner pointer; a Roamed-`me` inner memberRoutine (an SF entity's own) takes
         // the handle directly.
-        if (effective?.OwnerType?.FullName != inner.FullName)
+        // So is a routine a protocol the inner obeys writes for every obeying type (`Iterable[T].to[List[T]]()`): its
+        // body works on the entity itself.
+        bool protocolOwned = effective is { IsSpecialization: true, OwnerType: ProtocolTypeSymbol owningProtocol } &&
+                             registry.TypeObeysProtocol(type: inner, protocolName: owningProtocol.BareName);
+        if (effective == null || effective.OwnerType?.FullName != inner.FullName && !protocolOwned)
         {
             return null;
         }

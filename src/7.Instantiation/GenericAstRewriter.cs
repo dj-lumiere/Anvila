@@ -520,7 +520,9 @@ internal static class GenericAstRewriter
             if (original.Recovery is { } recovery)
             {
                 RoutineInfo? resolvedBase = resolvedOwner != null
-                    ? ResolveMemberRoutineOnConcreteOwner(ownerType: resolvedOwner,
+                    ? WrittenCommonRoutineOfHandledEntity(original: original.RecoveryOf ?? original,
+                          resolvedOwner: resolvedOwner, resolvedParamTypes: resolvedParamTypes) ??
+                      ResolveMemberRoutineOnConcreteOwner(ownerType: resolvedOwner,
                         memberRoutineName: original.Name,
                         argTypes: resolvedParamTypes,
                         isFailable: true)
@@ -579,9 +581,37 @@ internal static class GenericAstRewriter
         /// monomorphizing a memberRoutine-generic definition form when needed. Returns null when no
         /// concrete-owner memberRoutine binds here (the caller then falls through to other strategies).
         /// </summary>
+        /// <summary>A shared entity's handle (<c>Roamed[E]</c>) standing in for a type parameter has no common routine
+        /// of its own: the entity's written one (<c>List[T].from_serial</c>, giving the handle back) is the call's.
+        /// Null when <paramref name="original"/> is no such call or the entity writes none.</summary>
+        private RoutineInfo? WrittenCommonRoutineOfHandledEntity(RoutineInfo original, TypeSymbol resolvedOwner,
+            List<TypeSymbol> resolvedParamTypes)
+        {
+            return original is { Kind: TypeModel.Enums.RoutineKind.CommonRoutine, OwnerType: GenericParameterTypeSymbol } &&
+                   resolvedOwner is RecordTypeSymbol
+                   {
+                       GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol handled]
+                   } &&
+                   ResolveMemberRoutineOnConcreteOwner(ownerType: handled,
+                       memberRoutineName: original.Name,
+                       argTypes: resolvedParamTypes,
+                       isFailable: original.IsFailable) is
+                   {
+                       IsSynthesized: false, Kind: TypeModel.Enums.RoutineKind.CommonRoutine
+                   } written
+                ? written
+                : null;
+        }
+
         private RoutineInfo? ResolveRoutineOnOwner(RoutineInfo original, TypeSymbol resolvedOwner,
             List<TypeSymbol> resolvedParamTypes, List<TypeSymbol> memberRoutineInferArgTypes)
         {
+            if (WrittenCommonRoutineOfHandledEntity(original: original, resolvedOwner: resolvedOwner,
+                    resolvedParamTypes: resolvedParamTypes) is { } written)
+            {
+                return written;
+            }
+
             RoutineInfo? resolvedMemberRoutine = ResolveMemberRoutineOnConcreteOwner(
                 ownerType: resolvedOwner,
                 memberRoutineName: original.Name,
@@ -814,7 +844,7 @@ internal static class GenericAstRewriter
             RecoveryKind? recovery = call.ResolvedRoutine?.Recovery;
             RoutineInfo? resolved = call.Callee switch
             {
-                MemberExpression member => ResolveMemberCallRoutine(member: member,
+                MemberExpression member => ResolveMemberCallRoutine(member: member, original: call.ResolvedRoutine,
                     callArgTypes: callArgTypes,
                     isFailable: member.IsFailable || recovery != null),
                 IdentifierExpression identifier => ResolveFreeCallRoutine(call: call,
@@ -840,7 +870,7 @@ internal static class GenericAstRewriter
             return variant ?? (Registry.CanFailUnderRecovery(routine: resolved) ? null : resolved);
         }
 
-        private RoutineInfo? ResolveMemberCallRoutine(MemberExpression member,
+        private RoutineInfo? ResolveMemberCallRoutine(MemberExpression member, RoutineInfo? original,
             List<TypeSymbol> callArgTypes, bool isFailable)
         {
             // The receiver's own ResolvedType is the RAW template annotation — for a universal derive
@@ -871,6 +901,19 @@ internal static class GenericAstRewriter
                 return null;
             }
 
+            // A member of a specialization family (`xs.to[List]()`) is picked by its type arguments on the receiver
+            // the call has now, not by name: a family a protocol writes (`Iterable[T].to[List[T]]`) is bound here
+            // to the receiver's own member of it, or the protocol's bound to this receiver.
+            if ((original?.RecoveryOf ?? original) is { IsSpecialization: true, TypeArguments: { } picks } &&
+                Registry!.LookupFamilyMember(owner: UnroamedReceiver(type: receiverType), name: member.MemberName,
+                    typeArguments: picks.Select(selector: t => ResolveTypeForLookup(original: t) ?? t).ToList()) is
+                    { } family)
+            {
+                return original!.Recovery is { } familyRecovery
+                    ? RecoveryVariantOrPlain(resolved: family, kind: familyRecovery)
+                    : family;
+            }
+
             RoutineInfo? onReceiver = ResolveMemberRoutineOnConcreteOwner(ownerType: receiverType,
                 memberRoutineName: member.MemberName,
                 argTypes: callArgTypes,
@@ -893,6 +936,17 @@ internal static class GenericAstRewriter
             }
 
             return onReceiver;
+        }
+
+        /// <summary>The entity a shared-entity handle (<c>Roamed[E]</c>) stands for, else the type itself.</summary>
+        private static TypeSymbol UnroamedReceiver(TypeSymbol type)
+        {
+            return type is RecordTypeSymbol
+            {
+                GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [{ } inner]
+            }
+                ? inner
+                : type;
         }
 
         private RoutineInfo? ResolveFreeCallRoutine(CallExpression call,
@@ -1053,7 +1107,15 @@ internal static class GenericAstRewriter
                 args.Add(item: arg);
             }
 
+            // A member a protocol writes for every obeying type (`Iterable[T].to[List[T]]`) is picked again on the
+            // concrete receiver even when its bracket is already concrete: the receiver's own member of the family,
+            // or the protocol's bound to this receiver, so no protocol type reaches the emitter as a receiver.
+            bool protocolOwned = specialization.OwnerType is ProtocolTypeSymbol &&
+                                 concreteOwner is RecordTypeSymbol or EntityTypeSymbol &&
+                                 !concreteOwner.IsGenericDefinition &&
+                                 (concreteOwner.TypeArguments?.All(predicate: IsConcrete) ?? true);
             if (concreteOwner == null ||
+                !protocolOwned &&
                 args.Zip(second: fixedArgs).All(predicate: pair => pair.First.FullName == pair.Second.FullName))
             {
                 return null;

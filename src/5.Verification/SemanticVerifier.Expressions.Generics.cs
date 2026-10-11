@@ -18,6 +18,101 @@ public sealed partial class SemanticVerifier
         return result;
     }
 
+    /// <summary>
+    /// A bracket naming a generic type without its arguments (`set.to[List]()`) takes them from the one member of
+    /// the family that goes to that type (`Set[S64].to[List[S64]]`): the receiver decides them. The call's own
+    /// bracket is rewritten to the full type, so the rest of the build sees `to[List[S64]]`. Left as written when no
+    /// member, or more than one, goes to that type.
+    /// </summary>
+    private static void FillBracketFromFamily(GenericMemberRoutineCallExpression generic, List<TypeSymbol> typeArgs,
+        List<RoutineInfo> family)
+    {
+        for (int i = 0; i < typeArgs.Count; i++)
+        {
+            if (Unroamed(type: typeArgs[index: i]) is not { IsGenericDefinition: true } open)
+            {
+                continue;
+            }
+
+            int slot = i;
+            List<TypeSymbol> targets = family.Where(predicate: r => r.TypeArguments?.Count == typeArgs.Count)
+                                             .Select(selector: r => FamilyTarget(routine: r, index: slot))
+                                             .Where(predicate: t => t.BareName == open.BareName &&
+                                                                    !t.IsGenericDefinition &&
+                                                                    DefinitionOf(type: t).Realm == open.Realm)
+                                             .DistinctBy(keySelector: t => t.FullName)
+                                             .ToList();
+            if (targets is not [{ } full])
+            {
+                continue;
+            }
+
+            typeArgs[index: i] = full;
+            generic.TypeArguments[index: i] =
+                Builder.Instantiation.GenericAstRewriter.TypeInfoToTypeExpr(type: full,
+                    location: generic.TypeArguments[index: i].Location) with { KnownType = full };
+        }
+    }
+
+    /// <summary>The specialization family <paramref name="name"/> a call on <paramref name="receiver"/> picks from:
+    /// the receiver's own (a handle's is its entity's), or for a type parameter the families of the protocols its
+    /// <c>obeys</c> constraints name.</summary>
+    private List<RoutineInfo> FamilyOfReceiver(TypeSymbol receiver, string name)
+    {
+        if (receiver is not GenericParameterTypeSymbol parameter)
+        {
+            return _registry.LookupSpecializedMemberRoutines(owner: Unroamed(type: receiver), name: name);
+        }
+
+        var found = new List<RoutineInfo>();
+        IEnumerable<GenericConstraintDeclaration> constraints =
+            (_currentRoutine?.GenericConstraints ?? []).Concat(second: _currentRoutine?.OwnerType?.GenericConstraints ?? []);
+        foreach (GenericConstraintDeclaration constraint in constraints)
+        {
+            if (constraint.ParameterName != parameter.Name ||
+                constraint is not { ConstraintType: ConstraintKind.Obeys, ConstraintTypes: { } protocols })
+            {
+                continue;
+            }
+
+            foreach (TypeExpression protocolExpr in protocols)
+            {
+                if (ResolveType(typeExpr: protocolExpr) is ProtocolTypeSymbol protocol)
+                {
+                    found.AddRange(collection: _registry.LookupSpecializedMemberRoutines(owner: protocol, name: name)
+                                                        .Where(predicate: r => found.All(predicate: f =>
+                                                             f.RegistryKey != r.RegistryKey)));
+                }
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>The type a member of a family goes to at <paramref name="index"/>: what it gives back when its bracket
+    /// names that (the bracket of a routine a library writes can name a type of the same name in another language's
+    /// library), else the bracket entry.</summary>
+    internal static TypeSymbol FamilyTarget(RoutineInfo routine, int index)
+    {
+        TypeSymbol written = routine.TypeArguments![index: index];
+        return routine.ReturnType is { } returned && Unroamed(type: returned) is { } target &&
+               target.FullName == written.FullName
+            ? target
+            : written;
+    }
+
+    /// <summary>The entity a shared-entity handle (<c>Roamed[E]</c>) stands for, else the type itself: a Suflae bracket
+    /// that names an entity (<c>to[Set]</c>) means the entity.</summary>
+    internal static TypeSymbol Unroamed(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol
+        {
+            GenericDefinition.Name: Builder.Declaration.RuntimeContract.Roamed, TypeArguments: [{ } inner]
+        }
+            ? inner
+            : type;
+    }
+
     private TypeSymbol AnalyzeGenericMemberRoutineCallExpressionCore(
         GenericMemberRoutineCallExpression generic)
     {
@@ -51,13 +146,20 @@ public sealed partial class SemanticVerifier
         }
 
         // A family of specializations (`routine S64.to[U8]()`, ...) is picked by the written type arguments.
-        if (typeArgs.Count > 0 && objectType is not (ErrorTypeSymbol or GenericParameterTypeSymbol) &&
-            _registry.LookupSpecializedMemberRoutines(owner: objectType, name: generic.MemberRoutineName) is
-                { Count: > 0 } family)
+        // A Suflae entity is held through its handle (`Roamed[SkipIterable[...]]`): the family is the entity's. A
+        // type parameter's family is what the protocols it obeys write (`source.to[List]()` with
+        // `TSource obeys Iterable[T]`): the member is bound to the protocol for now and picked again on the concrete
+        // receiver when the body is made concrete.
+        if (typeArgs.Count > 0 && objectType is not ErrorTypeSymbol &&
+            FamilyOfReceiver(receiver: objectType, name: generic.MemberRoutineName) is { Count: > 0 } family)
         {
+            FillBracketFromFamily(generic: generic, typeArgs: typeArgs, family: family);
+
             RoutineInfo? chosen = family.FirstOrDefault(predicate: r =>
                 r.TypeArguments is { } args && args.Count == typeArgs.Count &&
-                args.Zip(second: typeArgs).All(predicate: pair => pair.First.FullName == pair.Second.FullName));
+                typeArgs.Select(selector: (t, i) => SameTypeInRealm(a: FamilyTarget(routine: r, index: i),
+                             b: Unroamed(type: t)))
+                        .All(predicate: same => same));
 
             // The library converts a value to its own type where generic code needs one (a `Text` item of a tuple
             // read from text), a program never does: it uses the value as it is.
@@ -65,6 +167,21 @@ public sealed partial class SemanticVerifier
                     typeArguments: typeArgs, location: generic.Location))
             {
                 chosen = null;
+            }
+
+            // A variant's arm extraction (`sv.to[S64]()`) has a body the builder writes when it is first reached.
+            if (chosen != null && Instantiation.AutoWiredRegistrationPass.IsVariantArmExtractor(routine: chosen))
+            {
+                EnsureVariantArmExtractorBody(extractor: chosen);
+            }
+
+            // A member a protocol writes for every obeying type (`Iterable[T].to[List[T]]`) runs on the receiver
+            // itself: homed on the receiver's type, its `me` is that type (in Suflae the entity's handle).
+            if (chosen is { OwnerType: ProtocolTypeSymbol } && Unroamed(type: objectType) is var home &&
+                home is RecordTypeSymbol or EntityTypeSymbol && !home.IsGenericDefinition &&
+                _registry.SubstituteMemberRoutineForOwner(memberRoutine: chosen, resolvedOwner: home) is { } homed)
+            {
+                chosen = homed;
             }
 
             // In a generic body (`line.to[T]()`), which member of the family it is depends on `T`: the call is bound to
@@ -746,15 +863,6 @@ public sealed partial class SemanticVerifier
         {
             CheckCreatorArgumentNames(arguments: generic.Arguments, creator: creator, type: resolvedType);
             generic.ResolvedRoutine = creator;
-            // A failable variant arm EXTRACTOR (`Dict![Text, SerialValue](from: sv)`) resolves through this
-            // generic-construction path — mint its pattern-matching body keyed off the resolved overload,
-            // same as the plain-call path in AnalyzeCreatorConstruction. Idempotent.
-            if (creator is
-                { IsCreator: true, IsFailable: true, Parameters: [{ Type: VariantTypeSymbol }] })
-            {
-                EnsureVariantArmExtractorBody(extractor: creator);
-            }
-
             ValidateExclusiveTokenUniqueness(arguments: generic.Arguments,
                 location: generic.Location);
             // Prefer the concrete resolvedType over the creator's return type when that type is still

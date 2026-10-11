@@ -529,6 +529,14 @@ public sealed partial class SemanticVerifier
     /// Checks whether a file path is inside the stdlib directory.
     /// Used to allow stdlib files to use reserved features (e.g., module Core).
     /// </summary>
+    /// <summary>True when <paramref name="filePath"/> names a file of the program being built: not one of the
+    /// library's, and not the empty or placeholder name of a body the builder writes.</summary>
+    internal bool IsProgramFile(string? filePath)
+    {
+        return !string.IsNullOrEmpty(value: filePath) && !filePath.StartsWith(value: '<') &&
+               Frontends.Languages.HasSourceExtension(fileName: filePath) && !IsStdlibFile(filePath: filePath);
+    }
+
     internal bool IsStdlibFile(string filePath)
     {
         return _registry.IsStandardLibraryFile(filePath: filePath);

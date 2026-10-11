@@ -306,8 +306,8 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
     }
 
     /// <summary>True when <paramref name="creator"/> is the synthesized creator taking exactly the member
-    /// variables of <paramref name="owner"/> (by name). A synthesized creator with a body (a conversion, a
-    /// variant arm extractor) takes other parameters.</summary>
+    /// variables of <paramref name="owner"/> (by name). A synthesized creator with a body (a conversion) takes
+    /// other parameters.</summary>
     private static bool MemberwiseCreatorMatchesFields(RoutineInfo creator, TypeSymbol owner)
     {
         List<MemberVariableInfo>? fields = MemberVariablesOf(type: owner);

@@ -1463,25 +1463,25 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         /// <summary>
-        /// Builds the body of a reached builder-registered <c>T!(from: SerialValue)</c> constructor
-        /// (registered by <c>AutoWiredRegistrationPass.MaybeRegisterFromSerialCreator</c>). A creator cannot be
-        /// a derive template and <c>expand</c> cannot splice a named-argument list, so the body is built here
-        /// as raw AST and then analyzed like a materialized derive:
+        /// Builds the body of a reached builder-registered <c>common routine T.from_serial!(value: SerialValue)</c>
+        /// (registered by <c>AutoWiredRegistrationPass.MaybeRegisterFromSerialCreator</c>). <c>expand</c> cannot
+        /// splice a named-argument list, so the body is built here as raw AST and then analyzed like a
+        /// materialized derive:
         /// <list type="bullet">
-        ///   <item>record/entity: <c>return T(f: serial_decode[F](value: serial_field(value: from, name: "f")), ...)</c></item>
-        ///   <item>choice / flags: <c>return choice_from_serial[T](value: from)</c> / <c>flags_from_serial</c></item>
+        ///   <item>record/entity: <c>return T(f: serial_decode[F](value: serial_field(value: value, name: "f")), ...)</c></item>
+        ///   <item>choice / flags: <c>return choice_from_serial[T](value: value)</c> / <c>flags_from_serial</c></item>
         ///   <item>variant: <c>variant_from_serial[T]</c>, behind an <c>is None => return none</c> clause when it has a <c>None</c> arm</item>
         /// </list>
         /// The helpers live in <c>Core/Serialization/FromSerial.rf</c>.
         /// </summary>
         private void MaterializeFromSerialBodyIfNeeded(RoutineInfo r, string key)
         {
-            // Identified by shape: a synthesized failable creator on a from-serial candidate type whose lone
-            // parameter is a SerialValue. (A variant-arm extractor `Arm!(from: V)` shares the name and
-            // failability but takes the variant, and its body lives in VariantBodies.)
+            // Identified by shape: the synthesized failable `from_serial` common routine of a from-serial candidate
+            // type, whose lone parameter is a SerialValue.
             if (r is not
                 {
-                    IsCreator: true, IsFailable: true, IsSynthesized: true,
+                    Kind: RoutineKind.CommonRoutine, Name: AutoWiredRegistrationPass.FromSerialRoutineName,
+                    IsFailable: true, IsSynthesized: true,
                     Parameters: [{ Name: AutoWiredRegistrationPass.FromSerialParameterName } input0],
                     OwnerType: { IsGenericDefinition: false } owner
                 } ||
@@ -1524,7 +1524,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     break;
                 case VariantTypeSymbol variant when variant.Members.Any(predicate: m => m.IsNone):
                 {
-                    // `when from { is None => return none, else => return variant_from_serial[T](value: from) }`
+                    // `when value { is None => return none, else => return variant_from_serial[T](value: value) }`
                     // — the `none` is typed here, against the concrete variant; a generic helper could not
                     // write `return none` for an arbitrary T.
                     var noneClause = new WhenClause(
@@ -1620,14 +1620,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         }
 
         /// <summary>
-        /// Gives a reached variant-arm extractor (<c>S64!(from: SerialValue)</c>) a body when no SA call site
+        /// Gives a reached variant-arm extraction (<c>SerialValue.to![S64]()</c>) a body when no SA call site
         /// minted one: a call inside a monomorphized body (<c>serial_decode[S64]</c> →
         /// <c>S64(from: value)</c>) is resolved by the AST rewriter, which never reaches the SA hook that mints
         /// extractor bodies, so without this the call link-fails as declared but never defined.
         /// </summary>
         private void MaterializeVariantArmExtractorBodyIfNeeded(RoutineInfo r, string key)
         {
-            if (r is not { IsCreator: true, IsFailable: true, IsSynthesized: true } ||
+            if (!AutoWiredRegistrationPass.IsVariantArmExtractor(routine: r) ||
                 _ctx.InstantiatedGenericBodies.ContainsKey(key: key) ||
                 _ctx.VariantBodies.ContainsKey(key: key) ||
                 programBodies.ContainsKey(key: key) ||
@@ -3508,8 +3508,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 ownerType: ownerType);
         }
 
-        // (4) Method-generic type-argument bindings (e.g. getitem![I] where I → U64).
-        if (resolvedRoutine.GenericDefinition?.GenericParameters is
+        // (4) Method-generic type-argument bindings (e.g. getitem![I] where I → U64). A specialization's bracket
+        // (`Iterable[T].to[Set[T]]` bound as `to[Set[S64]]`) picks the member of its family and binds no parameter:
+        // reading it as the routine's own arguments would set `T` to `Set[S64]`.
+        if (!resolvedRoutine.IsSpecialization && resolvedRoutine.GenericDefinition?.GenericParameters is
                 { Count: > 0 } memberRoutineParams && resolvedRoutine.TypeArguments is
                 { Count: > 0 } memberRoutineTypeArgs)
         {

@@ -80,7 +80,9 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
         }
 
         TypeSymbol? receiverType = member.Object.ResolvedType;
-        if (receiverType is null)
+        // A common routine is called on the type (`T.from_serial(value:)` with `T` a handle's type): there is no
+        // handle to reach into.
+        if (receiverType is null || call.ResolvedRoutine is { Kind: TypeModel.Enums.RoutineKind.CommonRoutine })
         {
             return call;
         }

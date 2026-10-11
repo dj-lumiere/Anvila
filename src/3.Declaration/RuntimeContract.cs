@@ -350,7 +350,6 @@ public static class RuntimeContract
     /// <param name="resolved">The creator the call resolved to, null for a memberwise construction.</param>
     public static bool IsMemberwiseConstruction(TypeSymbol? constructedType, RoutineInfo? resolved)
     {
-        // A variant arm extractor is synthesized too, but it reads its argument through a written body.
         return constructedType is not null && resolved is null or { IsSynthesized: true, IsFailable: false };
     }
 

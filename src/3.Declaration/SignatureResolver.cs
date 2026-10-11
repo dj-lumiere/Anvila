@@ -146,7 +146,8 @@ internal sealed class SignatureResolver
         // generic parameters before anything below reads them.
         List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
             receiverLeaves: receiverLeaves,
-            resolve: name => _sa.LookupTypeWithImports(name: name));
+            resolve: name => _sa.LookupTypeWithImports(name: name),
+            resolveExpression: typeExpr => _typeResolver.ResolveType(typeExpr: typeExpr));
         var filteredGenericParams = routine.GenericParameters
                                           ?.Where(predicate: p =>
                                                 !receiverLeaves.Contains(item: p) ||

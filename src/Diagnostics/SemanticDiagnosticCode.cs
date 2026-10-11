@@ -1052,6 +1052,10 @@ public enum SemanticDiagnosticCode
     ///<summary>Nested Maybe types (Maybe[Maybe[T]] / T??) are not allowed.</summary>
     NestedMaybeProhibited = 808,
 
+    /// <summary>`from_serial` is the builder's own name: a program neither writes nor calls it, it reads a value
+    /// back with `sv.to[T]()`.</summary>
+    FromSerialIsBuilderInternal = 809,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // INTRINSIC AND NATIVE CALL ERRORS (RF-S850 - RF-S899)
     // ═══════════════════════════════════════════════════════════════════════════

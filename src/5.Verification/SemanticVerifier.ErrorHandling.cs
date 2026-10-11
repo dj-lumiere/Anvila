@@ -246,11 +246,13 @@ public sealed partial class SemanticVerifier
             // stdlib bodies ARE available via `_memo.WarmStdlibRoutineBodies`; use them so warm can synthesize
             // the variant exactly as cold does — else the inner rewrite fails and the user variant calls
             // the raw failable form, crashing on the recoverable path.
-            if (!_routineBodies.TryGetValue(key: baseRoutine.RegistryKey,
-                    value: out Statement? collectedBody) && (_memo.WarmStdlibRoutineBodies == null ||
-                                                             !_memo.WarmStdlibRoutineBodies.TryGetValue(
-                                                                 key: baseRoutine.RegistryKey,
-                                                                 value: out collectedBody)))
+            // A variant's arm extraction (`sv.to![S64]()`) has the body the builder mints for it.
+            Statement? collectedBody = BuildVariantArmExtractorBody(extractor: baseRoutine);
+            if (collectedBody == null && !_routineBodies.TryGetValue(key: baseRoutine.RegistryKey,
+                    value: out collectedBody) && (_memo.WarmStdlibRoutineBodies == null ||
+                                                  !_memo.WarmStdlibRoutineBodies.TryGetValue(
+                                                      key: baseRoutine.RegistryKey,
+                                                      value: out collectedBody)))
             {
                 return false;
             }
@@ -572,7 +574,7 @@ public sealed partial class SemanticVerifier
     /// time a call site resolves it, keyed off the EXACT overload SA resolved (no name-scan). Stores into
     /// <see cref="_variantBodies"/> so <see cref="AnalyzeVariantBodies"/> annotates it like a try/check/
     /// lookup body and it flows through the SAME lowering + reachability + codegen path. Body:
-    /// <code>when from { is Arm v =&gt; return v.duplicate(), else =&gt; absent }</code>
+    /// <code>when me { is Arm v =&gt; return v.duplicate(), else =&gt; throw AbsentValueError }</code>
     /// — extract the arm payload when the active arm matches (DEEP-copied via <c>duplicate</c> so the caller
     /// does not alias the variant's heap payload → double-free), else the failable <c>absent</c> crashes on a
     /// wrong arm. (Was <c>WiredRoutinePass.TryBuildVariantArmConstructorBody</c>, deleted with that pass; the
@@ -593,23 +595,19 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Builds (without storing) the body of a variant-arm extractor creator <c>Arm!(from: V)</c>, or returns
+    /// Builds (without storing) the body of a variant's arm extraction <c>V.to![Arm]()</c>, or returns
     /// null when <paramref name="extractor"/> is not one. See <see cref="EnsureVariantArmExtractorBody"/>.
     /// </summary>
     private Statement? BuildVariantArmExtractorBody(RoutineInfo extractor)
     {
-        // Only a creator whose owner IS an arm of the variant it takes is an extractor. `Pt!(from: SerialValue)`
-        // has the same shape (failable creator, lone variant parameter) but builds a Pt from its serialized
-        // form, and gets its body from the from-serial materialization instead.
-        if (extractor.OwnerType is not { } armType ||
-            extractor.Parameters is not [{ Type: VariantTypeSymbol variant }] ||
-            !variant.Members.Any(predicate: m => m.Type?.FullName == armType.FullName))
+        if (!Instantiation.AutoWiredRegistrationPass.IsVariantArmExtractor(routine: extractor) ||
+            extractor.OwnerType is not VariantTypeSymbol variant || extractor.TypeArguments is not [{ } armType])
         {
             return null;
         }
 
         var loc = new SourceLocation(FileName: "", Line: 0, Column: 0, Position: 0);
-        var fromRef = new IdentifierExpression(Name: "from", Location: loc)
+        var fromRef = new IdentifierExpression(Name: "me", Location: loc)
         {
             ResolvedType = variant
         };

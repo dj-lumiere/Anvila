@@ -191,6 +191,16 @@ internal sealed class CallBindingPass : AstRewriter
             return null;
         }
 
+        // A common routine called on a handle's type (`T.from_serial(value:)` with `T` the handle `Roamed[E]`) is the
+        // entity's own: the handle has none, and the entity's gives the handle back.
+        if (routine.Kind == RoutineKind.CommonRoutine && receiver is RecordTypeSymbol
+            {
+                GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [{ } handled]
+            } && handled.FullName == routine.OwnerType!.FullName)
+        {
+            return null;
+        }
+
         // A Suflae entity's routine takes the Roamed handle as `me`, so a `Roamed[Point]` receiver is already
         // its own receiver.
         bool otherOwner = routine.OwnerType is not ProtocolTypeSymbol && routine.OwnerType!.FullName != receiver.FullName &&

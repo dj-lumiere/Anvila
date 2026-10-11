@@ -118,6 +118,19 @@ public sealed partial class SemanticVerifier
 
     private TypeSymbol AnalyzeCallExpression(CallExpression call, TypeSymbol? expectedType = null)
     {
+        // `from_serial` is the builder's own: a program reads a value back with `sv.to[T]()`. The call's own file
+        // says who wrote it: a library body is analyzed from the program that reaches it, and a body the builder
+        // writes has no file.
+        if (call.Callee is MemberExpression { MemberName: Instantiation.AutoWiredRegistrationPass.FromSerialRoutineName } &&
+            IsProgramFile(filePath: call.Location.FileName))
+        {
+            ReportError(code: SemanticDiagnosticCode.FromSerialIsBuilderInternal,
+                message: "'from_serial' is the builder's own routine. Read the value back with 'sv.to[T]()' " +
+                         "(for example 'sv.to[Point]()').",
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         // A call the builder bound to a recovery variant names the failable routine it recovers (the
         // variant has its name and parameters): keep the binding and analyze only the arguments, since
         // resolving the name again would bind the failable routine.
@@ -601,8 +614,13 @@ public sealed partial class SemanticVerifier
         // another module's routine of the same bare name must not shadow it, and neither may a foreign
         // (C/LLVM) routine, reachable only through its realm qualifier (the bare lookup falls back to
         // `Core.add`, which the `LLVM::add[T]` intrinsic owns).
+        // A call never writes `!`, so the module's failable routine (`two_sum!`) is its routine too: a non-failable
+        // one of the same name elsewhere (the library's `two_sum`) must not win over it.
         RoutineInfo? routine = _currentModuleName != null && !callName.Contains(value: '.')
-            ? _registry.LookupRoutine(fullName: $"{_currentModuleName}.{callName}", isFailable: isFailableCall)
+            ? _registry.LookupRoutine(fullName: $"{_currentModuleName}.{callName}", isFailable: isFailableCall) ??
+              (isFailableCall
+                  ? null
+                  : _registry.LookupRoutine(fullName: $"{_currentModuleName}.{callName}", isFailable: true))
             : null;
         routine ??= _registry.LookupRoutine(fullName: callName, isFailable: isFailableCall);
 
@@ -1216,8 +1234,27 @@ public sealed partial class SemanticVerifier
     private bool IsOwnTypeConversion(string name, TypeSymbol owner, IReadOnlyList<TypeSymbol> typeArguments,
         SourceLocation location)
     {
-        return name == ToConversionName && typeArguments is [{ } only] && only.FullName == owner.FullName &&
+        return name == ToConversionName && typeArguments is [{ } only] && SameTypeInRealm(a: only, b: owner) &&
                !IsStdlibFile(filePath: location.FileName);
+    }
+
+    /// <summary>Whether two types are the same type: the same name in the same language's library (Suflae's
+    /// <c>List[Text]</c> and RazorForge's are two types of one name).</summary>
+    internal static bool SameTypeInRealm(TypeSymbol a, TypeSymbol b)
+    {
+        return a.FullName == b.FullName && DefinitionOf(type: a).Realm == DefinitionOf(type: b).Realm;
+    }
+
+    /// <summary>The generic definition a type is an instance of, or the type itself.</summary>
+    internal static TypeSymbol DefinitionOf(TypeSymbol type)
+    {
+        return type switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } r } => r,
+            EntityTypeSymbol { GenericDefinition: { } e } => e,
+            ProtocolTypeSymbol { GenericDefinition: { } p } => p,
+            _ => type
+        };
     }
 
     /// <summary>The routine family conversions are written with: <c>routine S64.to[U8]()</c>.</summary>
@@ -1239,28 +1276,6 @@ public sealed partial class SemanticVerifier
         string creatorName = RoutineInfo.CreatorName;
 
         TypeSymbol? targetType = LookupTypeWithImports(name: potentialTypeName);
-
-        // Type-arg inference for a memberRoutine-chain variant arm extractor: `sv.Dict()` where `Dict`
-        // is a generic definition and the receiver is a variant — adopt the type arguments of the
-        // variant's arm whose generic base is `Dict` (mirrors the construction-form inference), so
-        // the concrete `Dict[Text, SerialValue].create!(from: sv)` is found instead of the def's
-        // bare `Dict.create()` (which trips RF-S770 with 0 params).
-        if (targetType is { IsGenericDefinition: true } &&
-            objectType is VariantTypeSymbol mcVariant)
-        {
-            string mcBase = targetType.Name;
-            VariantMemberInfo? mcArm = mcVariant.Members.FirstOrDefault(predicate: m =>
-                !m.IsNone && m.Type is not null && (m.Type switch
-                {
-                    EntityTypeSymbol e => e.GenericDefinition?.Name,
-                    RecordTypeSymbol r => r.GenericDefinition?.Name,
-                    _ => null
-                } ?? m.Type.Name) == mcBase);
-            if (mcArm?.Type is { } mcArmType)
-            {
-                targetType = mcArmType;
-            }
-        }
 
         return AnalyzeMemberConversion(call: call,
             objectType: objectType,
@@ -1563,27 +1578,8 @@ public sealed partial class SemanticVerifier
             AppendDefaultArguments(call: call, routine: creator, arguments: call.Arguments);
         }
 
-        // An auto-generated variant arm EXTRACTOR `Arm.create!(from: V)` is synthesized
-        // but has a real pattern-matching body — it is NOT a memberwise field-init, and
-        // for a scalar arm (S32) `ClassifyConstruction` would tag it a value conversion,
-        // making codegen bit-reinterpret the variant. Treat it as a normal memberRoutine call and
-        // route it through ResolvedRoutine below.
-        bool isVariantArmExtractor = creator is
-            { IsCreator: true, IsFailable: true, Parameters: [{ Type: VariantTypeSymbol }] };
-
-        // The extractor is synthesized bodiless — its real pattern-matching body is minted HERE, keyed
-        // off the EXACT overload SA just resolved (no name-scan): `when from { is Arm v => return
-        // v.duplicate(), else => absent }`. AnalyzeVariantBodies annotates it later like a try/check
-        // body; without this the bare `Dict!(from: sv)` call link-fails as "declared+called never defined".
-        if (isVariantArmExtractor)
-        {
-            EnsureVariantArmExtractorBody(extractor: creator!);
-        }
-
         call.ConstructedType = callableType;
-        call.LoweringKind = isVariantArmExtractor
-            ? ClassifyMemberRoutineCall(memberRoutine: creator)
-            : ClassifyConstruction(type: callableType);
+        call.LoweringKind = ClassifyConstruction(type: callableType);
 
         // `Type(...)` written *inside* Type's own `create` only needs the
         // inline base case when it resolves back to the SAME `create` we are
@@ -1604,7 +1600,7 @@ public sealed partial class SemanticVerifier
         // is left to inline construction in codegen. A type parameter's creator (bound through a protocol it
         // obeys) is a real call that instantiation rebinds.
         if (!insideOwnCreate &&
-            (!creator.IsSynthesized || isVariantArmExtractor || callableType is GenericParameterTypeSymbol))
+            (!creator.IsSynthesized || callableType is GenericParameterTypeSymbol))
         {
             call.ResolvedRoutine = creator;
             TrackFailableConstructorCall(creator: creator,
@@ -2248,10 +2244,24 @@ public sealed partial class SemanticVerifier
             return sameSet;
         }
 
+        // The bare-name lookup can hand back the only routine of that name whatever it takes (the library's
+        // `two_sum(a: B64, b: B64)` for a program's `two_sum(nums:, target:)`): it counts only when it takes the
+        // arguments.
         return _registry.LookupRoutineOverload(baseName: callName, argTypes: argTypes) is { } byName &&
-               IsFreeRoutineVisible(routine: byName)
+               IsFreeRoutineVisible(routine: byName) && TakesArgumentTypes(routine: byName, argTypes: argTypes)
             ? byName
             : null;
+    }
+
+    /// <summary>Whether <paramref name="routine"/> has a parameter for each of <paramref name="argTypes"/>, in order,
+    /// that takes it.</summary>
+    private bool TakesArgumentTypes(RoutineInfo routine, List<TypeSymbol> argTypes)
+    {
+        List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
+        return parameters.Count >= argTypes.Count && argTypes.Select(selector: (t, i) =>
+                   parameters[index: i].Type is GenericParameterTypeSymbol ||
+                   IsAssignableTo(source: t, target: parameters[index: i].Type))
+              .All(predicate: ok => ok);
     }
 
     /// <summary>Whether a free routine is visible in the file being analyzed: declared in this module, in
@@ -3982,6 +3992,20 @@ public sealed partial class SemanticVerifier
                     $"with {argTypes.Count} argument(s).",
                     location: call.Location);
             }
+            else if (type is RecordTypeSymbol { BackendType: not null } && !IsRepresentationChange(call: call))
+            {
+                // A primitive has no member variables to fill: its construction from one value reads that value's
+                // bits, so the value must be a primitive too. A variant holding one gives it up with `to`.
+                string from = argTypes is [{ } only] ? $" from a '{only.Name}'" : "";
+                string hint = argTypes is [VariantTypeSymbol] && call.Arguments is [var arm]
+                    ? $" If the value holds one, take it out with '{Unnamed(argument: arm)}.to[{type.Name}]()'."
+                    : $" Convert with '.to[{type.Name}]()' where a conversion exists.";
+                ReportError(code: SemanticDiagnosticCode.SpecializationNotFound,
+                    message: $"A '{type.Name}' is not built{from}: no creator of '{type.Name}' takes these arguments." +
+                             hint,
+                    location: call.Location);
+                return ErrorTypeSymbol.Instance;
+            }
             else
             {
                 ReportUnknownMemberVariableArguments(call: call, type: type);
@@ -3993,6 +4017,25 @@ public sealed partial class SemanticVerifier
         call.IsInFlight = type.ImplicitConstructorReturnsInFlight;
 
         return type;
+    }
+
+    /// <summary>True when a primitive's construction reads another primitive's bits (`S64(x)` with `x` a `U64`):
+    /// one unnamed argument of a type the backend represents.</summary>
+    private static bool IsRepresentationChange(CallExpression call)
+    {
+        return call.Arguments is [{ } value] && value is not NamedArgumentExpression &&
+               value.ResolvedType is RecordTypeSymbol { BackendType: not null } or null;
+    }
+
+    /// <summary>The source text of an argument as the program wrote it, for a message.</summary>
+    private static string Unnamed(Expression argument)
+    {
+        return argument switch
+        {
+            NamedArgumentExpression named => Unnamed(argument: named.Value),
+            IdentifierExpression id => id.Name,
+            _ => "value"
+        };
     }
 
     /// <summary>
