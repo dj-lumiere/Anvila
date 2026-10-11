@@ -372,6 +372,14 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             nextOnlyPropagation: false);
     }
 
+    /// <summary>Whether <paramref name="body"/> holds a buildtime <c>expand</c>.</summary>
+    internal static bool HasExpand(Statement body)
+    {
+        bool found = false;
+        AstWalker.Walk(root: body, visit: node => found |= node is ExpandStatement);
+        return found;
+    }
+
     /// <summary>
     /// A tail-return rewriter for on-demand variant-body generation: identical to
     /// <see cref="MakeNextVariantRewriter"/> but NOT restricted to <c>emit</c> — it rewrites a tail call to
@@ -622,6 +630,16 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             LoopStatement loop => loop with
             {
                 Body = TransformBodyCore(body: loop.Body,
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly)
+            },
+
+            // A buildtime `expand` repeats its body for each member: the body's failures are this variant's.
+            ExpandStatement expand => expand with
+            {
+                Body = TransformBodyCore(body: expand.Body,
                     kind: kind,
                     rewriter: rewriter,
                     registry: registry,
@@ -1445,10 +1463,16 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         // SemanticVerifier.Recovery — hoists FREE failable calls, which have no OwnerType).
         RoutineInfo? variant = registry.LookupRecoveryVariant(recovered: failRoutine, kind: RecoveryKind.Try);
 
-        if (variant?.ReturnType is not { } carrier)
+        // The carrier of what the call returns here: a call bound to one member of a specialization family
+        // (`text.to[T]()` in a generic body) returns the `T` it names, not that member's result.
+        if (variant?.ReturnType == null)
         {
             return false;
         }
+
+        TypeSymbol carrier = failRoutine.IsSpecialization || (failRoutine.GenericDefinition?.IsSpecialization ?? false)
+            ? CarrierHere(call: failCall, variant: variant, registry: registry) ?? variant.ReturnType
+            : variant.ReturnType;
 
         // A protocol's routine reached through a receiver whose type is a parameter carries `Me` in its result
         // (`Emittable.emit!() -> Me/Item`). `Me` is that receiver, not the routine this statement is in.

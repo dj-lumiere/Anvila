@@ -584,7 +584,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         var stmts = new List<Statement>(capacity: destruct.Pattern.Bindings.Count + 1)
         {
             new DeclarationStatement(Declaration: new VariableDeclaration(Name: tmpName,
-                    Type: null,
+                    Type: destruct.DeclaredType,
                     Initializer: destruct.Initializer,
                     Visibility: VisibilityModifier.Secret,
                     Location: loc),

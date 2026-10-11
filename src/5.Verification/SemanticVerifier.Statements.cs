@@ -112,7 +112,9 @@ public sealed partial class SemanticVerifier
                 return;
             }
 
-            TypeSymbol valueType = AnalyzeExpression(expression: preset.Value, expectedType: presetType);
+            // The value resolves where it was written: that file's imports.
+            TypeSymbol valueType = InImportStateOf(file: preset.Location.FileName,
+                analyze: () => AnalyzeExpression(expression: preset.Value, expectedType: presetType));
             if (valueType is not ErrorTypeSymbol && !IsAssignableTo(source: valueType, target: presetType))
             {
                 ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
@@ -288,6 +290,10 @@ public sealed partial class SemanticVerifier
         // pinned at registration tells which one this body is.
         if (routine.ResolvedInfo is { } realmPinned &&
             (realmPinned.SurfaceRealm != null || realmPinned.IsSpecialization ||
+             // A routine written for a kind of type argument (`routine Text.to[T]() needs TupleType T`) shares its
+             // name with the family's specializations too.
+             realmPinned is { GenericParameters.Count: > 0, OwnerType: { } kindOwner } &&
+             _registry.LookupSpecializedMemberRoutines(owner: kindOwner, name: realmPinned.Name).Count > 0 ||
              realmPinned.OwnerType is { } pinnedOwner && pinnedOwner.Realm != _registry.AmbientRealm))
         {
             // The registry holds the info as later passes completed it (a signature resolved again once every

@@ -542,6 +542,13 @@ public sealed partial class SemanticVerifier
             baseBody = new Builder.Desugaring.Passes.GenericCallLoweringPass(registry: _registry,
                 variantBodies: new Dictionary<string, Statement>()).VisitStatement(stmt: baseBody);
 
+            // A generic body that unrolls an `expand` over its own type parameter has its failable calls only once
+            // the types are known: its variants are built from each monomorphized body instead.
+            if (baseRoutine.GenericParameters is { Count: > 0 } && ErrorHandlingVariantPass.HasExpand(body: baseBody))
+            {
+                continue;
+            }
+
             foreach (GeneratedVariant variant in variants)
             {
                 string key = variant.Routine.RegistryKey;
@@ -984,6 +991,12 @@ public sealed partial class SemanticVerifier
         if (decl.ResolvedInfo is { } own && (own.SurfaceRealm != null ||
                                              own.OwnerType is GenericParameterTypeSymbol ||
                                              own.IsSpecialization ||
+                                             // A routine written for a kind of type argument
+                                             // (`routine Text.to[T]() needs TupleType T`) shares its name
+                                             // with the family's specializations.
+                                             own is { GenericParameters.Count: > 0, OwnerType: { } kindOwner } &&
+                                             _registry.LookupSpecializedMemberRoutines(owner: kindOwner,
+                                                 name: own.Name).Count > 0 ||
                                              own.OwnerType is { } ownOwner && ownOwner.Realm != _registry.AmbientRealm))
         {
             return _registry.GetRoutineByExactKey(registryKey: own.RegistryKey) ?? own;

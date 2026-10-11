@@ -2773,6 +2773,65 @@ public sealed partial class TypeRegistry
                                                .All(predicate: pair => pair.First.FullName == pair.Second.FullName));
     }
 
+    /// <summary>
+    /// The routine a call of the family <paramref name="name"/> on <paramref name="owner"/> with
+    /// <paramref name="typeArguments"/> runs: the specialization written for exactly those arguments, or else the
+    /// instance of the routine written for their kind (see <see cref="LookupKindGatedMemberRoutine"/>). Null when
+    /// neither exists.
+    /// </summary>
+    public RoutineInfo? LookupFamilyMember(TypeSymbol owner, string name, IReadOnlyList<TypeSymbol> typeArguments)
+    {
+        return LookupSpecializedMemberRoutine(owner: owner, name: name, typeArguments: typeArguments) ??
+               (LookupKindGatedMemberRoutine(owner: owner, name: name, typeArguments: typeArguments) is { } forKind
+                   ? GetOrCreateRoutineResolution(genericDef: forKind, typeArguments: typeArguments.ToList())
+                   : null);
+    }
+
+    /// <summary>
+    /// The routine of the family <paramref name="name"/> on <paramref name="owner"/> written for a whole kind of type
+    /// argument instead of one type: a generic member routine whose own parameters take
+    /// <paramref name="typeArguments"/> under its kind gates (<c>routine Text.to[T]() -> T needs TupleType T</c> for
+    /// <c>line.to[(S64, S64)]()</c>). A specialization written for the exact arguments wins over it, so this is asked
+    /// only when there is none. Null when no such routine admits the arguments.
+    /// </summary>
+    public RoutineInfo? LookupKindGatedMemberRoutine(TypeSymbol owner, string name,
+        IReadOnlyList<TypeSymbol> typeArguments)
+    {
+        if (typeArguments.Any(predicate: t => t is GenericParameterTypeSymbol or ErrorTypeSymbol))
+        {
+            return null;
+        }
+
+        var candidates = new List<RoutineInfo>();
+        CollectMemberRoutineCandidates(type: owner, memberRoutineName: name, candidates: candidates);
+        foreach (RoutineInfo candidate in candidates)
+        {
+            if (candidate is not { IsSpecialization: false, IsRecoveryVariant: false, GenericParameters: { } own } ||
+                own.Count != typeArguments.Count)
+            {
+                continue;
+            }
+
+            List<GenericConstraintDeclaration> gates = candidate.GenericConstraints ?? [];
+            bool admits = true;
+            for (int i = 0; i < own.Count && admits; i++)
+            {
+                List<GenericConstraintDeclaration> mine = gates.Where(predicate: c => c.ParameterName == own[index: i])
+                                                               .ToList();
+                admits = mine.Count > 0 &&
+                         mine.All(predicate: c => ImplementerSatisfiesConstraint(implementer: typeArguments[index: i],
+                             constraint: c));
+            }
+
+            if (admits)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Whether the kind gates among <paramref name="constraints"/> (<c>needs ChoiceType T</c>, ...) let
     /// <paramref name="type"/> through. An <c>obeys</c> constraint is not a kind gate.</summary>
     internal static bool KindGatesAdmit(IEnumerable<GenericConstraintDeclaration> constraints, TypeSymbol type)

@@ -35,8 +35,13 @@ internal static class RoutineSpecialization
             return null;
         }
 
+        // A receiver that is a plain type (`routine Text.to[Text]()`) brings no parameters of its own, so a bracket
+        // name equal to its name is still the bracket's.
+        bool plainReceiver = routine.OwnerName is { } ownerName && receiverLeaves.All(predicate: leaf => leaf == ownerName) &&
+                             resolve(arg: ownerName) is { IsGenericDefinition: false } and not GenericParameterTypeSymbol;
         List<string> own = routine.GenericParameters?
-                                  .Where(predicate: name => !receiverLeaves.Contains(item: name) &&
+                                  .Where(predicate: name => plainReceiver ||
+                                                            !receiverLeaves.Contains(item: name) &&
                                                             name != routine.OwnerName)
                                   .ToList() ?? [];
         if (own.Count == 0)

@@ -243,6 +243,20 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
             return expr;
         }
 
+        // A preset of this file wins over a preset of the same name declared in another module (the registry
+        // keeps one of them under the bare name).
+        if (v is { IsPreset: true } && _ownPresets is not null &&
+            _ownPresets.TryGetValue(key: id.Name, value: out PresetDeclaration? own) &&
+            !ReferenceEquals(objA: own.Value, objB: v.PresetValue))
+        {
+            return own.Value switch
+            {
+                ListLiteralExpression => expr,
+                LiteralExpression ownLiteral => ownLiteral with { ResolvedType = id.ResolvedType ?? ownLiteral.ResolvedType },
+                _ => InlineComposedPreset(id: id, value: own.Value, resolvedType: id.ResolvedType ?? own.Value.ResolvedType)
+            };
+        }
+
         if (v is { IsPreset: true, PresetValue: not null })
         {
             // Aggregate (Array[T,N]) presets are NOT inlined: substituting the whole list

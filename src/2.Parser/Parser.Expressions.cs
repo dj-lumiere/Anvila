@@ -589,7 +589,7 @@ public partial class Parser
                 $"'is' matches a variant TYPE only. For a flags membership test, use 'have {CurrentToken.Text} …' (or 'lack …').");
         }
 
-        if (Check(type: TokenType.None) || Check(type: TokenType.Identifier))
+        if (Check(type: TokenType.None) || Check(type: TokenType.Identifier) || Check(type: TokenType.LeftParen))
         {
             pattern = ParseTypePattern();
         }
@@ -612,7 +612,7 @@ public partial class Parser
     {
         _inWhenPatternContext = true;
         Pattern pattern;
-        if (Check(type: TokenType.None) || Check(type: TokenType.Identifier))
+        if (Check(type: TokenType.None) || Check(type: TokenType.Identifier) || Check(type: TokenType.LeftParen))
         {
             TypeExpression type = ParseType();
             pattern = new NegatedTypePattern(Type: type, Location: clauseLocation);

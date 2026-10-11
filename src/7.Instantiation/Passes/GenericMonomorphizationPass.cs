@@ -3062,12 +3062,21 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         };
         if (fallbackKind != null)
         {
+            // A body that unrolled an `expand` had no variant built before its types were known (its failable
+            // calls exist only now), so every one of its failable calls is recovered here.
+            bool unrolled = ErrorHandlingVariantPass.HasExpand(body: astDecl.Body);
+            Statement source = unrolled
+                ? new Builder.Desugaring.Passes.GenericCallLoweringPass(registry: ctx.Registry,
+                    variantBodies: new Dictionary<string, Statement>()).VisitStatement(stmt: rewrittenDecl.Body)
+                : rewrittenDecl.Body;
             Statement transformed = ErrorHandlingVariantPass.TransformBody(
-                body: rewrittenDecl.Body,
+                body: source,
                 kind: fallbackKind.Value,
-                rewriter: ErrorHandlingVariantPass.MakeNextVariantRewriter(registry: ctx.Registry),
+                rewriter: unrolled
+                    ? ErrorHandlingVariantPass.MakeOnDemandVariantRewriter(registry: ctx.Registry)
+                    : ErrorHandlingVariantPass.MakeNextVariantRewriter(registry: ctx.Registry),
                 registry: ctx.Registry,
-                nextOnlyPropagation: true);
+                nextOnlyPropagation: !unrolled);
             rewrittenDecl = rewrittenDecl with { Body = transformed };
         }
 

@@ -1256,6 +1256,14 @@ internal partial class Program
                 return phase1Result;
             }
 
+            // Presets that compute their value are computed now, once, and become the values they came to.
+            int presetResult = PresetEvaluation.Run(language: language, entryFile: entryFile,
+                projectRoot: projectRoot, orderedFiles: orderedFiles);
+            if (presetResult != 0)
+            {
+                return presetResult;
+            }
+
             // Phase 2: Semantic analysis (multi-file) — extracted to keep this method's complexity ≤15.
             var phase2Ctx = new Phase2Context(Language: language,
                 BuildMode: buildMode,

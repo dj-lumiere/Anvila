@@ -494,7 +494,7 @@ internal static class GenericAstRewriter
             if ((specializationBase.GenericDefinition ?? specializationBase).IsSpecialization &&
                 specializationBase.TypeArguments is { } specializedArguments && resolvedOwner != null)
             {
-                RoutineInfo? specialization = Registry!.LookupSpecializedMemberRoutine(owner: resolvedOwner,
+                RoutineInfo? specialization = Registry!.LookupFamilyMember(owner: resolvedOwner,
                     name: specializationBase.Name,
                     typeArguments: specializedArguments.Select(selector: t => ResolveTypeForLookup(original: t) ?? t)
                                                        .ToList());
@@ -1059,7 +1059,7 @@ internal static class GenericAstRewriter
                 return null;
             }
 
-            RoutineInfo? picked = Registry!.LookupSpecializedMemberRoutine(owner: concreteOwner,
+            RoutineInfo? picked = Registry!.LookupFamilyMember(owner: concreteOwner,
                 name: specialization.Name,
                 typeArguments: args);
             return picked != null && current!.Recovery is { } recovery
@@ -2750,10 +2750,31 @@ internal static class GenericAstRewriter
     /// <c>x.${m.name}</c> splices rewritten to real member accesses. The per-member clones are
     /// flattened into one block (no per-iteration scope, so an outer accumulator var stays visible).
     /// </summary>
+    /// <summary>Whether <paramref name="name"/> names no type here: no substitution binds it and no registered type
+    /// has the name (a type parameter of a body copied before monomorphization).</summary>
+    private static bool IsUnboundTypeParameter(string name, RewriteContext ctx)
+    {
+        return ctx.TypeSubs?.ContainsKey(key: name) != true && ctx.Registry?.LookupType(name: name) == null;
+    }
+
     private static BlockStatement RewriteExpandStatement(ExpandStatement expand,
         RewriteContext ctx)
     {
         TypeSymbol? source = ResolveExpandSource(sourceType: expand.SourceType, ctx: ctx);
+        if (Environment.GetEnvironmentVariable(variable: "RF_DEBUG_EXPAND") != null)
+        {
+            Console.Error.WriteLine(value: $"[expand] {expand.SourceType.Name} -> {source?.Name ?? "null"} clone={ctx.CloneOnly} subs=[{string.Join(separator: ",", values: ctx.TypeSubs?.Select(selector: kv => kv.Key + "=" + kv.Value.Name) ?? [])}] at {expand.Location.Line}");
+            Console.Error.WriteLine(value: string.Join(separator: " < ", values: Environment.StackTrace.Split(separator: '\n').Select(selector: l => l.Trim()).Where(predicate: l => l.Contains(value: "Builder.") && !l.Contains(value: "GenericAstRewriter")).Take(4)));
+        }
+
+        // A source that is still a type parameter (a copy of a generic body made before its types are known, such
+        // as a recovery variant's) is unrolled later, by the monomorphization that knows it: unrolled now, the body
+        // would repeat zero times.
+        if (source is null or GenericParameterTypeSymbol && IsUnboundTypeParameter(name: expand.SourceType.Name, ctx: ctx))
+        {
+            return new BlockStatement(Statements: [expand with { Body = RewriteStatement(stmt: expand.Body, ctx: ctx) }],
+                Location: expand.Location);
+        }
 
         // caseof(T): iterate a choice's cases (S32 discriminants) or a flags' members (U64 bit values),
         // exposing c.name / c.id (ordinal) / c.value (the numeric constant, spliced via ${c.value}).

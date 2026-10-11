@@ -960,7 +960,16 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeDestructuringStatement(DestructuringStatement destruct)
     {
-        TypeSymbol initType = AnalyzeExpression(expression: destruct.Initializer);
+        TypeSymbol? declared = destruct.DeclaredType is { } written
+            ? ResolveType(typeExpr: written)
+            : null;
+        TypeSymbol initType = AnalyzeExpression(expression: destruct.Initializer, expectedType: declared);
+        if (declared != null && initType is not ErrorTypeSymbol && !IsAssignableTo(source: initType, target: declared))
+        {
+            ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
+                message: $"The value is a '{initType.Name}', but the names are declared as '{declared.Name}'.",
+                location: destruct.Initializer.Location);
+        }
 
         // Analyze the destructuring pattern and bind variables
         AnalyzeDestructuringPattern(pattern: destruct.Pattern, sourceType: initType);

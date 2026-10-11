@@ -1150,6 +1150,34 @@ public sealed partial class SemanticVerifier
 
         RoutineInfo? chosen = family.FirstOrDefault(predicate: r => r.TypeArguments is [var only] &&
                                                                     only.FullName == expectedType.FullName);
+        if (chosen != null && IsOwnTypeConversion(name: member.MemberName, owner: objectType,
+                typeArguments: [expectedType], location: call.Location))
+        {
+            chosen = null;
+        }
+
+        // No routine for exactly this type: one written for its kind (`needs TupleType T`) takes it, instantiated
+        // for the type as an explicit `x.to[(S64, S64)]()` would be, and the call is bound to that instance.
+        if (chosen == null && _registry.LookupKindGatedMemberRoutine(owner: objectType, name: member.MemberName,
+                typeArguments: [expectedType]) is { } forKind)
+        {
+            var spelled = new GenericMemberRoutineCallExpression(Object: member.Object,
+                MemberRoutineName: member.MemberName,
+                TypeArguments: [new TypeExpression(Name: expectedType.Name, GenericArguments: null,
+                    Location: call.Location) { KnownType = expectedType }],
+                Arguments: call.Arguments,
+                IsMemoryOperation: false,
+                Location: call.Location);
+            TypeSymbol result = AnalyzeGenericReceiverMemberRoutineCall(generic: spelled,
+                objectType: objectType,
+                memberRoutine: forKind,
+                typeArgs: [expectedType]);
+            call.ResolvedRoutine = spelled.ResolvedRoutine;
+            call.LoweringKind = spelled.LoweringKind;
+            call.IsInFlight = spelled.IsInFlight;
+            return result;
+        }
+
         if (chosen == null)
         {
             ReportSpecializationNotFound(name: member.MemberName, owner: objectType, typeArguments: [expectedType],
@@ -1182,6 +1210,14 @@ public sealed partial class SemanticVerifier
                     ? $"The value is already a '{owner.Name}'. Use it as it is, without '.to[{arguments}]()'."
                     : $"There is no conversion from '{owner.Name}' to '{arguments}'.";
         ReportError(code: SemanticDiagnosticCode.SpecializationNotFound, message: message, location: location);
+    }
+
+    /// <summary>Whether a call in a program (not the library) converts a value to its own type.</summary>
+    private bool IsOwnTypeConversion(string name, TypeSymbol owner, IReadOnlyList<TypeSymbol> typeArguments,
+        SourceLocation location)
+    {
+        return name == ToConversionName && typeArguments is [{ } only] && only.FullName == owner.FullName &&
+               !IsStdlibFile(filePath: location.FileName);
     }
 
     /// <summary>The routine family conversions are written with: <c>routine S64.to[U8]()</c>.</summary>

@@ -136,6 +136,10 @@ public record DestructuringStatement(
     Expression Initializer,
     SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The type written after the names (<c>var (a, b): (S64, S64) = ask()</c>), which the initializer is
+    /// read as, or null when none is written.</summary>
+    public TypeExpression? DeclaredType { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

@@ -59,6 +59,14 @@ public sealed partial class SemanticVerifier
                 r.TypeArguments is { } args && args.Count == typeArgs.Count &&
                 args.Zip(second: typeArgs).All(predicate: pair => pair.First.FullName == pair.Second.FullName));
 
+            // The library converts a value to its own type where generic code needs one (a `Text` item of a tuple
+            // read from text), a program never does: it uses the value as it is.
+            if (chosen != null && IsOwnTypeConversion(name: generic.MemberRoutineName, owner: objectType,
+                    typeArguments: typeArgs, location: generic.Location))
+            {
+                chosen = null;
+            }
+
             // In a generic body (`line.to[T]()`), which member of the family it is depends on `T`: the call is bound to
             // one of them for now (they share their name, parameters and failability), and monomorphization picks
             // the one for the concrete type arguments. Its value has the type the written arguments say.
@@ -75,6 +83,16 @@ public sealed partial class SemanticVerifier
                     : stand.ReturnType ?? ErrorTypeSymbol.Instance;
                 generic.ResolvedType = value;
                 return value;
+            }
+
+            // No routine for exactly these arguments: one written for their kind (`needs TupleType T`) takes them.
+            if (chosen == null && _registry.LookupKindGatedMemberRoutine(owner: objectType,
+                    name: generic.MemberRoutineName, typeArguments: typeArgs) is { } forKind)
+            {
+                return AnalyzeGenericReceiverMemberRoutineCall(generic: generic,
+                    objectType: objectType,
+                    memberRoutine: forKind,
+                    typeArgs: typeArgs);
             }
 
             if (chosen == null)

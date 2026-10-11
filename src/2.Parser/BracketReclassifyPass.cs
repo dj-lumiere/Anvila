@@ -158,6 +158,10 @@ internal static class BracketReclassifyPass
             // seen in isolation; as a TYPE argument it is a nested generic instantiation. The Object
             // supplies the type name and the Index becomes the single (recursive) type argument.
             IndexExpression idx => NestedIndexToTypeArg(idx: idx),
+            // A tuple type as a type argument, `to[(S64, S64)]` (mirrors ParseTupleOrParenthesizedType).
+            TupleLiteralExpression tuple => new TypeExpression(Name: "Tuple",
+                GenericArguments: tuple.Elements.Select(selector: ExpressionToTypeArg).ToList(),
+                Location: tuple.Location),
             // Qualified type name a.b -> "a.b" (mirrors the dotted type path).
             MemberExpression mem => new TypeExpression(Name: QualifiedName(mem: mem),
                 GenericArguments: null,

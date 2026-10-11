@@ -3128,12 +3128,11 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <summary>
     /// Runs <paramref name="analyze"/> with the import state (imports, module, realm) of <paramref name="file"/>, then
-    /// puts the current state back. Runs it as it is when the file is the current one or left no snapshot.
+    /// puts the current state back. Runs it as it is when the file left no snapshot.
     /// </summary>
     private T InImportStateOf<T>(string file, Func<T> analyze)
     {
-        if (string.IsNullOrEmpty(value: file) || file == _currentFilePath ||
-            ResolveSnapshotFilePath(locationFile: file) is not { } snapshotFile)
+        if (string.IsNullOrEmpty(value: file) || ResolveSnapshotFilePath(locationFile: file) is not { } snapshotFile)
         {
             return analyze();
         }

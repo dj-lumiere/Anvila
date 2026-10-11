@@ -1008,6 +1008,19 @@ public partial class Parser
             return ParseNoneTypePattern(location: location);
         }
 
+        // A tuple type: `is (S64, S64) as pair`.
+        if (Check(type: TokenType.LeftParen))
+        {
+            TypeExpression tupleType = ParseType();
+            string? tupleName = ParsePatternBindingName(typeName: tupleType.Name);
+            return TryParseAndGuard(innerPattern: new TypePattern(Type: tupleType,
+                    VariableName: tupleName,
+                    Bindings: null,
+                    Location: location),
+                guardAllowed: tupleName != null,
+                location: location);
+        }
+
         if (!Check(type: TokenType.Identifier))
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedPattern,
@@ -1621,6 +1634,11 @@ public partial class Parser
 
         var pattern = new DestructuringPattern(Bindings: bindings, Location: location);
 
+        // An optional type the value is read as: `var (a, b): (S64, S64) = ask()`.
+        TypeExpression? declaredType = CheckAndAdvance(type: TokenType.Colon)
+            ? ParseType()
+            : null;
+
         // Expect '='
         Consume(type: TokenType.Assign, errorMessage: "Expected '=' in destructuring");
 
@@ -1631,6 +1649,6 @@ public partial class Parser
 
         return new DestructuringStatement(Pattern: pattern,
             Initializer: initializer,
-            Location: location);
+            Location: location) { DeclaredType = declaredType };
     }
 }
