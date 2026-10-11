@@ -925,6 +925,18 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             case StealExpression { Operand: IdentifierExpression id }:
                 _movedNames.Add(item: id.Name);
                 break;
+            // `x.release_inner()` takes the entity out of the handle `x` and ends the handle (an argument handed
+            // to a parameter that takes the entity over): `x` has moved out and is not torn down again.
+            case CallExpression
+                {
+                    Callee: MemberExpression
+                    {
+                        Object: IdentifierExpression released,
+                        MemberName: RuntimeContract.RoamedMemberRoutine.ReleaseInner
+                    }
+                }:
+                _movedNames.Add(item: released.Name);
+                break;
             // `T.retain()` / `T.track()` on a bare ENTITY consumes it (ownership moves into the
             // Constructing an RC wrapper FROM a bare entity moves the entity into the controller —
             // STRUCTURAL (name-agnostic): a call whose receiver is a bare entity and whose result is

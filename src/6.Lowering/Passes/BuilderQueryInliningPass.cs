@@ -450,6 +450,11 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         bool receiverIsInFlight = false)
     {
         EnsureTypes();
+        // A name question about a shared entity's handle is about the entity. Its size and id stay the handle's.
+        if (routineName is "type_name" or "full_type_name" or "module_name")
+        {
+            type = _registry.ReflectedType(type: type);
+        }
         string inFlightPrefix = receiverIsInFlight && type is EntityTypeSymbol
             ? "?"
             : "";

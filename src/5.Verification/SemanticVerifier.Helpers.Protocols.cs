@@ -110,8 +110,8 @@ public sealed partial class SemanticVerifier
                          !ImplementsProtocol(type: arg, protocolName: pe.Name)))
             {
                 ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
-                    message: $"Type '{arg.Name}' does not implement protocol '{protoExpr.Name}' " +
-                             $"required by constraint on '{c.ParameterName}'.",
+                    message: ProtocolViolationMessage(type: arg, protocolName: protoExpr.Name,
+                        parameterName: c.ParameterName),
                     location: location);
             }
         }
@@ -484,6 +484,59 @@ public sealed partial class SemanticVerifier
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The error for a type that does not obey a protocol a place asks for: which routine of the protocol it lacks, or
+    /// how its routine of that name differs. A parameter written with a protocol as its type (`shape: Shape`) is
+    /// generic in a hidden type parameter, which the message does not name.
+    /// </summary>
+    internal string ProtocolViolationMessage(TypeSymbol type, string protocolName, string parameterName)
+    {
+        string where = parameterName.StartsWith(value: "__", comparisonType: StringComparison.Ordinal)
+            ? ""
+            : $" (required of '{parameterName}')";
+        return $"'{type.Name}' does not obey '{protocolName}'{where}{ProtocolShortfall(type: type, protocolName: protocolName)}";
+    }
+
+    /// <summary>": it has no 'area() -> Decimal'." style ending naming the first protocol routine
+    /// <paramref name="type"/> lacks or writes differently, or "." when there is no single one to name.</summary>
+    private string ProtocolShortfall(TypeSymbol type, string protocolName)
+    {
+        if (LookupTypeWithImports(name: protocolName) is not ProtocolTypeSymbol protocol)
+        {
+            return ".";
+        }
+
+        foreach (ProtocolMemberRoutineInfo required in protocol.MemberRoutines.Where(predicate: m =>
+                     !m.HasDefaultImplementation && m.IsInstanceMemberRoutine))
+        {
+            string wanted = $"{required.Name}({string.Join(separator: ", ", values: required.ParameterNames.Zip(
+                second: required.ParameterTypes, resultSelector: (n, t) => $"{n}: {ShowProtocolType(type: t, owner: type)}"))})" +
+                            (required.ReturnType is { } r ? $" -> {ShowProtocolType(type: r, owner: type)}" : "");
+            RoutineInfo? own = _registry.LookupMemberRoutine(type: type, memberRoutineName: required.Name) ??
+                               _registry.LookupMemberRoutine(type: type, memberRoutineName: required.Name,
+                                   isFailable: true);
+            if (own == null || own.OwnerType is ProtocolTypeSymbol)
+            {
+                return $": it has no routine '{wanted}'. Write 'routine {type.Name}.{wanted}'.";
+            }
+
+            if (!memberRoutineSignatureMatches(typeMemberRoutine: own, protoMemberRoutine: required))
+            {
+                string has = $"{own.Name}({string.Join(separator: ", ", values: own.Parameters.Where(predicate: p => p.Name != "me").Select(selector: p => $"{p.Name}: {p.Type.Name}"))})" +
+                             (own.ReturnType is { } ownReturn ? $" -> {ownReturn.Name}" : "");
+                return $": its '{has}' does not match the protocol's '{wanted}'.";
+            }
+        }
+
+        return ".";
+    }
+
+    /// <summary>A protocol signature's type as the implementer would write it: `Me` is the implementer.</summary>
+    private static string ShowProtocolType(TypeSymbol type, TypeSymbol owner)
+    {
+        return type is ProtocolSelfTypeSymbol ? owner.Name : type.Name;
     }
 
     /// <summary>

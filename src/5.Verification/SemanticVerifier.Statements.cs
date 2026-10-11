@@ -165,6 +165,13 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // A routine with a parameter written without a type is checked where it is made concrete, once per set of
+        // types it is used with (AnalyzePerUseBodyOnDemand): as written, its body says nothing about that value.
+        if (routine.IsCheckedPerUse)
+        {
+            return;
+        }
+
         // A user-defined `destruct` replaces the builder-generated memory teardown (field
         // recursion + invalidate `me`), so the author owns freeing `me` and its fields. Require
         // `dangerous` so this opt-in to manual memory management is explicit at the declaration.

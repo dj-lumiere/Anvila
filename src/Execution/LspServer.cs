@@ -2857,7 +2857,7 @@ public static class LspServer
             (int Line, int Column) key = (cid.Location.Line, cid.Location.Column);
 
             // Making a value: a creator, a record built field by field (no routine behind it), or a type's
-            // conversion routine (`CStr(from: text)`). The callee names the type that was made.
+            // creator taking its source (`Retained(from: steal e)`). The callee names the type that was made.
             TypeSymbol? made = call.ResolvedRoutine switch
             {
                 { Kind: RoutineKind.Creator } creator => call.ResolvedType ?? creator.OwnerType,

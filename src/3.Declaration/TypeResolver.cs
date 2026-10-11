@@ -872,8 +872,8 @@ internal sealed class TypeResolver
                      !_sa.ImplementsProtocol(type: typeArg, protocolName: p.Name)))
         {
             _sa.ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
-                message:
-                $"Type '{typeArg.Name}' does not implement protocol '{protoExpr.Name}' required by constraint on '{constraint.ParameterName}'.",
+                message: _sa.ProtocolViolationMessage(type: typeArg, protocolName: protoExpr.Name,
+                    parameterName: constraint.ParameterName),
                 location: location);
         }
     }

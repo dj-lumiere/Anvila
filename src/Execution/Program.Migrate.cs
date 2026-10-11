@@ -1178,11 +1178,14 @@ internal partial class Program
             What: "d.add(key: k, value: v) → d[k] = v");
     }
 
-    /// <summary>The number types a conversion goes to with <c>to[T]()</c>.</summary>
+    /// <summary>The types a conversion goes to with <c>to[T]()</c>: a creator that computed its value from one value
+    /// of another type (<c>CStr(from: text)</c>, <c>Moment(from: local)</c>) is written as a conversion. A creator
+    /// whose argument becomes part of the new value as it is (<c>Retained(from: steal e)</c>) stays.</summary>
     private static readonly HashSet<string> NumericConversionTargets =
     [
         "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256",
-        "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256"
+        "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256",
+        "CStr", "CLong", "CULong", "CWChar", "Q128", "Q256", "Moment", "Bool", "Address"
     ];
 
     /// <summary>The argument labels a conversion creator was written with.</summary>

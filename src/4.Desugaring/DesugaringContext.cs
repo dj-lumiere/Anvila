@@ -68,6 +68,11 @@ public sealed class DesugaringContext
     public Func<TypeModel.Symbols.RoutineInfo, SyntaxTree.Statement, SyntaxTree.Statement>?
         AnalyzeMaterializedDeriveBody { get; set; }
 
+    /// <summary>Demand hook mirrored from <see cref="InstantiationContext.AnalyzePerUseBody"/>: analyzes one
+    /// concrete copy of a routine checked per use as the program's own code.</summary>
+    public Func<TypeModel.Symbols.RoutineInfo, SyntaxTree.Statement, SyntaxTree.Statement>?
+        AnalyzePerUseBody { get; set; }
+
     /// <summary>
     /// Builds the raw body of a variant-arm extractor creator (<c>Arm!(from: V)</c>:
     /// <c>when from { is Arm v =&gt; return v.duplicate(), else =&gt; absent }</c>) without storing it, or null

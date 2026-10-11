@@ -18,6 +18,36 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
     /// </summary>
     public void Run(Program program)
     {
+        // A routine checked per use has an unanalyzed body here: each concrete copy of it is analyzed and lowered
+        // where it is made (GenericMonomorphizationPass), so the written body is set aside while the file is
+        // lowered and put back in its place after.
+        List<(int Index, ISyntaxTreeNode Routine)> perUse = program.Declarations
+                                                                .Select(selector: (d, i) => (Index: i, Routine: d))
+                                                                .Where(predicate: e => e.Routine is RoutineDeclaration
+                                                                {
+                                                                    IsCheckedPerUse: true
+                                                                })
+                                                                .ToList();
+        for (int k = perUse.Count - 1; k >= 0; k--)
+        {
+            program.Declarations.RemoveAt(index: perUse[index: k].Index);
+        }
+
+        try
+        {
+            RunPasses(program: program);
+        }
+        finally
+        {
+            foreach ((int index, ISyntaxTreeNode routine) in perUse)
+            {
+                program.Declarations.Insert(index: index, item: routine);
+            }
+        }
+    }
+
+    private void RunPasses(Program program)
+    {
         // Lift lambdas FIRST: a lifted lambda is an ordinary routine appended to the program, so every pass
         // below lowers its body (f-strings, conversions, operators) like any other. Lifted last, its body
         // reached the emitter unlowered — the rewriters do not descend into a lambda expression.

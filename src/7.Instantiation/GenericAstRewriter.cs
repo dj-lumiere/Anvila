@@ -1844,7 +1844,8 @@ internal static class GenericAstRewriter
             {
                 Object.ResolvedType: { } objectType
             } memberRead &&
-            DeclaredMemberVariableType(owner: objectType, name: memberRead.MemberName) is { } memberType)
+            DeclaredMemberVariableType(owner: ctx.Registry?.ReflectedType(type: objectType) ?? objectType,
+                name: memberRead.MemberName) is { } memberType)
         {
             resolvedType = ctx.ResolveType(original: memberType) ?? memberType;
         }
@@ -2372,6 +2373,12 @@ internal static class GenericAstRewriter
         if (typeInfo == null)
         {
             return null;
+        }
+
+        // A name question about a shared entity's handle is about the entity. Its size and id stay the handle's.
+        if (callee.MemberName is "type_name" or "full_type_name" or "module_name")
+        {
+            typeInfo = ctx.Registry!.ReflectedType(type: typeInfo);
         }
 
         // Delegate actual folding to BuilderQueryInliningPass so both code paths
@@ -3227,7 +3234,7 @@ internal static class GenericAstRewriter
         if (ctx.TypeSubs != null &&
             ctx.TypeSubs.TryGetValue(key: sourceType.Name, value: out TypeSymbol? bound))
         {
-            return bound;
+            return ctx.Registry?.ReflectedType(type: bound) ?? bound;
         }
 
         string name = ctx.StringSubs.TryGetValue(key: sourceType.Name, value: out string? sub)

@@ -184,6 +184,7 @@ internal sealed class SignatureResolver
         var astParamGenericNames = new List<(int Index, string GenericName, string? Token)>();
         int paramIndex = -1;
 
+        _currentDeclaration = routine;
         foreach (Parameter param in routine.Parameters)
         {
             paramIndex++;
@@ -266,6 +267,7 @@ internal sealed class SignatureResolver
                 AllGenericParams: allGenericParams,
                 AllConstraints: allConstraints));
 
+        finalRoutine.IsCheckedPerUse = routine.IsCheckedPerUse;
         RegisterAndValidateRoutine(pending: pending, routine: routine, finalRoutine: finalRoutine);
     }
 
@@ -313,6 +315,9 @@ internal sealed class SignatureResolver
 
         return (allGenericParams, allConstraints);
     }
+
+    /// <summary>The routine whose parameters are being resolved (an untyped parameter marks it checked per use).</summary>
+    private RoutineDeclaration? _currentDeclaration;
 
     private readonly record struct ResolvedSignature(
         List<ParamInfo> Parameters,
@@ -483,6 +488,24 @@ internal sealed class SignatureResolver
         List<GenericConstraintDeclaration> implicitConstraints,
         List<(int Index, string GenericName, string? Token)> astParamGenericNames, ref int implicitGenericCounter)
     {
+        // A parameter written without a type, where the language takes one (`routine twice(x)`), takes any value:
+        // it is a hidden type parameter like a protocol-typed one, without a constraint, and the routine is checked
+        // for each set of types it is used with (RoutineDeclaration.IsCheckedPerUse).
+        if (param.Type == null && param.Name != "me" && _sa._registry.CompilationRules.TakesUntypedParameters &&
+            !_sa.IsStdlibFile(filePath: _sa._currentFilePath) && _currentDeclaration != null)
+        {
+            string untypedName = $"__T{implicitGenericCounter++}";
+            implicitGenerics.Add(item: untypedName);
+            astParamGenericNames.Add(item: (paramIndex, untypedName, null));
+            _currentDeclaration.IsCheckedPerUse = true;
+            parameters.Add(item: new ParamInfo(name: param.Name,
+                type: new GenericParameterTypeSymbol(name: untypedName) { Location = param.Location })
+            {
+                DefaultValue = param.DefaultValue, IsVariadicParam = param.IsVariadic
+            });
+            return;
+        }
+
         if (param.Type == null)
         {
             // A routine's parameters always state their types: only a lambda's are inferred, and a lambda is

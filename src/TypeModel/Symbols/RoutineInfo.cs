@@ -455,6 +455,11 @@ public sealed class RoutineInfo
     /// <summary>Whether this routine was auto-generated (e.g., derived comparison operators).</summary>
     public bool IsSynthesized { get; init; }
 
+    /// <summary>True for a routine whose body is checked per use: a parameter of it was written without a type,
+    /// so its body is analyzed for each set of types it is made concrete for (see
+    /// <c>RoutineDeclaration.IsCheckedPerUse</c>).</summary>
+    public bool IsCheckedPerUse { get; set; }
+
     /// <summary>
     /// The name a crash-trace frame shows for a routine the builder wrote in place of its own name (the work of
     /// an Agent shows as <c>agent in start()</c>). Null shows the routine's name.

@@ -238,6 +238,19 @@ public sealed partial class TypeRegistry
             : resolved;
     }
 
+    /// <summary>
+    /// The type a reflection question about <paramref name="type"/> is about (its name, its member variables): in a
+    /// build whose language shares entities, a routine made concrete for an entity holds the entity's handle, and the
+    /// question is about the entity behind it. Any other type is itself.
+    /// </summary>
+    public TypeSymbol ReflectedType(TypeSymbol type)
+    {
+        return CompilationRules.EntitiesAreShared &&
+               type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol entity] }
+            ? entity
+            : type;
+    }
+
     /// <summary>Whether the code in <paramref name="filePath"/> holds entities as shared handles (see
     /// <see cref="EntitiesAreShared"/>).</summary>
     public bool EntitiesAreSharedIn(string? filePath)
@@ -624,21 +637,50 @@ public sealed partial class TypeRegistry
                 : null;
         if (viewer == null)
         {
-            var shared = overloads.Where(predicate: r => r.SurfaceRealm == null)
-                                  .Select(selector: CallShape)
-                                  .ToHashSet(comparer: StringComparer.Ordinal);
+            List<RoutineInfo> shared = overloads.Where(predicate: r => r.SurfaceRealm == null)
+                                                .ToList();
             return overloads.Where(predicate: r => r.SurfaceRealm == null ||
                                                    r.SurfaceRealm == ResolutionRealm &&
-                                                   !shared.Contains(item: CallShape(routine: r)))
+                                                   !shared.Any(predicate: o => StandsIn(surface: r, shared: o)))
                             .ToList();
         }
 
         List<RoutineInfo> surface = overloads.Where(predicate: r => r.SurfaceRealm != null && r.SurfaceRealm == viewer)
                                              .ToList();
-        var replaced = surface.Select(selector: CallShape).ToHashSet(comparer: StringComparer.Ordinal);
+        var seen = surface.ToList();
         surface.AddRange(collection: overloads.Where(predicate: r =>
-            r.SurfaceRealm == null && !replaced.Contains(item: CallShape(routine: r))));
+            r.SurfaceRealm == null && !seen.Any(predicate: s => StandsIn(surface: s, shared: r))));
         return surface;
+    }
+
+    /// <summary>
+    /// Whether the realm's <paramref name="surface"/> routine stands in for the <paramref name="shared"/> one: it is
+    /// called the same way (the same parameter names), and either takes the same types or the shared one is not the
+    /// type's own operation on itself. Suflae's <c>getitem(index: Integer)</c> stands in for <c>getitem(index: U64)</c>,
+    /// but its <c>Decimal.mul(you: Integer)</c> is an addition next to <c>Decimal.mul(you: Decimal)</c>, not a
+    /// replacement of it.
+    /// </summary>
+    private static bool StandsIn(RoutineInfo surface, RoutineInfo shared)
+    {
+        if (CallShape(routine: surface) != CallShape(routine: shared))
+        {
+            return false;
+        }
+
+        if (ParameterTypes(routine: surface) == ParameterTypes(routine: shared))
+        {
+            return true;
+        }
+
+        return shared.OwnerType is not { } owner || shared.Parameters.Where(predicate: p => p.Name != "me")
+                                                          .Any(predicate: p => p.Type.FullName != owner.FullName);
+    }
+
+    /// <summary>A routine's parameter types, in order, without <c>me</c>.</summary>
+    private static string ParameterTypes(RoutineInfo routine)
+    {
+        return string.Join(separator: ",", values: routine.Parameters.Where(predicate: p => p.Name != "me")
+                                                          .Select(selector: p => p.Type.FullName));
     }
 
     /// <summary>How a call names a routine's arguments: its parameter names, in order, without <c>me</c>.</summary>

@@ -71,6 +71,10 @@ public abstract class LanguageRules
     /// rule the builder ends such a body with one itself, so teardown still has its one exit.</summary>
     public virtual bool RoutinesEndWithReturn => true;
 
+    /// <summary>Whether a routine's parameter may be written without a type (`routine twice(x)`): it takes any value,
+    /// and the routine is checked for each type it is used with.</summary>
+    public virtual bool TakesUntypedParameters => false;
+
     /// <summary>The <c>pass</c> placeholder statement and declaration.</summary>
     public abstract bool HasPassStatement { get; }
 

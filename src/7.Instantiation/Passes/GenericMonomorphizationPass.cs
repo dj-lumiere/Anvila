@@ -2589,6 +2589,15 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 Body = analyze(arg1: resolvedRoutine, arg2: rewrittenDecl.Body)
             };
         }
+        // A routine with a parameter written without a type was never analyzed as written: this copy, with the
+        // types it is used with, is analyzed now as the program's own code.
+        else if (astDecl.IsCheckedPerUse && ctx.AnalyzePerUseBody is { } analyzeUse)
+        {
+            rewrittenDecl = rewrittenDecl with
+            {
+                Body = analyzeUse(arg1: resolvedRoutine, arg2: rewrittenDecl.Body)
+            };
+        }
 
         ctx.InstantiatedGenericBodies[key: resolvedRoutine.RegistryKey] = new MonomorphizedBody(
             Ast: rewrittenDecl,
@@ -3934,7 +3943,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             bool ok = c.ConstraintType switch
             {
                 ConstraintKind.RecordType => IsRecordLike(type: actual),
-                ConstraintKind.EntityType => actual is EntityTypeSymbol,
+                ConstraintKind.EntityType => IsEntityLike(type: actual),
                 ConstraintKind.ChoiceType => actual is ChoiceTypeSymbol,
                 ConstraintKind.FlagsType => actual is FlagsTypeSymbol,
                 ConstraintKind.VariantType => actual is VariantTypeSymbol,
@@ -3964,12 +3973,22 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         return typeName switch
         {
             "RecordType" => IsRecordLike(type: actual),
-            "EntityType" => actual is EntityTypeSymbol,
+            "EntityType" => IsEntityLike(type: actual),
             "ChoiceType" => actual is ChoiceTypeSymbol,
             "FlagsType" => actual is FlagsTypeSymbol,
             "VariantType" => actual is VariantTypeSymbol,
             "Crashable" => actual is CrashableTypeSymbol,
             _ => true
+        };
+    }
+
+    /// An entity, or the shared handle a language that shares entities holds one through (`Roamed[Hero]`): a routine
+    /// made concrete for such an entity takes its handle.
+    private static bool IsEntityLike(TypeSymbol type)
+    {
+        return type is EntityTypeSymbol or RecordTypeSymbol
+        {
+            GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol]
         };
     }
 

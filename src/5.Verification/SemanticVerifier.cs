@@ -1103,6 +1103,7 @@ public sealed partial class SemanticVerifier
         // owner (lt/le/gt/ge from cmp, represent/cmp/… on a plain type) — the raw template body needs types
         // resolved in the owner's context before the fresh-body lowering sweep folds its operators.
         ctx.AnalyzeMaterializedDeriveBody = AnalyzeMaterializedDeriveBodyOnDemand;
+        ctx.AnalyzePerUseBody = AnalyzePerUseBodyOnDemand;
         ctx.BuildVariantArmExtractorBody = BuildVariantArmExtractorBody;
 
         // v0.2.0 may-suspend effect analysis over the call graph RoutineReachabilityPass populated
@@ -1857,6 +1858,24 @@ public sealed partial class SemanticVerifier
     /// delegated calls (<c>me.cmp(you)</c>). Annotates in place; returns the same body. Bound to
     /// <see cref="InstantiationContext.AnalyzeMaterializedDeriveBody"/>.
     /// </summary>
+    private Statement AnalyzePerUseBodyOnDemand(RoutineInfo routine, Statement body)
+    {
+        int errorsBefore = _errors.Count;
+        AnalyzeCompilerGeneratedBody(routineInfo: routine, body: body, writtenByProgram: true);
+
+        // The same lines are checked once per set of types, so each error says which use it is about.
+        string use = string.Join(separator: ", ",
+            values: routine.Parameters.Where(predicate: p => p.Name != "me")
+                           .Select(selector: p => $"{p.Name}: {p.Type.Name}"));
+        for (int i = errorsBefore; i < _errors.Count; i++)
+        {
+            SemanticError error = _errors[index: i];
+            _errors[index: i] = error with { Message = $"{error.Message} (in '{routine.Name}' used with {use})" };
+        }
+
+        return body;
+    }
+
     private Statement AnalyzeMaterializedDeriveBodyOnDemand(RoutineInfo routine, Statement body)
     {
         // A derive a realm writes for its own types (Suflae's `all_cases` making Suflae's `List`) names that
@@ -2809,7 +2828,7 @@ public sealed partial class SemanticVerifier
     /// validation that doesn't apply to builder-generated code.
     /// </summary>
     private void AnalyzeCompilerGeneratedBody(RoutineInfo routineInfo, Statement body,
-        bool preservePresetTypes = false)
+        bool preservePresetTypes = false, bool writtenByProgram = false)
     {
         string previousFilePath = _currentFilePath;
         var previousImports = new HashSet<string>(collection: _importedModules,
@@ -2897,7 +2916,8 @@ public sealed partial class SemanticVerifier
         // annotate ResolvedType on all nodes (needed by CallOverloadResolutionPass later).
         bool prevIsInCompilerGeneratedBody = _isInCompilerGeneratedBody;
         bool prevPreservePresetTypes = _preservePresetTypes;
-        _isInCompilerGeneratedBody = true;
+        // A body the program wrote (a routine checked per use) is the program's code: its errors are reported.
+        _isInCompilerGeneratedBody = !writtenByProgram;
         _preservePresetTypes = preservePresetTypes;
         int errorsBefore = _errors.Count;
         // A `dangerous` routine's body is a danger context, as it is when the routine is written by hand.
@@ -2909,7 +2929,7 @@ public sealed partial class SemanticVerifier
 
         AnalyzeStatement(statement: body);
         _dangerBlockDepth = prevDangerDepth;
-        if (_errors.Count > errorsBefore)
+        if (_errors.Count > errorsBefore && !writtenByProgram)
         {
             TraceDroppedErrors(from: errorsBefore);
             _errors.RemoveRange(index: errorsBefore, count: _errors.Count - errorsBefore);

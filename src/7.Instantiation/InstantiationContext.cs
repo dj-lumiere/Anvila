@@ -153,6 +153,14 @@ public sealed class InstantiationContext
         AnalyzeMaterializedDeriveBody { get; set; }
 
     /// <summary>
+    /// Analyzes one concrete copy of a routine checked per use (a parameter written without a type) as the
+    /// program's own code: its errors are reported, at the lines of the written body. Set by
+    /// <c>SemanticVerifier</c>.
+    /// </summary>
+    public Func<TypeModel.Symbols.RoutineInfo, SyntaxTree.Statement, SyntaxTree.Statement>?
+        AnalyzePerUseBody { get; set; }
+
+    /// <summary>
     /// Builds the raw body of a variant-arm extractor creator (<c>Arm!(from: V)</c>:
     /// <c>when from { is Arm v =&gt; return v.duplicate(), else =&gt; absent }</c>) without storing it, or null
     /// when the routine is not one. The demand collector uses it for an extractor it reaches only from a

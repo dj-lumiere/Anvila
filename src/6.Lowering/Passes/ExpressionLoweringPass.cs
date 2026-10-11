@@ -860,7 +860,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         foreach (Expression arg in call.Arguments)
         {
             // Preserve NamedArgumentExpression wrappers -- codegen uses arg names to detect
-            // direct field constructors (e.g., Point(x: 1, y: 2) vs CStr(from: v)).
+            // direct field constructors (e.g., Point(x: 1, y: 2) vs Retained(from: steal e)).
             // Only lower the inner value expression, not the wrapper itself.
             if (arg is NamedArgumentExpression namedArg)
             {

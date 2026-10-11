@@ -300,6 +300,13 @@ public record RoutineDeclaration(
     public bool IsBuilderWritten { get; init; }
 
     /// <summary>
+    /// True for a routine with a parameter written without a type (Suflae's `routine twice(x)`): each such
+    /// parameter is a hidden type parameter, and the body is checked once per set of types it is used with, in
+    /// that use, instead of once as written.
+    /// </summary>
+    public bool IsCheckedPerUse { get; set; }
+
+    /// <summary>
     /// The name a crash-trace frame shows for a routine the builder wrote, in place of the routine's own name
     /// (the work of an Agent shows as <c>agent in start()</c>). Null shows the routine's name.
     /// </summary>

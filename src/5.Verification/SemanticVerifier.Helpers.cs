@@ -1526,8 +1526,11 @@ public sealed partial class SemanticVerifier
         // to nothing (e.g. `record Cat` with no `eq` resolving `==` to `Equatable.eq`). Only a
         // concrete implementation counts as support here; generic-parameter receivers get their
         // constraint-based support from the dedicated branch below.
+        // A type with several routines of the name (`Decimal.eq(you: Decimal)` and `Decimal.eq(you: Integer)`)
+        // supports the operator when one of them takes its own type.
         RoutineInfo? resolved =
-            _registry.LookupMemberRoutine(type: type, memberRoutineName: memberRoutineName);
+            _registry.LookupMemberRoutine(type: type, memberRoutineName: memberRoutineName) ??
+            _registry.LookupMemberRoutineOverload(type: type, memberRoutineName: memberRoutineName, argTypes: [type]);
         if (resolved != null && resolved.OwnerType is not ProtocolTypeSymbol)
         {
             return true;
