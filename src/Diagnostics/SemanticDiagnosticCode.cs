@@ -1044,6 +1044,11 @@ public enum SemanticDiagnosticCode
     /// <summary>Lazy Sequence[T] cannot escape the scope of the token it was created from.</summary>
     SequenceScopeEscape = 820,
 
+    /// <summary>A program in a language where entities are shared handles writes its own <c>destruct</c>: the last
+    /// holder letting go, or the cycle collector, decides when an entity goes, so nothing written there would run at a
+    /// known point. A resource that must be released at a known point uses <c>using</c> (<c>enter</c>/<c>exit</c>).</summary>
+    SharedEntityDestruct = 821,
+
     /// <summary>Suflae untyped parameter defaults to Data.</summary>
     SuflaeImplicitDataType = 830,
 

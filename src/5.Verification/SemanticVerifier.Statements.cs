@@ -1884,6 +1884,18 @@ public sealed partial class SemanticVerifier
         bool isDestroyDecl = routine.Name == "destruct" ||
                              routine.Name.EndsWith(value: ".destroy",
                                  comparisonType: StringComparison.Ordinal);
+        // Where entities are shared handles, when one goes is decided by its last holder or by the cycle collector,
+        // so a `destruct` of the program's own would run at no point the program can name.
+        if (routine.Name == "destruct" && IsProgramFile(filePath: routine.Location.FileName) &&
+            _registry.EntitiesAreSharedIn(filePath: routine.Location.FileName))
+        {
+            ReportError(code: SemanticDiagnosticCode.SharedEntityDestruct,
+                message: $"You write `{routine.Name}` here, but a value here goes when its last holder lets go of it, or " +
+                         "when the cycle collector frees it, at no point the program can name. For a resource that " +
+                         "must be released at a known point, give the type `enter` and `exit` and use it with `using`.",
+                location: routine.Location);
+        }
+
         if (isDestroyDecl && routine.IsDangerous)
         {
             ReportError(code: SemanticDiagnosticCode.DestroyNotDangerous,
