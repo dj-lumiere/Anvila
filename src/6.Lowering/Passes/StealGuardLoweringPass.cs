@@ -75,6 +75,11 @@ internal static class StealGuardLoweringPass
                         when !IsRoamed(type: target.ResolvedType):
                         MarkConsumed(operand: assign.Value, everStolen: everStolen);
                         break;
+                    // `drop x` ends the binding: the slot is null from here, so a later read crashes.
+                    case DropStatement { Expression: IdentifierExpression dropped }
+                        when IsGuarded(id: dropped, everStolen: everStolen):
+                        dropped.NullStampAfterMove = true;
+                        break;
                 }
             });
     }
@@ -92,12 +97,17 @@ internal static class StealGuardLoweringPass
         Expression unwrapped = operand is NamedArgumentExpression named
             ? named.Value
             : operand;
+        bool stolen = false;
         if (unwrapped is StealExpression steal)
         {
             unwrapped = steal.Operand;
+            stolen = true;
         }
 
-        if (unwrapped is IdentifierExpression id && IsGuarded(id: id, everStolen: everStolen))
+        // A bare entity handed over moves. An RC wrapper handed over without `steal` is copied (one more
+        // holder), so the binding keeps its own handle.
+        if (unwrapped is IdentifierExpression id && IsGuarded(id: id, everStolen: everStolen) &&
+            (stolen || id.ResolvedType is EntityTypeSymbol))
         {
             id.NullStampAfterMove = true;
         }

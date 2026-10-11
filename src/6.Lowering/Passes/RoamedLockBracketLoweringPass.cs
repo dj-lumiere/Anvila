@@ -1,3 +1,4 @@
+using Builder.Tokenizer;
 using Builder.Declaration;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -126,24 +127,116 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                     isFailable: true);
             }
 
-            foreach (Expression h in handles)
+            if (handles.Count > 0 && SpillLeavingValue(stmt: stmt, handles: handles, into: rewritten))
             {
-                AddBracket(into: rewritten,
-                    handle: h,
-                    memberRoutine: RuntimeContract.RoamedMemberRoutine.LockEnter);
+                continue;
             }
 
-            rewritten.Add(item: stmt);
-            foreach (Expression h in handles)
-            {
-                AddBracket(into: rewritten,
-                    handle: h,
-                    memberRoutine: RuntimeContract.RoamedMemberRoutine.LockExit);
-            }
+            AddBracketed(into: rewritten, handles: handles, stmt: stmt);
         }
 
         block.Statements.Clear();
         block.Statements.AddRange(collection: rewritten);
+    }
+
+    private void AddBracketed(List<Statement> into, List<Expression> handles, Statement stmt)
+    {
+        foreach (Expression h in handles)
+        {
+            AddBracket(into: into,
+                handle: h,
+                memberRoutine: RuntimeContract.RoamedMemberRoutine.LockEnter);
+        }
+
+        into.Add(item: stmt);
+        foreach (Expression h in handles)
+        {
+            AddBracket(into: into,
+                handle: h,
+                memberRoutine: RuntimeContract.RoamedMemberRoutine.LockExit);
+        }
+    }
+
+    private int _spillCounter;
+
+    /// <summary>
+    /// A bracket around a whole statement only closes when the statement runs to its end. A <c>return</c> or
+    /// <c>throw</c> never does, and an <c>if</c>, <c>when</c> or <c>while</c> runs its body inside the bracket,
+    /// where a return, a wait or another lock would hold this one. So the value the statement reads through the
+    /// handle (the returned value, the condition) is computed first into a temp inside its own bracket, and the
+    /// statement itself works on the temp. A <c>while</c> reads its condition every round, so it becomes
+    /// <c>while true</c> whose body computes the condition, runs the loop body when it holds, and otherwise runs
+    /// the loop's <c>then</c> branch and breaks. Returns false when <paramref name="stmt"/> is not such a
+    /// statement, or already reads a plain name.
+    /// </summary>
+    private bool SpillLeavingValue(Statement stmt, List<Expression> handles, List<Statement> into)
+    {
+        switch (stmt)
+        {
+            case ReturnStatement { Value: not null and not IdentifierExpression } r:
+                into.Add(item: r with { Value = Spill(value: r.Value, handles: handles, into: into) });
+                return true;
+            case VariantReturnStatement { Value: not null and not IdentifierExpression } vr:
+                into.Add(item: vr with { Value = Spill(value: vr.Value, handles: handles, into: into) });
+                return true;
+            case ThrowStatement { Error: not IdentifierExpression } t:
+                into.Add(item: t with { Error = Spill(value: t.Error, handles: handles, into: into) });
+                return true;
+            case IfStatement { Condition: not IdentifierExpression } i:
+                into.Add(item: i with { Condition = Spill(value: i.Condition, handles: handles, into: into) });
+                return true;
+            case WhenStatement { Expression: not IdentifierExpression } w:
+                into.Add(item: w with { Expression = Spill(value: w.Expression, handles: handles, into: into) });
+                return true;
+            case WhileStatement { Condition: not IdentifierExpression } loop:
+            {
+                var body = new List<Statement>();
+                Expression condition = Spill(value: loop.Condition, handles: handles, into: body);
+                var stop = new List<Statement>();
+                if (loop.ElseBranch != null)
+                {
+                    stop.Add(item: loop.ElseBranch);
+                }
+
+                stop.Add(item: new BreakStatement(Location: loop.Location));
+                body.Add(item: new IfStatement(Condition: condition,
+                    ThenStatement: loop.Body,
+                    ElseStatement: new BlockStatement(Statements: stop, Location: loop.Location),
+                    Location: loop.Location));
+                var forever = new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: loop.Location)
+                {
+                    ResolvedType = Registry.LookupType(name: "Bool")
+                };
+                into.Add(item: loop with
+                {
+                    Condition = forever,
+                    Body = new BlockStatement(Statements: body, Location: loop.Location),
+                    ElseBranch = null
+                });
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Computes <paramref name="value"/> into a fresh temp inside the lock bracket of <paramref name="handles"/>,
+    /// appending the bracketed declaration to <paramref name="into"/>, and returns a read of the temp.</summary>
+    private Expression Spill(Expression value, List<Expression> handles, List<Statement> into)
+    {
+        string tmp = $"__lk_{_spillCounter++}";
+        var decl = new VariableDeclaration(Name: tmp,
+            Type: null,
+            Initializer: value,
+            Visibility: VisibilityModifier.Secret,
+            Location: value.Location);
+        AddBracketed(into: into,
+            handles: handles,
+            stmt: new DeclarationStatement(Declaration: decl, Location: value.Location));
+        return new IdentifierExpression(Name: tmp, Location: value.Location)
+        {
+            ResolvedType = value.ResolvedType
+        };
     }
 
     /// <summary>

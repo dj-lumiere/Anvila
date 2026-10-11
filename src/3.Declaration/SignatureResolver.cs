@@ -253,6 +253,7 @@ internal sealed class SignatureResolver
             filteredGenericParams: filteredGenericParams) ?? ResolveSharedEntityMeType(
             sfUserEntity: sfUserEntity,
             pending: pending,
+            routine: routine,
             refreshedOwnerType: refreshedOwnerType);
 
         _sa._currentRoutine = prevRoutine;
@@ -673,10 +674,13 @@ internal sealed class SignatureResolver
     /// Returns <c>null</c> when the conditions do not apply.
     /// </summary>
     private TypeSymbol? ResolveSharedEntityMeType(bool sfUserEntity,
-        SemanticVerifier.PendingRoutine pending, TypeSymbol? refreshedOwnerType)
+        SemanticVerifier.PendingRoutine pending, RoutineDeclaration routine, TypeSymbol? refreshedOwnerType)
     {
+        // The entity's own `destruct` runs from the handle's teardown (the free hook of its manager, or
+        // `roam_free`), which has the bare entity, not a handle: its `me` is the entity itself, and no one can
+        // hold it anew from there.
         if (sfUserEntity && pending.Kind == RoutineKind.MemberRoutine &&
-            pending.Kind is not RoutineKind.Creator &&
+            pending.Kind is not RoutineKind.Creator && routine.Name != RuntimeContract.Destroy &&
             refreshedOwnerType is EntityTypeSymbol ownerEntity &&
             _sa._registry.LookupType(name: RuntimeContract.Roamed) is { } roamedOwnerDef)
         {

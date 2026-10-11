@@ -88,7 +88,7 @@ public sealed class TesseraBackend : IBuilderBackend
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException)
         {
-            File.WriteAllText(path: path, contents: $"// The Tessera translation failed: {ex.Message}\n");
+            File.WriteAllText(path: path, contents: $"# The Tessera translation failed: {ex.Message}\n");
         }
     }
 
