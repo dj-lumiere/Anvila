@@ -60,7 +60,7 @@ public enum WiredKind
     /// <summary>Carrier unwrap (unwrap_or, unwrap).</summary>
     Unwrap,
 
-    /// <summary>Container membership (contains, notcontains).</summary>
+    /// <summary>Container membership (has, lacks).</summary>
     Container,
 
     /// <summary>Iteration protocol (iter, emit).</summary>
@@ -301,19 +301,19 @@ public static class WiredRoutineCatalog
             // ---- Container / iteration / indexing ----
             new WiredEntry
             {
-                Name = "contains",
+                Name = "has",
                 Kind = WiredKind.Container,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = ["Container"],
-                CapabilityWiredOverride = "contains"
+                CapabilityWiredOverride = "has"
             },
             new WiredEntry
             {
-                Name = "notcontains",
+                Name = "lacks",
                 Kind = WiredKind.Container,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = ["Container"],
-                CapabilityWiredOverride = "contains"
+                CapabilityWiredOverride = "has"
             },
             new WiredEntry
             {

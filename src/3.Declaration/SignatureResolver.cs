@@ -947,24 +947,9 @@ internal sealed class SignatureResolver
             }
         }
 
-        // Failability is COVARIANT: a NON-failable implementation may satisfy a FAILABLE (`!`)
-        // protocol requirement — never failing is a stronger contract than may-fail, so it is always
-        // a safe substitute (a `using` resource whose `enter!` can fail is satisfied by a `enter`
-        // that never does). The REVERSE is unsound: a failable implementation cannot satisfy a
-        // non-failable requirement, because its failures would escape unhandled at call sites that
-        // assume the memberRoutine cannot fail.
-        if (typeMemberRoutine.IsFailable && !protoMemberRoutine.IsFailable)
-        {
-            _sa.ReportError(code: SemanticDiagnosticCode.ProtocolMemberRoutineSignatureMismatch,
-                message:
-                $"member routine '{typeMemberRoutine.Name}' should be non-failable to match protocol '{protocol.Name}', " +
-                "but is failable (!).",
-                location: location ?? new SourceLocation(FileName: "",
-                    Line: 0,
-                    Column: 0,
-                    Position: 0));
-            return;
-        }
+        // Failability is not part of the contract: the `!` sits on a declaration only, a failure crashes loudly by
+        // default, and the caller chooses to recover with `try` / `check`. An implementation that can fail satisfies a
+        // requirement written without `!`, and one that cannot fail satisfies a failable one.
 
         // Check parameter count (excluding 'me' parameter if present)
         // In-body memberRoutines have explicit 'me' as first parameter

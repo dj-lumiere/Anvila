@@ -1293,6 +1293,15 @@ public sealed partial class SemanticVerifier
             { OwnerType: { } owner, Parameters: [{ Name: "you" }] } && owner.Name == receiverType.Name;
     }
 
+    /// <summary>The protocols an operator's receiver may obey: a membership test (`have`, `lack`) takes a map's
+    /// keys as well (`KeyContainer`).</summary>
+    private static List<string>? MembershipProtocols(string operatorMemberRoutine, List<string>? required)
+    {
+        return required != null && operatorMemberRoutine is "has" or "lacks"
+            ? [.. required, "KeyContainer"]
+            : required;
+    }
+
     private bool TryReportOperatorTypeViolation(BinaryExpression binary, TypeSymbol leftType,
         TypeSymbol rightType, string operatorMemberRoutine)
     {
@@ -1340,7 +1349,8 @@ public sealed partial class SemanticVerifier
             : leftType;
         if (!_isReducedStdlibValidation &&
             operatorReceiverType is RecordTypeSymbol or EntityTypeSymbol &&
-            GetRequiredProtocols(wiredName: operatorMemberRoutine) is
+            MembershipProtocols(operatorMemberRoutine: operatorMemberRoutine,
+                    required: GetRequiredProtocols(wiredName: operatorMemberRoutine)) is
                 { Count: > 0 } requiredProtocols && !requiredProtocols.Any(predicate: p =>
                 ImplementsProtocol(type: operatorReceiverType, protocolName: p)) &&
             !DeclaresOperatorRoutine(receiverType: operatorReceiverType,

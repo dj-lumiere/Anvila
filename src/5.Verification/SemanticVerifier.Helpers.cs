@@ -1751,7 +1751,7 @@ public sealed partial class SemanticVerifier
         // Unary
         "neg", "bitnot",
         // Membership
-        "contains", "notcontains",
+        "has", "lacks", "has_key", "lacks_key",
         // Indexing
         "getitem", "setitem",
         // Iteration
@@ -1797,7 +1797,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.IncompatibleComparisonTypes,
                     message:
-                    $"Type '{right.Name}' does not support 'in'/'notin' (no contains member routine).",
+                    $"Type '{right.Name}' does not support 'in'/'notin' (no 'has' member routine).",
                     location: location);
             }
 
@@ -1812,7 +1812,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.IncompatibleComparisonTypes,
                     message:
-                    $"Type '{left.Name}' does not support 'have'/'lack' (no contains member routine).",
+                    $"Type '{left.Name}' does not support 'have'/'lack' (no 'has' or 'has_key' member routine).",
                     location: location);
             }
 
@@ -1822,9 +1822,9 @@ public sealed partial class SemanticVerifier
         return false;
     }
 
-    /// <summary>The <c>contains</c> a membership operator calls on <paramref name="container"/>: picked by the element
-    /// type, since a container may declare several (<c>Text.contains</c> takes a <c>Char</c> or a <c>Text</c>) and a
-    /// name alone cannot choose among them.</summary>
+    /// <summary>The <c>has</c> a membership operator calls on <paramref name="container"/>: picked by the element
+    /// type, since a container may declare several (<c>Text.has</c> takes a <c>Char</c> or a <c>Text</c>) and a
+    /// name alone cannot choose among them. A map has <c>has_key</c> instead.</summary>
     private RoutineInfo? LookupContains(TypeSymbol container, TypeSymbol element)
     {
         // A shared entity's handle answers for the entity (`other have v` on a `Roamed[Set[T]]`).
@@ -1834,10 +1834,14 @@ public sealed partial class SemanticVerifier
             container = shared;
         }
 
+        // A map answers for its keys (`d have k` is `d.has_key(k)`).
         return _registry.LookupMemberRoutineOverload(type: container,
-                   memberRoutineName: "contains",
+                   memberRoutineName: "has",
                    argTypes: [element]) ??
-               _registry.LookupMemberRoutine(type: container, memberRoutineName: "contains");
+               _registry.LookupMemberRoutine(type: container, memberRoutineName: "has") ??
+               _registry.LookupMemberRoutineOverload(type: container,
+                   memberRoutineName: "has_key",
+                   argTypes: [element]);
     }
 
     /// <summary>

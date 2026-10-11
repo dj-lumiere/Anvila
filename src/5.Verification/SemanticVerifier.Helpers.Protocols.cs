@@ -492,11 +492,7 @@ public sealed partial class SemanticVerifier
     private bool memberRoutineSignatureMatches(RoutineInfo typeMemberRoutine,
         ProtocolMemberRoutineInfo protoMemberRoutine)
     {
-        // Check failable matches
-        if (typeMemberRoutine.IsFailable != protoMemberRoutine.IsFailable)
-        {
-            return false;
-        }
+        // Failability is not part of the contract (the caller recovers with `try` / `check`).
 
         // Check parameter count (excluding 'me' parameter if present)
         // In-body memberRoutines have explicit 'me' as first parameter

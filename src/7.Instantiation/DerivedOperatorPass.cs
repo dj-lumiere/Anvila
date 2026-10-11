@@ -95,7 +95,7 @@ internal sealed class DerivedOperatorPass
 
         // Look for contains memberRoutine
         RoutineInfo? containsMemberRoutine =
-            memberRoutineList.FirstOrDefault(predicate: m => m.Name == "contains");
+            memberRoutineList.FirstOrDefault(predicate: m => m.Name == "has");
         if (containsMemberRoutine != null)
         {
             GenerateNotContainsFromContains(type: type,
@@ -172,7 +172,7 @@ internal sealed class DerivedOperatorPass
         RoutineInfo containsMemberRoutine, List<RoutineInfo> existingMemberRoutines)
     {
         RoutineInfo? existingNotContains =
-            existingMemberRoutines.FirstOrDefault(predicate: m => m.Name == "notcontains");
+            existingMemberRoutines.FirstOrDefault(predicate: m => m.Name == "lacks");
 
         if (existingNotContains != null)
         {
@@ -185,7 +185,7 @@ internal sealed class DerivedOperatorPass
             return;
         }
 
-        var notContainsMemberRoutine = new RoutineInfo(name: "notcontains")
+        var notContainsMemberRoutine = new RoutineInfo(name: "lacks")
         {
             Kind = RoutineKind.MemberRoutine,
             OwnerType = type,

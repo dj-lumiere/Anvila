@@ -1135,6 +1135,21 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
         TypeSymbol? receiverType = receiver.ResolvedType;
         TypeSymbol? argType = argument.ResolvedType;
+
+        // A map answers membership for its keys: `d have k` is `d.has_key(k)`, `d lack k` is `d.lacks_key(k)`.
+        TypeSymbol? membershipOwner = receiverType is RecordTypeSymbol
+        {
+            GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } shared]
+        }
+            ? shared
+            : receiverType;
+        if (memberRoutineName is "has" or "lacks" && membershipOwner != null &&
+            ResolveBinaryOperatorRoutine(memberRoutineName: "has", receiverType: membershipOwner, argType: argType) == null &&
+            ResolveBinaryOperatorRoutine(memberRoutineName: "has_key", receiverType: membershipOwner, argType: argType) != null)
+        {
+            memberRoutineName = memberRoutineName == "has" ? "has_key" : "lacks_key";
+        }
+
         RoutineInfo? resolvedMemberRoutine = ResolveBinaryOperatorRoutine(
             memberRoutineName: memberRoutineName,
             receiverType: receiverType,

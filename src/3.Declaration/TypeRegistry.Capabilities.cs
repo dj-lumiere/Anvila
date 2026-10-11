@@ -22,7 +22,7 @@ namespace Builder.Declaration;
 /// </remarks>
 public sealed partial class TypeRegistry
 {
-    private const string ContainsMemberRoutineName = "contains";
+    private const string ContainsMemberRoutineName = "has";
 
     private readonly Dictionary<(string FullName, string Protocol), bool> _capabilityCache = new();
 

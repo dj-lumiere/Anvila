@@ -60,6 +60,10 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " It is called 'destruct' now (written 'drop x' outside the standard library).";
             case "assign":
                 return " 'assign' is gone: '=' copies a value ('var b = a').";
+            case "contains" or "notcontains":
+                return " Membership is 'has' / 'lacks' now, and a map's keys are 'has_key' / 'lacks_key'.";
+            case "has" when MemberSuggestionCandidates(type: type).Contains(value: "has_key"):
+                return " A key is tested with 'has_key'.";
         }
 
         return DidYouMean(target: name, candidates: MemberSuggestionCandidates(type: type));

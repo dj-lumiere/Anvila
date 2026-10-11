@@ -755,6 +755,23 @@ internal partial class Program
                 continue;
             }
 
+            // Membership is `has` / `lacks` (`xs.contains(v)` → `xs.has(v)`), and a map's keys are `has_key` /
+            // `lacks_key` (a call naming `key:` is a map's).
+            if (token.Text is "contains" or "notcontains" && i > 0 && tokens[index: i - 1].Type == TokenType.Dot)
+            {
+                bool keyed = i + 2 < tokens.Count && tokens[index: i + 2].Text == "key";
+                string renamed = (token.Text, keyed) switch
+                {
+                    ("contains", true) => "has_key",
+                    ("contains", false) => "has",
+                    ("notcontains", true) => "lacks_key",
+                    _ => "lacks"
+                };
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: renamed,
+                    Line: token.Line, What: $"{token.Text} → {renamed}"));
+                continue;
+            }
+
             // `perms but WRITE` (taking flags off a value) is `perms.without(WRITE)`.
             if (token.Text == "but" && i > 0 && ButEdits(tokens: tokens, index: i) is { Count: > 0 } butEdits)
             {

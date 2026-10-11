@@ -434,13 +434,13 @@ public partial class LlvmEmitter
                 message:
                 $"BinaryExpression(Or) must be lowered to ConditionalExpression by ExpressionLoweringPass before codegen. In routine: {_currentEmittingRoutine?.Name ?? "<unknown>"} (owner: {_currentEmittingRoutine?.OwnerType?.Name ?? "none"})"),
             BinaryOperator.Assign => EmitBinaryAssign(sb: sb, binary: binary),
-            // `x in coll` / `x notin coll` are lowered to `coll.contains(x)` / `coll.notcontains(x)`
+            // `x in coll` / `x notin coll` are lowered to `coll.has(x)` / `coll.lacks(x)`
             // member calls by OperatorLoweringPass before codegen (membership operators reverse
             // receiver/argument there). A bare BinaryExpression(In/NotIn) reaching codegen means a body
             // skipped that lowering — fix the pass, not here.
             BinaryOperator.In or BinaryOperator.NotIn => throw new InvalidOperationException(
                 message:
-                $"BinaryExpression({binary.Operator}) must be lowered to a contains/notcontains member " +
+                $"BinaryExpression({binary.Operator}) must be lowered to a has/lacks member " +
                 $"call by OperatorLoweringPass before codegen (right={binary.Right.GetType().Name}, loc={binary.Location})"),
             // `is` / `isnot` are lowered UPSTREAM to a structural comparison: variant → type_id compare
             // (ExpressionLoweringPass), choice → S32 discriminant equality (ExpressionLoweringPass +

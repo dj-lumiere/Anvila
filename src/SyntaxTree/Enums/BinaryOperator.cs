@@ -339,14 +339,14 @@ public static class BinaryOperatorExtensions
                 BinaryOperator.LogicalRightShift => "lshr",
 
                 // Legacy element-first membership (operands reversed in desugaring):
-                // x in coll -> coll.contains(x); x notin coll -> coll.notcontains(x)
-                BinaryOperator.In => "contains",
-                BinaryOperator.NotIn => "notcontains",
+                // x in coll -> coll.has(x); x notin coll -> coll.lacks(x)
+                BinaryOperator.In => "has",
+                BinaryOperator.NotIn => "lacks",
 
                 // Container-first containment (NO operand reversal — container is already the receiver):
-                // coll have x -> coll.contains(x); coll lack x -> coll.notcontains(x)
-                BinaryOperator.Have => "contains",
-                BinaryOperator.Lack => "notcontains",
+                // coll have x -> coll.has(x); coll lack x -> coll.lacks(x) (a map: has_key, lacks_key)
+                BinaryOperator.Have => "has",
+                BinaryOperator.Lack => "lacks",
 
                 // Unwrap operators
                 BinaryOperator.NoneCoalesce => "unwrap_or",
