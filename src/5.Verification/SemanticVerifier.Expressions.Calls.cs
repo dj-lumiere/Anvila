@@ -4093,6 +4093,19 @@ public sealed partial class SemanticVerifier
     /// the matching field type as the contextual expected type for literal adaptation and generic
     /// binding. Returns the list of analyzed argument types.
     /// </summary>
+    /// <summary>Whether a bare literal of <paramref name="literal"/>'s kind can take <paramref name="type"/>: an
+    /// integer literal any integer type, a float literal any float type, a text literal <c>Text</c>.</summary>
+    private bool LiteralCanBe(LiteralExpression literal, TypeSymbol type)
+    {
+        return literal.LiteralType switch
+        {
+            TokenType.IntegerLiteral or TokenType.UndecidedInteger => IsIntegerType(type: type),
+            TokenType.DecimalLiteral or TokenType.UndecidedDecimal => IsFloatType(type: type),
+            TokenType.TextLiteral => type.Name == "Text",
+            _ => false
+        };
+    }
+
     private List<TypeSymbol> AnalyzeNamedTypeConstructionArgs(CallExpression call, TypeSymbol type)
     {
         // Analyze all arguments once before branching. Variant construction auto-wraps
@@ -4125,6 +4138,25 @@ public sealed partial class SemanticVerifier
                         { IsGenericResolution: true, TypeArguments: not null })
                 {
                     argExpected = SubstituteTypeParameters(type: argExpected, genericType: type);
+                }
+            }
+
+            // A bare literal named for a creator's parameter and no member variable (`Suit(from: 2)` for the choice's
+            // `create(from: S32)`, beside `create(from: Text)`) takes the type of the one parameter of that name a
+            // literal of its kind can be: an integer literal an integer type, a text literal `Text`.
+            if (argExpected == null && arg is NamedArgumentExpression { Name: { } parameterName, Value: LiteralExpression literal })
+            {
+                List<TypeSymbol> parameterTypes = _registry.GetMemberRoutinesForType(type: type)
+                                                           .Where(predicate: r => r.IsCreator)
+                                                           .SelectMany(selector: r => r.Parameters)
+                                                           .Where(predicate: p => p.Name == parameterName &&
+                                                                                  LiteralCanBe(literal: literal, type: p.Type))
+                                                           .Select(selector: p => p.Type)
+                                                           .DistinctBy(keySelector: t => t.FullName)
+                                                           .ToList();
+                if (parameterTypes is [{ } agreed])
+                {
+                    argExpected = agreed;
                 }
             }
 
