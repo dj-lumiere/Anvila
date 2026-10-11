@@ -1914,11 +1914,13 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            // NotEqual cannot be used in chains
-            if (op == BinaryOperator.NotEqual)
+            // NotEqual cannot be used in chains, nor `<=>`, which gives an ordering rather than a truth
+            if (op is BinaryOperator.NotEqual or BinaryOperator.ThreeWayComparator)
             {
                 ReportError(code: SemanticDiagnosticCode.NotEqualInComparisonChain,
-                    message: "The '!=' operator cannot be used in comparison chains.",
+                    message: op == BinaryOperator.NotEqual
+                        ? "The '!=' operator cannot be used in comparison chains."
+                        : "The '<=>' operator gives an ordering, which no comparison chains on.",
                     location: location);
                 return;
             }

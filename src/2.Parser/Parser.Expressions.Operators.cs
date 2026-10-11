@@ -313,6 +313,16 @@ public partial class Parser
                    TokenType.IdentityNotEqual))
         {
             Token op = PeekToken(offset: -1);
+            // `a != b != c` reads as "all different" and is not, and `a < b != c` compares a truth with c: a
+            // comparison doesn't chain onto another through these.
+            if (IsComparison(expr: expr))
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.MixedOperatorsNeedParentheses,
+                    message: $"'{op.Text}' doesn't chain with another comparison: a chain goes one way, '<', '<=' and '==' " +
+                             "together or '>', '>=' and '==' together. Write the comparisons separately, joined with 'and' " +
+                             "(a != b and b != c).");
+            }
+
             Expression right = ParseComparison();
             expr = new BinaryExpression(Left: expr,
                 Operator: TokenToBinaryOperator(tokenType: op.Type),
@@ -322,6 +332,15 @@ public partial class Parser
 
         return expr;
     }
+
+    /// <summary>Whether <paramref name="expr"/> is a comparison written without parentheses.</summary>
+    private static bool IsComparison(Expression expr) => expr is ChainedComparisonExpression ||
+        expr is BinaryExpression
+        {
+            Operator: BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater or BinaryOperator.GreaterEqual
+                or BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.ThreeWayComparator
+                or BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual
+        };
 
     /// <summary>
     /// Parses comparison expressions with support for chaining.
