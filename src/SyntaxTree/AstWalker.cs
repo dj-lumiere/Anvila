@@ -352,10 +352,6 @@ public static class AstWalker
                 e.Expression,
                 e.Pattern
             },
-            FlagsTestExpression e => new object[]
-            {
-                e.Subject
-            },
             WhenExpression e => WhenExpressionChildren(e: e),
             StealExpression e => new object[]
             {
@@ -576,7 +572,7 @@ public static class AstWalker
                 : Enumerable.Empty<object>(),
             DestructuringPattern p => DestructuringPatternChildren(p: p),
             TypeDestructuringPattern p => TypeDestructuringPatternChildren(p: p),
-            LiteralPattern or IdentifierPattern or FlagsPattern or WildcardPattern or NonePattern
+            LiteralPattern or IdentifierPattern or WildcardPattern or NonePattern
                 or ElsePattern => Enumerable.Empty<object>(),
             _ => null
         };

@@ -92,10 +92,7 @@ internal sealed partial class AstPrinter
             RecoveryExpression => follow >= POr,
             LambdaExpression => follow >= PAssign,
             ConditionalExpression => follow >= PAssign,
-            // `x have A and B` reads as a flags test, and a bare `x is T and y` is rejected.
-            FlagsTestExpression => follow is POr or PAnd,
-            BinaryExpression { Operator: BinaryOperator.Have or BinaryOperator.Lack, Right: IdentifierExpression } =>
-                follow is POr or PAnd,
+            // A bare `x is T and y` is rejected.
             IsPatternExpression { Pattern: TypePattern { VariableName: null, Bindings: null } } =>
                 follow is POr or PAnd,
             _ => false
@@ -112,7 +109,7 @@ internal sealed partial class AstPrinter
             ConditionalExpression => PConditional,
             RangeExpression => PRange,
             ChainedComparisonExpression => PComparison,
-            IsPatternExpression or FlagsTestExpression => PIs,
+            IsPatternExpression => PIs,
             UnaryExpression { Operator: UnaryOperator.ForceUnwrap } => PPostfix,
             UnaryExpression or StealExpression or BackIndexExpression or RecoveryExpression
                 or AgentExpression => PUnary,
@@ -135,8 +132,7 @@ internal sealed partial class AstPrinter
             BinaryOperator.NotEqual or BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual => PEquality,
             BinaryOperator.Equal or BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater
                 or BinaryOperator.GreaterEqual or BinaryOperator.ThreeWayComparator => PComparison,
-            BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys
-                or BinaryOperator.Have or BinaryOperator.Lack or BinaryOperator.In
+            BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys or BinaryOperator.In
                 or BinaryOperator.NotIn => PIs,
             BinaryOperator.BitwiseOr or BinaryOperator.BitwiseXor or BinaryOperator.BitwiseAnd
                 or BinaryOperator.ArithmeticLeftShift or BinaryOperator.ArithmeticRightShift
@@ -266,8 +262,6 @@ internal sealed partial class AstPrinter
                 return LambdaDoc(lambda: lambda);
             case IsPatternExpression isPattern:
                 return IsPatternDoc(isPattern: isPattern);
-            case FlagsTestExpression flags:
-                return FlagsTestDoc(flags: flags);
             case WhenExpression whenExpression:
                 return WhenExpressionDoc(when: whenExpression, follow: follow, comma: comma);
             default:
@@ -1003,35 +997,7 @@ internal sealed partial class AstPrinter
            .Flat();
     }
 
-    private Doc FlagsTestDoc(FlagsTestExpression flags)
-    {
-        string keyword = flags.Kind == FlagsTestKind.Have
-            ? " have "
-            : " lack ";
-        return Doc.Concat(Expr(expression: flags.Subject, min: PIs, follow: PIs, comma: false),
-            Doc.Text(text: keyword + FlagsText(names: flags.TestFlags, connective: flags.Connective,
-                excluded: flags.ExcludedFlags, at: flags.Location)));
-    }
 
-    private string FlagsText(List<string> names, FlagsTestConnective connective, List<string>? excluded,
-        SourceLocation at)
-    {
-        string joined = string.Join(separator: connective == FlagsTestConnective.And
-                ? " and "
-                : " or ",
-            values: names);
-        if (excluded is not { Count: > 0 })
-        {
-            return joined;
-        }
-
-        if (connective != FlagsTestConnective.And)
-        {
-            throw Refuse(at: at, reason: "a flags test with 'or' and 'but'");
-        }
-
-        return joined + " but " + string.Join(separator: " and ", values: excluded);
-    }
 
     /// <summary>
     /// A <c>when</c> expression: its head is the end of the line, and its arms follow as a block one level in.
@@ -1133,11 +1099,6 @@ internal sealed partial class AstPrinter
                 return Doc.Text(text: "is " + TypePatternText(typePattern: typePattern));
             case NegatedTypePattern negated:
                 return Doc.Concat(Doc.Text(text: "isnot "), TypeDoc(type: negated.Type));
-            case FlagsPattern flags:
-                return Doc.Text(text: (flags.IsNegated
-                    ? "lack "
-                    : "have ") + FlagsText(names: flags.FlagNames, connective: flags.Connective,
-                    excluded: flags.ExcludedFlags, at: flags.Location));
             case ComparisonPattern comparison:
             {
                 var parts = new List<Doc> { Doc.Text(text: ComparisonOperator(type: comparison.Operator) + " ") };

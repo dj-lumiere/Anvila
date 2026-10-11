@@ -543,7 +543,6 @@ public abstract class AstRewriter
             DictLiteralExpression e => VisitDictLiteral(e: e),
             InsertedTextExpression e => VisitInsertedText(e: e),
             IsPatternExpression e => VisitIsPattern(e: e),
-            FlagsTestExpression e => VisitFlagsTest(e: e),
             GenericMemberRoutineCallExpression e => VisitGenericMemberRoutineCall(e: e),
             GenericMemberExpression e => VisitGenericMember(e: e),
             WrapperProjectionExpression e => VisitWrapperProjection(e: e),
@@ -1077,19 +1076,6 @@ public abstract class AstRewriter
             : e with { Expression = o, Pattern = pattern };
     }
 
-    /// <summary>
-    /// Rewrites a <see cref="FlagsTestExpression"/> (a bitfield membership test) by visiting the
-    /// subject expression. Returns the original node when the subject is unchanged.
-    /// </summary>
-    /// <param name="e">The flags-test expression to rewrite.</param>
-    /// <returns>The rewritten flags-test expression, or the original reference if nothing changed.</returns>
-    protected virtual Expression VisitFlagsTest(FlagsTestExpression e)
-    {
-        Expression s = VisitExpression(expr: e.Subject);
-        return ReferenceEquals(objA: s, objB: e.Subject)
-            ? e
-            : e with { Subject = s };
-    }
 
     /// <summary>
     /// Rewrites a <see cref="GenericMemberRoutineCallExpression"/> (a <c>obj.method[T](args)</c> call

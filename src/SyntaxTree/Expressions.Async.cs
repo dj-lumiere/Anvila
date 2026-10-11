@@ -98,50 +98,6 @@ public record IsPatternExpression(
     }
 }
 
-/// <summary>Flags test kind: have or lack.</summary>
-public enum FlagsTestKind
-{
-    /// <summary>Tests whether the subject HAS the specified flags (`flags have READ`).</summary>
-    Have,
-
-    /// <summary>Tests whether the subject LACKS the specified flags (`flags lack READ`).</summary>
-    Lack
-}
-
-/// <summary>Connective for combining flag names in a flags test.</summary>
-public enum FlagsTestConnective
-{
-    /// <summary>All named flags must match.</summary>
-    And,
-
-    /// <summary>Any named flag may match.</summary>
-    Or
-}
-
-/// <summary>
-/// Expression that tests whether a flags value has, lacks, or exactly matches specific flags.
-/// </summary>
-/// <param name="Subject">The expression being tested (must be a flags type)</param>
-/// <param name="Kind">The kind of test: is or isnot</param>
-/// <param name="TestFlags">The flag names being tested for</param>
-/// <param name="Connective">How the flags are combined: and (all required) or or (any required)</param>
-/// <param name="ExcludedFlags">Optional flags to exclude with 'but' (only valid with And connective)</param>
-/// <param name="Location">Source location information</param>
-public record FlagsTestExpression(
-    Expression Subject,
-    FlagsTestKind Kind,
-    List<string> TestFlags,
-    FlagsTestConnective Connective,
-    List<string>? ExcludedFlags,
-    SourceLocation Location) : Expression(Location: Location)
-{
-    /// <inheritdoc/>
-    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
-    {
-        return visitor.VisitFlagsTestExpression(node: this);
-    }
-}
-
 /// <summary>
 /// Pattern matching expression that evaluates to a value based on pattern matching.
 /// Similar to Rust's match expression or Kotlin's when expression.

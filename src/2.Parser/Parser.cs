@@ -213,7 +213,7 @@ public partial class Parser
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
-            if (token.Type is not (TokenType.To or TokenType.Til or TokenType.By or TokenType.Have or TokenType.Lack
+            if (token.Type is not (TokenType.To or TokenType.Til or TokenType.By
                 or TokenType.Is or TokenType.IsNot or TokenType.In or TokenType.As or TokenType.And or TokenType.Or))
             {
                 continue;
@@ -225,7 +225,7 @@ public partial class Parser
             bool afterExpression = before < TokenType.Identifier || before is TokenType.Identifier or TokenType.Me
                 or TokenType.MyType or TokenType.True or TokenType.False or TokenType.None or TokenType.NoneValue
                 or TokenType.RightParen or TokenType.RightBracket or TokenType.RightBrace or TokenType.Question;
-            bool patternArm = token.Type is TokenType.Is or TokenType.IsNot or TokenType.Have or TokenType.Lack &&
+            bool patternArm = token.Type is TokenType.Is or TokenType.IsNot &&
                               before is TokenType.Newline or TokenType.Indent or TokenType.Dedent;
             bool elseBinding = token.Type == TokenType.As && before == TokenType.Else;
             // A member variable of a record pattern is observed or named after its colon: `item: is Weapon as w`,

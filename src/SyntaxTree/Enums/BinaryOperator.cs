@@ -143,10 +143,7 @@ public enum BinaryOperator
 
     /// <summary>Container-first containment operator (have): <c>coll have x</c> / <c>flags have READ</c>.
     /// Container is the LEFT operand — no operand reversal in lowering (unlike <see cref="In"/>).</summary>
-    Have,
 
-    /// <summary>Negated container-first containment operator (lack): <c>coll lack x</c>.</summary>
-    Lack,
 
     /// <summary>Type check or pattern matching operator (is)</summary>
     Is,
@@ -259,8 +256,6 @@ public static class BinaryOperatorExtensions
 
                 BinaryOperator.In => "in",
                 BinaryOperator.NotIn => "notin",
-                BinaryOperator.Have => "have",
-                BinaryOperator.Lack => "lack",
                 BinaryOperator.Is => "is",
                 BinaryOperator.IsNot => "isnot",
                 BinaryOperator.Obeys => "obeys",
@@ -345,8 +340,6 @@ public static class BinaryOperatorExtensions
 
                 // Container-first containment (NO operand reversal — container is already the receiver):
                 // coll have x -> coll.has(x); coll lack x -> coll.lacks(x) (a map: has_key, lacks_key)
-                BinaryOperator.Have => "has",
-                BinaryOperator.Lack => "lacks",
 
                 // Unwrap operators
                 BinaryOperator.NoneCoalesce => "unwrap_or",

@@ -1013,7 +1013,7 @@ public sealed partial class SemanticVerifier
             case FlagsTypeSymbol:
                 ReportError(code: SemanticDiagnosticCode.ArithmeticOnFlagsType,
                     message:
-                    $"'is' cannot test flags on '{exprType.Name}'. Use 'have {isPat.Pattern switch { TypePattern tp => tp.Type.Name, _ => "FLAG" }}' / 'lack …' for membership.",
+                    $"'is' cannot test flags on '{exprType.Name}'. Use '.has({isPat.Pattern switch { TypePattern tp => tp.Type.Name, _ => "FLAG" }})' / '.lacks(…)' for membership.",
                     location: isPat.Location);
                 return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
         }
@@ -1025,39 +1025,6 @@ public sealed partial class SemanticVerifier
         return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
     }
 
-    private TypeSymbol AnalyzeFlagsTestExpression(FlagsTestExpression flagsTest)
-    {
-        TypeSymbol subjectType = AnalyzeExpression(expression: flagsTest.Subject);
-
-        if (subjectType.Category == TypeCategory.Error)
-        {
-            return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
-        }
-
-        if (subjectType is not FlagsTypeSymbol flagsType)
-        {
-            ReportError(code: SemanticDiagnosticCode.FlagsTypeMismatch,
-                message:
-                $"Flags test operators (have/lack) require a flags type, but got '{subjectType.Name}'.",
-                location: flagsTest.Location);
-            return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
-        }
-
-        // Validate each flag name exists in the type
-        ValidateFlagNamesExist(flagsType: flagsType,
-            flagNames: flagsTest.TestFlags,
-            location: flagsTest.Location);
-
-        // Validate excluded flags too
-        if (flagsTest.ExcludedFlags != null)
-        {
-            ValidateFlagNamesExist(flagsType: flagsType,
-                flagNames: flagsTest.ExcludedFlags,
-                location: flagsTest.Location);
-        }
-
-        return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
-    }
 
     /// <summary>
     /// Reports RF-S (FlagsMemberNotFound) for each name in <paramref name="flagNames"/> that is not a

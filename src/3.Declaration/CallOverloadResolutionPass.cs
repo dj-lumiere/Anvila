@@ -375,10 +375,6 @@ internal sealed class CallOverloadResolutionPass
                 WalkExpression(expr: ip.Expression);
                 break;
 
-            case FlagsTestExpression flags:
-                WalkExpression(expr: flags.Subject);
-                break;
-
             case ChainedComparisonExpression chain:
                 foreach (Expression op in chain.Operands)
                 {

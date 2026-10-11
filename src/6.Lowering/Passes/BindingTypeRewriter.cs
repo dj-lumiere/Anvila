@@ -368,11 +368,7 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         VisitPattern(p: node.Pattern);
         return false;
     }
-    public bool VisitFlagsTestExpression(FlagsTestExpression node)
-    {
-        Visit(e: node.Subject);
-        return false;
-    }
+
     public bool VisitWhenExpression(WhenExpression node)
     {
         Visit(e: node.Expression);

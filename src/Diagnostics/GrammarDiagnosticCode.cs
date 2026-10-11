@@ -163,7 +163,7 @@ public enum GrammarDiagnosticCode
     /// <summary>A call site wrote the failable <c>!</c> (<c>foo!(x)</c>); the <c>!</c> belongs on the declaration only.</summary>
     BangAtCallSite = 211,
 
-    /// <summary><c>x in coll</c> used as a membership test; containment is container-first: <c>coll have x</c>.</summary>
+    /// <summary><c>x in coll</c> used as a membership test; containment is a call on the container: <c>coll.has(x)</c>.</summary>
     InAsMembership = 212,
 
     /// <summary>Operators that share one precedence level written side by side without parentheses: <c>and</c> with

@@ -911,23 +911,6 @@ public record NegatedTypePattern(TypeExpression Type, SourceLocation Location)
     : Pattern(Location: Location);
 
 /// <summary>
-/// Pattern that matches flag combinations in when clauses.
-/// Used for 'have'/'lack' flags patterns (container-first membership).
-/// Examples: have READ and WRITE => ..., have READ or WRITE => ..., lack READ and WRITE => ...
-/// </summary>
-/// <param name="FlagNames">List of flag member names to test</param>
-/// <param name="Connective">How the flags are combined: And (all required) or Or (any required)</param>
-/// <param name="ExcludedFlags">Optional flags to exclude with 'but' (only valid with And connective)</param>
-/// <param name="IsNegated">True for `lack` (subject lacks the flags), false for `have`.</param>
-/// <param name="Location">Source location information</param>
-public record FlagsPattern(
-    List<string> FlagNames,
-    FlagsTestConnective Connective,
-    List<string>? ExcludedFlags,
-    bool IsNegated,
-    SourceLocation Location) : Pattern(Location: Location);
-
-/// <summary>
 /// Pattern that matches any value without binding it to a variable.
 /// Used as a catch-all pattern, typically in the final clause of pattern matching.
 /// </summary>

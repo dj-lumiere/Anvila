@@ -256,8 +256,10 @@ public partial class Parser
             Token name = CurrentToken;
             string? retired = name.Text switch
             {
-                "notin" => "'notin' is gone: the container comes first, 'xs lack x'.",
-                "but" => "'but' is gone: take flags off with 'perms.without(WRITE)', or test with 'perms lack WRITE'.",
+                "notin" => "'notin' is gone: ask the container, 'xs.lacks(x)'.",
+                "but" => "'but' is gone: take flags off with 'perms.without(WRITE)', or test with 'perms.lacks(WRITE)'.",
+                "have" => "'have' is gone: ask the container, 'xs.has(x)' ('d.has_key(k)' on a map, 'perms.has(READ and WRITE)' on flags, 'has_any' for any of them).",
+                "lack" => "'lack' is gone: ask the container, 'xs.lacks(x)' ('d.lacks_key(k)' on a map, 'perms.lacks(READ)' on flags).",
                 "disobeys" => "'disobeys' is gone: write 'not (x obeys P)'.",
                 _ => null
             };
@@ -399,17 +401,14 @@ public partial class Parser
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.InAsMembership,
                 message: "'in' only names what a loop walks (`each x in xs`). To test membership, " +
-                         "put the container first: `xs have x` (or `xs lack x`).");
+                         "ask the container: `xs.has(x)` (or `xs.lacks(x)`, and `d.has_key(k)` on a map).");
         }
 
-        // Handle is/isnot/have/lack/obeys/disobeys expressions when not in when pattern/clause context.
-        // (`in`/`notin` are RETIRED at the expression level — `in` is iteration-only, containment is
-        // `have`/`lack`.)
+        // Handle is/isnot/obeys expressions when not in when pattern/clause context. (`in`/`notin` are
+        // RETIRED at the expression level: `in` is iteration-only, and containment is a call, `xs.has(x)`.)
         while (!_inWhenPatternContext && !_inWhenClauseBody &&
                CheckAndAdvance(TokenType.Is,
                    TokenType.IsNot,
-                   TokenType.Have,
-                   TokenType.Lack,
                    TokenType.Obeys))
         {
             Token op = PeekToken(offset: -1);
@@ -418,10 +417,6 @@ public partial class Parser
             if (op.Type is TokenType.Is or TokenType.IsNot)
             {
                 expr = ParseIsOrIsNotPattern(expr: expr, op: op, location: location);
-            }
-            else if (op.Type is TokenType.Have or TokenType.Lack)
-            {
-                expr = ParseHaveOrLackExpression(container: expr, op: op, location: location);
             }
             else
             {
@@ -437,38 +432,6 @@ public partial class Parser
         return expr;
     }
 
-    /// <summary>
-    /// Parses a container-first containment expression (<c>container have/lack rhs</c>), the operator
-    /// already consumed. A bare flag name followed by <c>and</c>/<c>or</c>/<c>but</c> is a multi-flag
-    /// <see cref="FlagsTestExpression"/> (all/any/none + exclusion); anything else — a single flag or a
-    /// general collection element — is a <see cref="BinaryExpression"/> with <see cref="BinaryOperator.Have"/>
-    /// / <see cref="BinaryOperator.Lack"/> that SA resolves by the container's type (flags bit-test vs
-    /// <c>contains</c>).
-    /// </summary>
-    private Expression ParseHaveOrLackExpression(Expression container, Token op,
-        SourceLocation location)
-    {
-        bool isNegated = op.Type == TokenType.Lack;
-
-        // Multi-flag chain: `have READ and WRITE`, `lack READ or WRITE`, `have READ but WRITE`.
-        if (Check(type: TokenType.Identifier) && PeekToken(offset: 1)
-               .Type is TokenType.And or TokenType.Or)
-        {
-            string firstFlag = ConsumeIdentifier(errorMessage: "Expected flag name");
-            return ParseFlagsTestChain(subject: container,
-                firstFlag: firstFlag,
-                isNegated: isNegated,
-                location: location);
-        }
-
-        Expression element = ParseInfix();
-        return new BinaryExpression(Left: container,
-            Operator: isNegated
-                ? BinaryOperator.Lack
-                : BinaryOperator.Have,
-            Right: element,
-            Location: location);
-    }
 
     /// <summary>
     /// Parses the type/pattern following an <c>is</c> / <c>isnot</c> operator (the leading operator token

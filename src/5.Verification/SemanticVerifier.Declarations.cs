@@ -1128,7 +1128,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FlagsCustomOperatorNotAllowed,
                 message:
                 $"Flags type '{ownerType.Name}' cannot define operator '{routineName}'. " +
-                "A flags value is combined with 'and', tested with 'have' / 'lack' / '==', and takes members off with 'without': it defines no operators of its own.",
+                "A flags value is combined with 'and', tested with 'has' / 'has_any' / 'lacks' / '==', and takes members off with 'without': it defines no operators of its own.",
                 location: routine.Location);
         }
 

@@ -784,15 +784,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                         includeMe: includeMe)
                 },
                 original: isPattern),
-            FlagsTestExpression flagsTest => CopyResolvedType(rewritten: flagsTest with
-                {
-                    Subject = RewriteExpression(expression: flagsTest.Subject,
-                        scope: scope,
-                        inheritedGenericParameters: inheritedGenericParameters,
-                        inheritedGenericConstraints: inheritedGenericConstraints,
-                        includeMe: includeMe)
-                },
-                original: flagsTest),
             InsertedTextExpression inserted => CopyResolvedType(rewritten: inserted with
                 {
                     Parts = inserted.Parts
@@ -1869,13 +1860,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     parameterNames: parameterNames,
                     captures: captures);
                 CollectLocalCapturesInPattern(pattern: isPattern.Pattern,
-                    outerScope: outerScope,
-                    parameterNames: parameterNames,
-                    captures: captures);
-                break;
-
-            case FlagsTestExpression flagsTest:
-                CollectLocalCapturesRecursive(expression: flagsTest.Subject,
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);

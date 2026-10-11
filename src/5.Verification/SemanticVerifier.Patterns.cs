@@ -101,10 +101,6 @@ public sealed partial class SemanticVerifier
                 HandleExpressionPattern(exprPat: exprPat);
                 break;
 
-            case FlagsPattern flagsPat:
-                HandleFlagsPattern(flagsPat: flagsPat, matchedType: matchedType);
-                break;
-
             case ComparisonPattern cmp when matchedType is ChoiceTypeSymbol:
                 // Choice case matching in a when-arm uses `== CASE` / `!= CASE` (discriminant equality).
                 // Ordering (`<`, `<=`, …) has no meaning on a choice.
@@ -320,47 +316,6 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>
-    /// Analyzes a flags pattern — the matched type must be a flags type and every named / excluded
-    /// flag must exist on it.
-    /// </summary>
-    private void HandleFlagsPattern(FlagsPattern flagsPat, TypeSymbol matchedType)
-    {
-        if (matchedType is not FlagsTypeSymbol flagsTypeForPat)
-        {
-            if (matchedType.Category != TypeCategory.Error)
-            {
-                ReportError(code: SemanticDiagnosticCode.FlagsTypeMismatch,
-                    message: $"Flags pattern requires a flags type, but got '{matchedType.Name}'.",
-                    location: flagsPat.Location);
-            }
-
-            return;
-        }
-
-        // Validate each flag name exists
-        foreach (string flagName in flagsPat.FlagNames.Where(predicate: fn =>
-                     flagsTypeForPat.Members.All(predicate: m => m.Name != fn)))
-        {
-            ReportError(code: SemanticDiagnosticCode.FlagsMemberNotFound,
-                message:
-                $"Flags type '{flagsTypeForPat.Name}' does not have a member named '{flagName}'.",
-                location: flagsPat.Location);
-        }
-
-        // Validate excluded flags
-        if (flagsPat.ExcludedFlags != null)
-        {
-            foreach (string flagName in flagsPat.ExcludedFlags.Where(predicate: fn =>
-                         flagsTypeForPat.Members.All(predicate: m => m.Name != fn)))
-            {
-                ReportError(code: SemanticDiagnosticCode.FlagsMemberNotFound,
-                    message:
-                    $"Flags type '{flagsTypeForPat.Name}' does not have a member named '{flagName}'.",
-                    location: flagsPat.Location);
-            }
-        }
-    }
 
     private void AnalyzeDestructuringPattern(DestructuringPattern pattern, TypeSymbol sourceType)
     {
@@ -976,8 +931,6 @@ public sealed partial class SemanticVerifier
             VariantPattern vp => $"variant:{vp.CaseName}",
             NonePattern => "none",
             CrashablePattern => "crashable",
-            FlagsPattern fp =>
-                $"flags:{string.Join(separator: "|", values: fp.FlagNames.OrderBy(keySelector: n => n))}",
             // Identifier, wildcard, else, guard, expression patterns are not deduplicated
             _ => null
         };

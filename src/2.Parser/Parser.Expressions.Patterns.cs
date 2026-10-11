@@ -11,50 +11,6 @@ public partial class Parser
 {
     private const string ExpectedFlagNameAfterAnd = "Expected flag name after 'and'";
 
-    private FlagsTestExpression ParseFlagsTestChain(Expression subject, string firstFlag,
-        bool isNegated, SourceLocation location)
-    {
-        var flags = new List<string> { firstFlag };
-        FlagsTestKind kind = isNegated
-            ? FlagsTestKind.Lack
-            : FlagsTestKind.Have;
-
-        if (CheckAndAdvance(type: TokenType.And))
-        {
-            // 'and' chain: READ and WRITE and ...
-            flags.Add(item: ConsumeIdentifier(errorMessage: ExpectedFlagNameAfterAnd));
-            while (CheckAndAdvance(type: TokenType.And))
-            {
-                flags.Add(item: ConsumeIdentifier(errorMessage: ExpectedFlagNameAfterAnd));
-            }
-
-            return new FlagsTestExpression(Subject: subject,
-                Kind: kind,
-                TestFlags: flags,
-                Connective: FlagsTestConnective.And,
-                ExcludedFlags: null,
-                Location: location);
-        }
-
-        if (CheckAndAdvance(type: TokenType.Or))
-        {
-            flags.Add(item: ConsumeIdentifier(errorMessage: "Expected flag name after 'or'"));
-            while (CheckAndAdvance(type: TokenType.Or))
-            {
-                flags.Add(item: ConsumeIdentifier(errorMessage: "Expected flag name after 'or'"));
-            }
-
-            return new FlagsTestExpression(Subject: subject,
-                Kind: kind,
-                TestFlags: flags,
-                Connective: FlagsTestConnective.Or,
-                ExcludedFlags: null,
-                Location: location);
-        }
-
-        // Should not reach here (caller checked for and/or)
-        throw ThrowParseError(message: "Expected 'and' or 'or' in flags test");
-    }
 
     /// <summary>
     /// Parses destructuring bindings for pattern matching.

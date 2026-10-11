@@ -1718,7 +1718,7 @@ public sealed partial class SemanticVerifier
     {
         return op is BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.Less
             or BinaryOperator.LessEqual or BinaryOperator.Greater or BinaryOperator.GreaterEqual
-            or BinaryOperator.In or BinaryOperator.NotIn or BinaryOperator.Have or BinaryOperator.Lack
+            or BinaryOperator.In or BinaryOperator.NotIn
             or BinaryOperator.Is or BinaryOperator.IsNot or BinaryOperator.Obeys;
     }
 
@@ -1801,21 +1801,6 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.IncompatibleComparisonTypes,
                     message:
                     $"Type '{right.Name}' does not support 'in'/'notin' (no 'has' member routine).",
-                    location: location);
-            }
-
-            return true;
-        }
-
-        // Container-first membership (have, lack): the LEFT is the container. Flags membership is a bit
-        // test (handled before this by TryAnalyzeFlagsOperator); any other container must have `contains`.
-        if (op is BinaryOperator.Have or BinaryOperator.Lack)
-        {
-            if (left is not FlagsTypeSymbol && LookupContains(container: left, element: right) == null)
-            {
-                ReportError(code: SemanticDiagnosticCode.IncompatibleComparisonTypes,
-                    message:
-                    $"Type '{left.Name}' does not support 'have'/'lack' (no 'has' or 'has_key' member routine).",
                     location: location);
             }
 

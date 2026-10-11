@@ -467,7 +467,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             SetLiteralExpression set => LowerSetLiteral(set: set),
             DictLiteralExpression dict => LowerDictLiteral(dict: dict),
             DictEntryLiteralExpression dictEntry => LowerDictEntryLiteral(dictEntry: dictEntry),
-            FlagsTestExpression flagsTest => LowerFlagsTest(flagsTest: flagsTest),
             RangeExpression range => LowerRange(range: range),
             WhenExpression whenExpr => LowerWhenExpr(whenExpr: whenExpr, expr: expr),
             IdentifierExpression id => LowerIdentifierExpr(id: id, expr: expr),
@@ -1336,82 +1335,6 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return mask;
     }
 
-    /// <summary>
-    /// Lowers a flags test (<c>x is READ and WRITE</c> / <c>x isnot …</c>) to a bitmask
-    /// comparison expression, folding in an optional excluded-flags check.
-    /// </summary>
-    private (List<Statement> Hoisted, Expression Expr) LowerFlagsTest(
-        FlagsTestExpression flagsTest)
-    {
-        (List<Statement> subjH, Expression loweredSubj) = LowerExpr(expr: flagsTest.Subject);
-        SourceLocation loc = flagsTest.Location;
-        TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
-        TypeSymbol? boolType = ctx.Registry.LookupType(name: "Bool");
-        if (loweredSubj.ResolvedType is not FlagsTypeSymbol flagsType || u64Type == null ||
-            boolType == null)
-        {
-            return (subjH, flagsTest with { Subject = loweredSubj });
-        }
-
-        ulong testMask = FlagMaskFor(flagsType: flagsType, flagNames: flagsTest.TestFlags);
-        ulong excludedMask = FlagMaskFor(flagsType: flagsType, flagNames: flagsTest.ExcludedFlags);
-
-        var maskLit = new LiteralExpression(
-            Value: testMask,
-            LiteralType: TokenType.U64Literal,
-            Location: loc) { ResolvedType = u64Type };
-        var zeroLit =
-            new LiteralExpression(Value: 0UL, LiteralType: TokenType.U64Literal, Location: loc)
-            {
-                ResolvedType = u64Type
-            };
-
-        // `(subject & mask)` — the tested bits of the subject. Immutable AST record, safe to share.
-        var masked = new BinaryExpression(Left: loweredSubj,
-            Operator: BinaryOperator.BitwiseAnd,
-            Right: maskLit,
-            Location: loc) { ResolvedType = u64Type };
-        bool isAnd = flagsTest.Connective == FlagsTestConnective.And;
-        // Per the have/lack test table (subject elided; and/or distribute over the repeated predicate):
-        //   have R and W -> (s & m) == m   (has ALL)
-        //   have R or  W -> (s & m) != 0   (has ANY)
-        //   lack R and W -> (s & m) == 0   (has NONE)
-        //   lack R or  W -> (s & m) != m   (missing at least one)
-        (BinaryOperator cmpOp, Expression rhs) = (flagsTest.Kind, isAnd) switch
-        {
-            (FlagsTestKind.Have, true) => (BinaryOperator.Equal, (Expression)maskLit),
-            (FlagsTestKind.Have, false) => (BinaryOperator.NotEqual, zeroLit),
-            (FlagsTestKind.Lack, true) => (BinaryOperator.Equal, zeroLit),
-            _ => (BinaryOperator.NotEqual, maskLit)
-        };
-        Expression bitResult = new BinaryExpression(Left: masked,
-            Operator: cmpOp,
-            Right: rhs,
-            Location: loc) { ResolvedType = boolType };
-
-        if (excludedMask > 0)
-        {
-            var excLit = new LiteralExpression(
-                Value: excludedMask,
-                LiteralType: TokenType.U64Literal,
-                Location: loc) { ResolvedType = u64Type };
-            var excCheck = new BinaryExpression(
-                Left: new BinaryExpression(Left: loweredSubj,
-                    Operator: BinaryOperator.BitwiseAnd,
-                    Right: excLit,
-                    Location: loc) { ResolvedType = u64Type },
-                Operator: BinaryOperator.Equal,
-                Right: zeroLit,
-                Location: loc) { ResolvedType = boolType };
-            bitResult = new BinaryExpression(
-                Left: bitResult,
-                Operator: BinaryOperator.And,
-                Right: excCheck,
-                Location: loc) { ResolvedType = boolType };
-        }
-
-        return (subjH, bitResult);
-    }
 
     /// <summary>
     /// Builds the step expression for a range: the explicit step if present, otherwise a default

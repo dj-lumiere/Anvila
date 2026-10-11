@@ -428,11 +428,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             case GuardPattern gp:
                 return
                     $"{PrintPattern(p: gp.InnerPattern)} where {gp.Guard.Accept(visitor: this)}";
-            case FlagsPattern fp:
-                string flagsSep = fp.Connective == FlagsTestConnective.And
-                    ? " and "
-                    : " or ";
-                return $"is {string.Join(separator: flagsSep, values: fp.FlagNames)}";
             case DestructuringPattern dp:
                 return
                     $"({string.Join(separator: ", ", values: dp.Bindings.Select(selector: PrintBinding))})";
@@ -1141,26 +1136,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     }
 
 
-    /// <inheritdoc/>
-    public string VisitFlagsTestExpression(FlagsTestExpression node)
-    {
-        string connective = node.Connective == FlagsTestConnective.Or
-            ? " or "
-            : " and ";
-        string flags = string.Join(separator: connective, values: node.TestFlags);
-        string kind = node.Kind switch
-        {
-            FlagsTestKind.Have => "have",
-            FlagsTestKind.Lack => "lack",
-            _ => node.Kind
-                     .ToString()
-                     .ToLower()
-        };
-        string excluded = node.ExcludedFlags is { Count: > 0 }
-            ? $" but {string.Join(separator: ", ", values: node.ExcludedFlags)}"
-            : "";
-        return $"({node.Subject.Accept(visitor: this)} {kind} {flags}{excluded})";
-    }
 
 
     /// <inheritdoc/>

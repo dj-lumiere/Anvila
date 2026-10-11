@@ -29,11 +29,6 @@ namespace Builder.Lowering.Passes;
 /// <item><see cref="ElsePattern"/> on <c>Maybe[T record]</c> -> binding -> <c>subject.value</c>.</item>
 /// </list>
 ///
-/// <para>Lowerable patterns (flags subjects):</para>
-/// <list type="bullet">
-/// <item><see cref="FlagsPattern"/> -> <see cref="FlagsTestExpression"/> condition.</item>
-/// </list>
-///
 /// <para>Lowerable patterns (record subjects -> destructuring):</para>
 /// <list type="bullet">
 /// <item><see cref="DestructuringPattern"/> with all named simple bindings -> always matches,
@@ -429,7 +424,6 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             IdentifierPattern => true,
             ExpressionPattern => true,
             ComparisonPattern => true,
-            FlagsPattern => subjectType is FlagsTypeSymbol,
 
             // ElsePattern with binding on Result/Lookup, Maybe[T entity], or Maybe[T record]: lowerable.
             ElsePattern ep => !ep.VariableName.HasValue() || IsResultOrLookup(type: subjectType) ||
@@ -665,19 +659,6 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     subjectType: subjectType,
                     loc: loc,
                     boolType: boolType);
-
-            // -----------------------------------------------------------------------------
-
-            case FlagsPattern fp:
-            {
-                var cond = new FlagsTestExpression(Subject: subject,
-                    Kind: fp.IsNegated ? FlagsTestKind.Lack : FlagsTestKind.Have,
-                    TestFlags: fp.FlagNames,
-                    Connective: fp.Connective,
-                    ExcludedFlags: fp.ExcludedFlags,
-                    Location: loc) { ResolvedType = boolType };
-                return (cond, null);
-            }
 
             // -----------------------------------------------------------------------------
 

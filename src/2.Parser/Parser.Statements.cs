@@ -548,18 +548,6 @@ public partial class Parser
             return ParseConditionBasedPattern(clauseLocation: clauseLocation);
         }
 
-        // Flags membership arms: `have READ and WRITE => …` / `lack READ => …` (container-first), as in a
-        // when expression.
-        if (CheckAndAdvance(type: TokenType.Have))
-        {
-            return ParseFlagsWhenPattern(isNegated: false);
-        }
-
-        if (CheckAndAdvance(type: TokenType.Lack))
-        {
-            return ParseFlagsWhenPattern(isNegated: true);
-        }
-
         // Cases 3+4: 'is' / 'isnot' keyword — type or flags pattern
         if (CheckAndAdvance(type: TokenType.Is))
         {
@@ -787,41 +775,6 @@ public partial class Parser
         }
     }
 
-    /// <summary>
-    /// Parses a flags pattern in a when clause after 'is' when the next tokens
-    /// indicate a flags chain (identifier followed by and/or/but).
-    /// Examples: is READ and WRITE =&gt; ..., is READ or WRITE =&gt; ...
-    /// </summary>
-    private FlagsPattern ParseFlagsWhenPattern(bool isNegated)
-    {
-        SourceLocation loc = GetLocation();
-        var flags = new List<string>();
-        flags.Add(item: ConsumeIdentifier(errorMessage: "Expected flag name after 'have'/'lack'"));
-
-        FlagsTestConnective connective = FlagsTestConnective.And;
-
-        if (Check(type: TokenType.And))
-        {
-            while (CheckAndAdvance(type: TokenType.And))
-            {
-                flags.Add(item: ConsumeIdentifier(errorMessage: ExpectedFlagNameAfterAnd));
-            }
-        }
-        else if (Check(type: TokenType.Or))
-        {
-            connective = FlagsTestConnective.Or;
-            while (CheckAndAdvance(type: TokenType.Or))
-            {
-                flags.Add(item: ConsumeIdentifier(errorMessage: "Expected flag name after 'or'"));
-            }
-        }
-
-        return new FlagsPattern(FlagNames: flags,
-            Connective: connective,
-            ExcludedFlags: null,
-            IsNegated: isNegated,
-            Location: loc);
-    }
 
     /// <summary>
     /// Parses a pattern for use in when clauses.

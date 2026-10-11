@@ -938,13 +938,15 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // #134/#135: Flags types cannot use any operator wired memberRoutines
-        if (objectType is FlagsTypeSymbol && IsOperatorWired(name: member.MemberName))
+        // #134/#135: Flags types cannot use any operator wired memberRoutines. Their own tests (`has`, `has_any`,
+        // `lacks`) are plain routines of the flags protocol.
+        if (objectType is FlagsTypeSymbol && IsOperatorWired(name: member.MemberName) &&
+            member.MemberName is not ("has" or "has_any" or "lacks"))
         {
             ReportError(code: SemanticDiagnosticCode.ArithmeticOnFlagsType,
                 message:
                 $"Operator '{member.MemberName}' cannot be used with flags type '{objectType.Name}'. " +
-                "Combine flags with 'and' (READ and WRITE), take some off with 'without' (perms.without(WRITE)), and test them with 'have' / 'lack'.",
+                "Combine flags with 'and' (READ and WRITE), take some off with 'without' (perms.without(WRITE)), and test them with 'has' / 'has_any' / 'lacks'.",
                 location: call.Location);
             return ErrorTypeSymbol.Instance;
         }

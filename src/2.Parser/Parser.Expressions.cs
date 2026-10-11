@@ -442,17 +442,6 @@ public partial class Parser
             return new ExpressionPattern(Expression: condExpr, Location: clauseLocation);
         }
 
-        // Flags membership arms: `have READ and WRITE => …` / `lack READ => …` (container-first).
-        if (CheckAndAdvance(type: TokenType.Have))
-        {
-            return ParseFlagsWhenPattern(isNegated: false);
-        }
-
-        if (CheckAndAdvance(type: TokenType.Lack))
-        {
-            return ParseFlagsWhenPattern(isNegated: true);
-        }
-
         if (CheckAndAdvance(type: TokenType.Is))
         {
             return ParseIsWhenPattern();

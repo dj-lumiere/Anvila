@@ -259,7 +259,6 @@ public partial class Parser
         {
             TokenType.In or TokenType.Is or TokenType.Obeys => true,
             TokenType.NotIn or TokenType.IsNot => true,
-            TokenType.Have or TokenType.Lack => true,
             TokenType.Less or TokenType.LessEqual or TokenType.Greater or TokenType.GreaterEqual =>
                 true,
             TokenType.Equal or TokenType.NotEqual or TokenType.ThreeWayComparison => true,
@@ -704,8 +703,6 @@ public partial class Parser
             TokenType.Assign => BinaryOperator.Assign,
             TokenType.In => BinaryOperator.In,
             TokenType.NotIn => BinaryOperator.NotIn,
-            TokenType.Have => BinaryOperator.Have,
-            TokenType.Lack => BinaryOperator.Lack,
             TokenType.Is => BinaryOperator.Is,
             TokenType.IsNot => BinaryOperator.IsNot,
             TokenType.Obeys => BinaryOperator.Obeys,

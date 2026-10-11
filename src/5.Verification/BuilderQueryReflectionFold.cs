@@ -344,7 +344,6 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
                 gmc: gmc),
             GenericMemberExpression gm => FoldGenericMemberExpr(expr: expr, gm: gm),
             IsPatternExpression ip => FoldIsPatternExpr(expr: expr, ip: ip),
-            FlagsTestExpression ft => FoldFlagsTestExpr(expr: expr, ft: ft),
             ChainedComparisonExpression ch => FoldChainedComparisonExpr(expr: expr, ch: ch),
             CompoundAssignmentExpression cp => FoldCompoundAssignmentExpr(expr: expr, cp: cp),
             RangeExpression rg => FoldRangeExpr(expr: expr, rg: rg),
@@ -471,13 +470,6 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
             : ip with { Expression = e };
     }
 
-    private Expression FoldFlagsTestExpr(Expression expr, FlagsTestExpression ft)
-    {
-        Expression s = FoldReflectionExpr(expr: ft.Subject);
-        return ReferenceEquals(objA: s, objB: ft.Subject)
-            ? expr
-            : ft with { Subject = s };
-    }
 
     private Expression FoldChainedComparisonExpr(Expression expr, ChainedComparisonExpression ch)
     {

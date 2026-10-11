@@ -21,7 +21,22 @@ internal partial class Program
     private static int RunMigrateCommand(string[] args)
     {
         bool check = args.Contains(value: "--check");
-        var paths = args.Skip(count: 1).Where(predicate: a => a != "--check").ToList();
+        // `--step have` runs the containment rewrite alone, on any source whatever release its manifest names, and
+        // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
+        int stepAt = Array.IndexOf(array: args, value: "--step");
+        string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
+        if (stepAt >= 0 && step != "have")
+        {
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have");
+            return 2;
+        }
+
+        var paths = args.Skip(count: 1).Where(predicate: (a, i) => a is not ("--check" or "--step") && (stepAt < 0 || i + 1 != stepAt + 1)).ToList();
+        if (step == "have")
+        {
+            return RunHaveStep(paths: paths, check: check);
+        }
+
         if (paths.Count == 0)
         {
             Console.Error.WriteLine(value: $"usage: {CliRules.ToolName} migrate [--check] <file-or-dir>...");
@@ -1405,6 +1420,400 @@ internal partial class Program
                 yield return token;
             }
         }
+    }
+
+    /// <summary>
+    /// The containment step: every <c>have</c>/<c>lack</c> in the .rf/.sf files and in the razorforge/suflae code
+    /// blocks of the .md pages under <paramref name="paths"/> is rewritten as a call.
+    /// </summary>
+    private static int RunHaveStep(List<string> paths, bool check)
+    {
+        int changedFiles = 0;
+        var files = new List<string>();
+        foreach (string path in paths)
+        {
+            if (File.Exists(path: path))
+            {
+                files.Add(item: path);
+            }
+            else if (Directory.Exists(path: path))
+            {
+                files.AddRange(collection: Directory.EnumerateFiles(path: path, searchPattern: "*", searchOption: SearchOption.AllDirectories)
+                    .Where(predicate: f => f.EndsWith(value: ".rf", comparisonType: StringComparison.Ordinal) ||
+                                           f.EndsWith(value: ".sf", comparisonType: StringComparison.Ordinal) ||
+                                           f.EndsWith(value: ".md", comparisonType: StringComparison.Ordinal))
+                    .Where(predicate: f => !f.Contains(value: $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
+                                           !f.Contains(value: $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+                    .Order());
+            }
+            else
+            {
+                Console.Error.WriteLine(value: $"{path}: no such file or directory");
+            }
+        }
+
+        foreach (string file in files)
+        {
+            string source = File.ReadAllText(path: file);
+            string rewritten = file.EndsWith(value: ".md", comparisonType: StringComparison.Ordinal)
+                ? RewriteHaveInMarkdown(file: file, text: source)
+                : RewriteHave(file: file, source: source, language: SourceLanguage(path: file), lineOffset: 0);
+            if (rewritten == source)
+            {
+                continue;
+            }
+
+            changedFiles++;
+            if (!check)
+            {
+                File.WriteAllText(path: file, contents: rewritten);
+            }
+            else
+            {
+                Console.WriteLine(value: file);
+            }
+        }
+
+        Console.WriteLine(value: $"{changedFiles} file(s) {(check ? "would change" : "changed")}");
+        return check && changedFiles > 0 ? 1 : 0;
+    }
+
+    /// <summary>The razorforge and suflae code blocks of a page, each rewritten as a source of its language.</summary>
+    private static string RewriteHaveInMarkdown(string file, string text)
+    {
+        string[] lines = text.Split(separator: '\n');
+        var result = new List<string>(capacity: lines.Length);
+        int i = 0;
+        while (i < lines.Length)
+        {
+            string line = lines[i];
+            Language? language = line.TrimEnd() switch
+            {
+                "```razorforge" => Language.RazorForge,
+                "```suflae" => Language.Suflae,
+                _ => null
+            };
+            if (language is null)
+            {
+                result.Add(item: line);
+                i++;
+                continue;
+            }
+
+            int end = i + 1;
+            while (end < lines.Length && !lines[end].StartsWith(value: "```", comparisonType: StringComparison.Ordinal))
+            {
+                end++;
+            }
+
+            result.Add(item: line);
+            string block = string.Join(separator: '\n', values: lines[(i + 1)..end]);
+            string rewritten = RewriteHave(file: file, source: block, language: language.Value, lineOffset: i + 1);
+            result.AddRange(collection: rewritten.Split(separator: '\n'));
+            i = end;
+        }
+
+        return string.Join(separator: '\n', values: result);
+    }
+
+    private static string RewriteHave(string file, string source, Language language, int lineOffset)
+    {
+        List<Token> tokens;
+        try
+        {
+            tokens = Lexers.Tokenize(source: source, fileName: file, language: language);
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine(value: $"{file}: cannot read it: {e.Message}");
+            return source;
+        }
+
+        var edits = new List<MigrationEdit>();
+        var rewrittenWhens = new HashSet<int>();
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            if ((tokens[index: i].Type is TokenType.Have or TokenType.Lack || tokens[index: i] is { Type: TokenType.Identifier, Text: "have" or "lack" }) && tokens[index: i].Position >= 0)
+            {
+                edits.AddRange(collection: HaveLackEdits(tokens: tokens, index: i, source: source, rewrittenWhens: rewrittenWhens));
+            }
+        }
+
+        foreach (MigrationEdit edit in edits)
+        {
+            Console.WriteLine(value: $"{file}:{edit.Line + lineOffset}: {edit.What}");
+        }
+
+        return edits.Count == 0 ? source : ApplyMigrationEdits(source: source, edits: edits);
+    }
+
+    /// <summary>Where the operand ending at token <paramref name="last"/> begins: a chain of names, members, calls,
+    /// indexes and literals, a parenthesized group, with a leading minus on a literal.</summary>
+    private static int OperandStart(List<Token> tokens, int last)
+    {
+        int j = last;
+        while (j >= 0)
+        {
+            Token t = tokens[index: j];
+            if (t.Type is TokenType.RightParen or TokenType.RightBracket)
+            {
+                TokenType open = t.Type == TokenType.RightParen ? TokenType.LeftParen : TokenType.LeftBracket;
+                int depth = 0;
+                int k = j;
+                for (; k >= 0; k--)
+                {
+                    if (tokens[index: k].Type == t.Type) depth++;
+                    else if (tokens[index: k].Type == open && --depth == 0) break;
+                }
+
+                j = k;
+                // A call or an index: the chain goes on before the bracket.
+                if (j > 0 && (IsChainToken(token: tokens[index: j - 1]) || tokens[index: j - 1].Type is TokenType.RightParen or TokenType.RightBracket))
+                {
+                    j--;
+                    continue;
+                }
+
+                break;
+            }
+
+            if (!IsChainToken(token: t)) break;
+            if (j > 0 && (IsChainToken(token: tokens[index: j - 1]) || tokens[index: j - 1].Type is TokenType.RightParen or TokenType.RightBracket))
+            {
+                j--;
+                continue;
+            }
+
+            break;
+        }
+
+        j = Math.Max(val1: j, val2: 0);
+        if (j > 0 && tokens[index: j - 1].Type == TokenType.Minus && tokens[index: j].Type.ToString().EndsWith(value: "Literal", comparisonType: StringComparison.Ordinal) &&
+            (j == 1 || !IsChainToken(token: tokens[index: j - 2]) && tokens[index: j - 2].Type is not (TokenType.RightParen or TokenType.RightBracket)))
+        {
+            j--;
+        }
+
+        return j;
+    }
+
+    /// <summary>The token types a containment element stops before: the operators that bind looser than the element.</summary>
+    private static readonly HashSet<TokenType> ElementEnds =
+    [
+        TokenType.And, TokenType.Or, TokenType.Equal, TokenType.NotEqual, TokenType.IdentityEqual, TokenType.IdentityNotEqual,
+        TokenType.Less, TokenType.LessEqual, TokenType.Greater, TokenType.GreaterEqual, TokenType.ThreeWayComparison,
+        TokenType.Have, TokenType.Lack, TokenType.Is, TokenType.IsNot, TokenType.Obeys, TokenType.NoneCoalesce,
+        TokenType.RightBrace
+    ];
+
+    /// <summary>The last token of the element that starts at <paramref name="first"/>.</summary>
+    private static int ElementEnd(List<Token> tokens, int first)
+    {
+        int depth = 0;
+        int last = first;
+        for (int j = first; j < tokens.Count; j++)
+        {
+            Token t = tokens[index: j];
+            if (depth == 0 && (ExpressionEnds.Contains(item: t.Type) || ElementEnds.Contains(item: t.Type) || t is { Type: TokenType.Identifier, Text: "but" }))
+            {
+                break;
+            }
+
+            if (t.Type is TokenType.LeftParen or TokenType.LeftBracket) depth++;
+            else if (t.Type is TokenType.RightParen or TokenType.RightBracket)
+            {
+                if (--depth < 0) break;
+            }
+
+            last = j;
+        }
+
+        return last;
+    }
+
+    private static string TextOf(List<Token> tokens, int first, int last, string source)
+    {
+        return source[tokens[index: first].Position..EndOffset(tokens: tokens, index: last, source: source)];
+    }
+
+    /// <summary>Where the token at <paramref name="index"/> ends in the source: a literal's text leaves out its
+    /// quotes, so the end is read from where the next token starts, less the space between them.</summary>
+    private static int EndOffset(List<Token> tokens, int index, string source)
+    {
+        Token t = tokens[index: index];
+        int plain = t.Position + t.Text.Length;
+        if (index + 1 >= tokens.Count || tokens[index: index + 1].Position <= t.Position)
+        {
+            return plain;
+        }
+
+        int end = Math.Min(val1: tokens[index: index + 1].Position, val2: source.Length);
+        while (end > plain && end > 0 && source[end - 1] is ' ' or '\t')
+        {
+            end--;
+        }
+
+        return Math.Max(val1: end, val2: plain);
+    }
+
+    /// <summary>
+    /// <c>xs have x</c> is <c>xs.has(x)</c> and <c>xs lack x</c> <c>xs.lacks(x)</c>; a range in front takes
+    /// parentheses (<c>(0 to 10).has(3)</c>). A flags chain: <c>have A and B</c> is <c>.has(A and B)</c>,
+    /// <c>have A or B</c> <c>.has_any(A and B)</c>, <c>lack A and B</c> <c>.lacks(A and B)</c>, <c>lack A or B</c>
+    /// <c>not xs.has(A and B)</c>, and <c>have A but B</c> <c>xs.has(A) and xs.lacks(B)</c>. A <c>when</c> arm
+    /// <c>have A =&gt;</c> under <c>when perms</c> is the condition arm <c>perms.has(A) =&gt;</c> of a bare <c>when</c>.
+    /// </summary>
+    private static List<MigrationEdit> HaveLackEdits(List<Token> tokens, int index, string source, HashSet<int> rewrittenWhens)
+    {
+        Token word = tokens[index: index];
+        bool lack = word.Type == TokenType.Lack || word.Text == "lack";
+        string what = lack ? "xs lack x → xs.lacks(x)" : "xs have x → xs.has(x)";
+        var edits = new List<MigrationEdit>();
+
+        // The flags chain after the word, when there is one: its names and its connective.
+        var names = new List<int>();
+        string? connective = null;
+        int? excluded = null;
+        int chainEnd = index;
+        if (index + 2 < tokens.Count && tokens[index: index + 1].Type == TokenType.Identifier &&
+            (tokens[index: index + 2].Type is TokenType.And or TokenType.Or || tokens[index: index + 2] is { Type: TokenType.Identifier, Text: "but" }))
+        {
+            names.Add(item: index + 1);
+            int j = index + 2;
+            while (j + 1 < tokens.Count && tokens[index: j].Type is TokenType.And or TokenType.Or && tokens[index: j + 1].Type == TokenType.Identifier &&
+                   (connective is null || connective == tokens[index: j].Text))
+            {
+                connective = tokens[index: j].Text;
+                names.Add(item: j + 1);
+                j += 2;
+            }
+
+            if (j + 1 < tokens.Count && tokens[index: j] is { Type: TokenType.Identifier, Text: "but" } && tokens[index: j + 1].Type == TokenType.Identifier)
+            {
+                excluded = j + 1;
+                j += 2;
+            }
+
+            chainEnd = j - 1;
+        }
+
+        bool armForm = index > 0 && tokens[index: index - 1].Type is TokenType.Newline or TokenType.Indent or TokenType.Dedent;
+        if (armForm)
+        {
+            // The enclosing `when`: the nearest one with this arm's block open between them.
+            int depth = 0;
+            int whenAt = -1;
+            for (int k = index - 1; k >= 0; k--)
+            {
+                if (tokens[index: k].Type == TokenType.Indent) depth++;
+                else if (tokens[index: k].Type == TokenType.Dedent) depth--;
+                else if (tokens[index: k].Type == TokenType.When && depth == 1) { whenAt = k; break; }
+            }
+
+            if (whenAt < 0 || names.Count == 0 && index + 1 >= tokens.Count)
+            {
+                return [];
+            }
+
+            int subjectFirst = whenAt + 1;
+            int subjectLast = subjectFirst;
+            while (subjectLast + 1 < tokens.Count && tokens[index: subjectLast + 1].Type is not (TokenType.Newline or TokenType.Indent)) subjectLast++;
+            if (tokens[index: subjectFirst].Type is TokenType.Newline or TokenType.Indent)
+            {
+                return [];
+            }
+
+            string subject = TextOf(tokens: tokens, first: subjectFirst, last: subjectLast, source: source);
+            if (rewrittenWhens.Add(item: whenAt))
+            {
+                Token w = tokens[index: whenAt];
+                edits.Add(item: new MigrationEdit(Start: w.Position + w.Text.Length, Length: tokens[index: subjectLast].Position + tokens[index: subjectLast].Text.Length - w.Position - w.Text.Length,
+                    Replacement: "", Line: w.Line, What: "when perms / have A => → when / perms.has(A) =>"));
+            }
+
+            int armLast = names.Count > 0 ? chainEnd : index + 1;
+            string flags = names.Count > 0
+                ? string.Join(separator: " and ", values: names.Select(selector: n => tokens[index: n].Text))
+                : tokens[index: index + 1].Text;
+            string test = (lack, connective) switch
+            {
+                (false, "or") => $"{subject}.has_any({flags})",
+                (false, _) => $"{subject}.has({flags})",
+                (true, "or") => $"not {subject}.has({flags})",
+                (true, _) => $"{subject}.lacks({flags})"
+            };
+            if (excluded is { } ex) test += $" and {subject}.{(lack ? "has" : "lacks")}({tokens[index: ex].Text})";
+            Token last = tokens[index: armLast];
+            edits.Add(item: new MigrationEdit(Start: word.Position, Length: last.Position + last.Text.Length - word.Position, Replacement: test,
+                Line: word.Line, What: "have A => → perms.has(A) =>"));
+            return edits;
+        }
+
+        if (index == 0 || index + 1 >= tokens.Count || !(IsChainToken(token: tokens[index: index - 1]) || tokens[index: index - 1].Type is TokenType.RightParen or TokenType.RightBracket))
+        {
+            return [];
+        }
+
+        int leftLast = index - 1;
+        int leftFirst = OperandStart(tokens: tokens, last: leftLast);
+        bool range = false;
+        while (leftFirst > 0 && tokens[index: leftFirst - 1].Type is TokenType.To or TokenType.Til or TokenType.By && leftFirst >= 2)
+        {
+            range = true;
+            leftFirst = OperandStart(tokens: tokens, last: leftFirst - 2);
+        }
+
+        int gapStart = EndOffset(tokens: tokens, index: leftLast, source: source);
+        string leftText = TextOf(tokens: tokens, first: leftFirst, last: leftLast, source: source);
+        // A range in front is parenthesized: the closing parenthesis joins the call's edit, so the two keep their order.
+        string close = range ? ")" : "";
+        if (range)
+        {
+            leftText = $"({leftText})";
+            edits.Add(item: new MigrationEdit(Start: tokens[index: leftFirst].Position, Length: 0, Replacement: "(", Line: word.Line, What: what));
+        }
+
+        if (names.Count > 0)
+        {
+            string flags = string.Join(separator: " and ", values: names.Select(selector: n => tokens[index: n].Text));
+            Token last = tokens[index: chainEnd];
+            string call = (lack, connective) switch
+            {
+                (false, "or") => $".has_any({flags})",
+                (false, _) => $".has({flags})",
+                (true, "or") => $".has({flags})",
+                (true, _) => $".lacks({flags})"
+            };
+            if (excluded is { } ex) call += $" and {leftText}.{(lack ? "has" : "lacks")}({tokens[index: ex].Text})";
+            if (lack && connective == "or")
+            {
+                edits.Add(item: new MigrationEdit(Start: tokens[index: leftFirst].Position, Length: 0, Replacement: "not ", Line: word.Line, What: what));
+            }
+
+            edits.Add(item: new MigrationEdit(Start: gapStart, Length: last.Position + last.Text.Length - gapStart, Replacement: close + call, Line: word.Line, What: what));
+            return edits;
+        }
+
+        int rightFirst = index + 1;
+        int rightLast = ElementEnd(tokens: tokens, first: rightFirst);
+        if (rightLast < rightFirst)
+        {
+            return [];
+        }
+
+        Token first = tokens[index: rightFirst];
+        Token end = tokens[index: rightLast];
+        string verb = lack ? ".lacks" : ".has";
+        bool grouped = first.Type == TokenType.LeftParen && end.Type == TokenType.RightParen && OperandStart(tokens: tokens, last: rightLast) == rightFirst;
+        if (grouped)
+        {
+            edits.Add(item: new MigrationEdit(Start: gapStart, Length: first.Position - gapStart, Replacement: close + verb, Line: word.Line, What: what));
+            return edits;
+        }
+
+        edits.Add(item: new MigrationEdit(Start: gapStart, Length: first.Position - gapStart, Replacement: close + verb + "(", Line: word.Line, What: what));
+        edits.Add(item: new MigrationEdit(Start: EndOffset(tokens: tokens, index: rightLast, source: source), Length: 0, Replacement: ")", Line: word.Line, What: what));
+        return edits;
     }
 
     /// <summary>Applies <paramref name="edits"/> to <paramref name="source"/>, last first so the earlier spans stay put.</summary>

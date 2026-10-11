@@ -89,7 +89,6 @@ public sealed partial class SemanticVerifier
             GenericMemberExpression genericMember => AnalyzeGenericMemberExpression(
                 genericMember: genericMember),
             IsPatternExpression isPat => AnalyzeIsPatternExpression(isPat: isPat),
-            FlagsTestExpression flagsTest => AnalyzeFlagsTestExpression(flagsTest: flagsTest),
             StealExpression steal => AnalyzeStealExpression(steal: steal),
             BackIndexExpression back => AnalyzeBackIndexExpression(back: back, expectedType: expectedType),
             TypeExpression typeExpr => ResolveType(typeExpr: typeExpr),
@@ -701,21 +700,10 @@ public sealed partial class SemanticVerifier
         TypeSymbol leftType = AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
         // Pass leftType as expected for assignments so RHS literals like `none`
         // see the target's carrier-slot type as their contextual expected type.
-        // A flags test names a bare member of the left side's flags type: `perms have WRITE`.
-        bool flagsTest = binary.Operator is BinaryOperator.Have or BinaryOperator.Lack && leftType is FlagsTypeSymbol;
-        if (flagsTest)
-        {
-            _flagsContextStack.Push(item: leftType);
-        }
 
         TypeSymbol rightType = binary.Operator == BinaryOperator.Assign
             ? AnalyzeExpression(expression: binary.Right, expectedType: leftType)
             : AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
-        if (flagsTest)
-        {
-            _flagsContextStack.Pop();
-        }
-
         // An operand that is a value's token (an iterated element, an element read into a variable) is its value
         // here: `x + 1` with `x: Viewing[S64]` adds S64s (TokenReadLoweringPass reads it through the token).
         if (binary.Operator != BinaryOperator.Assign)
@@ -880,23 +868,6 @@ public sealed partial class SemanticVerifier
         result = null;
         switch (binary.Operator)
         {
-            // Flags membership (container-first): `flags have READ` / `flags lack READ` → Bool. A single
-            // flag member/mask on the right; a multi-flag and/or chain is a FlagsTestExpression, not
-            // this binary. Both operands must be the same flags type.
-            case BinaryOperator.Have or BinaryOperator.Lack when leftType is FlagsTypeSymbol:
-                if (rightType.Name != leftType.Name)
-                {
-                    ReportError(code: SemanticDiagnosticCode.FlagsTypeMismatch,
-                        message:
-                        $"Flags '{binary.Operator.ToStringRepresentation()}' test needs a '{leftType.Name}' member on the right, but got '{rightType.Name}'.",
-                        location: binary.Location);
-                    result = ErrorTypeSymbol.Instance;
-                    return true;
-                }
-
-                result = _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
-                return true;
-            // #128: 'or' cannot be used to combine flags outside have/lack tests
             case BinaryOperator.Or when leftType is FlagsTypeSymbol || rightType is FlagsTypeSymbol:
                 ReportError(code: SemanticDiagnosticCode.FlagsOrInAssignment,
                     message:
@@ -1311,18 +1282,6 @@ public sealed partial class SemanticVerifier
             }
         }
 
-        if (binary.Operator is BinaryOperator.Have or BinaryOperator.Lack &&
-            binary.Right is LiteralExpression { LiteralType: TokenType.UndecidedInteger })
-        {
-            TypeSymbol container = UnwrapCollectionLiteralExpectedType(type: leftType);
-            if (container.TypeArguments is { Count: >= 1 } contArgs &&
-                IsFixedWidthIntegerType(type: contArgs[index: 0]))
-            {
-                rightType = AnalyzeExpression(expression: binary.Right,
-                    expectedType: contArgs[index: 0]);
-            }
-        }
-
         return (leftType, rightType);
     }
 
@@ -1372,12 +1331,11 @@ public sealed partial class SemanticVerifier
             // Flags support `==`/`!=` (exact bitmask) and `have`/`lack` (container-first membership /
             // bit tests); every other operator is rejected.
             case FlagsTypeSymbol
-                when binary.Operator is not (BinaryOperator.Equal or BinaryOperator.NotEqual
-                    or BinaryOperator.Have or BinaryOperator.Lack):
+                when binary.Operator is not (BinaryOperator.Equal or BinaryOperator.NotEqual):
                 ReportError(code: SemanticDiagnosticCode.ArithmeticOnFlagsType,
                     message:
                     $"Operator '{binary.Operator.ToStringRepresentation()}' cannot be used " +
-                    $"with flags type '{leftType.Name}'. Use 'have'/'lack'/'==' for flag operations.",
+                    $"with flags type '{leftType.Name}'. Test flags with 'has'/'has_any'/'lacks' and compare with '=='.",
                     location: binary.Location);
                 return true;
         }
@@ -1843,7 +1801,7 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.ArithmeticOnFlagsType,
                     message:
                     $"Operator '{compound.Operator.ToStringRepresentation()}=' cannot be used with flags type '{targetType.Name}'. " +
-                    "Combine flags with 'and' (READ and WRITE), take some off with 'without' (perms.without(WRITE)), and test them with 'have' / 'lack'.",
+                    "Combine flags with 'and' (READ and WRITE), take some off with 'without' (perms.without(WRITE)), and test them with 'has' / 'has_any' / 'lacks'.",
                     location: compound.Location);
                 return ErrorTypeSymbol.Instance;
         }
