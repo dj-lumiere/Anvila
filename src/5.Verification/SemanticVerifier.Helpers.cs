@@ -1866,9 +1866,12 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // Check that types are compatible (same type or error type)
+        // Check that types are compatible (same type or error type). A type that writes its comparison against the
+        // other type itself (Suflae's `Integer.cmp(you: Decimal)`) compares with it.
+        string? comparison = op is BinaryOperator.Equal or BinaryOperator.NotEqual ? "eq" : "cmp";
         if (!IsAssignableTo(source: left, target: right) &&
-            !IsAssignableTo(source: right, target: left))
+            !IsAssignableTo(source: right, target: left) &&
+            !DeclaresOperatorRoutine(receiverType: left, operatorMemberRoutine: comparison, argType: right))
         {
             ReportError(code: SemanticDiagnosticCode.IncompatibleComparisonTypes,
                 message:

@@ -1119,6 +1119,11 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return LowerNonOverloadableBinary(expr: expr, bin: bin);
         }
 
+        if (OrderThroughCrossTypeCmp(bin: bin) is { } ordered)
+        {
+            return VisitExpression(expr: ordered);
+        }
+
         // An entity element operand (`a == boxes[0]`) is read through a view token on the element, not a
         // getitem copy.
         Expression left = LowerElementPath(expr: bin.Left, write: false) ?? VisitExpression(expr: bin.Left);
@@ -1222,6 +1227,51 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             ResolvedRoutine = resolvedMemberRoutine,
             LoweringKind = lk
         };
+    }
+
+    /// <summary>
+    /// An ordering of two different types that only a <c>cmp</c> taking the other type answers
+    /// (<c>Integer.cmp(you: Decimal)</c>): <c>a &lt; b</c> becomes <c>S32(from: a.cmp(you: b)) &lt; 0</c>, the sign read as
+    /// its number (-1, 0, 1). The derived <c>lt</c>/<c>le</c>/<c>gt</c>/<c>ge</c> take only their own type, so resolving the
+    /// operator by name would pick that one and read the other operand as the wrong type. Null when the operator is
+    /// not an ordering, the types are the same, or the receiver has an ordering routine for the other type itself.
+    /// </summary>
+    private Expression? OrderThroughCrossTypeCmp(BinaryExpression bin)
+    {
+        if (bin.Operator is not (BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater
+                or BinaryOperator.GreaterEqual) ||
+            bin.Left.ResolvedType is not { } left || bin.Right.ResolvedType is not { } right ||
+            left.FullName == right.FullName || bin.Operator.GetMemberRoutineName() is not { } name ||
+            TakesExactly(routine: ctx.Registry.LookupMemberRoutineOverload(type: left, memberRoutineName: name,
+                argTypes: [right]), argType: right) ||
+            ctx.Registry.LookupMemberRoutineOverload(type: left, memberRoutineName: "cmp", argTypes: [right]) is not
+                { } cmp || !TakesExactly(routine: cmp, argType: right) ||
+            ctx.Registry.LookupType(name: "S32") is not { } s32)
+        {
+            return null;
+        }
+
+        var sign = new CallExpression(
+            Callee: new MemberExpression(Object: bin.Left, MemberName: "cmp", Location: bin.Location)
+            {
+                IsFailable = cmp.IsFailable
+            },
+            Arguments: [new NamedArgumentExpression(Name: cmp.Parameters[index: 0].Name, Value: bin.Right, Location: bin.Location)],
+            Location: bin.Location) { ResolvedType = cmp.ReturnType, ResolvedRoutine = cmp };
+        var number = new CreatorExpression(TypeName: s32.Name, TypeArguments: null, MemberVariables: [("from", sign)],
+            Location: bin.Location) { ResolvedType = s32, LoweringKind = CallLoweringKind.TypeConstructor };
+        var zero = new LiteralExpression(Value: 0, LiteralType: TokenType.S32Literal, Location: bin.Location)
+        {
+            ResolvedType = s32
+        };
+        return bin with { Left = number, Right = zero };
+    }
+
+    /// <summary>Whether <paramref name="routine"/>'s operand is exactly <paramref name="argType"/>.</summary>
+    private static bool TakesExactly(RoutineInfo? routine, TypeSymbol argType)
+    {
+        return routine?.Parameters.FirstOrDefault(predicate: p => p.Name != "me") is { } p &&
+               p.Type.FullName == argType.FullName;
     }
 
     /// <summary>

@@ -774,6 +774,56 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// The error for two chosen number types side by side: they mix only with their own type, and the fix converts both
+    /// to the smallest type that holds every value of each (`a.to[S64]() + b.to[S64]()`), or to `Integer` when no fixed
+    /// width does.
+    /// </summary>
+    private string MixedNumbersMessage(TypeSymbol left, TypeSymbol right, string leftText, string rightText, string op)
+    {
+        string head = $"'{left.Name}' and '{right.Name}' mix only with their own type.";
+        return HoldsBoth(a: left.Name, b: right.Name) is { } both
+            ? $"{head} To hold both, convert both sides: '{leftText}.to[{both}]() {op} {rightText}.to[{both}]()'."
+            : $"{head} Convert one side to the other's type with '.to[...]()'.";
+    }
+
+    /// <summary>The smallest number type that holds every value of <paramref name="a"/> and of <paramref name="b"/>
+    /// (both integers, or both binary floats), or null.</summary>
+    private static string? HoldsBoth(string a, string b)
+    {
+        static (char Kind, int Bits)? Shape(string name) =>
+            name.Length >= 2 && name[0] is 'S' or 'U' or 'B' && int.TryParse(s: name[1..], result: out int bits)
+                ? (name[0], bits)
+                : null;
+
+        if (Shape(name: a) is not { } x || Shape(name: b) is not { } y)
+        {
+            return null;
+        }
+
+        if (x.Kind == 'B' || y.Kind == 'B')
+        {
+            return x.Kind == 'B' && y.Kind == 'B' ? $"B{Math.Max(val1: x.Bits, val2: y.Bits)}" : null;
+        }
+
+        if (x.Kind == y.Kind)
+        {
+            return $"{x.Kind}{Math.Max(val1: x.Bits, val2: y.Bits)}";
+        }
+
+        // A signed type holds an unsigned one only when it is wider.
+        (char Kind, int Bits) signed = x.Kind == 'S' ? x : y;
+        (char Kind, int Bits) unsigned = x.Kind == 'U' ? x : y;
+        int need = signed.Bits > unsigned.Bits ? signed.Bits : unsigned.Bits * 2;
+        return need <= 256 ? $"S{need}" : "Integer";
+    }
+
+    /// <summary>How an operand reads in a suggested fix: its name, or `…` for anything longer.</summary>
+    private static string OperandText(Expression expr)
+    {
+        return expr is IdentifierExpression id ? id.Name : "(…)";
+    }
+
+    /// <summary>
     /// #117: reports a fixed-width numeric type mismatch (e.g. <c>S32 + S64</c>). System types (Address)
     /// and logical/comparison/shift operators are exempt (shifts intentionally use U32 for the amount).
     /// Returns true when a violation was reported.
@@ -786,8 +836,8 @@ public sealed partial class SemanticVerifier
             !IsComparisonOperator(op: binary.Operator) && !IsShiftOperator(op: binary.Operator))
         {
             ReportError(code: SemanticDiagnosticCode.FixedWidthTypeMismatch,
-                message:
-                $"Fixed-width type mismatch: '{leftType.Name}' and '{rightType.Name}'. Explicit conversion required.",
+                message: MixedNumbersMessage(left: leftType, right: rightType, leftText: OperandText(expr: binary.Left),
+                    rightText: OperandText(expr: binary.Right), op: binary.Operator.ToStringRepresentation()),
                 location: binary.Location);
             return true;
         }
@@ -1900,7 +1950,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.FixedWidthTypeMismatch,
                 message:
-                $"Fixed-width type mismatch: '{targetType.Name}' {opSymbol} '{valueType.Name}'. Explicit conversion required.",
+                $"'{targetType.Name}' and '{valueType.Name}' mix only with their own type. The target keeps its type, so convert the value: '{OperandText(expr: compound.Target)} {opSymbol} {OperandText(expr: compound.Value)}.to[{targetType.Name}]()'.",
                 location: compound.Location);
             return true;
         }
