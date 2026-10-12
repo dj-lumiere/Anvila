@@ -100,9 +100,10 @@ internal sealed class TesseraWriter
     /// exports it, <see cref="Private"/> otherwise.</summary>
     public string RoutinePrefix(RoutineInfo routine)
     {
+        // Every routine written here is generated code, which Tessera lets use blocks and jumps.
         return _exports.TryGetValue(key: LlvmEmitter.MangleRoutineName(routine: routine), value: out string? symbol)
-            ? $"@export(\"{symbol}\")\n"
-            : Private;
+            ? $"@generated\n@export(\"{symbol}\")\n"
+            : $"@generated\n{Private}";
     }
 
     /// <summary>Whether <paramref name="routine"/> pushes a trace frame: a routine of the program (not one the
