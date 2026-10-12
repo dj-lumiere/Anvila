@@ -126,7 +126,7 @@ internal sealed class TesseraIntrinsics
             "store" => $"{Argument(index: 0)}.to[@{Type(index: 1)}]().poke({Argument(index: 1)})",
             // zero_value is zeroed under an older name: every byte of a T zero.
             "zeroed" or "zero_value" => _zero(arg: _resultType),
-            "ptr_same" => $"{Argument(index: 0)}.ptr_eq({Argument(index: 1)})",
+            "ptr_same" => $"({Argument(index: 0)} === {Argument(index: 1)})",
             // The crash trace the routines keep (TesseraTrace), read by Core's crash_report.
             "trace_depth" => "RF_TRACE_DEPTH.peek()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
