@@ -554,8 +554,14 @@ public sealed partial class SemanticVerifier
             foreach (GeneratedVariant variant in variants)
             {
                 string key = variant.Routine.RegistryKey;
-                if (_variantBodies.ContainsKey(key: key) ||
-                    _memo.RestoredVariantKeys.Contains(item: key))
+                if (_memo.RestoredVariantKeys.Contains(item: key) &&
+                    _variantBodies.TryGetValue(key: key, value: out Statement? restored))
+                {
+                    EnsureInnerRecoveryVariants(body: restored);
+                    continue;
+                }
+
+                if (_variantBodies.ContainsKey(key: key))
                 {
                     continue;
                 }
@@ -567,6 +573,26 @@ public sealed partial class SemanticVerifier
                     resolveFailurePoints: !_libraryVariantBases.Contains(item: baseRoutine.RegistryKey));
             }
         }
+    }
+
+    /// <summary>
+    /// Registers the recovery variants that a variant body restored from the warm state calls, the same ones
+    /// building that body would have looked up. A built body binds each inner failable call to the inner
+    /// routine's variant through <see cref="TypeRegistry.LookupRecoveryVariant"/>, which registers that variant
+    /// and queues its body. A restored body arrives already bound, so without this its inner variants stay
+    /// unregistered in this build and are called but never defined (a warm build of <c>check a // b</c> left
+    /// <c>S64.sub</c>'s check variant undefined while a cold one defined it). The lookups queue the inner bases,
+    /// and the drain loop restores or builds their bodies in turn.
+    /// </summary>
+    private void EnsureInnerRecoveryVariants(Statement body)
+    {
+        AstWalker.WalkExpressions(root: body, visit: expression =>
+        {
+            if (expression is CallExpression { ResolvedRoutine: { RecoveryOf: { } recovered, Recovery: { } kind } })
+            {
+                _registry.LookupRecoveryVariant(recovered: recovered, kind: kind);
+            }
+        });
     }
 
     /// <summary>

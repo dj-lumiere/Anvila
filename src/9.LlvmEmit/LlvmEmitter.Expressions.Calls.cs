@@ -397,7 +397,6 @@ public partial class LlvmEmitter
     private readonly record struct FreeCallSpec(
         string MangledName,
         string ReturnType,
-        string CallReturnType,
         bool IsCExtern);
 
     /// <summary>
@@ -620,33 +619,14 @@ public partial class LlvmEmitter
     // ── Helpers extracted from EmitFreeCallInstruction to keep cognitive complexity ≤ 15 ──────────
 
     /// <summary>
-    /// Iterates the argument lists in place and bitcasts any <c>half</c> (B16) argument to
-    /// <c>i16</c>, as required by the C ABI on all supported targets.
-    /// </summary>
-    private void CoerceCExternB16Arguments(StringBuilder sb, List<string> argValues,
-        List<string> argTypes)
-    {
-        for (int i = 0; i < argTypes.Count; i++)
-        {
-            if (argTypes[index: i] == "half")
-            {
-                string bits = NextTemp();
-                EmitLine(sb: sb, line: $"  {bits} = bitcast half {argValues[index: i]} to i16");
-                argValues[index: i] = bits;
-                argTypes[index: i] = "i16";
-            }
-        }
-    }
-
-    /// <summary>
     /// Emits the final LLVM call instruction for a free-function call and returns the result
     /// temporary. Handles all four return paths: sret (ABI-indirect struct), coerced struct
-    /// (Phase-2 ABI integer), void, and normal value (including C-extern B16 bitcast round-trip).
+    /// (Phase-2 ABI integer), void, and normal value.
     /// </summary>
     private string EmitFreeCallAndGetResult(StringBuilder sb, List<Expression> arguments,
         RoutineInfo? routine, FreeCallSpec spec, List<string> argTypes, List<string> argValues)
     {
-        (string mangledName, string returnType, string callReturnType, bool isCExtern) = spec;
+        (string mangledName, string returnType, bool isCExtern) = spec;
         bool needsSret = routine != null && (isCExtern
             ? NeedsCExternSret(routine: routine)
             : ReturnsViaSret(routine: routine));
@@ -679,7 +659,7 @@ public partial class LlvmEmitter
                 structLlvm: returnType);
         }
 
-        if (callReturnType == "void")
+        if (returnType == "void")
         {
             string args = BuildCallArgs(types: argTypes, values: argValues);
             EmitLine(sb: sb, line: $"  call void @{mangledName}({args})");
@@ -689,15 +669,8 @@ public partial class LlvmEmitter
 
         string callResult = NextTemp();
         string argsStr = BuildCallArgs(types: argTypes, values: argValues);
-        EmitLine(sb: sb, line: $"  {callResult} = call {callReturnType} @{mangledName}({argsStr})");
+        EmitLine(sb: sb, line: $"  {callResult} = call {returnType} @{mangledName}({argsStr})");
         ConsumeTransferredCallOwnership(sb: sb, arguments: arguments);
-        if (isCExtern && returnType == "half" && callReturnType == "i16")
-        {
-            string halfResult = NextTemp();
-            EmitLine(sb: sb, line: $"  {halfResult} = bitcast i16 {callResult} to half");
-            return halfResult;
-        }
-
         return callResult;
     }
 
@@ -1516,21 +1489,13 @@ public partial class LlvmEmitter
             _generatedRoutines.Add(item: mangledName);
         }
 
-        // For external("C") functions, B16 (half) params must be bitcast to i16 (C ABI)
+        // A B16 crosses the C ABI as `half` both ways, the same type the other side declares.
         bool isCExtern = routine is { CallingConvention: "C" };
-        if (isCExtern)
-        {
-            CoerceCExternB16Arguments(sb: sb, argValues: argValues, argTypes: argTypes);
-        }
 
         string returnType = routine?.ReturnType != null
             ? GetLlvmType(type: routine.ReturnType)
             : "void";
         // Failable routines return T directly -> they crash on failure, no carrier needed
-
-        string callReturnType = isCExtern && returnType == "half"
-            ? "i16"
-            : returnType;
 
         // Struct returns classified Indirect by the ABI come back through a hidden sret pointer:
         // external("C") returning structs > 8 bytes (Win-x64 MSVC), or an RF routine whose return
@@ -1541,7 +1506,7 @@ public partial class LlvmEmitter
         return EmitFreeCallAndGetResult(sb: sb, arguments: arguments,
             routine: routine,
             spec: new FreeCallSpec(MangledName: mangledName, ReturnType: returnType,
-                CallReturnType: callReturnType, IsCExtern: isCExtern),
+                IsCExtern: isCExtern),
             argTypes: argTypes, argValues: argValues);
     }
 

@@ -22,11 +22,10 @@ public partial class LlvmEmitter
         bool isCExtern = routine.CallingConvention == "C";
         bool isCreator = IsCreatorRoutine(routine: routine);
         List<string> paramTypes = BuildDeclarationParameterList(routine: routine,
-            isCExtern: isCExtern,
             isCreator: isCreator);
         EnsureRecordTypesDeclared(routine: routine);
 
-        string returnType = ComputeDeclarationReturnType(routine: routine, isCExtern: isCExtern);
+        string returnType = ComputeDeclarationReturnType(routine: routine);
         EmitRoutineDeclarationString(routine: routine,
             funcName: funcName,
             paramTypes: paramTypes,
@@ -65,8 +64,7 @@ public partial class LlvmEmitter
     /// Builds the LLVM parameter type list (no names) for a routine declaration: the implicit
     /// me receiver, then each explicit parameter in its ABI form.
     /// </summary>
-    private List<string> BuildDeclarationParameterList(RoutineInfo routine, bool isCExtern,
-        bool isCreator)
+    private List<string> BuildDeclarationParameterList(RoutineInfo routine, bool isCreator)
     {
         var paramTypes = new List<string>();
 
@@ -78,9 +76,9 @@ public partial class LlvmEmitter
                 item: GetImplicitMeParameterDeclaration(routine: routine, includeName: false));
         }
 
-        // Add explicit parameters. For external C functions, B16 (half) becomes i16 (integer ABI register).
+        // Add explicit parameters. A B16 crosses the C ABI as `half`, the same type the other side declares.
         paramTypes.AddRange(collection: routine.Parameters.Select(selector: param =>
-            FormatDeclarationParameter(routine: routine, param: param, isCExtern: isCExtern)));
+            FormatDeclarationParameter(routine: routine, param: param)));
 
         return paramTypes;
     }
@@ -88,8 +86,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Formats a single parameter for a routine declaration (no name, just ABI type string).
     /// </summary>
-    private string FormatDeclarationParameter(RoutineInfo routine, ParamInfo param,
-        bool isCExtern)
+    private string FormatDeclarationParameter(RoutineInfo routine, ParamInfo param)
     {
         // By-reference parameter: the routine receives a pointer to the caller's storage.
         if (param.IsByReference)
@@ -109,13 +106,7 @@ public partial class LlvmEmitter
             return coerceArg;
         }
 
-        string t = GetParameterLlvmType(type: param.Type);
-        if (isCExtern && t == "half")
-        {
-            return "i16";
-        }
-
-        return t;
+        return GetParameterLlvmType(type: param.Type);
     }
 
     /// <summary>
@@ -146,19 +137,11 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Computes the LLVM return type string for a routine declaration, applying failable-variant
-    /// carrier forms (Lookup / Check / TryBool) and the C ABI half-to-i16 promotion.
+    /// carrier forms (Lookup / Check / TryBool), the same form the definition returns.
     /// </summary>
-    private string ComputeDeclarationReturnType(RoutineInfo routine, bool isCExtern)
+    private string ComputeDeclarationReturnType(RoutineInfo routine)
     {
-        // The same carrier form the definition returns.
-        string returnType = ComputeDefinitionReturnType(info: routine);
-
-        if (isCExtern && returnType == "half")
-        {
-            returnType = "i16";
-        }
-
-        return returnType;
+        return ComputeDefinitionReturnType(info: routine);
     }
 
     /// <summary>
