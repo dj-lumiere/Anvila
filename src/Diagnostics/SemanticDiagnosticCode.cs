@@ -811,6 +811,10 @@ public enum SemanticDiagnosticCode
     /// the held token. Two tokens taken together by <c>multimodify</c>/<c>multiamend</c> are known to differ.</summary>
     HeldElementOfAliasReshaped = 640,
 
+    /// <summary>One call is handed the same container as a write token and as another token: the two are the same
+    /// container, so a change through one moves what the other reads.</summary>
+    SameContainerTwiceInCall = 623,
+
     /// <summary>`Array[T, N]()` fills every slot with zero bits, but `T` has no zero value (an entity, a
     /// Retained/Tracked-style handle, or a record/tuple/variant holding one), so a zero slot is a null
     /// handle that crashes when read or torn down.</summary>

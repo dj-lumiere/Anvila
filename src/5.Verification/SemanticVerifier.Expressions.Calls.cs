@@ -2483,6 +2483,17 @@ public sealed partial class SemanticVerifier
                 inferred: ref inferred);
         }
 
+        // Inference can also succeed against an overload the arguments do not fit: `T` comes from the first
+        // argument alone, so `multimodify(first: Modifying[T], second: Modifying[T])` infers `T` for a call
+        // whose second argument is a `Viewing`. A sibling that both infers and takes every argument wins then.
+        if (inferred != null && !TakesInferredArguments(call: call, generic: routine, inferred: inferred))
+        {
+            PreferGenericSiblingTakingArguments(call: call,
+                expectedType: expectedType,
+                generic: ref routine,
+                inferred: ref inferred);
+        }
+
         if (inferred != null)
         {
             // Same clean-diagnostic constraint check as the explicit-type-arg branch, for an
@@ -3906,6 +3917,62 @@ public sealed partial class SemanticVerifier
                 generic = sibling;
                 inferred = siblingInferred;
                 break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether every analyzed argument of <paramref name="call"/> fits its parameter in <paramref name="generic"/>
+    /// once <paramref name="inferred"/> fills the generic parameters. An argument not analyzed yet counts as fitting.
+    /// </summary>
+    private bool TakesInferredArguments(CallExpression call, RoutineInfo generic, List<TypeSymbol> inferred)
+    {
+        RoutineInfo resolved = _registry.GetOrCreateRoutineResolution(genericDef: generic, typeArguments: inferred);
+        List<Expression> ordered = OrderByParameters(arguments: call.Arguments, routine: resolved);
+        for (int i = 0; i < ordered.Count && i < resolved.Parameters.Count; i++)
+        {
+            Expression argument = ordered[index: i] is NamedArgumentExpression named
+                ? named.Value
+                : ordered[index: i];
+            if (argument.ResolvedType is not { } argType || argType.Category == TypeCategory.Error)
+            {
+                continue;
+            }
+
+            TypeSymbol paramType = resolved.Parameters[index: i].Type;
+            if (paramType.Category != TypeCategory.Error && !IsAssignableTo(source: argType, target: paramType))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="generic"/> to a same-arity sibling overload that infers its generic parameters from
+    /// <paramref name="call"/> and takes every argument. Leaves both as they are when no sibling does.
+    /// </summary>
+    private void PreferGenericSiblingTakingArguments(CallExpression call, TypeSymbol? expectedType,
+        ref RoutineInfo generic, ref List<TypeSymbol>? inferred)
+    {
+        foreach (RoutineInfo sibling in _registry.GenericOverloadsByArity(name: generic.Name,
+                     arity: call.Arguments.Count))
+        {
+            if (sibling == generic)
+            {
+                continue;
+            }
+
+            List<TypeSymbol>? siblingInferred = InferGenericTypeArguments(genericRoutine: sibling,
+                arguments: call.Arguments,
+                expectedType: expectedType);
+            if (siblingInferred != null &&
+                TakesInferredArguments(call: call, generic: sibling, inferred: siblingInferred))
+            {
+                generic = sibling;
+                inferred = siblingInferred;
+                return;
             }
         }
     }

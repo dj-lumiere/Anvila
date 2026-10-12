@@ -85,6 +85,67 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
         foreach (RoutineDeclaration routine in userPrograms.SelectMany(selector: EnumerateRoutines))
         {
             CheckStatementShapes(stmt: routine.Body, guards: [], preceding: []);
+            AstWalker.Walk(root: routine.Body, visit: node =>
+            {
+                if (node is CallExpression call)
+                {
+                    CheckSameContainerTwice(call: call);
+                }
+            });
+        }
+    }
+
+    /// <summary>
+    /// One call handed the same container as a write token and as another token (<c>merge(into: s, from: s)</c>,
+    /// or <c>s.add_all(other: s)</c> whose receiver is written): the two are the same container, so a change through
+    /// the write token moves what the other reads, RF-S623.
+    /// </summary>
+    private void CheckSameContainerTwice(CallExpression call)
+    {
+        if (call.ResolvedRoutine is not { } routine)
+        {
+            return;
+        }
+
+        var tokens = new List<(string Path, string Slot, bool Writes)>();
+        if (call.Callee is MemberExpression { Object: var receiver } && routine.OwnerType != null &&
+            ShapePath(expr: receiver) is { } receiverPath && !routine.IsReadOnly)
+        {
+            tokens.Add(item: (receiverPath, "the receiver", true));
+        }
+
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            Expression arg = call.Arguments[index: i];
+            ParamInfo? param = arg is NamedArgumentExpression named
+                ? routine.Parameters.FirstOrDefault(predicate: p => p.Name == named.Name)
+                : i < routine.Parameters.Count ? routine.Parameters[index: i] : null;
+            if (param?.Type.BareName is not ("Modifying" or "Viewing") || ShapePath(expr: arg) is not { } path)
+            {
+                continue;
+            }
+
+            tokens.Add(item: (path, $"'{param.Name}'", param.Type.BareName == "Modifying"));
+        }
+
+        for (int a = 0; a < tokens.Count; a++)
+        {
+            for (int b = a + 1; b < tokens.Count; b++)
+            {
+                if ((tokens[index: a].Writes || tokens[index: b].Writes) &&
+                    (AccessPaths.IsPrefixOrEqual(prefix: tokens[index: a].Path, path: tokens[index: b].Path) ||
+                     AccessPaths.IsPrefixOrEqual(prefix: tokens[index: b].Path, path: tokens[index: a].Path)))
+                {
+                    report(code: SemanticDiagnosticCode.SameContainerTwiceInCall,
+                        message:
+                        $"You are handing '{ShownPath(path: tokens[index: a].Path)}' to {tokens[index: a].Slot} and " +
+                        $"'{ShownPath(path: tokens[index: b].Path)}' to {tokens[index: b].Slot} of '{routine.Name}' in the same " +
+                        "call, and one of them is written: they are the same container, so a change through one moves what " +
+                        "the other reads. Copy the one that is only read first, or make the call with two different containers.",
+                        location: call.Location);
+                    return;
+                }
+            }
         }
     }
 
@@ -545,27 +606,35 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                         : $"'{callee}' can add to or remove from it";
                     ReportShapeChange(guard: g, attempt: attempt, why: why, location: call.Location);
                 }
-                else if (path != null && g.Holder != null && MayBeSameContainer(operand: operand, path: path, guard: g))
+                else if (path != null && MayBeSameContainer(operand: operand, path: path, guard: g))
                 {
-                    report(code: SemanticDiagnosticCode.HeldElementOfAliasReshaped,
-                        message:
-                        $"You are trying to {(callee.Length == 0 ? $"pass '{shown}' to a routine value" : $"change '{shown}' through '{callee}'")} " +
-                        $"while '{g.Holder}' (line {g.HolderLine}) holds an element of '{g.Shown}': '{shown}' and '{g.Shown}' " +
-                        $"are both tokens on a {AliasInner(type: g.Type)!.Name}, so they may be the same one, and the change " +
-                        $"could move or free the element '{g.Holder}' holds. Finish with '{g.Holder}' before the change, or " +
-                        $"take both with `using multimodify(first: {RootName(path: g.Path)}, second: {RootName(path: path)}) as (a, b)`, " +
-                        "which checks that they differ.",
-                        location: call.Location);
-                }
-                else if (path != null && IsSharedHandleOfSameKind(a: operand.ResolvedType, b: g.Type))
-                {
-                    ReportShapeChange(guard: g,
-                        attempt: callee.Length == 0
-                            ? $"pass '{shown}' to a routine value"
-                            : $"change '{shown}' through '{callee}'",
-                        why: $"'{shown}' and '{g.Shown}' are both shared handles to a " +
-                             $"{SharedHandleInner(type: g.Type!)!.Name}, so they may be the same one",
-                        location: call.Location);
+                    string change = callee.Length == 0 ? $"pass '{shown}' to a routine value" : $"change '{shown}' through '{callee}'";
+                    string same = $"'{shown}' and '{g.Shown}' are both tokens or shared handles on a {AliasInner(type: g.Type)!.Name}, " +
+                                  "so they may be the same one";
+                    string multi = $"take both with `using multimodify(first: {RootName(path: path)}, second: {RootName(path: g.Path)}) as (a, b)`, " +
+                                   "which checks that they differ";
+                    if (g.Holder != null)
+                    {
+                        report(code: SemanticDiagnosticCode.HeldElementOfAliasReshaped,
+                            message:
+                            $"You are trying to {change} while '{g.Holder}' (line {g.HolderLine}) holds an element of '{g.Shown}': " +
+                            $"{same}, and the change could move or free the element '{g.Holder}' holds. Finish with " +
+                            $"'{g.Holder}' before the change, or {multi}.",
+                            location: call.Location);
+                    }
+                    else if (g.IsLoop)
+                    {
+                        report(code: SemanticDiagnosticCode.ReshapingDuringIteration,
+                            message:
+                            $"You are trying to {change} while an `each` loop is going through '{g.Shown}': {same}, and after " +
+                            $"such a change the loop could no longer trust that its next element is really the next one. " +
+                            $"Make the change after the loop, or {multi}.",
+                            location: call.Location);
+                    }
+                    else
+                    {
+                        ReportShapeChange(guard: g, attempt: change, why: same, location: call.Location);
+                    }
                 }
             }
         }
