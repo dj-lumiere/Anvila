@@ -322,6 +322,20 @@ internal static class NativeToolchain
     private static readonly Lazy<string> ClangTool =
         new(valueFactory: () => ResolveToolchainTool(name: ClangToolName));
 
+    /// <summary>
+    /// Hands the clang this build resolved (a release package's bundled one included) to the Tessera builder, which
+    /// runs in this process and otherwise looks for clang on PATH only: it asks clang for the target's CPU features.
+    /// A <c>TESSERA_CLANG</c> the user set wins.
+    /// </summary>
+    public static void ShareClangWithTessera()
+    {
+        if (string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: "TESSERA_CLANG")) &&
+            ClangTool.Value != ClangToolName)
+        {
+            Environment.SetEnvironmentVariable(variable: "TESSERA_CLANG", value: ClangTool.Value);
+        }
+    }
+
     private static readonly Lazy<string> OptTool =
         new(valueFactory: () => ResolveToolchainTool(name: OptToolName));
 

@@ -38,6 +38,7 @@ public sealed class TesseraBackend : IBuilderBackend
         var decls = new List<Tessera.Decl>();
         decls.AddRange(collection: Parse(file: ModuleFileName, source: source, isLibrary: false));
         decls.AddRange(collection: Tessera.StandardLibrary.Load(directory: StdlibDirectory()));
+        NativeToolchain.ShareClangWithTessera();
         var compiler = new Tessera.Compiler(target: input.Target.TesseraTarget(), decls: decls, trace: false)
         {
             ExposeDefinitions = true
@@ -139,6 +140,7 @@ public sealed class TesseraBackend : IBuilderBackend
         {
             // RazorForge keeps its own crash trace in the generated routines (TesseraTrace), so Tessera's stays out.
             // A delta declares what the resident base defines (EmitResidentBase).
+            NativeToolchain.ShareClangWithTessera();
             var compiler = new Tessera.Compiler(target: input.Target.TesseraTarget(), decls: decls, trace: false)
             {
                 ProvidedSymbols = input.ResidentSymbols is { Count: > 0 } resident

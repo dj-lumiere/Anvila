@@ -284,6 +284,7 @@ internal static class IngridTessera
             // RazorForge program brings its runtime, and a stray copy would pull in POSIX calls the JIT can't resolve.
             // Tessera's own crash trace stays out too: Ingrid's routines (ingrid_roam_hold and the like) sit on hot
             // paths of every RazorForge program, and RazorForge keeps its own trace.
+            NativeToolchain.ShareClangWithTessera();
             return new Tessera.Compiler(target: TargetConfig.ForCurrentHost().TesseraTarget(), decls: decls,
                     trace: false)
                     { EmitLibraryExports = false }
