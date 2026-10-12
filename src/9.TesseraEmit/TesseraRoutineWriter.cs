@@ -416,7 +416,10 @@ internal sealed class TesseraRoutineWriter
 
             string text = Value(operand: Evaluate(expression: value));
             string bytes = $"t{_temps++}";
-            Emit(line: $"{bytes}: Span[Byte] = {_module.TextBytes()}({text})");
+            // The bytes go in a list this routine keeps: the crash that reads them ends the program.
+            string buffer = $"t{_temps++}";
+            Emit(line: $"local {buffer}: @List[Byte] <- .construct()");
+            Emit(line: $"{bytes}: Span[Byte] = {_module.TextBytes()}(text: {text}, into: {buffer})");
             return bytes;
         }
 
