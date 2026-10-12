@@ -50,6 +50,13 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
     /// <summary>A container whose shape must stay still: its access path, its type, and why.</summary>
     private sealed record ShapeGuard(string Path, TypeSymbol? Type, bool IsLoop)
     {
+        /// <summary>The variable holding a token on an element of the container, from its line to the end of its
+        /// block (<c>var p = xs.modify_at(index: 0)</c>), or null for a loop or an in-place statement.</summary>
+        public string? Holder { get; init; }
+
+        /// <summary>The line the holder was bound on.</summary>
+        public int HolderLine { get; init; }
+
         /// <summary>The path as a message shows it.</summary>
         public string Shown => ShownPath(path: Path);
     }
@@ -350,10 +357,16 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
             case BlockStatement block:
             {
                 var seen = new List<Statement>();
+                List<ShapeGuard> current = guards;
                 foreach (Statement s in block.Statements)
                 {
-                    CheckStatementShapes(stmt: s, guards: guards, preceding: seen);
+                    CheckStatementShapes(stmt: s, guards: current, preceding: seen);
                     seen.Add(item: s);
+                    // A token on an element held in a variable keeps the container's shape still to the block's end.
+                    if (HeldElementGuard(stmt: s) is { } held)
+                    {
+                        current = [.. current, held];
+                    }
                 }
 
                 return;
@@ -393,7 +406,14 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                 return;
             case UsingStatement usingStmt:
                 CheckOwnExpressions(exprs: [usingStmt.Resource], guards: guards);
+                // `using multimodify(first: a, second: b) as (x, y)` checked that the two differ.
+                bool distinct = DistinctPair(usingStmt: usingStmt) is { } pair && _distinct.Add(item: pair);
                 CheckStatementShapes(stmt: usingStmt.Body, guards: guards, preceding: []);
+                if (distinct)
+                {
+                    _distinct.Remove(item: DistinctPair(usingStmt: usingStmt)!.Value);
+                }
+
                 if (usingStmt.FallbackBody is { } fallback)
                 {
                     CheckStatementShapes(stmt: fallback, guards: guards, preceding: []);
@@ -525,6 +545,18 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                         : $"'{callee}' can add to or remove from it";
                     ReportShapeChange(guard: g, attempt: attempt, why: why, location: call.Location);
                 }
+                else if (path != null && g.Holder != null && MayBeSameContainer(operand: operand, path: path, guard: g))
+                {
+                    report(code: SemanticDiagnosticCode.HeldElementOfAliasReshaped,
+                        message:
+                        $"You are trying to {(callee.Length == 0 ? $"pass '{shown}' to a routine value" : $"change '{shown}' through '{callee}'")} " +
+                        $"while '{g.Holder}' (line {g.HolderLine}) holds an element of '{g.Shown}': '{shown}' and '{g.Shown}' " +
+                        $"are both tokens on a {AliasInner(type: g.Type)!.Name}, so they may be the same one, and the change " +
+                        $"could move or free the element '{g.Holder}' holds. Finish with '{g.Holder}' before the change, or " +
+                        $"take both with `using multimodify(first: {RootName(path: g.Path)}, second: {RootName(path: path)}) as (a, b)`, " +
+                        "which checks that they differ.",
+                        location: call.Location);
+                }
                 else if (path != null && IsSharedHandleOfSameKind(a: operand.ResolvedType, b: g.Type))
                 {
                     ReportShapeChange(guard: g,
@@ -537,6 +569,65 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                 }
             }
         }
+    }
+
+    /// <summary>The two-token pairs taken by <c>multimodify</c>/<c>multiamend</c> whose bodies are being checked.</summary>
+    private readonly HashSet<(string, string)> _distinct = [];
+
+    /// <summary>The names a <c>using multimodify(...)</c> / <c>using multiamend(...)</c> binds, in name order.</summary>
+    private static (string, string)? DistinctPair(UsingStatement usingStmt)
+    {
+        return usingStmt is { Parts: [var a, var b], Resource: CallExpression { Callee: IdentifierExpression { Name: "multimodify" or "multiamend" } } }
+            ? string.CompareOrdinal(strA: a, strB: b) < 0 ? (a, b) : (b, a)
+            : null;
+    }
+
+    /// <summary>The guard a statement opens when it binds a variable to a token on an element of a named container:
+    /// <c>var p = xs.modify_at(index: 0)</c>, <c>var p = xs.view_at(index: 0)</c>, or <c>var b = boxes[0]</c> on an
+    /// entity element.</summary>
+    private static ShapeGuard? HeldElementGuard(Statement stmt)
+    {
+        if (stmt is not DeclarationStatement { Declaration: VariableDeclaration { Name: var name, Initializer: { } init } })
+        {
+            return null;
+        }
+
+        Expression? container = Unwrap(expr: init) switch
+        {
+            CallExpression { Callee: MemberExpression { Object: var o, MemberName: "modify_at" or "view_at" } } => o,
+            IndexExpression { ResolvedType: EntityTypeSymbol, Object: var o } => o,
+            _ => null
+        };
+        return container != null && ShapePath(expr: container) is { } path
+            ? new ShapeGuard(Path: path, Type: container.ResolvedType, IsLoop: false)
+            {
+                Holder = name, HolderLine = stmt.Location.Line
+            }
+            : null;
+    }
+
+    /// <summary>Whether the container <paramref name="operand"/> changes may be the one <paramref name="guard"/> holds
+    /// an element of: both are tokens or shared handles on the same kind of container (a bare entity has one owner,
+    /// so two names of bare entities are two entities), and no <c>multimodify</c> showed they differ.</summary>
+    private bool MayBeSameContainer(Expression operand, string path, ShapeGuard guard)
+    {
+        TypeSymbol? a = AliasInner(type: operand.ResolvedType);
+        TypeSymbol? b = AliasInner(type: guard.Type);
+        if (a == null || b == null || a.FullName != b.FullName)
+        {
+            return false;
+        }
+
+        string x = RootName(path: path), y = RootName(path: guard.Path);
+        return x != y && !_distinct.Contains(item: string.CompareOrdinal(strA: x, strB: y) < 0 ? (x, y) : (y, x));
+    }
+
+    /// <summary>The container a token or a shared handle reaches, or null for a bare value.</summary>
+    private static TypeSymbol? AliasInner(TypeSymbol? type)
+    {
+        return type?.BareName is "Modifying" or "Viewing" or "Consulting" or "Amending" && type.TypeArguments is [{ } inner, ..]
+            ? inner
+            : type is null ? null : SharedHandleInner(type: type);
     }
 
     /// <summary>Two shared (reference-counted) handles to the same kind of container.</summary>
@@ -557,6 +648,17 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
     private void ReportShapeChange(ShapeGuard guard, string attempt, string why,
         SourceLocation location)
     {
+        if (guard.Holder != null)
+        {
+            report(code: SemanticDiagnosticCode.HeldElementOfAliasReshaped,
+                message:
+                $"You are trying to {attempt} while '{guard.Holder}' (line {guard.HolderLine}) holds an element of " +
+                $"'{guard.Shown}': {why}. That could move or free the element '{guard.Holder}' holds. Finish with " +
+                $"'{guard.Holder}' before the change.",
+                location: location);
+            return;
+        }
+
         if (guard.IsLoop)
         {
             report(code: SemanticDiagnosticCode.ReshapingDuringIteration,

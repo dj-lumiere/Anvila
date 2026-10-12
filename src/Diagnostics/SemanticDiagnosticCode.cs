@@ -806,6 +806,11 @@ public enum SemanticDiagnosticCode
     /// passed to — which would leave the token pointing at freed memory.</summary>
     TokenSourceReplaced = 639,
 
+    /// <summary>A token on an element of one container is held while another token or handle to the same kind of
+    /// container changes shape, and the two may be the same container: the element could be moved or freed under
+    /// the held token. Two tokens taken together by <c>multimodify</c>/<c>multiamend</c> are known to differ.</summary>
+    HeldElementOfAliasReshaped = 640,
+
     /// <summary>`Array[T, N]()` fills every slot with zero bits, but `T` has no zero value (an entity, a
     /// Retained/Tracked-style handle, or a record/tuple/variant holding one), so a zero slot is a null
     /// handle that crashes when read or torn down.</summary>
