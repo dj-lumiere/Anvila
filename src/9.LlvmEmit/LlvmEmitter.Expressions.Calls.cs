@@ -845,7 +845,7 @@ public partial class LlvmEmitter
                          $"(owner: {_currentEmittingRoutine?.OwnerType?.Name ?? "none"}).");
         }
 
-        // The field holds the fat Routine value `{ ptr fn, ptr bound, ptr recover }`. Load it and dispatch
+        // The field holds the fat Routine value `{ ptr fn, ptr bound }`. Load it and dispatch
         // through EmitFatRoutineIndirectCall (branch on `bound == null`).
         string fatVal = EmitMemberVariableAccess(sb: sb, expr: member);
         return EmitFatRoutineIndirectCall(sb: sb,
@@ -888,7 +888,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits an indirect call through a fat Routine value <c>{ ptr fn, ptr bound, ptr recover }</c>.
+    /// Emits an indirect call through a fat Routine value <c>{ ptr fn, ptr bound }</c>.
     /// Extracts <c>fn</c> and <c>bound</c>, evaluates the explicit args once, then branches on
     /// <c>bound == null</c>: captureless calls <c>fn(args)</c>, capturing calls <c>fn(args, ptr bound)</c>
     /// (bound = C userdata, passed TRAILING). The call follows the same platform ABI as the routine's
@@ -915,13 +915,54 @@ public partial class LlvmEmitter
             argTypes: argTypes);
     }
 
-    /// <summary>The LLVM type of a Routine value: <c>{ ptr fn, ptr bound, ptr recover }</c>.</summary>
-    internal const string RoutineValueLlvmType = "{ ptr, ptr, ptr }";
+    /// <summary>The LLVM type of a Routine value: <c>{ ptr fn, ptr bound }</c>, C's (callback, userdata) pair. The
+    /// recovering entry of the routine it holds is looked up by the routine's address (<see cref="RecoverEntryTable"/>)
+    /// only where a call through it is made beneath try or check.</summary>
+    internal const string RoutineValueLlvmType = "{ ptr, ptr }";
+
+    /// <summary>The name of the module's recovery table: <c>ptr (ptr fn)</c>, the recovering entry of the routine
+    /// at <c>fn</c>, or null.</summary>
+    internal const string RecoverEntryTable = "__rf_recover_entry";
+
+    /// <summary>Whether a call in this module asks the recovery table, so the module defines it.</summary>
+    private bool _recoverTableUsed;
+
+    /// <summary>
+    /// The recovery table: a routine (internal to the module) that compares <c>fn</c> with each routine taken as a
+    /// value here and gives its recovering entry, or null. A value made in another module of a JIT build finds no
+    /// entry, and its call runs the routine itself, which still crashes loudly on a failure.
+    /// </summary>
+    private void AppendRecoverEntryTable(StringBuilder output)
+    {
+        if (!_recoverTableUsed)
+        {
+            return;
+        }
+
+        output.AppendLine(value: $"define internal ptr @{RecoverEntryTable}(ptr %fn) {{");
+        output.AppendLine(value: "entry:");
+        string last = "null";
+        int n = 0;
+        foreach ((string fnSymbol, string recoverSymbol) in _recoverEntries)
+        {
+            output.AppendLine(value: $"  %is{n} = icmp eq ptr %fn, {fnSymbol}");
+            output.AppendLine(value: $"  %r{n} = select i1 %is{n}, ptr {recoverSymbol}, ptr {last}");
+            last = $"%r{n}";
+            n++;
+        }
+
+        output.AppendLine(value: $"  ret ptr {last}");
+        output.AppendLine(value: "}");
+        output.AppendLine();
+    }
+
+    /// <summary>Each routine taken as a value in this module (its symbol) and its recovering entry's symbol.</summary>
+    private readonly SortedDictionary<string, string> _recoverEntries = new(comparer: StringComparer.Ordinal);
 
     /// <summary>
     /// Emits a call through a routine value made beneath a recovery keyword
     /// (<see cref="CallExpression.RecoversThroughValue"/>), which yields <paramref name="carrier"/>. When the
-    /// value carries a recovering entry (its third word) the call goes through it, with the same arguments and
+    /// routine it holds has a recovering entry (the recovery table finds it by the routine's address) the call goes through it, with the same arguments and
     /// bound payload, and returns the carrier the entry built. Otherwise the routine itself runs (it cannot fail
     /// beneath its call) and its result is stored as the carrier's value arm.
     /// </summary>
@@ -933,7 +974,8 @@ public partial class LlvmEmitter
         string bound = NextTemp();
         EmitLine(sb: sb, line: $"  {bound} = extractvalue {RoutineValueLlvmType} {fatVal}, 1");
         string recover = NextTemp();
-        EmitLine(sb: sb, line: $"  {recover} = extractvalue {RoutineValueLlvmType} {fatVal}, 2");
+        EmitLine(sb: sb, line: $"  {recover} = call ptr @{RecoverEntryTable}(ptr {fn})");
+        _recoverTableUsed = true;
         (List<string> argValues, List<string> argTypes) = EmitRoutineValueArguments(sb: sb,
             routineType: routineType,
             arguments: arguments);

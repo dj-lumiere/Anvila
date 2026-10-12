@@ -635,7 +635,11 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     {
         (List<Statement> leftH, Expression loweredLeft) = LowerExpr(expr: bin.Left);
         (List<Statement> rightH, Expression loweredRight) = LowerExpr(expr: bin.Right);
-        List<Statement> hoisted = Concat(a: leftH, b: rightH);
+        // The left operand runs first even when the right one hoists setup (see HoistAfter).
+        var hoisted = new List<Statement>(collection: leftH);
+        var leftFirst = new List<Expression> { loweredLeft };
+        HoistAfter(hoisted: hoisted, setup: rightH, earlier: leftFirst);
+        loweredLeft = leftFirst[index: 0];
         if (hoisted.Count == 0 && ReferenceEquals(objA: loweredLeft, objB: bin.Left) &&
             ReferenceEquals(objA: loweredRight, objB: bin.Right))
         {
@@ -685,10 +689,19 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             capacity: creator.MemberVariables.Count);
         bool changed = false;
         TypeSymbol? constructed = creator.ConstructedType ?? creator.ResolvedType;
+        var earlier = new List<Expression>();
         foreach ((string name, Expression value) in creator.MemberVariables)
         {
             (List<Statement> h, Expression lowered) = LowerExpr(expr: value);
-            hoisted.AddRange(collection: h);
+            HoistAfter(hoisted: hoisted, setup: h, earlier: earlier);
+            for (int k = 0; k < earlier.Count; k++)
+            {
+                if (!ReferenceEquals(objA: earlier[index: k], objB: members[index: k].Value))
+                {
+                    members[index: k] = (members[index: k].Name, earlier[index: k]);
+                    changed = true;
+                }
+            }
             // A bare value for a `T?` member variable (`Slot(spare: item)`) goes in as a present `T?`.
             if (TryWrapMaybe(targetType: FieldTypeOf(constructed: constructed, name: name), value: lowered) is
                 { } wrapped)
@@ -697,6 +710,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             }
 
             members.Add(item: (name, lowered));
+            earlier.Add(item: lowered);
             if (!ReferenceEquals(objA: lowered, objB: value))
             {
                 changed = true;
@@ -719,14 +733,27 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         (List<Statement> objH, Expression loweredObj) = LowerExpr(expr: gmc.Object);
         hoisted.AddRange(collection: objH);
 
-        var args = new List<Expression>(capacity: gmc.Arguments.Count);
-        bool argsChanged = false;
+        // The receiver, when it is a new value, and each argument run left to right (see HoistAfter).
+        bool receiverRuns = loweredObj is CallExpression or GenericMemberRoutineCallExpression or CreatorExpression;
+        var earlier = receiverRuns ? new List<Expression> { loweredObj } : new List<Expression>();
+        int first = earlier.Count;
         foreach (Expression arg in gmc.Arguments)
         {
             (List<Statement> h, Expression lowered) = LowerExpr(expr: arg);
-            hoisted.AddRange(collection: h);
-            args.Add(item: lowered);
-            if (!ReferenceEquals(objA: lowered, objB: arg))
+            HoistAfter(hoisted: hoisted, setup: h, earlier: earlier);
+            earlier.Add(item: lowered);
+        }
+
+        if (receiverRuns)
+        {
+            loweredObj = earlier[index: 0];
+        }
+
+        List<Expression> args = earlier.GetRange(index: first, count: earlier.Count - first);
+        bool argsChanged = false;
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (!ReferenceEquals(objA: args[index: i], objB: gmc.Arguments[index: i]))
             {
                 argsChanged = true;
             }
@@ -748,12 +775,30 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         var hoisted = new List<Statement>();
         var parts = new List<InsertedTextPart>(capacity: ftext.Parts.Count);
         bool changed = false;
+        // The holes run left to right (see HoistAfter): `earlier` holds each lowered hole, `holeAt` its part.
+        var earlier = new List<Expression>();
+        var holeAt = new List<int>();
         foreach (InsertedTextPart part in ftext.Parts)
         {
             if (part is ExpressionPart ep)
             {
                 (List<Statement> h, Expression lowered) = LowerExpr(expr: ep.Expression);
-                hoisted.AddRange(collection: h);
+                if (h.Count > 0)
+                {
+                    HoistAfter(hoisted: hoisted, setup: h, earlier: earlier);
+                    for (int k = 0; k < earlier.Count; k++)
+                    {
+                        parts[index: holeAt[index: k]] = (ExpressionPart)parts[index: holeAt[index: k]] with
+                        {
+                            Expression = earlier[index: k]
+                        };
+                    }
+
+                    changed = true;
+                }
+
+                earlier.Add(item: lowered);
+                holeAt.Add(item: parts.Count);
                 parts.Add(item: ep with { Expression = lowered });
                 if (!ReferenceEquals(objA: lowered, objB: ep.Expression))
                 {
@@ -826,9 +871,25 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         (List<Statement> calleeH, Expression loweredCallee) = LowerExpr(expr: call.Callee);
         hoisted.AddRange(collection: calleeH);
 
+        // A receiver that is a new value (`make().use(...)`) runs before the arguments: an argument's hoisted setup
+        // binds it first. A receiver that is a place stays a place.
+        var earlier = new List<Expression>();
+        bool receiverRuns = loweredCallee is MemberExpression
+        {
+            Object: CallExpression or GenericMemberRoutineCallExpression or CreatorExpression
+        };
+        if (receiverRuns)
+        {
+            earlier.Add(item: ((MemberExpression)loweredCallee).Object);
+        }
+
         bool argsChanged = false;
         List<Expression> args =
-            LowerCallArguments(call: call, hoisted: hoisted, argsChanged: ref argsChanged);
+            LowerCallArguments(call: call, hoisted: hoisted, argsChanged: ref argsChanged, earlier: earlier);
+        if (receiverRuns && !ReferenceEquals(objA: earlier[index: 0], objB: ((MemberExpression)loweredCallee).Object))
+        {
+            loweredCallee = (MemberExpression)loweredCallee with { Object = earlier[index: 0] };
+        }
 
         // Variant construction via the call form: `Inner(7_s32)` / `Inner(none)`. SA leaves
         // these as CallExpressions with ConstructedType=<variant> but no create routine, so
@@ -851,9 +912,11 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     // Lowers the argument list of a call, auto-wrapping variant arm values against the resolved
     // parameter types. Named arguments preserve their wrapper; positional arguments map by index.
     private List<Expression> LowerCallArguments(CallExpression call, List<Statement> hoisted,
-        ref bool argsChanged)
+        ref bool argsChanged, List<Expression> earlier)
     {
-        var args = new List<Expression>(capacity: call.Arguments.Count);
+        // `earlier` holds what runs before the arguments (the receiver) and then each lowered argument, so a later
+        // argument's hoisted setup can bind the ones before it first.
+        int first = earlier.Count;
         RoutineInfo? callRoutine = call.ResolvedRoutine;
         int posArgIdx = 0;
         foreach (Expression arg in call.Arguments)
@@ -866,27 +929,30 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 Expression loweredNamed = LowerNamedCallArg(namedArg: namedArg,
                     callRoutine: callRoutine,
                     hoisted: hoisted,
-                    constructed: callRoutine == null ? call.ConstructedType : null);
-                args.Add(item: loweredNamed);
-                if (!ReferenceEquals(objA: loweredNamed, objB: arg))
-                {
-                    argsChanged = true;
-                }
+                    constructed: callRoutine == null ? call.ConstructedType : null,
+                    earlier: earlier);
+                earlier.Add(item: loweredNamed);
             }
             else
             {
                 Expression wrapped = LowerPositionalCallArg(arg: arg,
                     callRoutine: callRoutine,
                     posArgIdx: posArgIdx,
-                    hoisted: hoisted);
-                args.Add(item: wrapped);
-                if (!ReferenceEquals(objA: wrapped, objB: arg))
-                {
-                    argsChanged = true;
-                }
+                    hoisted: hoisted,
+                    earlier: earlier);
+                earlier.Add(item: wrapped);
             }
 
             posArgIdx++;
+        }
+
+        List<Expression> args = earlier.GetRange(index: first, count: earlier.Count - first);
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (!ReferenceEquals(objA: args[index: i], objB: call.Arguments[index: i]))
+            {
+                argsChanged = true;
+            }
         }
 
         return args;
@@ -894,10 +960,10 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     // Lowers a single named argument, wrapping the value for a variant arm or Maybe parameter if needed.
     private NamedArgumentExpression LowerNamedCallArg(NamedArgumentExpression namedArg,
-        RoutineInfo? callRoutine, List<Statement> hoisted, TypeSymbol? constructed)
+        RoutineInfo? callRoutine, List<Statement> hoisted, TypeSymbol? constructed, List<Expression> earlier)
     {
         (List<Statement> h, Expression loweredValue) = LowerExpr(expr: namedArg.Value);
-        hoisted.AddRange(collection: h);
+        HoistAfter(hoisted: hoisted, setup: h, earlier: earlier);
         TypeSymbol? paramType = callRoutine?.Parameters
                                           .FirstOrDefault(predicate: p => p.Name == namedArg.Name)
                                          ?.Type ?? FieldTypeOf(constructed: constructed, name: namedArg.Name);
@@ -924,10 +990,10 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     // Lowers a single positional argument, wrapping the value for a variant arm or Maybe parameter if needed.
     private Expression LowerPositionalCallArg(Expression arg, RoutineInfo? callRoutine,
-        int posArgIdx, List<Statement> hoisted)
+        int posArgIdx, List<Statement> hoisted, List<Expression> earlier)
     {
         (List<Statement> h, Expression lowered) = LowerExpr(expr: arg);
-        hoisted.AddRange(collection: h);
+        HoistAfter(hoisted: hoisted, setup: h, earlier: earlier);
         TypeSymbol? paramType = callRoutine != null && posArgIdx < callRoutine.Parameters.Count
             ? callRoutine.Parameters[index: posArgIdx].Type
             : null;
@@ -1091,7 +1157,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         foreach (Expression el in tuple.Elements)
         {
             (List<Statement> h, Expression lowered) = LowerExpr(expr: el);
-            hoisted.AddRange(collection: h);
+            HoistAfter(hoisted: hoisted, setup: h, earlier: elems);
             elems.Add(item: lowered);
         }
 
@@ -1570,7 +1636,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         foreach (Expression el in list.Elements)
         {
             (List<Statement> h, Expression lowered) = LowerExpr(expr: el);
-            hoisted.AddRange(collection: h);
+            if (h.Count > 0)
+            {
+                changed = true;
+            }
+
+            HoistAfter(hoisted: hoisted, setup: h, earlier: elems);
             elems.Add(item: lowered);
             if (!ReferenceEquals(objA: lowered, objB: el))
             {
@@ -1706,7 +1777,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             (List<Statement> keyH, Expression loweredKey) = LowerExpr(expr: key);
             (List<Statement> valH, Expression loweredVal) = LowerExpr(expr: value);
             hoisted.AddRange(collection: keyH);
-            hoisted.AddRange(collection: valH);
+            var keyFirst = new List<Expression> { loweredKey };
+            HoistAfter(hoisted: hoisted, setup: valH, earlier: keyFirst);
+            loweredKey = keyFirst[index: 0];
 
             // PriorityQueue literal: {priority: element} -> add(element, priority)
             List<Expression> args = isPriorityQueue
@@ -2080,7 +2153,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         foreach (Expression el in elements)
         {
             (List<Statement> h, Expression low) = LowerExpr(expr: el);
-            hoisted.AddRange(collection: h);
+            HoistAfter(hoisted: hoisted, setup: h, earlier: lowered);
             lowered.Add(item: low);
         }
 
@@ -3054,6 +3127,59 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return (hoisted, negated
             ? new UnaryExpression(Operator: UnaryOperator.Not, Operand: test, Location: loc) { ResolvedType = boolType }
             : test);
+    }
+
+    /// <summary>
+    /// Adds a sibling's hoisted setup lines, keeping left-to-right order: the setup runs before the statement, so every
+    /// earlier sibling that may do something (a call anywhere in it) is first bound to a temp ahead of those lines and
+    /// read from the temp in its place. A name, a literal, or a member read of one stays where it is.
+    /// </summary>
+    private void HoistAfter(List<Statement> hoisted, List<Statement> setup, List<Expression> earlier)
+    {
+        if (setup.Count == 0)
+        {
+            return;
+        }
+
+        for (int i = 0; i < earlier.Count; i++)
+        {
+            earlier[index: i] = SpillForOrder(expr: earlier[index: i], hoisted: hoisted);
+        }
+
+        hoisted.AddRange(collection: setup);
+    }
+
+    /// <summary>Whether evaluating <paramref name="expr"/> only reads: a literal, a name, or a member of one.</summary>
+    private static bool ReadsOnly(Expression expr)
+    {
+        return expr switch
+        {
+            LiteralExpression or IdentifierExpression => true,
+            MemberExpression member => ReadsOnly(expr: member.Object),
+            NamedArgumentExpression named => ReadsOnly(expr: named.Value),
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// <paramref name="expr"/> bound to a temp in <paramref name="hoisted"/>, and the read of that temp; a named
+    /// argument keeps its name. An expression that only reads stays as it is.
+    /// </summary>
+    private Expression SpillForOrder(Expression expr, List<Statement> hoisted)
+    {
+        if (ReadsOnly(expr: expr))
+        {
+            return expr;
+        }
+
+        if (expr is NamedArgumentExpression named)
+        {
+            return named with { Value = SpillForOrder(expr: named.Value, hoisted: hoisted) };
+        }
+
+        string name = NextTempName(prefix: "ord");
+        AddTempVar(hoisted: hoisted, name: name, typeHint: expr.ResolvedType, initializer: expr, loc: expr.Location);
+        return new IdentifierExpression(Name: name, Location: expr.Location) { ResolvedType = expr.ResolvedType };
     }
 
     /// <summary>Adds <c>var name = initializer</c> to <paramref name="hoisted"/>.</summary>

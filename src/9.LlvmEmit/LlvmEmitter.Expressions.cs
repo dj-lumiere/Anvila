@@ -83,7 +83,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a <see cref="ClosureValueExpression"/>: the fat Routine value <c>{ ptr fn, ptr bound, ptr recover }</c> pairing
+    /// Emits a <see cref="ClosureValueExpression"/>: the fat Routine value <c>{ ptr fn, ptr bound }</c> pairing
     /// the lifted routine's symbol with the bound payload the expression builds. Indirect calls pass
     /// <c>bound</c> as the trailing argument when it is not null. See [[cabi-callback-ffi]].
     /// </summary>
@@ -99,23 +99,22 @@ public partial class LlvmEmitter
             line: $"  {t0} = insertvalue {RoutineValueLlvmType} undef, ptr @{MangleRoutineName(routine: lifted)}, 0");
         string t1 = NextTemp();
         EmitLine(sb: sb, line: $"  {t1} = insertvalue {RoutineValueLlvmType} {t0}, ptr {bound}, 1");
-        return InsertRecoverEntry(sb: sb, partial: t1, recover: closure.Function.RecoverRoutine);
+        return InsertRecoverEntry(sb: sb, partial: t1, fnSymbol: $"@{MangleRoutineName(routine: lifted)}",
+            recover: closure.Function.RecoverRoutine);
     }
 
-    /// <summary>Stores the recovering entry of a routine value (its third word): the routine's lookup-shaped
-    /// recovery variant, or null when it has none.</summary>
-    private string InsertRecoverEntry(StringBuilder sb, string partial, RoutineInfo? recover)
+    /// <summary>Notes the recovering entry of the routine a value holds (its lookup-shaped recovery variant), which
+    /// the module's recovery table (<see cref="RecoverEntryTable"/>) maps the routine's address to. A routine value is
+    /// two words, so a record holding one still lays out as C's (callback, userdata) pair.</summary>
+    private string InsertRecoverEntry(StringBuilder sb, string partial, string fnSymbol, RoutineInfo? recover)
     {
-        string entry = "null";
         if (recover != null)
         {
             GenerateRoutineDeclaration(routine: recover);
-            entry = $"@{MangleRoutineName(routine: recover)}";
+            _recoverEntries[key: fnSymbol] = $"@{MangleRoutineName(routine: recover)}";
         }
 
-        string fat = NextTemp();
-        EmitLine(sb: sb, line: $"  {fat} = insertvalue {RoutineValueLlvmType} {partial}, ptr {entry}, 2");
-        return fat;
+        return partial;
     }
 
     /// <summary>
@@ -138,7 +137,7 @@ public partial class LlvmEmitter
         EmitLine(sb: sb, line: $"  {t0} = insertvalue {RoutineValueLlvmType} undef, ptr {sym}, 0");
         string t1 = NextTemp();
         EmitLine(sb: sb, line: $"  {t1} = insertvalue {RoutineValueLlvmType} {t0}, ptr null, 1");
-        return InsertRecoverEntry(sb: sb, partial: t1, recover: recover);
+        return InsertRecoverEntry(sb: sb, partial: t1, fnSymbol: sym, recover: recover);
     }
 
     /// <summary>

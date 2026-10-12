@@ -12,15 +12,15 @@ public sealed class RoutineTypeSymbol : TypeSymbol
     public override TypeCategory Category => TypeCategory.Routine;
 
     /// <summary>
-    /// A Routine value is <c>{ ptr fn, ptr bound, ptr recover }</c> = THREE pointers: the routine, its
-    /// bound payload (null when it captures nothing) and its recovering entry (the lookup-shaped
-    /// recovery variant a call beneath <c>try</c>/<c>check</c> goes through, null when the
-    /// routine cannot fail beneath its call). Its alignment is pointer-alignment. A stale size here
-    /// under-allocates any entity/record that stores a Routine field (the store overruns the heap block).
+    /// A Routine value is <c>{ ptr fn, ptr bound }</c> = TWO pointers: the routine and its bound payload (null when it
+    /// captures nothing), C's (callback, userdata) pair, so a record holding one lays out as a C callback struct. The
+    /// recovering entry a call beneath <c>try</c>/<c>check</c> goes through is looked up by the routine's address,
+    /// not carried. Its alignment is pointer-alignment. A stale size here under-allocates any entity/record that
+    /// stores a Routine field (the store overruns the heap block).
     /// </summary>
     public override int SizeBytes(int pointerSize)
     {
-        return 3 * pointerSize;
+        return 2 * pointerSize;
     }
 
     /// <inheritdoc/>

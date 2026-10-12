@@ -941,6 +941,8 @@ public partial class LlvmEmitter
             output.Append(value: _functionDefinitions);
         }
 
+        AppendRecoverEntryTable(output: output);
+
         AppendMainEntryPoint(output: output);
 
         // Normalize to Unix line endings (clang/LLVM requires LF, not CRLF)
