@@ -1272,6 +1272,12 @@ public sealed partial class SemanticVerifier
     private void ValidateEnterableResource(UsingStatement usingStmt, TypeSymbol resourceType,
         ref TypeSymbol boundType)
     {
+        // A resource whose own analysis failed has been reported already: no second error about its type.
+        if (resourceType.Category == TypeCategory.Error)
+        {
+            return;
+        }
+
         if (!ImplementsProtocol(type: resourceType, protocolName: "Enterable"))
         {
             ReportError(code: SemanticDiagnosticCode.UsingTargetMissingEnterExit,
