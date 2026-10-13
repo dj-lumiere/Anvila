@@ -404,6 +404,55 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>
+    /// A member-wise construction `T(field: value, ...)` sets the member variables it names, so one that gives a value
+    /// to a `secret` or `posted` member variable is written only inside the type's own module. Outside, the routines its module
+    /// opens build it, so a value whose parts must agree (a code and its payload) can't be put together wrong.
+    /// </summary>
+    private void ValidateMemberwiseConstructionAccess(TypeSymbol type, List<Expression> arguments,
+        SourceLocation location)
+    {
+        if (_isInCompilerGeneratedBody || IsAccessingFromSameModule(memberModule: type.Module))
+        {
+            return;
+        }
+
+        List<MemberVariableInfo>? fields = type switch
+        {
+            EntityTypeSymbol e => e.MemberVariables,
+            RecordTypeSymbol r => r.MemberVariables,
+            _ => null
+        };
+        // A member variable left to its default gets the value its module wrote, so only the ones given a value count.
+        var given = arguments.OfType<NamedArgumentExpression>()
+                             .Select(selector: a => a.Name)
+                             .ToHashSet();
+        if (fields?.FirstOrDefault(predicate: f => given.Contains(item: f.Name) &&
+                                                   f.Visibility is VisibilityModifier.Secret
+                                                       or VisibilityModifier.Posted) is not { } closed)
+        {
+            return;
+        }
+
+        string bareName = type.BareName;
+        List<string> builders = _registry.GetMemberRoutinesForType(type: type)
+                                         .Where(predicate: r => r.IsCommon && r.Visibility != VisibilityModifier.Secret &&
+                                                                r.ReturnType?.BareName == bareName)
+                                         .Select(selector: r => $"'{bareName}.{r.Name}(...)'")
+                                         .Distinct()
+                                         .ToList();
+        string fix = builders.Count > 0
+            ? $"Build it with {string.Join(separator: " or ", values: builders)}."
+            : $"Build it with a routine its module opens, or give '{bareName}' one.";
+        string kind = closed.Visibility == VisibilityModifier.Secret ? "secret" : "posted";
+        ReportError(code: closed.Visibility == VisibilityModifier.Secret
+                ? SemanticDiagnosticCode.SecretMemberAccess
+                : SemanticDiagnosticCode.PostedMemberAccess,
+            message: $"You build '{bareName}' by giving its member variables values directly, but '{closed.Name}' " +
+                     $"is {kind}, so only its own module may set it. {fix}",
+            location: location);
+    }
+
     /// <summary>Whether a member variable is one of the recovery carriers' layout fields.</summary>
     private static bool IsCarrierLayoutField(MemberVariableInfo memberVariable)
     {

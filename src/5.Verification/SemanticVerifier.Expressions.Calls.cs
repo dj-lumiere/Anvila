@@ -1584,6 +1584,11 @@ public sealed partial class SemanticVerifier
         }
 
         CheckCreatorArgumentNames(arguments: call.Arguments, creator: creator, type: callableType);
+        if (creator.IsSynthesized && callableType is not GenericParameterTypeSymbol)
+        {
+            ValidateMemberwiseConstructionAccess(type: callableType, arguments: call.Arguments, location: call.Location);
+        }
+
         ValidateCreatorEntityOwnershipArgs(call: call,
             creator: creator,
             creatorArgTypes: creatorArgTypes);
@@ -4093,6 +4098,7 @@ public sealed partial class SemanticVerifier
             else
             {
                 ReportUnknownMemberVariableArguments(call: call, type: type);
+                ValidateMemberwiseConstructionAccess(type: type, arguments: call.Arguments, location: call.Location);
             }
         }
 
