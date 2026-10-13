@@ -1,3 +1,4 @@
+using Builder.Diagnostics;
 using System.Text;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -37,7 +38,7 @@ public partial class LlvmEmitter
         if (!llvmType.StartsWith(value: '['))
         {
             throw new InvalidOperationException(
-                message: $"A '{arrayType.FullName}' literal reached the LLVM emitter in [{_currentRoutineDiagName}]; " +
+                message: $"{Article.Capital(name: arrayType.FullName)} '{arrayType.FullName}' literal reached the LLVM emitter in [{_currentRoutineDiagName}]; " +
                          "only fixed-array literals do.");
         }
 

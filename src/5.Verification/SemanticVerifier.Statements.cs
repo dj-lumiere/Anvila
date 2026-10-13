@@ -119,7 +119,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
                     message:
-                    $"Preset '{preset.Name}' is declared '{presetType.Name}', but its value is a '{valueType.Name}'.",
+                    $"Preset '{preset.Name}' is declared '{presetType.Name}', but its value is {Article.For(name: valueType.Name)} '{valueType.Name}'.",
                     location: preset.Value.Location);
             }
         }
@@ -1589,8 +1589,8 @@ public sealed partial class SemanticVerifier
             if (into is not ErrorTypeSymbol && from is not ErrorTypeSymbol && into.FullName != from.FullName)
             {
                 ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
-                    message: $"'{PlaceText(place: swap.Places[index: i])}' is a '{into.Name}' and would take the value of " +
-                             $"'{PlaceText(place: swap.Places[index: swap.Sources[index: i]])}', a '{from.Name}': places that swap " +
+                    message: $"'{PlaceText(place: swap.Places[index: i])}' is {Article.For(name: into.Name)} '{into.Name}' and would take the value of " +
+                             $"'{PlaceText(place: swap.Places[index: swap.Sources[index: i]])}', {Article.For(name: from.Name)} '{from.Name}': places that swap " +
                              "values have one type.",
                     location: swap.Places[index: i].Location);
             }

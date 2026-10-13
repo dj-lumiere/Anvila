@@ -650,7 +650,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                 message:
-                $"You index '{lookupType.Name}' with a '{indexType.Name}', but its 'getitem' takes a " +
+                $"You index '{lookupType.Name}' with {Article.For(name: indexType.Name)} '{indexType.Name}', but its 'getitem' takes a " +
                 $"'{indexExpectedType.Name}'. Convert the index to '{indexExpectedType.Name}'.",
                 location: index.Index.Location);
         }
@@ -1776,7 +1776,7 @@ public sealed partial class SemanticVerifier
                 TypeSymbol argType = analyzed ?? AnalyzeExpression(expression: value);
                 ReportError(code: SemanticDiagnosticCode.MemberVariableNotFound,
                     message:
-                    $"No creator of '{type.Name}' takes a '{argType.Name}' here. Check the argument's type, or name the parameter you mean (for example `{type.Name}(from: ...)`).",
+                    $"No creator of '{type.Name}' takes {Article.For(name: argType.Name)} '{argType.Name}' here. Check the argument's type, or name the parameter you mean (for example `{type.Name}(from: ...)`).",
                     location: value.Location);
                 continue;
             }

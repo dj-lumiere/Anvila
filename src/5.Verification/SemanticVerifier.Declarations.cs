@@ -504,7 +504,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.PresetElementNotConstant,
                     message:
-                    $"Element {i} of preset '{preset.Name}' is not a literal. A '{presetType.Name}' preset " +
+                    $"Element {i} of preset '{preset.Name}' is not a literal. {Article.Capital(name: presetType.Name)} '{presetType.Name}' preset " +
                     "is stored as one constant, so write each element as a literal.",
                     location: list.Elements[index: i].Location);
                 continue;
@@ -520,8 +520,8 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.PresetElementNotConstant,
                     message:
-                    $"Element {i} of preset '{preset.Name}' is a '{literalType.Name}' literal, but " +
-                    $"'{presetType.Name}' holds '{elementType.Name}'. Write it as a '{elementType.Name}' literal.",
+                    $"Element {i} of preset '{preset.Name}' is {Article.For(name: literalType.Name)} '{literalType.Name}' literal, but " +
+                    $"'{presetType.Name}' holds '{elementType.Name}'. Write it as {Article.For(name: elementType.Name)} '{elementType.Name}' literal.",
                     location: literal.Location);
                 continue;
             }

@@ -170,7 +170,7 @@ public sealed partial class SemanticVerifier
 
     private static string SpecialFloatNotInTypeMessage(LiteralExpression literal, string typeName)
     {
-        return $"`{literal.Value}` goes where a '{typeName}' goes, and a '{typeName}' has no infinity or NaN. Only " +
+        return $"`{literal.Value}` goes where {Article.For(name: typeName)} '{typeName}' goes, and {Article.For(name: typeName)} '{typeName}' has no infinity or NaN. Only " +
                "the binary floats (B16, B32, B64, B128) and the decimal floats D32, D64 and D128 have them: give the " +
                "value one of those types.";
     }

@@ -878,7 +878,7 @@ public sealed partial class SemanticVerifier
                     tokenTarget.FullName == _currentRoutine.ReturnType.FullName;
                 ReportError(code: SemanticDiagnosticCode.ReturnTypeMismatch,
                     message: tokenForEntity
-                        ? $"You are returning a '{returnType.Name}' token where this routine returns the " +
+                        ? $"You are returning {Article.For(name: returnType.Name)} '{returnType.Name}' token where this routine returns the " +
                           $"'{_currentRoutine.ReturnType.Name}' itself. The token only points at an entity something " +
                           "else owns (an element read into a variable, `var b = boxes[0]`, holds one). Return a copy " +
                           "with '.duplicate()', take the element out of its container (`remove_at`), or return the token " +
@@ -967,7 +967,7 @@ public sealed partial class SemanticVerifier
         if (declared != null && initType is not ErrorTypeSymbol && !IsAssignableTo(source: initType, target: declared))
         {
             ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
-                message: $"The value is a '{initType.Name}', but the names are declared as '{declared.Name}'.",
+                message: $"The value is {Article.For(name: initType.Name)} '{initType.Name}', but the names are declared as '{declared.Name}'.",
                 location: destruct.Initializer.Location);
         }
 

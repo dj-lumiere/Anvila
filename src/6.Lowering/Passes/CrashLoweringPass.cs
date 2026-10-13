@@ -186,7 +186,7 @@ internal sealed class CrashLoweringPass : AstRewriter
     private CrashStatement Crash(Expression title, Expression message, SourceLocation location)
     {
         return new CrashStatement(
-            Report: Report(crashReport: _crashReport, text: _text, s32: _s32,
+            Report: Report(registry: _registry, crashReport: _crashReport, text: _text, s32: _s32,
                 typeName: title, message: message, location: location),
             Location: location);
     }
@@ -201,15 +201,22 @@ internal sealed class CrashLoweringPass : AstRewriter
         SourceLocation location)
     {
         (TypeSymbol text, TypeSymbol s32, RoutineInfo crashReport) = CrashReportParts(registry: registry);
-        return Report(crashReport: crashReport, text: text, s32: s32,
+        return Report(registry: registry, crashReport: crashReport, text: text, s32: s32,
             typeName: Text(value: CrashableTypeSymbol.SynthesizeCrashTitle(typeName: typeName), text: text,
                 location: location),
             message: Text(value: message, text: text, location: location), location: location);
     }
 
-    private static CallExpression Report(RoutineInfo crashReport, TypeSymbol text, TypeSymbol s32, Expression typeName,
-        Expression message, SourceLocation location)
+    private static CallExpression Report(TypeRegistry registry, RoutineInfo crashReport, TypeSymbol text, TypeSymbol s32,
+        Expression typeName, Expression message, SourceLocation location)
     {
+        // A crash raised in the standard library (an overflow in `U8.add`, an index out of range) is named by where the
+        // program called into the library, not by the library's own line: line 0 with the library's directory as the
+        // file asks the report for the most recent frame of the live trace outside it.
+        bool fromLibrary = registry.IsStandardLibraryFile(filePath: location.FileName) && registry.StdlibPath != null;
+        string file = fromLibrary
+            ? Path.GetFullPath(path: registry.StdlibPath!)
+            : location.FileName;
         return new CallExpression(
             Callee: new IdentifierExpression(Name: RuntimeContract.CrashReport, Location: location)
             {
@@ -219,8 +226,8 @@ internal sealed class CrashLoweringPass : AstRewriter
             [
                 Named(name: "type_name", value: typeName),
                 Named(name: "message", value: message),
-                Named(name: "file", value: Text(value: location.FileName, text: text, location: location)),
-                Named(name: "line", value: S32(value: location.Line, s32: s32, location: location)),
+                Named(name: "file", value: Text(value: file, text: text, location: location)),
+                Named(name: "line", value: S32(value: fromLibrary ? 0 : location.Line, s32: s32, location: location)),
                 Named(name: "column", value: S32(value: location.Column, s32: s32, location: location))
             ],
             Location: location) { ResolvedRoutine = crashReport };

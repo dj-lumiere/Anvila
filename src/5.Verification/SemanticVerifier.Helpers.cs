@@ -863,7 +863,7 @@ public sealed partial class SemanticVerifier
             string from = value is IdentifierExpression id
                 ? $"'{id.Name}'"
                 : "the value it belongs to";
-            return $"{action} a '{type.Name}' that {from} still owns. '{parameter}' may be an entity, and then this " +
+            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {from} still owns. '{parameter}' may be an entity, and then this " +
                    $"would make two owners of it. Move it with 'steal', or keep '{parameter}' to values with " +
                    $"'needs RecordType {parameter}'.";
         }
@@ -881,7 +881,7 @@ public sealed partial class SemanticVerifier
             ? $"Take it out with a removing routine (e.g. 'remove_at'){copy}, or work on it where it sits " +
               "(a call or field write on the element reaches it in place)."
             : $"Move it with 'steal'{copy}, or keep a shareable handle instead.";
-        return $"{action} a '{type.Name}' that {owner} still owns, which would make two owners of one " +
+        return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {owner} still owns, which would make two owners of one " +
                $"single-owner entity. {fix}";
     }
 

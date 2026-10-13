@@ -1,3 +1,4 @@
+using Builder.Diagnostics;
 using Builder.Tokenizer;
 using SyntaxTree;
 
@@ -1117,7 +1118,7 @@ internal sealed partial class AstPrinter
         };
         if (classifier == null || types.Count > 0)
         {
-            throw Refuse(at: constraint.Location, reason: $"a '{constraint.ConstraintType}' constraint of this shape");
+            throw Refuse(at: constraint.Location, reason: $"{Article.For(name: constraint.ConstraintType.ToString())} '{constraint.ConstraintType}' constraint of this shape");
         }
 
         return Doc.Text(text: classifier + " " + constraint.ParameterName);

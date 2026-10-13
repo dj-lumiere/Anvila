@@ -73,7 +73,7 @@ public sealed partial class SemanticVerifier
             if (routine.Realm != expected)
             {
                 ReportError(code: SemanticDiagnosticCode.DirectWiredRoutineCall,
-                    message: $"'{tag}::{routine.Name}' does not name a {tag} routine.",
+                    message: $"'{tag}::{routine.Name}' does not name {Article.For(name: tag)} {tag} routine.",
                     location: location);
             }
         }
@@ -474,7 +474,7 @@ public sealed partial class SemanticVerifier
             };
             ReportError(code: SemanticDiagnosticCode.TypeNotCallable,
                 message:
-                $"You are calling {what}, but it is a '{calleeType.Name}', not a routine. Only a routine value can be " +
+                $"You are calling {what}, but it is {Article.For(name: calleeType.Name)} '{calleeType.Name}', not a routine. Only a routine value can be " +
                 "called: remove the extra parentheses, or call the routine you meant.",
                 location: call.Location);
             return ErrorTypeSymbol.Instance;
@@ -1248,7 +1248,7 @@ public sealed partial class SemanticVerifier
                   $"('routine S64.to[{arguments}]()'), so a value of '{owner.Name}' has none. Take the " +
                   $"parameter as '{arguments}', or convert where the type is known."
                 : typeArguments is [{ } only] && (only.FullName == owner.FullName || only.Name == owner.Name)
-                    ? $"The value is already a '{owner.Name}'. Use it as it is, without '.to[{arguments}]()'."
+                    ? $"The value is already {Article.For(name: owner.Name)} '{owner.Name}'. Use it as it is, without '.to[{arguments}]()'."
                     : $"There is no conversion from '{owner.Name}' to '{arguments}'.";
         ReportError(code: SemanticDiagnosticCode.SpecializationNotFound, message: message, location: location);
     }
@@ -4162,12 +4162,12 @@ public sealed partial class SemanticVerifier
             {
                 // A primitive has no member variables to fill: its construction from one value reads that value's
                 // bits, so the value must be a primitive too. A variant holding one gives it up with `to`.
-                string from = argTypes is [{ } only] ? $" from a '{only.Name}'" : "";
+                string from = argTypes is [{ } only] ? $" from {Article.For(name: only.Name)} '{only.Name}'" : "";
                 string hint = argTypes is [VariantTypeSymbol] && call.Arguments is [var arm]
                     ? $" If the value holds one, take it out with '{Unnamed(argument: arm)}.to[{type.Name}]()'."
                     : $" Convert with '.to[{type.Name}]()' where a conversion exists.";
                 ReportError(code: SemanticDiagnosticCode.SpecializationNotFound,
-                    message: $"A '{type.Name}' is not built{from}: no creator of '{type.Name}' takes these arguments." +
+                    message: $"{Article.Capital(name: type.Name)} '{type.Name}' is not built{from}: no creator of '{type.Name}' takes these arguments." +
                              hint,
                     location: call.Location);
                 return ErrorTypeSymbol.Instance;

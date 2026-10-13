@@ -1,3 +1,4 @@
+using Builder.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Builder.Backends;
@@ -430,7 +431,7 @@ internal sealed class TesseraWriter
         if (arms is not [{ Member.ReturnType: { } result }, ..])
         {
             throw new NotSupportedException(
-                message: $"The Tessera backend found no live crashable with a '{member}' to dispatch to.");
+                message: $"The Tessera backend found no live crashable with {Article.For(name: member)} '{member}' to dispatch to.");
         }
 
         string name = VerbatimName(text: $"crashable dispatch {member} {ArmsTag(arms: arms)}");

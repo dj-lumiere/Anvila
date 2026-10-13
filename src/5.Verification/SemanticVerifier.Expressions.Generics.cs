@@ -1198,7 +1198,7 @@ public sealed partial class SemanticVerifier
         {
             mismatch = fromWidth == toWidth
                 ? null
-                : ($"it reinterprets the bits of a {fromWidth}-bit '{from.Name}' as a {toWidth}-bit '{to.Name}', and a bit reinterpretation needs both types to be the same size",
+                : ($"it reinterprets the bits of {Article.For(name: fromWidth.ToString())} {fromWidth}-bit '{from.Name}' as {Article.For(name: toWidth.ToString())} {toWidth}-bit '{to.Name}', and a bit reinterpretation needs both types to be the same size",
                     "Widen or narrow the value first so both sides have the same width");
         }
         else if (IntrinsicConversionRules.TryGetValue(key: opcode, value: out var rule))

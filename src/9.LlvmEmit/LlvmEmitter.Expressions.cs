@@ -1,3 +1,4 @@
+using Builder.Diagnostics;
 using System.Text;
 using SyntaxTree;
 using TypeModel.Enums;
@@ -359,7 +360,7 @@ public partial class LlvmEmitter
         if (valueType is not RoutineTypeSymbol routineType)
         {
             throw new InvalidOperationException(
-                message: $"A recovering routine-value call at {call.Location} calls a '{valueType?.Name}', not a " +
+                message: $"A recovering routine-value call at {call.Location} calls {Article.For(name: valueType?.Name)} '{valueType?.Name}', not a " +
                          "routine value.");
         }
 
