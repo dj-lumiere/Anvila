@@ -29,9 +29,22 @@ internal static class UndecidedLiteralConformance
         };
     }
 
-    /// <summary>Maps an undecided integer literal's resolved type to its concrete integer token.</summary>
+    /// <summary>Whether <paramref name="typeName"/> is a binary float or a decimal type, which a bare whole number
+    /// written in base 10 also conforms to.</summary>
+    internal static bool IsFloatOrDecimal(string? typeName)
+    {
+        return typeName is "B16" or "B32" or "B64" or "B128" or "D32" or "D64" or "D128" or "Decimal";
+    }
+
+    /// <summary>Maps an undecided integer literal's resolved type to its concrete token: an integer token, or the
+    /// float or decimal token when the whole number went where a float or decimal goes.</summary>
     internal static TokenType ResolveInteger(TypeSymbol? resolved)
     {
+        if (IsFloatOrDecimal(typeName: resolved?.Name))
+        {
+            return ResolveDecimal(resolved: resolved);
+        }
+
         return resolved?.Name switch
         {
             "S8" => TokenType.S8Literal,

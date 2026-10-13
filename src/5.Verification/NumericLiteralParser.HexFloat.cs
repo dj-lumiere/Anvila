@@ -41,6 +41,16 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
+    /// Whether <paramref name="text"/> is written with a base prefix (<c>0x</c>, <c>0b</c>, <c>0o</c>): a literal
+    /// that spells bits rather than a quantity.
+    /// </summary>
+    public static bool HasBasePrefix(string text)
+    {
+        string body = text.TrimStart('+', '-');
+        return body.Length > 1 && body[0] == '0' && body[1] is 'x' or 'X' or 'b' or 'B' or 'o' or 'O';
+    }
+
+    /// <summary>
     /// Encodes a hexadecimal float literal into the bits of a binary float format, EXACTLY: the value
     /// hex-mantissa × 2^exponent must fit the format without rounding (a hex float spells its bits, so
     /// rounding one would silently change what was written).

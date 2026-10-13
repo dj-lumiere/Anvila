@@ -114,7 +114,12 @@ public sealed partial class SemanticVerifier
             return typeName;
         }
 
-        if (literal.LiteralType is TokenType.UndecidedDecimal &&
+        // A bare decimal literal conforms to a float or decimal type, and so does a bare whole number written in
+        // base 10: `price: 5` where a Decimal goes is 5. One written with a base prefix (`0xFF`) names bits, not a
+        // quantity, so it stays an integer.
+        if ((literal.LiteralType is TokenType.UndecidedDecimal ||
+             literal.LiteralType is TokenType.UndecidedInteger && literal.Value is string digits &&
+             !NumericLiteralParser.HasBasePrefix(text: digits)) &&
             (IsFloatType(type: expectedType) || IsDecimalType(type: expectedType)))
         {
             return expectedType.Name;
@@ -593,9 +598,13 @@ public sealed partial class SemanticVerifier
                 // Unsuffixed literals: route through resolved type (contextual inference may have changed it)
                 TokenType.UndecidedInteger => resolvedTypeName == IntegerTypeName
                     ? ParseIntegerLiteral(literal: literal, rawValue: rawValue)
-                    : ParseIntegerByResolvedType(literal: literal,
-                        rawValue: rawValue,
-                        resolvedTypeName: resolvedTypeName),
+                    : Declaration.UndecidedLiteralConformance.IsFloatOrDecimal(typeName: resolvedTypeName)
+                        ? ParseDecimalByResolvedType(literal: literal,
+                            rawValue: rawValue,
+                            resolvedTypeName: resolvedTypeName)
+                        : ParseIntegerByResolvedType(literal: literal,
+                            rawValue: rawValue,
+                            resolvedTypeName: resolvedTypeName),
                 TokenType.UndecidedDecimal => ParseDecimalByResolvedType(literal: literal,
                     rawValue: rawValue,
                     resolvedTypeName: resolvedTypeName),
