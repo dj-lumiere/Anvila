@@ -826,7 +826,10 @@ public sealed partial class SemanticVerifier
         // An element is exchanged by its container in one step (`xs.exchange(index: i, value: fresh)`).
         if (stolen.Place is IndexExpression element && putBack != null)
         {
-            if (_registry.LookupMemberRoutine(type: element.Object.ResolvedType ?? placeType,
+            // Reached through a token or a handle (`s[b]` with `s: Modifying[List[…]]`), the element is the container's
+            // inside it, and so is the routine that exchanges it. A read-only token is turned away when the exchange is
+            // analyzed, as any changing call through one is.
+            if (_registry.LookupMemberRoutine(type: ContainerBehind(type: element.Object.ResolvedType) ?? placeType,
                     memberRoutineName: Declaration.RuntimeContract.Exchange, isFailable: true) is not
                 { Parameters: [.., { Name: var positionName }, _] })
             {
@@ -886,6 +889,21 @@ public sealed partial class SemanticVerifier
         }
 
         stolen.Lowered = lowered;
+    }
+
+    /// <summary>
+    /// The container a token or a handle reaches (<c>List[T]</c> behind <c>Modifying[List[T]]</c>, <c>Retained[List[T]]</c>),
+    /// or <paramref name="type"/> itself when it is the container.
+    /// </summary>
+    private static TypeSymbol? ContainerBehind(TypeSymbol? type)
+    {
+        return type is RecordTypeSymbol { TypeArguments: [var inner, ..] } handle &&
+               (handle.GenericDefinition ?? handle).BareName is Declaration.RuntimeContract.Viewing
+                   or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Consulting
+                   or Declaration.RuntimeContract.Amending or Declaration.RuntimeContract.Retained
+                   or Declaration.RuntimeContract.Roamed
+            ? inner
+            : type;
     }
 
     /// <summary>Numbers the temporaries <see cref="AnalyzeStealStatement"/> introduces.</summary>

@@ -73,6 +73,9 @@ public partial class LlvmEmitter
                 // Named arguments appear inside synthesized AST bodies (e.g., me.eq(you: you)).
                 // The name is irrelevant to codegen -> just emit the inner value positionally.
                 NamedArgumentExpression named => EmitExpression(sb: sb, expr: named.Value),
+                // A move inside a synthesized body (a forwarder handing on an entity it took over) is the value
+                // itself. Who ends the value was settled upstream, where the move kept it out of the teardown.
+                StealExpression steal => EmitExpression(sb: sb, expr: steal.Operand),
                 _ => throw new NotImplementedException(
                     message: $"Expression type not implemented: {expr.GetType().Name}")
             };

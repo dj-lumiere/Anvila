@@ -658,12 +658,26 @@ internal sealed class WrapperForwardingPass
         TypeSymbol innerType = wrapperType.TypeArguments is { Count: > 0 }
             ? wrapperType.TypeArguments[index: 0]
             : new GenericParameterTypeSymbol(name: genericParamName);
+        // An entity the forwarder takes over by value (`exchange(index:, value:)` through a token) is the inner
+        // routine's to keep, so it moves on: passed plainly, the forwarder would still own it and end it on return,
+        // under the container now holding it. A type parameter may be an entity once instantiated, so it moves too.
         var forwardedArgs = parameters.Where(predicate: p => p.Name != "me")
                                       .Select(selector: p =>
-                                           (Expression)new NamedArgumentExpression(Name: p.Name,
-                                               Value: new IdentifierExpression(Name: p.Name,
-                                                   Location: _synthLoc),
-                                               Location: _synthLoc))
+                                       {
+                                           Expression value = new IdentifierExpression(Name: p.Name,
+                                               Location: _synthLoc);
+                                           if (!p.IsByReference && p.Type is EntityTypeSymbol or GenericParameterTypeSymbol)
+                                           {
+                                               value = new StealExpression(Operand: value, Location: _synthLoc)
+                                               {
+                                                   IsImplicitMove = true
+                                               };
+                                           }
+
+                                           return (Expression)new NamedArgumentExpression(Name: p.Name,
+                                               Value: value,
+                                               Location: _synthLoc);
+                                       })
                                       .ToList();
         var callCtx = new ForwarderCallContext(InnerMemberRoutine: innerMemberRoutine,
             CallPropertyName: innerMemberRoutine.Name,
