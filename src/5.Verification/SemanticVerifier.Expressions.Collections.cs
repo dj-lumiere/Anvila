@@ -699,10 +699,30 @@ public sealed partial class SemanticVerifier
         ValidateComparisonChain(chain: chain, location: chain.Location);
 
         // Analyze all operands and validate comparisons between consecutive pairs
-        var operandTypes = new List<TypeSymbol>();
-        foreach (Expression operand in chain.Operands)
+        // The operands made of literals are analyzed last, with the type of the chain's other operands, so a literal
+        // never takes its default type first (`0 <= me <= 18446744073709551615` beside a U64).
+        var operandTypes = new List<TypeSymbol>(
+            collection: chain.Operands.Select(selector: _ => (TypeSymbol)ErrorTypeSymbol.Instance));
+        TypeSymbol? numberPeer = null;
+        for (int i = 0; i < chain.Operands.Count; i++)
         {
-            operandTypes.Add(item: AnalyzeExpression(expression: operand));
+            if (LeadingNumber(expression: chain.Operands[index: i]) == null)
+            {
+                operandTypes[index: i] = AnalyzeExpression(expression: chain.Operands[index: i]);
+                numberPeer ??= ConstGenericValueType(type: operandTypes[index: i]) ?? operandTypes[index: i];
+            }
+        }
+
+        for (int i = 0; i < chain.Operands.Count; i++)
+        {
+            if (LeadingNumber(expression: chain.Operands[index: i]) is { } number)
+            {
+                operandTypes[index: i] = AnalyzeExpression(expression: chain.Operands[index: i],
+                    expectedType: numberPeer != null &&
+                                  ConformsToPeer(literal: number, peer: numberPeer, op: BinaryOperator.Less)
+                        ? numberPeer
+                        : null);
+            }
         }
 
         // Bare unsuffixed integer literals default to S64; re-infer them against the chain's concrete
@@ -710,13 +730,16 @@ public sealed partial class SemanticVerifier
         // RF-S060. A single pivot (the first non-literal fixed-width operand) covers the whole chain,
         // so even `0 < 5 < n` conforms both literals. Mirrors the pairwise literal re-inference in
         // AnalyzeBinaryExpression.
+        // A float or decimal pivot takes the bare numbers too (`-1.0 <= x <= 1.0` with a B128 `x`).
         TypeSymbol? pivot = null;
         for (int i = 0; i < chain.Operands.Count; i++)
         {
-            if (!IsUnsuffixedIntegerLiteral(expr: chain.Operands[index: i]) &&
-                IsFixedWidthIntegerType(type: operandTypes[index: i]))
+            TypeSymbol operandType = ConstGenericValueType(type: operandTypes[index: i]) ?? operandTypes[index: i];
+            if (LeadingNumber(expression: chain.Operands[index: i]) == null &&
+                (IsFixedWidthIntegerType(type: operandType) || IsFloatType(type: operandType) ||
+                 IsDecimalType(type: operandType)))
             {
-                pivot = operandTypes[index: i];
+                pivot = operandType;
                 break;
             }
         }
@@ -725,7 +748,8 @@ public sealed partial class SemanticVerifier
         {
             for (int i = 0; i < chain.Operands.Count; i++)
             {
-                if (IsUnsuffixedIntegerLiteral(expr: chain.Operands[index: i]) &&
+                if (LeadingNumber(expression: chain.Operands[index: i]) is { } literal &&
+                    ConformsToPeer(literal: literal, peer: pivot, op: BinaryOperator.Less) &&
                     operandTypes[index: i].Name != pivot.Name)
                 {
                     operandTypes[index: i] = AnalyzeExpression(
@@ -748,20 +772,6 @@ public sealed partial class SemanticVerifier
         return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
     }
 
-    /// <summary>
-    /// True for a bare (unsuffixed) integer literal — one whose width is still contextually
-    /// inferable rather than pinned by a suffix. Such literals default to S64 when analyzed
-    /// without an expected type and must be re-inferred against a typed peer.
-    /// </summary>
-    private static bool IsUnsuffixedIntegerLiteral(Expression expr)
-    {
-        return expr is LiteralExpression
-        {
-            LiteralType: TokenType.IntegerLiteral or TokenType.S64Literal
-            or TokenType.UndecidedInteger
-        };
-    }
-
     private TypeSymbol AnalyzeBlockExpression(BlockExpression block)
     {
         // Block expression evaluates to its contained value expression
@@ -772,7 +782,7 @@ public sealed partial class SemanticVerifier
     /// Analyzes a when expression (pattern matching expression).
     /// Returns the common type of all branch results.
     /// </summary>
-    private TypeSymbol AnalyzeWhenExpression(WhenExpression when)
+    private TypeSymbol AnalyzeWhenExpression(WhenExpression when, TypeSymbol? expectedType = null)
     {
         // Analyze the matched expression (Bool for subject-less when — arms are conditions)
         TypeSymbol matchedType = when.Expression != null
@@ -801,7 +811,7 @@ public sealed partial class SemanticVerifier
                 hasElse = true;
             }
 
-            resultType = AnalyzeWhenClauseBody(clause: clause, resultType: resultType);
+            resultType = AnalyzeWhenClauseBody(clause: clause, resultType: resultType, expectedType: expectedType);
 
             _registry.ExitScope();
         }
@@ -874,13 +884,16 @@ public sealed partial class SemanticVerifier
     /// <c>becomes</c> block — and folds its branch type into the running <paramref name="resultType"/>
     /// (reporting a mismatch against the first branch). Returns the updated result type.
     /// </summary>
-    private TypeSymbol? AnalyzeWhenClauseBody(WhenClause clause, TypeSymbol? resultType)
+    private TypeSymbol? AnalyzeWhenClauseBody(WhenClause clause, TypeSymbol? resultType, TypeSymbol? expectedType)
     {
         // When expressions require expression bodies that return values
         // The Body is a Statement, but for expressions it should typically be an ExpressionStatement
         if (clause.Body is ExpressionStatement exprStmt)
         {
-            TypeSymbol branchType = AnalyzeExpression(expression: exprStmt.Expression);
+            // An arm's value takes the type the whole `when` goes to, and a bare number arm takes the type of the
+            // arms before it (`x > 0 => x`, `else => 0`).
+            TypeSymbol? armExpected = expectedType ?? (exprStmt.Expression is LiteralExpression ? resultType : null);
+            TypeSymbol branchType = AnalyzeExpression(expression: exprStmt.Expression, expectedType: armExpected);
             return FoldWhenBranchType(resultType: resultType,
                 branchType: branchType,
                 errorLocation: clause.Body.Location);
@@ -983,11 +996,15 @@ public sealed partial class SemanticVerifier
         }
 
         var typeArgs = new TypeSymbol?[genericRoutine.GenericParameters.Count];
+        var lambdasRead = new HashSet<int>();
 
-        // First pass: infer from argument types.
+        // First pass: infer from argument types. A bare number binds nothing yet: it carries no type of its own,
+        // so the other arguments, the constraints and the expected type come first (see the last pass).
         InferTypeArgsFromArguments(genericRoutine: genericRoutine,
             arguments: arguments,
-            typeArgs: typeArgs);
+            typeArgs: typeArgs,
+            deferred: false,
+            lambdasRead: lambdasRead);
 
         // Second pass: infer any still-unbound generics from `needs` constraints whose constraining
         // param is now known (e.g. `zip[U, S2](other: Accessing[S2]) needs S2 obeys Iterable[U]` —
@@ -1008,6 +1025,15 @@ public sealed partial class SemanticVerifier
                 inferred: typeArgs);
         }
 
+        // Last pass: a type parameter only bare numbers give binds from their default types (`max(a: 5, b: 3)` is
+        // over S64), after which the numbers conform to it. The lambdas the first pass left come after the numbers.
+        InferTypeArgsFromArguments(genericRoutine: genericRoutine,
+            arguments: arguments,
+            typeArgs: typeArgs,
+            deferred: true,
+            lambdasRead: lambdasRead);
+        InferGenericsFromConstraints(routine: genericRoutine, inferred: typeArgs);
+
         // All type args must be inferred.
         return typeArgs.Any(predicate: t => t == null)
             ? null
@@ -1022,7 +1048,7 @@ public sealed partial class SemanticVerifier
     /// the arity constant <c>K</c>; error-typed arguments are skipped.
     /// </summary>
     private void InferTypeArgsFromArguments(RoutineInfo genericRoutine, List<Expression> arguments,
-        TypeSymbol?[] typeArgs)
+        TypeSymbol?[] typeArgs, bool deferred, HashSet<int> lambdasRead)
     {
         // GenericParameters is guaranteed non-null when the caller checks IsGenericDefinition,
         // but the field itself is nullable — guard here so the pass-down is clean.
@@ -1032,9 +1058,19 @@ public sealed partial class SemanticVerifier
         }
 
         int argCount = Math.Min(val1: genericRoutine.Parameters.Count, val2: arguments.Count);
-        for (int i = 0; i < argCount; i++)
+        foreach (int i in InferenceArguments(arguments: arguments, count: argCount, deferred: deferred,
+                     parameters: genericRoutine.Parameters, genericParameters: genericParameters, bound: typeArgs,
+                     lambdasRead: lambdasRead))
         {
             TypeSymbol paramType = genericRoutine.Parameters[index: i].Type;
+            // A bare number only binds a parameter nothing else bound: once bound it conforms, unread here.
+            if (deferred && IsBareNumber(argument: arguments[index: i]) &&
+                paramType is GenericParameterTypeSymbol bound &&
+                genericParameters.IndexOf(item: bound.Name) is var slot and >= 0 && typeArgs[slot] != null)
+            {
+                continue;
+            }
+
             Expression argExpr = arguments[index: i] is NamedArgumentExpression na
                 ? na.Value
                 : arguments[index: i];
@@ -1064,6 +1100,97 @@ public sealed partial class SemanticVerifier
                 genericParameters: genericParameters,
                 inferred: typeArgs);
         }
+    }
+
+    /// <summary>
+    /// The argument positions one inference pass reads. The first pass reads every argument but the bare numbers,
+    /// and a lambda only once the types of its parameters are bound. The deferred pass reads the bare numbers (which
+    /// bind a parameter only nothing else bound) and then the lambdas the first pass left
+    /// (<c>accumulate(start: 100, combiner: (acc, x) => acc + x)</c> types <c>acc</c> from <c>100</c>). The positions
+    /// are produced as the caller binds, so a lambda's readiness sees what the arguments before it bound.
+    /// </summary>
+    private static IEnumerable<int> InferenceArguments(List<Expression> arguments, int count, bool deferred,
+        IReadOnlyList<ParamInfo> parameters, List<string> genericParameters, TypeSymbol?[] bound,
+        HashSet<int> lambdasRead)
+    {
+        static bool IsLambda(Expression argument)
+        {
+            return (argument is NamedArgumentExpression named
+                ? named.Value
+                : argument) is LambdaExpression;
+        }
+
+        bool Unbound(TypeSymbol type)
+        {
+            return type switch
+            {
+                GenericParameterTypeSymbol parameter =>
+                    genericParameters.IndexOf(item: parameter.Name) is var slot and >= 0 && bound[slot] == null,
+                RoutineTypeSymbol routine => routine.ParameterTypes.Any(predicate: Unbound),
+                _ => type.TypeArguments?.Any(predicate: Unbound) == true
+            };
+        }
+
+        if (!deferred)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                if (!IsBareNumber(argument: arguments[index: i]) && !IsLambda(argument: arguments[index: i]))
+                {
+                    yield return i;
+                }
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                if (IsLambda(argument: arguments[index: i]) &&
+                    !(parameters[index: i].Type is RoutineTypeSymbol routine &&
+                      routine.ParameterTypes.Any(predicate: Unbound)))
+                {
+                    lambdasRead.Add(item: i);
+                    yield return i;
+                }
+            }
+
+            yield break;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            if (IsBareNumber(argument: arguments[index: i]))
+            {
+                yield return i;
+            }
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            if (IsLambda(argument: arguments[index: i]) && lambdasRead.Add(item: i))
+            {
+                yield return i;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="argument"/> is a bare number (<c>5</c>, <c>-0.5</c>). A number carries no type of its
+    /// own, so inference binds a type parameter from it only when nothing else gives that parameter: another
+    /// argument (<c>LLVM::sub(a: 0, b: me)</c> binds <c>T</c> from <c>me</c>), a constraint, or the type the result
+    /// goes to. The number then conforms to the bound type.
+    /// </summary>
+    private static bool IsBareNumber(Expression argument)
+    {
+        if (argument is NamedArgumentExpression named)
+        {
+            argument = named.Value;
+        }
+
+        if (argument is UnaryExpression { Operator: UnaryOperator.Minus } negated)
+        {
+            argument = negated.Operand;
+        }
+
+        return argument is LiteralExpression { LiteralType: TokenType.UndecidedInteger or TokenType.UndecidedDecimal };
     }
 
     /// <summary>
@@ -1198,6 +1325,7 @@ public sealed partial class SemanticVerifier
         }
 
         var inferred = new TypeSymbol?[genericMemberRoutine.GenericParameters.Count];
+        var lambdasRead = new HashSet<int>();
 
         // Receiver-based inference for a member declared on a SPECIALIZED generic instantiation
         // (e.g. `routine List[Agent[V]].gather!()`): unify the memberRoutine's MeType pattern
@@ -1213,8 +1341,58 @@ public sealed partial class SemanticVerifier
 
         int argCount = Math.Min(val1: genericMemberRoutine.Parameters.Count,
             val2: arguments.Count);
-        for (int i = 0; i < argCount; i++)
+        InferMemberTypeArgsFromArguments(genericMemberRoutine: genericMemberRoutine, arguments: arguments,
+            argCount: argCount, inferred: inferred, deferred: false, lambdasRead: lambdasRead);
+
+        // Infer still-unbound generics from `needs` constraints (e.g. U from `S obeys Iterable[U]`).
+        InferGenericsFromConstraints(routine: genericMemberRoutine, inferred: inferred);
+
+        // A type parameter only the result mentions (`count.to() -> T`) binds from where the result goes: the
+        // declared variable, the return type, the parameter, or the payload of a `try`/`check` carrier.
+        if (expectedType is not (null or ErrorTypeSymbol) && genericMemberRoutine.ReturnType is { } returnType)
         {
+            InferMemberRoutineTypeArgumentsFromTypes(paramType: returnType,
+                argType: expectedType,
+                genericParameters: genericMemberRoutine.GenericParameters,
+                inferred: inferred);
+        }
+
+        // A type parameter only bare numbers give binds last, from their default types, and the lambdas the first
+        // pass left come after the numbers.
+        InferMemberTypeArgsFromArguments(genericMemberRoutine: genericMemberRoutine, arguments: arguments,
+            argCount: argCount, inferred: inferred, deferred: true, lambdasRead: lambdasRead);
+        InferGenericsFromConstraints(routine: genericMemberRoutine, inferred: inferred);
+
+        for (int i = 0; i < inferred.Length; i++)
+        {
+            if (inferred[i] == null)
+            {
+                return null;
+            }
+        }
+
+        return inferred.ToList()!;
+    }
+
+    /// <summary>Binds member-routine type parameters from the arguments of one inference pass (see
+    /// <see cref="InferenceArguments"/>).</summary>
+    private void InferMemberTypeArgsFromArguments(RoutineInfo genericMemberRoutine, List<Expression> arguments,
+        int argCount, TypeSymbol?[] inferred, bool deferred, HashSet<int> lambdasRead)
+    {
+        foreach (int i in InferenceArguments(arguments: arguments, count: argCount, deferred: deferred,
+                     parameters: genericMemberRoutine.Parameters,
+                     genericParameters: genericMemberRoutine.GenericParameters!, bound: inferred,
+                     lambdasRead: lambdasRead))
+        {
+            // A bare number only binds a parameter nothing else bound: once bound it conforms, unread here.
+            if (deferred && IsBareNumber(argument: arguments[index: i]) &&
+                genericMemberRoutine.Parameters[index: i].Type is GenericParameterTypeSymbol bound &&
+                genericMemberRoutine.GenericParameters!.IndexOf(item: bound.Name) is var slot and >= 0 &&
+                inferred[slot] != null)
+            {
+                continue;
+            }
+
             Expression arg = arguments[index: i] is NamedArgumentExpression named
                 ? named.Value
                 : arguments[index: i];
@@ -1230,32 +1408,9 @@ public sealed partial class SemanticVerifier
             InferMemberRoutineTypeArgumentsFromTypes(
                 paramType: genericMemberRoutine.Parameters[index: i].Type,
                 argType: argType,
-                genericParameters: genericMemberRoutine.GenericParameters,
+                genericParameters: genericMemberRoutine.GenericParameters!,
                 inferred: inferred);
         }
-
-        // Infer still-unbound generics from `needs` constraints (e.g. U from `S obeys Iterable[U]`).
-        InferGenericsFromConstraints(routine: genericMemberRoutine, inferred: inferred);
-
-        // A type parameter only the result mentions (`count.to() -> T`) binds from where the result goes: the
-        // declared variable, the return type, the parameter, or the payload of a `try`/`check` carrier.
-        if (expectedType is not (null or ErrorTypeSymbol) && genericMemberRoutine.ReturnType is { } returnType)
-        {
-            InferMemberRoutineTypeArgumentsFromTypes(paramType: returnType,
-                argType: expectedType,
-                genericParameters: genericMemberRoutine.GenericParameters,
-                inferred: inferred);
-        }
-
-        for (int i = 0; i < inferred.Length; i++)
-        {
-            if (inferred[i] == null)
-            {
-                return null;
-            }
-        }
-
-        return inferred.ToList()!;
     }
 
     private TypeSymbol MarkerTokenArgumentType(RoutineInfo routine, TypeSymbol paramType, TypeSymbol argType)

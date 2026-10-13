@@ -52,7 +52,7 @@ public sealed partial class SemanticVerifier
             CompoundAssignmentExpression compound => AnalyzeCompoundAssignment(compound: compound),
             BinaryExpression binary => AnalyzeBinaryExpression(binary: binary,
                 expectedType: expectedType),
-            UnaryExpression unary => AnalyzeUnaryExpression(unary: unary),
+            UnaryExpression unary => AnalyzeUnaryExpression(unary: unary, expectedType: expectedType),
             CallExpression call => AnalyzeCallWithInlineTokens(call: call, expectedType: expectedType),
             MemberExpression member => AnalyzeMemberExpression(member: member),
             SpliceMemberExpression spliceMember => AnalyzeSpliceMemberExpression(
@@ -92,7 +92,7 @@ public sealed partial class SemanticVerifier
             StealExpression steal => AnalyzeStealExpression(steal: steal),
             BackIndexExpression back => AnalyzeBackIndexExpression(back: back, expectedType: expectedType),
             TypeExpression typeExpr => ResolveType(typeExpr: typeExpr),
-            WhenExpression whenExpr => AnalyzeWhenExpression(when: whenExpr),
+            WhenExpression whenExpr => AnalyzeWhenExpression(when: whenExpr, expectedType: expectedType),
             InsertedTextExpression insertedText => AnalyzeInsertedTextExpression(
                 insertedText: insertedText),
             _ => HandleUnknownExpression(expression: expression)
@@ -610,7 +610,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The number type a literal-only arithmetic or bitwise expression conforms to: the expected type when it is a
     /// number and every leaf of the expression is a literal, else null (an operand that is a variable or a call
-    /// keeps its own type, and the operator checks the widths).
+    /// keeps its own type, and the operator checks the widths). A shift amount and an exponent are not leaves of the
+    /// value: <c>1 &lt;&lt; k</c> is made of literals as far as its type goes.
     /// </summary>
     private TypeSymbol? LiteralArithmeticContext(BinaryExpression binary, TypeSymbol? expectedType)
     {
@@ -624,6 +625,11 @@ public sealed partial class SemanticVerifier
         return expression switch
         {
             LiteralExpression => true,
+            UnaryExpression { Operator: UnaryOperator.Minus or UnaryOperator.BitwiseNot } unary =>
+                IsLiteralArithmetic(expression: unary.Operand),
+            BinaryExpression binary when IsShiftOperator(op: binary.Operator) || binary.Operator is BinaryOperator.Power
+                or BinaryOperator.PowerWrap or BinaryOperator.PowerClamp or BinaryOperator.PowerUnchecked =>
+                IsLiteralArithmetic(expression: binary.Left),
             BinaryExpression binary when binary.Operator is >= BinaryOperator.Add and <= BinaryOperator.PowerUnchecked
                 or >= BinaryOperator.BitwiseAnd and <= BinaryOperator.LogicalRightShift =>
                 IsLiteralArithmetic(expression: binary.Left) && IsLiteralArithmetic(expression: binary.Right),
@@ -696,14 +702,40 @@ public sealed partial class SemanticVerifier
             ? complexCtx
             : literalCtx;
 
-        // Logical negation should eventually lower through member routines rather than a not operator.
-        TypeSymbol leftType = AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
-        // Pass leftType as expected for assignments so RHS literals like `none`
-        // see the target's carrier-slot type as their contextual expected type.
-
-        TypeSymbol rightType = binary.Operator == BinaryOperator.Assign
-            ? AnalyzeExpression(expression: binary.Right, expectedType: leftType)
-            : AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
+        // A side made of literals next to a typed side is analyzed after it, with that side's type, so it never takes
+        // its default type first (`me > 18446744073709551615` beside a U64 would not even read as an S64). A shift
+        // amount and an exponent are no such side.
+        bool peerTyped = binary.Operator != BinaryOperator.Assign && literalCtx == null &&
+                         !IsShiftOperator(op: binary.Operator) && binary.Operator is not (BinaryOperator.Power
+                             or BinaryOperator.PowerWrap or BinaryOperator.PowerClamp or BinaryOperator.PowerUnchecked);
+        TypeSymbol leftType;
+        TypeSymbol rightType;
+        if (peerTyped && LeadingNumber(expression: binary.Left) is { } leadingLeft &&
+            LeadingNumber(expression: binary.Right) == null)
+        {
+            rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
+            TypeSymbol peer = ConstGenericValueType(type: rightType) ?? rightType;
+            leftType = AnalyzeExpression(expression: binary.Left,
+                expectedType: ConformsToPeer(literal: leadingLeft, peer: peer, op: binary.Operator)
+                    ? peer
+                    : literalCtx);
+        }
+        else
+        {
+            // Logical negation should eventually lower through member routines rather than a not operator.
+            leftType = AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
+            TypeSymbol peer = ConstGenericValueType(type: leftType) ?? leftType;
+            // Pass leftType as expected for assignments so RHS literals like `none`
+            // see the target's carrier-slot type as their contextual expected type.
+            rightType = binary.Operator == BinaryOperator.Assign
+                ? AnalyzeExpression(expression: binary.Right, expectedType: leftType)
+                : AnalyzeExpression(expression: binary.Right,
+                    expectedType: peerTyped && LeadingNumber(expression: binary.Right) is { } leadingRight &&
+                                  LeadingNumber(expression: binary.Left) == null &&
+                                  ConformsToPeer(literal: leadingRight, peer: peer, op: binary.Operator)
+                        ? peer
+                        : rightCtx);
+        }
         // An operand that is a value's token (an iterated element, an element read into a variable) is its value
         // here: `x + 1` with `x: Viewing[S64]` adds S64s (TokenReadLoweringPass reads it through the token).
         if (binary.Operator != BinaryOperator.Assign)
@@ -1197,24 +1229,24 @@ public sealed partial class SemanticVerifier
     private (TypeSymbol leftType, TypeSymbol rightType) ReinferBinaryLiteralOperands(
         BinaryExpression binary, TypeSymbol leftType, TypeSymbol rightType)
     {
-        // Re-infer unsuffixed integer literals against the typed peer so
-        // comparisons like 'me.strong_count == 0' don't default the literal to S64.
-        if (binary.Right is LiteralExpression
-            {
-                LiteralType: TokenType.IntegerLiteral or TokenType.S64Literal
-                or TokenType.UndecidedInteger
-            } && IsFixedWidthIntegerType(type: leftType) && leftType.Name != rightType.Name)
+        // Re-infer unsuffixed number literals against the typed peer so comparisons like
+        // 'me.strong_count == 0' don't default the literal to S64, and 'x - 0.5' with a B128 'x' is a B128
+        // subtraction. A shift amount is no peer of the value shifted: '1 << k' keeps its own type for the 1.
+        // A const generic peer (`COUNT == 0` under `needs COUNT is U64`) gives its value type.
+        TypeSymbol leftPeer = ConstGenericValueType(type: leftType) ?? leftType;
+        TypeSymbol rightPeer = ConstGenericValueType(type: rightType) ?? rightType;
+        // An operand made of literals (`(1 << 112) -% 1` beside a U128) conforms as a whole, the way one literal does.
+        if (LeadingNumber(expression: binary.Right) is { } literalRight &&
+            ConformsToPeer(literal: literalRight, peer: leftPeer, op: binary.Operator) &&
+            leftPeer.Name != rightType.Name)
         {
-            rightType = AnalyzeExpression(expression: binary.Right, expectedType: leftType);
+            rightType = AnalyzeExpression(expression: binary.Right, expectedType: leftPeer);
         }
-        else if (binary.Left is LiteralExpression
-                 {
-                     LiteralType: TokenType.IntegerLiteral or TokenType.S64Literal
-                     or TokenType.UndecidedInteger
-                 } && IsFixedWidthIntegerType(type: rightType) &&
-                 leftType.Name != rightType.Name)
+        else if (LeadingNumber(expression: binary.Left) is { } literalLeft && !IsShiftOperator(op: binary.Operator) &&
+                 ConformsToPeer(literal: literalLeft, peer: rightPeer, op: binary.Operator) &&
+                 leftType.Name != rightPeer.Name)
         {
-            leftType = AnalyzeExpression(expression: binary.Left, expectedType: rightType);
+            leftType = AnalyzeExpression(expression: binary.Left, expectedType: rightPeer);
         }
 
         (leftType, rightType) = ReinferComplexLiteralPeer(binary: binary,
@@ -1225,6 +1257,54 @@ public sealed partial class SemanticVerifier
             rightType: rightType);
 
         return (leftType, rightType);
+    }
+
+    /// <summary>
+    /// The number an operand made only of literals starts with (<c>1</c> in <c>(1 &lt;&lt; 112) -% 1</c>), whose kind
+    /// (whole number or fraction) decides what the operand conforms to, or null when the operand has a variable or a
+    /// call among its values, or does not start with a number.
+    /// </summary>
+    private static LiteralExpression? LeadingNumber(Expression expression)
+    {
+        if (!IsLiteralArithmetic(expression: expression))
+        {
+            return null;
+        }
+
+        while (expression is BinaryExpression or UnaryExpression)
+        {
+            expression = expression is BinaryExpression binary
+                ? binary.Left
+                : ((UnaryExpression)expression).Operand;
+        }
+
+        return expression is LiteralExpression
+        {
+            LiteralType: TokenType.UndecidedInteger or TokenType.UndecidedDecimal or TokenType.IntegerLiteral
+            or TokenType.S64Literal
+        } number
+            ? number
+            : null;
+    }
+
+    /// <summary>
+    /// Whether a bare number <paramref name="literal"/> takes the type of its operator <paramref name="peer"/>: a
+    /// whole number goes to a fixed-width integer (and to an <c>Address</c> it is compared with, since an offset
+    /// added to an address is a <c>U64</c>), a number with a fraction point goes to a float or decimal type, and so
+    /// does a whole number written in base 10.
+    /// </summary>
+    private bool ConformsToPeer(LiteralExpression literal, TypeSymbol peer, BinaryOperator op)
+    {
+        if (literal.LiteralType is TokenType.IntegerLiteral or TokenType.S64Literal or TokenType.UndecidedInteger &&
+            (IsFixedWidthIntegerType(type: peer) || peer.Name == AddressTypeName && IsComparisonOperator(op: op)))
+        {
+            return true;
+        }
+
+        return (literal.LiteralType is TokenType.UndecidedDecimal ||
+                literal.LiteralType is TokenType.UndecidedInteger && literal.Value is string digits &&
+                !NumericLiteralParser.HasBasePrefix(text: digits)) &&
+               (IsFloatType(type: peer) || IsDecimalType(type: peer));
     }
 
     /// <summary>
@@ -2005,9 +2085,16 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    private TypeSymbol AnalyzeUnaryExpression(UnaryExpression unary)
+    private TypeSymbol AnalyzeUnaryExpression(UnaryExpression unary, TypeSymbol? expectedType = null)
     {
-        TypeSymbol operandType = AnalyzeExpression(expression: unary.Operand);
+        // A negated or complemented number made of literals (`~(1 << k)` where a U8 goes) takes the type the whole
+        // expression goes to, as the number alone would.
+        TypeSymbol? operandExpected = unary.Operator is UnaryOperator.Minus or UnaryOperator.BitwiseNot &&
+                                      expectedType != null && IsNumericType(type: expectedType) &&
+                                      IsLiteralArithmetic(expression: unary.Operand)
+            ? expectedType
+            : null;
+        TypeSymbol operandType = AnalyzeExpression(expression: unary.Operand, expectedType: operandExpected);
         operandType = ValueTokenTarget(type: operandType) ?? operandType;
 
         switch (unary.Operator)

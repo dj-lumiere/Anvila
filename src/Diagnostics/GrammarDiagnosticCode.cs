@@ -36,6 +36,10 @@ public enum GrammarDiagnosticCode
     /// <summary>A name between backticks is empty, spans a line, or has spaces at its ends or two in a row.</summary>
     InvalidBacktickName = 9,
 
+    /// <summary>A number names its type with a suffix (<c>5_u8</c>, <c>10n</c>, <c>2.5dn</c>). A number takes its type
+    /// from the place it goes, or from the declaration it starts (<c>var x: U8 = 5</c>).</summary>
+    TypeNamingSuffix = 10,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // INDENTATION ERRORS (050 - 079)
     // ═══════════════════════════════════════════════════════════════════════════

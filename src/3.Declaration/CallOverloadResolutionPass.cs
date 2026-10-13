@@ -764,11 +764,10 @@ internal sealed class CallOverloadResolutionPass
             return localT;
         }
 
-        // An explicitly-suffixed numeric literal (`0u64`, `1u64`, `3.0b32`) carries its type in its
-        // LiteralType token even when an un-SA'd body never stamped ResolvedType. Recover it so a local
-        // seeded from such a literal (`var n = 0u64`) gets a receiver type for a downstream `n.add(1u64)`
-        // — the cold-path monomorph of `Iterable[T].get_count`'s `n = n + 1u64`. Unsuffixed literals
-        // (UndecidedInteger/Decimal) are context-typed and deliberately NOT mapped here.
+        // A numeric literal with a typed token (a preset inlined with its declared type, a literal analysis
+        // already conformed) carries its type in its LiteralType token even when an un-SA'd body never stamped
+        // ResolvedType. Recover it so a local seeded from such a literal gets a receiver type for a downstream
+        // call. Undecided literals (UndecidedInteger/Decimal) are context-typed and deliberately NOT mapped here.
         if (expr is LiteralExpression { } lit &&
             MapSuffixedLiteralTypeName(literalType: lit.LiteralType) is { } litTypeName &&
             _registry.LookupType(name: litTypeName) is { } litType)

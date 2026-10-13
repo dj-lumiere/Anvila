@@ -440,9 +440,15 @@ public sealed partial class SemanticVerifier
     {
         TypeSymbol calleeType = AnalyzeExpression(expression: call.Callee);
 
-        foreach (Expression arg in call.Arguments)
+        // A routine value's parameter types are where its arguments go, so a bare number conforms to them
+        // (`double_it(21)` with `double_it: (S32) -> S32`).
+        List<TypeSymbol>? parameterTypes = (calleeType as RoutineTypeSymbol)?.ParameterTypes;
+        for (int i = 0; i < call.Arguments.Count; i++)
         {
-            AnalyzeExpression(expression: arg);
+            AnalyzeExpression(expression: call.Arguments[index: i],
+                expectedType: parameterTypes != null && i < parameterTypes.Count
+                    ? parameterTypes[index: i]
+                    : null);
         }
 
         ValidateExclusiveTokenUniqueness(arguments: call.Arguments, location: call.Location);
@@ -2190,9 +2196,14 @@ public sealed partial class SemanticVerifier
             {
                 LiteralType: TokenType.UndecidedInteger or TokenType.UndecidedDecimal
             };
-            TypeSymbol argType = !bareLiteral && i < routine.Parameters.Count
-                ? AnalyzeExpression(expression: actualArg, expectedType: routine.Parameters[index: i].Type)
-                : AnalyzeExpression(expression: actualArg);
+            // The default type is read off the literal without analyzing it: the call is analyzed again once the
+            // overload is known, and a number too wide for its default type must not be reported here.
+            TypeSymbol argType = bareLiteral
+                ? LookupTypeWithImports(name: MapLiteralTypeName(literal: (LiteralExpression)actualArg) ?? "") ??
+                  ErrorTypeSymbol.Instance
+                : i < routine.Parameters.Count
+                    ? AnalyzeExpression(expression: actualArg, expectedType: routine.Parameters[index: i].Type)
+                    : AnalyzeExpression(expression: actualArg);
             if (argType == ErrorTypeSymbol.Instance)
             {
                 return false;
@@ -2381,7 +2392,7 @@ public sealed partial class SemanticVerifier
 
         RoutineInfo? arityMatch = LookupVisibleFreeOverload(callName: callName,
             routine: routine,
-            argTypes: arityArgTypes);
+            argTypes: arityArgTypes) ?? FreeOverloadTakingNumbers(call: call, callName: callName);
         if (arityMatch != null && arityMatch != routine)
         {
             routine = arityMatch;
@@ -2396,6 +2407,72 @@ public sealed partial class SemanticVerifier
         TryRebindFreeOverloadAsGenericWithSiblings(call: call,
             callName: callName,
             routine: ref routine);
+    }
+
+    /// <summary>
+    /// The one visible concrete free routine named <paramref name="callName"/> that takes the call when its bare
+    /// numbers are given the types of the parameters they fill (`integer_bitop(a: x, b: y, op: 0, ...)` against
+    /// `op: U32`): a number carries no type of its own, so an exact lookup by the argument types misses it. A
+    /// routine of the current module wins over others. Null when there is no bare number or no single such routine.
+    /// </summary>
+    private RoutineInfo? FreeOverloadTakingNumbers(CallExpression call, string callName)
+    {
+        if (!call.Arguments.Any(predicate: IsBareNumber))
+        {
+            return null;
+        }
+
+        List<RoutineInfo> fitting = _registry.GetAllRoutines(requireLive: false)
+                                             .Where(predicate: r =>
+                                                  r.OwnerType == null && !r.IsGenericDefinition && r.Name == callName &&
+                                                  IsFreeRoutineVisible(routine: r) &&
+                                                  RoutineCanAcceptArgCount(routine: r, argCount: call.Arguments.Count) &&
+                                                  TakesArgumentsWithNumbers(call: call, routine: r))
+                                             .ToList();
+        List<RoutineInfo> own = fitting.Where(predicate: r => r.Module == _currentModuleName).ToList();
+        return own.Count == 1
+            ? own[index: 0]
+            : fitting.Count == 1
+                ? fitting[index: 0]
+                : null;
+    }
+
+    /// <summary>Whether <paramref name="routine"/> takes the call's arguments, a bare number going to any number
+    /// parameter.</summary>
+    private bool TakesArgumentsWithNumbers(CallExpression call, RoutineInfo routine)
+    {
+        List<Expression> ordered = OrderByParameters(arguments: call.Arguments, routine: routine);
+        for (int i = 0; i < ordered.Count && i < routine.Parameters.Count; i++)
+        {
+            TypeSymbol parameterType = routine.Parameters[index: i].Type;
+            if (ordered[index: i] is NamedArgumentExpression named &&
+                routine.Parameters[index: i].Name != named.Name)
+            {
+                return false;
+            }
+
+            if (IsBareNumber(argument: ordered[index: i]))
+            {
+                if (!IsNumericType(type: parameterType))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            Expression actual = ordered[index: i] is NamedArgumentExpression value
+                ? value.Value
+                : ordered[index: i];
+            TypeSymbol argumentType = actual.ResolvedType ?? AnalyzeExpression(expression: actual);
+            if (parameterType is not GenericParameterTypeSymbol &&
+                !IsAssignableTo(source: argumentType, target: parameterType))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

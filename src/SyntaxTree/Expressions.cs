@@ -107,6 +107,25 @@ public abstract record Expression(SourceLocation Location) : SyntaxTreeNode(Loca
 public record LiteralExpression(object Value, TokenType LiteralType, SourceLocation Location)
     : Expression(Location: Location)
 {
+    private TypeSymbol? _resolvedType;
+
+    /// <summary>
+    /// Told about every literal whose type analysis sets, when set. Only <c>migrate --step suffix</c> sets it: it
+    /// reads which type each bare number took, to decide whether the suffix it once carried can go.
+    /// </summary>
+    public static Action<LiteralExpression>? TypeAssigned { get; set; }
+
+    /// <inheritdoc/>
+    public override TypeSymbol? ResolvedType
+    {
+        get => _resolvedType;
+        set
+        {
+            _resolvedType = value;
+            TypeAssigned?.Invoke(obj: this);
+        }
+    }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

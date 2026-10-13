@@ -14,7 +14,7 @@ namespace Builder.Desugaring.Passes;
 /// subsequent passes (operator lowering, f-string lowering, etc.) operate on
 /// concrete literal values rather than named identifiers. For example,</para>
 /// <code>
-/// preset RUNS: S64 = 20_s64
+/// preset RUNS: S64 = 20
 /// for _ in 0..RUNS ?? for _ in 0..S64(20)
 /// </code>
 /// <para>Needs <see cref="VariableInfo.PresetValue"/> to be set on preset entries in
@@ -252,7 +252,9 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
             return own.Value switch
             {
                 ListLiteralExpression => expr,
-                LiteralExpression ownLiteral => ownLiteral with { ResolvedType = id.ResolvedType ?? ownLiteral.ResolvedType },
+                LiteralExpression ownLiteral => TypedNumber(literal: ownLiteral,
+                    declared: ctx.Registry.LookupType(name: own.Type.Name),
+                    resolvedType: id.ResolvedType ?? ownLiteral.ResolvedType),
                 _ => InlineComposedPreset(id: id, value: own.Value, resolvedType: id.ResolvedType ?? own.Value.ResolvedType)
             };
         }
@@ -273,13 +275,33 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
             TypeSymbol? resolvedType = id.ResolvedType ?? v.PresetValue.ResolvedType;
             if (v.PresetValue is LiteralExpression lit)
             {
-                return lit with { ResolvedType = resolvedType };
+                return TypedNumber(literal: lit, declared: v.Type, resolvedType: resolvedType);
             }
 
             return InlineComposedPreset(id: id, value: v.PresetValue, resolvedType: resolvedType);
         }
 
         return expr;
+    }
+
+    /// <summary>
+    /// The value a preset's literal inlines as. A bare number takes the preset's declared type with it
+    /// (<c>preset B128_PI: B128 = 3.14...</c> stays a B128 wherever it is used), since the number alone carries no
+    /// type and would read as its default where it lands (<c>B128_PI.to[B64]()</c>).
+    /// </summary>
+    private static LiteralExpression TypedNumber(LiteralExpression literal, TypeSymbol? declared,
+        TypeSymbol? resolvedType)
+    {
+        if (literal.LiteralType is Tokenizer.TokenType.UndecidedInteger or Tokenizer.TokenType.UndecidedDecimal &&
+            UndecidedLiteralConformance.HasNumberToken(type: declared))
+        {
+            return UndecidedLiteralConformance.Conform(literal: literal with { ResolvedType = declared }) with
+            {
+                ResolvedType = resolvedType ?? declared
+            };
+        }
+
+        return literal with { ResolvedType = resolvedType };
     }
 
     /// <summary>

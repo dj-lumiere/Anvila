@@ -29,6 +29,14 @@ internal static class UndecidedLiteralConformance
         };
     }
 
+    /// <summary>Whether a number of type <paramref name="type"/> has a literal token of its own (the integer, float and
+    /// decimal types), so a bare number typed so can be given that token.</summary>
+    internal static bool HasNumberToken(TypeSymbol? type)
+    {
+        return type?.Name is "S8" or "S16" or "S32" or "S64" or "S128" or "S256" or "U8" or "U16" or "U32" or "U64"
+            or "U128" or "U256" or "Address" or "Integer" || IsFloatOrDecimal(typeName: type?.Name);
+    }
+
     /// <summary>Whether <paramref name="typeName"/> is a binary float or a decimal type, which a bare whole number
     /// written in base 10 also conforms to.</summary>
     internal static bool IsFloatOrDecimal(string? typeName)

@@ -44,6 +44,8 @@ public sealed partial class SemanticVerifier
             return typeParameter;
         }
 
+        expectedType = NumberArm(literal: literal, expectedType: expectedType) ?? expectedType;
+
         string? typeName = MapLiteralTypeName(literal: literal);
         if (typeName == null)
         {
@@ -76,6 +78,53 @@ public sealed partial class SemanticVerifier
         return type;
     }
 
+    /// <summary>
+    /// The member of a variant or the payload of a <c>Maybe</c> a bare number goes to (<c>var m: Maybe[S64] = 42</c>,
+    /// <c>var n: Number = 3.14</c> with one float member), or null when the expected type is neither or the number
+    /// fits no single member. A member that is the number's default type wins, as it would without the variant.
+    /// </summary>
+    private TypeSymbol? NumberArm(LiteralExpression literal, TypeSymbol? expectedType)
+    {
+        if (literal.LiteralType is not (TokenType.UndecidedInteger or TokenType.UndecidedDecimal) ||
+            expectedType == null)
+        {
+            return null;
+        }
+
+        List<TypeSymbol> arms = expectedType switch
+        {
+            VariantTypeSymbol variant => variant.Members.Where(predicate: m => m.Type != null)
+                                                .Select(selector: m => m.Type!)
+                                                .ToList(),
+            { BareName: "Maybe", TypeArguments: [{ } payload] } => [payload],
+            _ => []
+        };
+        if (arms.Count == 0)
+        {
+            return null;
+        }
+
+        string? defaultName = MapLiteralTypeName(literal: literal);
+        if (arms.FirstOrDefault(predicate: arm => arm.Name == defaultName) is { } defaultArm)
+        {
+            return defaultArm;
+        }
+
+        // A whole number goes to the one integer member first, and to the one float or decimal member only when
+        // there is no integer member (and it is written in base 10).
+        bool baseTen = literal.Value is string digits && !NumericLiteralParser.HasBasePrefix(text: digits);
+        List<TypeSymbol> integers = literal.LiteralType == TokenType.UndecidedInteger
+            ? arms.Where(predicate: arm =>
+                IsFixedWidthIntegerType(type: arm) || arm.Name is IntegerTypeName or AddressTypeName).ToList()
+            : [];
+        List<TypeSymbol> fitting = integers.Count > 0 || !(literal.LiteralType == TokenType.UndecidedDecimal || baseTen)
+            ? integers
+            : arms.Where(predicate: arm => IsFloatType(type: arm) || IsDecimalType(type: arm)).ToList();
+        return fitting.Count == 1
+            ? fitting[index: 0]
+            : null;
+    }
+
     /// <summary>Whether <paramref name="name"/> is a type parameter of the routine being analyzed or of its
     /// owner type, so a value typed by it is one of the template's own values.</summary>
     private bool IsEnclosingGenericParameter(string name)
@@ -98,7 +147,7 @@ public sealed partial class SemanticVerifier
         }
 
         if (literal.LiteralType is TokenType.UndecidedInteger &&
-            IsFixedWidthIntegerType(type: expectedType))
+            (IsFixedWidthIntegerType(type: expectedType) || expectedType.Name == AddressTypeName))
         {
             if (LiteralFitsInType(literal: literal, targetType: expectedType))
             {
@@ -112,6 +161,12 @@ public sealed partial class SemanticVerifier
                 location: literal.Location);
             earlyExit = true;
             return typeName;
+        }
+
+        // A bare whole number conforms to an arbitrary-precision Integer (`var big: Integer = 10`): any value fits.
+        if (literal.LiteralType is TokenType.UndecidedInteger && expectedType.Name == IntegerTypeName)
+        {
+            return IntegerTypeName;
         }
 
         // A bare decimal literal conforms to a float or decimal type, and so does a bare whole number written in
@@ -343,14 +398,15 @@ public sealed partial class SemanticVerifier
     /// </summary>
     internal static bool LiteralFitsInType(LiteralExpression literal, TypeSymbol targetType)
     {
-        // String-form literals whose magnitude doesn't fit in 64 bits can only fit in S128/U128.
+        // A string-form literal whose magnitude needs more than 64 bits can only fit a 128- or 256-bit type, and
+        // only when its magnitude is within that type's range.
         if (literal.Value is string strVal)
         {
             if (!TryExtractStringLiteralMagnitude(strValue: strVal,
                     negative: out bool neg64,
                     magnitude: out ulong mag64))
             {
-                return targetType.Name is "S128" or "U128";
+                return WideMagnitudeFitsInType(strValue: strVal, targetType: targetType);
             }
 
             return MagnitudeFitsInType(targetType: targetType, negative: neg64, magnitude: mag64);
@@ -426,6 +482,37 @@ public sealed partial class SemanticVerifier
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Whether a literal whose magnitude needs more than 64 bits fits <paramref name="targetType"/>: only the 128-
+    /// and 256-bit integer types can hold one, each up to its own range.
+    /// </summary>
+    private static bool WideMagnitudeFitsInType(string strValue, TypeSymbol targetType)
+    {
+        int bits = targetType.Name switch
+        {
+            "S128" or "U128" => 128,
+            "S256" or "U256" => 256,
+            _ => 0
+        };
+        if (bits == 0 || !TryParseWideMagnitude(cleaned: CleanNumericLiteral(value: strValue),
+                value: out System.Numerics.BigInteger value))
+        {
+            return false;
+        }
+
+        bool negative = value.Sign < 0;
+        System.Numerics.BigInteger magnitude = System.Numerics.BigInteger.Abs(value: value);
+
+        System.Numerics.BigInteger limit = System.Numerics.BigInteger.One << (targetType.Name.StartsWith(value: 'S')
+            ? bits - 1
+            : bits);
+        return targetType.Name.StartsWith(value: 'S')
+            ? negative
+                ? magnitude <= limit
+                : magnitude < limit
+            : !negative && magnitude < limit;
     }
 
     /// <summary>

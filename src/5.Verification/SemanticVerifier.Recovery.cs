@@ -417,6 +417,15 @@ public sealed partial class SemanticVerifier
                 ReferencedNames.Add(item: id.Name);
             }
 
+            // A bare number keeps the type analysis gave it here (`8` in `try d / 8` beside a Decimal): the body
+            // built from the expression is analyzed again on its own, where the number would fall back to its
+            // default type and pick another overload than the one already bound.
+            if (expr is LiteralExpression literal &&
+                UndecidedLiteralConformance.HasNumberToken(type: literal.ResolvedType))
+            {
+                return UndecidedLiteralConformance.Conform(literal: literal);
+            }
+
             return base.VisitExpression(expr: expr);
         }
 

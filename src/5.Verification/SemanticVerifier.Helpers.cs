@@ -1668,6 +1668,36 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// The value type of a const generic parameter (<c>COUNT</c> under <c>needs COUNT is U64</c> is a <c>U64</c>),
+    /// or null when <paramref name="type"/> is not one. A bare number beside it takes that type.
+    /// </summary>
+    private TypeSymbol? ConstGenericValueType(TypeSymbol type)
+    {
+        if (type is not GenericParameterTypeSymbol parameter)
+        {
+            return null;
+        }
+
+        foreach (GenericConstraintDeclaration c in ActiveConstraintsFor(paramName: parameter.Name))
+        {
+            if (c is not { ConstraintType: ConstraintKind.ConstGeneric, ConstraintTypes: { Count: > 0 } bounds })
+            {
+                continue;
+            }
+
+            foreach (TypeExpression bound in bounds)
+            {
+                if (LookupTypeWithImports(name: bound.Name) is { } valueType && IsNumericType(type: valueType))
+                {
+                    return valueType;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Returns true if the named generic parameter has a `is &lt;TypeName&gt;` const-generic
     /// constraint matching <paramref name="otherTypeName"/>. Note: ConstraintKind.ConstGeneric is
     /// also used for `is EntityType`/`is RecordType` etc., which don't represent value types —

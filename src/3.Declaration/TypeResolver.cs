@@ -1563,6 +1563,8 @@ internal sealed class TypeResolver
                     explicitTypeName: "Bool");
                 return true;
 
+            // A bare number takes the preset's declared type (`preset WIDTH: Address = 16`).
+            case TokenType.UndecidedInteger:
             case TokenType.IntegerLiteral:
             case TokenType.S8Literal:
             case TokenType.S16Literal:

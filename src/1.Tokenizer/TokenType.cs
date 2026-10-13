@@ -80,71 +80,74 @@ public enum TokenType
 
     #region Typed Numeric Literals
 
+    // The lexer never makes these: a number in source is UndecidedInteger or UndecidedDecimal, and analysis
+    // gives it one of these once it knows the number's type (where it goes, or the declaration it starts).
+
     // Signed integers
-    /// <summary>8-bit signed integer literal (42s8)</summary>
+    /// <summary>8-bit signed integer literal</summary>
     S8Literal,
 
-    /// <summary>16-bit signed integer literal (1000s16)</summary>
+    /// <summary>16-bit signed integer literal</summary>
     S16Literal,
 
-    /// <summary>32-bit signed integer literal (42s32)</summary>
+    /// <summary>32-bit signed integer literal</summary>
     S32Literal,
 
-    /// <summary>64-bit signed integer literal (1000s64)</summary>
+    /// <summary>64-bit signed integer literal</summary>
     S64Literal,
 
-    /// <summary>128-bit signed integer literal (42s128)</summary>
+    /// <summary>128-bit signed integer literal</summary>
     S128Literal,
 
-    /// <summary>256-bit signed integer literal (42s256)</summary>
+    /// <summary>256-bit signed integer literal</summary>
     S256Literal,
 
     // Unsigned integers
-    /// <summary>8-bit unsigned integer literal (255u8)</summary>
+    /// <summary>8-bit unsigned integer literal</summary>
     U8Literal,
 
-    /// <summary>16-bit unsigned integer literal (65535u16)</summary>
+    /// <summary>16-bit unsigned integer literal</summary>
     U16Literal,
 
-    /// <summary>32-bit unsigned integer literal (42u32)</summary>
+    /// <summary>32-bit unsigned integer literal</summary>
     U32Literal,
 
-    /// <summary>64-bit unsigned integer literal (1000u64)</summary>
+    /// <summary>64-bit unsigned integer literal</summary>
     U64Literal,
 
-    /// <summary>128-bit unsigned integer literal (42u128)</summary>
+    /// <summary>128-bit unsigned integer literal</summary>
     U128Literal,
 
-    /// <summary>256-bit unsigned integer literal (42u256)</summary>
+    /// <summary>256-bit unsigned integer literal</summary>
     U256Literal,
 
     /// <summary>Arbitrary precision integer literal</summary>
     IntegerLiteral,
 
-    /// <summary>Address-sized unsigned integer literal (42_addr)</summary>
+    /// <summary>Address-sized unsigned integer literal</summary>
     AddressLiteral,
 
     // Floating point
-    /// <summary>16-bit floating point literal (3.14b16)</summary>
+    /// <summary>16-bit floating point literal</summary>
     B16Literal,
 
-    /// <summary>32-bit floating point literal (3.14b32)</summary>
+    /// <summary>32-bit floating point literal</summary>
     B32Literal,
 
-    /// <summary>64-bit floating point literal (3.14b64)</summary>
+    /// <summary>64-bit floating point literal</summary>
     B64Literal,
 
-    /// <summary>128-bit floating point literal (3.14b128)</summary>
+    /// <summary>128-bit floating point literal</summary>
     B128Literal,
 
     // Decimal
-    /// <summary>32-bit decimal literal (3.14d32)</summary>
+    /// <summary>32-bit decimal literal</summary>
     D32Literal,
 
-    /// <summary>64-bit decimal literal (3.14d64)</summary>
+    /// <summary>64-bit decimal literal</summary>
     D64Literal,
 
-    /// <summary>128-bit decimal literal (3.14d128)</summary>
+    /// <summary>128-bit decimal literal</summary>
     D128Literal,
 
     /// <summary>Arbitrary precision decimal literal</summary>

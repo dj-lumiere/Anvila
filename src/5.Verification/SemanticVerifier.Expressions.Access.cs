@@ -1358,15 +1358,18 @@ public sealed partial class SemanticVerifier
 
         bool startIsLiteral = range.Start is LiteralExpression;
         bool endIsLiteral = range.End is LiteralExpression;
-        if (startIsLiteral && !endIsLiteral && IsNumericType(type: endType) &&
-            startType != endType)
+        // A const generic endpoint (`0 til COUNT` under `needs COUNT is U64`) gives its value type.
+        TypeSymbol endValue = ConstGenericValueType(type: endType) ?? endType;
+        TypeSymbol startValue = ConstGenericValueType(type: startType) ?? startType;
+        if (startIsLiteral && !endIsLiteral && IsNumericType(type: endValue) &&
+            startType != endValue)
         {
-            startType = AnalyzeExpression(expression: range.Start, expectedType: endType);
+            startType = AnalyzeExpression(expression: range.Start, expectedType: endValue);
         }
-        else if (endIsLiteral && !startIsLiteral && IsNumericType(type: startType) &&
-                 startType != endType)
+        else if (endIsLiteral && !startIsLiteral && IsNumericType(type: startValue) &&
+                 startValue != endType)
         {
-            endType = AnalyzeExpression(expression: range.End, expectedType: startType);
+            endType = AnalyzeExpression(expression: range.End, expectedType: startValue);
         }
 
         return (startType, endType);

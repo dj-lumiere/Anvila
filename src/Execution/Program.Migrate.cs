@@ -20,14 +20,20 @@ internal partial class Program
     /// </summary>
     private static int RunMigrateCommand(string[] args)
     {
+        // The analysis child of `--step suffix` (see RunSuffixProbe): not for people to run.
+        if (args.Length == 4 && args[1] == "--suffix-probe")
+        {
+            return RunSuffixProbe(list: args[2], output: args[3]);
+        }
+
         bool check = args.Contains(value: "--check");
         // `--step have` runs the containment rewrite alone, on any source whatever release its manifest names, and
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step != "have")
+        if (stepAt >= 0 && step is not ("have" or "suffix"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have or suffix");
             return 2;
         }
 
@@ -35,6 +41,12 @@ internal partial class Program
         if (step == "have")
         {
             return RunHaveStep(paths: paths, check: check);
+        }
+
+        // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
+        if (step == "suffix")
+        {
+            return RunSuffixStep(paths: paths, check: check);
         }
 
         if (paths.Count == 0)
