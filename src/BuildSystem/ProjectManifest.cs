@@ -155,7 +155,7 @@ public sealed class DebugOptions
     /// <c>.ll</c>) and suppresses the post-run <c>.ll</c> cleanup.</summary>
     public bool DumpIr { get; set; }
 
-    /// <summary>Write the program's Tessera translation as <c>&lt;entry&gt;.tess</c> next to the source
+    /// <summary>Write the program's Tessera translation as <c>&lt;entry&gt;.te</c> next to the source
     /// (<c>dump-tessera</c>), whichever backend builds it.</summary>
     public bool DumpTessera { get; set; }
 

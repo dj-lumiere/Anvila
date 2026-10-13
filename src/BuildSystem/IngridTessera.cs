@@ -4,7 +4,7 @@ using Builder.TesseraEmit;
 namespace Builder;
 
 /// <summary>
-/// Ingrid's libraries written in Tessera (<c>Ingrid/tessera/*.tess</c>): the math, hashing, and random-number code both
+/// Ingrid's libraries written in Tessera (<c>Ingrid/tessera/*.te</c>): the math, hashing, and random-number code both
 /// languages build on. The standard library calls them through <c>C::</c> declarations, and their bodies are not in the
 /// runtime DLL, so every RazorForge module is llvm-linked with this library before <c>opt</c>. That puts the bodies in
 /// the module being optimized, where LLVM can inline them (<c>#inline</c> routines are <c>alwaysinline</c>).
@@ -44,7 +44,7 @@ internal static class IngridTessera
                                  $"executable and no '{IrFileName}' next to it.");
             }
 
-            string[] sources = Directory.GetFiles(path: sourceDir, searchPattern: "*.tess",
+            string[] sources = Directory.GetFiles(path: sourceDir, searchPattern: "*.te",
                     searchOption: SearchOption.AllDirectories)
                 .Order(comparer: StringComparer.Ordinal)
                 .ToArray();
@@ -187,10 +187,10 @@ internal static class IngridTessera
         var watchers = new List<FileSystemWatcher>();
         if (TryFindSourceDir(exeDir: exeDir, sourceDir: out string sourceDir))
         {
-            Watch(watchers: watchers, dir: sourceDir, recursive: true, filters: ["*.tess"]);
+            Watch(watchers: watchers, dir: sourceDir, recursive: true, filters: ["*.te"]);
         }
 
-        Watch(watchers: watchers, dir: TesseraBackend.StdlibDirectory(), recursive: true, filters: ["*.tess"]);
+        Watch(watchers: watchers, dir: TesseraBackend.StdlibDirectory(), recursive: true, filters: ["*.te"]);
         string builder = typeof(Tessera.Compiler).Assembly.Location;
         Watch(watchers: watchers, dir: exeDir, recursive: false,
             filters: builder.Length > 0
@@ -249,7 +249,7 @@ internal static class IngridTessera
     {
         DateTime cachedAt = File.GetLastWriteTimeUtc(path: cached);
         string[] builders = [typeof(Tessera.Compiler).Assembly.Location, typeof(IngridTessera).Assembly.Location];
-        IEnumerable<string> stdlib = Directory.GetFiles(path: TesseraBackend.StdlibDirectory(), searchPattern: "*.tess",
+        IEnumerable<string> stdlib = Directory.GetFiles(path: TesseraBackend.StdlibDirectory(), searchPattern: "*.te",
             searchOption: SearchOption.AllDirectories);
         return sources.Concat(second: stdlib).Any(predicate: s => File.GetLastWriteTimeUtc(path: s) > cachedAt)
                || builders.Any(predicate: b => b.Length > 0 && File.GetLastWriteTimeUtc(path: b) > cachedAt);
@@ -268,7 +268,7 @@ internal static class IngridTessera
         }
 
         string stdlib = TesseraBackend.StdlibDirectory();
-        foreach (string file in Directory.GetFiles(path: stdlib, searchPattern: "*.tess",
+        foreach (string file in Directory.GetFiles(path: stdlib, searchPattern: "*.te",
                          searchOption: SearchOption.AllDirectories)
                      .Order(comparer: StringComparer.Ordinal))
         {

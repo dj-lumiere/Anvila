@@ -69,6 +69,6 @@
        in the package (NETSDK1152). tessera.dll still reaches the executables as Anvila's dependency. -->
   <ItemGroup>
     <ProjectReference Include="..\Tessera\Tessera.csproj" PrivateAssets="all"/>
-    <Content Include="..\Tessera\Standard\**\*.tess" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
+    <Content Include="..\Tessera\Standard\**\*.te" LinkBase="tessera-stdlib" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 </Project>

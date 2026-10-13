@@ -27,7 +27,7 @@ public static class DiagnosticFlags
     /// never write a <c>.ll</c>) and the <c>.ll</c> is NOT cleaned up — so the IR is inspectable after a run.</summary>
     public static bool DumpIr { get; set; }
 
-    /// <summary>Keep the Tessera source the Tessera backend writes as <c>&lt;entry&gt;.tess</c> next to the
+    /// <summary>Keep the Tessera source the Tessera backend writes as <c>&lt;entry&gt;.te</c> next to the
     /// source (<c>dump-tessera</c>).</summary>
     public static bool DumpTessera { get; set; }
 

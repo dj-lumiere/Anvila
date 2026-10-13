@@ -1620,7 +1620,7 @@ internal partial class Program
             ResidentSymbols = p3.ResidentSymbols,
             Timing = saTiming,
             SourceDumpPath = DiagnosticFlags.DumpTessera
-                ? Path.ChangeExtension(path: entryFile, extension: ".tess")
+                ? Path.ChangeExtension(path: entryFile, extension: ".te")
                 : null
         };
 

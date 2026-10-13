@@ -14,7 +14,7 @@ public sealed class TesseraBackend : IBuilderBackend
     public const string BackendName = "tessera";
 
     /// <summary>The file name the generated module is parsed (and its errors reported) under.</summary>
-    private const string ModuleFileName = "razorforge_module.tess";
+    private const string ModuleFileName = "razorforge_module.te";
 
     /// <inheritdoc/>
     public string Name => BackendName;
@@ -155,7 +155,7 @@ public sealed class TesseraBackend : IBuilderBackend
         {
             throw new InvalidOperationException(
                 message: $"The Tessera builder rejected the generated module: {ex.Message}" +
-                         " (set [debug] dump-tessera = true in config.toml to keep the module as <entry>.tess).",
+                         " (set [debug] dump-tessera = true in config.toml to keep the module as <entry>.te).",
                 innerException: ex);
         }
 
@@ -177,7 +177,7 @@ public sealed class TesseraBackend : IBuilderBackend
     {
         string source = new TesseraWriter(input: input, library: library).Write();
         // Parsed once here, so a module the Tessera parser rejects fails the export rather than Ingrid's build.
-        _ = Parse(file: "generated.tess", source: source, isLibrary: false);
+        _ = Parse(file: "generated.te", source: source, isLibrary: false);
         return Tessera.Formatter.Format(text: source);
     }
 

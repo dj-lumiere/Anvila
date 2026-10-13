@@ -30,7 +30,7 @@ internal partial class Program
     /// shapes in their signatures (scalars, a 128-bit value as two U64 halves, a wide result in IngridWords). The
     /// record keeps them apart from the <c>C::ingrid_*</c> declarations the standard library calls them by. The file
     /// is built with the Tessera backend from a <c>start()</c> that calls each export, and the exports with every
-    /// routine they reach become one Tessera file, <c>&lt;out&gt;/&lt;file stem&gt;.tess</c>: the exports under their
+    /// routine they reach become one Tessera file, <c>&lt;out&gt;/&lt;file stem&gt;.te</c>: the exports under their
     /// C symbols, the rest private. With no file given, every export file of the workspace's
     /// <c>RazorForge/IngridExport</c> is written to <c>Ingrid/tessera/generated</c>.
     /// </summary>
@@ -83,7 +83,7 @@ internal partial class Program
         Directory.CreateDirectory(path: outDir);
         foreach (string file in files)
         {
-            string target = Path.Combine(path1: outDir, path2: Path.GetFileNameWithoutExtension(path: file) + ".tess");
+            string target = Path.Combine(path1: outDir, path2: Path.GetFileNameWithoutExtension(path: file) + ".te");
             try
             {
                 File.WriteAllText(path: target, contents: ExportIngridFile(exportFile: file, outDir: outDir));
