@@ -774,7 +774,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Using-bound resource cannot escape the using block scope.</summary>
     UsingResourceScopeEscape = 614,
 
-    /// <summary>Variable is a deadref after steal or ownership transfer — cannot be used.</summary>
+    /// <summary>A name is used after a <c>steal</c> moved its value out.</summary>
     UseAfterSteal = 615,
 
     /// <summary>Cannot downgrade token permission (e.g., .view() on Modifying/Amending).</summary>

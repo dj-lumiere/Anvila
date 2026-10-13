@@ -153,6 +153,14 @@ public record VariableDeclaration(
     public bool IsPatternBinding { get; init; }
 
     /// <summary>
+    /// A local a lowering pass made to hold a value it produced (the hoisted subject of a <c>when</c>) and that
+    /// owns that value, so it is torn down when its block ends. Scope teardown clears the mark once it has
+    /// looked at the local. A local still marked after the type-aware lowering was made after scope teardown
+    /// ran, and the late teardown run (<c>ScopeTeardownLoweringPass.RunLate</c>) gives it its destroys.
+    /// </summary>
+    public bool OwesTeardown { get; init; }
+
+    /// <summary>
     /// The type of the local's storage, stamped at Phase 9 by <c>LocalTypeStampPass</c> for the backends:
     /// the declared type, else the initializer's.
     /// </summary>

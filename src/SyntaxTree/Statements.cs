@@ -746,6 +746,13 @@ public record WhenStatement(
     // per variant arm, with `${m.type}` folded to the arm type. Null for an ordinary `when`.
     WhenArmExpansion? ArmExpansion = null) : Statement(Location: Location)
 {
+    /// <summary>
+    /// The step of an <c>each</c> loop, matching what the walk hands out next. The item is lent by the walk,
+    /// which still keeps it (a walk over a list reads the element in place), so the subject owns nothing and
+    /// is not torn down when the step ends.
+    /// </summary>
+    public bool IsEachStep { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

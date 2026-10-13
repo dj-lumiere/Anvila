@@ -226,6 +226,8 @@ public sealed partial class SemanticVerifier
         _deadrefVariables.Clear();
         _everStolenVariables.Clear();
         _droppedVariables.Clear();
+        _stealSites.Clear();
+        _stealDestinations.Clear();
 
         _registry.EnterScope(kind: ScopeKind.Function, name: routine.Name);
         DeclareParametersInScope(routine: routine, routineInfo: routineInfo);
@@ -1071,6 +1073,7 @@ public sealed partial class SemanticVerifier
 // Register variable in current scope
         // A new declaration shadows any prior steal of the same name in this scope.
         _deadrefVariables.Remove(item: varDecl.Name);
+        NoteStealDestination(value: varDecl.Initializer, destination: $"'{varDecl.Name}'");
 
         // Suflae flow typing: a local is nullable when it was annotated `E?`, or (with no annotation)
         // inferred from a nullable entity read (`var n = a.optField`) or a `none` literal — so member
@@ -1481,6 +1484,11 @@ public sealed partial class SemanticVerifier
         if (assign.Target is IdentifierExpression rebindId)
         {
             _deadrefVariables.Remove(item: rebindId.Name);
+        }
+
+        if (PlaceName(place: assign.Target) is { } assignedPlace)
+        {
+            NoteStealDestination(value: assign.Value, destination: $"'{assignedPlace}'");
         }
 
         // #173: Tuple assignment destructuring — (a, b) = (b, a)

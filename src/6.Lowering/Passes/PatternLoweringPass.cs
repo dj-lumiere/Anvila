@@ -183,7 +183,8 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         return BuildLowerableWhen(expression: s.Expression,
             subjectType: subjectType,
             loweredClauses: loweredClauses,
-            loc: loc);
+            loc: loc,
+            ownsSubject: !s.IsEachStep);
     }
 
     /// <summary>
@@ -193,7 +194,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// cognitive complexity.
     /// </summary>
     private Statement BuildLowerableWhen(Expression expression, TypeSymbol? subjectType,
-        List<WhenClause> loweredClauses, SourceLocation loc)
+        List<WhenClause> loweredClauses, SourceLocation loc, bool ownsSubject)
     {
         var hoisted = new List<Statement>();
         Expression subject = expression;
@@ -201,11 +202,16 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         if (subject is not (IdentifierExpression or LiteralExpression))
         {
             string subjName = NextTempName(prefix: "subj");
+            // The temp owns what the subject produced (`when try watcher.hold()` holds a handle), so it is
+            // torn down when the `when` ends. A program is lowered after its scope teardown ran, so the mark
+            // tells the late teardown run to give it its destroys. The step of an `each` loop owns nothing,
+            // the walk lends its item.
             AddTempVar(hoisted: hoisted,
                 name: subjName,
                 typeHint: subjectType,
                 initializer: subject,
-                loc: loc);
+                loc: loc,
+                owesTeardown: ownsSubject);
             subject = new IdentifierExpression(Name: subjName, Location: loc)
             {
                 ResolvedType = subjectType
@@ -1448,7 +1454,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// Performs the add temp var step for this builder phase.
     /// </summary>
     private static void AddTempVar(List<Statement> hoisted, string name, TypeSymbol? typeHint,
-        Expression initializer, SourceLocation loc)
+        Expression initializer, SourceLocation loc, bool owesTeardown = false)
     {
         var decl = new VariableDeclaration(Name: name,
             Type: typeHint != null
@@ -1456,7 +1462,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 : null,
             Initializer: initializer,
             Visibility: VisibilityModifier.Secret,
-            Location: loc);
+            Location: loc) { OwesTeardown = owesTeardown };
         hoisted.Add(item: new DeclarationStatement(Declaration: decl, Location: loc));
     }
 

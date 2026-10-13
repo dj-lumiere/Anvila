@@ -181,6 +181,10 @@ public sealed partial class SemanticVerifier
     /// whether it lost to a steal earlier in the code or to one inside the same call.</summary>
     private readonly Dictionary<string, StealExpression> _stealSites = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>Where each <c>steal</c> of a name moved the value, worded for a message (<c>'held'</c>, <c>the
+    /// call to 'keep'</c>), when the steal sits in a declaration, an assignment or a call argument.</summary>
+    private readonly Dictionary<StealExpression, string> _stealDestinations = new(comparer: ReferenceEqualityComparer.Instance);
+
     /// <summary>The argument lists of the calls whose arguments are being analyzed, innermost last.</summary>
     private readonly Stack<List<Expression>> _callArgumentsInAnalysis = new();
 
@@ -1267,6 +1271,9 @@ public sealed partial class SemanticVerifier
         // producing calls sit in real statements. ScopeTeardownLoweringPass already ran (pre-lowering,
         // step 4) and will not revisit this program, so the temps' bindings are freed exactly once by
         // the destroy calls this pass emits (codegen emit-on-demand resolves the concrete destroy).
+        // The locals the lowering made that own a value (a hoisted `when` subject) came after scope teardown,
+        // so they get their destroys from its late run, first, so the temporaries' spills see them in place.
+        new ScopeTeardownLoweringPass(ctx: ctx).RunLate(program: program);
         new TemporaryTeardownPass(ctx: ctx).Run(program: program);
     }
 
@@ -2039,6 +2046,7 @@ public sealed partial class SemanticVerifier
 
             new ScopeTeardownLoweringPass(ctx: pctx).Run(program: entry.Program);
             new PostprocessingPipeline(ctx: pctx).Run(program: entry.Program);
+            new ScopeTeardownLoweringPass(ctx: pctx).RunLate(program: entry.Program);
             new TemporaryTeardownPass(ctx: pctx).Run(program: entry.Program);
 
             // A failable `try`/`check` variant synthesized DURING this file's on-demand

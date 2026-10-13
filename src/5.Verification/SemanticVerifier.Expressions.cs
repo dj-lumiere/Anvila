@@ -542,8 +542,7 @@ public sealed partial class SemanticVerifier
                       $"Use '{id.Name}' in one statement and steal it in a separate one after it."
                     : _droppedVariables.Contains(item: id.Name)
                         ? $"'{id.Name}' was ended by 'drop {id.Name}', so it can no longer be used."
-                        : $"Variable '{id.Name}' is a deadref — it was invalidated by a previous 'steal' or ownership " +
-                          "transfer. The variable can no longer be used.",
+                        : UseAfterStealMessage(name: id.Name),
                 location: id.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -559,6 +558,56 @@ public sealed partial class SemanticVerifier
         }
 
         return narrowed ?? varInfo.Type;
+    }
+
+    /// <summary>
+    /// RF-S615 for a use of <paramref name="name"/> after a <c>steal</c> moved its value out: names the line of the
+    /// steal and where the value went when that is known, and points at the new owner or at using the name
+    /// before the steal.
+    /// </summary>
+    private string UseAfterStealMessage(string name)
+    {
+        if (!_stealSites.TryGetValue(key: name, value: out StealExpression? steal))
+        {
+            return $"You use '{name}' here, but a 'steal' earlier in this routine moved what it held out, so '{name}' " +
+                   $"holds nothing now. Use '{name}' before that 'steal', or give '{name}' a new value first.";
+        }
+
+        int line = steal.Location.Line;
+        return _stealDestinations.TryGetValue(key: steal, value: out string? destination)
+            ? destination.StartsWith(value: '\'')
+                ? $"You use '{name}' here, but 'steal' on line {line} moved what it held into {destination}. " +
+                  $"Use {destination}, or use '{name}' before line {line}."
+                : $"You use '{name}' here, but 'steal' on line {line} moved what it held into {destination}. " +
+                  $"Use '{name}' before line {line}, or give '{name}' a new value first."
+            : $"You use '{name}' here, but 'steal' on line {line} moved what it held out. " +
+              $"Use '{name}' before line {line}, or give '{name}' a new value first.";
+    }
+
+    /// <summary>Records where a <c>steal</c> of a name moves the value when <paramref name="value"/> is one
+    /// (<c>steal mine</c>, or a named argument holding it), for <see cref="UseAfterStealMessage"/>.</summary>
+    private void NoteStealDestination(Expression? value, string destination)
+    {
+        Expression? stolen = value is NamedArgumentExpression named
+            ? named.Value
+            : value;
+        if (stolen is StealExpression { Operand: IdentifierExpression } steal)
+        {
+            _stealDestinations[key: steal] = destination;
+        }
+    }
+
+    /// <summary>A place written as a name or a field path (<c>held</c>, <c>me.slot</c>), as it reads in the
+    /// source, or null for any other place.</summary>
+    private static string? PlaceName(Expression place)
+    {
+        return place switch
+        {
+            IdentifierExpression id => id.Name,
+            MemberExpression { Object: var owner } member when PlaceName(place: owner) is { } ownerName =>
+                $"{ownerName}.{member.MemberName}",
+            _ => null
+        };
     }
 
     /// <summary>
@@ -698,6 +747,11 @@ public sealed partial class SemanticVerifier
         if (binary is { Operator: BinaryOperator.Assign, Left: IdentifierExpression rebindId })
         {
             _deadrefVariables.Remove(item: rebindId.Name);
+        }
+
+        if (binary.Operator == BinaryOperator.Assign && PlaceName(place: binary.Left) is { } assignedPlace)
+        {
+            NoteStealDestination(value: binary.Right, destination: $"'{assignedPlace}'");
         }
 
         // A complex expected type propagates into arithmetic operands so both `3` and `4i` in
@@ -1742,6 +1796,18 @@ public sealed partial class SemanticVerifier
             _registry.LookupMemberRoutine(type: setLookupType,
                 memberRoutineName: "setitem",
                 isFailable: true);
+        // A wrapper receiver (`result[k] = v` where `result: Modifying[Dict[K, V]]`) has no `setitem` of its
+        // own: synthesize the forwarder to the inner container's, exactly as a read does for `getitem`, so
+        // the lowering writes through the wrapper with a call instead of treating the wrapper as a pointer.
+        if (setItem == null && Wrappers.IsWrapperType(type: setLookupType))
+        {
+            setItem = TrySynthesizeWrapperForwarder(wrapperType: setLookupType,
+                memberRoutineName: "setitem",
+                isFailable: false) ?? TrySynthesizeWrapperForwarder(wrapperType: setLookupType,
+                memberRoutineName: "setitem",
+                isFailable: true);
+        }
+
         if (setItem is { IsFailable: true } && _currentRoutine != null)
         {
             _currentRoutine.HasFailableCalls = true;

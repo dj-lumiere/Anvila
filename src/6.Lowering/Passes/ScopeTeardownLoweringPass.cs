@@ -63,6 +63,45 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
     }
 
+    /// <summary>
+    /// The late run, after the type-aware lowering of a body whose scope teardown ran before it (a program, a
+    /// library file analyzed on demand, a monomorphized body): every other binding already has its destroys, so
+    /// only the locals that lowering made and marked <see cref="VariableDeclaration.OwesTeardown"/> are tracked,
+    /// torn down at the end of their block and at every return, throw, break and continue that leaves it.
+    /// </summary>
+    public void RunLate(Program program)
+    {
+        _late = true;
+        try
+        {
+            Run(program: program);
+        }
+        finally
+        {
+            _late = false;
+        }
+    }
+
+    /// <summary>The late run (see <see cref="RunLate"/>) over monomorphized bodies.</summary>
+    public void RunLateOnInstantiatedGenericBodies(
+        Dictionary<string, Instantiation.MonomorphizedBody> bodies)
+    {
+        _late = true;
+        try
+        {
+            BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: bodies,
+                lower: (_, entry) => LowerRoutine(r: entry.Ast).Body);
+        }
+        finally
+        {
+            _late = false;
+        }
+    }
+
+    /// <summary>True during <see cref="RunLate"/>: only marked locals are tracked, and the rewrites the
+    /// first run already made (a reassignment, a dropped binding, a field overwrite) are not made again.</summary>
+    private bool _late;
+
     public void RunOnVariantBodies()
     {
         foreach (string key in ctx.VariantBodies.Keys.ToList())
@@ -73,6 +112,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             _meType = null;
             _movedNames.Clear();
             CollectMovedNames(stmt: ctx.VariantBodies[key: key]);
+            MarkMovedPatternSubjects(stmt: ctx.VariantBodies[key: key]);
             var live = new List<Owned>();
             // A recovery composition's base (`__recover_N`, synthesized) takes the caller's locals as borrowed
             // parameters, so its variant tears none of them down.
@@ -115,6 +155,11 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     private RoutineDeclaration LowerRoutine(RoutineDeclaration r)
     {
+        if (_late && !HasMarkedLocal(stmt: r.Body))
+        {
+            return r;
+        }
+
         _meType = r.ResolvedInfo?.OwnerType;
         _movedNames.Clear();
         CollectMovedNames(stmt: r.Body);
@@ -127,6 +172,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             _movedNames.UnionWith(other: stolen);
         }
+
+        MarkMovedPatternSubjects(stmt: r.Body);
 
         // THREE-RULES param model (Rule 2): passing into a routine param is either 먹튀 (`steal`, move
         // ownership in — a bare ENTITY the caller relinquished) OR handing over a borrow. A RECORD param
@@ -145,7 +192,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // param in SF is skipped here (it would otherwise be consuming per the RF rule).
         bool entitiesAreShared = ctx.Registry.EntitiesAreSharedIn(filePath: r.Location.FileName);
         var paramLive = new List<Owned>();
-        foreach (Parameter p in r.Parameters)
+        // The late run tracks no parameter: the first run already tore the owned ones down.
+        foreach (Parameter p in _late ? [] : r.Parameters)
         {
             if (p.Name == "me")
             {
@@ -236,7 +284,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
             // `drop x` tears the binding down here. Semantic analysis recorded it among the stolen names, so it is
             // not in `live` and the scope's end leaves it alone.
-            case DropStatement { EndsBinding: true, Expression: IdentifierExpression ended } dropped:
+            case DropStatement { EndsBinding: true, Expression: IdentifierExpression ended } dropped when !_late:
                 return ended.ResolvedType is { } endedType &&
                        TryResolveDestroy(type: endedType, destroy: out RoutineInfo? endedDestroy) &&
                        endedDestroy != null
@@ -287,7 +335,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             // handle — it must be released HERE or it leaks. (This is the one job of the deleted
             // RcRetainLoweringPass.ReassignRelease; the retain-NEW on the RHS is SF's implicit `.share()`
             // from SuflaeEntityLoweringPass, which runs before this pass, so `rhs` already carries it.)
-            case AssignmentStatement a when !a.KeepsReplacedValue && a.Target is MemberExpression mt:
+            case AssignmentStatement a when !_late && !a.KeepsReplacedValue && a.Target is MemberExpression mt:
                 return LowerRoamedFieldReassign(original: a,
                     target: mt,
                     rhs: a.Value,
@@ -299,7 +347,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 {
                     Operator: BinaryOperator.Assign, Left: MemberExpression mt
                 } bin
-            } es:
+            } es when !_late:
                 return LowerRoamedFieldReassign(original: es,
                     target: mt,
                     rhs: bin.Right,
@@ -360,15 +408,19 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
         foreach (Statement s in block.Statements)
         {
-            if (s is DeclarationStatement { Declaration: VariableDeclaration v })
+            if (s is DeclarationStatement { Declaration: VariableDeclaration v } declaration)
             {
-                stmts.Add(item: s);
+                // Once looked at here, a local a lowering marked as owing its teardown has it (or does not
+                // need it), so a later run leaves it alone.
+                stmts.Add(item: v.OwesTeardown
+                    ? declaration with { Declaration = v with { OwesTeardown = false } }
+                    : s);
                 RegisterBlockDeclaration(v: v, live: live);
                 continue;
             }
 
             stmts.Add(item: LowerStatement(stmt: s, live: live, loopBoundary: loopBoundary));
-            if (s is AssignmentStatement { IsGlobalInit: true, Target: IdentifierExpression g })
+            if (!_late && s is AssignmentStatement { IsGlobalInit: true, Target: IdentifierExpression g })
             {
                 RegisterGlobalsSingleton(target: g, live: live);
             }
@@ -416,6 +468,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     // after handling the `var buf = _lit_N` collection-literal ownership transfer.
     private void RegisterBlockDeclaration(VariableDeclaration v, List<Owned> live)
     {
+        if (_late)
+        {
+            RegisterLateDeclaration(v: v, live: live);
+            return;
+        }
+
         // A `var buf = _lit_N` binding takes over ownership of a hoisted collection-literal
         // temporary (ExpressionLoweringPass lowers `var buf = []` to
         // `var _lit_N = List(); _lit_N.add(...); var buf = _lit_N`). `buf` and `_lit_N` alias
@@ -465,11 +523,19 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             skip: ref skip,
             stmts: stmts);
 
+        // Returning a name a pattern bound (`else as h => return h`) moves out the matched value it reads, so
+        // the local holding that value is not torn down on this path either.
+        HashSet<string>? movedOut = ReturnedName(stmt: exit) is { } returned &&
+                                    _patternSources.TryGetValue(key: returned, value: out HashSet<string>? sources)
+            ? sources
+            : null;
+
         // Destroy in REVERSE declaration order (LIFO) — the safe RAII order, matching this pass's
         // documented contract and the fall-through end-of-block teardown above.
         for (int i = live.Count - 1; i >= from; i--)
         {
-            if (skip != null && live[index: i].Name == skip)
+            if (skip != null && live[index: i].Name == skip ||
+                movedOut != null && movedOut.Contains(item: live[index: i].Name))
             {
                 continue;
             }
@@ -888,6 +954,88 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                // binds its item) is a view too: the matched carrier is torn down and frees it.
                || v.IsPatternBinding;
     }
+
+    /// <summary>
+    /// The late run's registration: a local a lowering marked as owing its teardown, holding a fresh value it
+    /// owns (a call or construction, not a token or a view of a value kept elsewhere) of a type whose destroy
+    /// releases something counted: a managed leaf like <c>Text</c>, an RC wrapper, or a record carrying one. An
+    /// entity, a plain value record, or a scalar is left alone, as <see cref="TemporaryTeardownPass"/> does
+    /// for the temporaries it spills.
+    /// </summary>
+    private void RegisterLateDeclaration(VariableDeclaration v, List<Owned> live)
+    {
+        if (!v.OwesTeardown || _movedNames.Contains(item: v.Name) || IsViewBinding(v: v) ||
+            v.Initializer is not (CallExpression or CreatorExpression) ||
+            v.Initializer is CallExpression { ResolvedRoutine.ReturnType: { } returned } &&
+            ImplicitToken.IsTokenParameter(parameter: returned, tokenKind: out _, target: out _))
+        {
+            return;
+        }
+
+        TypeSymbol? t = v.Type?.ResolvedType ?? v.Initializer.ResolvedType;
+        if (t is not RecordTypeSymbol rec || !TryResolveDestroy(type: t, destroy: out RoutineInfo? d) ||
+            d == null)
+        {
+            return;
+        }
+
+        TypeRegistry.Lifecycle lc = ctx.Registry.GetLifecycle(type: rec);
+        if (lc.Store != null || rec.HasRCMemberVariables || TypeRegistry.GetRcWrapperBaseName(type: rec) is not null)
+        {
+            live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: d));
+        }
+    }
+
+    /// <summary>Whether <paramref name="stmt"/> declares a local still marked as owing its teardown.</summary>
+    private static bool HasMarkedLocal(Statement stmt)
+    {
+        bool found = false;
+        AstWalker.Walk(root: stmt, visit: node => found |= node is VariableDeclaration { OwesTeardown: true });
+        return found;
+    }
+
+    /// <summary>
+    /// A name a pattern binds reads the matched value (<c>var h = _pl_subj_0.value</c>), which still owns it.
+    /// When an arm moves that name out (<c>keep(it: steal h)</c>), what the matched value held has left, so the
+    /// local holding the matched value is moved too and is not torn down. Records which locals each such
+    /// name reads, so a return of the name leaves them alone as well (see <see cref="PrefixDestroys"/>).
+    /// </summary>
+    private void MarkMovedPatternSubjects(Statement stmt)
+    {
+        _patternSources.Clear();
+        AstWalker.Walk(root: stmt, visit: node =>
+        {
+            if (node is not VariableDeclaration { IsPatternBinding: true, Initializer: { } read } binding)
+            {
+                return;
+            }
+
+            if (!_patternSources.TryGetValue(key: binding.Name, value: out HashSet<string>? sources))
+            {
+                sources = new HashSet<string>(comparer: StringComparer.Ordinal);
+                _patternSources[key: binding.Name] = sources;
+            }
+
+            AstWalker.WalkExpressions(root: read, visit: e =>
+            {
+                if (e is IdentifierExpression id)
+                {
+                    sources.Add(item: id.Name);
+                }
+            });
+        });
+
+        foreach ((string bound, HashSet<string> sources) in _patternSources)
+        {
+            if (_movedNames.Contains(item: bound))
+            {
+                _movedNames.UnionWith(other: sources);
+            }
+        }
+    }
+
+    /// <summary>For each name a pattern binds in the routine being lowered, the locals its value is read from.</summary>
+    private readonly Dictionary<string, HashSet<string>> _patternSources = new(comparer: StringComparer.Ordinal);
 
     // -----------------------------------------------------------------------------
     // Move pre-scan: a binding whose ownership leaves the routine is never torn down here.

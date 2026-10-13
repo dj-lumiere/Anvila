@@ -993,7 +993,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Clauses: failureClause != null
                 ? [noneClause, failureClause, elseClause]
                 : [noneClause, elseClause],
-            Location: loc);
+            Location: loc) { IsEachStep = true };
         var loopStmt =
             new LoopStatement(Body: new BlockStatement(Statements: [whenStmt], Location: loc),
                 Location: loc)
@@ -1058,7 +1058,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Clauses: failureClause != null
                 ? [noneClause, failureClause, elseClause]
                 : [noneClause, elseClause],
-            Location: loc);
+            Location: loc) { IsEachStep = true };
         var loopStmt =
             new LoopStatement(Body: new BlockStatement(Statements: [whenStmt], Location: loc),
                 Location: loc)

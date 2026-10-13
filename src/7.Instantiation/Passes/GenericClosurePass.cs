@@ -302,6 +302,9 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // whether they own anything. Now that `T` is concrete, a fresh owning value handed to a call is
         // torn down after it and an overwrite destroys the old value. After RecordCopyLoweringPass so the
         // RHS is already an independent value.
+        // A `when` subject the pattern lowering above hoisted into a local came after the definition's scope
+        // teardown, so the late teardown run gives it its destroys.
+        new ScopeTeardownLoweringPass(ctx: postCtx).RunLateOnInstantiatedGenericBodies(bodies: freshBodies);
         new TemporaryTeardownPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
     }
 }

@@ -196,6 +196,11 @@ public sealed partial class SemanticVerifier
     private void AnalyzeCallArguments(RoutineInfo routine, List<Expression> arguments,
         SourceLocation location, TypeSymbol? callObjectType = null)
     {
+        foreach (Expression argument in arguments)
+        {
+            NoteStealDestination(value: argument, destination: $"the call to '{routine.Name}'");
+        }
+
         _callArgumentsInAnalysis.Push(item: arguments);
         try
         {
