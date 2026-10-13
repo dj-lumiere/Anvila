@@ -250,7 +250,7 @@ internal sealed class IteratorInlineLoweringPass
     // ---------------------------------------------------------------------------------------------
     private LoopStatement? TryInline(LoopStatement loop)
     {
-        // CheckAndAdvance the CFLP shape: loop body is a block whose single statement is a `when` over a
+        // Check the CFLP shape: loop body is a block whose single statement is a `when` over a
         // `try it.emit()` call with a NonePattern clause + an ElsePattern clause.
         if (loop.Body is not BlockStatement { Statements: [WhenStatement when] })
         {

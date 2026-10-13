@@ -501,7 +501,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
 
         foreach (TypeSymbol p in protocols)
         {
-            // CheckAndAdvance the conformance to the same protocol by generic-definition identity (no name
+            // Check the conformance to the same protocol by generic-definition identity (no name
             // string-munging): `Iterable[Text]`'s def is the same `Iterable` def the routine owns.
             TypeSymbol pDef = GenericDefOf(t: p) ?? p;
             if (!ReferenceEquals(objA: pDef, objB: protoDef) && pDef.Name != protoDef.Name)

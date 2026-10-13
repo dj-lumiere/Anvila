@@ -2079,7 +2079,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     private static TypeSymbol? UnwrapOwnershipWrapper(TypeSymbol? type)
     {
         // T / Retained[T] / Tracked[T] are declared as `record T` in stdlib, so
-        // they surface as RecordTypeSymbol. CheckAndAdvance by base name + single
+        // they surface as RecordTypeSymbol. Check by base name + single
         // TypeArgument and return the inner collection so downstream lowering sees the actual
         // base (BitList, SortedSet, …) instead of the Owned envelope.
         if (type is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } rec &&
@@ -2801,7 +2801,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         Expression loweredExpr, TypeSymbol? boolType, List<Statement> hoisted)
     {
         // Pattern name may be qualified (`Color.RED`) from f-string holes or bare (`RED`)
-        // from when-clause arms. CheckAndAdvance on the trailing segment either way.
+        // from when-clause arms. Check on the trailing segment either way.
         string choiceCaseName = choiceTp.Type.Name;
         int choiceDot = choiceCaseName.LastIndexOf(value: '.');
         if (choiceDot >= 0)

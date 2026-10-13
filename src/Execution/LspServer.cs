@@ -1702,7 +1702,7 @@ public static class LspServer
         {
             // A bare or realm-qualified callee (`foo` or `C::foo`). The IdentifierExpression is
             // anchored at its START — the realm tag when one is present — so `C::foo` spans the realm
-            // token AND the name token. CheckAndAdvance EITHER, at its exact column, so hovering the `C` in
+            // token AND the name token. Check EITHER, at its exact column, so hovering the `C` in
             // `C::rf_x()` resolves the routine instead of mistaking `C` for a value of the return type.
             case IdentifierExpression cid when cid.Location.Line == hit.Line:
             {

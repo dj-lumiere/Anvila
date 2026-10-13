@@ -1472,7 +1472,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Look for the member routine on the type (not on its protocols — that would find the protocol's own declaration)
-        // Routine names are bare; the failable `!` is a structured flag. CheckAndAdvance the bare name,
+        // Routine names are bare; the failable `!` is a structured flag. Check the bare name,
         // then (for a failable requirement) fall back to a same-named failable implementation.
         IEnumerable<RoutineInfo> ownMemberRoutines =
             _registry.GetMemberRoutinesForType(type: type);

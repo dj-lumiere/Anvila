@@ -529,7 +529,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.NullableEntityDeref,
                 message:
-                "Cannot use 'when' on an entity reference. CheckAndAdvance its none-state with " +
+                "Cannot use 'when' on an entity reference. Check its none-state with " +
                 "'if x is None' / 'if x isnot None' instead.",
                 location: whenStmt.Expression.Location);
         }

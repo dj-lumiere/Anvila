@@ -147,7 +147,7 @@ public partial class Parser
         if (PeekToken(offset: offset)
                .Type != type)
         {
-            return true; // Don't skip, but let caller check CheckAndAdvance
+            return true; // Don't skip, but let the caller check
         }
 
         // Actually consume the newlines
