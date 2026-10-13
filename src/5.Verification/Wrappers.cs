@@ -32,7 +32,7 @@ internal static class Wrappers
     }
 
     /// <summary>
-    /// Checks if a type is a Claiming&lt;T&gt; token type.
+    /// Checks if a type is a Amending&lt;T&gt; token type.
     /// </summary>
     internal static bool IsAmendingType(TypeSymbol type)
     {
@@ -175,7 +175,7 @@ internal static class Wrappers
     /// </summary>
     internal static readonly HashSet<string> ExclusiveTokenTypes =
     [
-        AmendingWrapperName // Cannot pass same Claiming token twice
+        AmendingWrapperName // Cannot pass same Amending token twice
     ];
 
     /// <summary>
@@ -213,7 +213,7 @@ internal static class Wrappers
     /// parallel) by reference, aliasing the spawner's cell safely. These are the atomic /
     /// shared-ownership wrappers — <c>Atomic[T]</c>, <c>Guarded[T,P]</c>, <c>Witnessed[T,P]</c> (atomic
     /// refcount) — plus the <em>multi-threaded</em> lock-backed tokens <c>Consulting[T,P]</c>
-    /// (read-only) and <c>Claiming[T,P]</c> (exclusive), whose mutex/rwlock makes concurrent access
+    /// (read-only) and <c>Amending[T,P]</c> (exclusive), whose mutex/rwlock makes concurrent access
     /// sound. The single-threaded tokens <c>Viewing</c>/<c>Modifying</c> are deliberately NOT here —
     /// they are unsynchronized (see the 2×2 in <c>internal-wiki/v0.3.x-mn-scheduler.md</c> §4). Every
     /// other type must be trivially copyable (passed by value as an independent copy) or

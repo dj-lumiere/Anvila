@@ -613,10 +613,24 @@ public sealed partial class SemanticVerifier
                 !ContainsUnresolvedMemberRoutineGeneric(type: paramType,
                     genericParameters: routine.GenericParameters))
             {
-                ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-                    message:
-                    $"Argument '{param.Name}' of '{routine.Name}': cannot convert '{argType.Name}' to '{paramType.Name}'.",
-                    location: argExpr.Location);
+                // A read token handed to a write-token parameter says what to pass instead, so it gets that message
+                // alone rather than a bare type mismatch next to it.
+                if (argType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Consulting &&
+                    paramType.BareName is Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Amending)
+                {
+                    ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
+                        message:
+                        $"You are handing a read token ('{argType.Name}') to '{param.Name}' of '{routine.Name}', " +
+                        "which can change it. A read token only lets you read: pass a write token instead.",
+                        location: argExpr.Location);
+                }
+                else
+                {
+                    ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                        message:
+                        $"Argument '{param.Name}' of '{routine.Name}': cannot convert '{argType.Name}' to '{paramType.Name}'.",
+                        location: argExpr.Location);
+                }
             }
 
             bool isCapturingLambdaLiteral = argExpr is LambdaExpression { Captures.Count: > 0 };

@@ -95,7 +95,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Validates that exclusive tokens (Claiming) are not passed multiple times in a single call.
+    /// Validates that exclusive tokens (Amending) are not passed multiple times in a single call.
     /// </summary>
     private void ValidateExclusiveTokenUniqueness(List<Expression> arguments,
         SourceLocation location)
@@ -149,7 +149,7 @@ public sealed partial class SemanticVerifier
     /// one live handle);</item>
     /// <item>trivially copyable: passed BY VALUE as an independent copy;</item>
     /// <item>a thread-shareable wrapper (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>/<c>Consulting</c>/
-    /// <c>Claiming</c>), which carries its own synchronization (atomic refcount or lock);</item>
+    /// <c>Amending</c>), which carries its own synchronization (atomic refcount or lock);</item>
     /// <item>a <c>Roamed</c> handle, which is promoted before the Agent is built.</item>
     /// </list>
     /// Anything else (a bare entity passed by copy, a record transitively owning a single-threaded wrapper
@@ -238,8 +238,8 @@ public sealed partial class SemanticVerifier
             : $"it owns `{offender!.Value.Wrapper}` at `{offender.Value.Path}`, which only one thread may use";
         string fix = isEntity
             ? "Write `steal` before it to move it into the agent, share it with `Guarded`/`Witnessed`/`Atomic`/" +
-              "`Consulting`/`Claiming`, or pass a copyable value"
-            : "Share it with `Guarded`/`Witnessed`/`Atomic`/`Consulting`/`Claiming`, or pass a copyable value";
+              "`Consulting`/`Amending`, or pass a copyable value"
+            : "Share it with `Guarded`/`Witnessed`/`Atomic`/`Consulting`/`Amending`, or pass a copyable value";
         ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
             message: $"You pass {what} to an agent, but {reason}. {fix}.",
             location: value.Location);
