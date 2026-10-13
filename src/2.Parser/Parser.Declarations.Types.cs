@@ -325,7 +325,16 @@ public partial class Parser
                 continue;
             }
 
+            Token memberStart = CurrentToken;
             ISyntaxTreeNode node = ParseDeclaration();
+            if (node is RoutineDeclaration)
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.InvalidDeclarationInBody,
+                    message:
+                    "Routines cannot be declared inside crashable bodies. Use 'routine CrashableName.MemberRoutine()' syntax instead.",
+                    token: memberStart);
+            }
+
             if (node is SyntaxTree.Declaration member)
             {
                 members.Add(item: member);
@@ -504,12 +513,14 @@ public partial class Parser
             return true;
         }
 
+        Token memberStart = CurrentToken;
         ISyntaxTreeNode node = ParseDeclaration();
         if (node is RoutineDeclaration)
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.InvalidDeclarationInBody,
                 message:
-                $"Routines cannot be declared inside {typeName} bodies. Use 'routine {pascal}Name.MemberRoutine()' syntax instead.");
+                $"Routines cannot be declared inside {typeName} bodies. Use 'routine {pascal}Name.MemberRoutine()' syntax instead.",
+                token: memberStart);
         }
 
         if (node is SyntaxTree.Declaration member)
