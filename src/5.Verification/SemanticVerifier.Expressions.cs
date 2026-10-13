@@ -23,6 +23,23 @@ public sealed partial class SemanticVerifier
     /// <returns>The resolved type of the expression.</returns>
     private TypeSymbol AnalyzeExpression(Expression expression, TypeSymbol? expectedType = null)
     {
+        _expressionDepth++;
+        try
+        {
+            return AnalyzeExpressionCore(expression: expression, expectedType: expectedType);
+        }
+        finally
+        {
+            _expressionDepth--;
+            if (_expressionDepth == 0 && _statementDepth == 0)
+            {
+                ReportSpecialFloats();
+            }
+        }
+    }
+
+    private TypeSymbol AnalyzeExpressionCore(Expression expression, TypeSymbol? expectedType)
+    {
         if (expression is { IsPreAnalyzed: true, ResolvedType: { } preAnalyzed })
         {
             return preAnalyzed;

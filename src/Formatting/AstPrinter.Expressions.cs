@@ -1314,21 +1314,10 @@ internal sealed partial class AstPrinter
                 return CharacterLiteralSource(at: at, type: type);
         }
 
+        // `inf` and `nan` are written as the words alone: they take their type from where they go.
         if (value is "inf" or "nan" or "-inf" or "-nan")
         {
-            // `inf_b64` lexes to the word alone, with the width in the token type.
-            string suffix = type switch
-            {
-                TokenType.B16Literal => "b16",
-                TokenType.B32Literal => "b32",
-                TokenType.B64Literal => "b64",
-                TokenType.B128Literal => "b128",
-                TokenType.D32Literal => "d32",
-                TokenType.D64Literal => "d64",
-                TokenType.D128Literal => "d128",
-                _ => throw Refuse(at: at, reason: $"an '{value}' literal of type {type}")
-            };
-            return value + "_" + suffix;
+            return (string)value;
         }
 
         if (value is string text)

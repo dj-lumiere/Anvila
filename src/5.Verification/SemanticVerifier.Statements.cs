@@ -610,6 +610,23 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeStatement(Statement statement)
     {
+        _statementDepth++;
+        try
+        {
+            AnalyzeStatementCore(statement: statement);
+        }
+        finally
+        {
+            _statementDepth--;
+            if (_expressionDepth == 0)
+            {
+                ReportSpecialFloats();
+            }
+        }
+    }
+
+    private void AnalyzeStatementCore(Statement statement)
+    {
         switch (statement)
         {
             case BlockStatement block:

@@ -175,14 +175,14 @@ public partial class Parser
                .Type))
         {
             Advance();
-            return "-" + AnnotationLiteralText(token: Advance());
+            return "-" + Advance().Text;
         }
 
         // Any other literal the lexer knows, as written: numbers of every type, durations (`5s`), memory sizes
         // (`1mib`) and characters.
         if (IsAnnotationLiteral(type: CurrentToken.Type))
         {
-            return AnnotationLiteralText(token: Advance());
+            return Advance().Text;
         }
 
         // Identifier (for choice values or constant references)
@@ -211,29 +211,5 @@ public partial class Parser
             or TokenType.WeekLiteral or TokenType.DayLiteral or TokenType.HourLiteral or TokenType.MinuteLiteral
             or TokenType.SecondLiteral or TokenType.MillisecondLiteral or TokenType.MicrosecondLiteral
             or TokenType.NanosecondLiteral or TokenType.CharacterLiteral or TokenType.ByteLetterLiteral;
-    }
-
-    /// <summary>
-    /// A literal's text as written. The lexer keeps only the word of <c>inf_b64</c> / <c>nan_b64</c> and puts the
-    /// width in the token type, so the suffix is spelled back on.
-    /// </summary>
-    private static string AnnotationLiteralText(Token token)
-    {
-        if (token.Text is not ("inf" or "nan"))
-        {
-            return token.Text;
-        }
-
-        string suffix = token.Type switch
-        {
-            TokenType.B16Literal => "b16",
-            TokenType.B32Literal => "b32",
-            TokenType.B64Literal => "b64",
-            TokenType.B128Literal => "b128",
-            TokenType.D32Literal => "d32",
-            TokenType.D64Literal => "d64",
-            _ => "d128"
-        };
-        return token.Text + "_" + suffix;
     }
 }

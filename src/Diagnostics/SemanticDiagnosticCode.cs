@@ -97,6 +97,18 @@ public enum SemanticDiagnosticCode
     /// </summary>
     HexFloatLiteralInexact = 18,
 
+    /// <summary>
+    /// <c>inf</c> or <c>nan</c> stands where nothing gives it a type (<c>var x = inf</c>). It takes the type of the place
+    /// it goes, like a bare number, and has no default type.
+    /// </summary>
+    SpecialFloatNeedsType = 19,
+
+    /// <summary>
+    /// <c>inf</c> or <c>nan</c> goes where a type without an infinity or a NaN goes (<c>Decimal</c>, <c>Integer</c>, an
+    /// integer type): only the binary floats and the fixed decimal floats have those values.
+    /// </summary>
+    SpecialFloatNotInType = 20,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // BINARY AND UNARY OPERATOR ERRORS (RF-S050 - RF-S099)
     // ═══════════════════════════════════════════════════════════════════════════

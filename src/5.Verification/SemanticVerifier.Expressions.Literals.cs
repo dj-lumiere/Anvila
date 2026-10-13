@@ -64,6 +64,23 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
+        // `inf` and `nan` have no default type: what they go to is checked once the whole statement is analyzed
+        // (a peer can still give it a type), and the value is read only for a type that has it.
+        if (literal is { LiteralType: TokenType.UndecidedDecimal, Value: "inf" or "nan" })
+        {
+            string? failure = expectedType == null
+                ? SpecialFloatNeedsTypeMessage(literal: literal)
+                : HasInfinityAndNan(typeName: typeName) &&
+                  (expectedType is GenericParameterTypeSymbol || HasInfinityAndNan(typeName: expectedType.Name))
+                    ? null
+                    : SpecialFloatNotInTypeMessage(literal: literal, typeName: expectedType.Name);
+            _specialFloats[key: literal] = failure;
+            if (failure != null)
+            {
+                return expectedType ?? LookupTypeWithImports(name: typeName) ?? ErrorTypeSymbol.Instance;
+            }
+        }
+
         StoreParsedLiteral(literal: literal, typeName: typeName);
 
         TypeSymbol? type = LookupTypeWithImports(name: typeName);
@@ -123,6 +140,66 @@ public sealed partial class SemanticVerifier
         return fitting.Count == 1
             ? fitting[index: 0]
             : null;
+    }
+
+    /// <summary>The <c>inf</c> and <c>nan</c> literals analyzed since the last report, each with what is wrong with
+    /// where it went (null when nothing is): the last analysis of a literal decides.</summary>
+    private readonly Dictionary<LiteralExpression, string?> _specialFloats =
+        new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>Where an <c>inf</c> or <c>nan</c> was already reported, so a copy of the same code is not reported
+    /// again.</summary>
+    private readonly HashSet<SourceLocation> _reportedSpecialFloats = [];
+
+    private int _statementDepth;
+    private int _expressionDepth;
+
+    /// <summary>Whether a value of <paramref name="typeName"/> can be infinite or a NaN: the binary floats and the
+    /// fixed decimal floats.</summary>
+    private static bool HasInfinityAndNan(string typeName)
+    {
+        return typeName is "B16" or "B32" or "B64" or "B128" or "D32" or "D64" or "D128";
+    }
+
+    private static string SpecialFloatNeedsTypeMessage(LiteralExpression literal)
+    {
+        return $"`{literal.Value}` takes its type from the place it goes, and nothing here gives it one. Write the " +
+               $"type where the value is declared (`var x: B64 = {literal.Value}`), or put it where a float goes (an " +
+               "argument, an assignment, the other side of an operator).";
+    }
+
+    private static string SpecialFloatNotInTypeMessage(LiteralExpression literal, string typeName)
+    {
+        return $"`{literal.Value}` goes where a '{typeName}' goes, and a '{typeName}' has no infinity or NaN. Only " +
+               "the binary floats (B16, B32, B64, B128) and the decimal floats D32, D64 and D128 have them: give the " +
+               "value one of those types.";
+    }
+
+    /// <summary>
+    /// Reports the <c>inf</c> and <c>nan</c> literals analyzed since the last report that went nowhere with a type, or
+    /// to a type without an infinity or a NaN. Called when a statement (or an expression outside any statement)
+    /// has been analyzed in full, so a literal typed by its peer late is judged by where it finally went.
+    /// </summary>
+    private void ReportSpecialFloats()
+    {
+        if (_specialFloats.Count == 0)
+        {
+            return;
+        }
+
+        foreach ((LiteralExpression literal, string? failure) in _specialFloats)
+        {
+            if (failure != null && _reportedSpecialFloats.Add(item: literal.Location))
+            {
+                ReportError(code: failure.Contains(value: "nothing here gives it one")
+                        ? SemanticDiagnosticCode.SpecialFloatNeedsType
+                        : SemanticDiagnosticCode.SpecialFloatNotInType,
+                    message: failure,
+                    location: literal.Location);
+            }
+        }
+
+        _specialFloats.Clear();
     }
 
     /// <summary>Whether <paramref name="name"/> is a type parameter of the routine being analyzed or of its

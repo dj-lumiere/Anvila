@@ -432,8 +432,9 @@ public partial class Parser
                     Location: opLocation);
             }
 
-            // If it's a literal expression with string value, prepend negative sign
-            if (literal is LiteralExpression { Value: string strVal } litExpr)
+            // If it's a literal expression with string value, prepend negative sign. `-inf` and `-nan` stay a negation:
+            // the value is the number's negation in whatever type `inf` takes.
+            if (literal is LiteralExpression { Value: string strVal } litExpr && strVal is not ("inf" or "nan"))
             {
                 // Toggle negative sign: if already negative, remove it; otherwise add it
                 string newValue = strVal.StartsWith(value: '-')

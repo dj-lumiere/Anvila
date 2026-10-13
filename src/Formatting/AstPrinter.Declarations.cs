@@ -508,9 +508,6 @@ internal sealed partial class AstPrinter
             {
                 TokenType.TextLiteral => Literals.QuoteText(value: token.Text, bytes: false),
                 TokenType.BytesLiteral => "b" + Literals.QuoteText(value: token.Text, bytes: true),
-                _ when token.Text is "inf" or "nan" => LiteralValueText(value: token.Text, type: token.Type,
-                    at: new SourceLocation(FileName: token.FileName, Line: token.Line, Column: token.Column,
-                        Position: token.Position)),
                 _ => token.Text
             });
         }

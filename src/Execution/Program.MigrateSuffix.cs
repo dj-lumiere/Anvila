@@ -370,7 +370,12 @@ internal partial class Program
                 continue;
             }
 
-            if (number.TypeName == BareNumberType(source: source, number: number))
+            // `inf` and `nan` have no default type: their declaration always states one.
+            bool special = string.CompareOrdinal(strA: source.Text, indexA: number.NumberStart, strB: "inf", indexB: 0,
+                               length: 3) == 0 ||
+                           string.CompareOrdinal(strA: source.Text, indexA: number.NumberStart, strB: "nan", indexB: 0,
+                               length: 3) == 0;
+            if (!special && number.TypeName == BareNumberType(source: source, number: number))
             {
                 continue;
             }

@@ -202,8 +202,19 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     /// copy is inlined in turn so a preset it names (<c>NAME</c>) is replaced as well.
     /// </summary>
     private Expression InlineComposedPreset(IdentifierExpression id, Expression value,
-        TypeSymbol? resolvedType)
+        TypeSymbol? resolvedType, TypeSymbol? declared)
     {
+        // A negated number (`preset LOWEST: B64 = -inf`) keeps the preset's declared type on the number, as a bare
+        // number preset does.
+        if (value is UnaryExpression { Operator: UnaryOperator.Minus, Operand: LiteralExpression negated } negation)
+        {
+            return negation with
+            {
+                Operand = TypedNumber(literal: negated, declared: declared, resolvedType: null),
+                ResolvedType = resolvedType ?? declared
+            };
+        }
+
         if (!_inlining.Add(item: id.Name))
         {
             return id;
@@ -255,7 +266,8 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
                 LiteralExpression ownLiteral => TypedNumber(literal: ownLiteral,
                     declared: ctx.Registry.LookupType(name: own.Type.Name),
                     resolvedType: id.ResolvedType ?? ownLiteral.ResolvedType),
-                _ => InlineComposedPreset(id: id, value: own.Value, resolvedType: id.ResolvedType ?? own.Value.ResolvedType)
+                _ => InlineComposedPreset(id: id, value: own.Value, resolvedType: id.ResolvedType ?? own.Value.ResolvedType,
+                    declared: ctx.Registry.LookupType(name: own.Type.Name))
             };
         }
 
@@ -278,7 +290,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
                 return TypedNumber(literal: lit, declared: v.Type, resolvedType: resolvedType);
             }
 
-            return InlineComposedPreset(id: id, value: v.PresetValue, resolvedType: resolvedType);
+            return InlineComposedPreset(id: id, value: v.PresetValue, resolvedType: resolvedType, declared: v.Type);
         }
 
         return expr;
