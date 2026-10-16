@@ -58,6 +58,18 @@
     <PackageReference Include="DebugUtils.CSharp" Version="1.8.0"/>
     <PackageReference Include="dotnet-framework-sonarscanner" Version="9.2.0"/>
     <PackageReference Include="LLVMSharp" Version="22.1.8"/>
+    <!-- The LLVM-C library the in-process JIT loads, the same version as the bindings above. Only the
+         host's runtime package is pulled, so a build carries one native libLLVM, not every platform's. -->
+    <PackageReference Include="libLLVM.runtime.linux-x64" Version="22.1.8"
+                      Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'"/>
+    <PackageReference Include="libLLVM.runtime.linux-arm64" Version="22.1.8"
+                      Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"/>
+    <PackageReference Include="libLLVM.runtime.win-x64" Version="22.1.8"
+                      Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'"/>
+    <PackageReference Include="libLLVM.runtime.win-arm64" Version="22.1.8"
+                      Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"/>
+    <PackageReference Include="libLLVM.runtime.osx-arm64" Version="22.1.8"
+                      Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"/>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
     <PackageReference Include="Tomlyn" Version="0.17.0"/>
   </ItemGroup>

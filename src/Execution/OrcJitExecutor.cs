@@ -19,10 +19,9 @@ namespace Builder.Execution;
 /// process's crash — identical to running the AOT exe. That is why JIT-and-run happens client-side, never
 /// in the daemon (whose stdio the user can't see).
 ///
-/// Version-skew note: the LLVMSharp bindings are 20.x but the staged <c>libLLVM.dll</c> is 21.x, which
-/// dropped <c>LLVMOrcThreadSafeContextGetContext</c> in favour of
-/// <c>LLVMOrcCreateNewThreadSafeContextFromLLVMContext</c> (which 20.x does not bind). We hand-resolve that
-/// one export from our explicitly-loaded module handle; everything else lines up across the C-API surface.
+/// The LLVMSharp bindings and the loaded libLLVM come from the same LLVM release (the libLLVM.runtime
+/// package for the host). <c>LLVMOrcCreateNewThreadSafeContextFromLLVMContext</c> is still resolved by hand
+/// from the loaded module handle, which works whether or not the bindings declare it.
 /// (Proven end-to-end first by tests/Perf/OrcJitSpike.cs, incl. rf_* runtime-symbol resolution.)
 /// </summary>
 #pragma warning disable S6640 // unsafe is required for LLVM ORC function-pointer interop (delegate* unmanaged[Cdecl])
@@ -30,6 +29,10 @@ internal static unsafe class OrcJitExecutor
 {
     private static readonly object InitLock = new();
     private static bool _initialized;
+
+    /// <summary>The native runtime's file, searched by path as well, because on Linux and macOS a library
+    /// loaded by the .NET host is not visible to a process-wide symbol search.</summary>
+    private static string? _runtimePath;
 
     // Error-context label for the OrcCreateLLJIT C-API call (passed to CheckErr).
     private const string OrcCreateLljitWhat = "OrcCreateLLJIT";
@@ -70,13 +73,18 @@ internal static unsafe class OrcJitExecutor
                 string dir =
                     Path.GetDirectoryName(path: typeof(OrcJitExecutor).Assembly.Location) ?? ".";
 
-                // libLLVM: the LLVM-C shared library staged next to our assembly (falls back to a system
-                // install). Loaded by absolute path so the export hand-resolution binds unambiguously.
-                string stagedLlvm = Path.Combine(path1: dir, path2: "libLLVM.dll");
-                string llvmSrc = File.Exists(path: stagedLlvm)
-                    ? stagedLlvm
-                    : @"C:\Program Files\LLVM\bin\LLVM-C.dll";
-                nint llvmHandle = NativeLibrary.Load(libraryPath: llvmSrc);
+                // libLLVM: the LLVM-C library from the libLLVM.runtime.<rid> package, the same version as the
+                // LLVMSharp bindings. The runtime resolves it from runtimes/<rid>/native through the deps file,
+                // so the build never depends on an LLVM installed on the machine.
+                const string llvmSrc = "libLLVM";
+                if (!NativeLibrary.TryLoad(libraryName: llvmSrc,
+                        assembly: typeof(OrcJitExecutor).Assembly,
+                        searchPath: null,
+                        handle: out nint llvmHandle))
+                {
+                    error = "libLLVM was not found next to the builder (the libLLVM.runtime package for this platform).";
+                    return false;
+                }
                 if (!NativeLibrary.TryGetExport(handle: llvmHandle,
                         name: "LLVMOrcCreateNewThreadSafeContextFromLLVMContext",
                         address: out nint fromCtxPtr))
@@ -94,10 +102,12 @@ internal static unsafe class OrcJitExecutor
                 // search (this is what lets JIT'd RF code link against rf_console_show, the scheduler, …).
                 // The handle is intentionally not stored: the library stays loaded for the process lifetime
                 // by virtue of NativeLibrary.Load, so no explicit reference is needed.
-                string rtPath = Path.Combine(path1: dir, path2: "razorforge_runtime.dll");
-                _ = NativeLibrary.Load(libraryPath: File.Exists(path: rtPath)
-                    ? rtPath
-                    : "razorforge_runtime");
+                string rtName = OperatingSystem.IsWindows() ? "razorforge_runtime.dll"
+                    : OperatingSystem.IsMacOS() ? "librazorforge_runtime.dylib"
+                    : "librazorforge_runtime.so";
+                string rtPath = Path.Combine(path1: dir, path2: rtName);
+                _runtimePath = File.Exists(path: rtPath) ? rtPath : null;
+                _ = NativeLibrary.Load(libraryPath: _runtimePath ?? "razorforge_runtime");
 
                 LLVM.InitializeNativeTarget();
                 LLVM.InitializeNativeAsmPrinter();
@@ -247,6 +257,21 @@ internal static unsafe class OrcJitExecutor
                 FilterCtx: null),
             what: "GeneratorForProcess");
         LLVM.OrcJITDylibAddGenerator(JD: dylib, DG: gen);
+        if (_runtimePath != null && !OperatingSystem.IsWindows())
+        {
+            LLVMOrcOpaqueDefinitionGenerator* runtimeGen;
+            byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(s: _runtimePath + "\0");
+            fixed (byte* pathPtr = pathBytes)
+            {
+                CheckErr(err: LLVM.OrcCreateDynamicLibrarySearchGeneratorForPath(Result: &runtimeGen,
+                        FileName: (sbyte*)pathPtr,
+                        GlobalPrefix: prefix,
+                        Filter: null,
+                        FilterCtx: null),
+                    what: "GeneratorForPath");
+            }
+            LLVM.OrcJITDylibAddGenerator(JD: dylib, DG: runtimeGen);
+        }
         return dylib;
     }
 
