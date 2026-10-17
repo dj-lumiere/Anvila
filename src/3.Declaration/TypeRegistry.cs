@@ -1120,6 +1120,16 @@ public sealed partial class TypeRegistry
         {
             _moduleNames[key: moduleId] = effectiveModule;
             _loadedFilePaths.TryAdd(key: fullResolvedPath, value: effectiveModule);
+
+            // The other standard library files of the same module (a language's own additions to a shared module).
+            foreach (string companion in _stdlibLoader.CompanionFiles(module: effectiveModule, loaded: resolvedPath))
+            {
+                string fullCompanion = Path.GetFullPath(path: companion);
+                if (_loadedFilePaths.TryAdd(key: fullCompanion, value: effectiveModule))
+                {
+                    _stdlibLoader.LoadModule(registry: this, filePath: companion, moduleId: moduleId);
+                }
+            }
         }
 
         return effectiveModule != null;

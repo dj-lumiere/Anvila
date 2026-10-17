@@ -606,6 +606,27 @@ public sealed partial class StdlibLoader
     /// <param name="filePath">The resolved file path of the module.</param>
     /// <param name="moduleId">The module identifier (e.g., "Collections.List").</param>
     /// <returns>The effective module of the loaded module, or null on failure.</returns>
+    /// <summary>
+    /// The files of the language's own library (not RazorForge source) that declare <paramref name="module"/> besides
+    /// <paramref name="loaded"/>. A language's own library can add to a shared module (Suflae's `IO/File` surface next
+    /// to RazorForge's `IO/File`), and an import resolves to one file, so these come through here. Other RazorForge
+    /// files of the module still load only when something imports them.
+    /// </summary>
+    internal List<string> CompanionFiles(string module, string loaded)
+    {
+        ScanStdlibFiles();
+        string full = Path.GetFullPath(path: loaded);
+        return _modulePrograms.TryGetValue(key: module,
+                   value: out List<(Program Program, string FilePath, string Module)>? programs)
+            ? programs.Select(selector: p => p.FilePath)
+                      .Where(predicate: f => RealmOf(filePath: f) != TypeModel.Realms.Shared &&
+                                             !Path.GetFullPath(path: f)
+                                                 .Equals(value: full, comparisonType: StringComparison.OrdinalIgnoreCase))
+                      .Distinct()
+                      .ToList()
+            : [];
+    }
+
     public string? LoadModule(TypeRegistry registry, string filePath, string moduleId)
     {
         try
