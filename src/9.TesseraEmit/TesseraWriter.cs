@@ -253,7 +253,7 @@ internal sealed class TesseraWriter
 
     /// <summary>
     /// The library routine that writes a builder Text (one U32 code point per character) as UTF-8 into the caller's
-    /// list and gives the bytes (a <c>Span[Byte]</c>) Tessera's <c>crash</c> takes, for a crash message the program
+    /// list and gives the bytes (a <c>@[Byte]</c>) Tessera's <c>crash</c> takes, for a crash message the program
     /// computes. Written once, on first use. The list stays allocated: the crash ends the program.
     /// </summary>
     public string TextBytes()
@@ -266,7 +266,7 @@ internal sealed class TesseraWriter
         _textBytes = VerbatimName(text: "text bytes");
         _definitions.Append(value: $$"""
             ### A crash message as UTF-8.
-            secret routine {{_textBytes}}(text: {{TypeText(type: TextType)}}, into: @List[Byte]) -> Span[Byte]
+            secret routine {{_textBytes}}(text: {{TypeText(type: TextType)}}, into: @List[Byte]) -> @[Byte]
                 local data: @U32 = text.data
                 local count: U64 = text.count
 

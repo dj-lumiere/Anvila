@@ -387,7 +387,7 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary>
     /// A crash in a library: Tessera's <c>crash</c> with the crash's name and message, which Ingrid's crash handler
-    /// reports the way RazorForge's crash report does. The report call's text arguments become a Span[Byte] (a literal as
+    /// reports the way RazorForge's crash report does. The report call's text arguments become a @[Byte] (a literal as
     /// it is, a computed text through <see cref="TesseraWriter.TextBytes"/>), and a <c>#source</c> line gives the
     /// crash the RazorForge place the report would have named.
     /// </summary>
@@ -419,7 +419,7 @@ internal sealed class TesseraRoutineWriter
             // The bytes go in a list this routine keeps: the crash that reads them ends the program.
             string buffer = $"t{_temps++}";
             Emit(line: $"local {buffer}: @List[Byte] <- .construct()");
-            Emit(line: $"{bytes}: Span[Byte] = {_module.TextBytes()}(text: {text}, into: {buffer})");
+            Emit(line: $"{bytes}: @[Byte] = {_module.TextBytes()}(text: {text}, into: {buffer})");
             return bytes;
         }
 
