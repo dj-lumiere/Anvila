@@ -201,6 +201,14 @@ public sealed partial class SemanticVerifier
     /// <summary>Tracks the current for-loop iteration variable names for reshaping check (#22).</summary>
     private readonly HashSet<string> _activeIterationSources = [];
 
+    /// <summary>
+    /// The iterators and adapters (<c>var big = boxes.where(...)</c>, the iterator an <c>each</c> loop declares) whose
+    /// walk starts at a read-only place (a <c>Viewing</c> token, or <c>me</c> in a <c>@readonly</c> routine). An
+    /// <c>each</c> loop over one hands its elements out as <c>Viewing</c>, whatever token <c>emit</c> gives, so a
+    /// read-only start stays read-only through every adapter.
+    /// </summary>
+    private readonly HashSet<string> _readOnlyIterators = [];
+
     /// <summary>Routine declarations collected in Phase 3/4, pending resolution and registration in Phase 4.1.</summary>
     internal readonly List<PendingRoutine> _pendingRoutines = [];
 

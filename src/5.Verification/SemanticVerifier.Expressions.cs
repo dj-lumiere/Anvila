@@ -1742,19 +1742,7 @@ public sealed partial class SemanticVerifier
     {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
-        // Read-only wrapper types (Viewing, Consulting) cannot be written through.
-        if (Wrappers.IsReadOnlyWrapper(type: objectType))
-        {
-            ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
-                message:
-                Wrappers.GuardedPolicy(type: objectType) == "ReadOnly"
-                    ? $"Cannot write to member '{member.MemberName}': '{objectType.Name}' has the ReadOnly policy, so " +
-                      "its value is only read. Share it under the Exclusive or MultiRead policy and change it inside " +
-                      "'using ... amend()'."
-                    : $"Cannot write to member '{member.MemberName}' through read-only wrapper '{objectType.Name}'. " +
-                      "Use Modifying[T] for exclusive write access or Amending[T] for locked write access.",
-                location: location);
-        }
+        ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: location);
 
         ValidateMemberVariableWriteAccess(objectType: objectType,
             memberVariableName: member.MemberName,
@@ -2121,6 +2109,26 @@ public sealed partial class SemanticVerifier
     /// plain assignment target: preset (immutable) variable, @readonly member-routine mutation of <c>me</c>,
     /// and read-only-protocol index writes.
     /// </summary>
+    /// <summary>A member variable written (<c>=</c> or <c>+=</c>) through a read-only wrapper, a <c>Viewing</c> token or
+    /// a ReadOnly <c>Guarded</c>: the write is an error.</summary>
+    private void ReportWriteThroughReadOnly(TypeSymbol objectType, string memberName, SourceLocation location)
+    {
+        if (!Wrappers.IsReadOnlyWrapper(type: objectType))
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
+            message: Wrappers.GuardedPolicy(type: objectType) == "ReadOnly"
+                ? $"You are writing member '{memberName}' of '{objectType.Name}', whose ReadOnly policy only lets its " +
+                  "value be read. Share it under the Exclusive or MultiRead policy and change it inside " +
+                  "'using ... modify()'."
+                : $"You are writing member '{memberName}' through '{objectType.Name}', which only reads the value. " +
+                  "Where it has to change, take a 'Modifying' token instead (a parameter typed Modifying[...], or " +
+                  "'.modify()').",
+            location: location);
+    }
+
     private void ValidateCompoundAssignmentTarget(CompoundAssignmentExpression compound)
     {
         switch (compound.Target)
@@ -2140,6 +2148,8 @@ public sealed partial class SemanticVerifier
             case MemberExpression member:
             {
                 TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
+                ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName,
+                    location: compound.Location);
                 ValidateMemberVariableWriteAccess(objectType: objectType,
                     memberVariableName: member.MemberName,
                     location: compound.Location);

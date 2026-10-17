@@ -1120,6 +1120,74 @@ public sealed partial class SemanticVerifier
 
 
         TrackSpecialVariableRegistrations(varDecl: varDecl, varType: varType);
+        TrackReadOnlyIterator(varDecl: varDecl);
+    }
+
+    /// <summary>
+    /// Records whether a variable walks from a read-only place: the iterator an <c>each</c> loop declares
+    /// (<c>var _lf_iter_N = source.iter()</c>), or an iterator or adapter made from one (<c>var big =
+    /// boxes.where(...)</c>, the source an <c>each</c> over a call names). Any other declaration of the name clears it,
+    /// so a name reused in another routine starts over.
+    /// </summary>
+    private void TrackReadOnlyIterator(VariableDeclaration varDecl)
+    {
+        bool readOnly = _registry.Rules.ChecksAccessTokens && varDecl.Initializer switch
+        {
+            CallExpression { IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "iter", Object: var source } }
+                => StartsReadOnly(place: source),
+            { ResolvedType: { } walked } initializer => Walks(type: walked) && StartsReadOnly(place: initializer),
+            _ => false
+        };
+        if (readOnly)
+        {
+            _readOnlyIterators.Add(item: varDecl.Name);
+        }
+        else
+        {
+            _readOnlyIterators.Remove(item: varDecl.Name);
+        }
+    }
+
+    /// <summary>Whether a value of <paramref name="type"/> is walked: an iterator (it has <c>emit</c>) or an adapter
+    /// an <c>each</c> loop asks for one (it has <c>iter</c>).</summary>
+    private bool Walks(TypeSymbol type)
+    {
+        return _registry.LookupMemberRoutine(type: type, memberRoutineName: "emit", isFailable: true) != null ||
+               _registry.LookupMemberRoutine(type: type, memberRoutineName: "iter") != null;
+    }
+
+    /// <summary>
+    /// Whether a walk starts at a read-only place: following the receivers of a call chain
+    /// (<c>boxes.where(...)</c>), member variables and elements back to where it begins, a <c>Viewing</c> token
+    /// on the way, <c>me</c> in a <c>@readonly</c> routine, or an iterator or adapter that already walks from one.
+    /// </summary>
+    private bool StartsReadOnly(Expression place)
+    {
+        if (place.ResolvedType is { } type && Wrappers.IsReadOnlyWrapper(type: type))
+        {
+            return true;
+        }
+
+        return place switch
+        {
+            IdentifierExpression { Name: "me" } => _currentRoutine is { IsReadOnly: true },
+            IdentifierExpression walk => _readOnlyIterators.Contains(item: walk.Name),
+            CallExpression { Callee: MemberExpression receiver } => StartsReadOnly(place: receiver.Object),
+            MemberExpression member => StartsReadOnly(place: member.Object),
+            IndexExpression element => StartsReadOnly(place: element.Object),
+            _ => false
+        };
+    }
+
+    /// <summary>The element token an <c>each</c> loop binds when its walk starts read-only: <c>Viewing[T]</c> in place
+    /// of the <c>Modifying[T]</c> the iterator hands out. Any other type stays as it is.</summary>
+    private TypeSymbol ReadOnlyElement(TypeSymbol element)
+    {
+        return element is { BareName: Declaration.RuntimeContract.Modifying } &&
+               Wrappers.GetWrapperInnerType(wrapperType: element) is { } inner &&
+               _registry.LookupType(name: Declaration.RuntimeContract.Viewing) is { } viewingDef
+            ? _registry.GetOrCreateResolution(genericDef: viewingDef, typeArguments: [inner])
+            : element;
     }
 
     /// <summary>
@@ -1696,19 +1764,7 @@ public sealed partial class SemanticVerifier
     {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
-        // Read-only wrapper types (Viewing, Consulting) cannot be written through
-        if (Wrappers.IsReadOnlyWrapper(type: objectType))
-        {
-            ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
-                message:
-                Wrappers.GuardedPolicy(type: objectType) == "ReadOnly"
-                    ? $"Cannot write to member '{member.MemberName}': '{objectType.Name}' has the ReadOnly policy, so " +
-                      "its value is only read. Share it under the Exclusive or MultiRead policy and change it inside " +
-                      "'using ... amend()'."
-                    : $"Cannot write to member '{member.MemberName}' through read-only wrapper '{objectType.Name}'. " +
-                      "Use Modifying[T] for exclusive write access or Amending[T] for locked write access.",
-                location: assign.Location);
-        }
+        ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: assign.Location);
 
         ValidateMemberVariableWriteAccess(objectType: objectType,
             memberVariableName: member.MemberName,

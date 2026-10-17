@@ -437,6 +437,13 @@ public sealed partial class SemanticVerifier
                 ? wv
                 : null;
         var handledArms = new List<string>();
+        // The step of an `each` loop whose walk starts read-only hands its element out as `Viewing`.
+        bool viewingElement = whenStmt.IsEachStep &&
+                              whenStmt.Expression is RecoveryExpression
+                              {
+                                  Inner: CallExpression { Callee: MemberExpression { Object: IdentifierExpression iterator } }
+                              } &&
+                              _readOnlyIterators.Contains(item: iterator.Name);
         bool handledNone = false;
         bool handledNoneValue = false;
         bool handledCrashable = false;
@@ -459,7 +466,8 @@ public sealed partial class SemanticVerifier
                 matchedType: matchedType,
                 ctx: new WhenClauseContext(WhenVarName: whenVarName,
                     WhenVariant: whenVariant,
-                    HandledArms: handledArms),
+                    HandledArms: handledArms,
+                    ViewingElement: viewingElement),
                 handledNone: ref handledNone,
                 handledNoneValue: ref handledNoneValue,
                 handledCrashable: ref handledCrashable,
@@ -544,7 +552,8 @@ public sealed partial class SemanticVerifier
     private readonly record struct WhenClauseContext(
         string? WhenVarName,
         VariantTypeSymbol? WhenVariant,
-        List<string> HandledArms);
+        List<string> HandledArms,
+        bool ViewingElement = false);
 
     private bool AnalyzeWhenClause(WhenClause clause, TypeSymbol matchedType,
         WhenClauseContext ctx, ref bool handledNone, ref bool handledNoneValue,
@@ -586,7 +595,9 @@ public sealed partial class SemanticVerifier
             if (narrowedType != null && elsePat.VariableName != null)
             {
                 DeclarePatternVariable(name: elsePat.VariableName,
-                    type: narrowedType,
+                    type: ctx.ViewingElement
+                        ? ReadOnlyElement(element: narrowedType)
+                        : narrowedType,
                     location: elsePat.Location);
                 AnalyzeStatement(statement: clause.Body);
                 _registry.ExitScope();
