@@ -795,7 +795,7 @@ internal sealed class TypeResolver
     /// Routes a single generic constraint to its category-specific validator based on
     /// <see cref="GenericConstraintDeclaration.ConstraintType"/>.
     /// </summary>
-    private void DispatchConstraintValidation(TypeSymbol typeArg,
+    internal void DispatchConstraintValidation(TypeSymbol typeArg,
         GenericConstraintDeclaration constraint, SourceLocation location)
     {
         switch (constraint.ConstraintType)
@@ -889,7 +889,8 @@ internal sealed class TypeResolver
         {
             _sa.ReportError(code: SemanticDiagnosticCode.ValueTypeConstraintViolation,
                 message:
-                $"Type '{typeArg.Name}' is not a value type (record) required by constraint on '{constraint.ParameterName}'.",
+                $"'{constraint.ParameterName}' needs a record ('needs RecordType {constraint.ParameterName}'), and " +
+                $"'{typeArg.Name}' is not one.",
                 location: location);
         }
     }
@@ -915,7 +916,8 @@ internal sealed class TypeResolver
         {
             _sa.ReportError(code: SemanticDiagnosticCode.ReferenceTypeConstraintViolation,
                 message:
-                $"Type '{typeArg.Name}' is not a reference type (entity) required by constraint on '{constraint.ParameterName}'.",
+                $"'{constraint.ParameterName}' needs an entity ('needs EntityType {constraint.ParameterName}'), and " +
+                $"'{typeArg.Name}' is not one.",
                 location: location);
         }
     }

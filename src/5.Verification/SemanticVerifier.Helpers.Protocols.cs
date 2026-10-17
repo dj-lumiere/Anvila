@@ -89,7 +89,20 @@ public sealed partial class SemanticVerifier
 
         foreach (GenericConstraintDeclaration c in constraints)
         {
-            if (c.ConstraintType != ConstraintKind.Obeys || c.ConstraintTypes == null)
+            // A kind (`needs RecordType T`, `needs EntityType T`, ...) is checked the way a generic type's is.
+            if (c.ConstraintType != ConstraintKind.Obeys)
+            {
+                int kindIdx = genParams.IndexOf(item: c.ParameterName);
+                if (kindIdx >= 0 && kindIdx < typeArgs.Count &&
+                    typeArgs[index: kindIdx] is not (GenericParameterTypeSymbol or ErrorTypeSymbol) and { } kindArg)
+                {
+                    _typeResolver.DispatchConstraintValidation(typeArg: kindArg, constraint: c, location: location);
+                }
+
+                continue;
+            }
+
+            if (c.ConstraintTypes == null)
             {
                 continue;
             }
