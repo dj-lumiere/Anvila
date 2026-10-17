@@ -657,20 +657,20 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Reports RF-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>
-    private void ValidateIdentityOperand(TypeSymbol type, BinaryOperator op,
+    private bool ValidateIdentityOperand(TypeSymbol type, BinaryOperator op,
         SourceLocation location)
     {
         if (type is ErrorTypeSymbol || IsIdentityComparable(type: type))
         {
-            return;
+            return true;
         }
 
         ReportError(code: SemanticDiagnosticCode.IdentityOperandNotReference,
             message:
-            $"Operator '{op.ToStringRepresentation()}' compares object IDENTITY, which needs a " +
-            $"reference operand (an entity or a borrow/handle wrapper) — but '{type.Name}' is a " +
-            "value type. Use '==' for value equality.",
+            $"'{op.ToStringRepresentation()}' asks whether two names refer to the same entity, and '{type.Name}' is " +
+            "a value, which has no identity of its own. Compare values with '=='.",
             location: location);
+        return false;
     }
 
     /// <summary>
@@ -1019,12 +1019,11 @@ public sealed partial class SemanticVerifier
         // forwarding wrapper); a value type has no identity. Result is always Bool.
         if (binary.Operator is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual)
         {
-            ValidateIdentityOperand(type: leftType,
-                op: binary.Operator,
-                location: binary.Left.Location);
-            ValidateIdentityOperand(type: rightType,
-                op: binary.Operator,
-                location: binary.Right.Location);
+            // One message is enough when both sides are values.
+            if (ValidateIdentityOperand(type: leftType, op: binary.Operator, location: binary.Left.Location))
+            {
+                ValidateIdentityOperand(type: rightType, op: binary.Operator, location: binary.Right.Location);
+            }
             return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
         }
 

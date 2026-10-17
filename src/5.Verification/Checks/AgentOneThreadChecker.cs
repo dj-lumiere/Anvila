@@ -112,15 +112,15 @@ internal sealed class AgentOneThreadChecker(DiagnosticReporter report)
             }
         }
 
-        // Anywhere else, the Agent would leave the routine where what it borrows lives.
+        // Anywhere else, the Agent would leave the block where the argument it holds can be used.
         foreach (object n in nodes)
         {
             if (n is Expression e && !allowed.Contains(item: e) && OneThreadReason(expr: e, held: held) is { } reason)
             {
                 report(code: SemanticDiagnosticCode.ThreadArgNotShareable,
-                    message: $"This Agent holds {reason}, so it stays in the routine that made it, where what it " +
-                             "borrows lives: start it with 'start_here()' and retrieve it here. Passing it on, storing " +
-                             "it or returning it would let the work outlive what it borrows.",
+                    message: $"This Agent holds {reason}, so it stays in the block that made it, the only place " +
+                             "that argument can be used: start it with 'start_here()' and retrieve it there. Passing " +
+                             "it on, storing it or returning it would let the work run after that block ends.",
                     location: e.Location);
             }
         }
