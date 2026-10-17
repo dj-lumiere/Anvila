@@ -237,7 +237,7 @@ public sealed partial class SemanticVerifier
             ? "a bare entity would be the same object in the caller and in the running work"
             : $"it holds `{offender!.Value.Wrapper}` at `{offender.Value.Path}`, which only the work that made it may use";
         string fix = isEntity
-            ? "Write `steal` before it to move it into the agent, share it with `Guarded`/`Witnessed`/`Atomic`, or " +
+            ? "Write `steal` before it to hand it over to the agent, share it with `Guarded`/`Witnessed`/`Atomic`, or " +
               "pass a copyable value"
             : "Share it with `Guarded`/`Witnessed`/`Atomic`, or pass a copyable value";
         ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,

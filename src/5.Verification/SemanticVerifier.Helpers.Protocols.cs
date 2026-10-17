@@ -187,7 +187,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
                 message: $"'{ownerType.Name}' cannot be duplicated: it is copied member by member, and its member " +
                          $"'{held.Name}' is '{held.Type.Name}', which is not Copyable. Declare '{held.Type.Name}' " +
-                         "'obeys Copyable', or move the value with 'steal' instead of duplicating it.",
+                         "'obeys Copyable', or hand the value over with 'steal' instead of duplicating it.",
                 location: location);
         }
     }

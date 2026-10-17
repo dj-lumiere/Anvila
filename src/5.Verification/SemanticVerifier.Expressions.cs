@@ -538,7 +538,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.UseAfterSteal,
                 message: StealsInSameCall(name: id.Name) is { } sameCall
                     ? $"You are using '{id.Name}' in this call, but 'steal {id.Name}' (column {sameCall.Location.Column}) " +
-                      $"moves it out in the same call, so this argument would point at an object that has moved. " +
+                      $"hands it over in the same call, so this argument would point at an object this name no longer holds. " +
                       $"Use '{id.Name}' in one statement and steal it in a separate one after it."
                     : _droppedVariables.Contains(item: id.Name)
                         ? $"'{id.Name}' was ended by 'drop {id.Name}', so it can no longer be used."
@@ -569,18 +569,18 @@ public sealed partial class SemanticVerifier
     {
         if (!_stealSites.TryGetValue(key: name, value: out StealExpression? steal))
         {
-            return $"You use '{name}' here, but a 'steal' earlier in this routine moved what it held out, so '{name}' " +
+            return $"You use '{name}' here, but a 'steal' earlier in this routine handed what it held over, so '{name}' " +
                    $"holds nothing now. Use '{name}' before that 'steal', or give '{name}' a new value first.";
         }
 
         int line = steal.Location.Line;
         return _stealDestinations.TryGetValue(key: steal, value: out string? destination)
             ? destination.StartsWith(value: '\'')
-                ? $"You use '{name}' here, but 'steal' on line {line} moved what it held into {destination}. " +
+                ? $"You use '{name}' here, but 'steal' on line {line} handed what it held over to {destination}. " +
                   $"Use {destination}, or use '{name}' before line {line}."
-                : $"You use '{name}' here, but 'steal' on line {line} moved what it held into {destination}. " +
+                : $"You use '{name}' here, but 'steal' on line {line} handed what it held over to {destination}. " +
                   $"Use '{name}' before line {line}, or give '{name}' a new value first."
-            : $"You use '{name}' here, but 'steal' on line {line} moved what it held out. " +
+            : $"You use '{name}' here, but 'steal' on line {line} handed what it held over. " +
               $"Use '{name}' before line {line}, or give '{name}' a new value first.";
     }
 

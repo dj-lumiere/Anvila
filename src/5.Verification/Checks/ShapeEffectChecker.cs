@@ -575,7 +575,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                                 {
                                     ReportShapeChange(guard: g,
                                         attempt: $"steal '{stolen}'",
-                                        why: $"'{stolen}' would move away with the element",
+                                        why: $"'{stolen}' would be handed over with the element",
                                         location: steal.Location);
                                 }
                             }

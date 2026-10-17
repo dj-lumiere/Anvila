@@ -44,7 +44,7 @@ internal static class StealGuardLoweringPass
                     case IdentifierExpression id when IsGuarded(id: id, everStolen: everStolen):
                         id.StealGuardCrash = CrashLoweringPass.Report(registry: registry,
                             typeName: UseAfterStealError,
-                            message: $"'{id.Name}' was used after it was moved out with steal.",
+                            message: $"'{id.Name}' was used after 'steal' handed it over.",
                             location: id.Location);
                         break;
                     case CallExpression call:

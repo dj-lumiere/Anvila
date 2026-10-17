@@ -349,7 +349,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.StealAggregatePart,
                 message:
                 "You are trying to steal a value out of the middle of an aggregate, which " +
-                "would leave a hole where it used to sit. Move it out with a repairing " +
+                "would leave a hole where it used to sit. Take it out with a repairing " +
                 "removal (e.g. 'remove_at', which closes the gap), or keep a shareable " +
                 "handle instead.",
                 location: steal.Location);
@@ -409,7 +409,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.StealScopeBoundToken,
                 message:
                 $"Cannot steal '{operandType.Name}': only an entity, a value, or a value of a type parameter can be " +
-                "moved with 'steal'.",
+                "handed over with 'steal'.",
                 location: steal.Location);
             steal.ResolvedType = operandType;
             return operandType;
