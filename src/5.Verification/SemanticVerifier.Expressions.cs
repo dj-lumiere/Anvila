@@ -660,7 +660,8 @@ public sealed partial class SemanticVerifier
     private bool ValidateIdentityOperand(TypeSymbol type, BinaryOperator op,
         SourceLocation location)
     {
-        if (type is ErrorTypeSymbol || IsIdentityComparable(type: type))
+        if (type is ErrorTypeSymbol || IsIdentityComparable(type: type) ||
+            type is GenericParameterTypeSymbol && GenericParamHasKind(type: type, kind: ConstraintKind.EntityType))
         {
             return true;
         }

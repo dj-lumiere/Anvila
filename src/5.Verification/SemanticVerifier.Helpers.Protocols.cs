@@ -344,6 +344,15 @@ public sealed partial class SemanticVerifier
         };
     }
 
+    /// <summary>Whether the generic parameter <paramref name="type"/> has the kind constraint <paramref name="kind"/>
+    /// (<c>needs EntityType T</c>) on the current routine or its owner type.</summary>
+    private bool GenericParamHasKind(TypeSymbol type, ConstraintKind kind)
+    {
+        return (_currentRoutine?.GenericConstraints ?? [])
+              .Concat(second: _currentRoutine?.OwnerType?.GenericConstraints ?? [])
+              .Any(predicate: c => c.ParameterName == type.Name && c.ConstraintType == kind);
+    }
+
     /// <summary>
     /// Returns true when the generic-parameter <paramref name="type"/> obeys
     /// <paramref name="protocolName"/> via an active <c>obeys</c> constraint on the current routine or
