@@ -793,13 +793,13 @@ public sealed partial class SemanticVerifier
         // Safety comes from move tracking; this check makes the destructive transfer visible in source.
         // A builder-written body is analyzed after that strip, so a borrow parameter already reads as the bare
         // entity there (`eq(you: Accessing[Box])` as `eq(you: Box)`) and the structure says nothing.
-        if (ChecksOwnershipHere && !_isInCompilerGeneratedBody &&
+        if (ChecksHolderOf(type: argType) && !_isInCompilerGeneratedBody &&
             ReadsKeptEntity(value: argValue, includeVariables: true) && argType is EntityTypeSymbol &&
             paramType is EntityTypeSymbol)
         {
             ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                 message: KeptEntityMessage(
-                    action: $"'{routine.Name}' takes ownership of its '{param.Name}', and you are passing it",
+                    action: $"'{routine.Name}' keeps what its '{param.Name}' is given, and you are passing it",
                     value: argValue, type: argType),
                 location: argValue.Location);
         }
@@ -820,6 +820,38 @@ public sealed partial class SemanticVerifier
     /// the language the routine is written in. A Suflae library body is analyzed in RazorForge mode, but Suflae
     /// shares its entities, so a second name of one is no second owner there.
     /// </summary>
+    /// <summary>Whether putting a value of <paramref name="type"/> into a second place is checked here: everywhere a
+    /// language checks every entity's holder, and in a program of a language whose entities are shared, for an entity
+    /// from a `.rf` module, which is not shared there either (two names holding it would each release it).</summary>
+    private bool ChecksHolderOf(TypeSymbol type)
+    {
+        return ChecksOwnershipHere || HoldsRazorForgeEntity(type: type);
+    }
+
+    /// <summary>Whether <paramref name="type"/> is an entity from a `.rf` module met in a program file of a language
+    /// whose entities are shared.</summary>
+    private bool HoldsRazorForgeEntity(TypeSymbol type)
+    {
+        return _registry.EntitiesAreShared && IsRazorForgeEntity(type: type) &&
+               !_isInCompilerGeneratedBody && !IsStdlibFile(filePath: _currentFilePath);
+    }
+
+    /// <summary>Whether <paramref name="type"/> is an entity written in RazorForge: one declared in a `.rf` file, or
+    /// a RazorForge library entity with no declaring file of its own. A program's own entities of the build's
+    /// language are not, whatever realm they are registered in.</summary>
+    internal static bool IsRazorForgeEntity(TypeSymbol type)
+    {
+        if (type is not EntityTypeSymbol entity)
+        {
+            return false;
+        }
+
+        TypeSymbol declared = entity.GenericDefinition ?? entity;
+        return declared.Location?.FileName is { } file && Builder.Frontends.Languages.HasSourceExtension(fileName: file)
+            ? Builder.Frontends.Languages.OfFile(fileName: file) == TypeModel.Enums.Language.RazorForge
+            : declared.Realm == TypeModel.Realms.Shared;
+    }
+
     private bool ChecksOwnershipHere =>
         _registry.Rules.ChecksOwnership &&
         (_currentRoutine?.Location?.FileName is not { } file ||
@@ -871,6 +903,19 @@ public sealed partial class SemanticVerifier
 
     private string KeptEntityMessage(string action, Expression value, TypeSymbol type)
     {
+        if (!ChecksOwnershipHere && HoldsRazorForgeEntity(type: type))
+        {
+            string holder = value switch
+            {
+                IdentifierExpression id => $"'{id.Name}'",
+                IndexExpression => "its container",
+                _ => "the value it belongs to"
+            };
+            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {holder} still holds. An entity from a " +
+                   "`.rf` module is not shared, so two places holding it would each release it. Make it where it goes " +
+                   $"('{type.BareName}(...)' written in place), or keep working on it through {holder}.";
+        }
+
         if (!_registry.IsEntityKind(type: type) &&
             Builder.Declaration.TypeRegistry.EntityParameterIn(type: type, constraints: []) is { } parameter)
         {

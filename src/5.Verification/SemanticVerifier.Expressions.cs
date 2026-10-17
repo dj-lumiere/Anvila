@@ -1873,7 +1873,7 @@ public sealed partial class SemanticVerifier
         // `b = a` where `a` is a bare identifier of entity-KIND type (a bare entity, or a record/tuple that
         // transitively owns one) is a build error — copying it would make two owners of the single-owner
         // entity inside. Move it (`steal`) or hold a shareable handle.
-        if (ChecksOwnershipHere &&
+        if (ChecksHolderOf(type: valueType) &&
             ReadsKeptEntity(value: value, includeVariables: true) &&
             MayHoldEntity(type: valueType))
         {

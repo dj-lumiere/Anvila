@@ -115,16 +115,35 @@ public sealed partial class TypeRegistry
     /// The language of the code being analyzed or lowered now: RazorForge while a stdlib-source scope is
     /// open (the standard library is RazorForge source, even in a Suflae build), else <see cref="Language"/>.
     /// </summary>
-    public Language AnalysisLanguage => _stdlibSourceScopes > 0
+    public Language AnalysisLanguage => _stdlibSourceScopes > 0 || SourceIsOtherLanguage
         ? Language.RazorForge
         : Language;
+
+    /// <summary>The file of the code being analyzed or lowered now, set by the analyzer as it moves from file to
+    /// file. Empty when no file is current.</summary>
+    public string SourceFile { get; set; } = string.Empty;
+
+    /// <summary>Whether the code in front of the registry is a program file written in RazorForge inside a build of
+    /// another language (a `.rf` module a Suflae program imports). It is RazorForge source, as the shared standard
+    /// library is: its entities are not shared, whatever the build's language does.</summary>
+    private bool SourceIsOtherLanguage => _stdlibSourceScopes == 0 && IsOtherLanguageFile(filePath: SourceFile) &&
+                                          !IsStandardLibraryFile(filePath: SourceFile);
+
+    /// <summary>Whether <paramref name="filePath"/> is a source file of a language other than the build's. A path
+    /// with no language extension (a program given as text) is the build's own.</summary>
+    private bool IsOtherLanguageFile(string? filePath)
+    {
+        return !string.IsNullOrEmpty(value: filePath) &&
+               Frontends.Languages.HasSourceExtension(fileName: filePath) &&
+               Frontends.Languages.RealmOf(fileName: filePath) != CompilationRules.ShortName;
+    }
 
     /// <summary>
     /// Whether the code being analyzed or lowered now holds entities as shared handles: a build whose language
     /// shares entities, in a file of that language, its own standard library files included. The shared
     /// RazorForge library keeps single-owner entities in every build.
     /// </summary>
-    public bool EntitiesAreShared => CompilationRules.EntitiesAreShared &&
+    public bool EntitiesAreShared => CompilationRules.EntitiesAreShared && !SourceIsOtherLanguage &&
                                      (_stdlibSourceScopes == 0 || ResolutionRealm == CompilationRules.ShortName);
 
     /// <summary>
@@ -255,9 +274,7 @@ public sealed partial class TypeRegistry
     /// <see cref="EntitiesAreShared"/>).</summary>
     public bool EntitiesAreSharedIn(string? filePath)
     {
-        return CompilationRules.EntitiesAreShared &&
-               (!IsStandardLibraryFile(filePath: filePath) ||
-                Frontends.Languages.RealmOf(fileName: filePath) == CompilationRules.ShortName);
+        return CompilationRules.EntitiesAreShared && !IsOtherLanguageFile(filePath: filePath);
     }
 
     /// <summary>

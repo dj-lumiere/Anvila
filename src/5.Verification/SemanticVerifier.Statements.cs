@@ -1306,7 +1306,7 @@ public sealed partial class SemanticVerifier
         // A tuple element access (`_t.item0`) is how `var (a, b) = expr` destructuring lowers: the tuple
         // is a CONSUMED temporary, so each element MOVES out — not a view of a persisting owner. Exclude it
         // (Object is a TupleTypeSymbol) so channel/pair destructuring of entity elements stays a legal move.
-        if (ChecksOwnershipHere && varDecl.Initializer != null &&
+        if (ChecksHolderOf(type: varType) && varDecl.Initializer != null &&
             ReadsKeptEntity(value: varDecl.Initializer, includeVariables: true) &&
             MayHoldEntity(type: varType))
         {

@@ -2405,10 +2405,13 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        _registry.SourceFile = string.Empty;
+
         // Phase 1: Collect declarations from ALL files (populates registry with all types/routines)
         foreach ((Program program, string filePath) in files)
         {
             _currentFilePath = filePath;
+            _registry.SourceFile = filePath;
             _currentModuleName = null;
             _importedModules.Clear();
             _importedSymbolNames.Clear();
@@ -2423,6 +2426,8 @@ public sealed partial class SemanticVerifier
             moduleNameSnapshots[key: filePath] = _currentModuleName;
             CaptureCurrentImportStateSnapshot(filePath: filePath);
         }
+
+        _registry.SourceFile = string.Empty;
 
         Mark(label: "Phase 1 -> Declarations");
 
@@ -2463,6 +2468,8 @@ public sealed partial class SemanticVerifier
             _signatureResolver.ResolveAndRegisterPendingRoutines(filterFilePath: filePath);
             _signatureResolver.ResolveExternalSignatures(program: program);
         }
+
+        _registry.SourceFile = string.Empty;
 
         Mark(label: "Phase 2 -> Type/signature resolution");
 
@@ -2545,6 +2552,8 @@ public sealed partial class SemanticVerifier
             PreRegisterUserVariants(program: program);
         }
 
+        _registry.SourceFile = string.Empty;
+
         Mark(label: $"Phase 3 pre-file -> {nameof(PreRegisterUserVariants)}");
 
         // Phase 3 global (pre-pass): pre-register stdlib failable memberRoutine variants (emit's and recover's try variants, etc.)
@@ -2571,6 +2580,8 @@ public sealed partial class SemanticVerifier
             RunPhase4SyntaxPrepass(program: program);
         }
 
+        _registry.SourceFile = string.Empty;
+
         Mark(label: "Phase 4 per-file -> syntax-only desugaring");
 
         // Phase 5: Analyze bodies per file (expressions need correct import scoping)
@@ -2584,6 +2595,8 @@ public sealed partial class SemanticVerifier
             AnalyzeBodies(program: program);
             CheckSharedDeclarationsAreBound(program: program);
         }
+
+        _registry.SourceFile = string.Empty;
 
         CheckShapeEffects(programs: files.Select(selector: f => f.Program));
 
@@ -2653,6 +2666,8 @@ public sealed partial class SemanticVerifier
                 module: moduleName);
         }
 
+        _registry.SourceFile = string.Empty;
+
         // Phase 5 global: compute type liveness — mark which concrete generic instances are
         // actually reachable from routine signatures.  Must run before Phase 6 global desugaring so that
         // WiredRoutinePass and GMP only operate on live types, preventing phantom instantiations
@@ -2716,6 +2731,8 @@ public sealed partial class SemanticVerifier
 
             RunPhase8Postprocessing(program: program);
         }
+
+        _registry.SourceFile = string.Empty;
 
         mark(obj: "Phase 8 per-file -> type-aware postprocessing");
 
@@ -2852,8 +2869,11 @@ public sealed partial class SemanticVerifier
         var previousSymbols = new HashSet<string>(collection: _importedSymbolNames,
             comparer: StringComparer.Ordinal);
         string? previousModuleName = _currentModuleName;
+        string previousSourceFile = _registry.SourceFile;
 
         RestoreImportScopeForCompilerGeneratedBody(routineInfo: routineInfo, body: body);
+        // The body is analyzed as the language of the file its routine is declared in.
+        _registry.SourceFile = routineInfo.Location?.FileName ?? body.Location.FileName ?? string.Empty;
 
         // The body is analyzed in the language it is written in: a stdlib routine is RazorForge even in a Suflae
         // build, so its builder-written variants keep their `danger` blocks and dangerous calls. So is a body
@@ -2961,6 +2981,7 @@ public sealed partial class SemanticVerifier
         _currentRoutine = prevRoutine;
         _currentType = prevType;
         _currentFilePath = previousFilePath;
+        _registry.SourceFile = previousSourceFile;
         _currentModuleName = previousModuleName;
         _importedModules.Clear();
         foreach (string ns in previousImports)
@@ -3100,6 +3121,7 @@ public sealed partial class SemanticVerifier
         Dictionary<string, string?>? moduleNameSnapshots = null)
     {
         _currentFilePath = filePath;
+        _registry.SourceFile = filePath;
         _importedModules.Clear();
         _importedSymbolNames.Clear();
         _importedForeignAliases.Clear();
@@ -3174,6 +3196,7 @@ public sealed partial class SemanticVerifier
         }
 
         string savedFile = _currentFilePath;
+        string savedSource = _registry.SourceFile;
         var savedImports = new HashSet<string>(collection: _importedModules, comparer: StringComparer.OrdinalIgnoreCase);
         var savedSymbols = new HashSet<string>(collection: _importedSymbolNames, comparer: StringComparer.Ordinal);
         var savedAliases = new HashSet<string>(collection: _importedForeignAliases, comparer: StringComparer.Ordinal);
@@ -3190,6 +3213,7 @@ public sealed partial class SemanticVerifier
         finally
         {
             _currentFilePath = savedFile;
+            _registry.SourceFile = savedSource;
             _importedModules.Clear();
             _importedModules.UnionWith(other: savedImports);
             _importedSymbolNames.Clear();

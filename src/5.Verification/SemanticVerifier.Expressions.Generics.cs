@@ -50,7 +50,12 @@ public sealed partial class SemanticVerifier
             typeArgs[index: i] = full;
             generic.TypeArguments[index: i] =
                 Builder.Instantiation.GenericAstRewriter.TypeInfoToTypeExpr(type: full,
-                    location: generic.TypeArguments[index: i].Location) with { KnownType = full };
+                    location: generic.TypeArguments[index: i].Location) with
+                {
+                    KnownType = full,
+                    // The completed argument names the same language's type as the written one (`RF::List`).
+                    Realm = generic.TypeArguments[index: i].Realm
+                };
         }
     }
 

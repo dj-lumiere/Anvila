@@ -959,7 +959,7 @@ public sealed partial class SemanticVerifier
         // same RazorForge entity as `RF::Counter`.
         foreach (ParamInfo p in parameters)
         {
-            if (p.Type is EntityTypeSymbol { Realm: TypeModel.Realms.Shared } pe)
+            if (p.Type is EntityTypeSymbol pe && IsRazorForgeEntity(type: pe))
             {
                 Parameter? declared = routine.Parameters.FirstOrDefault(predicate: d => d.Name == p.Name);
                 ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
@@ -972,7 +972,7 @@ public sealed partial class SemanticVerifier
 
         // A constructor's return is the freshly-built entity the CALLER receives, not a
         // by-value hand-off of an already-live object, so it is exempt (mirrors the invariant's carve-out).
-        if (kind != RoutineKind.Creator && returnType is EntityTypeSymbol { Realm: TypeModel.Realms.Shared } re)
+        if (kind != RoutineKind.Creator && returnType is EntityTypeSymbol re && IsRazorForgeEntity(type: re))
         {
             ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
                 message: $"You declare the return type as '{re.Name}', an entity from a `.rf` module." +

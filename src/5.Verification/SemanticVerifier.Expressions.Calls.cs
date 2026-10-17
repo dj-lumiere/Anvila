@@ -2019,11 +2019,6 @@ public sealed partial class SemanticVerifier
         // caller still owns `raw` → double-free once the param type's `destruct` is
         // materialized. Verb-wrapped args (`steal x`, `x.copy()`) are Steal/Call nodes, not
         // Identifier/Member, so they are excluded automatically.
-        if (!ChecksOwnershipHere)
-        {
-            return;
-        }
-
         for (int ci = 0; ci < call.Arguments.Count; ci++)
         {
             Expression cArg = call.Arguments[index: ci];
@@ -2040,14 +2035,14 @@ public sealed partial class SemanticVerifier
 
             if (cParam is { Type: EntityTypeSymbol } &&
                 ReadsKeptEntity(value: cArgValue, includeVariables: true) &&
-                creatorArgTypes[index: ci] is EntityTypeSymbol cArgEntity)
+                creatorArgTypes[index: ci] is EntityTypeSymbol cArgEntity && ChecksHolderOf(type: cArgEntity))
             {
                 string creatorName = string.IsNullOrEmpty(value: creator.Name)
                     ? creator.OwnerType?.Name ?? "the creator"
                     : creator.Name;
                 ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                     message: KeptEntityMessage(
-                        action: $"'{creatorName}' takes ownership of its '{cParam.Name}', and you are passing it",
+                        action: $"'{creatorName}' keeps what its '{cParam.Name}' is given, and you are passing it",
                         value: cArgValue, type: cArgEntity),
                     location: cArgValue.Location);
             }
