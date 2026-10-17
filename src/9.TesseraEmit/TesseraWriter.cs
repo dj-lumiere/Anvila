@@ -266,12 +266,12 @@ internal sealed class TesseraWriter
         _textBytes = VerbatimName(text: "text bytes");
         _definitions.Append(value: $$"""
             ### A crash message as UTF-8.
-            private routine {{_textBytes}}(text: {{TypeText(type: TextType)}}, into: @List[Byte]) -> Span[Byte]
+            secret routine {{_textBytes}}(text: {{TypeText(type: TextType)}}, into: @List[Byte]) -> Span[Byte]
                 local data: @U32 = text.data
                 local count: U64 = text.count
 
                 each i in 0 til count
-                    code: U32 = data.stride(i.to[USize]()).peek()
+                    code: U32 = data.stride(i).peek()
                     character: Char = code.to[Char]()
                     into.write("{character}")
                 return into.getview()

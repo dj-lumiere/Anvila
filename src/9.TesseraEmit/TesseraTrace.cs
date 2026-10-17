@@ -44,7 +44,7 @@ internal static class TesseraTrace
         ### Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
             depth: S32 = RF_TRACE_DEPTH.peek()
-            index: USize = zext[S32, USize](band[S32](depth, 31))
+            index: U64 = zext[S32, U64](band[S32](depth, 31))
             frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
             frame.`routine`.poke(routine_name)
             frame.file.poke(file)
@@ -62,7 +62,7 @@ internal static class TesseraTrace
             depth: S32 = RF_TRACE_DEPTH.peek()
             if depth.le(0)
                 return
-            index: USize = zext[S32, USize](band[S32](sub[S32](depth, 1), 31))
+            index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
             frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
             frame.line.poke(line)
             frame.column.poke(column)

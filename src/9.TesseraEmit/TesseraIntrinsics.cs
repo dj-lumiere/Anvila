@@ -169,9 +169,7 @@ internal sealed class TesseraIntrinsics
                 ? typeArgument
                 : throw new NotSupportedException(
                     message: "The Tessera backend found an LLVM::element_pointer without an element type.");
-        string count = Type(index: 1);
-        string size = count.StartsWith(value: 'S') ? "SSize" : "USize";
-        return $"{Argument(index: 0)}.to[@{_typeText(arg: element)}]().stride({Argument(index: 1)}.to_wrap[{size}]())";
+        return $"{Argument(index: 0)}.to[@{_typeText(arg: element)}]().stride({Index(index: 1)})";
     }
 
     /// <summary>
@@ -207,7 +205,7 @@ internal sealed class TesseraIntrinsics
             return 'p';
         }
 
-        if (text is "USize" or "SSize" or "Bool" ||
+        if (text is "CSize" or "CSSize" or "Bool" ||
             text.Length > 1 && text[0] is 'S' or 'U' && char.IsAsciiDigit(c: text[1]))
         {
             return 'i';
@@ -239,13 +237,15 @@ internal sealed class TesseraIntrinsics
         return $"{Argument(index: 0)}.to[@{Type(index: 1)}]().{method}({Argument(index: 1)})";
     }
 
-    /// <summary>An index argument as the pointer-width integer <c>stride</c> takes: the same bits on a 64-bit target,
-    /// the low half on a 32-bit one (no index there reaches past it).</summary>
+    /// <summary>An index argument as the U64 (or S64, to move back) <c>stride</c> takes: as it is when it already is
+    /// one, converted otherwise.</summary>
     private string Index(int index)
     {
         string type = Type(index: index);
-        string size = type.StartsWith(value: 'S') ? "SSize" : "USize";
-        return $"{Argument(index: index)}.to_wrap[{size}]()";
+        string count = type.StartsWith(value: 'S') ? "S64" : "U64";
+        return type == count
+            ? Argument(index: index)
+            : $"{Argument(index: index)}.to[{count}]()";
     }
 
     /// <summary>The array with one byte replaced: the array goes to a slot, the byte is stored, and the
