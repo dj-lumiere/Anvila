@@ -826,8 +826,14 @@ internal partial class Program
     private static bool DaemonDisabledByEnv()
     {
         string? v = Environment.GetEnvironmentVariable(variable: "RF_NO_DAEMON");
-        return !string.IsNullOrEmpty(value: v) && v != "0";
+        // A build for one @test routine changes the entry file's start(), which a warm daemon's caches don't know of.
+        return !string.IsNullOrEmpty(value: v) && v != "0" ||
+               !string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: TestEntryVariable));
     }
+
+    /// <summary>The environment variable the <c>test</c> command sets to the name of the <c>@test</c> routine a build
+    /// runs in place of the program's own <c>start()</c>.</summary>
+    private const string TestEntryVariable = "RF_TEST_ENTRY";
 
     /// <summary>
     /// Populates the process-wide <see cref="DiagnosticFlags"/> from a manifest's <c>[debug]</c> section,
@@ -1450,7 +1456,11 @@ internal partial class Program
             stdlibRoot: stdlibRoot,
             language: language,
             libraryRoots: libraryRoots,
-            cachedStdlibIndex: cachedStdlibIndex);
+            cachedStdlibIndex: cachedStdlibIndex)
+        {
+            // Set only by the `test` command for the build it runs per @test routine.
+            TestEntry = Environment.GetEnvironmentVariable(variable: TestEntryVariable)
+        };
         BuildResult buildResult = driver.CompileFile(entryFile: Path.GetFullPath(path: entryFile));
 
         if (swBuild != null)

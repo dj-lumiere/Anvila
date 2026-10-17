@@ -99,7 +99,7 @@ public partial class Parser
         "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "no_optimize",
         "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking",
         RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rf",
-        "test", "case", "time_limit", "memory_limit", "skip", "bench"
+        "test", "case", "time_limit", "memory_limit", "skip"
     ];
 
     /// <summary>Whether <paramref name="name"/> is an annotation the builder knows. An unknown one is reported and left

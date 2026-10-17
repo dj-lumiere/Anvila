@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text;
+using Builder.Declaration;
+using TypeModel.Enums;
 
 namespace Builder.Execution;
 
@@ -46,13 +48,12 @@ internal partial class Program
             }
         }
 
-        int failed = 0;
-        foreach (string program in programs)
+        int passed = 0, failed = 0, skipped = 0;
+        void Report(string name, string? failure)
         {
-            string? failure = RunOneTest(program: program);
-            string name = Path.GetFileNameWithoutExtension(path: program);
             if (failure == null)
             {
+                passed++;
                 Console.WriteLine(value: $"ok    {name}");
             }
             else
@@ -62,10 +63,126 @@ internal partial class Program
             }
         }
 
-        Console.WriteLine(value: $"{programs.Count - failed} passed, {failed} failed");
+        foreach (string program in programs)
+        {
+            string name = Path.GetFileNameWithoutExtension(path: program);
+            (List<RoutineTest> routineTests, bool hasProgram) = FindRoutineTests(program: program);
+
+            // The program itself runs when it has a start (written or as top-level statements), or when a file next
+            // to it says what it should do. A file of @test routines only is tested routine by routine.
+            string stem = Path.ChangeExtension(path: program, extension: null);
+            if (hasProgram || routineTests.Count == 0 ||
+                new[] { ".expected", ".exit", ".error", ".input" }.Any(predicate: e => File.Exists(path: stem + e)))
+            {
+                Report(name: name, failure: RunOneTest(program: program));
+            }
+
+            foreach (RoutineTest test in routineTests)
+            {
+                string testName = $"{name}::{test.Name}";
+                if (test.Skip.Skipped)
+                {
+                    skipped++;
+                    Console.WriteLine(value: test.Skip.Reason == null
+                        ? $"skip  {testName}"
+                        : $"skip  {testName}: {test.Skip.Reason}");
+                    continue;
+                }
+
+                Report(name: testName, failure: test.Problem ?? RunRoutineTest(program: program, test: test));
+            }
+        }
+
+        Console.WriteLine(value: skipped > 0
+            ? $"{passed} passed, {failed} failed, {skipped} skipped"
+            : $"{passed} passed, {failed} failed");
         return failed == 0
             ? 0
             : 1;
+    }
+
+    /// <summary>The <c>@test</c> routines of <paramref name="program"/>, and whether it has a program to run of its
+    /// own (a <c>start()</c>, written or made from top-level statements). A file that doesn't parse has neither:
+    /// running it as a program reports the error.</summary>
+    private static (List<RoutineTest> Tests, bool HasProgram) FindRoutineTests(string program)
+    {
+        try
+        {
+            Language language = Builder.Frontends.Languages.OfFile(fileName: program);
+            List<Builder.Tokenizer.Token> tokens = Builder.Tokenizer.Lexers.Tokenize(
+                source: File.ReadAllText(path: program), fileName: program, language: language);
+            var parser = new Builder.Parser.Parser(tokens: tokens, language: language, fileName: program)
+            {
+                PrintsErrors = false
+            };
+            SyntaxTree.Program ast = parser.Parse();
+            if (parser.HasErrors)
+            {
+                return ([], true);
+            }
+
+            bool hasStart = ast.Declarations.OfType<SyntaxTree.RoutineDeclaration>()
+                               .Any(predicate: r => r.Name == "start" && r.Parameters.Count == 0);
+            return (RoutineTests.Find(program: ast), hasStart);
+        }
+        catch (Exception)
+        {
+            return ([], true);
+        }
+    }
+
+    /// <summary>Builds <paramref name="program"/> with a <c>start()</c> that runs <paramref name="test"/>, runs it
+    /// (stopping it at its <c>@time_limit</c>), and returns null when every case gave its output, or what went
+    /// wrong.</summary>
+    private static string? RunRoutineTest(string program, RoutineTest test)
+    {
+        (int buildExit, string buildOut, string buildErr, bool buildTimedOut) = RunSelf(
+            arguments: [BuildCommand, program],
+            input: "",
+            environment: new Dictionary<string, string> { [key: TestEntryVariable] = test.Name });
+        if (buildTimedOut)
+        {
+            return $"the build did not finish within {TestTimeout.TotalMinutes} minutes";
+        }
+
+        const string written = "Executable written to: ";
+        string? exe = buildOut.Split(separator: '\n')
+                              .Select(selector: l => l.Trim())
+                              .Where(predicate: l => l.StartsWith(value: written, comparisonType: StringComparison.Ordinal))
+                              .Select(selector: l => l[written.Length..])
+                              .LastOrDefault();
+        if (buildExit != 0 || exe == null || !File.Exists(path: exe))
+        {
+            return "the build failed\n" + (buildOut + buildErr).Trim();
+        }
+
+        TimeSpan limit = test.TimeLimit ?? TestTimeout;
+        (int exit, _, string stderr, bool timedOut) = RunProgram(fileName: exe, arguments: [], input: "",
+            environment: null, timeout: limit);
+        if (timedOut)
+        {
+            return test.TimeLimit != null
+                ? $"took longer than its @time_limit of {FormatSpan(span: limit)}"
+                : $"did not finish within {TestTimeout.TotalMinutes} minutes";
+        }
+
+        if (exit == 1 && test.Cases.Count > 0)
+        {
+            return "a case gave a different result\n" + stderr.TrimEnd();
+        }
+
+        return exit == 0
+            ? null
+            : $"exit code {exit}" + (string.IsNullOrWhiteSpace(value: stderr)
+                ? ""
+                : $"\n{stderr.TrimEnd()}");
+    }
+
+    private static string FormatSpan(TimeSpan span)
+    {
+        return span.TotalSeconds >= 1
+            ? $"{span.TotalSeconds:0.###}s"
+            : $"{span.TotalMilliseconds:0.###}ms";
     }
 
     /// <summary>Builds and runs one test program, or null when it did what its sibling files say it should.
@@ -111,27 +228,43 @@ internal partial class Program
 
     /// <summary>Runs this same tool on <paramref name="arguments"/> with <paramref name="input"/> as its standard
     /// input, and returns its exit code and output.</summary>
-    private static (int Exit, string Stdout, string Stderr, bool TimedOut) RunSelf(string[] arguments, string input)
+    private static (int Exit, string Stdout, string Stderr, bool TimedOut) RunSelf(string[] arguments, string input,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         // Run as `dotnet <dll>` when this process is the dotnet host, else as the apphost itself.
         string host = Environment.ProcessPath ?? throw new InvalidOperationException(message: "No process path.");
+        var self = new List<string>();
+        if (Path.GetFileNameWithoutExtension(path: host)
+                .Equals(value: "dotnet", comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            self.Add(item: Environment.GetCommandLineArgs()[0]);
+        }
+
+        self.AddRange(collection: arguments);
+        return RunProgram(fileName: host, arguments: self, input: input, environment: environment, timeout: TestTimeout);
+    }
+
+    /// <summary>Runs <paramref name="fileName"/> with <paramref name="input"/> as its standard input, stopping it after
+    /// <paramref name="timeout"/>, and returns its exit code and output.</summary>
+    private static (int Exit, string Stdout, string Stderr, bool TimedOut) RunProgram(string fileName,
+        IEnumerable<string> arguments, string input, IReadOnlyDictionary<string, string>? environment, TimeSpan timeout)
+    {
         var start = new ProcessStartInfo
         {
-            FileName = host,
+            FileName = fileName,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
-        if (Path.GetFileNameWithoutExtension(path: host)
-                .Equals(value: "dotnet", comparisonType: StringComparison.OrdinalIgnoreCase))
-        {
-            start.ArgumentList.Add(item: Environment.GetCommandLineArgs()[0]);
-        }
-
         foreach (string argument in arguments)
         {
             start.ArgumentList.Add(item: argument);
+        }
+
+        foreach ((string key, string value) in environment ?? new Dictionary<string, string>())
+        {
+            start.Environment[key: key] = value;
         }
 
         using Process process = Process.Start(startInfo: start) ??
@@ -140,7 +273,7 @@ internal partial class Program
         Task<string> stderr = process.StandardError.ReadToEndAsync();
         process.StandardInput.Write(value: input);
         process.StandardInput.Close();
-        if (!process.WaitForExit(timeout: TestTimeout))
+        if (!process.WaitForExit(timeout: timeout))
         {
             process.Kill(entireProcessTree: true);
             return (-1, "", "", true);

@@ -88,6 +88,13 @@ public sealed class BuildDriver
     /// </summary>
     public IReadOnlyDictionary<string, string>? SourceOverrides { get; init; }
 
+    /// <summary>The <c>@test</c> routine of the entry file this build runs in place of the program's own
+    /// <c>start()</c> (the <c>test</c> command builds one program per test routine). Null for an ordinary build.</summary>
+    public string? TestEntry { get; init; }
+
+    /// <summary>The files the build was asked for, as full paths (the entry files, not what they import).</summary>
+    private readonly HashSet<string> _entryFiles = new(comparer: StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Builds the stdlib import index ONCE (parses every stdlib file for its module/symbol → path entries)
     /// and returns an immutable snapshot for daemon-side caching. Subsequent <see cref="BuildDriver"/>s reuse
@@ -150,6 +157,7 @@ public sealed class BuildDriver
         PreRegisterLibraryRoots();
 
         // Process each entry file
+        _entryFiles.UnionWith(other: sourceFiles.Select(selector: f => Path.GetFullPath(path: f)));
         foreach (string sourceFile in sourceFiles)
         {
             if (!File.Exists(path: sourceFile))
@@ -269,6 +277,11 @@ public sealed class BuildDriver
             if (unit == null)
             {
                 return;
+            }
+
+            if (TestEntry != null && fromFile == null && _entryFiles.Contains(item: Path.GetFullPath(path: filePath)))
+            {
+                ReplaceStartWithTest(unit: unit, filePath: filePath);
             }
 
             // Register the module
@@ -541,6 +554,51 @@ public sealed class BuildDriver
     /// Parses a single source file. A warm daemon (the driver was handed a cached stdlib index) reuses the
     /// parse of a standard-library file from <see cref="StdlibParseCache"/> while the file is unchanged on disk.
     /// </summary>
+    /// <summary>Takes the entry file's own <c>start()</c> (written or made from its top-level statements) out and puts
+    /// in one that runs the <c>@test</c> routine <see cref="TestEntry"/>.</summary>
+    private void ReplaceStartWithTest(FileBuildUnit unit, string filePath)
+    {
+        RoutineDeclaration? routine = unit.Ast.Declarations.OfType<RoutineDeclaration>()
+                                          .FirstOrDefault(predicate: r => r.Name == TestEntry &&
+                                                                          r.Annotations.Contains(item: "test"));
+        RoutineTest? test = routine == null
+            ? null
+            : RoutineTests.Find(program: unit.Ast).FirstOrDefault(predicate: t => t.Name == TestEntry);
+        if (routine == null || test == null || test.Problem != null)
+        {
+            _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.InvalidAnnotation,
+                Message: test?.Problem ?? $"There is no @test routine '{TestEntry}' in this file.",
+                Location: routine?.Location ?? new SourceLocation(FileName: filePath, Line: 1, Column: 1, Position: 0)));
+            return;
+        }
+
+        unit.Ast.Declarations.RemoveAll(match: d => d is RoutineDeclaration { Name: "start", GenericParameters: null } r &&
+                                                     r.Parameters.Count == 0);
+        Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
+        string source = RoutineTests.StartSource(test: test, routine: routine);
+        List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: source, fileName: filePath, language: language);
+        var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath) { PrintsErrors = false };
+        Program start = parser.Parse();
+        foreach (GrammarException recovered in parser.GetStructuredErrors())
+        {
+            _errors.Add(item: ToParseError(ex: recovered));
+        }
+
+        unit.Ast.Declarations.AddRange(collection: start.Declarations.OfType<RoutineDeclaration>());
+
+        // The start reports a case that differs with `alert`, which the file need not import itself.
+        if (test.Cases.Any(predicate: c => c.Output != null) &&
+            !unit.Imports.Any(predicate: i => i.ModulePath == "IO/Console"))
+        {
+            var console = new ImportDeclaration(ModulePath: "IO/Console",
+                Alias: null,
+                SpecificImports: ["alert"],
+                Location: new SourceLocation(FileName: filePath, Line: 1, Column: 1, Position: 0));
+            unit.Imports.Add(item: console);
+            unit.Ast.Declarations.Insert(index: 1, item: console);
+        }
+    }
+
     private FileBuildUnit? ParseFile(string filePath)
     {
         try
