@@ -454,6 +454,18 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         // tag-based `when` over the inner's variant, TryBuildCarrierSafeCall/BuildCarrierPropagationWhen).
         // A kind left without the registry keeps its inner failable calls raw, and their failure then
         // crashes through the recovery the caller asked for.
+        // A routine that returns nothing may end without a `return` (Suflae never writes one). Reaching its end is
+        // success, so the try variant gets the `return` that becomes `true` here, instead of the closing return
+        // added later, which would give the zero value of Bool.
+        if (kind == ErrorHandlingVariantKind.TryBool && body is BlockStatement { Statements: var stmts } block &&
+            stmts is not [.., ReturnStatement or ThrowStatement])
+        {
+            body = block with
+            {
+                Statements = [..stmts, new ReturnStatement(Value: null, Location: block.Location)]
+            };
+        }
+
         return TransformBodyCore(body: body,
             kind: kind,
             rewriter: rewriter,
