@@ -864,6 +864,14 @@ public sealed partial class SemanticVerifier
             rightType: rightType);
     }
 
+    /// <summary>Whether <paramref name="type"/> has the routine (<c>to_shift_amount</c>, <c>to_index</c>) that turns
+    /// it into the count a shift or a subscript takes, so it may stand where another integer type is taken.</summary>
+    private bool HasCountConversion(TypeSymbol type, string memberRoutineName)
+    {
+        return _registry.LookupMemberRoutine(type: type, memberRoutineName: memberRoutineName, isFailable: true) !=
+               null || _registry.LookupMemberRoutine(type: type, memberRoutineName: memberRoutineName) != null;
+    }
+
     /// <summary>
     /// The error for two chosen number types side by side: they mix only with their own type, and the fix converts both
     /// to the smallest type that holds every value of each (`a.to[S64]() + b.to[S64]()`), or to `Integer` when no fixed
@@ -1253,20 +1261,13 @@ public sealed partial class SemanticVerifier
             return ResolveOperatorReturnType(routine: memberRoutine, leftType: leftType);
         }
 
-        if (!IsAssignableTo(source: rightType, target: paramType))
-        {
-            // A shift amount has its own type, whatever is shifted: another integer type in its place would be
-            // passed as if it were one.
-            if (IsShiftOperator(op: binary.Operator) && IsIntegerType(type: rightType))
-            {
-                string amount = OperandText(expr: binary.Right);
-                ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-                    message:
-                    $"The amount of '{binary.Operator.ToStringRepresentation()}' on '{leftType.Name}' must be '{paramType.Name}', and '{amount}' is '{rightType.Name}'. Convert it: '{amount}.to[{paramType.Name}]()'.",
-                    location: binary.Right.Location);
-                return ErrorTypeSymbol.Instance;
-            }
+        // A shift amount may be any integer with a count of its own (`to_shift_amount`): OperatorLoweringPass turns
+        // it into the U32 the shift routine takes.
+        bool countedShiftAmount = IsShiftOperator(op: binary.Operator) && IsIntegerType(type: paramType) &&
+                                  HasCountConversion(type: rightType, memberRoutineName: "to_shift_amount");
 
+        if (!countedShiftAmount && !IsAssignableTo(source: rightType, target: paramType))
+        {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                 message:
                 $"Operator '{binary.Operator.ToStringRepresentation()}': cannot convert '{rightType.Name}' to '{paramType.Name}'.",
@@ -1987,22 +1988,6 @@ public sealed partial class SemanticVerifier
                 inPlaceMemberRoutine: inPlaceMemberRoutine,
                 regularMemberRoutine: regularMemberRoutine))
         {
-            return ErrorTypeSymbol.Instance;
-        }
-
-        // A shift amount has its own type, as in `x << n` (see AnalyzeOverloadableOperator).
-        if (isShift && regularMemberRoutine != null && IsIntegerType(type: valueType) &&
-            _registry.LookupMemberRoutineOverload(type: targetType,
-                memberRoutineName: regularMemberRoutine,
-                argTypes: [valueType]) == null &&
-            _registry.LookupMemberRoutine(type: targetType, memberRoutineName: regularMemberRoutine) is
-                { Parameters: [var amountParam, ..] })
-        {
-            string amount = OperandText(expr: compound.Value);
-            ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-                message:
-                $"The amount of '{compound.Operator.ToStringRepresentation()}=' on '{targetType.Name}' must be '{amountParam.Type.Name}', and '{amount}' is '{valueType.Name}'. Convert it: '{amount}.to[{amountParam.Type.Name}]()'.",
-                location: compound.Value.Location);
             return ErrorTypeSymbol.Instance;
         }
 

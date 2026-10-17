@@ -139,12 +139,14 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                 memberRoutineName: accessor,
                 argTypes: [indexType])
             : null;
-        if (mint == null && ctx.Registry.LookupType(name: "U64") is { } u64 &&
-            indexType is not null && indexType != u64)
+        if (mint == null && indexType is not null)
         {
-            mint = ctx.Registry.LookupMemberRoutineOverload(type: containerType,
-                memberRoutineName: accessor,
-                argTypes: [u64]);
+            foreach (TypeSymbol taken in IndexTypesFor(indexType: indexType))
+            {
+                mint ??= ctx.Registry.LookupMemberRoutineOverload(type: containerType,
+                    memberRoutineName: accessor,
+                    argTypes: [taken]);
+            }
         }
 
         mint ??= ctx.Registry.LookupMemberRoutine(type: containerType, memberRoutineName: accessor);
@@ -166,7 +168,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // a wrapper forwarder would after unwrapping. The read/write intent and the container freeze
         // were already checked at analysis (RF-S639). An entity-typed temporary is not torn down, so
         // the element stays owned by the container.
-        return new CallExpression(Callee: callee, Arguments: [FirstOperand(argument: index, routine: mint)],
+        return new CallExpression(Callee: callee, Arguments: [FirstOperand(argument: IndexOperand(index: index, routine: mint), routine: mint)],
             Location: element.Location)
         {
             ResolvedRoutine = mint,
@@ -395,6 +397,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return null;
         }
 
+        loweredIdx = IndexOperand(index: loweredIdx, routine: setItem);
         var member = new MemberExpression(Object: receiver,
             MemberName: SetItemMemberRoutine,
             Location: idx.Location);
@@ -461,12 +464,14 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                 return byArgs;
             }
 
-            if (ctx.Registry.LookupType(name: "U64") is { } u64 &&
-                ctx.Registry.LookupMemberRoutineOverload(type: targetType,
-                    memberRoutineName: SetItemMemberRoutine,
-                    argTypes: [u64, valueType]) is { } byU64)
+            foreach (TypeSymbol taken in IndexTypesFor(indexType: indexType))
             {
-                return byU64;
+                if (ctx.Registry.LookupMemberRoutineOverload(type: targetType,
+                        memberRoutineName: SetItemMemberRoutine,
+                        argTypes: [taken, valueType]) is { } byTaken)
+                {
+                    return byTaken;
+                }
             }
         }
 
@@ -919,7 +924,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             Location: idx.Location);
         // `getitem` hands back a holder of its own (the container keeps its element), so the read needs no
         // copy around it.
-        return new CallExpression(Callee: member, Arguments: [FirstOperand(argument: loweredIdx, routine: resolvedGetItem)],
+        return new CallExpression(Callee: member, Arguments: [FirstOperand(argument: IndexOperand(index: loweredIdx, routine: resolvedGetItem), routine: resolvedGetItem)],
             Location: idx.Location)
         {
             ResolvedRoutine = resolvedGetItem,
@@ -1068,12 +1073,14 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                 return byIndex;
             }
 
-            if (ctx.Registry.LookupType(name: "U64") is { } u64 &&
-                ctx.Registry.LookupMemberRoutineOverload(type: targetType,
-                    memberRoutineName: GetItemMemberRoutine,
-                    argTypes: [u64]) is { } byU64)
+            foreach (TypeSymbol taken in IndexTypesFor(indexType: indexType))
             {
-                return byU64;
+                if (ctx.Registry.LookupMemberRoutineOverload(type: targetType,
+                        memberRoutineName: GetItemMemberRoutine,
+                        argTypes: [taken]) is { } byTaken)
+                {
+                    return byTaken;
+                }
             }
         }
 
@@ -1163,9 +1170,10 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             argument: ref argument,
             resolvedMemberRoutine: ref resolvedMemberRoutine);
 
-        // Shift operators require the shift-amount operand to match the parameter's exact width.
-        argument = TryNarrowShiftOperand(bin: bin,
-            resolvedMemberRoutine: resolvedMemberRoutine,
+        // A shift amount of another integer type becomes the U32 the shift routine takes.
+        argument = ConvertShiftAmount(bin: bin,
+            receiverType: receiverType,
+            resolvedMemberRoutine: ref resolvedMemberRoutine,
             argType: argType,
             argument: argument);
 
@@ -1354,33 +1362,126 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     }
 
     /// <summary>
-    /// When a shift operator's argument type differs from the expected parameter type, wraps the
-    /// argument in a numeric conversion to match the parameter. Returns the (possibly wrapped)
-    /// argument. No-op when the operator is not a shift or the types already match.
+    /// A shift amount may be any integer: one of another type than the routine's parameter becomes the U32 the shift
+    /// routine takes through its own <c>to_shift_amount()</c>, which crashes on a negative amount and gives
+    /// <c>U32_MAX</c> for one too large (still past every width). Where the shift takes an <c>Integer</c> amount
+    /// (Suflae), a fixed-width one becomes that <c>Integer</c>. Returns the (possibly converted) argument, and
+    /// points <paramref name="resolvedMemberRoutine"/> at the routine taking the U32.
     /// </summary>
-    private static Expression TryNarrowShiftOperand(BinaryExpression bin,
-        RoutineInfo? resolvedMemberRoutine, TypeSymbol? argType, Expression argument)
+    private Expression ConvertShiftAmount(BinaryExpression bin, TypeSymbol? receiverType,
+        ref RoutineInfo? resolvedMemberRoutine, TypeSymbol? argType, Expression argument)
     {
-        if (resolvedMemberRoutine is not { Parameters.Count: > 0 })
+        if (resolvedMemberRoutine is not { Parameters.Count: > 0 } || receiverType == null || argType == null ||
+            bin.Operator is not (BinaryOperator.ArithmeticLeftShift or BinaryOperator.ArithmeticRightShift
+                or BinaryOperator.LogicalRightShift))
         {
             return argument;
         }
 
-        if (bin.Operator is not (BinaryOperator.ArithmeticLeftShift
-            or BinaryOperator.ArithmeticRightShift or BinaryOperator.LogicalRightShift))
+        TypeSymbol amountType = resolvedMemberRoutine.Parameters[index: 0].Type;
+        if (argType.FullName == amountType.FullName || !IsIntegerAmount(type: argType))
         {
             return argument;
         }
 
-        TypeSymbol paramType = resolvedMemberRoutine.Parameters[index: 0].Type;
-        if (argType != null && argType.FullName != paramType.FullName &&
-            TryGetFixedWidthIntegerInfo(type: argType, signed: out _, width: out _) &&
-            TryGetFixedWidthIntegerInfo(type: paramType, signed: out _, width: out _))
+        // A Suflae shift takes an `Integer` amount, which handles the count itself.
+        if (amountType.Name == "Integer")
         {
-            return WrapNumericOperand(expr: argument, targetType: paramType);
+            return CountCall(value: argument, memberRoutineName: "to_integer_count") ?? argument;
         }
 
-        return argument;
+        if (ctx.Registry.LookupType(name: "U32") is not { } u32 ||
+            ResolveBinaryOperatorRoutine(memberRoutineName: resolvedMemberRoutine.Name,
+                receiverType: receiverType,
+                argType: u32) is not { Parameters: [{ Type.FullName: var taken }, ..] } byU32 ||
+            taken != u32.FullName ||
+            CountCall(value: argument, memberRoutineName: "to_shift_amount") is not { } amount)
+        {
+            return argument;
+        }
+
+        resolvedMemberRoutine = byU32;
+        return amount;
+    }
+
+    /// <summary>The types a subscript's index may be taken as when no accessor takes its own type: an index may be any
+    /// integer, and a <c>U64</c> (RazorForge) or an <c>Integer</c> (Suflae) parameter takes it through
+    /// <see cref="IndexOperand"/>.</summary>
+    private IEnumerable<TypeSymbol> IndexTypesFor(TypeSymbol indexType)
+    {
+        if (!IsIntegerAmount(type: indexType))
+        {
+            yield break;
+        }
+
+        foreach (string name in (string[])["U64", "Integer"])
+        {
+            if (ctx.Registry.LookupType(name: name) is { } taken && taken.FullName != indexType.FullName)
+            {
+                yield return taken;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The index of a subscript as the accessor's <c>index</c> parameter takes it: an integer of another type goes
+    /// through its own <c>to_index()</c> (a <c>U64</c>, crashing below 0) or <c>to_integer_count()</c> (an
+    /// <c>Integer</c>). Any other argument, and a parameter not named <c>index</c> (a map's key), stays as it is.
+    /// </summary>
+    private Expression IndexOperand(Expression index, RoutineInfo? routine)
+    {
+        if (routine?.Parameters.FirstOrDefault(predicate: p => p.Name != "me") is not
+                { Name: "index", Type: var taken } || index.ResolvedType is not { } given ||
+            given.FullName == taken.FullName || !IsIntegerAmount(type: given))
+        {
+            return index;
+        }
+
+        string? conversion = taken.Name switch
+        {
+            "U64" => "to_index",
+            "Integer" => "to_integer_count",
+            _ => null
+        };
+        return conversion != null && CountCall(value: index, memberRoutineName: conversion) is { } converted
+            ? converted
+            : index;
+    }
+
+    /// <summary>Whether <paramref name="type"/> is an integer that can stand for a count: a fixed-width integer
+    /// or <c>Integer</c>.</summary>
+    private static bool IsIntegerAmount(TypeSymbol type)
+    {
+        return TryGetFixedWidthIntegerInfo(type: type, signed: out _, width: out _) || type.Name == "Integer";
+    }
+
+    /// <summary>The call <c>value.memberRoutineName()</c> (<c>to_shift_amount</c>, <c>to_index</c>) that turns an
+    /// integer into the count a routine takes, or null when its type has none.</summary>
+    private Expression? CountCall(Expression value, string memberRoutineName)
+    {
+        if (value.ResolvedType is not { } type)
+        {
+            return null;
+        }
+
+        RoutineInfo? routine =
+            ctx.Registry.LookupMemberRoutine(type: type, memberRoutineName: memberRoutineName, isFailable: true) ??
+            ctx.Registry.LookupMemberRoutine(type: type, memberRoutineName: memberRoutineName);
+        if (routine == null)
+        {
+            return null;
+        }
+
+        var callee = new MemberExpression(Object: value, MemberName: memberRoutineName, Location: value.Location)
+        {
+            ResolvedType = type
+        };
+        return new CallExpression(Callee: callee, Arguments: [], Location: value.Location)
+        {
+            ResolvedRoutine = routine,
+            ResolvedType = routine.ReturnType,
+            LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine)
+        };
     }
 
     /// <summary>

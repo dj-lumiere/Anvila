@@ -617,6 +617,28 @@ public sealed partial class SemanticVerifier
         return returnType;
     }
 
+    /// <summary>
+    /// Whether an index of <paramref name="indexType"/> may stand where the accessor takes <paramref name="taken"/>:
+    /// an index may be any integer with a count of its own, which OperatorLoweringPass turns into the <c>U64</c>
+    /// (<c>to_index</c>) or <c>Integer</c> (<c>to_integer_count</c>) the accessor's <c>index</c> parameter takes. A map's
+    /// key is no index and keeps its own type.
+    /// </summary>
+    private bool IsCountedIndex(RoutineInfo? getItem, TypeSymbol indexType, TypeSymbol taken)
+    {
+        if (getItem?.Parameters.FirstOrDefault(predicate: p => p.Name != "me") is not { Name: "index" } ||
+            !IsIntegerType(type: indexType))
+        {
+            return false;
+        }
+
+        return taken.Name switch
+        {
+            "U64" => HasCountConversion(type: indexType, memberRoutineName: "to_index"),
+            "Integer" => HasCountConversion(type: indexType, memberRoutineName: "to_integer_count"),
+            _ => false
+        };
+    }
+
     private TypeSymbol AnalyzeIndexExpression(IndexExpression index)
     {
         // Type-as-value generic instantiation: when the object is a bare type name (no
@@ -646,7 +668,8 @@ public sealed partial class SemanticVerifier
         if (indexExpectedType != null && indexType is not ErrorTypeSymbol &&
             !ContainsUnresolvedTypeParameter(type: indexExpectedType) &&
             !ContainsUnresolvedTypeParameter(type: indexType) &&
-            !IsAssignableTo(source: indexType, target: indexExpectedType))
+            !IsAssignableTo(source: indexType, target: indexExpectedType) &&
+            !IsCountedIndex(getItem: getItem, indexType: indexType, taken: indexExpectedType))
         {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                 message:
