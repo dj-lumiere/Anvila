@@ -93,9 +93,9 @@ internal sealed class TesseraWriter
     /// <summary>Whether this writes an Ingrid library rather than a program.</summary>
     public bool IsLibrary => _library is not null;
 
-    /// <summary>What a declaration that is not exported starts with: <c>private</c> in a library, whose only
+    /// <summary>What a declaration that is not exported starts with: <c>secret</c> in a library, whose only
     /// public names are its exports.</summary>
-    public string Private => _library is null ? "" : "private ";
+    public string Private => _library is null ? "" : "secret ";
 
     /// <summary>What starts the declaration of <paramref name="routine"/>: its export attribute when a library
     /// exports it, <see cref="Private"/> otherwise.</summary>
@@ -883,7 +883,7 @@ internal sealed class TesseraWriter
         "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "local", "todo", "and", "or", "is", "as",
         "not", "if", "each", "while", "until", "becomes", "break", "pass", "needs", "obeys", "protocol",
         "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
-        "define", "private", "internal", "module", "import", "Me", "self", "Self",
+        "define", "secret", "private", "internal", "module", "import", "Me", "self", "Self",
     ];
 
     /// <summary>A value named as the builder's program names it: a Tessera keyword goes between backticks.</summary>
