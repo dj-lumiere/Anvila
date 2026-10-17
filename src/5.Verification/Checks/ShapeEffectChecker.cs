@@ -263,6 +263,14 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
         AstWalker.WalkExpressions(root: routine.Body,
             visit: e =>
             {
+                // `d[k] = v` through a parameter whose setitem may add the key changes that parameter's shape.
+                if (ReshapingIndexWrite(expr: e) is { } written && ShapePath(expr: written) is { } writtenPath &&
+                    own.Contains(item: RootName(path: writtenPath)))
+                {
+                    found.Add(item: Bounded(path: writtenPath));
+                    return;
+                }
+
                 if (e is not CallExpression call)
                 {
                     return;
@@ -543,6 +551,23 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                         case CallExpression call:
                             CheckCallAgainstGuards(call: call, guards: active);
                             break;
+                        case IndexExpression when ReshapingIndexWrite(expr: node) is { } written &&
+                                                  ShapePath(expr: written) is { } writtenPath:
+                            foreach (ShapeGuard g in active)
+                            {
+                                // `d[k] = v` on the loop's own variable is RF-S625 where it is written.
+                                bool direct = g.IsLoop && written is IdentifierExpression { Name: var name } &&
+                                              name == g.Path;
+                                if (!direct && AccessPaths.IsPrefixOrEqual(prefix: writtenPath, path: g.Path))
+                                {
+                                    ReportShapeChange(guard: g,
+                                        attempt: $"put a value into '{ShownPath(path: writtenPath)}[...]'",
+                                        why: $"it may add an element to '{ShownPath(path: writtenPath)}'",
+                                        location: node.Location);
+                                }
+                            }
+
+                            break;
                         case StealExpression steal when ShapePath(expr: steal.Operand) is { } stolen:
                             foreach (ShapeGuard g in active.Where(predicate: g => !g.IsLoop))
                             {
@@ -559,6 +584,15 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
                     }
                 });
         }
+    }
+
+    /// <summary>The container of a subscript write whose <c>setitem</c> is <c>@reshaping</c> (<c>d[k] = v</c> on a
+    /// <c>Dict</c>, which may add the key), or null.</summary>
+    private static Expression? ReshapingIndexWrite(Expression expr)
+    {
+        return expr is IndexExpression { ResolvedSetItem.IsReshaping: true } written
+            ? written.Object
+            : null;
     }
 
     /// <summary>The element guard for a path that reaches an entity element of a named container.</summary>

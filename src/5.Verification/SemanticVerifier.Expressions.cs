@@ -1780,6 +1780,41 @@ public sealed partial class SemanticVerifier
     /// Validates an index expression as an assignment target: propagates failable setitem metadata,
     /// checks read-only transparent protocols, and verifies the indexed variable is modifiable.
     /// </summary>
+    /// <summary>
+    /// Records the <c>setitem</c> a subscript write calls (<see cref="IndexExpression.ResolvedSetItem"/>, for the shape
+    /// check of the indirect cases), and reports <c>d[k] = v</c> on the container an <c>each</c> loop is walking when
+    /// that <c>setitem</c> is <c>@reshaping</c> (a <c>Dict</c>'s may add the key): RF-S625, as a call of a reshaping
+    /// routine on it would be. A language that checks shapes as the program runs (Suflae) leaves this to that check.
+    /// </summary>
+    private void CheckIndexWriteReshape(IndexExpression index, SourceLocation location)
+    {
+        if (index.Object.ResolvedType is not { } containerType)
+        {
+            return;
+        }
+
+        TypeSymbol lookupType = IndexLookupType(type: containerType);
+        RoutineInfo? setItem = _registry.LookupMemberRoutine(type: lookupType, memberRoutineName: "setitem") ??
+                               _registry.LookupMemberRoutine(type: lookupType, memberRoutineName: "setitem",
+                                   isFailable: true);
+        index.ResolvedSetItem = setItem;
+        if (_registry.CompilationRules.ChecksShapeAtRunTime ||
+            index.Object is not IdentifierExpression walked ||
+            !_activeIterationSources.Contains(item: walked.Name))
+        {
+            return;
+        }
+
+        if (setItem is { IsReshaping: true })
+        {
+            ReportError(code: SemanticDiagnosticCode.ReshapingDuringIteration,
+                message: $"You are putting a value into '{walked.Name}[...]' while looping over '{walked.Name}': it may " +
+                         "add an element, and then the loop can't trust that its next element is really the next. " +
+                         "Collect the changes and apply them after the loop.",
+                location: location);
+        }
+    }
+
     private void ValidateIndexAssignmentTarget(IndexExpression index, SourceLocation location)
     {
         TypeSymbol indexedObjectType = AnalyzeExpression(expression: index.Object);
@@ -1810,6 +1845,8 @@ public sealed partial class SemanticVerifier
             _currentRoutine.HasFailableCalls = true;
             _currentRoutine.FailableCallees.Add(item: setItem);
         }
+
+        CheckIndexWriteReshape(index: index, location: location);
 
         // The object being indexed must be modifiable.
         if (index.Object is IdentifierExpression indexedVar)
@@ -2182,6 +2219,7 @@ public sealed partial class SemanticVerifier
                     }
                 }
 
+                CheckIndexWriteReshape(index: index, location: compound.Location);
                 break;
             }
         }

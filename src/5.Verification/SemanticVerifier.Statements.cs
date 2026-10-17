@@ -1612,6 +1612,11 @@ public sealed partial class SemanticVerifier
             ValidateMemberAssignmentTarget(assign: assign, member: member);
         }
 
+        if (assign.Target is IndexExpression element)
+        {
+            CheckIndexWriteReshape(index: element, location: assign.Location);
+        }
+
         // #81: Result/Lookup cannot be copied from variable to variable via assignment
         if (assign.Value is IdentifierExpression && IsCarrierType(type: valueType) &&
             !IsMaybeType(type: valueType))

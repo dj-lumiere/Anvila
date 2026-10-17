@@ -770,6 +770,12 @@ public record IndexExpression(Expression Object, Expression Index, SourceLocatio
     public RoutineInfo? ResolvedGetItem { get; set; }
 
     /// <summary>
+    /// The <c>setitem</c> semantic analysis found for a write to this subscript (<c>d[k] = v</c>, <c>d[k] += 1</c>),
+    /// or null for a read. The shape check reads its <c>@reshaping</c> marker: a <c>Dict</c>'s may add the key.
+    /// </summary>
+    public RoutineInfo? ResolvedSetItem { get; set; }
+
+    /// <summary>
     /// True when this subscript reads an entity element into a variable (<c>var b = boxes[0]</c>): the variable
     /// holds a read token on the element (<c>boxes.view_at(index: 0)</c>), since the element keeps its single
     /// owner. Lowering mints that token in place of a <c>getitem</c>.
