@@ -758,6 +758,23 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         // `is None` on Maybe[T record] tests absence (`not present`); other TypePatterns
         // test presence. Parser emits `is None` as TypePattern with Type.Name == "None".
         TypeSymbol? innerType = subjectType!.TypeArguments![index: 0];
+        TypeSymbol? armType = tp.Type.ResolvedType ?? ctx.Registry.LookupType(name: tp.Type.Name);
+        if (tp.Type.Name != "None" && innerType is VariantTypeSymbol carried && armType != null &&
+            armType.FullName != carried.FullName)
+        {
+            // `is Deposit` on a `Maybe[Command]`: present, and the value holds a Deposit.
+            Expression value = MakeMemberAccess(subject: subject, field: ValueFieldName, fieldType: carried, loc: loc);
+            (Expression? armCond, Statement? armBinding) = GetResultLookupTypePatternCondition(tp: tp,
+                subject: value,
+                loc: loc,
+                boolType: boolType);
+            Expression present = MakePresentAccess(subject: subject, loc: loc);
+            return (armCond == null
+                ? present
+                : new BinaryExpression(Left: present, Operator: BinaryOperator.And, Right: armCond, Location: loc)
+                    { ResolvedType = boolType }, armBinding);
+        }
+
         Expression cond = tp.Type.Name == "None"
             ? MakeNotPresent(subject: subject, loc: loc, boolType: boolType)
             : MakePresentAccess(subject: subject, loc: loc);
@@ -885,6 +902,28 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 loc: loc,
                 boolType: boolType,
                 u64Type: u64Type), null);
+        }
+
+        // `is Deposit` on a `Check[Command]` (or a variant that holds `Command`): the subject holds a Command, and that
+        // Command holds a Deposit. Tested one level at a time, so a type held deeper still is found the same way.
+        if (targetType != null && (subject.ResolvedType as VariantTypeSymbol)?.HolderOf(type: targetType) is { } holder)
+        {
+            Expression held = MakeCarrierPayload(subject: subject, innerType: holder, loc: loc);
+            Expression holdsHolder = new BinaryExpression(
+                Left: MakeMemberAccess(subject: subject, field: TypeIdFieldName, fieldType: u64Type, loc: loc),
+                Operator: BinaryOperator.Equal,
+                Right: new LiteralExpression(Value: TypeIdHelper.ComputeTypeId(fullName: holder.FullName),
+                    LiteralType: TokenType.U64Literal,
+                    Location: loc) { ResolvedType = u64Type },
+                Location: loc) { ResolvedType = boolType };
+            (Expression? innerCond, Statement? innerBinding) = GetResultLookupTypePatternCondition(tp: tp,
+                subject: held,
+                loc: loc,
+                boolType: boolType);
+            return (innerCond == null
+                ? holdsHolder
+                : new BinaryExpression(Left: holdsHolder, Operator: BinaryOperator.And, Right: innerCond, Location: loc)
+                    { ResolvedType = boolType }, innerBinding);
         }
 
         // Specific type: type_id == FNV-1a(type.FullName).

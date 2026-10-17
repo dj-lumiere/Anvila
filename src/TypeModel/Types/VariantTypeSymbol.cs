@@ -48,6 +48,24 @@ public sealed class VariantTypeSymbol : RecordTypeSymbol
         return Members.FirstOrDefault(predicate: member => member.Type?.Name == type.Name);
     }
 
+    /// <summary>
+    /// The variant type, among the ones this variant holds directly, that holds <paramref name="type"/> (itself or
+    /// deeper), when this variant doesn't hold <paramref name="type"/> directly: <c>Command</c> for <c>Deposit</c> in a
+    /// <c>Check[Command]</c>. Null when this variant holds the type itself, or nothing it holds does.
+    /// </summary>
+    public TypeSymbol? HolderOf(TypeSymbol type)
+    {
+        if (FindMember(type: type) != null)
+        {
+            return null;
+        }
+
+        return Members.Select(selector: m => m.Type)
+                      .FirstOrDefault(predicate: t => t is VariantTypeSymbol held &&
+                                                       (held.FindMember(type: type) != null ||
+                                                        held.HolderOf(type: type) != null));
+    }
+
     /// <inheritdoc/>
     /// <remarks>The layout both backends write: <c>{ U64 tag, [N x Byte] payload }</c>, N the largest arm, so the
     /// payload sits right after the tag and the whole is aligned to the tag.</remarks>

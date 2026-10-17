@@ -814,10 +814,15 @@ public sealed partial class SemanticVerifier
         if (IsCarrierType(type: matchedType) && !IsMaybeType(type: matchedType) &&
             exhaustiveness.MissingCases.Any(predicate: m => m != "None"))
         {
+            string valueName = matchedType.TypeArguments?.FirstOrDefault()?.Name ?? "T";
+            bool someValueTaken = whenStmt.Clauses.Any(predicate: c => IsHeldTypeArm(pattern: c.Pattern,
+                carrierType: matchedType));
             ReportError(code: SemanticDiagnosticCode.NonExhaustiveMatch,
-                message:
-                $"This `when` on '{matchedType.Name}' never takes the success value. Add an arm for it " +
-                $"(`is {matchedType.TypeArguments?.FirstOrDefault()?.Name ?? "T"} v`).{missing}",
+                message: someValueTaken
+                    ? $"This `when` on '{matchedType.Name}' takes some kinds of '{valueName}' but not all of them. " +
+                      $"Add an arm for each one left, or one for the whole value (`is {valueName} v`).{missing}"
+                    : $"This `when` on '{matchedType.Name}' never takes the success value. Add an arm for it " +
+                      $"(`is {valueName} v`).{missing}",
                 location: whenStmt.Location);
         }
         else

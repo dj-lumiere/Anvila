@@ -565,8 +565,10 @@ public sealed partial class SemanticVerifier
         }
 
         // Variant: `is <MemberType>` matches if MemberType is one of the variant's members
+        // or of a variant held inside it (`is Deposit` on an `Event` that holds `Command`).
         if (matchedType is VariantTypeSymbol variantMatched &&
-            VariantHasMemberOfType(variant: variantMatched, patternType: patternType))
+            (VariantHasMemberOfType(variant: variantMatched, patternType: patternType) ||
+             variantMatched.HolderOf(type: patternType) != null))
         {
             return true;
         }
@@ -752,14 +754,41 @@ public sealed partial class SemanticVerifier
                                   .OfType<string>()
                                   .ToHashSet();
 
-        var missingMembers = members.Where(predicate: m => !coveredMembers.Contains(item: m.Name) &&
-                                                           !(m.Type != null &&
-                                                             coveredTypes.Contains(item: m.Type.FullName)))
-                                    .Select(selector: m => m.Name)
+        // A member that is itself a variant is also covered by arms that name its own types (`is Deposit`, `is Withdraw`
+        // cover `Command`), and when only some of them are named, the ones left are what is missing.
+        var missingMembers = members.SelectMany(selector: m => MissingVariantArms(member: m,
+                                         coveredNames: coveredMembers,
+                                         coveredTypes: coveredTypes))
                                     .ToList();
 
         return new ExhaustivenessResult(IsExhaustive: missingMembers.Count == 0,
             MissingCases: missingMembers);
+    }
+
+    /// <summary>The arms <paramref name="member"/> still needs: none when an arm names it, or, for a member that is a
+    /// variant some of whose types are named, the types of it that no arm names.</summary>
+    private static IEnumerable<string> MissingVariantArms(VariantMemberInfo member, HashSet<string> coveredNames,
+        HashSet<string> coveredTypes)
+    {
+        if (coveredNames.Contains(item: member.Name) ||
+            member.Type != null && coveredTypes.Contains(item: member.Type.FullName))
+        {
+            return [];
+        }
+
+        if (member.Type is VariantTypeSymbol held && held.Members.Count > 0)
+        {
+            List<string> inner = held.Members.SelectMany(selector: m => MissingVariantArms(member: m,
+                                          coveredNames: coveredNames,
+                                          coveredTypes: coveredTypes))
+                                     .ToList();
+            if (inner.Count < held.Members.Count)
+            {
+                return inner;
+            }
+        }
+
+        return [member.Name];
     }
 
     /// <summary>
@@ -823,11 +852,25 @@ public sealed partial class SemanticVerifier
                 // Only generic 'is Crashable e' counts as catch-all, not specific error types (#89)
                 hasCrashableCatchAll = true;
             }
-            else if (!IsNonePattern(pattern: pattern) && pattern is not CrashablePattern)
+            else if (!IsNonePattern(pattern: pattern) && pattern is not CrashablePattern &&
+                     !IsHeldTypeArm(pattern: pattern, carrierType: carrierType))
             {
                 // Any other pattern (type check, literal, etc.) counts as value arm
                 hasValue = true;
             }
+        }
+
+        // Arms that name the types a variant T holds (`is Deposit`, `is Withdraw` for `Maybe[Command]`) take the
+        // value only together: every type T holds must be named.
+        if (!hasValue && carrierType.TypeArguments is [VariantTypeSymbol carried] &&
+            clauses.Any(predicate: c => IsHeldTypeArm(pattern: c.Pattern, carrierType: carrierType)))
+        {
+            ExhaustivenessResult held = CheckVariantExhaustiveness(
+                clauses: clauses.Where(predicate: c => IsHeldTypeArm(pattern: c.Pattern, carrierType: carrierType))
+                                .ToList(),
+                members: carried.Members,
+                typeName: carried.Name);
+            hasValue = held.IsExhaustive;
         }
 
         List<string> missing = CollectCarrierMissingCases(
@@ -837,6 +880,18 @@ public sealed partial class SemanticVerifier
             hasValue: hasValue);
 
         return new ExhaustivenessResult(IsExhaustive: missing.Count == 0, MissingCases: missing);
+    }
+
+    /// <summary>An unguarded <c>is X</c> arm on a carrier whose <c>T</c> is a variant, where <c>X</c> is one of the types T
+    /// holds rather than T itself.</summary>
+    private static bool IsHeldTypeArm(Pattern pattern, TypeSymbol carrierType)
+    {
+        return !PatternFacts.IsConditional(pattern: pattern) &&
+               pattern is TypePattern { Type.ResolvedType: { } armType } &&
+               carrierType.TypeArguments is [VariantTypeSymbol carried] &&
+               armType.FullName != carried.FullName &&
+               armType is not CrashableTypeSymbol &&
+               (carried.FindMember(type: armType) != null || carried.HolderOf(type: armType) != null);
     }
 
     /// <summary>
