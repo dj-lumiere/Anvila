@@ -4439,9 +4439,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// A bare call to a routine of an imported module, when another imported module has a routine of the same name
-    /// that takes the same parameters, could mean either one. Reports RF-S513 instead of picking one. The current
-    /// module's own routine is not ambiguous: it comes first.
+    /// A bare call to a routine of an imported module, when another imported module has a routine of the same name,
+    /// could mean either: the module goes in front (`Prices.label(...)`). Reports RF-S513 instead of picking one. The
+    /// current module's own routine is not ambiguous: it comes first.
     /// </summary>
     private void CheckAmbiguousImportedRoutine(CallExpression call, IdentifierExpression id, RoutineInfo routine)
     {
@@ -4451,14 +4451,10 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        string Signature(RoutineInfo r) => string.Join(separator: ",",
-            values: r.Parameters.Select(selector: p => RoutineInfo.GetTypeIdentity(type: p.Type)));
-        string wanted = Signature(r: routine);
         List<string> others = _importedModules
                              .Where(predicate: ns => ns != home && ns != _currentModuleName)
                              .Where(predicate: ns => _registry.FreeRoutinesWithBaseName(baseName: $"{ns}.{routine.Name}")
-                                                              .Any(predicate: r => !r.IsForeign &&
-                                                                                   Signature(r: r) == wanted))
+                                                              .Any(predicate: r => !r.IsForeign))
                              .Order(comparer: StringComparer.Ordinal)
                              .ToList();
         if (others.Count == 0)
@@ -4466,11 +4462,16 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        List<string> all = others.Prepend(element: home).Select(selector: m => $"'{m}'").ToList();
+        List<string> all = others.Prepend(element: home)
+                                 .Order(comparer: StringComparer.Ordinal)
+                                 .Select(selector: m => $"'{m}'")
+                                 .ToList();
         string modules = string.Join(separator: ", ", values: all.SkipLast(count: 1)) + " and " + all[^1];
+        string leaf = home[(home.LastIndexOfAny(anyOf: ['/', '.']) + 1)..];
         ReportError(code: SemanticDiagnosticCode.AmbiguousModuleQualifiedCall,
-            message: $"'{routine.Name}' with these parameters is in {modules}, and this file imports each of them, so " +
-                     $"the call could mean any of them. Name the module, as in '{home}.{routine.Name}(...)'.",
+            message: $"'{routine.Name}' is in {modules}, and this file imports each of them, so a bare " +
+                     $"'{routine.Name}(...)' could mean {(all.Count == 2 ? "either" : "any of them")}. Put the module in front, as in " +
+                     $"'{leaf}.{routine.Name}(...)'.",
             location: call.Location);
     }
 
