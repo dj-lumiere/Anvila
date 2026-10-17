@@ -1253,12 +1253,20 @@ public sealed partial class SemanticVerifier
             return ResolveOperatorReturnType(routine: memberRoutine, leftType: leftType);
         }
 
-        bool allowIntegralShiftAmount = IsShiftOperator(op: binary.Operator) &&
-                                        IsIntegerType(type: rightType) &&
-                                        IsIntegerType(type: paramType);
-
-        if (!allowIntegralShiftAmount && !IsAssignableTo(source: rightType, target: paramType))
+        if (!IsAssignableTo(source: rightType, target: paramType))
         {
+            // A shift amount has its own type, whatever is shifted: another integer type in its place would be
+            // passed as if it were one.
+            if (IsShiftOperator(op: binary.Operator) && IsIntegerType(type: rightType))
+            {
+                string amount = OperandText(expr: binary.Right);
+                ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                    message:
+                    $"The amount of '{binary.Operator.ToStringRepresentation()}' on '{leftType.Name}' must be '{paramType.Name}', and '{amount}' is '{rightType.Name}'. Convert it: '{amount}.to[{paramType.Name}]()'.",
+                    location: binary.Right.Location);
+                return ErrorTypeSymbol.Instance;
+            }
+
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                 message:
                 $"Operator '{binary.Operator.ToStringRepresentation()}': cannot convert '{rightType.Name}' to '{paramType.Name}'.",
@@ -1979,6 +1987,22 @@ public sealed partial class SemanticVerifier
                 inPlaceMemberRoutine: inPlaceMemberRoutine,
                 regularMemberRoutine: regularMemberRoutine))
         {
+            return ErrorTypeSymbol.Instance;
+        }
+
+        // A shift amount has its own type, as in `x << n` (see AnalyzeOverloadableOperator).
+        if (isShift && regularMemberRoutine != null && IsIntegerType(type: valueType) &&
+            _registry.LookupMemberRoutineOverload(type: targetType,
+                memberRoutineName: regularMemberRoutine,
+                argTypes: [valueType]) == null &&
+            _registry.LookupMemberRoutine(type: targetType, memberRoutineName: regularMemberRoutine) is
+                { Parameters: [var amountParam, ..] })
+        {
+            string amount = OperandText(expr: compound.Value);
+            ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                message:
+                $"The amount of '{compound.Operator.ToStringRepresentation()}=' on '{targetType.Name}' must be '{amountParam.Type.Name}', and '{amount}' is '{valueType.Name}'. Convert it: '{amount}.to[{amountParam.Type.Name}]()'.",
+                location: compound.Value.Location);
             return ErrorTypeSymbol.Instance;
         }
 
