@@ -629,6 +629,15 @@ public sealed partial class SemanticVerifier
                         "which can change it. A read token only lets you read: pass a write token instead.",
                         location: argExpr.Location);
                 }
+                else if (OtherRealmOfSameType(source: argType, target: paramType) is { } crossing)
+                {
+                    ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                        message:
+                        $"Argument '{param.Name}' of '{routine.Name}' takes RF::{crossing.BareName}, and this is " +
+                        $"SF::{crossing.BareName}: the two languages each have their own, which don't cross as they " +
+                        $"are. Convert it at the boundary: '.to[RF::{crossing.BareName}]()'.",
+                        location: argExpr.Location);
+                }
                 else
                 {
                     ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
@@ -1047,7 +1056,7 @@ public sealed partial class SemanticVerifier
             _ => string.Empty
         };
         return baseName == Declaration.RuntimeContract.Roamed &&
-               type.TypeArguments is [{ } inner] && inner.FullName == entity.FullName;
+               type.TypeArguments is [{ } inner] && inner.FullName == entity.FullName && inner.Realm == entity.Realm;
     }
 
     /// <summary>
@@ -1055,11 +1064,33 @@ public sealed partial class SemanticVerifier
     /// Handles error types (to suppress cascading errors), generic resolution matching, and protocol conformance.
     /// No implicit numeric or widening conversions are performed.
     /// </summary>
+    /// <summary>
+    /// The Suflae type handed where the RazorForge type of the same name is wanted (`SF::Core.List[S64]` for
+    /// `RF::Core.List[S64]`, either one maybe behind a shared handle), or null.
+    /// </summary>
+    private static TypeSymbol? OtherRealmOfSameType(TypeSymbol source, TypeSymbol target)
+    {
+        TypeSymbol from = SharedInner(type: source);
+        TypeSymbol to = SharedInner(type: target);
+        return from.FullName == to.FullName && from.Realm == "SF" && to.Realm == TypeModel.Realms.Shared
+            ? from
+            : null;
+
+        static TypeSymbol SharedInner(TypeSymbol type)
+        {
+            return type is RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } inner] }
+                ? inner
+                : type;
+        }
+    }
+
     private bool IsAssignableTo(TypeSymbol source, TypeSymbol target)
     {
         if (source.Name == target.Name || source.FullName == target.FullName)
         {
-            return true;
+            // One stdlib source makes a type in each language (`SF::Core.List` and `RF::Core.List`): the same name in
+            // two realms is two types, which a value crosses only through a conversion (`xs.to[RF::List]()`).
+            return source.Realm == target.Realm || source.Category == TypeCategory.Error;
         }
 
         // Shared entities: bare entity E and Roamed[E] are mutually assignable (the lowering pass
@@ -1133,7 +1164,7 @@ public sealed partial class SemanticVerifier
     {
         if (source is not { IsGenericResolution: true, TypeArguments: { } sourceArgs } ||
             target is not { IsGenericResolution: true, TypeArguments: { } targetArgs } ||
-            source.BareName != target.BareName || sourceArgs.Count != targetArgs.Count)
+            source.BareName != target.BareName || source.Realm != target.Realm || sourceArgs.Count != targetArgs.Count)
         {
             return false;
         }
@@ -1142,7 +1173,7 @@ public sealed partial class SemanticVerifier
         {
             TypeSymbol s = sourceArgs[index: i];
             TypeSymbol t = targetArgs[index: i];
-            if (s.FullName == t.FullName || IsGenericDefinitionResolutionAssignable(source: s, target: t) ||
+            if (s.FullName == t.FullName && s.Realm == t.Realm || IsGenericDefinitionResolutionAssignable(source: s, target: t) ||
                 IsOwnProtocolSelf(protocol: s, self: t) || IsTemplateSelfAssignable(source: s, target: t))
             {
                 continue;

@@ -503,6 +503,15 @@ public sealed partial class SemanticVerifier
             expectedType: expectedType,
             routine: ref routine);
 
+        // A creator found by its name may be the other language's type of the same name (`BitList()` in a Suflae
+        // file finding RazorForge's): the type the name resolves to in this file decides, and its own creators are
+        // reached through it below.
+        if (routine is { Kind: RoutineKind.Creator, OwnerType: { } creatorOwner } && callableType != null &&
+            creatorOwner.FullName == callableType.FullName && creatorOwner.Realm != callableType.Realm)
+        {
+            routine = null;
+        }
+
         // Zero-arg construction `Type()`: the arg-bearing constructor block below is gated on
         // `Arguments.Count > 0`, and the free-routine path requires `routine != null`. A no-arg
         // `Type()` therefore had NO handler here and relied on `LookupRoutine("Type")` (above)
@@ -2331,7 +2340,7 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            if (at.FullName != pt.FullName && !IsAssignableTo(source: at, target: pt))
+            if (!IsAssignableTo(source: at, target: pt))
             {
                 return true;
             }
