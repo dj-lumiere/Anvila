@@ -136,6 +136,9 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
            .RunOnVariantBodies();
         new GenericCallLoweringPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies)
            .RunOnVariantBodies();
+        // As in Run(): f-strings first, so the represent/diagnose an f-string part renders through on a
+        // Crashables (`f"{e}"`) is there for CrashableExpansionPass to turn into a call through the error's mold.
+        new FStringLoweringPass(ctx: ctx).RunOnVariantBodies();
         // Expand `is Crashable` clauses (synthesized by non-tail propagation in check/lookup
         // variants) into per-type TypePatterns before PatternLowering can lower them. No-op for
         // variant bodies that contain no CrashablePattern.
@@ -156,7 +159,6 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
             new ExpressionLoweringPass(ctx: ctx).RunOnVariantBodies();
         }
 
-        new FStringLoweringPass(ctx: ctx).RunOnVariantBodies();
         new TokenReadLoweringPass(ctx: ctx).RunOnVariantBodies();
         new OperatorLoweringPass(ctx: ctx).RunOnVariantBodies();
         // See the per-program Run(): rewrite the Roamed raw_inner() projection into a real AST call

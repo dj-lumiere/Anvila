@@ -21,7 +21,7 @@ namespace Builder.Lowering.Passes;
 /// <list type="bullet">
 ///   <item><see cref="ReturnStatement"/> / <see cref="ThrowStatement"/>
 ///         / <see cref="VariantReturnStatement"/> — destroy ALL live owned locals/params, except the
-///         value being returned.</item>
+///         value being returned or thrown.</item>
 ///   <item><see cref="BreakStatement"/> / <see cref="ContinueStatement"/> — destroy owned locals
 ///         declared inside the enclosing loop.</item>
 ///   <item>Block fall-through end — destroy the locals declared in that block.</item>
@@ -523,8 +523,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             skip: ref skip,
             stmts: stmts);
 
-        // Returning a name a pattern bound (`else as h => return h`) moves out the matched value it reads, so
-        // the local holding that value is not torn down on this path either.
+        // Returning or throwing a name a pattern bound (`else as h => return h`, `is Crashables as e => throw e`)
+        // moves out the matched value it reads, so the local holding that value is not torn down on this path
+        // either.
         HashSet<string>? movedOut = ReturnedName(stmt: exit) is { } returned &&
                                     _patternSources.TryGetValue(key: returned, value: out HashSet<string>? sources)
             ? sources
@@ -552,7 +553,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         return new BlockStatement(Statements: stmts, Location: exit.Location);
     }
 
-    // Spills a non-trivial returned expression into a `__td_ret_N` temp so it's computed while its
+    // Spills a non-trivial returned or thrown expression into a `__td_ret_N` temp so it's computed while its
     // locals are still live (destroying them first would free memory the expression then reads). The
     // spill decl is appended to <paramref name="stmts"/>, <paramref name="skip"/> is updated to the
     // temp (moved out — never torn down), and the rewritten exit (returning the temp) is returned.
@@ -565,6 +566,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             ReturnStatement r => r.Value,
             VariantReturnStatement vr => vr.Value,
+            ThrowStatement t => t.Error,
             _ => null
         };
         // A recovery carrier around the returned local (`Maybe(present: true, value: x)`) reads only that local,
@@ -601,6 +603,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             ReturnStatement r => r with { Value = tmpRef },
             VariantReturnStatement vr => vr with { Value = tmpRef },
+            ThrowStatement t => t with { Error = tmpRef },
             _ => exit
         };
     }
@@ -869,6 +872,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             ReturnStatement { Value: IdentifierExpression id } => id.Name,
             VariantReturnStatement { Value: IdentifierExpression id } => id.Name,
+            // `throw failure` hands the error on like a return: it, and the value a pattern bound it from, leave
+            // with it.
+            ThrowStatement { Error: IdentifierExpression thrown } => thrown.Name,
             // `return x.release_inner()` takes the entity out of the handle `x` and ends it: `x` moves out.
             ReturnStatement
             {
