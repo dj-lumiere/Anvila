@@ -70,6 +70,12 @@ public sealed partial class StdlibLoader
     /// each: Suflae's view of shared declarations, checked by <see cref="RfBindingCheck"/>.</summary>
     public IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings => _rfBindings;
 
+    private readonly List<string> _parseErrors = [];
+
+    /// <summary>The syntax errors found in the standard library's files, one rendered diagnostic each. A file with one
+    /// still loads what parsed, so validate-stdlib reads this list to fail loudly.</summary>
+    public IReadOnlyList<string> ParseErrors => _parseErrors;
+
     private readonly HashSet<string> _razorForgeLibraryTypes = new(comparer: StringComparer.Ordinal);
 
     /// <summary>The <c>Module.Name</c> of every type a parsed file of RazorForge's library declares (Suflae's library
@@ -410,6 +416,7 @@ public sealed partial class StdlibLoader
             {
                 Console.Error.WriteLine(
                     value: $"Warning: Failed to parse stdlib file {filePath}: {ex.Message}");
+                _parseErrors.Add(item: $"{filePath}: {ex.Message}");
             }
         }
     }
@@ -427,6 +434,7 @@ public sealed partial class StdlibLoader
         List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
         var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
         Program program = parser.Parse();
+        _parseErrors.AddRange(collection: parser.GetErrors());
 
         // An `@rf("...")` declaration shows a shared RazorForge declaration in the file's language and creates
         // nothing: it leaves the program here, before any pass sees it, and is checked against its target by

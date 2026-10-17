@@ -1551,8 +1551,15 @@ public sealed partial class SemanticVerifier
         return RuntimeContractCheck.Check(registry: _registry);
     }
 
-    /// <summary>Checks the standard library's <c>@rf("...")</c> declarations against the RazorForge ones they name;
-    /// returns one line per problem.</summary>
+    /// <summary>The syntax errors in the standard library's files. A file with one loads only what parsed, so a
+    /// declaration could be missing without any other error saying so.</summary>
+    public List<string> CheckStdlibParse()
+    {
+        return _registry.StdlibParseErrors().ToList();
+    }
+
+    /// <summary>Checks the standard library's <c>@rf("...")</c> declarations against the RazorForge ones they name,
+    /// and returns one line per problem.</summary>
     public List<string> CheckRfBindings()
     {
         RfBindingCheck.LoadModules(registry: _registry);

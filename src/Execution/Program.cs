@@ -1053,6 +1053,20 @@ internal partial class Program
             // fails HERE (loudly) instead of silently miscompiling at runtime.
             List<string> contractErrors = analyzer.CheckRuntimeContract();
 
+            // A stdlib file with a syntax error loads only what parsed, which nothing else would report.
+            List<string> parseErrors = analyzer.CheckStdlibParse();
+            if (parseErrors.Count > 0)
+            {
+                Console.WriteLine(value: $"=== SYNTAX ERRORS IN STDLIB FILES ({parseErrors.Count}) ===");
+                foreach (string parseError in parseErrors)
+                {
+                    Console.WriteLine(value: $"    - {parseError}");
+                }
+
+                Console.WriteLine();
+                return 1;
+            }
+
             // A language's view of shared declarations (`@rf("...")`) must still match what it names.
             List<string> bindingErrors = analyzer.CheckRfBindings();
             if (bindingErrors.Count > 0)

@@ -849,6 +849,19 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool IsCoreModuleLoaded => _coreModuleLoaded;
 
+    /// <summary>The syntax errors in the standard library's files, every file read (see
+    /// <see cref="StdlibLoader.ParseErrors"/>). Empty when no standard library was loaded.</summary>
+    internal IReadOnlyList<string> StdlibParseErrors()
+    {
+        if (_stdlibLoader == null)
+        {
+            return [];
+        }
+
+        _stdlibLoader.ScanModuleNames();
+        return _stdlibLoader.ParseErrors;
+    }
+
     /// <summary>The standard library's <c>@rf("...")</c> declarations (see <see cref="RfBindingCheck"/>).</summary>
     internal IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RfBindings =>
         _stdlibLoader?.RfBindings ?? [];
