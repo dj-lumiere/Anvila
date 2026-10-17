@@ -31,9 +31,9 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix"))
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have or suffix");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix or agent");
             return 2;
         }
 
@@ -41,6 +41,12 @@ internal partial class Program
         if (step == "have")
         {
             return RunHaveStep(paths: paths, check: check);
+        }
+
+        // `--step agent`: the `agent` keyword before a call is the conversion on the routine, `f.to[Agent](args)`.
+        if (step == "agent")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAgent);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
@@ -1457,6 +1463,16 @@ internal partial class Program
     /// </summary>
     private static int RunHaveStep(List<string> paths, bool check)
     {
+        return RunRewriteStep(paths: paths, check: check, rewrite: RewriteHave);
+    }
+
+    /// <summary>A rewrite of one source, its lines numbered from <c>lineOffset</c> in what it reports.</summary>
+    private delegate string SourceRewrite(string file, string source, Language language, int lineOffset);
+
+    /// <summary>Runs <paramref name="rewrite"/> over every .rf and .sf file of <paramref name="paths"/>, and over the
+    /// razorforge and suflae code blocks of their .md pages.</summary>
+    private static int RunRewriteStep(List<string> paths, bool check, SourceRewrite rewrite)
+    {
         int changedFiles = 0;
         var files = new List<string>();
         foreach (string path in paths)
@@ -1485,8 +1501,8 @@ internal partial class Program
         {
             string source = File.ReadAllText(path: file);
             string rewritten = file.EndsWith(value: ".md", comparisonType: StringComparison.Ordinal)
-                ? RewriteHaveInMarkdown(file: file, text: source)
-                : RewriteHave(file: file, source: source, language: SourceLanguage(path: file), lineOffset: 0);
+                ? RewriteInMarkdown(file: file, text: source, rewrite: rewrite)
+                : rewrite(file: file, source: source, language: SourceLanguage(path: file), lineOffset: 0);
             if (rewritten == source)
             {
                 continue;
@@ -1508,7 +1524,7 @@ internal partial class Program
     }
 
     /// <summary>The razorforge and suflae code blocks of a page, each rewritten as a source of its language.</summary>
-    private static string RewriteHaveInMarkdown(string file, string text)
+    private static string RewriteInMarkdown(string file, string text, SourceRewrite rewrite)
     {
         string[] lines = text.Split(separator: '\n');
         var result = new List<string>(capacity: lines.Length);
@@ -1537,12 +1553,111 @@ internal partial class Program
 
             result.Add(item: line);
             string block = string.Join(separator: '\n', values: lines[(i + 1)..end]);
-            string rewritten = RewriteHave(file: file, source: block, language: language.Value, lineOffset: i + 1);
+            string rewritten = rewrite(file: file, source: block, language: language.Value, lineOffset: i + 1);
             result.AddRange(collection: rewritten.Split(separator: '\n'));
             i = end;
         }
 
         return string.Join(separator: '\n', values: result);
+    }
+
+    /// <summary>
+    /// <c>agent f(x)</c> → <c>f.to[Agent](x)</c>, <c>agent r.m(x)</c> → <c>r.m.to[Agent](x)</c>, and <c>(agent f(x)).verb()</c>
+    /// → <c>f.to[Agent](x).verb()</c>. Two forms change meaning and are listed for a hand rewrite instead: recovery in front
+    /// (<c>try agent f()</c>, whose failure is recovered at <c>retrieve()</c> now) and a chain that goes on after the call
+    /// without parentheses (<c>agent f(x).retrieve()</c> deferred the whole chain).
+    /// </summary>
+    private static string RewriteAgent(string file, string source, Language language, int lineOffset)
+    {
+        List<Token> tokens;
+        try
+        {
+            tokens = Lexers.Tokenize(source: source, fileName: file, language: language);
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine(value: $"{file}: cannot read it: {e.Message}");
+            return source;
+        }
+
+        var edits = new List<MigrationEdit>();
+        for (int i = 0; i + 1 < tokens.Count; i++)
+        {
+            Token word = tokens[index: i];
+            if (word.Type != TokenType.Agent || word.Position < 0)
+            {
+                continue;
+            }
+
+            if (i > 0 && tokens[index: i - 1].Type is TokenType.Try or TokenType.Check)
+            {
+                Console.WriteLine(value: $"{file}:{word.Line + lineOffset}: '{tokens[index: i - 1].Text} agent' recovers inside " +
+                                         "the work, which no spelling does now: make the Agent with f.to[Agent](args) and " +
+                                         $"recover where it is collected ({tokens[index: i - 1].Text} job.retrieve()), rewrite it by hand");
+                continue;
+            }
+
+            // The call: the chain after `agent` up to the first `(` that follows a name.
+            int open = -1;
+            for (int j = i + 1; j < tokens.Count; j++)
+            {
+                TokenType type = tokens[index: j].Type;
+                if (type == TokenType.LeftParen && j > i + 1 && tokens[index: j - 1].Type is TokenType.Identifier or TokenType.RightBracket)
+                {
+                    open = j;
+                    break;
+                }
+
+                if (type is TokenType.LeftParen or TokenType.LeftBracket)
+                {
+                    j = SkipBalanced(tokens: tokens, start: j, open: type,
+                        close: type == TokenType.LeftParen ? TokenType.RightParen : TokenType.RightBracket) - 1;
+                    continue;
+                }
+
+                if (type is not (TokenType.Identifier or TokenType.Dot or TokenType.Steal or TokenType.Me))
+                {
+                    break;
+                }
+            }
+
+            if (open < 0 || tokens[index: open].Position < 0)
+            {
+                Console.WriteLine(value: $"{file}:{word.Line + lineOffset}: 'agent' here is before no call, rewrite it by hand");
+                continue;
+            }
+
+            int afterCall = SkipBalanced(tokens: tokens, start: open, open: TokenType.LeftParen, close: TokenType.RightParen);
+            bool wrapped = i > 0 && tokens[index: i - 1].Type == TokenType.LeftParen &&
+                           afterCall < tokens.Count && tokens[index: afterCall].Type == TokenType.RightParen;
+            bool chainGoesOn = !wrapped && afterCall < tokens.Count && tokens[index: afterCall].Type == TokenType.Dot;
+            if (chainGoesOn)
+            {
+                Console.WriteLine(value: $"{file}:{word.Line + lineOffset}: 'agent' defers the whole chain after the call here, " +
+                                         "which f.to[Agent](args) doesn't: rewrite it by hand");
+                continue;
+            }
+
+            Token next = tokens[index: i + 1];
+            edits.Add(item: new MigrationEdit(Start: word.Position, Length: next.Position - word.Position, Replacement: "",
+                Line: word.Line, What: "agent f(…) → f.to[Agent](…)"));
+            edits.Add(item: new MigrationEdit(Start: tokens[index: open].Position, Length: 0, Replacement: ".to[Agent]",
+                Line: word.Line, What: ""));
+            if (wrapped)
+            {
+                Token before = tokens[index: i - 1];
+                Token close = tokens[index: afterCall];
+                edits.Add(item: new MigrationEdit(Start: before.Position, Length: 1, Replacement: "", Line: word.Line, What: ""));
+                edits.Add(item: new MigrationEdit(Start: close.Position, Length: 1, Replacement: "", Line: word.Line, What: ""));
+            }
+        }
+
+        foreach (MigrationEdit edit in edits.Where(predicate: e => e.What.Length > 0))
+        {
+            Console.WriteLine(value: $"{file}:{edit.Line + lineOffset}: {edit.What}");
+        }
+
+        return edits.Count == 0 ? source : ApplyMigrationEdits(source: source, edits: edits);
     }
 
     private static string RewriteHave(string file, string source, Language language, int lineOffset)

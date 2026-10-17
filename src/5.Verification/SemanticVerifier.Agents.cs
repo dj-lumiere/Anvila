@@ -45,8 +45,8 @@ public sealed partial class SemanticVerifier
         if (deferred == null)
         {
             ReportError(code: SemanticDiagnosticCode.AgentNotSupportedHere,
-                message: "You wrote 'agent' before something that is not a call. 'agent' goes before a call, as in " +
-                         "'agent download(url: u)', and turns it into an Agent you start with start_now().",
+                message: "This Agent is made of something that is not a routine. 'to[Agent]' converts a routine with " +
+                         "its arguments, as in 'download.to[Agent](url: u)', into an Agent you start with start_now().",
                 location: agent.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -66,8 +66,8 @@ public sealed partial class SemanticVerifier
             arguments.Any(predicate: a => ContainsUnresolvedTypeParameter(type: a.Type)))
         {
             ReportError(code: SemanticDiagnosticCode.AgentNotSupportedHere,
-                message: "This 'agent' call works on values whose type is a parameter of this generic routine, and an " +
-                         "Agent runs one concrete routine. Make the agent call in a routine that is not generic, and " +
+                message: "This 'to[Agent]' works on values whose type is a parameter of this generic routine, and an " +
+                         "Agent runs one concrete routine. Make the Agent in a routine that is not generic, and " +
                          "pass it the values.",
                 location: agent.Location);
             return ErrorTypeSymbol.Instance;

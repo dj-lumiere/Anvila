@@ -66,8 +66,8 @@ public partial class Parser
         // Plain member access: obj.member
         if (CheckAndAdvance(type: TokenType.Dot))
         {
-            expr = HandleMemberAccess(expr: expr)
-               .Expr;
+            expr = AsAgent(expr: HandleMemberAccess(expr: expr)
+               .Expr);
             return true;
         }
 
@@ -87,6 +87,26 @@ public partial class Parser
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// <c>f.to[Agent](args)</c>: the routine <c>f</c> (or <c>x.f</c>, a member routine of a receiver) made concurrent work,
+    /// its arguments computed now and the call deferred into an <c>Agent[T]</c>. The routine is named, not called, as in
+    /// <c>f.to[Callable]()</c>, and the conversion takes the routine's own arguments.
+    /// </summary>
+    private static Expression AsAgent(Expression expr)
+    {
+        return expr is GenericMemberRoutineCallExpression
+        {
+            MemberRoutineName: "to",
+            TypeArguments: [{ Name: "Agent", GenericArguments: null or { Count: 0 } }],
+            Object: IdentifierExpression or MemberExpression
+        } conversion
+            ? new AgentExpression(Inner: new CallExpression(Callee: conversion.Object,
+                    Arguments: conversion.Arguments,
+                    Location: conversion.Object.Location),
+                Location: conversion.Location)
+            : expr;
     }
 
     /// <summary>Returns true when the current token sequence starts a bracket access expression.</summary>

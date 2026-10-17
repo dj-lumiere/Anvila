@@ -867,8 +867,8 @@ public partial class Parser
         throw new GrammarException(code: GrammarDiagnosticCode.UnexpectedToken,
             message: $"You wrote '{CurrentToken.Text} routine', but a routine declares nothing about where it runs: " +
                      "any routine can run concurrently. Remove " +
-                     $"'{CurrentToken.Text}', and write 'agent' before a call to get an Agent you start: " +
-                     "'agent work(x: 1)'.",
+                     $"'{CurrentToken.Text}', and convert the routine to get an Agent you start: " +
+                     "'work.to[Agent](x: 1)'.",
             fileName: FileName,
             line: CurrentToken.Line,
             column: CurrentToken.Column,

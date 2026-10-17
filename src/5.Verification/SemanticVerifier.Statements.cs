@@ -1411,8 +1411,8 @@ public sealed partial class SemanticVerifier
     /// <summary>The warning for an <c>agent</c> call whose Agent nothing starts.</summary>
     private static string AgentNeverStartedMessage()
     {
-        return "This agent call builds an Agent that nothing starts, so its work never runs. Start it at once " +
-               "with `(agent ...).start_now()`, or keep it in a variable, start it, and `.retrieve()` it later.";
+        return "This builds an Agent that nothing starts, so its work never runs. Start it at once " +
+               "with `f.to[Agent](...).start_now()`, or keep it in a variable, start it, and `.retrieve()` it later.";
     }
 
     /// <summary>
