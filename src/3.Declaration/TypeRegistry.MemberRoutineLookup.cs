@@ -1814,6 +1814,15 @@ public sealed partial class TypeRegistry
                     memberRoutineName: memberRoutineName,
                     forImplementer: forImplementer ?? type,
                     isFailable: isFailable);
+                // The protocol's own signature only says the type must have the routine. When the type
+                // declares it with the other failability (`Duration.neg!()` for `Negatable.neg()`), that
+                // declaration is the routine, and the lookup for the other failability finds it.
+                if (res is { OwnerType: ProtocolTypeSymbol } && HasOwnMemberRoutineNamed(type: type,
+                        memberRoutineName: memberRoutineName))
+                {
+                    continue;
+                }
+
                 if (res != null)
                 {
                     return res;
@@ -1832,6 +1841,16 @@ public sealed partial class TypeRegistry
     /// </summary>
     /// <summary>Whether the type itself declares more than one routine named <paramref name="memberRoutineName"/>
     /// with the requested failability.</summary>
+    /// <summary>Whether the type itself declares a routine named <paramref name="memberRoutineName"/>, of either
+    /// failability.</summary>
+    private bool HasOwnMemberRoutineNamed(TypeSymbol type, string memberRoutineName)
+    {
+        return _routinesByOwner.TryGetValue(key: RealmRegistryKey(type: type),
+                   value: out Dictionary<string, List<RoutineInfo>>? ownByName) &&
+               ownByName.TryGetValue(key: memberRoutineName, value: out List<RoutineInfo>? memberRoutines) &&
+               VisibleOverloads(overloads: memberRoutines).Any();
+    }
+
     private bool HasSeveralOwnMemberRoutines(TypeSymbol type, string memberRoutineName, bool? isFailable)
     {
         return _routinesByOwner.TryGetValue(key: RealmRegistryKey(type: type),

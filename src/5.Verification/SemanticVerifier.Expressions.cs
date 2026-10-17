@@ -2254,9 +2254,19 @@ public sealed partial class SemanticVerifier
                 return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
 
             case UnaryOperator.Minus:
+                RoutineInfo? negation = operandType == ErrorTypeSymbol.Instance
+                    ? null
+                    : _registry.LookupMemberRoutine(type: operandType, memberRoutineName: "neg");
+                // `-x` calls `neg`, and a `neg!` that can fail (`-S64_MIN`) makes the enclosing routine one that
+                // calls something that can fail, as `a + b` does.
+                if (negation is { IsFailable: true } && _currentRoutine != null)
+                {
+                    _currentRoutine.HasFailableCalls = true;
+                    _currentRoutine.FailableCallees.Add(item: negation);
+                }
+
                 if (operandType != ErrorTypeSymbol.Instance && !IsNumericType(type: operandType) &&
-                    _registry.LookupMemberRoutine(type: operandType, memberRoutineName: "neg") ==
-                    null)
+                    negation == null)
                 {
                     ReportError(code: SemanticDiagnosticCode.NegationRequiresNumeric,
                         message: "Negation operator requires a numeric operand.",
