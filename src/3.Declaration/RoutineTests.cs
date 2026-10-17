@@ -13,12 +13,14 @@ public sealed record RoutineTestCase(List<string> Arguments, string? Output);
 /// <param name="Cases">Its <c>@case</c>s, in the order written. Empty for a routine called once with no arguments.</param>
 /// <param name="Skip">Whether it is marked <c>@skip</c>, and the reason when one is given.</param>
 /// <param name="TimeLimit">Its <c>@time_limit</c>, when it has one.</param>
+/// <param name="MemoryLimit">Its <c>@memory_limit</c> in bytes, when it has one.</param>
 /// <param name="Problem">Why it can't be run as written, or null.</param>
 public sealed record RoutineTest(
     string Name,
     List<RoutineTestCase> Cases,
     (bool Skipped, string? Reason) Skip,
     TimeSpan? TimeLimit,
+    ulong? MemoryLimit,
     string? Problem);
 
 /// <summary>
@@ -51,6 +53,7 @@ public static class RoutineTests
         var cases = new List<RoutineTestCase>();
         (bool, string?) skip = (false, null);
         TimeSpan? timeLimit = null;
+        ulong? memoryLimit = null;
         string? problem = null;
         foreach (string annotation in routine.Annotations)
         {
@@ -71,7 +74,12 @@ public static class RoutineTests
                         : null);
                     break;
                 case "memory_limit":
-                    problem ??= "@memory_limit is not measured yet, so this test can't check it";
+                    memoryLimit = args.Count > 0
+                        ? ParseByteSize(text: args[0].Value)
+                        : null;
+                    problem ??= memoryLimit is null or 0
+                        ? "@memory_limit needs a size, such as @memory_limit(1mib)"
+                        : null;
                     break;
                 case "time_limit":
                     timeLimit = args.Count > 0
@@ -112,6 +120,7 @@ public static class RoutineTests
             Cases: cases,
             Skip: skip,
             TimeLimit: timeLimit,
+            MemoryLimit: memoryLimit,
             Problem: problem);
     }
 
@@ -235,7 +244,8 @@ public static class RoutineTests
         return parts;
     }
 
-    /// <summary>A duration written as an annotation argument (<c>500ms</c>, <c>2s</c>, <c>1min</c>), or null.</summary>
+    /// <summary>A duration written as an annotation argument, with the units a duration literal takes (<c>ns</c>,
+    /// <c>us</c>, <c>ms</c>, <c>s</c>, <c>m</c>, <c>h</c>, <c>d</c>, <c>w</c>), or null.</summary>
     private static TimeSpan? ParseDuration(string text)
     {
         string t = text.Replace(oldValue: "_", newValue: "").Trim();
@@ -257,10 +267,43 @@ public static class RoutineTests
             "us" => TimeSpan.FromTicks(value: (long)(amount * 10)),
             "ms" => TimeSpan.FromMilliseconds(value: amount),
             "s" => TimeSpan.FromSeconds(value: amount),
-            "min" => TimeSpan.FromMinutes(value: amount),
+            "m" => TimeSpan.FromMinutes(value: amount),
             "h" => TimeSpan.FromHours(value: amount),
+            "d" => TimeSpan.FromDays(value: amount),
+            "w" => TimeSpan.FromDays(value: amount * 7),
             _ => null
         };
+    }
+
+    /// <summary>A size written as an annotation argument, with the units a size literal takes (<c>b</c>, <c>kb</c>,
+    /// <c>mb</c>, <c>gb</c>, <c>kib</c>, <c>mib</c>, <c>gib</c>), in bytes, or null.</summary>
+    private static ulong? ParseByteSize(string text)
+    {
+        string t = text.Replace(oldValue: "_", newValue: "").Trim();
+        int unitAt = 0;
+        while (unitAt < t.Length && char.IsDigit(c: t[index: unitAt]))
+        {
+            unitAt++;
+        }
+
+        if (unitAt == 0 || !ulong.TryParse(s: t[..unitAt], style: NumberStyles.None,
+                provider: CultureInfo.InvariantCulture, result: out ulong amount))
+        {
+            return null;
+        }
+
+        ulong? unit = t[unitAt..] switch
+        {
+            "b" => 1UL,
+            "kb" => 1_000UL,
+            "mb" => 1_000_000UL,
+            "gb" => 1_000_000_000UL,
+            "kib" => 1_024UL,
+            "mib" => 1_048_576UL,
+            "gib" => 1_073_741_824UL,
+            _ => null
+        };
+        return unit * amount;
     }
 
     private static string Unquote(string text)

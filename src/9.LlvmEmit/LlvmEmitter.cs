@@ -1208,7 +1208,8 @@ public partial class LlvmEmitter
     /// <summary>
     /// Appends the <c>main()</c> entry point that inits the runtime, sets the trace mode, calls
     /// the entry module's <c>start()</c>, and returns the exit status <c>set_exit_code</c> stored
-    /// (the runtime's <c>rf_exit_code</c>, 0 when nothing set one). No-op when no start symbol is found.
+    /// (the runtime's <c>rf_exit_code</c>, 0 when nothing set one), or 82 when a routine test's heap went past its
+    /// memory limit. No-op when no start symbol is found.
     /// </summary>
     private void AppendMainEntryPoint(StringBuilder output)
     {
@@ -1229,6 +1230,8 @@ public partial class LlvmEmitter
         output.AppendLine(value: "declare void @__rf_set_trace_mode(i32)");
         output.AppendLine(value: "declare void @rf_set_stack_overflow_report(ptr)");
         output.AppendLine(value: "declare i32 @rf_exit_code()");
+        output.AppendLine(value: "declare void @rf_heap_limit_init()");
+        output.AppendLine(value: "declare i32 @rf_heap_limit_status(i32)");
         // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
         string overflowReport = _registry.Language == Language.Suflae
             ? "tessera_deep_calls_report"
@@ -1239,13 +1242,16 @@ public partial class LlvmEmitter
         output.AppendLine(value: "; Entry point");
         output.AppendLine(value: $"define i32 @main(i32 %argc, ptr %argv) {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
+        // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RF_MEMORY_LIMIT).
+        output.AppendLine(value: "  call void @rf_heap_limit_init()");
         output.AppendLine(value: "  call void @rf_runtime_init()");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
         // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace.
         output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
 
         output.AppendLine(handler: $"  call void @{startFunc}()");
-        output.AppendLine(value: "  %status = call i32 @rf_exit_code()");
+        output.AppendLine(value: "  %set = call i32 @rf_exit_code()");
+        output.AppendLine(value: "  %status = call i32 @rf_heap_limit_status(i32 %set)");
         output.AppendLine(value: "  ret i32 %status");
         output.AppendLine(value: "}");
     }

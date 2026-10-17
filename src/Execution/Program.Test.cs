@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using Builder.Declaration;
 using TypeModel.Enums;
@@ -157,13 +158,22 @@ internal partial class Program
         }
 
         TimeSpan limit = test.TimeLimit ?? TestTimeout;
+        // A memory limit is checked by the runtime, which counts the heap when RF_MEMORY_LIMIT is set.
+        Dictionary<string, string>? environment = test.MemoryLimit is { } bytes
+            ? new Dictionary<string, string> { [key: "RF_MEMORY_LIMIT"] = bytes.ToString(provider: CultureInfo.InvariantCulture) }
+            : null;
         (int exit, _, string stderr, bool timedOut) = RunProgram(fileName: exe, arguments: [], input: "",
-            environment: null, timeout: limit);
+            environment: environment, timeout: limit);
         if (timedOut)
         {
             return test.TimeLimit != null
                 ? $"took longer than its @time_limit of {FormatSpan(span: limit)}"
                 : $"did not finish within {TestTimeout.TotalMinutes} minutes";
+        }
+
+        if (test.MemoryLimit != null && stderr.Contains(value: "Memory limit error", comparisonType: StringComparison.Ordinal))
+        {
+            return "used more memory than its @memory_limit\n" + stderr.Trim();
         }
 
         if (exit == 1 && test.Cases.Count > 0)
