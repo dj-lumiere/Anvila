@@ -101,6 +101,12 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         var rewritten = new List<Statement>(capacity: block.Statements.Count);
         foreach (Statement stmt in block.Statements)
         {
+            if (stmt is BlockStatement { HoldsAccessLock: true } held)
+            {
+                LowerHeldBlock(block: held, into: rewritten);
+                continue;
+            }
+
             RecurseInto(stmt: stmt);
             // An atomic-width scalar global RMW (`__globals__.n = __globals__.n.add(d)`) becomes one
             // lock-free AtomicRmwStatement instead of a bracketed load-compute-store. Everything else
@@ -111,7 +117,8 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 continue;
             }
 
-            List<Expression> handles = FieldAccessHandles(stmt: stmt)
+            Statement current = ReadFieldsBeforeCalls(stmt: stmt, into: rewritten);
+            List<Expression> handles = FieldAccessHandles(stmt: current)
                                        .Where(predicate: h => IsHeldPlace(handle: h) && !IsSelfLocking(handle: h))
                                        .ToList();
             // The IterGuard: a write to a member variable of an entity changes the entity itself (a container's
@@ -127,16 +134,318 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                     isFailable: true);
             }
 
-            if (handles.Count > 0 && SpillLeavingValue(stmt: stmt, handles: handles, into: rewritten))
+            if (handles.Count > 0 && SpillLeavingValue(stmt: current, handles: handles, into: rewritten))
             {
                 continue;
             }
 
-            AddBracketed(into: rewritten, handles: handles, stmt: stmt);
+            AddBracketed(into: rewritten, handles: handles, stmt: current);
         }
 
         block.Statements.Clear();
         block.Statements.AddRange(collection: rewritten);
+    }
+
+    /// <summary>
+    /// A block that reads a member variable and writes it back in several statements (see
+    /// <see cref="BlockStatement.HoldsAccessLock"/>) takes the access lock of every entity it touches before its
+    /// first statement and lets it go after its last, and also before every <c>return</c> or <c>throw</c> inside it
+    /// (the pass-on of a failure). Its own statements keep their brackets, which the reentrant lock allows.
+    /// </summary>
+    private void LowerHeldBlock(BlockStatement block, List<Statement> into)
+    {
+        var handles = new List<Expression>();
+        var seen = new HashSet<string>();
+        AstWalker.Walk(root: block,
+            visit: n =>
+            {
+                if (n is not Statement s)
+                {
+                    return;
+                }
+
+                foreach (Expression h in FieldAccessHandles(stmt: s))
+                {
+                    if (IsHeldPlace(handle: h) && !IsSelfLocking(handle: h) && seen.Add(item: PlaceKey(place: h)))
+                    {
+                        handles.Add(item: h);
+                    }
+                }
+            });
+        LowerBlock(block: block);
+        if (handles.Count > 0)
+        {
+            ReleaseBeforeLeaving(block: block, handles: handles);
+        }
+
+        AddBracketed(into: into, handles: handles, stmt: block);
+    }
+
+    /// <summary>
+    /// A routine of the program can take access locks of its own (it reads member variables of the entities it is
+    /// given). Holding one lock while waiting for another is how two agents wait for each other forever: one holds
+    /// the list and waits for the account, the other holds the account and waits for the list. So a member variable
+    /// read in the arguments of a call to such a routine (<c>me.take(account: payer, note: f"to {payee.member}")</c>)
+    /// is read first, into a temp inside its own bracket, and the call itself runs holding no lock for it. Standard
+    /// library routines take no lock of the program's entities, so a call to one stays inside the bracket. The
+    /// entity a statement writes keeps its lock across the statement, so a read that feeds the write stays in it.
+    /// A read is not moved ahead of an earlier argument that calls a routine of the program, which could change it.
+    /// Returns <paramref name="stmt"/> with the reads replaced, after adding the temps to <paramref name="into"/>.
+    /// </summary>
+    private Statement ReadFieldsBeforeCalls(Statement stmt, List<Statement> into)
+    {
+        string? written = WrittenFieldHandle(stmt: stmt) is { } w
+            ? PlaceKey(place: w)
+            : null;
+        var reader = new FieldReadHoister(pass: this, keepPlace: written, into: into);
+        return stmt switch
+        {
+            ExpressionStatement es => es with { Expression = reader.VisitExpression(expr: es.Expression) },
+            DropStatement ds => ds with { Expression = reader.VisitExpression(expr: ds.Expression) },
+            AssignmentStatement a => a with { Value = reader.VisitExpression(expr: a.Value) },
+            DeclarationStatement { Declaration: VariableDeclaration { Initializer: { } init } v } d =>
+                d with { Declaration = v with { Initializer = reader.VisitExpression(expr: init) } },
+            ReturnStatement { Value: { } rv } r => r with { Value = reader.VisitExpression(expr: rv) },
+            VariantReturnStatement { Value: { } vv } vr => vr with { Value = reader.VisitExpression(expr: vv) },
+            ThrowStatement t => t with { Error = reader.VisitExpression(expr: t.Error) },
+            IfStatement i => i with { Condition = reader.VisitExpression(expr: i.Condition) },
+            WhenStatement wh => wh with { Expression = reader.VisitExpression(expr: wh.Expression) },
+            _ => stmt
+        };
+    }
+
+    /// <summary>Whether a call to <paramref name="call"/>'s routine may run while an access lock is held: a routine
+    /// of the standard library, or one the builder wrote with no source of its own.</summary>
+    private bool RunsUnderLock(CallExpression call)
+    {
+        if (call.ResolvedRoutine is not { } routine)
+        {
+            return false;
+        }
+
+        RoutineInfo source = routine.RecoveryOf ?? routine.GenericDefinition ?? routine;
+        string? file = source.Location?.FileName ?? routine.Location?.FileName;
+        return file == null || Registry.IsStandardLibraryFile(filePath: file);
+    }
+
+    /// <summary>The held place of a member variable read through a Roamed handle that must leave the bracket of the
+    /// statement (see <see cref="ReadFieldsBeforeCalls"/>), or null.</summary>
+    private static Expression? MovableFieldRead(Expression e, string? keepPlace)
+    {
+        return e is MemberExpression member && RoamedFieldReceiver(member: member) is { } handle &&
+               IsHeldPlace(handle: handle) && !IsSelfLocking(handle: handle) && PlaceKey(place: handle) != keepPlace
+            ? handle
+            : null;
+    }
+
+    /// <summary>Replaces the member variable reads in the arguments of calls to routines of the program with temps
+    /// read just before the statement (see <see cref="ReadFieldsBeforeCalls"/>). Only eagerly evaluated parts are
+    /// visited: the right side of <c>and</c>/<c>or</c>/<c>??</c>, the branches of a conditional, a <c>when</c>
+    /// expression and a routine value stay as they are.</summary>
+    private sealed class FieldReadHoister(RoamedLockBracketLoweringPass pass, string? keepPlace, List<Statement> into)
+        : AstRewriter
+    {
+        protected override Expression VisitCall(CallExpression e)
+        {
+            var visited = (CallExpression)base.VisitCall(e: e);
+            if (pass.RunsUnderLock(call: visited))
+            {
+                return visited;
+            }
+
+            Expression callee = visited.Callee;
+            bool earlierCall = false;
+            if (callee is MemberExpression { Object: var receiver } cm)
+            {
+                callee = cm with { Object = MoveReads(e: receiver) };
+                earlierCall = ContainsProgramCall(e: receiver);
+            }
+
+            var args = new List<Expression>(capacity: visited.Arguments.Count);
+            foreach (Expression arg in visited.Arguments)
+            {
+                args.Add(item: earlierCall ? arg : MoveReads(e: arg));
+                earlierCall |= ContainsProgramCall(e: arg);
+            }
+
+            return visited with { Callee = callee, Arguments = args };
+        }
+
+        protected override Expression VisitBinary(BinaryExpression e)
+        {
+            if (e.Operator is BinaryOperator.And or BinaryOperator.Or or BinaryOperator.NoneCoalesce)
+            {
+                Expression left = VisitExpression(expr: e.Left);
+                return ReferenceEquals(objA: left, objB: e.Left)
+                    ? e
+                    : e with { Left = left };
+            }
+
+            return base.VisitBinary(e: e);
+        }
+
+        protected override Expression VisitConditional(ConditionalExpression e)
+        {
+            Expression condition = VisitExpression(expr: e.Condition);
+            return ReferenceEquals(objA: condition, objB: e.Condition)
+                ? e
+                : e with { Condition = condition };
+        }
+
+        protected override Expression VisitWhenExpression(WhenExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitClosureValue(ClosureValueExpression e)
+        {
+            return e;
+        }
+
+        /// <summary>Reads every movable member variable in <paramref name="e"/> into a temp first.</summary>
+        private Expression MoveReads(Expression e)
+        {
+            return new ReadMover(pass: pass, keepPlace: keepPlace, into: into).VisitExpression(expr: e);
+        }
+
+        private bool ContainsProgramCall(Expression e)
+        {
+            bool found = false;
+            AstWalker.WalkExpressions(root: e,
+                visit: n => found |= n is CallExpression c && !pass.RunsUnderLock(call: c));
+            return found;
+        }
+    }
+
+    /// <summary>Puts each movable member variable read it meets into a bracketed temp (see
+    /// <see cref="FieldReadHoister"/>), skipping parts that may not run.</summary>
+    private sealed class ReadMover(RoamedLockBracketLoweringPass pass, string? keepPlace, List<Statement> into)
+        : AstRewriter
+    {
+        protected override Expression VisitMember(MemberExpression e)
+        {
+            if (MovableFieldRead(e: e, keepPlace: keepPlace) is { } handle)
+            {
+                return pass.Spill(value: e, handles: [handle], into: into);
+            }
+
+            return base.VisitMember(e: e);
+        }
+
+        protected override Expression VisitBinary(BinaryExpression e)
+        {
+            if (e.Operator is BinaryOperator.And or BinaryOperator.Or or BinaryOperator.NoneCoalesce)
+            {
+                Expression left = VisitExpression(expr: e.Left);
+                return ReferenceEquals(objA: left, objB: e.Left)
+                    ? e
+                    : e with { Left = left };
+            }
+
+            return base.VisitBinary(e: e);
+        }
+
+        protected override Expression VisitConditional(ConditionalExpression e)
+        {
+            Expression condition = VisitExpression(expr: e.Condition);
+            return ReferenceEquals(objA: condition, objB: e.Condition)
+                ? e
+                : e with { Condition = condition };
+        }
+
+        protected override Expression VisitWhenExpression(WhenExpression e)
+        {
+            return e;
+        }
+
+        protected override Expression VisitClosureValue(ClosureValueExpression e)
+        {
+            return e;
+        }
+    }
+
+    /// <summary>The spelling of a held place (<c>me.board</c>), which tells two reads of the same handle apart from
+    /// reads of different ones.</summary>
+    private static string PlaceKey(Expression place)
+    {
+        return place switch
+        {
+            IdentifierExpression id => id.Name,
+            MemberExpression member => PlaceKey(place: member.Object) + "." + member.MemberName,
+            _ => ""
+        };
+    }
+
+    /// <summary>Puts <c>lock_exit</c> of <paramref name="handles"/> before every <c>return</c> and <c>throw</c> inside
+    /// <paramref name="block"/>, at any depth.</summary>
+    private void ReleaseBeforeLeaving(BlockStatement block, List<Expression> handles)
+    {
+        var rewritten = new List<Statement>(capacity: block.Statements.Count);
+        foreach (Statement stmt in block.Statements)
+        {
+            if (stmt is ReturnStatement or VariantReturnStatement or ThrowStatement)
+            {
+                foreach (Expression h in handles)
+                {
+                    AddBracket(into: rewritten, handle: h, memberRoutine: RuntimeContract.RoamedMemberRoutine.LockExit);
+                }
+
+                rewritten.Add(item: stmt);
+                continue;
+            }
+
+            rewritten.Add(item: ReleaseIn(stmt: stmt, handles: handles));
+        }
+
+        block.Statements.Clear();
+        block.Statements.AddRange(collection: rewritten);
+    }
+
+    /// <summary>The statement with the releases of <see cref="ReleaseBeforeLeaving"/> put into its branches. A branch
+    /// that is a bare <c>return</c> becomes a block of the releases and the <c>return</c>.</summary>
+    private Statement ReleaseIn(Statement stmt, List<Expression> handles)
+    {
+        switch (stmt)
+        {
+            case BlockStatement b:
+                ReleaseBeforeLeaving(block: b, handles: handles);
+                return b;
+            case ReturnStatement or VariantReturnStatement or ThrowStatement:
+            {
+                var wrapped = new BlockStatement(Statements: new List<Statement> { stmt }, Location: stmt.Location);
+                ReleaseBeforeLeaving(block: wrapped, handles: handles);
+                return wrapped;
+            }
+            case IfStatement i:
+                return i with
+                {
+                    ThenStatement = ReleaseIn(stmt: i.ThenStatement, handles: handles),
+                    ElseStatement = i.ElseStatement == null
+                        ? null
+                        : ReleaseIn(stmt: i.ElseStatement, handles: handles)
+                };
+            case WhenStatement w:
+                return w with
+                {
+                    Clauses = w.Clauses.Select(selector: c => c with { Body = ReleaseIn(stmt: c.Body, handles: handles) })
+                                       .ToList()
+                };
+            case WhileStatement loop:
+                return loop with
+                {
+                    Body = ReleaseIn(stmt: loop.Body, handles: handles),
+                    ElseBranch = loop.ElseBranch == null
+                        ? null
+                        : ReleaseIn(stmt: loop.ElseBranch, handles: handles)
+                };
+            case LoopStatement l:
+                return l with { Body = ReleaseIn(stmt: l.Body, handles: handles) };
+            case DangerStatement d:
+                ReleaseBeforeLeaving(block: d.Body, handles: handles);
+                return d;
+            default:
+                return stmt;
+        }
     }
 
     private void AddBracketed(List<Statement> into, List<Expression> handles, Statement stmt)

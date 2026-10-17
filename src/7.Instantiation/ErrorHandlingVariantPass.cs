@@ -480,7 +480,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     rewriter: rewriter,
                     registry: registry,
                     nextOnly: nextOnly),
-                Location: body.Location);
+                Location: body.Location) { HoldsAccessLock = WritesMemberVariable(stmt: residual!) };
         }
 
         return body switch
@@ -955,6 +955,22 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     hoisted: out List<Statement>? hoisted,
                     residual: out Statement? residual))
             {
+                // A member variable written from a value computed out of it (`board.score += 1` became
+                // `var t = board.score.add(1)`, the pass-on, `board.score = t`) keeps the read and the write in one
+                // block, which holds the entity's access lock across both.
+                if (WritesMemberVariable(stmt: residual!))
+                {
+                    result.Add(item: new BlockStatement(Statements: TransformBlockStatements(
+                            stmts: new List<Statement>(collection: hoisted!) { residual! },
+                            start: 0,
+                            kind: kind,
+                            rewriter: rewriter,
+                            registry: registry,
+                            nextOnly: nextOnly),
+                        Location: s.Location) { HoldsAccessLock = true });
+                    continue;
+                }
+
                 var respliced = new List<Statement>(collection: hoisted!) { residual! };
                 respliced.AddRange(collection: stmts.Skip(count: i + 1));
                 result.AddRange(collection: TransformBlockStatements(stmts: respliced,
@@ -1174,6 +1190,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             _ => stmt
         };
         return true;
+    }
+
+    /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>).</summary>
+    private static bool WritesMemberVariable(Statement stmt)
+    {
+        return stmt is AssignmentStatement { Target: MemberExpression };
     }
 
     private static int _hoistTemp;

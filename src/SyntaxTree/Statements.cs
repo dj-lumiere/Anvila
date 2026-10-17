@@ -713,6 +713,12 @@ public record BlockStatement(List<Statement> Statements, SourceLocation Location
     /// does is not known, so a check like "every path returns" takes it as returning instead of adding to the report.</summary>
     public bool HadParseError { get; init; }
 
+    /// <summary>True for a block that reads a member variable of an entity and writes it back in more than one
+    /// statement (a <c>+=</c> whose arithmetic can fail, split so a recovering variant passes the failure on). The
+    /// access lock of every entity it touches is held across the whole block, so no other agent changes the member
+    /// variable between the read and the write.</summary>
+    public bool HoldsAccessLock { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
