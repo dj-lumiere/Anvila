@@ -258,6 +258,11 @@ internal sealed class SignatureResolver
 
         _sa._currentRoutine = prevRoutine;
 
+        _sa.CheckSignatureHasNoForeignBareEntity(routine: routine,
+            kind: pending.Kind,
+            parameters: parameters,
+            returnType: returnType);
+
         RoutineInfo finalRoutine = BuildFinalRoutineInfo(pending: pending,
             routine: routine,
             refreshedOwnerType: refreshedOwnerType,

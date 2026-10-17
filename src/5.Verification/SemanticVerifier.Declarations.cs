@@ -939,8 +939,8 @@ public sealed partial class SemanticVerifier
     /// build-time invariant <c>AssertNoBareEntityInSignature</c> still guards the OTHER bare-entity case
     /// (an SF entity that slipped roaming — a builder bug, no <c>RF::</c> tag).
     /// </summary>
-    private void CheckSignatureHasNoForeignBareEntity(RoutineDeclaration routine,
-        RoutineKind kind)
+    internal void CheckSignatureHasNoForeignBareEntity(RoutineDeclaration routine,
+        RoutineKind kind, IReadOnlyList<ParamInfo> parameters, TypeSymbol? returnType)
     {
         string? file = routine.Location.FileName;
         if (!_registry.EntitiesAreShared || file == null ||
@@ -951,32 +951,33 @@ public sealed partial class SemanticVerifier
         }
 
         const string advice =
-            " An entity from a `.rf` module has one owner and no reference count, so handing it across a routine " +
-            "here would free the same object more than once. Keep it as a member variable of an entity of this " +
-            "program and pass that entity, or do the work on it inside the `.rf` module.";
+            " An entity from a `.rf` module is not shared and has no reference count, so handing it across a " +
+            "routine here would release the same object more than once. Keep it as a member variable of an " +
+            "entity of this program and pass that entity, or do the work on it inside the `.rf` module.";
 
-        foreach (Parameter p in routine.Parameters)
+        // The resolved type decides, not the spelling: a bare `Counter` from an imported `.rf` module is the
+        // same RazorForge entity as `RF::Counter`.
+        foreach (ParamInfo p in parameters)
         {
-            if (p.Type is { Realm: TypeModel.Realms.Shared } pType &&
-                ResolveType(typeExpr: pType) is EntityTypeSymbol pe)
+            if (p.Type is EntityTypeSymbol { Realm: TypeModel.Realms.Shared } pe)
             {
+                Parameter? declared = routine.Parameters.FirstOrDefault(predicate: d => d.Name == p.Name);
                 ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
                     message:
                     $"You declare parameter '{p.Name}' as '{pe.Name}', an entity from a `.rf` module." +
                     advice,
-                    location: pType.Location);
+                    location: declared?.Type?.Location ?? routine.Location);
             }
         }
 
-        // A constructor's return is the freshly-built entity the CALLER takes ownership of, not a
+        // A constructor's return is the freshly-built entity the CALLER receives, not a
         // by-value hand-off of an already-live object, so it is exempt (mirrors the invariant's carve-out).
-        if (kind != RoutineKind.Creator && routine.ReturnType is { Realm: TypeModel.Realms.Shared } rType &&
-            ResolveType(typeExpr: rType) is EntityTypeSymbol re)
+        if (kind != RoutineKind.Creator && returnType is EntityTypeSymbol { Realm: TypeModel.Realms.Shared } re)
         {
             ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
                 message: $"You declare the return type as '{re.Name}', an entity from a `.rf` module." +
                          advice,
-                location: rType.Location);
+                location: routine.ReturnType?.Location ?? routine.Location);
         }
     }
 
@@ -985,8 +986,6 @@ public sealed partial class SemanticVerifier
         // Determine the kind of routine (member/creator/free) plus its owner + canonical name.
         (RoutineKind kind, TypeSymbol? ownerType, string routineName) =
             DetermineRoutineKind(routine: routine);
-
-        CheckSignatureHasNoForeignBareEntity(routine: routine, kind: kind);
 
         // Validate declaration-level constraints (operator/kind restrictions, wired names, annotations,
         // mutation-category conflicts, varargs placement) before deferring registration.
