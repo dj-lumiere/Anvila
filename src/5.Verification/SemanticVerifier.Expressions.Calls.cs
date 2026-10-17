@@ -770,7 +770,9 @@ public sealed partial class SemanticVerifier
         // Try module-prefixed routine lookup (e.g., Core.normalize_duration)
         // This is done after type creator check to avoid shadowing type creators
         // with identically-named convenience functions (e.g., "routine U32(from: U8)")
-        RoutineInfo? routine = LookupRoutineWithImports(name: callName);
+        RoutineInfo? routine = PreferImportedRoutineThatFits(call: call,
+            callName: callName,
+            routine: LookupRoutineWithImports(name: callName));
 
         // Generic overload disambiguation by arity for an import-resolved routine: several
         // generic free routines can share one name (e.g. `zip(a,b)` / `zip(a,b,c)` /
@@ -3831,6 +3833,7 @@ public sealed partial class SemanticVerifier
         // Realm gate: a foreign routine (C extern / LLVM intrinsic) must be called via its
         // `C::`/`LLVM::` qualifier, and a `C::`/`LLVM::` qualifier must name a matching realm.
         CheckCallRealm(callee: id, routine: routine, location: call.Location);
+        CheckAmbiguousImportedRoutine(call: call, id: id, routine: routine);
 
         if (CheckUnresolvableGenericRoutine(call: call, routine: routine))
         {
@@ -4387,6 +4390,88 @@ public sealed partial class SemanticVerifier
                     location: arg.Location);
             }
         }
+    }
+
+    /// <summary>
+    /// A bare call found a routine of an imported module by its name alone. When that module has no routine of the
+    /// name that takes the call's arguments (their count and names) and exactly one other imported module does, the
+    /// call means that module's routine.
+    /// </summary>
+    private RoutineInfo? PreferImportedRoutineThatFits(CallExpression call, string callName, RoutineInfo? routine)
+    {
+        if (routine is not { IsForeign: false, Module: { } home } || callName.Contains(value: '.') ||
+            home == _currentModuleName)
+        {
+            return routine;
+        }
+
+        bool Fits(RoutineInfo r)
+        {
+            int count = call.Arguments.Count;
+            if (r.IsVariadic)
+            {
+                return true;
+            }
+
+            if (count > r.Parameters.Count || r.Parameters.Skip(count: count).Any(predicate: p => !p.HasDefaultValue))
+            {
+                return false;
+            }
+
+            return call.Arguments.OfType<NamedArgumentExpression>()
+                       .All(predicate: a => r.Parameters.Any(predicate: p => p.Name == a.Name));
+        }
+
+        if (_registry.FreeRoutinesWithBaseName(baseName: $"{home}.{callName}").Any(predicate: Fits))
+        {
+            return routine;
+        }
+
+        List<RoutineInfo> fitting = _importedModules
+                                   .Where(predicate: ns => ns != home)
+                                   .Select(selector: ns => _registry.FreeRoutinesWithBaseName(baseName: $"{ns}.{callName}")
+                                                                    .FirstOrDefault(predicate: r => !r.IsForeign && Fits(r: r)))
+                                   .OfType<RoutineInfo>()
+                                   .ToList();
+        return fitting is [var only]
+            ? only
+            : routine;
+    }
+
+    /// <summary>
+    /// A bare call to a routine of an imported module, when another imported module has a routine of the same name
+    /// that takes the same parameters, could mean either one. Reports RF-S513 instead of picking one. The current
+    /// module's own routine is not ambiguous: it comes first.
+    /// </summary>
+    private void CheckAmbiguousImportedRoutine(CallExpression call, IdentifierExpression id, RoutineInfo routine)
+    {
+        if (call.IsSynthesizedLowering || id.Name.Contains(value: '.') || routine.IsForeign ||
+            routine.IsSynthesized || routine.Module is not { } home || home == _currentModuleName)
+        {
+            return;
+        }
+
+        string Signature(RoutineInfo r) => string.Join(separator: ",",
+            values: r.Parameters.Select(selector: p => RoutineInfo.GetTypeIdentity(type: p.Type)));
+        string wanted = Signature(r: routine);
+        List<string> others = _importedModules
+                             .Where(predicate: ns => ns != home && ns != _currentModuleName)
+                             .Where(predicate: ns => _registry.FreeRoutinesWithBaseName(baseName: $"{ns}.{routine.Name}")
+                                                              .Any(predicate: r => !r.IsForeign &&
+                                                                                   Signature(r: r) == wanted))
+                             .Order(comparer: StringComparer.Ordinal)
+                             .ToList();
+        if (others.Count == 0)
+        {
+            return;
+        }
+
+        List<string> all = others.Prepend(element: home).Select(selector: m => $"'{m}'").ToList();
+        string modules = string.Join(separator: ", ", values: all.SkipLast(count: 1)) + " and " + all[^1];
+        ReportError(code: SemanticDiagnosticCode.AmbiguousModuleQualifiedCall,
+            message: $"'{routine.Name}' with these parameters is in {modules}, and this file imports each of them, so " +
+                     $"the call could mean any of them. Name the module, as in '{home}.{routine.Name}(...)'.",
+            location: call.Location);
     }
 
     private TypeSymbol? AnalyzeResolvedFreeRoutine(CallExpression call, IdentifierExpression id,

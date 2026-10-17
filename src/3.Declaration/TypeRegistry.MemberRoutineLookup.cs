@@ -478,6 +478,16 @@ public sealed partial class TypeRegistry
         return null;
     }
 
+    /// <summary>The free routines registered under <paramref name="baseName"/> (<c>Module.name</c>), every
+    /// overload.</summary>
+    public IEnumerable<RoutineInfo> FreeRoutinesWithBaseName(string baseName)
+    {
+        return _routinesByOwner.TryGetValue(key: FreeOwnerKey, value: out Dictionary<string, List<RoutineInfo>>? byName) &&
+               byName.TryGetValue(key: baseName, value: out List<RoutineInfo>? routines)
+            ? VisibleOverloads(overloads: routines)
+            : [];
+    }
+
     /// <summary>True if <paramref name="baseName"/> has more than one registered overload (keys
     /// <c>baseName</c> and/or <c>baseName#…</c>). Used to gate the first-wins fallback, which is only
     /// correct for a lone overload.</summary>
