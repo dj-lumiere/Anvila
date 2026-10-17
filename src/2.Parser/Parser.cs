@@ -891,12 +891,13 @@ public partial class Parser
             return;
         }
 
-        throw new GrammarException(code: GrammarDiagnosticCode.ModifierHasNoEffect,
+        // Recorded, not thrown: the code is well-formed, so parsing goes on and the rest of the body is not lost.
+        RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.ModifierHasNoEffect,
             message: message,
             fileName: FileName,
             line: at.Line,
             column: at.Column,
-            language: _language);
+            language: _language));
     }
 
     /// <summary>

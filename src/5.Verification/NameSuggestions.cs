@@ -86,7 +86,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     /// subject to a length-scaled threshold (1 edit for short names, up to 3 for long ones).
     /// Ties break alphabetically for deterministic output. Returns null when nothing is close.
     /// </summary>
-    private static string? SuggestSimilarName(string target, IEnumerable<string> candidates)
+    internal static string? SuggestSimilarName(string target, IEnumerable<string> candidates)
     {
         if (target.Length == 0)
         {

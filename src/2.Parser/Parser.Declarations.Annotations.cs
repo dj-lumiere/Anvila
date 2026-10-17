@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using Builder.Diagnostics;
 using Builder.Tokenizer;
 
@@ -51,6 +52,7 @@ public partial class Parser
         {
             string compoundAnnot = ConsumeIdentifier(
                 errorMessage: "Expected annotation name in compound annotation");
+            bool knownCompound = IsKnownAnnotation(name: compoundAnnot, at: PeekToken(offset: -1));
 
             // Check for optional arguments on each annotation
             if (CheckAndAdvance(type: TokenType.LeftParen))
@@ -58,7 +60,10 @@ public partial class Parser
                 compoundAnnot += "(" + ParseAnnotationArgumentList() + ")";
             }
 
-            annotations.Add(item: compoundAnnot);
+            if (knownCompound)
+            {
+                annotations.Add(item: compoundAnnot);
+            }
         } while (CheckAndAdvance(type: TokenType.Comma));
 
         Consume(type: TokenType.RightBracket,
@@ -73,6 +78,7 @@ public partial class Parser
     {
         // Regular annotation: @identifier
         string annotName = ConsumeIdentifier(errorMessage: "Expected annotation name after '@'");
+        bool known = IsKnownAnnotation(name: annotName, at: PeekToken(offset: -1));
 
         // Check for annotation arguments: @something("size_of") or @deprecated(message: "text")
         if (CheckAndAdvance(type: TokenType.LeftParen))
@@ -80,7 +86,43 @@ public partial class Parser
             annotName += "(" + ParseAnnotationArgumentList() + ")";
         }
 
-        annotations.Add(item: annotName);
+        if (known)
+        {
+            annotations.Add(item: annotName);
+        }
+    }
+
+    /// <summary>The annotations the builder gives an effect. Any other name is a build error, so a misspelled one
+    /// (`@readonyl`) is not quietly ignored.</summary>
+    private static readonly HashSet<string> KnownAnnotations =
+    [
+        "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "no_optimize",
+        "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking",
+        RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rf",
+        "test", "case", "time_limit", "memory_limit", "skip", "bench"
+    ];
+
+    /// <summary>Whether <paramref name="name"/> is an annotation the builder knows. An unknown one is reported and left
+    /// off the declaration, so nothing reports it a second time.</summary>
+    private bool IsKnownAnnotation(string name, Token at)
+    {
+        if (KnownAnnotations.Contains(item: name))
+        {
+            return true;
+        }
+
+        string? near = Builder.Verification.NameSuggestions.SuggestSimilarName(target: name,
+            candidates: KnownAnnotations);
+        // Recorded, not thrown: the declaration it sits on still parses, so one misspelled name reports once.
+        RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.UnknownAnnotation,
+            message: near != null
+                ? $"There is no annotation '@{name}'. Did you mean '@{near}'?"
+                : $"There is no annotation '@{name}', and the builder would ignore it. Remove it.",
+            fileName: FileName,
+            line: at.Line,
+            column: at.Column,
+            language: _language));
+        return false;
     }
 
     /// <summary>
