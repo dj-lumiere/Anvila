@@ -662,9 +662,9 @@ internal sealed class TesseraRoutineWriter
             case "B16" or "BF16" or "B32" or "B64":
                 return "0.0";
             case "Addr":
-                return "null";
+                return ".hollow()";
             case ['@', ..]:
-                return "null";
+                return ".hollow()";
         }
 
         string slot = $"zero{_temps++}";
@@ -712,7 +712,7 @@ internal sealed class TesseraRoutineWriter
                     Type: _module.ConstantType(constant: constant), IsPlace: false);
             case IdentifierExpression { ResolvedRoutine: { } named }:
                 // A routine taken as a value: its code address, nothing bound.
-                return RoutineValue(routine: named, bound: "null");
+                return RoutineValue(routine: named, bound: ".hollow()");
             case ClosureValueExpression closure:
                 return RoutineValue(
                     routine: closure.Function.ResolvedRoutine ??
@@ -803,7 +803,7 @@ internal sealed class TesseraRoutineWriter
     {
         string record = _module.RoutineValueRecord;
         string name = $"t{_temps++}";
-        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: null)");
+        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: .hollow())");
         return new Operand(Text: name, Type: null, IsPlace: false);
     }
 

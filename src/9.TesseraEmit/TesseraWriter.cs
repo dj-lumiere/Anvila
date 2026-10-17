@@ -783,13 +783,13 @@ internal sealed class TesseraWriter
     /// <summary>
     /// The read-only memory holding <paramref name="data"/>'s elements (a Tessera preset in memory, a private constant
     /// as in the LLVM emitter, so each module keeps its own), laid down once per distinct content; its name is the
-    /// address. Empty data is the null address.
+    /// address. Empty data is the hollow address, `.hollow()`.
     /// </summary>
     public string ConstantData(ConstantDataExpression data)
     {
         if (data.Elements.Count == 0)
         {
-            return "null";
+            return ".hollow()";
         }
 
         string type = $"Array[{TypeText(type: data.ElementType)}, {data.Elements.Count}]";
@@ -894,7 +894,7 @@ internal sealed class TesseraWriter
     public static bool IsName(string text) =>
         text.Length > 0
         && (text[0] == '`' || ((char.IsLetter(c: text[0]) || text[0] == '_') && text.All(predicate: c => char.IsLetterOrDigit(c: c) || c == '_')))
-        && text is not ("true" or "false" or "null");
+        && text is not ("true" or "false");
 
     private string UniqueName(string wanted)
     {
