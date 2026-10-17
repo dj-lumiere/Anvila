@@ -1983,7 +1983,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// variant (passthrough — including a different variant that is itself an arm must still wrap),
     /// or it matches no arm. Guarded by the declaration auto-wrap and the call-argument auto-wrap.
     /// </summary>
-    private static Expression? TryWrapVariantArm(TypeSymbol? targetType, Expression init)
+    internal static Expression? TryWrapVariantArm(TypeSymbol? targetType, Expression init)
     {
         if (targetType is not VariantTypeSymbol variant)
         {

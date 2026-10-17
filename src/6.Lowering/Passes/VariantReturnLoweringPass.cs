@@ -67,6 +67,16 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             Location: loc);
     }
 
+    /// <summary>A returned value as the carrier's <c>T</c>: a value of one of T's types, where T is a variant
+    /// (<c>return Deposit(...)</c> from a routine that returns <c>Command</c>), is wrapped into T first. The plain-return
+    /// wrap in <see cref="ExpressionLoweringPass"/> sees only the carrier as the return type, so it never does this.</summary>
+    private static Expression AsCarried(RecordTypeSymbol carrier, Expression value)
+    {
+        return carrier.TypeArguments is [{ } carried]
+            ? ExpressionLoweringPass.TryWrapVariantArm(targetType: carried, init: value) ?? value
+            : value;
+    }
+
     /// <summary>The arm name a carrier return gives its success value (the arm is the carrier's <c>T</c>, whatever it
     /// is once the carrier is concrete).</summary>
     internal const string SuccessArm = "T";
@@ -156,7 +166,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
         };
         if (hasValue)
         {
-            members.Add(item: ("value", vr.Value!));
+            members.Add(item: ("value", AsCarried(carrier: maybe, value: vr.Value!)));
         }
 
         return new ReturnStatement(
@@ -186,8 +196,12 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
 
         if (vr.Value is { ResolvedType: not null } || vr is { SiteKind: VariantSiteKind.FromThrow, Value: not null })
         {
-            return MakeCarrierReturn(carrier: carrier, payload: vr.Value,
-                thrown: vr.SiteKind == VariantSiteKind.FromThrow, loc: vr.Location);
+            bool thrown = vr.SiteKind == VariantSiteKind.FromThrow;
+            return MakeCarrierReturn(carrier: carrier,
+                payload: thrown || vr.Value!.ResolvedType is CrashableTypeSymbol
+                    ? vr.Value
+                    : AsCarried(carrier: carrier, value: vr.Value!),
+                thrown: thrown, loc: vr.Location);
         }
 
         // No resolved type on the value — leave for codegen.
