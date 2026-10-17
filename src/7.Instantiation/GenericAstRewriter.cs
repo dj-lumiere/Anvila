@@ -2683,19 +2683,25 @@ internal static class GenericAstRewriter
             {
                 Condition = RewriteExpression(expr: ws.Condition, ctx: ctx),
                 Body = RewriteStatement(stmt: ws.Body, ctx: ctx),
-                ElseBranch = ws.ElseBranch != null
-                    ? RewriteStatement(stmt: ws.ElseBranch, ctx: ctx)
+                ThenBranch = ws.ThenBranch != null
+                    ? RewriteStatement(stmt: ws.ThenBranch, ctx: ctx)
                     : null
             },
 
-            LoopStatement ls => ls with { Body = RewriteStatement(stmt: ls.Body, ctx: ctx) },
+            LoopStatement ls => ls with
+            {
+                Body = RewriteStatement(stmt: ls.Body, ctx: ctx),
+                ThenBranch = ls.ThenBranch != null
+                    ? RewriteStatement(stmt: ls.ThenBranch, ctx: ctx)
+                    : null
+            },
 
             EachStatement fs => fs with
             {
                 Iterable = RewriteExpression(expr: fs.Iterable, ctx: ctx),
                 Body = RewriteStatement(stmt: fs.Body, ctx: ctx),
-                ElseBranch = fs.ElseBranch != null
-                    ? RewriteStatement(stmt: fs.ElseBranch, ctx: ctx)
+                ThenBranch = fs.ThenBranch != null
+                    ? RewriteStatement(stmt: fs.ThenBranch, ctx: ctx)
                     : null
             },
 

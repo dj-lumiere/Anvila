@@ -532,12 +532,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     nextOnly: nextOnly),
 
             // A loop condition re-runs every iteration, so a failure in it cannot be split out ahead of the loop:
-            // `while c` becomes `loop` over `if c then <body> else break`, whose condition is split out like
-            // any other `if` condition, each time it runs. A `while … else` gets the flag its body sets, and its
-            // `else` runs after the loop when the flag is still clear (the body never ran).
+            // `while c` becomes `while true` over `if c then <body> else break`, whose condition is split out like
+            // any other `if` condition, each time it runs.
             WhileStatement ws when registry != null && !nextOnly &&
                                    HasPropagatableFailure(expr: ws.Condition, registry: registry) =>
-                TransformBodyCore(body: LoopForRecovery(ws: ws),
+                TransformBodyCore(body: LoopForRecovery(ws: ws, registry: registry),
                     kind: kind,
                     rewriter: rewriter,
                     registry: registry,
@@ -645,6 +644,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     kind: kind,
                     rewriter: rewriter,
                     registry: registry,
+                    nextOnly: nextOnly),
+                ThenBranch = TransformThen(then: loop.ThenBranch,
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
                     nextOnly: nextOnly)
             },
 
@@ -745,62 +749,30 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// <c>while c</c> as <c>loop { if c { body } else { break } }</c>, so the condition is an <c>if</c> condition the
-    /// statement propagation splits out each time it runs. With an <c>else</c>, the body first sets a flag and the
-    /// <c>else</c> runs after the loop when the flag is still clear (the body ran zero times).
+    /// <c>while c</c> as <c>while true</c> over <c>if c { body } else { break }</c>, so the condition is an <c>if</c>
+    /// condition the statement propagation splits out each time it runs. The carried values and the <c>then</c> stay
+    /// on the loop.
     /// </summary>
-    private static Statement LoopForRecovery(WhileStatement ws)
+    private static WhileStatement LoopForRecovery(WhileStatement ws, TypeRegistry registry)
     {
         SourceLocation loc = ws.Location;
-        string? ranName = ws.ElseBranch != null
-            ? $"__rf_ran_{Interlocked.Increment(location: ref _hoistTemp)}"
-            : null;
-        Statement body = ranName != null
-            ? new BlockStatement(Statements:
-                [
-                    new AssignmentStatement(Target: new IdentifierExpression(Name: ranName, Location: loc),
-                        Value: new LiteralExpression(Value: true,
-                            LiteralType: Builder.Tokenizer.TokenType.True,
-                            Location: loc),
-                        Location: loc),
-                    ws.Body
-                ],
-                Location: loc)
-            : ws.Body;
-        var loop = new LoopStatement(Body: new BlockStatement(Statements:
+        return ws with
+        {
+            Condition = new LiteralExpression(Value: true, LiteralType: Builder.Tokenizer.TokenType.True, Location: loc)
+            {
+                ResolvedType = registry.LookupType(name: "Bool")
+            },
+            Body = new BlockStatement(Statements:
                 [
                     new IfStatement(Condition: ws.Condition,
-                        ThenStatement: body,
+                        ThenStatement: ws.Body,
                         ElseStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)],
                             Location: loc),
                         Location: loc)
                 ],
                 Location: loc),
-            Location: loc);
-        if (ranName == null)
-        {
-            return loop;
-        }
-
-        return new BlockStatement(Statements:
-            [
-                new DeclarationStatement(Declaration: new VariableDeclaration(Name: ranName,
-                        Type: new TypeExpression(Name: "Bool", GenericArguments: null, Location: loc),
-                        Initializer: new LiteralExpression(Value: false,
-                            LiteralType: Builder.Tokenizer.TokenType.False,
-                            Location: loc),
-                        Visibility: VisibilityModifier.Secret,
-                        Location: loc),
-                    Location: loc),
-                loop,
-                new IfStatement(Condition: new UnaryExpression(Operator: UnaryOperator.Not,
-                        Operand: new IdentifierExpression(Name: ranName, Location: loc),
-                        Location: loc),
-                    ThenStatement: ws.ElseBranch!,
-                    ElseStatement: null,
-                    Location: loc)
-            ],
-            Location: loc);
+            IsUntil = false
+        };
     }
 
     /// <summary><c>return f()</c> as <c>var __rf_tail_N = f()</c> then <c>return __rf_tail_N</c> (an entity
@@ -866,14 +838,26 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 rewriter: rewriter,
                 registry: registry,
                 nextOnly: nextOnly),
-            ElseBranch = ws.ElseBranch != null
-                ? TransformBodyCore(body: ws.ElseBranch,
-                    kind: kind,
-                    rewriter: rewriter,
-                    registry: registry,
-                    nextOnly: nextOnly)
-                : null
+            ThenBranch = TransformThen(then: ws.ThenBranch,
+                kind: kind,
+                rewriter: rewriter,
+                registry: registry,
+                nextOnly: nextOnly)
         };
+    }
+
+    /// <summary>A loop's <c>then</c>, which runs after the loop in the same routine: its returns and failures are
+    /// this variant's like the body's.</summary>
+    private static Statement? TransformThen(Statement? then, ErrorHandlingVariantKind kind,
+        VariantCallRewriter? rewriter, TypeRegistry? registry, bool nextOnly)
+    {
+        return then == null
+            ? null
+            : TransformBodyCore(body: then,
+                kind: kind,
+                rewriter: rewriter,
+                registry: registry,
+                nextOnly: nextOnly);
     }
 
     private static EachStatement TransformEach(EachStatement fs, ErrorHandlingVariantKind kind,
@@ -892,13 +876,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 rewriter: rewriter,
                 registry: registry,
                 nextOnly: nextOnly),
-            ElseBranch = fs.ElseBranch != null
-                ? TransformBodyCore(body: fs.ElseBranch,
-                    kind: kind,
-                    rewriter: rewriter,
-                    registry: registry,
-                    nextOnly: nextOnly)
-                : null
+            ThenBranch = TransformThen(then: fs.ThenBranch,
+                kind: kind,
+                rewriter: rewriter,
+                registry: registry,
+                nextOnly: nextOnly)
         };
     }
 

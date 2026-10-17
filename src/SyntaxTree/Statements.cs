@@ -459,7 +459,6 @@ public record IfStatement(
 /// <param name="Condition">Boolean expression evaluated before each iteration</param>
 /// <param name="Body">Statement to execute repeatedly while condition is true</param>
 /// <param name="Location">Source location information</param>
-/// <param name="ElseBranch">Optional else branch that runs if the loop completes without breaking.</param>
 /// <remarks>
 /// Loop behavior characteristics:
 /// <list type="bullet">
@@ -467,7 +466,6 @@ public record IfStatement(
 /// <item>Supports break and continue statements for flow control</item>
 /// <item>Infinite loops possible if condition never becomes false</item>
 /// <item>Body can be single statement or block statement</item>
-/// <item>Python-style else: else branch executes if loop completes without break</item>
 /// </list>
 /// </remarks>
 /// <summary>One value a loop carries from one round to the next: <c>a: T = init</c> after <c>with</c>. It is bound
@@ -478,14 +476,13 @@ public record CarriedValue(string Name, TypeExpression Type, Expression Init, So
 public record WhileStatement(
     Expression Condition,
     Statement Body,
-    Statement? ElseBranch,
     SourceLocation Location) : Statement(Location: Location)
 {
     /// <summary>The values the loop carries (<c>with a: T = init, …</c>), or null.</summary>
     public List<CarriedValue>? With { get; init; }
 
-    /// <summary>The <c>then</c> block after the loop: it runs when the loop ends by itself, never after a
-    /// <c>break</c>.</summary>
+    /// <summary>The <c>then</c> block after the loop: it runs once whenever the loop is left for the line after it,
+    /// when the loop ends by itself and after a <c>break</c>, never on a <c>return</c> or <c>throw</c>.</summary>
     public Statement? ThenBranch { get; init; }
 
     /// <summary>True for <c>until c</c>, kept as <c>while not (c)</c>: the condition is the negation of what was
@@ -509,6 +506,10 @@ public record WhileStatement(
 public record LoopStatement(Statement Body, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>The <c>then</c> block of a written <c>loop</c>: it runs once the loop is left by a <c>break</c>.
+    /// Lowered away before analysis, so only the parser and the formatter see it.</summary>
+    public Statement? ThenBranch { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
@@ -551,7 +552,6 @@ public record LoopStatement(Statement Body, SourceLocation Location)
 /// <param name="Body">Statement to execute for each iteration with the loop variable bound</param>
 /// <param name="Location">Source location information</param>
 /// <param name="VariablePattern">Optional destructuring pattern used instead of a single loop variable.</param>
-/// <param name="ElseBranch">Optional else branch that runs if the loop completes without breaking.</param>
 /// <remarks>
 /// Supports iteration over various collection types:
 /// <list type="bullet">
@@ -560,7 +560,6 @@ public record LoopStatement(Statement Body, SourceLocation Location)
 /// <item>Strings: for char in "hello"</item>
 /// <item>Custom iterables implementing iteration protocols</item>
 /// <item>Tuple destructuring: for (index, item) in items.enumerate()</item>
-/// <item>Python-style else: else branch executes if loop completes without break</item>
 /// </list>
 /// </remarks>
 public record EachStatement(
@@ -568,14 +567,13 @@ public record EachStatement(
     DestructuringPattern? VariablePattern,
     Expression Iterable,
     Statement Body,
-    Statement? ElseBranch,
     SourceLocation Location) : Statement(Location: Location)
 {
     /// <summary>The values the loop carries (<c>with a: T = init, …</c>), or null.</summary>
     public List<CarriedValue>? With { get; init; }
 
-    /// <summary>The <c>then</c> block after the loop: it runs when the loop ends by itself, never after a
-    /// <c>break</c>.</summary>
+    /// <summary>The <c>then</c> block after the loop: it runs once whenever the loop is left for the line after it,
+    /// when the loop ends by itself and after a <c>break</c>, never on a <c>return</c> or <c>throw</c>.</summary>
     public Statement? ThenBranch { get; init; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>

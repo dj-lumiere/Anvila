@@ -309,7 +309,7 @@ internal sealed class TesseraRoutineWriter
             case IfStatement i:
                 WriteIf(statement: i);
                 break;
-            case WhileStatement { ElseBranch: null } w:
+            case WhileStatement w:
                 WriteWhile(condition: w.Condition, body: w.Body);
                 break;
             case LoopStatement l:

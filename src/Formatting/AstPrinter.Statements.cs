@@ -138,7 +138,6 @@ internal sealed partial class AstPrinter
                     : Doc.Concat(prefix, Doc.Text(text: "while "),
                         Expr(expression: whileStatement.Condition, context: ExprContext.Statement)), With(carried: whileStatement.With)));
                 PrintBody(body: whileStatement.Body, depth: depth + 1, at: whileStatement.Location);
-                PrintElseBranch(elseBranch: whileStatement.ElseBranch, depth: depth, at: whileStatement.Location);
                 PrintThenBranch(thenBranch: whileStatement.ThenBranch, depth: depth, at: whileStatement.Location);
                 break;
             case LoopStatement loop:
@@ -149,6 +148,7 @@ internal sealed partial class AstPrinter
 
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "loop")));
                 PrintBody(body: loop.Body, depth: depth + 1, at: loop.Location);
+                PrintThenBranch(thenBranch: loop.ThenBranch, depth: depth, at: loop.Location);
                 break;
             case EachStatement each:
                 PrintEach(each: each, start: start, depth: depth, prefix: prefix);
@@ -292,7 +292,6 @@ internal sealed partial class AstPrinter
         EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "each " + variable + " in "),
             Expr(expression: each.Iterable, context: ExprContext.Statement), With(carried: each.With)));
         PrintBody(body: each.Body, depth: depth + 1, at: each.Location);
-        PrintElseBranch(elseBranch: each.ElseBranch, depth: depth, at: each.Location);
         PrintThenBranch(thenBranch: each.ThenBranch, depth: depth, at: each.Location);
     }
 

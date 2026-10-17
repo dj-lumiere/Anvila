@@ -93,8 +93,8 @@ public abstract class AstRewriter
     }
 
     /// <summary>
-    /// Rewrites a <see cref="WhileStatement"/> by visiting its condition, body, and optional
-    /// else-branch (executed when the loop exits normally). Returns the original node when nothing changed.
+    /// Rewrites a <see cref="WhileStatement"/> by visiting its condition, body and <c>then</c>. Returns the original
+    /// node when nothing changed.
     /// </summary>
     /// <param name="s">The while statement to rewrite.</param>
     /// <returns>The rewritten while statement, or the original reference if nothing changed.</returns>
@@ -102,33 +102,40 @@ public abstract class AstRewriter
     {
         Expression cond = VisitExpression(expr: s.Condition);
         Statement body = VisitStatement(stmt: s.Body);
-        Statement? els = s.ElseBranch != null
-            ? VisitStatement(stmt: s.ElseBranch)
-            : null;
+        Statement? then = VisitThen(then: s.ThenBranch);
         return ReferenceEquals(objA: cond, objB: s.Condition) &&
                ReferenceEquals(objA: body, objB: s.Body) &&
-               ReferenceEquals(objA: els, objB: s.ElseBranch)
+               ReferenceEquals(objA: then, objB: s.ThenBranch)
             ? s
-            : s with { Condition = cond, Body = body, ElseBranch = els };
+            : s with { Condition = cond, Body = body, ThenBranch = then };
+    }
+
+    /// <summary>Rewrites a loop's <c>then</c> block, or gives null when the loop has none.</summary>
+    private Statement? VisitThen(Statement? then)
+    {
+        return then == null
+            ? null
+            : VisitStatement(stmt: then);
     }
 
     /// <summary>
-    /// Rewrites a <see cref="LoopStatement"/> (unconditional loop) by visiting its body.
-    /// Returns the original node when the body is unchanged.
+    /// Rewrites a <see cref="LoopStatement"/> (unconditional loop) by visiting its body and <c>then</c>.
+    /// Returns the original node when neither changed.
     /// </summary>
     /// <param name="s">The loop statement to rewrite.</param>
     /// <returns>The rewritten loop statement, or the original reference if nothing changed.</returns>
     protected virtual Statement VisitLoop(LoopStatement s)
     {
         Statement body = VisitStatement(stmt: s.Body);
-        return ReferenceEquals(objA: body, objB: s.Body)
+        Statement? then = VisitThen(then: s.ThenBranch);
+        return ReferenceEquals(objA: body, objB: s.Body) && ReferenceEquals(objA: then, objB: s.ThenBranch)
             ? s
-            : s with { Body = body };
+            : s with { Body = body, ThenBranch = then };
     }
 
     /// <summary>
-    /// Rewrites an <see cref="EachStatement"/> by visiting its iterable expression, loop body, and
-    /// optional else-branch. Returns the original node when none of the children changed.
+    /// Rewrites an <see cref="EachStatement"/> by visiting its iterable expression, loop body and <c>then</c>.
+    /// Returns the original node when none of them changed.
     /// </summary>
     /// <param name="s">The each statement to rewrite.</param>
     /// <returns>The rewritten each statement, or the original reference if nothing changed.</returns>
@@ -136,14 +143,12 @@ public abstract class AstRewriter
     {
         Expression iterable = VisitExpression(expr: s.Iterable);
         Statement body = VisitStatement(stmt: s.Body);
-        Statement? els = s.ElseBranch != null
-            ? VisitStatement(stmt: s.ElseBranch)
-            : null;
+        Statement? then = VisitThen(then: s.ThenBranch);
         return ReferenceEquals(objA: iterable, objB: s.Iterable) &&
                ReferenceEquals(objA: body, objB: s.Body) &&
-               ReferenceEquals(objA: els, objB: s.ElseBranch)
+               ReferenceEquals(objA: then, objB: s.ThenBranch)
             ? s
-            : s with { Iterable = iterable, Body = body, ElseBranch = els };
+            : s with { Iterable = iterable, Body = body, ThenBranch = then };
     }
 
     /// <summary>

@@ -215,23 +215,19 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             ifs with { Condition = loweredCond, ThenStatement = then, ElseStatement = elseS });
     }
 
-    // Lowers a while-statement: lowers the condition and body/else branches.
+    // Lowers a while-statement: lowers the condition and the body.
     private (List<Statement> Hoisted, Statement Lowered) LowerWhileStatement(WhileStatement w)
     {
         (List<Statement> condH, Expression loweredCond) = LowerExpr(expr: w.Condition);
         Statement body = LowerStatementFull(stmt: w.Body);
-        Statement? elseB = w.ElseBranch != null
-            ? LowerStatementFull(stmt: w.ElseBranch)
-            : null;
         bool changed = !ReferenceEquals(objA: loweredCond, objB: w.Condition) ||
-                       !ReferenceEquals(objA: body, objB: w.Body) ||
-                       !ReferenceEquals(objA: elseB, objB: w.ElseBranch);
+                       !ReferenceEquals(objA: body, objB: w.Body);
         if (!changed && condH.Count == 0)
         {
             return ([], w);
         }
 
-        return (condH, w with { Condition = loweredCond, Body = body, ElseBranch = elseB });
+        return (condH, w with { Condition = loweredCond, Body = body });
     }
 
     // Lowers a compound-assignment expression-statement: discards the residual LHS reference

@@ -1410,13 +1410,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         var sb = new StringBuilder();
         sb.AppendLine(handler: $"{I}while {node.Condition.Accept(visitor: this)}");
         sb.Append(value: PrintBodyOf(stmt: node.Body));
-        if (node.ElseBranch != null)
-        {
-            sb.AppendLine();
-            sb.AppendLine(handler: $"{I}else");
-            sb.Append(value: PrintBodyOf(stmt: node.ElseBranch));
-        }
-
         return sb.ToString()
                  .TrimEnd();
     }
@@ -1444,13 +1437,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         var sb = new StringBuilder();
         sb.AppendLine(handler: $"{I}each {binder} in {node.Iterable.Accept(visitor: this)}");
         sb.Append(value: PrintBodyOf(stmt: node.Body));
-        if (node.ElseBranch != null)
-        {
-            sb.AppendLine();
-            sb.AppendLine(handler: $"{I}else");
-            sb.Append(value: PrintBodyOf(stmt: node.ElseBranch));
-        }
-
         return sb.ToString()
                  .TrimEnd();
     }

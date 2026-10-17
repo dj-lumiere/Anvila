@@ -221,19 +221,13 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 // they evaluate). Condition temps in this rare case are left as-is.
                 return w with
                 {
-                    Body = TransformStatement(stmt: w.Body),
-                    ElseBranch = w.ElseBranch != null
-                        ? TransformStatement(stmt: w.ElseBranch)
-                        : null
+                    Body = TransformStatement(stmt: w.Body)
                 };
 
             case EachStatement f:
                 return f with
                 {
-                    Body = TransformStatement(stmt: f.Body),
-                    ElseBranch = f.ElseBranch != null
-                        ? TransformStatement(stmt: f.ElseBranch)
-                        : null
+                    Body = TransformStatement(stmt: f.Body)
                 };
 
             case DangerStatement d:

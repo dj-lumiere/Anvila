@@ -18,8 +18,7 @@ namespace Builder.Instantiation.Passes;
 /// <code>
 /// loop /*IsIteratorEachLoop*/ {
 ///   when try _lf_iter_N.emit() {
-///     is None -> break                              # plain for
-///     (for-else: the value arm sets _lf_ran_N = true before the body)
+///     is None -> break
 ///     else v -> &lt;bindings + user body&gt;
 ///   }
 /// }
@@ -203,12 +202,8 @@ internal sealed class IteratorInlineLoweringPass
     private WhileStatement RewriteWhile(WhileStatement w)
     {
         Statement b = Rewrite(stmt: w.Body);
-        Statement? el = w.ElseBranch != null
-            ? Rewrite(stmt: w.ElseBranch)
-            : null;
-        return !ReferenceEquals(objA: b, objB: w.Body) ||
-               !ReferenceEquals(objA: el, objB: w.ElseBranch)
-            ? w with { Body = b, ElseBranch = el }
+        return !ReferenceEquals(objA: b, objB: w.Body)
+            ? w with { Body = b }
             : w;
     }
 
@@ -291,7 +286,7 @@ internal sealed class IteratorInlineLoweringPass
             return null;
         }
 
-        // Extract the none-clause (for for-else exhaustion scaffold) and the else-clause
+        // Extract the none-clause (the end of the walk) and the else-clause
         // (loop-var bindings + user body).
         if (!TryExtractClauses(when: when,
                 noneClause: out WhenClause? noneClause,
@@ -348,7 +343,7 @@ internal sealed class IteratorInlineLoweringPass
     }
 
     /// <summary>
-    /// Extracts the none-clause (for-else exhaustion scaffold) and else-clause (loop-var bindings +
+    /// Extracts the none-clause (the end of the walk) and else-clause (loop-var bindings +
     /// user body) from the CFLP `when`. Returns false when either is missing.
     /// </summary>
     private static bool TryExtractClauses(WhenStatement when,
@@ -974,22 +969,12 @@ internal sealed class IteratorInlineLoweringPass
                 break;
             case WhileStatement w:
                 WalkStatements(stmt: w.Body, visit: visit);
-                if (w.ElseBranch != null)
-                {
-                    WalkStatements(stmt: w.ElseBranch, visit: visit);
-                }
-
                 break;
             case LoopStatement l:
                 WalkStatements(stmt: l.Body, visit: visit);
                 break;
             case EachStatement f:
                 WalkStatements(stmt: f.Body, visit: visit);
-                if (f.ElseBranch != null)
-                {
-                    WalkStatements(stmt: f.ElseBranch, visit: visit);
-                }
-
                 break;
             case WhenStatement wn:
                 foreach (WhenClause c in wn.Clauses)

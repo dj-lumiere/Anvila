@@ -433,10 +433,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             case WhileStatement loop:
                 return loop with
                 {
-                    Body = ReleaseIn(stmt: loop.Body, handles: handles),
-                    ElseBranch = loop.ElseBranch == null
-                        ? null
-                        : ReleaseIn(stmt: loop.ElseBranch, handles: handles)
+                    Body = ReleaseIn(stmt: loop.Body, handles: handles)
                 };
             case LoopStatement l:
                 return l with { Body = ReleaseIn(stmt: l.Body, handles: handles) };
@@ -502,11 +499,6 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 var body = new List<Statement>();
                 Expression condition = Spill(value: loop.Condition, handles: handles, into: body);
                 var stop = new List<Statement>();
-                if (loop.ElseBranch != null)
-                {
-                    stop.Add(item: loop.ElseBranch);
-                }
-
                 stop.Add(item: new BreakStatement(Location: loop.Location));
                 body.Add(item: new IfStatement(Condition: condition,
                     ThenStatement: loop.Body,
@@ -519,8 +511,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 into.Add(item: loop with
                 {
                     Condition = forever,
-                    Body = new BlockStatement(Statements: body, Location: loop.Location),
-                    ElseBranch = null
+                    Body = new BlockStatement(Statements: body, Location: loop.Location)
                 });
                 return true;
             }
@@ -896,22 +887,12 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 break;
             case WhileStatement w:
                 RecurseStmt(stmt: w.Body);
-                if (w.ElseBranch != null)
-                {
-                    RecurseStmt(stmt: w.ElseBranch);
-                }
-
                 break;
             case LoopStatement l:
                 RecurseStmt(stmt: l.Body);
                 break;
             case EachStatement f:
                 RecurseStmt(stmt: f.Body);
-                if (f.ElseBranch != null)
-                {
-                    RecurseStmt(stmt: f.ElseBranch);
-                }
-
                 break;
             case DangerStatement d:
                 LowerBlock(block: d.Body);

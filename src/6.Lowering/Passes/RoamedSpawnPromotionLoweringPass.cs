@@ -328,22 +328,12 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                 break;
             case WhileStatement w:
                 RecurseStmt(stmt: w.Body);
-                if (w.ElseBranch != null)
-                {
-                    RecurseStmt(stmt: w.ElseBranch);
-                }
-
                 break;
             case LoopStatement l:
                 RecurseStmt(stmt: l.Body);
                 break;
             case EachStatement f:
                 RecurseStmt(stmt: f.Body);
-                if (f.ElseBranch != null)
-                {
-                    RecurseStmt(stmt: f.ElseBranch);
-                }
-
                 break;
             case DangerStatement d:
                 LowerBlock(block: d.Body);

@@ -146,10 +146,9 @@ public static class AstWalker
             },
             IfStatement s => IfStatementChildren(s: s),
             WhileStatement s => WhileStatementChildren(s: s),
-            LoopStatement s => new object[]
-            {
-                s.Body
-            },
+            LoopStatement s => s.ThenBranch != null
+                ? new object[] { s.Body, s.ThenBranch }
+                : new object[] { s.Body },
             EachStatement s => EachStatementChildren(s: s),
             BlockStatement s => BlockStatementChildren(s: s),
             WhenStatement s => WhenStatementChildren(s: s),
@@ -178,9 +177,9 @@ public static class AstWalker
     {
         yield return s.Condition;
         yield return s.Body;
-        if (s.ElseBranch != null)
+        if (s.ThenBranch != null)
         {
-            yield return s.ElseBranch;
+            yield return s.ThenBranch;
         }
     }
 
@@ -193,9 +192,9 @@ public static class AstWalker
 
         yield return s.Iterable;
         yield return s.Body;
-        if (s.ElseBranch != null)
+        if (s.ThenBranch != null)
         {
-            yield return s.ElseBranch;
+            yield return s.ThenBranch;
         }
     }
 

@@ -242,15 +242,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     new HashSet<string>(collection: scope, comparer: StringComparer.Ordinal),
                     inheritedGenericParameters: inheritedGenericParameters,
                     inheritedGenericConstraints: inheritedGenericConstraints,
-                    includeMe: includeMe),
-                ElseBranch = whileStmt.ElseBranch != null
-                    ? RewriteStatement(statement: whileStmt.ElseBranch,
-                        scope: new HashSet<string>(collection: scope,
-                            comparer: StringComparer.Ordinal),
-                        inheritedGenericParameters: inheritedGenericParameters,
-                        inheritedGenericConstraints: inheritedGenericConstraints,
-                        includeMe: includeMe)
-                    : null
+                    includeMe: includeMe)
             },
             LoopStatement loop => loop with
             {
@@ -435,15 +427,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                 scope: bodyScope,
                 inheritedGenericParameters: inheritedGenericParameters,
                 inheritedGenericConstraints: inheritedGenericConstraints,
-                includeMe: includeMe),
-            ElseBranch = eachStmt.ElseBranch != null
-                ? RewriteStatement(statement: eachStmt.ElseBranch,
-                    scope:
-                    new HashSet<string>(collection: scope, comparer: StringComparer.Ordinal),
-                    inheritedGenericParameters: inheritedGenericParameters,
-                    inheritedGenericConstraints: inheritedGenericConstraints,
-                    includeMe: includeMe)
-                : null
+                includeMe: includeMe)
         };
     }
 
@@ -1983,14 +1967,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);
-                if (whileStmt.ElseBranch != null)
-                {
-                    CollectLocalCapturesInStatement(statement: whileStmt.ElseBranch,
-                        outerScope: outerScope,
-                        parameterNames: parameterNames,
-                        captures: captures);
-                }
-
                 break;
             case LoopStatement loop:
                 CollectLocalCapturesInStatement(statement: loop.Body,
@@ -2007,14 +1983,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);
-                if (eachStmt.ElseBranch != null)
-                {
-                    CollectLocalCapturesInStatement(statement: eachStmt.ElseBranch,
-                        outerScope: outerScope,
-                        parameterNames: parameterNames,
-                        captures: captures);
-                }
-
                 break;
             case WhenStatement whenStmt:
                 CollectLocalCapturesRecursive(expression: whenStmt.Expression,

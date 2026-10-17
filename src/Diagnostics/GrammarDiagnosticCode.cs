@@ -190,6 +190,10 @@ public enum GrammarDiagnosticCode
     /// <c>continue</c>.</summary>
     ContinueCarriesWrongValues = 218,
 
+    /// <summary>An <c>else</c> after a loop: loops take only <c>then</c>. The case where the loop would not run once
+    /// is an <c>if</c> before the loop.</summary>
+    LoopElse = 219,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

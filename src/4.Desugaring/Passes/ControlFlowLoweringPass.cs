@@ -39,21 +39,6 @@ namespace Builder.Desugaring.Passes;
 /// }
 /// </code>
 ///
-/// <para><b>for x in iterable else { alt }</b> (for-else) -> the else runs only when the body never ran:</para>
-/// <code>
-///  {
-/// var _lf_ran_N: Bool = false
-/// var _lf_iter_N = iterable.iter()
-/// loop {
-/// when try _lf_iter_N.emit() {
-/// is None -> break
-/// else var x -> { _lf_ran_N = true; body }
-///  }
-///  }
-/// if not _lf_ran_N { alt }
-/// }
-/// </code>
-///
 /// <para>Range-based loops (<c>for x in 0 to n</c>) are also covered: the
 /// <c>RangeExpression</c> iterable is converted to <c>Range[T](...)</c> by
 /// <see cref="Builder.Lowering.Passes.ExpressionLoweringPass"/> (which runs after this pass).</para>
@@ -133,10 +118,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 rebuild: b => w with { With = null, Body = b }),
             EachStatement { With.Count: > 0 } f => LowerCarried(loop: f with { With = null }, carried: f.With, body: f.Body,
                 rebuild: b => f with { With = null, Body = b }),
-            EachStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then,
-                body: f.Body, rebuild: b => f with { ThenBranch = null, Body = b }),
-            WhileStatement { ThenBranch: { } then } w => LowerLoopThen(loop: w with { ThenBranch = null }, then: then,
-                body: w.Body, rebuild: b => w with { ThenBranch = null, Body = b }),
+            EachStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then),
+            WhileStatement { ThenBranch: { } then } w => LowerLoopThen(loop: w with { ThenBranch = null }, then: then),
+            LoopStatement { ThenBranch: { } then } l => LowerLoopThen(loop: l with { ThenBranch = null }, then: then),
             EachStatement f => LowerEach(eachStmt: f),
             DestructuringStatement ds => LowerDestructuring(destruct: ds),
             BlockStatement b => LowerBlock(b: b),
@@ -270,22 +254,10 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Lowers <c>while cond { body }</c> to <c>loop { if !cond { break } body }</c>. A <c>while … else</c> runs its
-    /// <c>else</c> only when the body ran zero times (the condition was false at the very first check), never after
-    /// the body ran, however the loop ended:
-    /// <code>
-    /// var _lf_ran_N = false
-    /// loop { if !cond { break }  _lf_ran_N = true  body }
-    /// if !_lf_ran_N { alt }
-    /// </code>
+    /// Lowers <c>while cond { body }</c> to <c>loop { if !cond { break } body }</c>.
     /// </summary>
     private Statement LowerWhile(WhileStatement whileStmt)
     {
-        if (whileStmt.ElseBranch is { } elseBranch)
-        {
-            return LowerWhileElse(whileStmt: whileStmt, elseBranch: elseBranch);
-        }
-
         SourceLocation loc = whileStmt.Location;
         Statement loweredBody = LowerStatement(stmt: whileStmt.Body);
 
@@ -306,29 +278,6 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             : new BlockStatement(Statements: [guardBreak, loweredBody], Location: loc);
 
         return new LoopStatement(Body: loopBody, Location: loc);
-    }
-
-    /// <summary>A <c>while … else</c> (see <see cref="LowerWhile"/>): the loop with a flag its body sets, and the
-    /// <c>else</c> run when the flag is still clear.</summary>
-    private BlockStatement LowerWhileElse(WhileStatement whileStmt, Statement elseBranch)
-    {
-        SourceLocation loc = whileStmt.Location;
-        string ranName = $"_lf_ran_{_iterCount++}";
-        Statement markRan = new AssignmentStatement(Target: new IdentifierExpression(Name: ranName, Location: loc),
-            Value: new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: loc),
-            Location: loc);
-        Statement loop = LowerWhile(whileStmt: whileStmt with
-        {
-            Body = new BlockStatement(Statements: [markRan, whileStmt.Body], Location: loc),
-            ElseBranch = null
-        });
-        return new BlockStatement(Statements:
-            [
-                RanFlag(name: ranName, loc: loc),
-                loop,
-                IfNotRan(name: ranName, elseBranch: LowerStatement(stmt: elseBranch), loc: loc)
-            ],
-            Location: loc);
     }
 
     /// <summary>
@@ -408,25 +357,15 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// A loop with a <c>then</c> block, which runs when the loop ends by itself, never after a <c>break</c>:
-    /// <code>
-    /// var _lf_broke_N = false
-    /// loop, each of its own breaks first setting _lf_broke_N = true
-    /// if !_lf_broke_N { then }
-    /// </code>
+    /// A loop with a <c>then</c> block, which runs once whenever the loop is left for the line after it: when the loop
+    /// ends by itself and after a <c>break</c>. A <c>return</c> or <c>throw</c> leaves the routine and never reaches
+    /// it. So the block is the loop followed by the <c>then</c> lines, inside the block of the carried values when
+    /// the loop has any.
     /// </summary>
-    private BlockStatement LowerLoopThen(Statement loop, Statement then, Statement body, Func<Statement, Statement> rebuild)
+    private BlockStatement LowerLoopThen(Statement loop, Statement then)
     {
-        SourceLocation loc = loop.Location;
-        string brokeName = $"_lf_broke_{_iterCount++}";
-        Statement marked = rebuild(arg: new BreakMarker(flag: brokeName).VisitStatement(stmt: body));
-        return new BlockStatement(Statements:
-            [
-                RanFlag(name: brokeName, loc: loc),
-                LowerStatement(stmt: marked),
-                IfNotRan(name: brokeName, elseBranch: LowerStatement(stmt: then), loc: loc)
-            ],
-            Location: loc);
+        return new BlockStatement(Statements: [LowerStatement(stmt: loop), LowerStatement(stmt: then)],
+            Location: loop.Location);
     }
 
     /// <summary>
@@ -500,50 +439,6 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             statements.Add(item: new ContinueStatement(Location: at));
             return new BlockStatement(Statements: statements, Location: at);
         }
-    }
-
-    /// <summary>Sets a flag before each <c>break</c> of one loop, the breaks of the loops inside it left alone.</summary>
-    private sealed class BreakMarker(string flag) : AstRewriter
-    {
-        public override Statement VisitStatement(Statement stmt)
-        {
-            return stmt switch
-            {
-                BreakStatement b => new BlockStatement(Statements:
-                    [
-                        new AssignmentStatement(Target: new IdentifierExpression(Name: flag, Location: b.Location),
-                            Value: new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: b.Location),
-                            Location: b.Location),
-                        b
-                    ],
-                    Location: b.Location),
-                WhileStatement or EachStatement or LoopStatement => stmt,
-                _ => base.VisitStatement(stmt: stmt)
-            };
-        }
-    }
-
-    /// <summary><c>var name: Bool = false</c>, the flag a loop with an <c>else</c> sets when its body runs.</summary>
-    private static DeclarationStatement RanFlag(string name, SourceLocation loc)
-    {
-        return new DeclarationStatement(Declaration: new VariableDeclaration(Name: name,
-                Type: new TypeExpression(Name: "Bool", GenericArguments: null, Location: loc),
-                Initializer: new LiteralExpression(Value: false, LiteralType: TokenType.False, Location: loc),
-                Visibility: VisibilityModifier.Secret,
-                Location: loc),
-            Location: loc);
-    }
-
-    /// <summary><c>if not name { else }</c>: a loop's <c>else</c>, run when its body never ran.</summary>
-    private static IfStatement IfNotRan(string name, Statement elseBranch, SourceLocation loc)
-    {
-        return new IfStatement(
-            Condition: new UnaryExpression(Operator: UnaryOperator.Not,
-                Operand: new IdentifierExpression(Name: name, Location: loc),
-                Location: loc),
-            ThenStatement: elseBranch,
-            ElseStatement: null,
-            Location: loc);
     }
 
     /// <summary>
@@ -790,35 +685,19 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             loweredBody: loweredBody,
             loc: loc);
 
-        // -----------------------------------------------------------------------------
-        Statement? elseBranchLowered = eachStmt.ElseBranch != null
-            ? LowerStatement(stmt: eachStmt.ElseBranch)
-            : null;
-
         // In a recovery variant, a failure beneath a lookup-shaped step returns as the variant's failure.
         WhenClause? failureClause = eachStmt.StepFailureKind is { } failureKind
             ? RoutineValueCalls.StepFailureClause(kind: failureKind, registry: ctx.Registry, loc: loc)
             : null;
 
-        return elseBranchLowered != null
-            ? BuildForElse(elseBranchLowered: elseBranchLowered,
-                tryNextCall: tryNextCall,
-                elseBody: elseBody,
-                iterVarStmt: iterVarStmt,
-                loc: loc,
-                names: new ForElseNames(ElseVarName: elseVarName,
-                    RanName: $"_lf_ran_{n}",
-                    IterationSourceName: iterationSourceName,
-                    IterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable)),
-                failureClause: failureClause)
-            : BuildPlainFor(tryNextCall: tryNextCall,
-                elseBody: elseBody,
-                elseVarName: elseVarName,
-                iterVarStmt: iterVarStmt,
-                iterationSourceName: iterationSourceName,
-                iterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable),
-                loc: loc,
-                failureClause: failureClause);
+        return BuildPlainFor(tryNextCall: tryNextCall,
+            elseBody: elseBody,
+            elseVarName: elseVarName,
+            iterVarStmt: iterVarStmt,
+            iterationSourceName: iterationSourceName,
+            iterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable),
+            loc: loc,
+            failureClause: failureClause);
     }
 
     /// <summary>The entity a shared-entity handle (<c>Roamed[E]</c>) stands for, else the type itself.</summary>
@@ -959,60 +838,6 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Builds the for-else lowering. The <c>else</c> runs only when the body ran zero times (the source was
-    /// empty), never after the body ran, however the loop ended: a flag the value arm sets before the body, and
-    /// an <c>if not _lf_ran_N { alt }</c> check after the loop.
-    /// </summary>
-    private readonly record struct ForElseNames(
-        string? ElseVarName,
-        string RanName,
-        string? IterationSourceName,
-        string? IterationSourcePath);
-
-    private static BlockStatement BuildForElse(Statement elseBranchLowered, Expression tryNextCall,
-        Statement elseBody, Statement iterVarStmt, ForElseNames names,
-        SourceLocation loc, WhenClause? failureClause)
-    {
-        string? elseVarName = names.ElseVarName;
-        string ranName = names.RanName;
-        string? iterationSourceName = names.IterationSourceName;
-        string? iterationSourcePath = names.IterationSourcePath;
-        var noneClause = new WhenClause(Pattern: EndOfWalkPattern(failureClause: failureClause, loc: loc),
-            Body: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
-            Location: loc);
-        // The value arm marks the body as run before it runs.
-        Statement markRan = new AssignmentStatement(Target: new IdentifierExpression(Name: ranName, Location: loc),
-            Value: new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: loc),
-            Location: loc);
-        var elseClause = new WhenClause(
-            Pattern: new ElsePattern(VariableName: elseVarName, Location: loc),
-            Body: new BlockStatement(Statements: [markRan, elseBody], Location: loc),
-            Location: loc);
-
-        var whenStmt = new WhenStatement(Expression: tryNextCall,
-            Clauses: failureClause != null
-                ? [noneClause, failureClause, elseClause]
-                : [noneClause, elseClause],
-            Location: loc) { IsEachStep = true };
-        var loopStmt =
-            new LoopStatement(Body: new BlockStatement(Statements: [whenStmt], Location: loc),
-                Location: loc)
-            {
-                IsIteratorEachLoop = true, IterationSourceName = iterationSourceName,
-                IterationSourcePath = iterationSourcePath
-            };
-
-        return new BlockStatement(Statements:
-            [
-                RanFlag(name: ranName, loc: loc),
-                iterVarStmt,
-                loopStmt,
-                IfNotRan(name: ranName, elseBranch: elseBranchLowered, loc: loc)
-            ],
-            Location: loc);
-    }
-
-    /// <summary>
     /// The shape path of an <c>each</c> source: a name, a field chain (<c>me.items</c>) or an element
     /// (<c>grid[0]</c> is <c>grid[]</c>, the index is not tracked). Null for any other source.
     /// </summary>
@@ -1034,14 +859,13 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Builds the plain for lowering (no else branch): the <c>None</c> arm breaks directly.
+    /// Builds the <c>each</c> lowering: the <c>None</c> arm breaks.
     /// </summary>
     private static BlockStatement BuildPlainFor(Expression tryNextCall, Statement elseBody,
         string? elseVarName, Statement iterVarStmt, string? iterationSourceName,
         string? iterationSourcePath,
         SourceLocation loc, WhenClause? failureClause)
     {
-        // Plain for (no else branch)
         Statement noneBody = new BlockStatement(Statements:
             [new BreakStatement(Location: loc)],
             Location: loc);

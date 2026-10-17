@@ -296,22 +296,12 @@ public sealed class CancellationInstrumentationPass
                 break;
             case WhileStatement w:
                 RecurseStmt(stmt: w.Body, locals: locals);
-                if (w.ElseBranch != null)
-                {
-                    RecurseStmt(stmt: w.ElseBranch, locals: locals);
-                }
-
                 break;
             case LoopStatement l:
                 RecurseStmt(stmt: l.Body, locals: locals);
                 break;
             case EachStatement f:
                 RecurseStmt(stmt: f.Body, locals: locals);
-                if (f.ElseBranch != null)
-                {
-                    RecurseStmt(stmt: f.ElseBranch, locals: locals);
-                }
-
                 break;
             case DangerStatement d:
                 InstrumentBlock(block: d.Body, locals: locals);

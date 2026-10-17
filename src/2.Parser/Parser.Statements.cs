@@ -139,7 +139,7 @@ public partial class Parser
     /// <summary>
     /// Parses a while loop statement.
     /// Syntax: <c>while condition</c> followed by indented body
-    /// Optional <c>else</c> block runs only when the body ran zero times (the condition was false at the first check).
+    /// An optional <c>then</c> block runs once the loop is left for the line after it.
     /// </summary>
     /// <returns>A <see cref="WhileStatement"/> AST node.</returns>
     private WhileStatement ParseWhileStatement()
@@ -168,12 +168,9 @@ public partial class Parser
     {
         List<CarriedValue>? with = ParseCarriedValues();
         Statement body = ParseCarryingBody(with: with, location: location);
-        Statement? elseBranch = CheckAndAdvance(type: TokenType.Else)
-            ? ParseBody()
-            : null;
+        RejectLoopElse();
         return new WhileStatement(Condition: condition,
             Body: body,
-            ElseBranch: elseBranch,
             Location: location) { ThenBranch = ParseLoopThen(), With = with };
     }
 
@@ -252,7 +249,30 @@ public partial class Parser
         };
     }
 
-    /// <summary>A loop's <c>then</c> block, run when the loop ends by itself (no <c>break</c>), or null.</summary>
+    /// <summary>
+    /// An <c>else</c> right after a loop's body is an error: loops take only <c>then</c>. Its body is still parsed,
+    /// so the lines after it read as usual.
+    /// </summary>
+    private void RejectLoopElse()
+    {
+        if (!Check(type: TokenType.Else))
+        {
+            return;
+        }
+
+        Token word = Advance();
+        RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.LoopElse,
+            message: "A loop has no 'else'. To do something when the loop would not run even once, test that with " +
+                     "an 'if' before the loop. To do something once the loop is left, put it under 'then'.",
+            fileName: FileName,
+            line: word.Line,
+            column: word.Column,
+            language: _language));
+        _ = ParseBody();
+    }
+
+    /// <summary>A loop's <c>then</c> block, or null. It runs once whenever the loop is left for the line after it:
+    /// when the loop ends by itself and after a <c>break</c>, never on a <c>return</c> or <c>throw</c>.</summary>
     private Statement? ParseLoopThen()
     {
         return Check(type: TokenType.Then) && PeekToken(offset: 1).Type == TokenType.Newline
@@ -277,13 +297,14 @@ public partial class Parser
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
         Statement body = ParseBody();
-        return new LoopStatement(Body: body, Location: location);
+        RejectLoopElse();
+        return new LoopStatement(Body: body, Location: location) { ThenBranch = ParseLoopThen() };
     }
 
     /// <summary>
     /// Parses a for-in loop statement.
     /// Syntax: <c>for variable in iterable</c> or <c>for (a, b) in iterable</c> followed by body.
-    /// Optional <c>else</c> block runs only when the body ran zero times (the source was empty).
+    /// An optional <c>then</c> block runs once the loop is left for the line after it.
     /// </summary>
     /// <returns>A <see cref="EachStatement"/> AST node.</returns>
     private EachStatement ParseEachStatement()
@@ -314,19 +335,12 @@ public partial class Parser
         Expression sequenceable = ParseExpression();
         List<CarriedValue>? with = ParseCarriedValues();
         Statement body = ParseCarryingBody(with: with, location: location);
-
-        // Check for else clause (runs only when the body never ran)
-        Statement? elseBranch = null;
-        if (CheckAndAdvance(type: TokenType.Else))
-        {
-            elseBranch = ParseBody();
-        }
+        RejectLoopElse();
 
         return new EachStatement(Variable: variable,
             VariablePattern: variablePattern,
             Iterable: sequenceable,
             Body: body,
-            ElseBranch: elseBranch,
             Location: location) with { ThenBranch = ParseLoopThen(), With = with };
     }
 
