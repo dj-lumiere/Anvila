@@ -87,7 +87,7 @@ internal static class FailurePointCalls
     /// null. A slice (range index), an end-relative index (<c>^n</c>), an entity element (read through a
     /// token, not <c>getitem</c>) and a type receiver (<c>T[U]</c>) keep their own lowering.
     /// </summary>
-    public static CallExpression? ForIndex(IndexExpression idx)
+    public static CallExpression? ForIndex(IndexExpression idx, TypeRegistry registry)
     {
         if (idx.ResolvedGetItem is not { } getItem || !CanFail(routine: getItem) || idx.ReadsElementToken ||
             idx.ResolvedType is null or EntityTypeSymbol || idx.Object.ResolvedType is null ||
@@ -105,7 +105,7 @@ internal static class FailurePointCalls
                        indexType.BareName != slot.BareName && indexType is not EntityTypeSymbol;
         Expression key = byToken
             ? new AddressOfExpression(Target: idx.Index, Location: idx.Location) { ResolvedType = slot }
-            : idx.Index;
+            : CountedIndex(index: idx.Index, getItem: getItem, registry: registry) ?? idx.Index;
         return MemberCall(receiver: idx.Object,
             memberName: getItem.Name,
             arguments:
@@ -117,6 +117,40 @@ internal static class FailurePointCalls
             routine: getItem,
             resultType: idx.ResolvedType,
             location: idx.Location);
+    }
+
+    /// <summary>
+    /// An index of another integer type than the <c>index</c> parameter takes, as <c>i.to_index()</c> (a <c>U64</c>,
+    /// failing with <c>NegativeIndexError</c> below 0) or <c>i.to_integer_count()</c> (an <c>Integer</c>), the same
+    /// conversion OperatorLoweringPass gives a subscript outside a recovery. Null when no conversion is needed.
+    /// </summary>
+    private static CallExpression? CountedIndex(Expression index, RoutineInfo getItem, TypeRegistry registry)
+    {
+        if (getItem.Parameters[index: 0] is not { Name: "index", Type: var taken } ||
+            index.ResolvedType is not { } given || given.FullName == taken.FullName)
+        {
+            return null;
+        }
+
+        string? conversion = taken.Name switch
+        {
+            "U64" => "to_index",
+            "Integer" => "to_integer_count",
+            _ => null
+        };
+        if (conversion == null ||
+            (registry.LookupMemberRoutine(type: given, memberRoutineName: conversion, isFailable: true) ??
+             registry.LookupMemberRoutine(type: given, memberRoutineName: conversion)) is not { } routine)
+        {
+            return null;
+        }
+
+        return MemberCall(receiver: index,
+            memberName: conversion,
+            arguments: [],
+            routine: routine,
+            resultType: routine.ReturnType,
+            location: index.Location);
     }
 
     /// <summary>Whether a call of <paramref name="routine"/> can fail (declared or inferred).</summary>
@@ -279,7 +313,7 @@ internal static class FailurePointCalls
         protected override Expression VisitIndex(IndexExpression e)
         {
             Expression rewritten = base.VisitIndex(e: e);
-            return rewritten is IndexExpression idx && ForIndex(idx: idx) is { } call
+            return rewritten is IndexExpression idx && ForIndex(idx: idx, registry: registry) is { } call
                 ? call
                 : rewritten;
         }

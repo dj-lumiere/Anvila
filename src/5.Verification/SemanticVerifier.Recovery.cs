@@ -488,7 +488,7 @@ public sealed partial class SemanticVerifier
         protected override Expression VisitIndex(IndexExpression e)
         {
             Expression rewritten = base.VisitIndex(e: e);
-            return rewritten is IndexExpression idx && FailurePointCalls.ForIndex(idx: idx) is { } call
+            return rewritten is IndexExpression idx && FailurePointCalls.ForIndex(idx: idx, registry: registry) is { } call
                 ? HoistFailable(call: call)
                 : rewritten;
         }
