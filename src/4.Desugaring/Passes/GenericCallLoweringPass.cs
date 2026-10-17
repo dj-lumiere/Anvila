@@ -378,7 +378,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         // ConstructedType). Without this the GMC survives to codegen and trips the residual-node check. On the
         // warm path ConstructedType is already set, so this is a no-op.
         if (gmc.ConstructedType is null && !gmc.IsMemoryOperation && gmc.ResolvedRoutine == null &&
-            gmc.Object is IdentifierExpression ctId && ctId.Name == gmc.MemberRoutineName &&
+            gmc.IsFree && gmc.Object is IdentifierExpression ctId &&
             ResolveConstructionTypeForGmc(gmc: gmc) is { IsGenericDefinition: false } recovered)
         {
             // ConstructedType is a mutable {get;set;} prop — set it in place (a `with` clone would drop it).
@@ -403,8 +403,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         // `Buffer[T](count: n, fill: x)`) is a creator call, not a field-init: leave it as a GMC so
         // SA resolves the creator; SA-time lowering (below, once ResolvedRoutine is set) or the
         // creator-routing path handles it.
-        if (gmc.Object is IdentifierExpression literalId &&
-            literalId.Name == gmc.MemberRoutineName && !gmc.IsMemoryOperation &&
+        if (gmc.IsFree && gmc.Object is IdentifierExpression literalId && !gmc.IsMemoryOperation &&
             gmc.ResolvedRoutine == null && NamedArgumentsAreFields(gmc: gmc)
             // Constructor form `Type[Args](...)`: MemberRoutineName names a type. Prefer the SA-resolved
             // ConstructedType (import-precise) over a bare `LookupType(name)`, which only found a
@@ -423,7 +422,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         // it (List has fields), and the null-return below would leave the GMCE for codegen to reject. `List`
         // HAS a real no-arg creator (`routine List[T]()`), so resolve it by signature and fall through to the
         // construction lowering — the same target SA would have bound on the warm/eager path.
-        if (gmc.Object is IdentifierExpression ctorId && ctorId.Name == gmc.MemberRoutineName &&
+        if (gmc.IsFree && gmc.Object is IdentifierExpression ctorId &&
             !gmc.IsMemoryOperation && gmc.ResolvedRoutine == null && gmc.Arguments.Count == 0 &&
             ResolveConstructionTypeForGmc(gmc: gmc) is { IsGenericDefinition: false } ctorType &&
             _registry.LookupCreatorOverload(type: ctorType, argTypes: []) is { } noArgCreator)
@@ -459,7 +458,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         // construction case (same as `Type[Args](args)`) so its arguments are passed straight to the
         // resolved `create!` instead of being mis-lowered into a member call whose receiver (the type
         // name) becomes a null first argument.
-        if (gmc.Object is IdentifierExpression id && id.Name == gmc.MemberRoutineName)
+        if (gmc.IsFree && gmc.Object is IdentifierExpression id)
         {
             return LowerConstructionCall(gmc: gmc, id: id, loweredArgs: loweredArgs);
         }

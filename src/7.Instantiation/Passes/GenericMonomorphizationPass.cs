@@ -1510,7 +1510,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     TypeArguments: [GenericAstRewriter.TypeInfoToTypeExpr(type: typeArgument, location: loc)],
                     Arguments: [new NamedArgumentExpression(Name: "value", Value: value, Location: loc)],
                     IsMemoryOperation: false,
-                    Location: loc);
+                    Location: loc) { IsFree = true };
             }
 
             Expression result;

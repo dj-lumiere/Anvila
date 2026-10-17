@@ -1094,8 +1094,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             }
 
             // Type constructor / free routine: Object and memberRoutineName are the same identifier.
-            if (node.Object is IdentifierExpression ctorId &&
-                ctorId.Name == node.MemberRoutineName)
+            if (node.IsFree)
             {
                 return $"{ri.QualifiedName}{typeArgs}({args})";
             }
@@ -1105,7 +1104,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         }
 
         // Type constructor: Object and memberRoutineName are the same identifier (e.g. SortedDict[S64, S64]())
-        if (node.Object is IdentifierExpression id && id.Name == node.MemberRoutineName)
+        if (node.IsFree)
         {
             return $"{node.MemberRoutineName}{typeArgs}({args})";
         }

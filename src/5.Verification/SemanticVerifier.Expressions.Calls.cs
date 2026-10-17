@@ -3580,12 +3580,24 @@ public sealed partial class SemanticVerifier
                                     .OfType<NamedArgumentExpression>()
                                     .Select(selector: n => n.Name)
                                     .ToList();
+                bool NamesFit(RoutineInfo c)
+                {
+                    return seedNames.All(predicate: n => c.Parameters.Any(predicate: p => p.Name == n));
+                }
+
+                // A full-arity match wins. Only when none exists may trailing defaulted parameters be left out
+                // (`FileManager.move(from:, to:)` against `move(from:, to:, replacing: Bool = false)`).
                 var arityMatches = seedCandidates.Where(predicate: c =>
-                                                      c.Parameters.Count == call.Arguments.Count &&
-                                                      seedNames.All(predicate: n =>
-                                                          c.Parameters.Any(predicate: p =>
-                                                              p.Name == n)))
+                                                      c.Parameters.Count == call.Arguments.Count && NamesFit(c: c))
                                                  .ToList();
+                if (arityMatches.Count == 0)
+                {
+                    arityMatches = seedCandidates.Where(predicate: c =>
+                                                      c.Parameters.Count > call.Arguments.Count &&
+                                                      c.Parameters.Skip(count: call.Arguments.Count)
+                                                       .All(predicate: p => p.HasDefaultValue) && NamesFit(c: c))
+                                                 .ToList();
+                }
                 var failMatches = arityMatches
                                  .Where(predicate: c =>
                                       c.IsFailable == isFailableMemberRoutineCall)

@@ -533,7 +533,7 @@ public sealed partial class SemanticVerifier
                 ],
                 Arguments: [address],
                 IsMemoryOperation: false,
-                Location: location);
+                Location: location) { IsFree = true };
         }
         else
         {

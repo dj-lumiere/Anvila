@@ -622,7 +622,7 @@ public sealed partial class StdlibLoader
             progs.Add(item: (ast, filePath, effectiveModule));
 
             // Load the file's imports FIRST, so a field or signature naming a type from an imported module
-            // (IO/File's `File.metadata() -> FileMetadata` from IO/FileSystem) finds it registered. The
+            // (a member variable typed `Moment`, declared by the module it imports) finds it registered. The
             // module is already marked loaded, so an import cycle back to it stops here.
             foreach (ImportDeclaration import in ast.Declarations.OfType<ImportDeclaration>())
             {
@@ -755,7 +755,7 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// The module prefixes a program's imports make visible to bare type names during registration. A type
-    /// is keyed by its module exactly as the module declares it (<c>IO/FileSystem.FileMetadata</c>), so the
+    /// is keyed by its module exactly as the module declares it (<c>IO/File.FileMetadata</c>), so the
     /// import path is kept verbatim. The dotted spelling and the top-level segment are kept as well, for
     /// modules declared in dotted form and for bare top-level module imports.
     /// </summary>

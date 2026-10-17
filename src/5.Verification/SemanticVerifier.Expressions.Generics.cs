@@ -136,13 +136,10 @@ public sealed partial class SemanticVerifier
         // type name plus the structured `IsMemoryOperation` failable flag — recognize it here and
         // route to the type's failable `create` overload (e.g. the auto-generated variant arm
         // extractor `Dict[Text, SerialValue].create!(from: sv)`).
-        bool isFailableCtor = generic.IsMemoryOperation &&
-                              generic.Object is IdentifierExpression fctorId &&
-                              generic.MemberRoutineName == fctorId.Name;
-        if (generic.Object is IdentifierExpression typeId && objectType is TypeSymbol
+        if (generic.IsFree && generic.Object is IdentifierExpression typeId && objectType is TypeSymbol
             {
                 IsGenericDefinition: true
-            } typeInfo && (typeId.Name == generic.MemberRoutineName || isFailableCtor))
+            } typeInfo)
         {
             return AnalyzeGenericTypeConstructorCall(generic: generic,
                 typeId: typeId,

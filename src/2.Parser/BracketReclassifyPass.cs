@@ -69,6 +69,7 @@ internal static class BracketReclassifyPass
         // (foo[T](x)) whose Object is the identifier and whose member name is that identifier.
         Expression receiver;
         string memberName;
+        bool free = false;
         if (node.Object is MemberExpression member)
         {
             receiver = member.Object;
@@ -78,6 +79,7 @@ internal static class BracketReclassifyPass
         {
             receiver = identifier;
             memberName = identifier.Name;
+            free = true;
         }
         else
         {
@@ -94,7 +96,7 @@ internal static class BracketReclassifyPass
                 TypeArguments: typeArgs,
                 Arguments: node.CallArgs,
                 IsMemoryOperation: node.IsFailable,
-                Location: node.Location);
+                Location: node.Location) { IsFree = free };
         }
 
         return new GenericMemberExpression(Object: receiver,

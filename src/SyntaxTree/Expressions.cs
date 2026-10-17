@@ -1141,6 +1141,13 @@ public record GenericMemberRoutineCallExpression(
     }
 
     /// <summary>
+    /// True for the free form `f[T](...)` or `Type[T](...)`, written with no receiver: `Object` is then the
+    /// identifier `f` itself. False for a call on a receiver, `x.f[T](...)`, even when the receiver is a variable
+    /// that happens to share the routine's name (`to.to[CStr]()`).
+    /// </summary>
+    public bool IsFree { get; init; }
+
+    /// <summary>
     /// The fully resolved RoutineInfo from semantic analysis (with owner-level and memberRoutine-level
     /// generic substitution applied). Set for generic memberRoutine calls on objects (e.g., obj.MemberCallable[U](args)).
     /// </summary>

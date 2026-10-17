@@ -360,7 +360,7 @@ public sealed partial class SemanticVerifier
         }
 
         Expression callee = routine.OwnerType == null &&
-                            generic.Object is IdentifierExpression id && id.Name == generic.MemberRoutineName
+                            generic.IsFree && generic.Object is IdentifierExpression id
             ? id with { ResolvedRoutine = routine }
             : new MemberExpression(Object: generic.Object,
                 MemberName: generic.MemberRoutineName,

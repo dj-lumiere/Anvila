@@ -213,7 +213,7 @@ internal static class AgentRecipe
                 TypeArguments: typeArguments,
                 Arguments: arguments,
                 IsMemoryOperation: false,
-                Location: loc)
+                Location: loc) { IsFree = true }
             : new CallExpression(Callee: Id(name: name, loc: loc), Arguments: arguments, Location: loc);
     }
 
