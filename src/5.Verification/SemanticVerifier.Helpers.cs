@@ -903,14 +903,14 @@ public sealed partial class SemanticVerifier
 
     private string KeptEntityMessage(string action, Expression value, TypeSymbol type)
     {
+        string holder = value switch
+        {
+            IdentifierExpression id => $"'{id.Name}'",
+            IndexExpression => "its container",
+            _ => "the value it belongs to"
+        };
         if (!ChecksOwnershipHere && HoldsRazorForgeEntity(type: type))
         {
-            string holder = value switch
-            {
-                IdentifierExpression id => $"'{id.Name}'",
-                IndexExpression => "its container",
-                _ => "the value it belongs to"
-            };
             return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {holder} still holds. An entity from a " +
                    "`.rf` module is not shared, so two places holding it would each release it. Make it where it goes " +
                    $"('{type.BareName}(...)' written in place), or keep working on it through {holder}.";
@@ -922,26 +922,20 @@ public sealed partial class SemanticVerifier
             string from = value is IdentifierExpression id
                 ? $"'{id.Name}'"
                 : "the value it belongs to";
-            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {from} still owns. '{parameter}' may be an entity, and then this " +
-                   $"would make two owners of it. Move it with 'steal', or keep '{parameter}' to values with " +
-                   $"'needs RecordType {parameter}'.";
+            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {from} still holds. '{parameter}' may be an entity, and then " +
+                   $"this would share it between two places with no manager. Hand it over with 'steal', or keep '{parameter}' " +
+                   $"to values with 'needs RecordType {parameter}'.";
         }
 
-        string owner = value switch
-        {
-            IdentifierExpression id => $"'{id.Name}'",
-            IndexExpression => "its container",
-            _ => "the value it belongs to"
-        };
         string copy = ImplementsProtocol(type: type, protocolName: "Copyable")
             ? ", or make an explicit copy with '.duplicate()'"
             : "";
         string fix = value is IndexExpression
             ? $"Take it out with a removing routine (e.g. 'remove_at'){copy}, or work on it where it sits " +
               "(a call or field write on the element reaches it in place)."
-            : $"Move it with 'steal'{copy}, or keep a shareable handle instead.";
-        return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {owner} still owns, which would make two owners of one " +
-               $"single-owner entity. {fix}";
+            : $"Hand it over with 'steal'{copy}, or put it under a manager to share it.";
+        return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {holder} still holds, which would share one entity " +
+               $"between two places with no manager. {fix}";
     }
 
     /// <summary>
