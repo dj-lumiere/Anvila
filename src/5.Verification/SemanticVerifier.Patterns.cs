@@ -991,5 +991,87 @@ public sealed partial class SemanticVerifier
         };
     }
 
+    /// <summary>
+    /// The one type an <c>else as name</c> arm gives its name: what is left of <paramref name="matchedType"/> after the
+    /// unguarded arms before it. A <c>Maybe</c> is its value or <c>None</c>, a <c>Check</c> is its value or the caught
+    /// error (every crashable together counts as one type), a variant is its member types, and anything else is
+    /// itself. When more than one type is left, reports RF-S359 and returns null.
+    /// </summary>
+    private TypeSymbol? ResolveElseRemainder(ElsePattern elsePat, TypeSymbol matchedType,
+        IEnumerable<WhenClause> priorClauses)
+    {
+        TypeSymbol crashables = ResolveType(typeExpr: new TypeExpression(
+            Name: Builder.Declaration.RuntimeContract.Crashables,
+            GenericArguments: null,
+            Location: elsePat.Location));
+        TypeSymbol noneType = _registry.LookupType(name: "None") ?? ErrorTypeSymbol.Instance;
+        List<Pattern> prior = priorClauses.Select(selector: c => c.Pattern)
+                                          .Where(predicate: p => !PatternFacts.IsConditional(pattern: p))
+                                          .ToList();
+
+        var left = new List<TypeSymbol>();
+        string? carrier = GetCarrierBaseName(type: matchedType);
+        if (carrier != null && matchedType.TypeArguments is [var valueType, ..])
+        {
+            bool valueTaken = prior.Any(predicate: p => p is TypePattern tp && !IsNonePattern(pattern: p) &&
+                                                         IsSameType(a: tp.Type.ResolvedType ??
+                                                                       _registry.LookupType(name: tp.Type.Name),
+                                                             b: valueType));
+            if (!valueTaken)
+            {
+                left.Add(item: valueType);
+            }
+
+            if (carrier == MaybeTypeName && !prior.Any(predicate: IsNonePattern))
+            {
+                left.Add(item: noneType);
+            }
+
+            if (carrier == "Check" && !prior.Any(predicate: IsCrashableCatchAll))
+            {
+                left.Add(item: crashables);
+            }
+        }
+        else if (matchedType is VariantTypeSymbol variant)
+        {
+            var taken = prior.Select(selector: p => ResolveVariantArm(pattern: p, variant: variant))
+                             .Where(predicate: m => m != null)
+                             .Select(selector: m => m!.Name)
+                             .ToHashSet();
+            foreach (VariantMemberInfo member in variant.Members.Where(predicate: m => !taken.Contains(item: m.Name)))
+            {
+                TypeSymbol memberType = member.Type is CrashableTypeSymbol
+                    ? crashables
+                    : member.Type ?? noneType;
+                if (!left.Any(predicate: t => IsSameType(a: t, b: memberType)))
+                {
+                    left.Add(item: memberType);
+                }
+            }
+        }
+        else
+        {
+            left.Add(item: matchedType);
+        }
+
+        if (left.Count <= 1)
+        {
+            return left.FirstOrDefault() ?? matchedType;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.ElseBindsSeveralTypes,
+            message: $"'else as {elsePat.VariableName}' would hold one of {left.Count} types " +
+                     $"({string.Join(separator: ", ", values: left.Select(selector: t => t.Name))}), so " +
+                     $"'{elsePat.VariableName}' has no one type. Write an arm for each of them, or write 'else' " +
+                     "without a name.",
+            location: elsePat.Location);
+        return null;
+    }
+
+    private static bool IsSameType(TypeSymbol? a, TypeSymbol? b)
+    {
+        return a != null && b != null && (ReferenceEquals(objA: a, objB: b) || a.FullName == b.FullName);
+    }
+
     #endregion
 }

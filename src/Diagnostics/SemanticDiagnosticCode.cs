@@ -411,6 +411,9 @@ public enum SemanticDiagnosticCode
     /// <summary>Duplicate pattern in match.</summary>
     DuplicatePattern = 358,
 
+    /// <summary>An <c>else as name</c> arm where more than one type is left, so the name would have no one type.</summary>
+    ElseBindsSeveralTypes = 359,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // DECLARATION AND VISIBILITY ERRORS (RF-S400 - RF-S449)
     // ═══════════════════════════════════════════════════════════════════════════

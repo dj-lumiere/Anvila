@@ -433,7 +433,8 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
             // ElsePattern with binding on Result/Lookup, Maybe[T entity], or Maybe[T record]: lowerable.
             ElsePattern ep => !ep.VariableName.HasValue() || IsResultOrLookup(type: subjectType) ||
-                              IsMaybeEntity(type: subjectType) || IsMaybeRecord(type: subjectType),
+                              IsMaybeEntity(type: subjectType) || IsMaybeRecord(type: subjectType) ||
+                              ep.RemainingType != null,
 
             NonePattern => IsMaybeRecord(type: subjectType) || IsMaybeEntity(type: subjectType) ||
                            IsResultOrLookup(type: subjectType),
@@ -715,7 +716,27 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         SourceLocation loc)
     {
         Statement? binding = null;
-        if (ep.VariableName != null)
+        TypeSymbol? rest = ep.RemainingType;
+        bool restIsSubject = rest == null || subjectType == null || rest.FullName == subjectType.FullName;
+        if (ep.VariableName != null && rest is { Name: "None" } && !restIsSubject)
+        {
+            // Only `None` is left: the name holds nothing worth reading.
+            return (null, null);
+        }
+
+        if (ep.VariableName != null && !restIsSubject && subjectType is VariantTypeSymbol &&
+            !IsResultOrLookup(type: subjectType))
+        {
+            // A variant with one member type left: the name holds that member.
+            binding = MakeBinding(name: ep.VariableName,
+                value: MakeCarrierPayload(subject: subject, innerType: rest!, loc: loc),
+                loc: loc);
+        }
+        else if (ep.VariableName != null && restIsSubject && ep.RemainingType != null)
+        {
+            binding = MakeBinding(name: ep.VariableName, value: subject, loc: loc);
+        }
+        else if (ep.VariableName != null)
         {
             Expression bindValue;
             if (IsMaybeRecord(type: subjectType) || IsMaybeEntity(type: subjectType))
@@ -728,7 +749,8 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     loc: loc);
             }
             else if (IsResultOrLookup(type: subjectType) &&
-                     subjectType!.TypeArguments?.Count > 0 && isElseNarrowed)
+                     subjectType!.TypeArguments?.Count > 0 &&
+                     (isElseNarrowed || rest?.FullName == subjectType.TypeArguments[index: 0].FullName))
             {
                 // Result/Lookup: truly narrowed-to-T else arm -> extract payload.
                 // Only when all non-T arms (None + all Crashable types) are handled.

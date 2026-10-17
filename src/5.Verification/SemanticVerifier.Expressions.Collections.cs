@@ -802,8 +802,21 @@ public sealed partial class SemanticVerifier
         {
             _registry.EnterScope(kind: ScopeKind.Block, name: "when_clause");
 
-            // Analyze the pattern
-            AnalyzePattern(pattern: clause.Pattern, matchedType: matchedType);
+            // Analyze the pattern. `else as name` gives the name the one type left after the earlier arms.
+            if (clause.Pattern is ElsePattern { VariableName: { } elseName } elsePat)
+            {
+                TypeSymbol? rest = ResolveElseRemainder(elsePat: elsePat,
+                    matchedType: matchedType,
+                    priorClauses: when.Clauses.TakeWhile(predicate: c => !ReferenceEquals(objA: c, objB: clause)));
+                elsePat.RemainingType = rest;
+                elsePat.BindsCarrierError = rest is not null && GetCarrierBaseName(type: matchedType) == "Check" &&
+                                            rest.BareName == Builder.Declaration.RuntimeContract.Crashables;
+                DeclarePatternVariable(name: elseName, type: rest ?? ErrorTypeSymbol.Instance, location: elsePat.Location);
+            }
+            else
+            {
+                AnalyzePattern(pattern: clause.Pattern, matchedType: matchedType);
+            }
 
             // Check for else clause
             if (clause.Pattern is WildcardPattern or ElsePattern)

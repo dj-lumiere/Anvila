@@ -464,6 +464,7 @@ public sealed partial class SemanticVerifier
             _registry.EnterScope(kind: ScopeKind.Block, name: "when_clause");
             bool handled = AnalyzeWhenClause(clause: clause,
                 matchedType: matchedType,
+                priorClauses: whenStmt.Clauses.TakeWhile(predicate: c => !ReferenceEquals(objA: c, objB: clause)),
                 ctx: new WhenClauseContext(WhenVarName: whenVarName,
                     WhenVariant: whenVariant,
                     HandledArms: handledArms,
@@ -556,7 +557,7 @@ public sealed partial class SemanticVerifier
         bool ViewingElement = false);
 
     private bool AnalyzeWhenClause(WhenClause clause, TypeSymbol matchedType,
-        WhenClauseContext ctx, ref bool handledNone, ref bool handledNoneValue,
+        IEnumerable<WhenClause> priorClauses, WhenClauseContext ctx, ref bool handledNone, ref bool handledNoneValue,
         ref bool handledCrashable, ref bool handledValue)
     {
         ApplyElseVariantNarrowing(clause: clause,
@@ -569,40 +570,26 @@ public sealed partial class SemanticVerifier
             handledNoneValue: ref handledNoneValue,
             handledCrashable: ref handledCrashable);
 
-        if (clause.Pattern is ElsePattern elsePat && IsCarrierType(type: matchedType))
+        if (clause.Pattern is ElsePattern { VariableName: { } elseName } elsePat)
         {
-            // Every earlier arm already covers the value, so the only case
-            // left is the caught error: bind it as `is Crashables e` would, not the carrier itself.
-            string? carrierBase = GetCarrierBaseName(type: matchedType);
-            bool onlyErrorLeft = handledValue && !handledCrashable &&
-                                 carrierBase == "Check";
-            if (onlyErrorLeft && elsePat.VariableName != null)
-            {
-                elsePat.BindsCarrierError = true;
-                DeclarePatternVariable(name: elsePat.VariableName,
-                    type: ResolveType(typeExpr: new TypeExpression(Name: Builder.Declaration.RuntimeContract.Crashables,
-                        GenericArguments: null,
-                        Location: elsePat.Location)),
-                    location: elsePat.Location);
-                AnalyzeStatement(statement: clause.Body);
-                _registry.ExitScope();
-                return true;
-            }
-
-            TypeSymbol? narrowedType = ComputeNarrowedType(type: matchedType,
-                eliminateNone: handledNone,
-                eliminateCrashable: handledCrashable);
-            if (narrowedType != null && elsePat.VariableName != null)
-            {
-                DeclarePatternVariable(name: elsePat.VariableName,
-                    type: ctx.ViewingElement
-                        ? ReadOnlyElement(element: narrowedType)
-                        : narrowedType,
-                    location: elsePat.Location);
-                AnalyzeStatement(statement: clause.Body);
-                _registry.ExitScope();
-                return true;
-            }
+            // The name has the one type left after the earlier arms. On a `Check`, when that is the caught error,
+            // the arm is `is Crashables e`.
+            TypeSymbol? rest = ResolveElseRemainder(elsePat: elsePat,
+                matchedType: matchedType,
+                priorClauses: priorClauses);
+            elsePat.RemainingType = rest;
+            elsePat.BindsCarrierError = rest is not null && GetCarrierBaseName(type: matchedType) == "Check" &&
+                                        rest.BareName == Builder.Declaration.RuntimeContract.Crashables;
+            DeclarePatternVariable(name: elseName,
+                type: rest == null
+                    ? ErrorTypeSymbol.Instance
+                    : ctx.ViewingElement && IsCarrierType(type: matchedType)
+                        ? ReadOnlyElement(element: rest)
+                        : rest,
+                location: elsePat.Location);
+            AnalyzeStatement(statement: clause.Body);
+            _registry.ExitScope();
+            return true;
         }
 
         AnalyzePattern(pattern: clause.Pattern, matchedType: matchedType);

@@ -1091,6 +1091,13 @@ public record ElsePattern(string? VariableName, SourceLocation Location)
     public bool BindsCarrierError { get; set; }
 
     /// <summary>
+    /// Set by semantic analysis on an <c>else as name</c> arm: the one type left after the earlier arms, which the name
+    /// has (the value of a <c>Maybe</c>, a variant's remaining member type, or the subject's own type when nothing was
+    /// taken out). Lowering binds the name to that part of the subject.
+    /// </summary>
+    public TypeModel.Types.TypeSymbol? RemainingType { get; set; }
+
+    /// <summary>
     /// Set by the builder on the value arm of a <c>Check</c>/<c>Lookup</c> carrier whose payload cannot be shared
     /// (an entity): the binding takes the payload and the carrier forgets it (its tag cleared), so only the
     /// binding tears it down.
