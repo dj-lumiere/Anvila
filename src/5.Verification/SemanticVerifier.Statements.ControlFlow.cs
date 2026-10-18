@@ -219,6 +219,54 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>
+    /// A loop whose condition is a literal builds as written, with a notice. <c>while true</c> / <c>until false</c>
+    /// ends only by <c>break</c> or <c>return</c>, which <c>loop</c> says. <c>while false</c> / <c>until true</c> never
+    /// runs its body, which an editor shows faded. A named Bool, even a preset, is a condition like any other.
+    /// </summary>
+    internal void NoteLiteralLoopCondition(WhileStatement whileStmt)
+    {
+        Expression written = whileStmt.IsUntil && whileStmt.Condition is UnaryExpression
+        {
+            Operator: UnaryOperator.Not
+        } negated
+            ? negated.Operand
+            : whileStmt.Condition;
+        if (written is not LiteralExpression { Value: bool literal })
+        {
+            return;
+        }
+
+        string header = $"{(whileStmt.IsUntil ? "until" : "while")} {(literal ? "true" : "false")}";
+        if (literal != whileStmt.IsUntil)
+        {
+            // `loop` takes no carried values: a loop with `with` keeps its header.
+            SourceLocation end = written.Location;
+            SuggestedFix? fix = !whileStmt.HadWith && end.Line == whileStmt.Location.Line
+                ? new SuggestedFix(Title: "Write 'loop'",
+                    Edits:
+                    [
+                        new TextEdit(StartLine: whileStmt.Location.Line, StartColumn: whileStmt.Location.Column,
+                            EndLine: end.Line, EndColumn: end.Column + (literal ? 4 : 5), NewText: "loop")
+                    ])
+                : null;
+            ReportNotice(code: SemanticWarningCode.InfiniteLoopAsWhile,
+                message: $"`{header}` runs until a `break` or `return`: write `loop` for a loop like that.",
+                location: whileStmt.Location,
+                fix: fix);
+            return;
+        }
+
+        Statement body = whileStmt.Body is BlockStatement { Statements.Count: > 0 } block
+            ? block.Statements[index: 0]
+            : whileStmt.Body;
+        ReportNotice(code: SemanticWarningCode.UnreachableLoopBody,
+            message: $"This code never runs: `{header}` doesn't enter the loop.",
+            location: body.Location,
+            endLine: LastLine(statement: whileStmt.Body),
+            neverRuns: true);
+    }
+
     private void AnalyzeWhileStatement(WhileStatement whileStmt)
     {
         TypeSymbol conditionType = AnalyzeExpression(expression: whileStmt.Condition);

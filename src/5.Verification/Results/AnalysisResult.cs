@@ -38,6 +38,10 @@ public sealed record AnalysisResult(
     IReadOnlyCollection<string> LiveOwnerTypeNames,
     IReadOnlyCollection<string> MaySuspendRoutineKeys)
 {
+    /// <summary>The notices of the user's files: likely slips that build as written, which <c>check</c>, <c>lint</c>
+    /// and the language server show and a build doesn't.</summary>
+    public List<SemanticWarning> Notices { get; init; } = [];
+
     /// <summary>Whether analysis completed without errors.</summary>
     public bool Success => Errors.Count == 0;
 }

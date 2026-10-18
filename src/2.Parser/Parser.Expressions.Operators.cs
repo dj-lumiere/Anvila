@@ -410,8 +410,48 @@ public partial class Parser
     /// Context-sensitive: disabled inside when clause bodies to avoid ambiguity.
     /// </summary>
     /// <returns>The parsed expression.</returns>
+    /// <summary>
+    /// The fix for <c>x in xs</c> written as a test, with the parser at the <c>in</c>: <c>xs.has(x)</c>, the container
+    /// read on a lookahead parser. Null when the two sides span lines or the container doesn't parse.
+    /// </summary>
+    private SuggestedFix? MembershipFix(int start)
+    {
+        int inAt = _position;
+        string? element = TokenText(from: start, to: inAt);
+        int saved = _position;
+        try
+        {
+            _position = inAt + 1;
+            ParseInfix();
+            int end = _position;
+            string? container = TokenText(from: inAt + 1, to: end);
+            if (element == null || container == null)
+            {
+                return null;
+            }
+
+            Token first = _tokens[index: start];
+            Token last = _tokens[index: end - 1];
+            bool simple = _tokens.Skip(count: inAt + 1).Take(count: end - inAt - 1)
+                                 .All(predicate: t => t.Type is TokenType.Identifier or TokenType.Dot);
+            string receiver = simple ? container : $"({container})";
+            return new SuggestedFix(Title: $"Write {receiver}.has({element})",
+                Edits: [new TextEdit(StartLine: first.Line, StartColumn: first.Column, EndLine: last.Line,
+                    EndColumn: last.Column + last.Text.Length, NewText: $"{receiver}.has({element})")]);
+        }
+        catch (GrammarException)
+        {
+            return null;
+        }
+        finally
+        {
+            _position = saved;
+        }
+    }
+
     private Expression ParseIsExpression()
     {
+        int start = _position;
         Expression expr = ParseInfix();
 
         // `x in coll` as a test: containment is written container-first. `in` only introduces a loop
@@ -420,7 +460,8 @@ public partial class Parser
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.InAsMembership,
                 message: "'in' only names what a loop walks (`each x in xs`). To test membership, " +
-                         "ask the container: `xs.has(x)` (or `xs.lacks(x)`, and `d.has_key(k)` on a map).");
+                         "ask the container: `xs.has(x)` (or `xs.lacks(x)`, and `d.has_key(k)` on a map).",
+                fix: MembershipFix(start: start));
         }
 
         // Handle is/isnot/obeys expressions when not in when pattern/clause context. (`in`/`notin` are

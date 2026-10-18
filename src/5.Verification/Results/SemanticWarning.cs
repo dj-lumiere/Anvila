@@ -14,6 +14,19 @@ public sealed record SemanticWarning(
     string Message,
     SourceLocation Location)
 {
+    /// <summary>The last line of the code it covers, when it covers more than its first line (the body of a loop
+    /// that never runs), or null.</summary>
+    public int? EndLine { get; init; }
+
+    /// <summary>Whether the code it covers never runs: an editor shows that code faded.</summary>
+    public bool NeverRuns { get; init; }
+
+    /// <summary>The change it proposes, offered as a quick fix, or null.</summary>
+    public SuggestedFix? Fix { get; init; }
+
+    /// <summary>Whether this is a notice (a likely slip that builds as written) rather than a warning.</summary>
+    public bool IsNotice { get; init; }
+
     /// <summary>
     /// The code as the user sees it, spelled in the language of the file the warning points at
     /// (RF-W### for a .rf file, SF-W### for a .sf file).
@@ -29,5 +42,5 @@ public sealed record SemanticWarning(
     /// Format: warning[RF-W###]: filename:line:column: message (SF-W### for a Suflae file)
     /// </summary>
     public string FormattedMessage =>
-        $"warning[{CodeString}]: {Location.FileName}:{Location.Line}:{Location.Column}: {SurfaceMessage}";
+        $"{(IsNotice ? "note" : "warning")}[{CodeString}]: {Location.FileName}:{Location.Line}:{Location.Column}: {SurfaceMessage}";
 }

@@ -228,10 +228,18 @@ internal partial class Program
     /// <summary>Runs the <c>check</c> command: resolves the entry file and type-checks without codegen.</summary>
     private static int RunCheckCommand(string[] args)
     {
-        ResolvedEntry resolved = ResolveEntryFile(args: args, needsOutputArg: false);
+        bool json = args.Contains(value: "--json");
+        ResolvedEntry resolved = ResolveEntryFile(args: args.Where(predicate: a => a != "--json").ToArray(),
+            needsOutputArg: false);
         if (resolved.EntryFile == null)
         {
             return 1;
+        }
+
+        if (json)
+        {
+            return CheckJson(entryFile: resolved.EntryFile, projectRoot: resolved.ProjectRoot,
+                libraryRoots: resolved.LibraryRoots);
         }
 
         return CheckMultiFile(entryFile: resolved.EntryFile,
@@ -870,12 +878,12 @@ internal partial class Program
         Console.WriteLine(value: "Usage:");
         Console.WriteLine(value: $"  {tool} new [folder]                     - Start a project (config.toml, main{CliRules.FileExtension}, editor files)");
         Console.WriteLine(value: $"  {tool} migrate [--check] <paths>...      - Move sources from the previous release to this one");
-        Console.WriteLine(value: $"  {tool} check [entry-file]               - Check the program without building it");
+        Console.WriteLine(value: $"  {tool} check [--json] [entry-file]      - Check the program without building it (--json: as JSON)");
         Console.WriteLine(value: $"  {tool} build [entry-file]               - Build a native executable");
         Console.WriteLine(value: $"  {tool} run [entry-file]                 - Build the program and run it");
         Console.WriteLine(value: $"  {tool} test <dir-or-file>...            - Run test programs against their expected output");
         Console.WriteLine(value: $"  {tool} fmt [--check] <file-or-dir>...   - Format sources in place (--check: only list)");
-        Console.WriteLine(value: $"  {tool} lint <file-or-dir>...            - Report code that is not in the canonical style");
+        Console.WriteLine(value: $"  {tool} lint <file-or-dir>...            - Report code that is not in the canonical style, and notes");
         Console.WriteLine(value: $"  {tool} docs <source-dir> <output-dir>    - Write the API reference pages of a library");
         Console.WriteLine(value: $"  {tool} lsp                              - Run the language server (for an editor)");
         Console.WriteLine(value: $"  {tool} help                             - Show this help");
@@ -1833,6 +1841,13 @@ internal partial class Program
                 Console.WriteLine();
                 Console.Error.WriteLine(value: $"=== WARNINGS ({result.Warnings.Count}) ===");
                 DiagnosticRenderer.PrintAll(warnings: result.Warnings);
+            }
+
+            if (result.Notices.Count > 0)
+            {
+                Console.WriteLine();
+                Console.Error.WriteLine(value: $"=== NOTES ({result.Notices.Count}) ===");
+                DiagnosticRenderer.PrintAll(warnings: result.Notices);
             }
 
             Console.WriteLine();

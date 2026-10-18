@@ -948,6 +948,24 @@ public sealed partial class SemanticVerifier
         return need <= 256 ? $"S{need}" : "Integer";
     }
 
+    /// <summary>The quick fix for two chosen number types side by side when both sides are names: each converted to
+    /// the type that holds both (`a.to[S64]() + b.to[S64]()`). Null otherwise.</summary>
+    private static SuggestedFix? MixedNumbersFix(BinaryExpression binary, TypeSymbol left, TypeSymbol right)
+    {
+        if (binary.Left is not IdentifierExpression a || binary.Right is not IdentifierExpression b ||
+            HoldsBoth(a: left.Name, b: right.Name) is not { } both)
+        {
+            return null;
+        }
+
+        return new SuggestedFix(Title: $"Convert both sides to {both}",
+            Edits:
+            [
+                TextEdit.Insert(line: a.Location.Line, column: a.Location.Column + a.Name.Length, text: $".to[{both}]()"),
+                TextEdit.Insert(line: b.Location.Line, column: b.Location.Column + b.Name.Length, text: $".to[{both}]()")
+            ]);
+    }
+
     /// <summary>How an operand reads in a suggested fix: its name, or `…` for anything longer.</summary>
     private static string OperandText(Expression expr)
     {
@@ -975,7 +993,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FixedWidthTypeMismatch,
                 message: MixedNumbersMessage(left: leftType, right: rightType, leftText: OperandText(expr: binary.Left),
                     rightText: OperandText(expr: binary.Right), op: binary.Operator.ToStringRepresentation()),
-                location: binary.Location);
+                location: binary.Location,
+                fix: MixedNumbersFix(binary: binary, left: leftType, right: rightType));
             return true;
         }
 

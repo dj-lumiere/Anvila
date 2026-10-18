@@ -1,4 +1,8 @@
 using Builder.Formatting;
+using Builder.Declaration;
+using Builder.Diagnostics;
+using Builder.Verification;
+using Builder.Verification.Results;
 using TypeModel.Enums;
 
 namespace Builder.Execution;
@@ -125,6 +129,53 @@ internal partial class Program
         return prefixed.Count;
     }
 
+    /// <summary>
+    /// Prints the notices of <paramref name="file"/> (likely slips that build as written, such as a Suflae result
+    /// left unused) and returns how many there were. Only a language that reports some is analyzed, so linting a
+    /// RazorForge file stays a style check.
+    /// </summary>
+    private static int ReportNotices(string file)
+    {
+        if (Builder.Frontends.Languages.For(language: SourceLanguage(path: file)).MarksDroppedResults)
+        {
+            return 0;
+        }
+
+        ResolvedEntry resolved = ResolveExplicitEntry(explicitEntry: file, outputFile: null);
+        if (resolved.EntryFile == null)
+        {
+            return 0;
+        }
+
+        string stdlibRoot = StdlibLoader.GetDefaultStdlibPath();
+        var driver = new BuildDriver(projectRoot: resolved.ProjectRoot ?? Path.GetDirectoryName(path: Path.GetFullPath(path: file)) ?? ".",
+            stdlibRoot: stdlibRoot,
+            language: SourceLanguage(path: file),
+            libraryRoots: resolved.LibraryRoots);
+        BuildResult built = driver.CompileFile(entryFile: Path.GetFullPath(path: file));
+        if (built.Errors.Count > 0)
+        {
+            return 0;
+        }
+
+        var analyzer = new SemanticVerifier(language: SourceLanguage(path: file));
+        analyzer.Registry.UseModuleResolver(resolver: driver.Resolver);
+        AnalysisResult result = analyzer.AnalyzeMultiple(files: OrderUserFiles(
+            userUnits: FilterUserUnits(buildResult: built, stdlibRoot: stdlibRoot),
+            initializationOrder: built.InitializationOrder));
+        // Only the file's own notices: a file it imports is linted on its own.
+        List<SemanticWarning> own = result.Notices
+                                          .Where(predicate: n => Path.GetFullPath(path: n.Location.FileName) ==
+                                                                 Path.GetFullPath(path: file))
+                                          .ToList();
+        foreach (SemanticWarning notice in own)
+        {
+            DiagnosticRenderer.Print(warning: notice);
+        }
+
+        return own.Count;
+    }
+
     private static int RunLintCommand(string[] args)
     {
         List<string> targets = args.Skip(count: 1).ToList();
@@ -159,11 +210,13 @@ internal partial class Program
 
         int problems = 0;
         int hints = 0;
+        int notes = 0;
         foreach (string file in files.Distinct()
                                      .Order(comparer: StringComparer.Ordinal))
         {
             string source = File.ReadAllText(path: file);
             hints += ReportPrefixedNames(file: file, source: source);
+            notes += ReportNotices(file: file);
             FormatResult result = SourceFormatter.Format(source: source, fileName: file,
                 language: SourceLanguage(path: file), keepOrder: false);
             if (!result.Succeeded)
@@ -200,6 +253,11 @@ internal partial class Program
         if (hints > 0)
         {
             Console.WriteLine(value: $"{hints} names carry a prefix (hints, not errors)");
+        }
+
+        if (notes > 0)
+        {
+            Console.WriteLine(value: $"{notes} notes (likely slips that build as written, not errors)");
         }
         return problems == 0
             ? 0

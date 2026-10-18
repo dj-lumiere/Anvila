@@ -76,7 +76,17 @@ public sealed partial class SemanticVerifier
     private List<SemanticWarning> UserVisibleWarnings()
     {
         return _warnings.Where(predicate: w =>
-                             !string.IsNullOrEmpty(value: w.Location.FileName) &&
+                             !w.IsNotice && !string.IsNullOrEmpty(value: w.Location.FileName) &&
+                             !IsStdlibFile(filePath: w.Location.FileName))
+                        .ToList();
+    }
+
+    /// <summary>The notices of the user's files (see <see cref="ReportNotice"/>): shown by <c>check</c>, <c>lint</c>
+    /// and the language server, never by a build.</summary>
+    private List<SemanticWarning> UserVisibleNotices()
+    {
+        return _warnings.Where(predicate: w =>
+                             w.IsNotice && !string.IsNullOrEmpty(value: w.Location.FileName) &&
                              !IsStdlibFile(filePath: w.Location.FileName))
                         .ToList();
     }
@@ -602,7 +612,7 @@ public sealed partial class SemanticVerifier
             InstantiatedGenericBodies: _instantiatedGenericBodies,
             LiveRoutineKeys: _liveRoutineKeys,
             LiveOwnerTypeNames: _liveOwnerTypeNames,
-            MaySuspendRoutineKeys: _maySuspendRoutineKeys);
+            MaySuspendRoutineKeys: _maySuspendRoutineKeys) { Notices = UserVisibleNotices() };
     }
 
     /// <summary>The result of an analysis that stopped before the declaration phases because a
@@ -617,7 +627,7 @@ public sealed partial class SemanticVerifier
             InstantiatedGenericBodies: _instantiatedGenericBodies,
             LiveRoutineKeys: _liveRoutineKeys,
             LiveOwnerTypeNames: _liveOwnerTypeNames,
-            MaySuspendRoutineKeys: _maySuspendRoutineKeys);
+            MaySuspendRoutineKeys: _maySuspendRoutineKeys) { Notices = UserVisibleNotices() };
     }
 
     /// <summary>Phase 1: Collect all type shapes and routine stubs -> no names resolved.</summary>
@@ -2557,7 +2567,7 @@ public sealed partial class SemanticVerifier
                 InstantiatedGenericBodies: _instantiatedGenericBodies,
                 LiveRoutineKeys: _liveRoutineKeys,
                 LiveOwnerTypeNames: _liveOwnerTypeNames,
-                MaySuspendRoutineKeys: _maySuspendRoutineKeys);
+                MaySuspendRoutineKeys: _maySuspendRoutineKeys) { Notices = UserVisibleNotices() };
         }
 
         // Phase 2 global: once, registry-only -> no per-file import scoping needed
@@ -2698,7 +2708,7 @@ public sealed partial class SemanticVerifier
                 InstantiatedGenericBodies: _instantiatedGenericBodies,
                 LiveRoutineKeys: _liveRoutineKeys,
                 LiveOwnerTypeNames: _liveOwnerTypeNames,
-                MaySuspendRoutineKeys: _maySuspendRoutineKeys);
+                MaySuspendRoutineKeys: _maySuspendRoutineKeys) { Notices = UserVisibleNotices() };
         }
 
         foreach ((Program program, string filePath) in files)
@@ -2743,7 +2753,7 @@ public sealed partial class SemanticVerifier
             InstantiatedGenericBodies: _instantiatedGenericBodies,
             LiveRoutineKeys: _liveRoutineKeys,
             LiveOwnerTypeNames: _liveOwnerTypeNames,
-            MaySuspendRoutineKeys: _maySuspendRoutineKeys);
+            MaySuspendRoutineKeys: _maySuspendRoutineKeys) { Notices = UserVisibleNotices() };
     }
 
     /// <summary>
@@ -3353,6 +3363,23 @@ public sealed partial class SemanticVerifier
         AddError(error: new SemanticError(Code: code, Message: message, Location: location));
     }
 
+    /// <summary>Reports an error that proposes <paramref name="fix"/> (a quick fix in the editor).</summary>
+    internal void ReportError(SemanticDiagnosticCode code, string message, SourceLocation location, SuggestedFix? fix)
+    {
+        AddError(error: new SemanticError(Code: code, Message: message, Location: location) { Fix = fix });
+    }
+
+    /// <summary>Reports an error about code that never runs, from <paramref name="location"/> through
+    /// <paramref name="endLine"/>: an editor also shows that code faded.</summary>
+    internal void ReportNeverRunsError(SemanticDiagnosticCode code, string message, SourceLocation location,
+        int endLine)
+    {
+        AddError(error: new SemanticError(Code: code, Message: message, Location: location)
+        {
+            EndLine = endLine, NeverRuns = true
+        });
+    }
+
     /// <summary>
     /// Reports a semantic warning with a diagnostic code.
     /// </summary>
@@ -3361,12 +3388,48 @@ public sealed partial class SemanticVerifier
     /// <param name="location">The source location of the warning.</param>
     internal void ReportWarning(SemanticWarningCode code, string message, SourceLocation location)
     {
+        ReportWarning(code: code, message: message, location: location, fix: null);
+    }
+
+    /// <summary>Reports a warning that proposes <paramref name="fix"/> (a quick fix in the editor).</summary>
+    internal void ReportWarning(SemanticWarningCode code, string message, SourceLocation location, SuggestedFix? fix)
+    {
         if (SuppressedWarnings.Contains(item: code))
         {
             return;
         }
 
-        AddWarning(warning: new SemanticWarning(Code: code, Message: message, Location: location));
+        AddWarning(warning: new SemanticWarning(Code: code, Message: message, Location: location) { Fix = fix });
+    }
+
+    /// <summary>
+    /// Reports a notice: something that is most likely a slip but builds as written (a Suflae result left unused).
+    /// A build stays quiet about it. <c>check</c>, <c>lint</c> and the language server show it.
+    /// </summary>
+    internal void ReportNotice(SemanticWarningCode code, string message, SourceLocation location,
+        int? endLine = null, bool neverRuns = false, SuggestedFix? fix = null)
+    {
+        AddWarning(warning: new SemanticWarning(Code: code, Message: message, Location: location)
+        {
+            IsNotice = true, EndLine = endLine, NeverRuns = neverRuns, Fix = fix
+        });
+    }
+
+    /// <summary>The last source line of <paramref name="statement"/>: its own line, or the last line of the
+    /// statements it holds.</summary>
+    internal static int LastLine(Statement statement)
+    {
+        return statement switch
+        {
+            BlockStatement { Statements.Count: > 0 } block => Math.Max(val1: block.Location.Line,
+                val2: LastLine(statement: block.Statements[^1])),
+            IfStatement ifStmt => Math.Max(val1: LastLine(statement: ifStmt.ThenStatement),
+                val2: ifStmt.ElseStatement is { } otherwise ? LastLine(statement: otherwise) : 0),
+            WhileStatement loop => Math.Max(val1: LastLine(statement: loop.Body),
+                val2: loop.ThenBranch is { } then ? LastLine(statement: then) : 0),
+            LoopStatement loop => LastLine(statement: loop.Body),
+            _ => statement.Location.Line
+        };
     }
 
     private static readonly HashSet<SemanticWarningCode> SuppressedWarnings = new()

@@ -51,8 +51,8 @@ public static class DiagnosticRenderer
     public static void Print(SemanticWarning warning, string indent = "  ")
     {
         PrintDiagnostic(writer: Console.Error,
-            severity: "warning",
-            severityColor: ConsoleColor.Yellow,
+            severity: warning.IsNotice ? "note" : "warning",
+            severityColor: warning.IsNotice ? ConsoleColor.Cyan : ConsoleColor.Yellow,
             header: warning.FormattedMessage,
             location: warning.Location,
             indent: indent);
@@ -123,7 +123,7 @@ public static class DiagnosticRenderer
         if (warnings.Count > shown)
         {
             Console.Error.WriteLine(
-                value: $"{indent}... and {warnings.Count - shown} more warnings not shown.");
+                value: $"{indent}... and {warnings.Count - shown} more {(warnings[index: shown].IsNotice ? "notes" : "warnings")} not shown.");
         }
     }
 

@@ -965,7 +965,7 @@ public sealed class BuildDriver
                     : 1,
                 Position: 0))
         {
-            GrammarCode = ex.Code.ToCodeString(language: ex.Language)
+            GrammarCode = ex.Code.ToCodeString(language: ex.Language), Fix = ex.Fix
         };
     }
 

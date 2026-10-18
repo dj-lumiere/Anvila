@@ -4035,78 +4035,37 @@ public static class LspServer
         {
             foreach (JsonElement diag in diags.EnumerateArray())
             {
-                TryAddDropCodeAction(actions: actions,
-                    doc: doc,
-                    uri: uri,
-                    diag: diag);
+                TryAddFixCodeAction(actions: actions, uri: uri, diag: diag);
             }
         }
 
         WriteResult(stdout: stdout, id: id, result: actions);
     }
 
-    /// <summary>If <paramref name="diag"/> is an RF-W007 (unused Bool-returning call) diagnostic and the
-    /// first token on its line can be found, adds a "Prepend 'drop'" quick-fix code action.</summary>
-    private static void TryAddDropCodeAction(List<object?> actions, DocState doc, string uri,
-        JsonElement diag)
+    /// <summary>If <paramref name="diag"/> carries the fix its diagnostic proposes (in <c>data.fix</c>, see
+    /// <see cref="MakeDiagnostic"/>), adds it as a quick fix.</summary>
+    private static void TryAddFixCodeAction(List<object?> actions, string uri, JsonElement diag)
     {
-        string code;
-        if (!diag.TryGetProperty(propertyName: "code", value: out JsonElement cd))
-        {
-            code = "";
-        }
-        else if (cd.ValueKind == JsonValueKind.String)
-        {
-            code = cd.GetString() ?? "";
-        }
-        else
-        {
-            code = cd.ToString();
-        }
-
-        if (!code.Contains(value: "W007") ||
-            !diag.TryGetProperty(propertyName: PropRange, value: out JsonElement dr) ||
-            !dr.TryGetProperty(propertyName: PropStart, value: out JsonElement ds) ||
-            !ds.TryGetProperty(propertyName: "line", value: out JsonElement dl))
+        if (!diag.TryGetProperty(propertyName: "data", value: out JsonElement data) ||
+            data.ValueKind != JsonValueKind.Object ||
+            !data.TryGetProperty(propertyName: "fix", value: out JsonElement fix) ||
+            !fix.TryGetProperty(propertyName: "title", value: out JsonElement title) ||
+            !fix.TryGetProperty(propertyName: "edits", value: out JsonElement edits))
         {
             return;
         }
 
-        int line1 = dl.GetInt32() + 1;
-        Token? first = doc.Tokens
-                          .Where(predicate: t => t.Line == line1 && t.Text.Length > 0 &&
-                                                 t.Type != TokenType.Newline)
-                          .OrderBy(keySelector: t => t.Column)
-                          .FirstOrDefault();
-        if (first == null)
-        {
-            return;
-        }
-
-        var pos = new Dictionary<string, object?>
-        {
-            [key: "line"] = line1 - 1, [key: PropCharacter] = first.Column - 1
-        };
         actions.Add(item: new Dictionary<string, object?>
         {
-            [key: "title"] = "Prepend 'drop'",
+            [key: "title"] = title.GetString(),
             [key: "kind"] = "quickfix",
+            [key: "isPreferred"] = true,
             [key: "diagnostics"] = new List<object?> { JsonElementToObject(el: diag) },
             [key: "edit"] = new Dictionary<string, object?>
             {
                 [key: "changes"] = new Dictionary<string, object?>
                 {
-                    [key: uri] = new List<object?>
-                    {
-                        new Dictionary<string, object?>
-                        {
-                            [key: PropRange] = new Dictionary<string, object?>
-                            {
-                                [key: PropStart] = pos, [key: "end"] = pos
-                            },
-                            [key: "newText"] = "drop "
-                        }
-                    }
+                    [key: uri] = edits.Clone()
                 }
             }
         });
@@ -4758,6 +4717,15 @@ public static class LspServer
                             ?.Text.Length ?? 1;
             }
 
+            // The column just past the last token of a line (1-based), for a diagnostic that covers whole lines.
+            int LineEnd(int line)
+            {
+                return tokens.Where(predicate: t => t.Line == line && t.Type != TokenType.Newline)
+                             .Select(selector: t => t.Column + t.Text.Length)
+                             .DefaultIfEmpty(defaultValue: 1)
+                             .Max();
+            }
+
             IReadOnlyList<GrammarException> grammarErrors = parser.GetStructuredErrors();
             foreach (GrammarException pe in grammarErrors)
             {
@@ -4766,7 +4734,8 @@ public static class LspServer
                     severity: 1,
                     code: pe.Code.ToCodeString(language: lang),
                     message: pe.RawMessage,
-                    length: SpanLen(line: pe.Line, col: pe.Column)));
+                    length: SpanLen(line: pe.Line, col: pe.Column),
+                    fix: pe.Fix));
             }
 
             TypeRegistry.StdlibSnapshot snapshot = SnapshotFor(language: lang);
@@ -4809,7 +4778,11 @@ public static class LspServer
                     severity: 1,
                     code: e.CodeString,
                     message: e.SurfaceMessage,
-                    length: SpanLen(line: e.Location.Line, col: e.Location.Column)));
+                    length: SpanLen(line: e.Location.Line, col: e.Location.Column),
+                    endLine: e.EndLine,
+                    endColumn: e.EndLine is { } errorEnd ? LineEnd(line: errorEnd) : 0,
+                    neverRuns: e.NeverRuns,
+                    fix: e.Fix));
             }
 
             FileBuildUnit? unit = build.Units.FirstOrDefault(predicate: u =>
@@ -4836,7 +4809,11 @@ public static class LspServer
                     severity: 1,
                     code: e.CodeString,
                     message: e.SurfaceMessage,
-                    length: SpanLen(line: e.Location.Line, col: e.Location.Column)));
+                    length: SpanLen(line: e.Location.Line, col: e.Location.Column),
+                    endLine: e.EndLine,
+                    endColumn: e.EndLine is { } errorEnd ? LineEnd(line: errorEnd) : 0,
+                    neverRuns: e.NeverRuns,
+                    fix: e.Fix));
             }
 
             foreach (SemanticWarning w in result.Warnings.Where(predicate: w =>
@@ -4847,7 +4824,24 @@ public static class LspServer
                     severity: 2,
                     code: w.CodeString,
                     message: w.SurfaceMessage,
-                    length: SpanLen(line: w.Location.Line, col: w.Location.Column)));
+                    length: SpanLen(line: w.Location.Line, col: w.Location.Column),
+                    fix: w.Fix));
+            }
+
+            // A notice builds as written: it is shown as information, below a warning.
+            foreach (SemanticWarning n in result.Notices.Where(predicate: n =>
+                         IsThisFile(location: n.Location, fileName: fileName)))
+            {
+                diagnostics.Add(item: MakeDiagnostic(line: n.Location.Line,
+                    column: n.Location.Column,
+                    severity: 3,
+                    code: n.CodeString,
+                    message: n.SurfaceMessage,
+                    length: SpanLen(line: n.Location.Line, col: n.Location.Column),
+                    endLine: n.EndLine,
+                    endColumn: n.EndLine is { } noticeEnd ? LineEnd(line: noticeEnd) : 0,
+                    neverRuns: n.NeverRuns,
+                    fix: n.Fix));
             }
 
             // Keep the typed AST + tokens + registry so hover/definition/completion reuse this analysis.
@@ -4950,12 +4944,29 @@ public static class LspServer
     /// Builds an LSP Diagnostic. LSP positions are 0-based; our locations are 1-based. The range
     /// underlines a single character at the reported column (a token-length range is a later refinement).
     /// </summary>
+    /// <summary>An LSP range (0-based) from 1-based lines and columns.</summary>
+    private static Dictionary<string, object?> LspRange(int startLine, int startColumn, int endLine, int endColumn)
+    {
+        return new Dictionary<string, object?>
+        {
+            [key: PropStart] = new Dictionary<string, object?>
+            {
+                [key: "line"] = startLine - 1, [key: PropCharacter] = Math.Max(val1: 0, val2: startColumn - 1)
+            },
+            [key: "end"] = new Dictionary<string, object?>
+            {
+                [key: "line"] = endLine - 1, [key: PropCharacter] = Math.Max(val1: 0, val2: endColumn - 1)
+            }
+        };
+    }
+
     private static Dictionary<string, object?> MakeDiagnostic(int line, int column, int severity,
-        string code, string message, int length = 1)
+        string code, string message, int length = 1, int? endLine = null, int endColumn = 0, bool neverRuns = false,
+        SuggestedFix? fix = null)
     {
         int l = Math.Max(val1: 0, val2: line - 1);
         int c = Math.Max(val1: 0, val2: column - 1);
-        return new Dictionary<string, object?>
+        var diagnostic = new Dictionary<string, object?>
         {
             [key: PropRange] = new Dictionary<string, object?>
             {
@@ -4970,11 +4981,48 @@ public static class LspServer
                     [key: PropCharacter] = c + Math.Max(val1: 1, val2: length)
                 }
             },
-            [key: "severity"] = severity, // 1 = Error, 2 = Warning
+            [key: "severity"] = severity, // 1 = Error, 2 = Warning, 3 = Information
             [key: "code"] = code,
             [key: "source"] = _profile.ServerName,
             [key: "message"] = message
         };
+        if (endLine is { } last && last >= line)
+        {
+            diagnostic[key: PropRange] = new Dictionary<string, object?>
+            {
+                [key: PropStart] = new Dictionary<string, object?> { [key: "line"] = l, [key: PropCharacter] = c },
+                [key: "end"] = new Dictionary<string, object?>
+                {
+                    [key: "line"] = last - 1, [key: PropCharacter] = Math.Max(val1: 0, val2: endColumn - 1)
+                }
+            };
+        }
+
+        if (neverRuns)
+        {
+            // DiagnosticTag.Unnecessary: the editor fades the code instead of underlining it.
+            diagnostic[key: "tags"] = new List<object?> { 1 };
+        }
+
+        if (fix != null)
+        {
+            // The client hands `data` back with the code-action request, which turns it into the quick fix.
+            diagnostic[key: "data"] = new Dictionary<string, object?>
+            {
+                [key: "fix"] = new Dictionary<string, object?>
+                {
+                    [key: "title"] = fix.Title,
+                    [key: "edits"] = fix.Edits.Select(selector: e => (object?)new Dictionary<string, object?>
+                    {
+                        [key: PropRange] = LspRange(startLine: e.StartLine, startColumn: e.StartColumn,
+                            endLine: e.EndLine, endColumn: e.EndColumn),
+                        [key: "newText"] = e.NewText
+                    }).ToList()
+                }
+            };
+        }
+
+        return diagnostic;
     }
 
     private static void PublishDiagnostics(Stream stdout, string uri,

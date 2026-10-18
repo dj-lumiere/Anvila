@@ -705,6 +705,11 @@ public sealed partial class SemanticVerifier
 
             case LoopStatement loopStmt:
             {
+                if (loopStmt.WrittenWhile is { } written)
+                {
+                    NoteLiteralLoopCondition(whileStmt: written);
+                }
+
                 var deadBeforeLoop = new HashSet<string>(collection: _deadrefVariables);
                 _unassignedAtBreak.Push(item: []);
                 _registry.EnterScope(kind: ScopeKind.Loop, name: "loop");
@@ -995,10 +1000,11 @@ public sealed partial class SemanticVerifier
         {
             if (diverged)
             {
-                ReportError(code: SemanticDiagnosticCode.UnreachableStatement,
+                ReportNeverRunsError(code: SemanticDiagnosticCode.UnreachableStatement,
                     message: "Unreachable statement: the previous statement always diverges " +
                              "(return / throw / break / continue), so this code can never run.",
-                    location: stmt.Location);
+                    location: stmt.Location,
+                    endLine: LastLine(statement: block.Statements[^1]));
                 break;
             }
 
@@ -1564,12 +1570,27 @@ public sealed partial class SemanticVerifier
                     "`.start_now()` on it to start it, and `.retrieve()` later to wait for its value.",
                     location: call.Location);
             }
+            else if (IsDiscardable(routine: call.ResolvedRoutine))
+            {
+                // A by-product result its author marked @discardable: leaving it is fine in both languages.
+            }
             else if (Builder.Frontends.Languages.For(language: Builder.Frontends.Languages.OfFile(fileName: _currentFilePath))
-                         .MarksDroppedResults && !IsDiscardable(routine: call.ResolvedRoutine))
+                     .MarksDroppedResults)
             {
                 ReportWarning(code: SemanticWarningCode.UnusedRoutineReturnValue,
                     message: $"Return value of '{routineName}()' ({exprType.Name}) is unused. " +
                              "Use 'drop' to drop the result on purpose, or bind it to a variable.",
+                    location: call.Location,
+                    fix: new SuggestedFix(Title: "Prepend 'drop'",
+                        Edits: [TextEdit.Insert(line: expr.Location.Line, column: expr.Location.Column, text: "drop ")]));
+            }
+            else
+            {
+                // Suflae has no `drop`: the line builds as written, and a notice asks whether the result was meant.
+                ReportNotice(code: SemanticWarningCode.UnusedRoutineReturnValue,
+                    message: $"You call '{routineName}()' for its result ({exprType.Name}) and leave the result " +
+                             "unused. To keep it, put it in a variable (`var x = ...`). If you call it only for what " +
+                             "it does, leave the line as it is.",
                     location: call.Location);
             }
         }

@@ -115,7 +115,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             // A loop with carried values is a block: the values as variables, then the loop, whose `continue with`
             // stores the next values. The `then` block, inside the same block, still sees them.
             WhileStatement { With.Count: > 0 } w => LowerCarried(loop: w with { With = null }, carried: w.With, body: w.Body,
-                rebuild: b => w with { With = null, Body = b }),
+                rebuild: b => w with { With = null, Body = b, HadWith = true }),
             EachStatement { With.Count: > 0 } f => LowerCarried(loop: f with { With = null }, carried: f.With, body: f.Body,
                 rebuild: b => f with { With = null, Body = b }),
             EachStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then),
@@ -260,12 +260,19 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     {
         SourceLocation loc = whileStmt.Location;
         Statement loweredBody = LowerStatement(stmt: whileStmt.Body);
+        // A literal condition is kept for analysis, which notes what such a loop means.
+        WhileStatement? literal = whileStmt.Condition is LiteralExpression { Value: bool } or UnaryExpression
+        {
+            Operator: UnaryOperator.Not, Operand: LiteralExpression { Value: bool }
+        }
+            ? whileStmt
+            : null;
 
         // `while true` needs no guard: it ends only at a `break`, which is also what lets the analysis see that a
         // variable given its value before that `break` has one after the loop.
         if (whileStmt.Condition is LiteralExpression { LiteralType: TokenType.True })
         {
-            return new LoopStatement(Body: loweredBody, Location: loc);
+            return new LoopStatement(Body: loweredBody, Location: loc) { WrittenWhile = literal };
         }
 
         // Build: if !cond { break }
@@ -284,7 +291,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             ? block with { Statements = [guardBreak, .. block.Statements] }
             : new BlockStatement(Statements: [guardBreak, loweredBody], Location: loc);
 
-        return new LoopStatement(Body: loopBody, Location: loc);
+        return new LoopStatement(Body: loopBody, Location: loc) { WrittenWhile = literal };
     }
 
     /// <summary>

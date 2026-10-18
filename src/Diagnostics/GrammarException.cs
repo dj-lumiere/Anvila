@@ -56,6 +56,9 @@ public class GrammarException(
     /// </summary>
     public Language Language { get; } = language;
 
+    /// <summary>The change it proposes, offered as a quick fix, or null.</summary>
+    public SuggestedFix? Fix { get; init; }
+
     /// <summary>
     /// Formats the error message in the standard format:
     /// error[RF-G001]: filename.rf:10:5: message

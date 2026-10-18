@@ -489,6 +489,10 @@ public record WhileStatement(
     /// written, so the source prints back as written.</summary>
     public bool IsUntil { get; init; }
 
+    /// <summary>True when the loop as written carried values (<c>with …</c>), which lowering takes off before it lowers
+    /// the loop itself.</summary>
+    public bool HadWith { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
@@ -509,6 +513,10 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// <summary>The <c>then</c> block of a written <c>loop</c>: it runs once the loop is left by a <c>break</c>.
     /// Lowered away before analysis, so only the parser and the formatter see it.</summary>
     public Statement? ThenBranch { get; init; }
+
+    /// <summary>The <c>while</c> / <c>until</c> loop with a literal condition this loop was lowered from, so analysis
+    /// can say what such a loop means (it never ends by itself, or never runs its body), or null.</summary>
+    public WhileStatement? WrittenWhile { get; init; }
 
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)

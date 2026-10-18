@@ -153,10 +153,20 @@ public partial class Parser
 
     private GrammarException BangAtCallSiteError()
     {
+        // The fix deletes the `!`, which sits next to where the parser stands.
+        Token? bang = Enumerable.Range(start: -2, count: 5)
+                                .Where(predicate: offset => _position + offset >= 0)
+                                .Select(selector: offset => PeekToken(offset: offset))
+                                .FirstOrDefault(predicate: t => t.Text == "!");
         return ThrowParseError(code: GrammarDiagnosticCode.BangAtCallSite,
             message: "A call doesn't take '!'. The '!' goes on the routine's declaration only " +
                      "(`routine parse!(...)`); call it as `parse(...)`, and put `try` or `check` " +
-                     "in front of the call to recover from a failure.");
+                     "in front of the call to recover from a failure.",
+            fix: bang == null
+                ? null
+                : new SuggestedFix(Title: "Remove the '!'",
+                    Edits: [new TextEdit(StartLine: bang.Line, StartColumn: bang.Column, EndLine: bang.Line,
+                        EndColumn: bang.Column + 1, NewText: "")]));
     }
 
     /// <summary>

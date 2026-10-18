@@ -14,6 +14,16 @@ public sealed record SemanticError(
     string Message,
     SourceLocation Location)
 {
+    /// <summary>The last line of the code it covers, when it covers more than its first line (the body of a loop
+    /// that never runs), or null.</summary>
+    public int? EndLine { get; init; }
+
+    /// <summary>Whether the code it covers never runs: an editor shows that code faded.</summary>
+    public bool NeverRuns { get; init; }
+
+    /// <summary>The change it proposes, offered as a quick fix, or null.</summary>
+    public SuggestedFix? Fix { get; init; }
+
     /// <summary>
     /// The code as the user sees it, spelled in the language of the file the error points at
     /// (RF-S### for a .rf file, SF-S### for a .sf file).

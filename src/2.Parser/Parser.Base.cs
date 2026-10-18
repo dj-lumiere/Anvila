@@ -614,7 +614,7 @@ public partial class Parser
     /// <param name="code">The diagnostic code for the error.</param>
     /// <param name="message">The error message.</param>
     /// <returns>The exception to throw.</returns>
-    protected GrammarException ThrowParseError(GrammarDiagnosticCode code, string message)
+    protected GrammarException ThrowParseError(GrammarDiagnosticCode code, string message, SuggestedFix? fix = null)
     {
         Token token = CurrentToken;
         return new GrammarException(code: code,
@@ -622,7 +622,32 @@ public partial class Parser
             fileName: FileName,
             line: token.Line,
             column: token.Column,
-            language: _language);
+            language: _language) { Fix = fix };
+    }
+
+    /// <summary>The source text of the tokens from <paramref name="from"/> up to (not including) <paramref name="to"/>,
+    /// with the spaces between them as written, or null when they span more than one line or hold a text, character or
+    /// bytes literal (a token keeps such a literal's contents, not its spelling).</summary>
+    protected string? TokenText(int from, int to)
+    {
+        if (from < 0 || to > _tokens.Count || from >= to || _tokens[index: from].Line != _tokens[index: to - 1].Line ||
+            _tokens.Skip(count: from).Take(count: to - from).Any(predicate: t => t.Type is TokenType.TextLiteral
+                or TokenType.FormattedText or TokenType.RawText or TokenType.RawFormattedText or TokenType.TextSegment
+                or TokenType.CharacterLiteral or TokenType.ByteLetterLiteral or TokenType.BytesLiteral
+                or TokenType.BytesRawLiteral))
+        {
+            return null;
+        }
+
+        var text = new System.Text.StringBuilder(value: _tokens[index: from].Text);
+        for (int i = from + 1; i < to; i++)
+        {
+            Token before = _tokens[index: i - 1];
+            text.Append(value: ' ', repeatCount: Math.Max(val1: 0, val2: _tokens[index: i].Column - before.Column - before.Text.Length))
+                .Append(value: _tokens[index: i].Text);
+        }
+
+        return text.ToString();
     }
 
     /// <summary>
