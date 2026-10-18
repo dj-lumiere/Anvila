@@ -39,13 +39,12 @@ internal static class TraceFrames
             return routine.TraceName;
         }
 
-        // A recovery variant shows its routine as written: with `!` only when that routine is declared failable.
-        bool failable = routine.IsFailable || routine.RecoveryOf is { IsFailable: true };
+        // A frame names the routine as callers write it: failability is on the declaration, never on the name.
         if (!sharedEntities)
         {
             string parameters = string.Join(separator: ", ",
                 values: routine.Parameters.Select(selector: p => p.Type.FullName));
-            return $"{routine.BaseName}{(failable ? "!" : "")}({parameters})";
+            return $"{routine.BaseName}({parameters})";
         }
 
         // Where entities are shared handles, the frame speaks of the program's own types: a handle shows as the
@@ -55,7 +54,7 @@ internal static class TraceFrames
             : routine.BaseName;
         string shownParameters = string.Join(separator: ", ",
             values: routine.Parameters.Select(selector: p => Shown(type: p.Type)));
-        return $"{owner}{(failable ? "!" : "")}({shownParameters})";
+        return $"{owner}({shownParameters})";
     }
 
     /// <summary>A type as a frame shows it where entities are shared: <c>Roamed[X]</c> as <c>X</c>, at any depth,
