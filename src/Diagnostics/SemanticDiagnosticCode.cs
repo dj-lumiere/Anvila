@@ -1069,6 +1069,10 @@ public enum SemanticDiagnosticCode
     /// <summary>Two external("C") declarations for the same C symbol disagree on signature.</summary>
     ExternalSignatureMismatch = 811,
 
+    /// <summary>A C routine takes or returns a C string RazorForge made (`CStr`, `CWStr`) where C has a pointer
+    /// (`CStrView`, `CWStrView`).</summary>
+    OwnedCStringAtCBoundary = 814,
+
     /// <summary>Invalid f-text format specifier.</summary>
     InvalidFTextFormatSpec = 816,
 

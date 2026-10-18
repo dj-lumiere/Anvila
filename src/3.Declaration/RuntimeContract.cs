@@ -181,6 +181,25 @@ public static class RuntimeContract
     /// <summary>The native pointer record a routine is handed to native code as.</summary>
     public const string CPtr = "CPtr";
 
+    /// <summary>The C strings RazorForge makes and the C string pointers they go in place of. A <c>CStr</c>
+    /// argument to a <c>CStrView</c> parameter becomes <c>arg.view()</c>, and <c>steal arg</c> becomes
+    /// <c>arg.leak()</c> (memory handed to C for good). The same holds for <c>CWStr</c> and <c>CWStrView</c>.</summary>
+    public static class CString
+    {
+        /// <summary>Each C string type with the pointer type it goes in place of.</summary>
+        public static readonly IReadOnlyDictionary<string, string> ViewOf = new Dictionary<string, string>
+        {
+            ["CStr"] = "CStrView",
+            ["CWStr"] = "CWStrView"
+        };
+
+        /// <summary>The routine that gives C the pointer while the C string lives on.</summary>
+        public const string View = "view";
+
+        /// <summary>The routine that gives C the pointer and memory it keeps.</summary>
+        public const string Leak = "leak";
+    }
+
     /// <summary>The container routine that puts a value in an element place and gives back the one that was there
     /// (<c>steal xs[i] as old inject fresh</c>).</summary>
     public const string Exchange = "exchange";

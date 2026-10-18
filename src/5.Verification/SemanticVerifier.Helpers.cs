@@ -546,6 +546,34 @@ public sealed partial class SemanticVerifier
         return mint;
     }
 
+    /// <summary>
+    /// A C string (<c>CStr</c>, <c>CWStr</c>) handed to a parameter of its pointer type (<c>CStrView</c>,
+    /// <c>CWStrView</c>) becomes the pointer: <c>arg.view()</c>, valid while the C string lives, or for
+    /// <c>steal arg</c>, <c>arg.leak()</c>, whose memory C keeps and nothing here tears down.
+    /// Null when the argument is anything else.
+    /// </summary>
+    private Expression? ImplicitCStringView(Expression argExpr, TypeSymbol argType, TypeSymbol paramType)
+    {
+        if (argType is ErrorTypeSymbol ||
+            !Declaration.RuntimeContract.CString.ViewOf.TryGetValue(key: argType.Name, value: out string? view) ||
+            paramType.Name != view)
+        {
+            return null;
+        }
+
+        SourceLocation location = argExpr.Location;
+        Expression value = UnwrapNamedArgument(argument: argExpr);
+        string verb = value is StealExpression
+            ? Declaration.RuntimeContract.CString.Leak
+            : Declaration.RuntimeContract.CString.View;
+        var call = new CallExpression(
+            Callee: new MemberExpression(Object: value, MemberName: verb, Location: location),
+            Arguments: [],
+            Location: location) { IsSynthesizedLowering = true };
+        AnalyzeExpression(expression: call, expectedType: paramType);
+        return call;
+    }
+
     /// <summary>Puts <paramref name="replacement"/> where <paramref name="original"/> stands in a call's
     /// argument list, inside its named-argument wrapper when it has one.</summary>
     private static void ReplaceArgument(List<Expression> arguments, Expression original,
@@ -593,7 +621,8 @@ public sealed partial class SemanticVerifier
             Expression argExpr = binding.Value;
             TypeSymbol argType = AnalyzeExpression(expression: argExpr, expectedType: paramType);
 
-            if (ImplicitTokenArgument(argExpr: argExpr, argType: argType, paramType: paramType) is { } viewed)
+            if ((ImplicitTokenArgument(argExpr: argExpr, argType: argType, paramType: paramType) ??
+                 ImplicitCStringView(argExpr: argExpr, argType: argType, paramType: paramType)) is { } viewed)
             {
                 ReplaceArgument(arguments: arguments, original: argExpr, replacement: viewed);
                 argExpr = viewed;

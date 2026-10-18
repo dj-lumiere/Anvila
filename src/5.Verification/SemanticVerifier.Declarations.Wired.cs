@@ -174,6 +174,32 @@ public sealed partial class SemanticVerifier
 
         _currentRoutine = prevRoutine;
 
+        // C reads a C string through a `char*`: the C string RazorForge made goes there as its view.
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            if (Declaration.RuntimeContract.CString.ViewOf.TryGetValue(key: parameters[index: i].Type.Name,
+                    value: out string? view))
+            {
+                ReportError(code: SemanticDiagnosticCode.OwnedCStringAtCBoundary,
+                    message:
+                    $"You declare '{parameters[index: i].Name}' of C routine '{external.Name}' as a " +
+                    $"'{parameters[index: i].Type.Name}', but C reads a pointer there. Declare it as '{view}': a " +
+                    $"'{parameters[index: i].Type.Name}' argument is then passed as its view.",
+                    location: external.Parameters[index: i].Type?.Location ??
+                              external.Parameters[index: i].Location);
+            }
+        }
+
+        if (returnType != null &&
+            Declaration.RuntimeContract.CString.ViewOf.TryGetValue(key: returnType.Name, value: out string? returnView))
+        {
+            ReportError(code: SemanticDiagnosticCode.OwnedCStringAtCBoundary,
+                message:
+                $"You declare C routine '{external.Name}' as returning a '{returnType.Name}', but C returns a " +
+                $"pointer, which RazorForge never frees. Declare it as returning '{returnView}'.",
+                location: external.ReturnType!.Location);
+        }
+
         // `@link(lib: "X", symbol: "y")` associates this C:: extern with a foreign library and (optionally)
         // overrides the linked symbol name. Linkage kind (static/dynamic) + calling convention live in the
         // toml [libraries.X] declaration, NOT here — so switching a library static↔dynamic never touches
