@@ -124,6 +124,45 @@ public sealed partial class TypeRegistry
         }
     }
 
+    /// <summary>
+    /// An iterable's `Iter` (`Iterable[T]`'s associated type, the iterator `iter()` gives) is whatever its `iter()`
+    /// returns, recorded on the type when that routine is registered, as `Item` is from `emit!`. A type that writes
+    /// `relates X as Iter` keeps what it wrote.
+    /// </summary>
+    private static void BindIteratorType(RoutineInfo routine)
+    {
+        const string iterSlot = "Iter";
+        // Only a concrete iterator of a concrete type: a generic one is written with `relates` (the library's), and
+        // binding a type that still names parameters or projections could make a type that holds itself.
+        if (routine is not { Name: RuntimeContract.Iter, IsFailable: false, Parameters.Count: 0, ReturnType: { } iterator } ||
+            routine.OwnerType is null or { IsGenericDefinition: true } || !IsClosedType(type: iterator) ||
+            !IsClosedType(type: routine.OwnerType))
+        {
+            return;
+        }
+
+        Dictionary<string, TypeSymbol>? bindings = routine.OwnerType switch
+        {
+            EntityTypeSymbol entity => entity.AssociatedTypeBindings,
+            RecordTypeSymbol record => record.AssociatedTypeBindings,
+            _ => null
+        };
+        if (bindings != null &&
+            (!bindings.TryGetValue(key: iterSlot, value: out TypeSymbol? bound) || bound is ErrorTypeSymbol))
+        {
+            bindings[key: iterSlot] = iterator;
+        }
+    }
+
+    /// <summary>Whether <paramref name="type"/> names no generic parameter, protocol self or projection at any
+    /// depth.</summary>
+    private static bool IsClosedType(TypeSymbol type)
+    {
+        return type is not (ErrorTypeSymbol or GenericParameterTypeSymbol or AssociatedProjectionTypeSymbol
+                   or ProtocolSelfTypeSymbol or ProtocolTypeSymbol) && !type.IsGenericDefinition &&
+               (type.TypeArguments ?? []).All(predicate: IsClosedType);
+    }
+
     public void RegisterRoutine(RoutineInfo routine)
     {
         // Realm-aware storage key: ambient-realm routines key bare (unchanged); a bridged-realm routine
@@ -149,6 +188,7 @@ public sealed partial class TypeRegistry
         }
 
         BindEmittedItem(routine: routine);
+        BindIteratorType(routine: routine);
 
         // Also register under base name (first overload wins for unqualified lookup). A foreign
         // (C/LLVM) routine is only legitimately reachable via its realm qualifier (`LLVM::name`) or an
@@ -3569,6 +3609,13 @@ public sealed partial class TypeRegistry
 
         if (type is RecordTypeSymbol rec)
         {
+            // A value aggregate holding an entity (a bundle instance such as `Labeled[Battery]`) is never copied by
+            // `=`: it moves with `steal`, or is copied on purpose with `.duplicate()`. No copy step then.
+            if (rec is { IsGenericResolution: true } && IsEntityKind(type: rec))
+            {
+                return null;
+            }
+
             // A hand-written store is always a retaining copy (the managed-leaf retain hook,
             // e.g. Text/Decimal bumping a shared controller). Skip it when its owner-level `needs`
             // constraint is unmet for the concrete type — e.g. `Array[SomeEntity]` whose element-loop

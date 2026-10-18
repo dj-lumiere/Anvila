@@ -56,7 +56,10 @@ internal static class GenericAstRewriter
 
         if (enclosingRoutine?.OwnerType is { } ownerType)
         {
-            TypeSymbol resolvedOwner = ctx.ResolveType(original: ownerType) ?? ownerType;
+            // The routine's own `me` type when it has one (a Suflae entity's routine takes the `Roamed[E]` handle as
+            // `me`), else its owner: both substituted the same way.
+            TypeSymbol meSource = enclosingRoutine.MeType ?? ownerType;
+            TypeSymbol resolvedOwner = ctx.ResolveType(original: meSource) ?? meSource;
             ctx.ParamTypes[key: "me"] = resolvedOwner;
         }
 
@@ -2606,7 +2609,10 @@ internal static class GenericAstRewriter
 
         if (enclosingRoutine?.OwnerType is { } ownerType)
         {
-            TypeSymbol resolvedOwner = ctx.ResolveType(original: ownerType) ?? ownerType;
+            // The routine's own `me` type when it has one (a Suflae entity's routine takes the `Roamed[E]` handle as
+            // `me`), else its owner: both substituted the same way.
+            TypeSymbol meSource = enclosingRoutine.MeType ?? ownerType;
+            TypeSymbol resolvedOwner = ctx.ResolveType(original: meSource) ?? meSource;
             ctx.ParamTypes[key: "me"] = resolvedOwner;
         }
 

@@ -251,7 +251,10 @@ internal sealed class CallBindingPass : AstRewriter
         for (int i = 0; i < call.Arguments.Count && i < routine.Parameters.Count; i++)
         {
             TypeSymbol parameter = routine.Parameters[index: i].Type;
-            if (parameter.Name != RuntimeContract.CPtr && !(routine.IsForeign && parameter is RoutineTypeSymbol))
+            // An LLVM intrinsic (`LLVM::store[T]` with a routine type for `T`) is no C boundary: it moves the whole
+            // routine value, both its words.
+            if (parameter.Name != RuntimeContract.CPtr &&
+                !(routine.IsForeign && routine.LlvmIrTemplate == null && parameter is RoutineTypeSymbol))
             {
                 continue;
             }

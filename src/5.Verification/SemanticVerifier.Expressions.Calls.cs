@@ -1665,7 +1665,11 @@ public sealed partial class SemanticVerifier
         }
 
         call.IsInFlight = creator.IsInFlightReturn;
-        return creator.ReturnType ?? callableType;
+        // A field-by-field construction builds the type itself: after inference that is the concrete instance
+        // (`Pair(first: 1, second: "one")` is a `Pair[S64, Text]`), not the definition the transient creator names.
+        return creator.IsSynthesized && callableType is not GenericParameterTypeSymbol
+            ? callableType
+            : creator.ReturnType ?? callableType;
     }
 
     /// <summary>

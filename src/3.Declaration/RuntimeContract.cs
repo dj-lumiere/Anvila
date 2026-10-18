@@ -365,6 +365,9 @@ public static class RuntimeContract
     /// <summary>An iterator's step (`Emittable.emit!`): what it returns is the iterator's `Item`.</summary>
     public const string Emit = "emit";
 
+    /// <summary>The <c>Iterable[T]</c> routine that gives a fresh iterator; what it returns is the type's <c>Iter</c>.</summary>
+    public const string Iter = "iter";
+
     /// <summary>The name prefix of the local a reassignment's new value is first written to, before the old value
     /// is torn down (<c>var __li_N = EXPR ; x.destruct() ; x = __li_N</c>). Such a local owns that value and hands it
     /// over to the target: the write does not make one more holder.</summary>

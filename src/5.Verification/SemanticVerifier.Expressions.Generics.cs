@@ -152,6 +152,19 @@ public sealed partial class SemanticVerifier
         // type parameter's family is what the protocols it obeys write (`source.to[List]()` with
         // `TSource obeys Iterable[T]`): the member is bound to the protocol for now and picked again on the concrete
         // receiver when the body is made concrete.
+        // A value's token (an element `each` hands out, `Modifying[Text]`) converts the value it is on: the family is
+        // the value's, and the lowering reads the value through the token (TokenReadLoweringPass).
+        if (typeArgs.Count > 0 && ValueTokenTarget(type: objectType) is { } held &&
+            FamilyOfReceiver(receiver: held, name: generic.MemberRoutineName) is { Count: > 0 } heldFamily &&
+            heldFamily.Any(predicate: r => r.TypeArguments is { } args && args.Count == typeArgs.Count &&
+                                           typeArgs.Select(selector: (t, i) =>
+                                                        SameTypeInRealm(a: FamilyTarget(routine: r, index: i),
+                                                            b: Unroamed(type: t)))
+                                                    .All(predicate: same => same)))
+        {
+            objectType = held;
+        }
+
         if (typeArgs.Count > 0 && objectType is not ErrorTypeSymbol &&
             FamilyOfReceiver(receiver: objectType, name: generic.MemberRoutineName) is { Count: > 0 } family)
         {
