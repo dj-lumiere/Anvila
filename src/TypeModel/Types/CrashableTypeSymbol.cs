@@ -38,8 +38,10 @@ public sealed class CrashableTypeSymbol : RecordTypeSymbol
     }
 
     /// <summary>
-    /// Converts a CamelCase type name to a sentence-cased crash title.
-    /// Examples: NetworkError -> "Network error", VerificationFailedError -> "Verification failed error"
+    /// Converts a CamelCase type name to a sentence-cased crash title. A run of capitals is one word and keeps its
+    /// capitals.
+    /// Examples: NetworkError -> "Network error", VerificationFailedError -> "Verification failed error",
+    /// IOError -> "IO error"
     /// </summary>
     public static string SynthesizeCrashTitle(string typeName)
     {
@@ -48,19 +50,41 @@ public sealed class CrashableTypeSymbol : RecordTypeSymbol
             return typeName;
         }
 
-        var sb = new StringBuilder();
-        for (int i = 0; i < typeName.Length; i++)
+        var words = new List<string>();
+        int start = 0;
+        for (int i = 1; i < typeName.Length; i++)
         {
-            if (i > 0 && char.IsUpper(c: typeName[index: i]))
+            char c = typeName[index: i];
+            char before = typeName[index: i - 1];
+            bool afterLower = char.IsUpper(c: c) && !char.IsUpper(c: before);
+            bool acronymEnds = char.IsUpper(c: c) && char.IsUpper(c: before) && i + 1 < typeName.Length &&
+                               char.IsLower(c: typeName[index: i + 1]);
+            if (afterLower || acronymEnds)
+            {
+                words.Add(item: typeName[start..i]);
+                start = i;
+            }
+        }
+
+        words.Add(item: typeName[start..]);
+        var sb = new StringBuilder();
+        for (int w = 0; w < words.Count; w++)
+        {
+            string word = words[index: w];
+            bool acronym = word.Length > 1 && word.All(predicate: char.IsUpper);
+            string shown = acronym ? word : word.ToLowerInvariant();
+            if (w == 0)
+            {
+                shown = char.ToUpperInvariant(c: shown[index: 0]) + shown[1..];
+            }
+            else
             {
                 sb.Append(value: ' ');
             }
 
-            sb.Append(value: typeName[index: i]);
+            sb.Append(value: shown);
         }
 
-        string spaced = sb.ToString()
-                          .ToLowerInvariant();
-        return char.ToUpperInvariant(c: spaced[index: 0]) + spaced[1..];
+        return sb.ToString();
     }
 }

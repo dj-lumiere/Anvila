@@ -1178,7 +1178,9 @@ public sealed partial class SemanticVerifier
         RoutineInfo? memberRoutine =
             _registry.LookupMemberRoutineOverload(type: leftType,
                 memberRoutineName: memberRoutineName,
-                argTypes: [rightType]) ?? _registry.LookupMemberRoutine(type: leftType,
+                argTypes: [rightType]) ?? OperatorOverloadForLiteral(binary: binary,
+                leftType: leftType,
+                memberRoutineName: memberRoutineName) ?? _registry.LookupMemberRoutine(type: leftType,
                 memberRoutineName: memberRoutineName);
 
         // Apply failable-call checking for integer arithmetic operators.
@@ -1283,6 +1285,31 @@ public sealed partial class SemanticVerifier
             argType: rightType);
 
         return ResolveOperatorReturnType(routine: memberRoutine, leftType: leftType);
+    }
+
+    /// <summary>
+    /// The operator routine a bare number literal on the right picks when its own type matches none: the one
+    /// overload whose operand is a number type the literal fits (`1h // 4` in Suflae, where `4` starts as
+    /// <c>Integer</c>, picks <c>floordiv(divisor: S64)</c> over <c>floordiv(you: Duration)</c>). Null when no
+    /// overload or more than one takes it.
+    /// </summary>
+    private RoutineInfo? OperatorOverloadForLiteral(BinaryExpression binary, TypeSymbol leftType,
+        string memberRoutineName)
+    {
+        if (binary.Right is not LiteralExpression
+            {
+                LiteralType: TokenType.UndecidedInteger or TokenType.IntegerLiteral or TokenType.S64Literal
+            } literal)
+        {
+            return null;
+        }
+
+        List<RoutineInfo> fitting = _registry.GetMemberRoutinesForType(type: leftType)
+            .Where(predicate: r => r.Name == memberRoutineName && r.Parameters.Count == 1 &&
+                                   IsFixedWidthIntegerType(type: r.Parameters[index: 0].Type) &&
+                                   LiteralFitsInType(literal: literal, targetType: r.Parameters[index: 0].Type))
+            .ToList();
+        return fitting.Count == 1 ? fitting[index: 0] : null;
     }
 
     private static TypeSymbol ResolveOperatorReturnType(RoutineInfo routine, TypeSymbol leftType)

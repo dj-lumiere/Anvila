@@ -343,6 +343,21 @@ public sealed partial class StdlibLoader
         }
     }
 
+    /// <summary>The standard library files this target builds, in ordinal path order.</summary>
+    private IEnumerable<string> StdlibFilePaths()
+    {
+        return _scanRoots
+              .Where(predicate: r => Directory.Exists(path: r.Dir))
+              .SelectMany(selector: r => Directory.GetFiles(path: r.Dir,
+                   searchPattern: r.Glob,
+                   searchOption: SearchOption.AllDirectories))
+              .OrderBy(keySelector: p => p, comparer: StringComparer.Ordinal)
+               // File-granularity conditional compilation applies to the stdlib too: a platform-specific stdlib
+               // file (e.g. the LP64/LLP64 C-type width files) carries a `#@target(...)` directive and only the
+               // matching one is loaded.
+              .Where(predicate: p => Targeting.TargetGate.ShouldCompile(filePath: p));
+    }
+
     /// <summary>
     /// Scans all stdlib files recursively and categorizes them by module.
     /// Files with "module Core" go to _corePrograms.
@@ -362,24 +377,8 @@ public sealed partial class StdlibLoader
         // every OS (Directory.GetFiles order is OS-dependent) — otherwise memberRoutine resolution becomes
         // order-dependent across platforms. RazorForge sorts before Suflae so the RF-realm Core registers
         // first (the SF-realm Core keys distinctly by realm, so order does not cause collision either way).
-        IEnumerable<string> allFiles = _scanRoots
-                                      .Where(predicate: r => Directory.Exists(path: r.Dir))
-                                      .SelectMany(selector: r => Directory.GetFiles(path: r.Dir,
-                                           searchPattern: r.Glob,
-                                           searchOption: SearchOption.AllDirectories))
-                                      .OrderBy(keySelector: p => p,
-                                           comparer: StringComparer.Ordinal);
-
-        foreach (string filePath in allFiles)
+        foreach (string filePath in StdlibFilePaths())
         {
-            // File-granularity conditional compilation applies to the stdlib too: a platform-specific
-            // stdlib file (e.g. the LP64/LLP64 C-type width files) carries a `#@target(...)` directive
-            // and only the matching one is loaded.
-            if (!Targeting.TargetGate.ShouldCompile(filePath: filePath))
-            {
-                continue;
-            }
-
             try
             {
                 string code = File.ReadAllText(path: filePath);
@@ -614,17 +613,65 @@ public sealed partial class StdlibLoader
     /// </summary>
     internal List<string> CompanionFiles(string module, string loaded)
     {
-        ScanStdlibFiles();
         string full = Path.GetFullPath(path: loaded);
-        return _modulePrograms.TryGetValue(key: module,
-                   value: out List<(Program Program, string FilePath, string Module)>? programs)
-            ? programs.Select(selector: p => p.FilePath)
-                      .Where(predicate: f => RealmOf(filePath: f) != TypeModel.Realms.Shared &&
-                                             !Path.GetFullPath(path: f)
-                                                 .Equals(value: full, comparisonType: StringComparison.OrdinalIgnoreCase))
-                      .Distinct()
-                      .ToList()
+        return FilesByModule().TryGetValue(key: module, value: out List<string>? files)
+            ? files.Where(predicate: f => RealmOf(filePath: f) != TypeModel.Realms.Shared &&
+                                          !Path.GetFullPath(path: f)
+                                              .Equals(value: full, comparisonType: StringComparison.OrdinalIgnoreCase))
+                   .Distinct()
+                   .ToList()
             : [];
+    }
+
+    /// <summary>The standard library files of each module, read from each file's <c>module</c> line (or its folder
+    /// when it has none) without parsing the file.</summary>
+    private Dictionary<string, List<string>>? _filesByModule;
+
+    /// <summary>
+    /// The standard library files of each module. Only the head of each file is read, so a build that imports one
+    /// module doesn't parse the whole library to find that module's other files.
+    /// </summary>
+    private Dictionary<string, List<string>> FilesByModule()
+    {
+        if (_filesByModule != null)
+        {
+            return _filesByModule;
+        }
+
+        _filesByModule = new Dictionary<string, List<string>>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach (string filePath in StdlibFilePaths())
+        {
+            string module = ReadModuleLine(filePath: filePath) ?? DeriveModuleFromPath(filePath: filePath);
+            if (!_filesByModule.TryGetValue(key: module, value: out List<string>? files))
+            {
+                files = [];
+                _filesByModule[key: module] = files;
+            }
+
+            files.Add(item: filePath);
+        }
+
+        return _filesByModule;
+    }
+
+    /// <summary>The path of a file's <c>module</c> line: the first line that is neither blank nor a comment, when
+    /// it is one.</summary>
+    private static string? ReadModuleLine(string filePath)
+    {
+        foreach (string line in File.ReadLines(path: filePath))
+        {
+            string text = line.Trim();
+            if (text.Length == 0 || text.StartsWith(value: '#'))
+            {
+                continue;
+            }
+
+            return text.StartsWith(value: "module ", comparisonType: StringComparison.Ordinal)
+                ? text["module ".Length..].Trim()
+                : null;
+        }
+
+        return null;
     }
 
     public string? LoadModule(TypeRegistry registry, string filePath, string moduleId)
