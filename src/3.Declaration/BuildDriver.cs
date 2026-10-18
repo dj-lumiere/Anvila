@@ -775,11 +775,11 @@ public sealed class BuildDriver
         }
     }
 
-    /// <summary>Derives the module path of a file with no <c>module</c> header from its location
-    /// relative to the project root (see <see cref="ModulePathDerivation"/>).</summary>
+    /// <summary>Derives the module path of a file with no <c>module</c> header from its location relative to the
+    /// project root, or to the <c>module_paths</c> folder that holds it (see <see cref="ModulePathDerivation"/>).</summary>
     private string DeriveModuleFromPath(string filePath)
     {
-        return ModulePathDerivation.FromFile(projectRoot: _projectRoot, filePath: filePath);
+        return ModulePathDerivation.FromFile(projectRoot: _projectRoot, moduleRoots: _libraryRoots, filePath: filePath);
     }
 
     /// <summary>
@@ -889,10 +889,8 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Parses all sources in external library dependency directories and registers their
-    /// declared module names in the resolver index — mirroring the stdlib pre-scan.
-    /// Library files without a <c>module</c> declaration are skipped (a dependency's
-    /// public surface is its declared modules).
+    /// Parses all sources in the <c>module_paths</c> folders and registers their module names in the resolver index,
+    /// mirroring the stdlib pre-scan: a declared module, or the path a header-less file's place in the folder names.
     /// </summary>
     private void PreRegisterLibraryRoots()
     {
@@ -908,8 +906,8 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Scans one library root directory for <c>*.rf</c> and <c>*.sf</c> sources and registers
-    /// each file that declares a <c>module</c> header into the resolver index.
+    /// Scans one <c>module_paths</c> folder for <c>*.rf</c> and <c>*.sf</c> sources and registers each into the resolver
+    /// index.
     /// </summary>
     private void PreRegisterLibraryRoot(string libraryRoot)
     {
@@ -927,8 +925,8 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Parses a single library source file and registers it in the resolver index when it
-    /// declares a <c>module</c> header and passes the build-target gate.
+    /// Parses a single <c>module_paths</c> source file and registers it in the resolver index when it passes the
+    /// build-target gate.
     /// </summary>
     private void TryRegisterLibraryFile(string filePath)
     {
@@ -944,14 +942,10 @@ public sealed class BuildDriver
             return;
         }
 
-        foreach (ISyntaxTreeNode node in ast.Declarations)
-        {
-            if (node is ModuleDeclaration md)
-            {
-                _resolver.RegisterFile(filePath: filePath, moduleName: md.Path, ast: ast);
-                break;
-            }
-        }
+        // A file without a `module` line is the module its place in the folder names (`money/tax.rf` is Money/Tax).
+        string moduleName = ast.Declarations.OfType<ModuleDeclaration>().FirstOrDefault()?.Path ??
+                            DeriveModuleFromPath(filePath: filePath);
+        _resolver.RegisterFile(filePath: filePath, moduleName: moduleName, ast: ast);
     }
 
     /// <summary>

@@ -53,7 +53,7 @@ public sealed class PackageInfo
 /// <code>
 /// [target]
 /// executable = "MainModule"
-/// library = ["../shared-utils", "libs/json-helpers"]
+/// module_paths = ["../shared-utils", "libs/json-helpers"]
 /// mode = "debug"
 /// </code>
 /// </summary>
@@ -73,7 +73,7 @@ public sealed class BuildTarget
     /// into a cache directory and the build consumes it exactly like a local entry here.
     /// Local directory paths remain supported as the offline/vendored form.
     /// </summary>
-    public List<string> Libraries { get; set; } = [];
+    public List<string> ModulePaths { get; set; } = [];
 
     /// <summary>
     /// External C libraries to link (the <c>-l</c> names, e.g. <c>"SDL2"</c>). Names only — the platform

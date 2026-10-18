@@ -34,6 +34,23 @@ internal static class ModulePathDerivation
     }
 
     /// <summary>
+    /// The module path of a header-less file that may sit in a <c>module_paths</c> folder: derived from its place in the
+    /// innermost root that holds it (the project folder or one of <paramref name="moduleRoots"/>), so
+    /// <c>../shared/money/tax.rf</c> under <c>module_paths = ["../shared"]</c> is <c>Money/Tax</c>.
+    /// </summary>
+    internal static string FromFile(string projectRoot, IEnumerable<string> moduleRoots, string filePath)
+    {
+        string full = Path.GetFullPath(path: filePath);
+        string root = moduleRoots.Prepend(element: projectRoot)
+                                 .Select(selector: r => Path.GetFullPath(path: r))
+                                 .Where(predicate: r => full.StartsWith(value: r.TrimEnd('/', '\\') + Path.DirectorySeparatorChar,
+                                      comparisonType: StringComparison.Ordinal))
+                                 .OrderByDescending(keySelector: r => r.Length)
+                                 .FirstOrDefault() ?? projectRoot;
+        return FromFile(projectRoot: root, filePath: full);
+    }
+
+    /// <summary>
     /// PascalCases one path segment: splits on whitespace, capitalizes the first letter of each word
     /// (preserving the rest), and concatenates. <c>file a</c> -> <c>FileA</c>; an already-cased
     /// <c>SomeFolder</c> stays <c>SomeFolder</c>.

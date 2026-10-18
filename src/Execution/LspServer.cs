@@ -4911,7 +4911,7 @@ public static class LspServer
         try
         {
             ProjectManifest manifest = ManifestLoader.Load(tomlPath: manifestPath, resolveExecutable: false);
-            return (manifest.ManifestDirectory, manifest.Target.Libraries);
+            return (manifest.ManifestDirectory, manifest.Target.ModulePaths);
         }
         catch (Exception)
         {

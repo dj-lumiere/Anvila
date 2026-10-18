@@ -66,7 +66,7 @@ internal static class ManifestCache
     /// <summary>Stores a freshly parsed manifest when its parse depends only on its own text.</summary>
     public static void TryWrite(string fullPath, string content, ProjectManifest manifest)
     {
-        if (manifest.Target.Libraries.Count > 0 || manifest.Target.LibraryConfigs.Count > 0)
+        if (manifest.Target.ModulePaths.Count > 0 || manifest.Target.LibraryConfigs.Count > 0)
         {
             return;
         }

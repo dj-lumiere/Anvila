@@ -313,7 +313,8 @@ public sealed class ModuleResolver
                 // `module Geometry/Shapes`), so the path it was imported by need not match the folders' case.
                 _derivedModuleFiles.TryAdd(
                     key: ModulePathDerivation.ReadDeclaredModule(filePath: file) ??
-                         ModulePathDerivation.FromFile(projectRoot: _projectRoot, filePath: file),
+                         ModulePathDerivation.FromFile(projectRoot: _projectRoot, moduleRoots: _libraryRoots,
+                             filePath: file),
                     value: Path.GetFullPath(path: file));
             }
         }

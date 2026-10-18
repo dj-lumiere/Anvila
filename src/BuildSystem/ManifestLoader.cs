@@ -111,7 +111,7 @@ public static class ManifestLoader
             throw new InvalidOperationException(
                 message:
                 $"{ManifestFileName}: missing [target] section. Declare what the package builds, e.g.\n" +
-                "[target]\nexecutable = \"MainModule\"\nlibrary = [\"../shared-utils\"]\nmode = \"debug\"");
+                "[target]\nexecutable = \"MainModule\"\nmodule_paths = [\"../shared-utils\"]\nmode = \"debug\"");
         }
 
         // [libraries.NAME] — richly-declared foreign C libraries (linkage kind + calling convention). This
@@ -195,24 +195,24 @@ public static class ManifestLoader
     }
 
     /// <summary>Resolves each external library dependency directory relative to the manifest,
-    /// mutating the target's <c>Libraries</c> list in place and validating existence.</summary>
+    /// mutating the target's <c>ModulePaths</c> list in place and validating existence.</summary>
     private static void ResolveLibraryDependencyDirectories(ProjectManifest manifest,
         string manifestDir)
     {
-        for (int i = 0; i < manifest.Target.Libraries.Count; i++)
+        for (int i = 0; i < manifest.Target.ModulePaths.Count; i++)
         {
-            string rawEntry = manifest.Target.Libraries[index: i];
+            string rawEntry = manifest.Target.ModulePaths[index: i];
             string resolved = Path.GetFullPath(path: Path.Combine(path1: manifestDir,
                 path2: rawEntry));
             if (!Directory.Exists(path: resolved))
             {
                 throw new InvalidOperationException(
                     message:
-                    $"{ManifestFileName}: library dependency '{rawEntry}' not found (resolved to '{resolved}'). " +
-                    "Library entries are directories containing RazorForge modules.");
+                    $"{ManifestFileName}: module_paths folder '{rawEntry}' not found (resolved to '{resolved}'). " +
+                    "module_paths lists folders of modules.");
             }
 
-            manifest.Target.Libraries[index: i] = resolved;
+            manifest.Target.ModulePaths[index: i] = resolved;
         }
     }
 
@@ -363,16 +363,24 @@ public static class ManifestLoader
         return target;
     }
 
-    /// <summary>Parses the <c>library</c>, <c>c_libraries</c>, and <c>library_paths</c> entries into
+    /// <summary>Parses the <c>module_paths</c>, <c>c_libraries</c>, and <c>library_paths</c> entries into
     /// <paramref name="target"/>. Each accepts a single string or an array of strings.</summary>
     private static void ParseTargetLibraries(TomlTable table, BuildTarget target,
         string manifestDir)
     {
-        // `library` = EXTERNAL dependency directories (requirements.txt-style), relative
-        // to the manifest. Accept a single string or an array of strings.
-        if (table.TryGetValue(key: "library", value: out object? libraryObj))
+        // `module_paths` = folders whose modules join the solution, relative to the manifest. Accept a single string or
+        // an array of strings. A library is a sealed package (`c_libraries`, `[libraries.NAME]`), so the old `library`
+        // key for source folders is an error that names the new one.
+        if (table.ContainsKey(key: "library"))
         {
-            ParseLibraryEntries(value: libraryObj, target: target);
+            throw new InvalidOperationException(
+                message: $"{ManifestFileName}: [target] library is named module_paths: module_paths = [\"../shared\"] " +
+                         "lists the folders whose modules join the solution.");
+        }
+
+        if (table.TryGetValue(key: "module_paths", value: out object? modulePathsObj))
+        {
+            ParseLibraryEntries(value: modulePathsObj, target: target);
         }
 
         // `c_libraries` = external C libraries to link (the `-l` names, e.g. "SDL2"). Names only.
@@ -395,7 +403,7 @@ public static class ManifestLoader
         foreach (string? rawEntry in AsStringEntries(value: value)
                     .Where(predicate: e => !string.IsNullOrWhiteSpace(value: e)))
         {
-            target.Libraries.Add(item: rawEntry!);
+            target.ModulePaths.Add(item: rawEntry!);
         }
     }
 

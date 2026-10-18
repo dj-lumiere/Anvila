@@ -667,11 +667,11 @@ internal partial class Program
                 Console.WriteLine(
                     value:
                     $"Executable: {explicitEntry} ({target.Mode}, entry from command line)");
-                if (target.Libraries.Count > 0)
+                if (target.ModulePaths.Count > 0)
                 {
                     Console.WriteLine(
                         value:
-                        $"Libraries: {string.Join(separator: ", ", values: target.Libraries)}");
+                        $"Libraries: {string.Join(separator: ", ", values: target.ModulePaths)}");
                 }
             }
 
@@ -687,7 +687,7 @@ internal partial class Program
                 SaTiming = manifest.Debug.Timing,
                 RequireStartRoutine = true,
                 ShowBuildStages = manifest.Debug.ShowBuildStages,
-                LibraryRoots = target.Libraries,
+                LibraryRoots = target.ModulePaths,
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
@@ -752,11 +752,11 @@ internal partial class Program
             {
                 Console.WriteLine(value: $"Using manifest: {manifestPath}");
                 Console.WriteLine(value: $"Executable: {target.Executable} ({target.Mode})");
-                if (target.Libraries.Count > 0)
+                if (target.ModulePaths.Count > 0)
                 {
                     Console.WriteLine(
                         value:
-                        $"Libraries: {string.Join(separator: ", ", values: target.Libraries)}");
+                        $"Libraries: {string.Join(separator: ", ", values: target.ModulePaths)}");
                 }
             }
 
@@ -772,7 +772,7 @@ internal partial class Program
                 SaTiming = manifest.Debug.Timing,
                 RequireStartRoutine = true,
                 ShowBuildStages = showBuildStages,
-                LibraryRoots = target.Libraries,
+                LibraryRoots = target.ModulePaths,
                 CLibraries = target.CLibraries,
                 LibraryPaths = target.LibraryPaths,
                 LibraryConfigs = target.LibraryConfigs,
