@@ -261,6 +261,13 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         SourceLocation loc = whileStmt.Location;
         Statement loweredBody = LowerStatement(stmt: whileStmt.Body);
 
+        // `while true` needs no guard: it ends only at a `break`, which is also what lets the analysis see that a
+        // variable given its value before that `break` has one after the loop.
+        if (whileStmt.Condition is LiteralExpression { LiteralType: TokenType.True })
+        {
+            return new LoopStatement(Body: loweredBody, Location: loc);
+        }
+
         // Build: if !cond { break }
         Expression negCond = new UnaryExpression(Operator: UnaryOperator.Not,
             Operand: whileStmt.Condition,

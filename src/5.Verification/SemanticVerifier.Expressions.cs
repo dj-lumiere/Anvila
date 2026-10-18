@@ -532,6 +532,16 @@ public sealed partial class SemanticVerifier
 
         // #11: Deadref tracking — report error if steal invalidated variable. Stamp the per-occurrence
         // dead state first (for the language server's grey-out) regardless of whether we error.
+        if (_deadrefVariables.Contains(item: UnassignedMark + id.Name))
+        {
+            ReportError(code: SemanticDiagnosticCode.ReadBeforeAssigned,
+                message: $"'{id.Name}' was declared without a value, and a path to this line doesn't give it one. " +
+                         $"Give '{id.Name}' a value on every path before reading it, or give it one where it is declared.",
+                location: id.Location);
+            // Reported once: the rest of this path reads it as given.
+            NoteAssigned(name: id.Name);
+        }
+
         id.IsDeadUse = _deadrefVariables.Contains(item: id.Name);
         if (id.IsDeadUse)
         {
@@ -748,6 +758,11 @@ public sealed partial class SemanticVerifier
         if (binary is { Operator: BinaryOperator.Assign, Left: IdentifierExpression rebindId })
         {
             _deadrefVariables.Remove(item: rebindId.Name);
+        }
+
+        if (binary.Operator == BinaryOperator.Assign)
+        {
+            NoteAssignedPlace(target: binary.Left);
         }
 
         if (binary.Operator == BinaryOperator.Assign && PlaceName(place: binary.Left) is { } assignedPlace)
@@ -1764,6 +1779,29 @@ public sealed partial class SemanticVerifier
     /// Validates a member-access expression as an assignment target: checks read-only wrappers,
     /// setter visibility, Suflae non-nullable field nullability, and @readonly routine mutation.
     /// </summary>
+    /// <summary>
+    /// Reports a write to a member variable of a binding that is only read (a preset, a RazorForge global): the write
+    /// would change that binding's value as much as assigning it would. The binding is the variable the chain of member
+    /// variables and elements starts from (<c>settings</c> in <c>settings.audio.volume = 5</c>).
+    /// </summary>
+    private void ReportWriteIntoReadOnlyBinding(MemberExpression member, SourceLocation location)
+    {
+        Expression root = member.Object;
+        while (root is MemberExpression or IndexExpression)
+        {
+            root = root is MemberExpression inner ? inner.Object : ((IndexExpression)root).Object;
+        }
+
+        if (root is IdentifierExpression { Name: not "me" } binding &&
+            _registry.LookupVariable(name: binding.Name) is { IsModifiable: false })
+        {
+            ReportError(code: SemanticDiagnosticCode.MemberVariableAssignmentOnImmutable,
+                message: ImmutableBindingMessage(name: binding.Name,
+                    what: $"its member variable '{member.MemberName}' can't be assigned"),
+                location: location);
+        }
+    }
+
     private void ValidateMemberAssignmentTarget(MemberExpression member, Expression value,
         SourceLocation location)
     {
@@ -1774,6 +1812,8 @@ public sealed partial class SemanticVerifier
         ValidateMemberVariableWriteAccess(objectType: objectType,
             memberVariableName: member.MemberName,
             location: location);
+
+        ReportWriteIntoReadOnlyBinding(member: member, location: location);
 
         // Suflae: a NON-NULLABLE entity field (`x: E`) rejects `o.x = <possibly-none>` — literal
         // `none` or an unchecked `E?` read. Only an optional field (`x: E?`) may hold a null Roamed

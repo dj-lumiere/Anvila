@@ -430,7 +430,8 @@ public sealed partial class SemanticVerifier
 
         // Snapshot the per-routine "out of scope via steal/consumption" set onto the declaration so
         // the scope-exit teardown pass can exclude these bindings from `destruct`.
-        routine.StolenVariableNames = [.. _deadrefVariables];
+        routine.StolenVariableNames = [.. _deadrefVariables.Where(predicate: n =>
+            !n.StartsWith(value: UnassignedMark, comparisonType: StringComparison.Ordinal))];
         routine.EverStolenVariableNames = [.. _everStolenVariables];
     }
 
@@ -671,6 +672,7 @@ public sealed partial class SemanticVerifier
             case LoopStatement loopStmt:
             {
                 var deadBeforeLoop = new HashSet<string>(collection: _deadrefVariables);
+                _unassignedAtBreak.Push(item: []);
                 _registry.EnterScope(kind: ScopeKind.Loop, name: "loop");
                 // A lowered `each x in a` loop carries the surface source name so the
                 // reshaping-during-iteration check can fire even though the EachStatement was
@@ -686,6 +688,12 @@ public sealed partial class SemanticVerifier
 
                 _registry.ExitScope();
                 ReportTakenInLoop(loop: loopStmt, before: deadBeforeLoop);
+                // A loop is left only by a `break` (or by leaving the routine), so what is still unassigned after
+                // it is what was unassigned at one of its breaks.
+                HashSet<string> unassignedAtBreak = _unassignedAtBreak.Pop();
+                _deadrefVariables.RemoveWhere(match: n =>
+                    n.StartsWith(value: UnassignedMark, comparisonType: StringComparison.Ordinal));
+                _deadrefVariables.UnionWith(other: unassignedAtBreak);
                 break;
             }
 
@@ -717,6 +725,12 @@ public sealed partial class SemanticVerifier
 
             case BreakStatement breakStmt:
                 AnalyzeBreakStatement(breakStmt: breakStmt);
+                if (_unassignedAtBreak.TryPeek(result: out HashSet<string>? atBreak))
+                {
+                    atBreak.UnionWith(other: _deadrefVariables.Where(predicate: n =>
+                        n.StartsWith(value: UnassignedMark, comparisonType: StringComparison.Ordinal)));
+                }
+
                 break;
 
             case ContinueStatement continueStmt:
@@ -1073,6 +1087,15 @@ public sealed partial class SemanticVerifier
 // Register variable in current scope
         // A new declaration shadows any prior steal of the same name in this scope.
         _deadrefVariables.Remove(item: varDecl.Name);
+        NoteAssigned(name: varDecl.Name);
+        // A variable declared without a value (`lateinit var label: Text`) can't be read until every path to the
+        // read has given it one. Names the builder writes itself (`__rf_...`) are assigned by the code it writes.
+        if (varDecl is { Initializer: null, Type: not null } &&
+            !varDecl.Name.StartsWith(value: "__", comparisonType: StringComparison.Ordinal))
+        {
+            _deadrefVariables.Add(item: UnassignedMark + varDecl.Name);
+        }
+
         NoteStealDestination(value: varDecl.Initializer, destination: $"'{varDecl.Name}'");
 
         // Suflae flow typing: a local is nullable when it was annotated `E?`, or (with no annotation)
@@ -1554,6 +1577,8 @@ public sealed partial class SemanticVerifier
             _deadrefVariables.Remove(item: rebindId.Name);
         }
 
+        NoteAssignedPlace(target: assign.Target);
+
         if (PlaceName(place: assign.Target) is { } assignedPlace)
         {
             NoteStealDestination(value: assign.Value, destination: $"'{assignedPlace}'");
@@ -1775,18 +1800,7 @@ public sealed partial class SemanticVerifier
             memberVariableName: member.MemberName,
             location: assign.Location);
 
-        // Preset enforcement: cannot assign to member variables of preset variables
-        if (member.Object is IdentifierExpression memberVariableTarget)
-        {
-            VariableInfo? targetVar = _registry.LookupVariable(name: memberVariableTarget.Name);
-            if (targetVar is { IsModifiable: false })
-            {
-                ReportError(code: SemanticDiagnosticCode.MemberVariableAssignmentOnImmutable,
-                    message:
-                    ImmutableBindingMessage(name: memberVariableTarget.Name, what: $"its member variable '{member.MemberName}' can't be assigned"),
-                    location: assign.Location);
-            }
-        }
+        ReportWriteIntoReadOnlyBinding(member: member, location: assign.Location);
 
         // Check if we're in a @readonly memberRoutine trying to mutate 'me' (RazorForge-only; Suflae
         // hides @readonly/@reshaping).

@@ -1186,10 +1186,19 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         return true;
     }
 
-    /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>).</summary>
+    /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>), or a Suflae
+    /// module global, which becomes a member variable of the one shared globals entity later
+    /// (<c>visits = visits + 1</c>).</summary>
     private static bool WritesMemberVariable(Statement stmt)
     {
-        return stmt is AssignmentStatement { Target: MemberExpression };
+        Expression? target = stmt switch
+        {
+            AssignmentStatement assign => assign.Target,
+            ExpressionStatement { Expression: BinaryExpression { Operator: BinaryOperator.Assign } assign } =>
+                assign.Left,
+            _ => null
+        };
+        return target is MemberExpression or IdentifierExpression { IsModuleGlobal: true };
     }
 
     private static int _hoistTemp;

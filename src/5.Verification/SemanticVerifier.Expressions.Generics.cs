@@ -591,6 +591,22 @@ public sealed partial class SemanticVerifier
         generic.LoweringKind = ClassifyStandaloneRoutineCall(routine: routine);
         generic.IsInFlight = routine.IsInFlightReturn;
 
+        // A failable routine called with its type arguments written out (`serial_decode[T](value: v)`) is a
+        // failable call like any other: the enclosing routine can fail through it, and its recovery variant
+        // calls the callee's.
+        if (routine.IsFailable && _currentRoutine != null)
+        {
+            _currentRoutine.HasFailableCalls = true;
+            _currentRoutine.FailableCallees.Add(item: routine);
+            if (!_currentRoutine.IsFailable && _currentRoutine.Name != StartRoutineName &&
+                !_currentRoutine.IsSynthesized)
+            {
+                ReportWarning(code: SemanticWarningCode.UnhandledCrashableCall,
+                    message: $"Failable routine '{routine.Name}!' called without error handling. " + UseWhenHint,
+                    location: generic.Location);
+            }
+        }
+
         if (routine.LlvmIrTemplate is { } template && typeSubs != null)
         {
             CheckIntrinsicConversionTypes(template: template,

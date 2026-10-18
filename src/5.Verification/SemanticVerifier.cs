@@ -177,6 +177,42 @@ public sealed partial class SemanticVerifier
     /// <summary>Tracks variables invalidated by steal/ownership transfer (#11).</summary>
     private readonly HashSet<string> _deadrefVariables = [];
 
+    /// <summary>
+    /// The mark in <see cref="_deadrefVariables"/> for a variable declared without a value that some path has not
+    /// assigned yet (<c>unassigned:label</c>). It flows through the branches like a steal does: an assignment clears
+    /// it, and after an <c>if</c> or a <c>when</c> it stays when any path going on past it still has it. No identifier
+    /// contains <c>:</c>, so the mark is never taken for a binding.
+    /// </summary>
+    private const string UnassignedMark = "unassigned:";
+
+    /// <summary>One entry per loop being analyzed: the marks of <see cref="UnassignedMark"/> at each <c>break</c> of
+    /// it, which are the marks the code after the loop starts with.</summary>
+    private readonly Stack<HashSet<string>> _unassignedAtBreak = new();
+
+    /// <summary>Clears the not-yet-assigned mark of <paramref name="name"/>: it is being given a value.</summary>
+    private void NoteAssigned(string name)
+    {
+        _deadrefVariables.Remove(item: UnassignedMark + name);
+    }
+
+    /// <summary>
+    /// Clears the not-yet-assigned mark of the variable an assignment writes into: the variable itself
+    /// (<c>label = "x"</c>) or one of its member variables (<c>result.x = 1</c>, filling a <c>lateinit</c> record one
+    /// member at a time). Writing a member is not a read of the variable.
+    /// </summary>
+    private void NoteAssignedPlace(Expression target)
+    {
+        while (target is MemberExpression or SpliceMemberExpression)
+        {
+            target = target is MemberExpression member ? member.Object : ((SpliceMemberExpression)target).Object;
+        }
+
+        if (target is IdentifierExpression id)
+        {
+            NoteAssigned(name: id.Name);
+        }
+    }
+
     /// <summary>The <c>steal</c> that made each name in <see cref="_deadrefVariables"/> dead, so a use can say
     /// whether it lost to a steal earlier in the code or to one inside the same call.</summary>
     private readonly Dictionary<string, StealExpression> _stealSites = new(comparer: StringComparer.Ordinal);

@@ -268,6 +268,9 @@ public enum SemanticDiagnosticCode
     /// <summary>Cannot assign initializer type to declared variable type.</summary>
     VariableInitializerTypeMismatch = 201,
 
+    /// <summary>A variable declared without a value is read where some path has not given it one yet.</summary>
+    ReadBeforeAssigned = 202,
+
     /// <summary>If condition must be boolean.</summary>
     IfConditionNotBool = 203,
 

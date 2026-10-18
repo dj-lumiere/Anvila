@@ -1758,6 +1758,13 @@ public sealed partial class TypeRegistry
         {
             var ownerParameters = new HashSet<string>(comparer: StringComparer.Ordinal);
             CollectGenericParameterNames(type: recovered.OwnerType, into: ownerParameters);
+            // A parameter the call names in its own type arguments (`serial_decode[T](...)` inside a routine
+            // generic in `T`) is the caller's, bound when the caller is made concrete, as an owner's is.
+            foreach (TypeSymbol argument in recovered.TypeArguments ?? [])
+            {
+                CollectGenericParameterNames(type: argument, into: ownerParameters);
+            }
+
             var leftover = new HashSet<string>(comparer: StringComparer.Ordinal);
             CollectGenericParameterNames(type: substituted.ReturnType, into: leftover);
             foreach (ParamInfo parameter in substituted.Parameters)

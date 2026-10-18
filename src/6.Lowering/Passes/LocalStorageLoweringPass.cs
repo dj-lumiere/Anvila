@@ -45,7 +45,9 @@ internal sealed class LocalStorageLoweringPass : AstRewriter
         }
 
         local.StartsZeroed = type is EntityTypeSymbol || TypeRegistry.GetRcWrapperBaseName(type: type) is not null;
-        if (local is not { IsLateInit: true, Initializer: null })
+        // A variable declared without a value starts as the type's zero (an entity as a zeroed block): `lateinit var`
+        // in RazorForge, a plain `var x: T` in Suflae.
+        if (local is not { Initializer: null })
         {
             return visited;
         }

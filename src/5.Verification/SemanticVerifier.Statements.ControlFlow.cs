@@ -232,10 +232,26 @@ public sealed partial class SemanticVerifier
                 location: whileStmt.Condition.Location);
         }
 
-        // Analyze loop body
+        // Analyze loop body. The loop ends at a `break`, and also when the condition is false, maybe before the first
+        // turn: then what was unassigned before it still is. `while true` ends only at a `break`.
+        bool endsOnlyAtBreak = whileStmt.Condition is LiteralExpression { LiteralType: Builder.Tokenizer.TokenType.True };
+        var unassignedBefore = endsOnlyAtBreak
+            ? []
+            : _deadrefVariables.Where(predicate: n =>
+                n.StartsWith(value: UnassignedMark, comparisonType: StringComparison.Ordinal)).ToList();
+        _unassignedAtBreak.Push(item: []);
         _registry.EnterScope(kind: ScopeKind.Loop, name: "while");
         AnalyzeStatement(statement: whileStmt.Body);
         _registry.ExitScope();
+        HashSet<string> atBreak = _unassignedAtBreak.Pop();
+        if (endsOnlyAtBreak)
+        {
+            _deadrefVariables.RemoveWhere(match: n =>
+                n.StartsWith(value: UnassignedMark, comparisonType: StringComparison.Ordinal));
+        }
+
+        _deadrefVariables.UnionWith(other: unassignedBefore);
+        _deadrefVariables.UnionWith(other: atBreak);
     }
 
     /// <summary>

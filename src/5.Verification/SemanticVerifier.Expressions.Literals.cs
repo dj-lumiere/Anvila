@@ -122,25 +122,42 @@ public sealed partial class SemanticVerifier
         }
 
         string? defaultName = MapLiteralTypeName(literal: literal);
-        if (arms.FirstOrDefault(predicate: arm => arm.Name == defaultName) is { } defaultArm)
-        {
-            return defaultArm;
-        }
 
         // A whole number goes to the one integer member first, and to the one float or decimal member only when
         // there is no integer member (and it is written in base 10).
         bool baseTen = literal.Value is string digits && !NumericLiteralParser.HasBasePrefix(text: digits);
         List<TypeSymbol> integers = literal.LiteralType == TokenType.UndecidedInteger
             ? arms.Where(predicate: arm =>
-                IsFixedWidthIntegerType(type: arm) || arm.Name is IntegerTypeName or AddressTypeName).ToList()
+                      IsFixedWidthIntegerType(type: arm) || arm.Name is IntegerTypeName or AddressTypeName)
+                  .Where(predicate: arm => !IsFixedWidthIntegerType(type: arm) ||
+                                           LiteralFitsInType(literal: literal, targetType: arm))
+                  .ToList()
             : [];
         List<TypeSymbol> fitting = integers.Count > 0 || !(literal.LiteralType == TokenType.UndecidedDecimal || baseTen)
             ? integers
             : arms.Where(predicate: arm => IsFloatType(type: arm) || IsDecimalType(type: arm)).ToList();
+        if (fitting.Count > 1 && expectedType is VariantTypeSymbol && _ambiguousNumberArms.Add(item: literal.Location))
+        {
+            string names = string.Join(separator: "', '", values: fitting.Select(selector: arm => arm.Name));
+            ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
+                message: $"This number could go into the '{names}' members of '{expectedType.Name}', and nothing " +
+                         "says which. State its type in a declaration first (`var n: " + fitting[index: 0].Name +
+                         " = ...`) and use that.",
+                location: literal.Location);
+        }
+
+        if (arms.FirstOrDefault(predicate: arm => arm.Name == defaultName) is { } defaultArm)
+        {
+            return defaultArm;
+        }
+
         return fitting.Count == 1
             ? fitting[index: 0]
             : null;
     }
+
+    /// <summary>Where a number that fits more than one member of a variant was already reported.</summary>
+    private readonly HashSet<SourceLocation> _ambiguousNumberArms = [];
 
     /// <summary>The <c>inf</c> and <c>nan</c> literals analyzed since the last report, each with what is wrong with
     /// where it went (null when nothing is): the last analysis of a literal decides.</summary>
