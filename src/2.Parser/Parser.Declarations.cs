@@ -394,7 +394,7 @@ public partial class Parser
         // Support ! suffix for failable routines (can appear after qualified name).
         // The `!` is a separate Bang token — ConsumeIdentifier/ConsumeMemberRoutineName never fold it
         // into the name, so the stored name is always bare and only this flag records failability.
-        bool isFailable = CheckAndAdvance(type: TokenType.Bang);
+        bool isFailable = TakeFailable();
 
         // A failable free routine writes the bang immediately after the base name, with its
         // type-level generics following it: `race![T](...)`. (Member routines instead carry their
@@ -771,6 +771,9 @@ public partial class Parser
     // Entity declaration parsing lives in Parser.Declarations.Types.cs.
     private (VisibilityModifier Visibility, bool IsCommon) ParseModifiers()
     {
+        // A flag left by a declaration that failed to parse never reaches the next one.
+        _failable = false;
+        _declarationStartToken = CurrentToken;
         VisibilityModifier visibility = VisibilityModifier.Open; // Default
         bool isCommon = false; // Default
         bool hasVisibility = false;
@@ -789,6 +792,13 @@ public partial class Parser
             {
                 visibility = VisibilityModifier.Secret;
                 hasVisibility = true;
+            }
+            // `failable` — a routine that can fail, written first
+            else if (!_failable && Check(type: TokenType.Failable))
+            {
+                _failableToken = CurrentToken;
+                Advance();
+                _failable = true;
             }
             // `common` — a type-level (static) member routine
             else if (!hasStorage && CheckAndAdvance(type: TokenType.Common))

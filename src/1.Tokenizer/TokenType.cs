@@ -340,6 +340,10 @@ public enum TokenType
     /// </summary>
     Common,
 
+    /// <summary>The routine modifier for a routine that can fail (`throw`): `failable routine parse(...)`. It goes
+    /// first, before `dangerous` or `common`.</summary>
+    Failable,
+
     #endregion
 
     #region Self References

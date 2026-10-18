@@ -519,16 +519,29 @@ public partial class Parser
             RejectNoEffect(when: isDangerous, at: beforeVarOrField,
                 message: "'dangerous' marks a routine whose signature exposes raw unsafety, and has no effect on a " +
                          "variable, a member variable or a preset. Remove it (an unsafe operation goes in a 'danger' block).");
+            RejectNoEffect(when: _failable, at: beforeVarOrField,
+                message: "'failable' marks a routine that can fail, and has no effect on a variable, a member " +
+                         "variable or a preset. Remove it.");
             RejectNoEffect(when: isCommon, at: beforeVarOrField,
                 message: "'common' marks a routine that belongs to its type, not to a value, and has no effect on a " +
                          "variable, a member variable or a preset. Remove it.");
             return varOrField;
         }
 
-        return ParseRoutineOrTypeDeclaration(visibility: visibility,
+        ISyntaxTreeNode declaration = ParseRoutineOrTypeDeclaration(visibility: visibility,
             annotations: annotations,
             isCommon: isCommon,
             isDangerous: isDangerous);
+        if (_failable)
+        {
+            // Nothing took the modifier: it stood before a type or another declaration that can't fail.
+            _failable = false;
+            throw ThrowParseError(code: GrammarDiagnosticCode.FailableNotARoutine,
+                message: "'failable' marks a routine that can fail, and has no effect here. Remove it.",
+                token: _failableToken ?? CurrentToken);
+        }
+
+        return declaration;
     }
 
     /// <summary>

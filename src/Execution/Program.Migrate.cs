@@ -31,9 +31,9 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent"))
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix or agent");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent or failable");
             return 2;
         }
 
@@ -41,6 +41,12 @@ internal partial class Program
         if (step == "have")
         {
             return RunHaveStep(paths: paths, check: check);
+        }
+
+        // `--step failable`: a routine that can fail is `failable routine name(...)`, not `routine name!(...)`.
+        if (step == "failable")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteFailable);
         }
 
         // `--step agent`: the `agent` keyword before a call is the conversion on the routine, `f.to[Agent](args)`.
@@ -1567,6 +1573,28 @@ internal partial class Program
     /// (<c>try agent f()</c>, whose failure is recovered at <c>retrieve()</c> now) and a chain that goes on after the call
     /// without parentheses (<c>agent f(x).retrieve()</c> deferred the whole chain).
     /// </summary>
+    /// <summary>A routine declaration written with `!` after its name, its visibility and its other modifiers.</summary>
+    private static readonly System.Text.RegularExpressions.Regex FailableDeclaration = new(
+        pattern: @"^(?<indent>[ \t]*)(?<visibility>(?:(?:posted|secret)\s+)?)(?<modifiers>(?:(?:common|dangerous)\s+)*)routine\s+(?<name>[^(!\n]*?)!(?=[\[(])",
+        options: System.Text.RegularExpressions.RegexOptions.Multiline);
+
+    /// <summary>The same in inline code: `` `routine parse!(...)` ``.</summary>
+    private static readonly System.Text.RegularExpressions.Regex FailableInline = new(
+        pattern: @"`(?<modifiers>(?:(?:common|dangerous)\s+)*)routine\s+(?<name>[^(!`\n]*?)!(?=[\[(])");
+
+    /// <summary>
+    /// `--step failable`: `routine name!(...)` becomes `failable routine name(...)`. `failable` goes after the
+    /// visibility and before `dangerous` or `common`.
+    /// </summary>
+    private static string RewriteFailable(string file, string source, Language language, int lineOffset)
+    {
+        string text = FailableDeclaration.Replace(input: source,
+            evaluator: m => $"{m.Groups[groupname: "indent"].Value}{m.Groups[groupname: "visibility"].Value}failable " +
+                            $"{m.Groups[groupname: "modifiers"].Value}routine {m.Groups[groupname: "name"].Value}");
+        return FailableInline.Replace(input: text,
+            evaluator: m => $"`failable {m.Groups[groupname: "modifiers"].Value}routine {m.Groups[groupname: "name"].Value}");
+    }
+
     private static string RewriteAgent(string file, string source, Language language, int lineOffset)
     {
         List<Token> tokens;

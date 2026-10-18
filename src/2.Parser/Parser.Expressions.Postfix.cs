@@ -159,8 +159,8 @@ public partial class Parser
                                 .Select(selector: offset => PeekToken(offset: offset))
                                 .FirstOrDefault(predicate: t => t.Text == "!");
         return ThrowParseError(code: GrammarDiagnosticCode.BangAtCallSite,
-            message: "A call doesn't take '!'. The '!' goes on the routine's declaration only " +
-                     "(`routine parse!(...)`); call it as `parse(...)`, and put `try` or `check` " +
+            message: "A call doesn't take '!'. A routine that can fail says so on its declaration " +
+                     "(`failable routine parse(...)`); call it as `parse(...)`, and put `try` or `check` " +
                      "in front of the call to recover from a failure.",
             fix: bang == null
                 ? null

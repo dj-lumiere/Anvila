@@ -1170,12 +1170,12 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // @crash_only is only valid on failable (!) routines (#76)
+        // @crash_only is only valid on failable routines (#76)
         if (routine.Annotations.Contains(item: "crash_only") && !routine.IsFailable)
         {
             ReportError(code: SemanticDiagnosticCode.CrashOnlyOnNonFailable,
-                message: "'@crash_only' goes only on a routine that can fail. Declare it with '!' " +
-                         "('routine name!(...)'), or drop the annotation.",
+                message: "'@crash_only' goes only on a routine that can fail. Declare it 'failable' " +
+                         "('failable routine name(...)'), or drop the annotation.",
                 location: routine.Location);
         }
 
@@ -1411,9 +1411,9 @@ public sealed partial class SemanticVerifier
             ? $" -> {_registry.ReplaceProtocolSelf(type: returned, owner: type).Name}"
             : "";
         string owner = required.IsInstanceMemberRoutine ? "routine" : "common routine";
-        string bang = required.IsFailable ? "!" : "";
+        string failable = required.IsFailable ? "failable " : "";
         return $"'{type.Name}' obeys '{protocol.Name}', which needs the routine '{required.Name}', and " +
-               $"'{type.Name}' has none. Write `{owner} {type.Name}.{required.Name}{bang}({parameters}){result}`.";
+               $"'{type.Name}' has none. Write `{failable}{owner} {type.Name}.{required.Name}({parameters}){result}`.";
     }
 
     /// <summary>
@@ -1444,10 +1444,10 @@ public sealed partial class SemanticVerifier
         string parameters = string.Join(separator: ", ",
             values: requiredCreator.ParameterNames.Select(selector: (n, i) =>
                 $"{n}: {requiredCreator.ParameterTypes[index: i].Name}"));
-        string bang = requiredCreator.IsFailable ? "!" : "";
+        string failable = requiredCreator.IsFailable ? "failable " : "";
         ReportError(code: SemanticDiagnosticCode.MissingProtocolMemberRoutine,
             message: $"'{type.Name}' obeys '{protocol.Name}', which requires a creator " +
-                     $"`routine {type.Name}{bang}({parameters}) -> {type.Name}`, but '{type.Name}' has none that " +
+                     $"`{failable}routine {type.Name}({parameters}) -> {type.Name}`, but '{type.Name}' has none that " +
                      "takes those parameters.",
             location: type.Location ?? _conformanceDeclaredAt ?? new SourceLocation(FileName: "",
                 Line: 0,

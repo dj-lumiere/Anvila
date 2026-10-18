@@ -4215,10 +4215,10 @@ public static class LspServer
         string ret = r.ReturnType != null
             ? $" -> {TypeText(type: r.ReturnType)}"
             : "";
-        string bang = r.IsFailable
-            ? "!"
+        string failable = r.IsFailable
+            ? " (failable)"
             : "";
-        return $"{bang}({ps}){ret}";
+        return $"({ps}){ret}{failable}";
     }
 
     /// <summary>

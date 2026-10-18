@@ -742,6 +742,15 @@ public partial class Parser
         // Optional `common` storage-class qualifier — type-level (static) protocol memberRoutine,
         // e.g. `common routine Me.identity() -> V`. The `common` flag is propagated downstream so
         // TypeBodyResolver can set IsInstanceMemberRoutine = false.
+        _failable = false;
+        _declarationStartToken = CurrentToken;
+        if (Check(type: TokenType.Failable))
+        {
+            _failableToken = CurrentToken;
+            Advance();
+            _failable = true;
+        }
+
         bool memberRoutineIsCommon = CheckAndAdvance(type: TokenType.Common);
 
         // Optional `dangerous` qualifier — marks the protocol memberRoutine as requiring a `danger`
@@ -836,7 +845,7 @@ public partial class Parser
 
         // Support failable member routines: "routine!". The `!` is a STRUCTURED flag on
         // the RoutineSignature — the name stays bare.
-        bool memberRoutineIsFailable = CheckAndAdvance(type: TokenType.Bang);
+        bool memberRoutineIsFailable = TakeFailable();
 
         // Parameters
         Consume(type: TokenType.LeftParen, errorMessage: "Expected '(' after member routine name");

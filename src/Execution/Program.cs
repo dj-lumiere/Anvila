@@ -1559,7 +1559,7 @@ internal partial class Program
         {
             Console.WriteLine();
             Console.WriteLine(value: "Error: executable target has no 'start' routine. " +
-                                     "Add 'routine start()' or 'routine start!()' to the entry module, " +
+                                     "Add 'routine start()' or 'failable routine start()' to the entry module, " +
                                      "or set the target type to 'library' in config.toml.");
             return 1;
         }

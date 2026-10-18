@@ -732,7 +732,9 @@ internal sealed partial class AstPrinter
 
         int open = ParameterListOpen(from: keyword + 1, at: routine.Location);
         string modifiers = VisibilityPrefix(visibility: routine.Visibility, at: routine.Location, printer: this) +
-                           (routine.IsCommon
+                           (routine.IsFailable
+                               ? "failable "
+                               : "") + (routine.IsCommon
                                ? "common "
                                : "") + (routine.IsDangerous
                                ? "dangerous "
@@ -770,7 +772,9 @@ internal sealed partial class AstPrinter
         int realm = _index.TokenIndexAt(position: external.Location.Position);
         int open = ParameterListOpen(from: realm, at: external.Location);
         var kept = new List<(int From, int To)>();
-        Doc head = Doc.Concat(Doc.Text(text: (external.IsDangerous
+        Doc head = Doc.Concat(Doc.Text(text: (external.IsFailable
+                ? "failable "
+                : "") + (external.IsDangerous
                 ? "dangerous "
                 : "") + "routine " + RoutineNameText(first: realm, last: open - 1, kept: kept)),
             ParameterList(parameters: external.Parameters, typeOnly: TypeOnlyParameters(open: open),
@@ -1471,7 +1475,9 @@ internal sealed partial class AstPrinter
         int start = _index.Tokens[index: lineStart].Position;
 
         List<string> annotations = signature.Annotations ?? [];
-        string modifiers = (annotations.Contains(item: "common")
+        string modifiers = (signature.IsFailable
+            ? "failable "
+            : "") + (annotations.Contains(item: "common")
             ? "common "
             : "") + (annotations.Contains(item: "dangerous")
             ? "dangerous "

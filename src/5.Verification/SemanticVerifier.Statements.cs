@@ -425,14 +425,14 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // A routine whose body throws must say so on its declaration: `routine f!(...)`.
+        // A routine whose body throws must say so on its declaration: `failable routine f(...)`.
         // Call sites never write the `!`, so the declaration is the one place a reader learns the
         // routine can fail. Synthesized routines carry their failability from the routine they derive from.
         if (routineInfo.HasThrow && !routine.IsFailable && !routineInfo.IsSynthesized)
         {
             ReportError(code: SemanticDiagnosticCode.ThrowOutsideFailableFunction,
                 message:
-                $"'{routine.Name}' throws, so its declaration needs '!': write 'routine {routine.Name}!(...)'. " +
+                $"'{routine.Name}' throws, so it is declared 'failable': write 'failable routine {routine.Name}(...)'. " +
                 $"Callers still call it as '{routine.Name}(...)'.",
                 location: routine.Location);
         }

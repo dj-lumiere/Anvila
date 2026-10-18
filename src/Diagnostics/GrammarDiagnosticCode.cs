@@ -201,6 +201,12 @@ public enum GrammarDiagnosticCode
     /// <summary>An annotation the builder does not know (a misspelled one, or one it gives no effect).</summary>
     UnknownAnnotation = 221,
 
+    /// <summary>A routine declared with `!` after its name: a routine that can fail is `failable routine name(...)`.</summary>
+    FailableBangOnName = 222,
+
+    /// <summary>`failable` before something that isn't a routine.</summary>
+    FailableNotARoutine = 223,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

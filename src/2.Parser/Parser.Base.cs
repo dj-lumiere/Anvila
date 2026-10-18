@@ -482,6 +482,7 @@ public partial class Parser
             TokenType.Variant => true,
             TokenType.Protocol => true,
             TokenType.Routine => true,
+            TokenType.Failable => true,
             TokenType.Var => true,
             TokenType.Preset => true,
             TokenType.If => true,
@@ -624,6 +625,42 @@ public partial class Parser
             column: token.Column,
             language: _language) { Fix = fix };
     }
+
+    /// <summary>Whether the declaration being parsed was written `failable`, and the token that said so.</summary>
+    private bool _failable;
+    private Token? _failableToken;
+
+    /// <summary>
+    /// The failability of the routine whose name was just read: true when it was written `failable`. A `!` after the
+    /// name is a build error whose fix writes `failable` in front and drops the `!`.
+    /// </summary>
+    private bool TakeFailable()
+    {
+        bool marked = _failable;
+        _failable = false;
+        if (!Check(type: TokenType.Bang))
+        {
+            return marked;
+        }
+
+        Token bang = CurrentToken;
+        Token start = _declarationStartToken ?? bang;
+        var edits = new List<TextEdit>
+        {
+            new(StartLine: bang.Line, StartColumn: bang.Column, EndLine: bang.Line, EndColumn: bang.Column + 1, NewText: "")
+        };
+        if (!marked)
+        {
+            edits.Insert(index: 0, item: TextEdit.Insert(line: start.Line, column: start.Column, text: "failable "));
+        }
+
+        throw ThrowParseError(code: GrammarDiagnosticCode.FailableBangOnName,
+            message: "A routine that can fail is declared `failable routine name(...)`: its name takes no '!'.",
+            fix: new SuggestedFix(Title: "Write 'failable routine'", Edits: edits));
+    }
+
+    /// <summary>The first token of the declaration being parsed (after its annotations), where a fix puts `failable`.</summary>
+    private Token? _declarationStartToken;
 
     /// <summary>The source text of the tokens from <paramref name="from"/> up to (not including) <paramref name="to"/>,
     /// with the spaces between them as written, or null when they span more than one line or hold a text, character or

@@ -26,7 +26,7 @@ public partial class Parser
 
         // Support ! suffix for failable routines. The `!` is a STRUCTURED flag on the
         // ExternalDeclaration — the name stays bare.
-        bool isFailable = CheckAndAdvance(type: TokenType.Bang);
+        bool isFailable = TakeFailable();
 
         // Check for generic parameters with inline constraints
         List<string>? genericParams = null;
