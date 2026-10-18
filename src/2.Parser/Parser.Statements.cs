@@ -565,6 +565,19 @@ public partial class Parser
         // Cases 3+4: 'is' / 'isnot' keyword — type or flags pattern
         if (CheckAndAdvance(type: TokenType.Is))
         {
+            // `is (1, 2)`: a tuple arm takes no `is`.
+            int saved = _position;
+            if (Check(type: TokenType.LeftParen) &&
+                TryParseTuplePattern(location: clauseLocation) is { } tuple && HoldsLiteral(pattern: tuple))
+            {
+                // Reported, and the arm is kept as the tuple arm it means so the rest of the `when` still parses.
+                RecordError(ex: ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
+                    message: "A tuple arm is written without 'is': '(1, 2) => ...'. 'is' is followed by a type.",
+                    token: _tokens[index: saved]));
+                return TryParseAndGuard(innerPattern: tuple, guardAllowed: true, location: clauseLocation);
+            }
+
+            _position = saved;
             return ParseIsWhenPattern();
         }
 
@@ -863,6 +876,14 @@ public partial class Parser
 
         _position = saved;
         return null;
+    }
+
+    /// <summary>True when a tuple pattern compares a member with a literal, at any depth.</summary>
+    private static bool HoldsLiteral(DestructuringPattern pattern)
+    {
+        return pattern.Bindings.Any(predicate: b => b.NestedPattern is LiteralPattern ||
+                                                    b.NestedPattern is DestructuringPattern nested &&
+                                                    HoldsLiteral(pattern: nested));
     }
 
     private DestructuringPattern ParseTuplePatternElements(SourceLocation location)

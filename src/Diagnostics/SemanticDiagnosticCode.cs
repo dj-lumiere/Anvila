@@ -1092,6 +1092,10 @@ public enum SemanticDiagnosticCode
     /// back with `sv.to[T]()`.</summary>
     FromSerialIsBuilderInternal = 809,
 
+    /// <summary>`sv.to[T]()` names a type that cannot be rebuilt from its serialized form: it, or a type it holds,
+    /// has no `from_serial` and keeps a `secret` member variable.</summary>
+    NotRebuildableFromSerial = 813,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // INTRINSIC AND NATIVE CALL ERRORS (RF-S850 - RF-S899)
     // ═══════════════════════════════════════════════════════════════════════════

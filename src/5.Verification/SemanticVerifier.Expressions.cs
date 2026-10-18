@@ -1259,6 +1259,13 @@ public sealed partial class SemanticVerifier
         // Substitute Me -> leftType for protocol-sourced member routines (`Accessing[Me]` too).
         paramType = _registry.ReplaceProtocolSelf(type: paramType, owner: leftType);
 
+        // A read token parameter (`cmp(you: Viewing[Me])`) takes the operand itself: the call reads it in place.
+        if (Wrappers.IsReadOnlyWrapper(type: paramType) && paramType.TypeArguments is [{ } viewed] &&
+            IsAssignableTo(source: rightType, target: viewed))
+        {
+            paramType = viewed;
+        }
+
         // Contextually infer unsuffixed integer literals against the operator
         // parameter type so stdlib/operator lowering does not inherit a stale S64.
         if (binary.Right is LiteralExpression
@@ -1965,7 +1972,12 @@ public sealed partial class SemanticVerifier
 
         // Phase 1: warn when the RHS is a non-trivially-copyable wrapper reference.
         // See AnalyzeVariableDeclaration for the same rule applied to var initializers.
-        if (ChecksOwnershipHere &&
+        // A value's token assigned to a place of the value's type (`best = item` with `item` an `each` element) is a
+        // read of the value, not a copy of the token.
+        bool readsTokenValue = ValueTokenTarget(type: valueType) is { } tokenValue &&
+                               IsAssignableTo(source: tokenValue, target: targetType) &&
+                               !Wrappers.IsWrapperType(type: targetType);
+        if (ChecksOwnershipHere && !readsTokenValue &&
             value is IdentifierExpression or MemberExpression &&
             !Wrappers.IsTriviallyAssignable(type: valueType))
         {

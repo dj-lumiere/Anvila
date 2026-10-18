@@ -15,7 +15,75 @@ public sealed partial class SemanticVerifier
         // A generic call (`hollow[Integer]()`, `obj.method[T](..)`) resolves through a path distinct from
         // the plain-call analyzer, so the Suflae unsafe-call gate is applied here too on its resolved routine.
         EnforceUnsafeCallAllowed(resolved: generic.ResolvedRoutine, location: generic.Location);
+        ReportNotRebuildableFromSerial(generic: generic, target: result);
         return result;
+    }
+
+    /// <summary>
+    /// <c>sv.to[T]()</c> rebuilds <c>T</c> through its <c>from_serial</c>: a type's own, or the one the builder writes
+    /// for a type whose member variables can all be read. A <c>T</c> with neither, or holding a type with neither,
+    /// would build a value with nothing in it, so it is a build error.
+    /// </summary>
+    private void ReportNotRebuildableFromSerial(GenericMemberRoutineCallExpression generic, TypeSymbol target)
+    {
+        if (generic is not { MemberRoutineName: "to", Object.ResolvedType.Name: "SerialValue" } ||
+            target is ErrorTypeSymbol || !IsProgramFile(filePath: generic.Location.FileName) ||
+            NotRebuildable(type: target, seen: []) is not { } missing)
+        {
+            return;
+        }
+
+        string inside = missing.FullName == target.FullName ? "" : $" ('{target.Name}' holds it)";
+        ReportError(code: SemanticDiagnosticCode.NotRebuildableFromSerial,
+            message: $"'{missing.Name}'{inside} cannot be read back from a serialized value: it keeps member " +
+                     "variables that 'serialize' does not write. Read back a type whose member variables are all " +
+                     "readable, or keep the serialized value.",
+            location: generic.Location);
+    }
+
+    /// <summary>The first type in <paramref name="type"/>, itself or one it holds, that has no way back from its
+    /// serialized form, or null when every one has.</summary>
+    private TypeSymbol? NotRebuildable(TypeSymbol type, HashSet<string> seen)
+    {
+        type = Unroamed(type: type);
+        if (type is GenericParameterTypeSymbol or ErrorTypeSymbol || !seen.Add(item: type.FullName))
+        {
+            return null;
+        }
+
+        RoutineInfo? own = _registry.LookupMemberRoutine(type: type,
+            memberRoutineName: Instantiation.AutoWiredRegistrationPass.FromSerialRoutineName);
+        IEnumerable<TypeSymbol> parts;
+        if (own is { OwnerType: not GenericParameterTypeSymbol, IsSynthesized: false })
+        {
+            // A library leaf or collection: its elements are rebuilt with theirs.
+            parts = type.TypeArguments ?? [];
+        }
+        else if (Instantiation.AutoWiredRegistrationPass.IsFromSerialCandidate(type: type))
+        {
+            parts = type switch
+            {
+                VariantTypeSymbol variant => variant.Members.Select(selector: m => m.Type)
+                                                    .OfType<TypeSymbol>(),
+                RecordTypeSymbol record => record.MemberVariables.Select(selector: mv => mv.Type),
+                EntityTypeSymbol entity => entity.MemberVariables.Select(selector: mv => mv.Type),
+                _ => []
+            };
+        }
+        else
+        {
+            return type;
+        }
+
+        foreach (TypeSymbol part in parts)
+        {
+            if (NotRebuildable(type: part, seen: seen) is { } missing)
+            {
+                return missing;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -906,6 +974,18 @@ public sealed partial class SemanticVerifier
             return returnTypeIsGenericOrUnresolved
                 ? resolvedType
                 : creator.ReturnType!;
+        }
+
+        // A type the backend holds as one value (`BitArray[8]`) has no member variables to give values to: several
+        // positional values are its literal, which goes into a declared variable of the type.
+        if (resolvedType is RecordTypeSymbol { BackendType: not null } && generic.Arguments.Count > 1 &&
+            generic.Arguments.All(predicate: a => a is not NamedArgumentExpression))
+        {
+            ReportError(code: SemanticDiagnosticCode.TypeNotCallable,
+                message: $"'{resolvedType.Name}' is not built from its values in a call. Write them as a literal into " +
+                         $"a variable of that type: `var bits: {resolvedType.Name} = [...]`.",
+                location: generic.Location);
+            return ErrorTypeSymbol.Instance;
         }
 
         int memberCount = resolvedType switch

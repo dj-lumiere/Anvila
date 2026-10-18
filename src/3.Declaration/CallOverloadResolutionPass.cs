@@ -524,6 +524,14 @@ internal sealed class CallOverloadResolutionPass
             return;
         }
 
+        // A call through a routine value (a local lambda named like a routine, `add(a: 2, b: 3)`) has no routine
+        // to find: analysis already chose the value.
+        if (call.LoweringKind == CallLoweringKind.DynamicCall &&
+            call.Callee is IdentifierExpression { ResolvedType: RoutineTypeSymbol })
+        {
+            return;
+        }
+
         List<TypeSymbol> argTypes =
             CollectCallArgTypes(call: call, allKnown: out bool allArgTypesKnown);
 

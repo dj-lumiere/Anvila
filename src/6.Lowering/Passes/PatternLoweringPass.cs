@@ -64,6 +64,9 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     private const string ValueFieldName = Declaration.RuntimeContract.Carrier.ValueField;
     private const string TypeIdFieldName = "type_id";
 
+    /// <summary>Lowers the literals arms compare with, made on first use.</summary>
+    private LiteralLoweringPass? _literals;
+
     /// <summary>
     /// Tracks the temp count while this builder phase runs.
     /// </summary>
@@ -506,11 +509,15 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
             case LiteralPattern lit:
             {
+                // Literal lowering has already run, so a literal this arm makes for a type that has no scalar form
+                // (an `Integer`, a `Char`) is lowered here.
+                _literals ??= new LiteralLoweringPass(ctx: ctx);
+                Expression value = _literals.VisitExpression(expr: new LiteralExpression(Value: lit.Value,
+                    LiteralType: lit.LiteralType,
+                    Location: loc) { ResolvedType = subject.ResolvedType });
                 var cond = new BinaryExpression(Left: subject,
                     Operator: BinaryOperator.Equal,
-                    Right: new LiteralExpression(Value: lit.Value,
-                        LiteralType: lit.LiteralType,
-                        Location: loc) { ResolvedType = subject.ResolvedType },
+                    Right: value,
                     Location: loc) { ResolvedType = boolType };
                 return (cond, null);
             }

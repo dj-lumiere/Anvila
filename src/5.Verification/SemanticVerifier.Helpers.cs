@@ -453,11 +453,13 @@ public sealed partial class SemanticVerifier
         List<ParamInfo> parameters, int totalParams, Dictionary<int, Expression> boundParams,
         int positionalCount, SourceLocation location)
     {
-        int requiredParams = parameters.Count(predicate: p => !p.HasDefaultValue);
+        // A variadic parameter takes any number of values, none included (`total()`).
+        int requiredParams = parameters.Count(predicate: p => !p.HasDefaultValue && !p.IsVariadicParam);
         int unboundRequired = 0;
         for (int i = 0; i < totalParams; i++)
         {
-            if (!boundParams.ContainsKey(key: i) && !parameters[index: i].HasDefaultValue)
+            if (!boundParams.ContainsKey(key: i) && !parameters[index: i].HasDefaultValue &&
+                !parameters[index: i].IsVariadicParam)
             {
                 unboundRequired++;
             }

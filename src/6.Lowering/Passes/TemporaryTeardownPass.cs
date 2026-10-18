@@ -486,7 +486,9 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         stmts.Add(item: rebuild(
             arg: new IdentifierExpression(Name: newName, Location: owner.Location)
             {
-                ResolvedType = t, IsSynthesizedTeardownTemp = true
+                // The spill's own type: a value going into a `Maybe` place (`n = 5` with `n: Integer?`) is still
+                // the bare value here, and the later Maybe wrap needs to see that.
+                ResolvedType = rhs2.ResolvedType ?? t, IsSynthesizedTeardownTemp = true
             }));
         for (int i = spills.Count - 1; i >= 0; i--)
         {

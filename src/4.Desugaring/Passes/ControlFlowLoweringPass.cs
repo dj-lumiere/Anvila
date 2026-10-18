@@ -620,6 +620,36 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         };
     }
 
+    /// <summary>Names each temporary that <paramref name="expr"/> calls a member routine on, innermost first, in
+    /// declarations added to <paramref name="into"/>, and returns <paramref name="expr"/> reading those names.</summary>
+    private Expression NameTemporaryReceivers(Expression expr, List<Statement> into)
+    {
+        if (expr is not CallExpression { Callee: MemberExpression { Object: CallExpression or CreatorExpression } member } call)
+        {
+            return expr;
+        }
+
+        Expression receiver = NameTemporaryReceivers(expr: member.Object, into: into);
+        string name = $"_lf_src_{_iterCount++}";
+        into.Add(item: SourceDeclaration(name: name, value: receiver));
+        return call with
+        {
+            Callee = member with { Object = new IdentifierExpression(Name: name, Location: member.Object.Location) }
+        };
+    }
+
+    /// <summary>The declaration of a name an <c>each</c> loop gives a temporary it walks.</summary>
+    private static DeclarationStatement SourceDeclaration(string name, Expression value)
+    {
+        return new DeclarationStatement(
+            Declaration: new VariableDeclaration(Name: name,
+                Type: null,
+                Initializer: value,
+                Visibility: VisibilityModifier.Secret,
+                Location: value.Location),
+            Location: value.Location);
+    }
+
     private BlockStatement LowerEach(EachStatement eachStmt)
     {
         // A loop over a value nothing holds (`each w in make()`, `each w in text.words()`) walks a temporary
@@ -628,19 +658,18 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         if (eachStmt.Iterable.ResolvedType == null && !IsHeldPlace(expr: eachStmt.Iterable))
         {
             SourceLocation srcLoc = eachStmt.Location;
-            string sourceName = $"_lf_src_{_iterCount}";
-            var sourceDecl = new DeclarationStatement(
-                Declaration: new VariableDeclaration(Name: sourceName,
-                    Type: null,
-                    Initializer: eachStmt.Iterable,
-                    Visibility: VisibilityModifier.Secret,
-                    Location: srcLoc),
-                Location: srcLoc);
+            // A temporary receiver in the chain (`text.words()` in `text.words().enumerate()`) is named too: the
+            // adapter keeps only a pointer to it.
+            var sourceDecls = new List<Statement>();
+            Expression source = NameTemporaryReceivers(expr: eachStmt.Iterable, into: sourceDecls);
+            string sourceName = $"_lf_src_{_iterCount++}";
+            sourceDecls.Add(item: SourceDeclaration(name: sourceName, value: source));
             BlockStatement loop = LowerEach(eachStmt: eachStmt with
             {
                 Iterable = new IdentifierExpression(Name: sourceName, Location: eachStmt.Iterable.Location)
             });
-            return new BlockStatement(Statements: [sourceDecl, loop], Location: srcLoc);
+            sourceDecls.Add(item: loop);
+            return new BlockStatement(Statements: sourceDecls, Location: srcLoc);
         }
 
         SourceLocation loc = eachStmt.Location;

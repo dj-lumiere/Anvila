@@ -313,7 +313,8 @@ public sealed partial class SemanticVerifier
         // No positional args to pack: this call is NOT using the variadic form (e.g. a memberwise
         // field-init `T(data:.., count:..)` on a type that also has a variadic `create`). Packing an
         // empty `Array[T, 0]` here would prepend a bogus literal and corrupt the field-init call.
-        if (group.Count == 0)
+        // A plain routine called with no value for its variadic parameter (`total()`) gets an empty group.
+        if (group.Count == 0 && routine.IsCreator)
         {
             return false;
         }
@@ -387,6 +388,15 @@ public sealed partial class SemanticVerifier
         if (TryAnalyzeMetadataIntrinsicCall(call: call) is { } intrinsicResult)
         {
             return intrinsicResult;
+        }
+
+        // A local holding a routine value shadows a routine of the same name (`var add = (a, b) => a + b` then
+        // `add(a: 2, b: 3)` calls the lambda), as a local shadows any other name.
+        if (call.Callee is IdentifierExpression { Realm: null } local &&
+            _registry.GetLocalScopeVariables().TryGetValue(key: local.Name, value: out VariableInfo? localVar) &&
+            localVar.Type is RoutineTypeSymbol)
+        {
+            return AnalyzeDynamicCallExpression(call: call);
         }
 
         TypeSymbol? resolved = call.Callee switch
@@ -493,6 +503,25 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol? callableType = ResolveCallableType(call: call, id: id, callName: callName);
 
+        // `Dict(1: 10, 2: 20)`: key-value pairs build a map only as a literal.
+        if (callableType != null && call.Arguments.Any(predicate: a => a is DictEntryLiteralExpression))
+        {
+            ReportError(code: SemanticDiagnosticCode.TypeNotCallable,
+                message: $"'{callableType.Name}' is not built from key-value pairs in a call. Write them as a " +
+                         $"literal into a variable of that type: `var d: {callableType.Name}{(callableType.GenericParameters is { Count: > 0 } ps ? "[" + string.Join(separator: ", ", values: ps) + "]" : "")} = {{1: 10, 2: 20}}`.",
+                location: call.Location);
+            foreach (Expression argument in call.Arguments)
+            {
+                if (argument is DictEntryLiteralExpression entry)
+                {
+                    AnalyzeExpression(expression: entry.Key);
+                    AnalyzeExpression(expression: entry.Value);
+                }
+            }
+
+            return ErrorTypeSymbol.Instance;
+        }
+
         RoutineInfo? routine = ResolveInitialFreeRoutine(call: call,
             callName: callName,
             isFailableCall: isFailableCall,
@@ -562,6 +591,12 @@ public sealed partial class SemanticVerifier
         // `LookupTypeWithImports("U32!")` returns null and the call falls through to
         // non-creator paths, eventually mis-picking a non-failable overload by name.
         TypeSymbol? callableType = LookupTypeWithImports(name: callName);
+        // `Me(...)` in a member routine builds the type the routine is on, as `Me` names it in a type position.
+        if (callableType == null && callName == "Me" && id.Realm == null &&
+            _currentRoutine?.OwnerType is { } meOwner && meOwner is not ProtocolTypeSymbol)
+        {
+            callableType = meOwner;
+        }
         // `T(from: x)` inside a generic routine builds the type parameter `T` (the instantiation's type). A parameter
         // of the definition in scope shadows a type of the same name (`record T` elsewhere), as in type positions.
         if (id.Realm == null && _typeResolver.IsGenericParameter(name: callName) &&
