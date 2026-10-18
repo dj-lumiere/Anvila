@@ -30,6 +30,10 @@ internal sealed class ApiDocGenerator
         public required SourceIndex Index { get; init; }
         public required string[] Lines { get; init; }
         public Dictionary<string, string> Anchors { get; } = new(comparer: StringComparer.Ordinal);
+
+        /// <summary>The member anchors written on the page so far (overloads share the first one).</summary>
+        public HashSet<string> MemberAnchors { get; } = new(comparer: StringComparer.Ordinal);
+
         public string? Summary { get; set; }
     }
 
@@ -44,6 +48,10 @@ internal sealed class ApiDocGenerator
 
     /// <summary>Every public type of the library by name: the page declaring it and its anchor there.</summary>
     private readonly Dictionary<string, (string Page, string Anchor)> _types = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>Every public routine and preset by what a <c>{...}</c> names: <c>Owner.name</c> for one on a type,
+    /// <c>name</c> for a free one. The page that declares the type keeps the type's members.</summary>
+    private readonly Dictionary<string, (string Page, string Anchor)> _members = new(comparer: StringComparer.Ordinal);
 
     /// <summary>
     /// Creates a generator over the sources under <paramref name="sourceRoot"/> written in
@@ -101,6 +109,11 @@ internal sealed class ApiDocGenerator
         foreach (SourcePage page in _pages)
         {
             RegisterTypes(page: page);
+        }
+
+        foreach (SourcePage page in _pages)
+        {
+            RegisterMembers(page: page);
         }
 
         Directory.CreateDirectory(path: outputRoot);
@@ -210,6 +223,60 @@ internal sealed class ApiDocGenerator
         }
     }
 
+    /// <summary>The anchor of a routine or preset: <c>moment-year</c> on a type, <c>routine-show</c> and
+    /// <c>preset-u8_max</c> for a free one.</summary>
+    private static string MemberAnchor(string? owner, string name, bool routine)
+    {
+        return (owner?.ToLowerInvariant() ?? (routine ? "routine" : "preset")) + "-" + name.ToLowerInvariant();
+    }
+
+    private void RegisterMembers(SourcePage page)
+    {
+        foreach (SyntaxTree.Declaration declaration in page.Program.Declarations.OfType<SyntaxTree.Declaration>()
+                                                         .Where(predicate: IsPublic))
+        {
+            switch (declaration)
+            {
+                case RoutineDeclaration routine:
+                    Register(owner: OwnerOf(routine: routine), name: routine.MemberRoutineName ?? routine.Name, routine: true);
+                    break;
+                case PresetDeclaration preset:
+                    Register(owner: null, name: preset.Name, routine: false);
+                    break;
+                case VariableDeclaration global:
+                    Register(owner: null, name: global.Name, routine: false);
+                    break;
+                case ProtocolDeclaration protocol:
+                    foreach (RoutineSignature signature in protocol.MemberRoutines)
+                    {
+                        Register(owner: protocol.Name, name: signature.Name, routine: true);
+                    }
+
+                    break;
+            }
+        }
+
+        void Register(string? owner, string name, bool routine)
+        {
+            string key = owner == null ? name : $"{owner}.{name}";
+            bool home = owner != null && _types.TryGetValue(key: owner, value: out (string Page, string Anchor) at) &&
+                        at.Page == page.PagePath;
+            if (home || !_members.ContainsKey(key: key))
+            {
+                _members[key: key] = (page.PagePath, MemberAnchor(owner: owner, name: name, routine: routine));
+            }
+        }
+    }
+
+    /// <summary>The heading of a routine or preset, with its anchor the first time the page has it.</summary>
+    private static string MemberHeading(SourcePage page, string heading, string? owner, string name, bool routine)
+    {
+        string anchor = MemberAnchor(owner: owner, name: name, routine: routine);
+        return page.MemberAnchors.Add(item: anchor)
+            ? $"### `{heading}` {{ #{anchor} }}\n\n"
+            : $"### `{heading}`\n\n";
+    }
+
     /// <summary>The type a routine is declared on: its receiver, or the type it creates (a creator is named after
     /// its type). Null for a free routine.</summary>
     private string? OwnerOf(RoutineDeclaration routine)
@@ -283,7 +350,7 @@ internal sealed class ApiDocGenerator
                 string name = value is PresetDeclaration preset
                     ? preset.Name
                     : ((VariableDeclaration)value).Name;
-                body.Append(value: $"### `{name}`\n\n");
+                body.Append(value: MemberHeading(page: page, heading: name, owner: null, name: name, routine: false));
                 AppendSignature(sb: body, signature: Signature(page: page, printer: printer, declaration: value));
                 AppendDoc(sb: body, page: page, doc: DocAbove(page: page, line: value.Location.Line));
             }
@@ -410,7 +477,8 @@ internal sealed class ApiDocGenerator
             case ProtocolDeclaration protocol:
                 foreach (RoutineSignature signature in protocol.MemberRoutines)
                 {
-                    sb.Append(value: $"### `{signature.Name}`\n\n");
+                    sb.Append(value: MemberHeading(page: page, heading: signature.Name, owner: protocol.Name,
+                        name: signature.Name, routine: true));
                     string text;
                     try
                     {
@@ -443,7 +511,8 @@ internal sealed class ApiDocGenerator
                 heading = $"{owner}()";
             }
 
-            sb.Append(value: $"### `{heading}`\n\n");
+            sb.Append(value: MemberHeading(page: page, heading: heading, owner: OwnerOf(routine: routine),
+                name: routine.MemberRoutineName ?? routine.Name, routine: true));
             AppendSignature(sb: sb, signature: Signature(page: page, printer: printer, declaration: routine));
             AppendDoc(sb: sb, page: page, doc: DocAbove(page: page, line: routine.Location.Line));
         }
@@ -734,15 +803,40 @@ internal sealed class ApiDocGenerator
         return BraceReference.Replace(input: text, evaluator: match =>
         {
             string inner = match.Groups[groupnum: 1].Value.Trim();
-            Match type = TypeReference.Match(input: inner);
-            if (type.Success && _types.TryGetValue(key: type.Groups[groupnum: 1].Value,
-                    value: out (string Page, string Anchor) target))
-            {
-                return $"[`{inner}`]({LinkTo(from: page, page: target.Page, anchor: target.Anchor)})";
-            }
-
-            return $"`{inner}`";
+            return Target(inner: inner) is { } target
+                ? $"[`{inner}`]({LinkTo(from: page, page: target.Page, anchor: target.Anchor)})"
+                : $"`{inner}`";
         });
+    }
+
+    /// <summary>Where a <c>{...}</c> reference points: a type (<c>{List[T]}</c>), a routine or preset on one
+    /// (<c>{Moment.year}</c>, <c>{Text.to[S64]}</c>), or a free routine or preset (<c>{show}</c>). Null for anything
+    /// else (a parameter, an expression).</summary>
+    private (string Page, string Anchor)? Target(string inner)
+    {
+        string text = inner.EndsWith(value: "()", comparisonType: StringComparison.Ordinal) ? inner[..^2] : inner;
+        Match type = TypeReference.Match(input: text);
+        if (type.Success && _types.TryGetValue(key: type.Groups[groupnum: 1].Value,
+                value: out (string Page, string Anchor) typeAt))
+        {
+            return typeAt;
+        }
+
+        int depth = 0;
+        int dot = -1;
+        for (int i = 0; i < text.Length; i++)
+        {
+            switch (text[index: i])
+            {
+                case '[': depth++; break;
+                case ']': depth--; break;
+                case '.' when depth == 0: dot = i; break;
+            }
+        }
+
+        static string Bare(string s) => s.IndexOf(value: '[') is var b and >= 0 ? s[..b] : s;
+        string key = dot < 0 ? Bare(s: text) : $"{Bare(s: text[..dot])}.{Bare(s: text[(dot + 1)..])}";
+        return _members.TryGetValue(key: key, value: out (string Page, string Anchor) member) ? member : null;
     }
 
     private static string LinkTo(SourcePage from, string page, string anchor)
