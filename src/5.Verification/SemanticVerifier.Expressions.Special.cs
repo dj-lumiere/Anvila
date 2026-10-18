@@ -462,7 +462,8 @@ public sealed partial class SemanticVerifier
         if (IsHijacked(type: operandType))
         {
             ReportError(code: SemanticDiagnosticCode.StealHijacked,
-                message: "Cannot steal 'Hijacked[T]' - internal ownership type cannot be stolen.",
+                message: "You can't steal a 'Hijacked[T]': it is a raw pointer that keeps nothing, so there is nothing to " +
+                         "hand over. Pass the pointer itself.",
                 location: steal.Location);
             return true;
         }

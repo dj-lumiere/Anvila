@@ -627,7 +627,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.RecursiveBundle,
                 message: $"Bundle '{bundle.Name}' contains itself. A bundle is a value held in place, so one that holds " +
                          $"itself would have no end. Make '{bundle.Name}' an entity: its reference to itself is then a " +
-                         "pointer, and the structure is a tree its owner tears down.",
+                         "pointer, each node lives in one place, and the structure is a tree torn down from its root.",
                 location: bundle.Location ?? new SourceLocation(FileName: "", Line: 0, Column: 0, Position: 0));
             found = true;
         }
