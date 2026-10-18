@@ -461,6 +461,11 @@ public sealed class RoutineInfo
     /// <c>RoutineDeclaration.IsCheckedPerUse</c>).</summary>
     public bool IsCheckedPerUse { get; set; }
 
+    /// <summary>True for a member routine whose body assigns a member variable of <c>me</c> directly
+    /// (<c>me.count = me.count + 1</c>), read from the written body when the routine is registered. Where shapes are
+    /// checked at run time, such a write is what changes a container's shape.</summary>
+    public bool WritesOwnMemberVariables { get; set; }
+
     /// <summary>
     /// The name a crash-trace frame shows for a routine the builder wrote in place of its own name (the work of
     /// an Agent shows as <c>agent in start()</c>). Null shows the routine's name.

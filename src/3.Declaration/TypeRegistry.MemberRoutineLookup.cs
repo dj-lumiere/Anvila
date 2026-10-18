@@ -2058,14 +2058,11 @@ public sealed partial class TypeRegistry
         // (e.g. `T`), not to the protocol itself. Going through LookupMemberRoutine
         // would bind Me to the protocol type, yielding signatures like
         // `combine(you: Combinable) -> Combinable` instead of `-> T`.
-        ProtocolMemberRoutineInfo? protoMemberRoutine =
-            protoInfo.MemberRoutines.FirstOrDefault(predicate: m =>
-                (m.Name == memberRoutineName ||
-                 memberRoutineName == RoutineInfo.CreatorName && m.IsCreatorRequirement) &&
-                (isFailable == null || m.IsFailable == isFailable));
-        if (protoMemberRoutine != null)
+        // A routine of a protocol this one extends (`protocol Animal obeys Named`) is a requirement of it too.
+        if (FindProtocolRequirement(proto: protoInfo, memberRoutineName: memberRoutineName, isFailable: isFailable,
+                seen: []) is ({ } declaring, { } protoMemberRoutine))
         {
-            return SynthesizeProtocolMemberRoutine(proto: protoInfo,
+            return SynthesizeProtocolMemberRoutine(proto: declaring,
                 protoMemberRoutine: protoMemberRoutine,
                 ownerType: param);
         }
@@ -2084,6 +2081,41 @@ public sealed partial class TypeRegistry
         }
 
         return null;
+    }
+
+    /// <summary>The requirement named <paramref name="memberRoutineName"/> of <paramref name="proto"/> or of a
+    /// protocol it extends, at any depth, with the protocol that declares it.</summary>
+    private (ProtocolTypeSymbol? Declaring, ProtocolMemberRoutineInfo? Requirement) FindProtocolRequirement(
+        ProtocolTypeSymbol proto, string memberRoutineName, bool? isFailable, HashSet<string> seen)
+    {
+        if (!seen.Add(item: proto.FullName))
+        {
+            return (null, null);
+        }
+
+        ProtocolMemberRoutineInfo? own = proto.MemberRoutines.FirstOrDefault(predicate: m =>
+            (m.Name == memberRoutineName || memberRoutineName == RoutineInfo.CreatorName && m.IsCreatorRequirement) &&
+            (isFailable == null || m.IsFailable == isFailable));
+        if (own != null)
+        {
+            return (proto, own);
+        }
+
+        foreach (ProtocolTypeSymbol parent in (proto.GenericDefinition ?? proto).ParentProtocols)
+        {
+            // A parent captured before its routines were registered is read again from the registry.
+            ProtocolTypeSymbol current = parent.MemberRoutines.Count == 0 &&
+                                         LookupType(name: parent.FullName) is ProtocolTypeSymbol latest
+                ? latest
+                : parent;
+            if (FindProtocolRequirement(proto: current, memberRoutineName: memberRoutineName, isFailable: isFailable,
+                    seen: seen) is ({ } declaring, { } requirement))
+            {
+                return (declaring, requirement);
+            }
+        }
+
+        return (null, null);
     }
 
     /// <summary>

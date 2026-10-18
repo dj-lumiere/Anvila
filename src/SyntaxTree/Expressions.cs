@@ -777,8 +777,9 @@ public record IndexExpression(Expression Object, Expression Index, SourceLocatio
 
     /// <summary>
     /// True when this subscript reads an entity element into a variable (<c>var b = boxes[0]</c>): the variable
-    /// holds a read token on the element (<c>boxes.view_at(index: 0)</c>), since the element keeps its single
-    /// owner. Lowering mints that token in place of a <c>getitem</c>.
+    /// holds a token on the element (<c>boxes.modify_at(index: 0)</c>, or <c>view_at</c> where the container is
+    /// read-only; the subscript's resolved type says which), since the element stays in the container. Lowering
+    /// mints that token in place of a <c>getitem</c>.
     /// </summary>
     public bool ReadsElementToken { get; set; }
 

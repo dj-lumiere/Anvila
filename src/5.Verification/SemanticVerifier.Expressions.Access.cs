@@ -1773,11 +1773,13 @@ public sealed partial class SemanticVerifier
         List<(string Name, Expression Value)> memberVariables, SourceLocation location,
         IReadOnlyList<TypeSymbol>? analyzedTypes = null)
     {
-        // Get the type's member variables
+        // Get the type's member variables. An instance's are read from its definition and substituted once below:
+        // its own list already has the arguments in, and substituting that again undoes a swap (`Pair[B, A]` built
+        // inside `Pair[A, B]`).
         List<MemberVariableInfo>? typeMemberVariables = type switch
         {
-            RecordTypeSymbol record => record.MemberVariables,
-            EntityTypeSymbol entity => entity.MemberVariables,
+            RecordTypeSymbol record => (record.GenericDefinition ?? record).MemberVariables,
+            EntityTypeSymbol entity => (entity.GenericDefinition ?? entity).MemberVariables,
             _ => null
         };
 

@@ -1132,7 +1132,10 @@ public sealed partial class SemanticVerifier
             _deadrefVariables.Add(item: UnassignedMark + varDecl.Name);
         }
 
-        NoteStealDestination(value: varDecl.Initializer, destination: $"'{varDecl.Name}'");
+        NoteStealDestination(value: varDecl.Initializer,
+            destination: varDecl.IsLoopTakeSource
+                ? $"the 'each' loop on line {varDecl.Location.Line}"
+                : $"'{varDecl.Name}'");
 
         // Suflae flow typing: a local is nullable when it was annotated `E?`, or (with no annotation)
         // inferred from a nullable entity read (`var n = a.optField`) or a `none` literal — so member
@@ -1250,10 +1253,12 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// An entity element read into a variable (<c>var b = boxes[0]</c>) binds a read token on the element: the
-    /// container keeps owning it, and <c>b</c> reads it in place (<c>boxes.view_at(index: 0)</c>). Returns the
-    /// token type, or null when the initializer is not such a read (a range slice copies; a container without
-    /// <c>view_at</c> has no element token).
+    /// An entity element read into a variable (<c>var b = boxes[0]</c>) binds a token on the element, with the
+    /// permission the container gives: a write token when the container can be changed here
+    /// (<c>boxes.modify_at(index: 0)</c>), so a member write through <c>b</c> changes the element in the container, and a
+    /// read token when it is reached read-only (<c>boxes.view_at(index: 0)</c>). Returns the token type, or null when
+    /// the initializer is not such a read (a range slice copies; a container without <c>view_at</c> has no element
+    /// token).
     /// </summary>
     private TypeSymbol? ElementTokenBinding(Expression initializer, TypeSymbol elementType)
     {
@@ -1261,15 +1266,34 @@ public sealed partial class SemanticVerifier
             initializer is not IndexExpression { Index: not RangeExpression } element ||
             element.Object.ResolvedType is not { } containerType ||
             _registry.LookupMemberRoutine(type: containerType, memberRoutineName: "view_at", isFailable: true) is null ||
-            _registry.LookupType(name: Declaration.RuntimeContract.Viewing) is not { } viewingDef)
+            _registry.LookupType(name: Declaration.RuntimeContract.Viewing) is not { } viewingDef ||
+            _registry.LookupType(name: Declaration.RuntimeContract.Modifying) is not { } modifyingDef)
         {
             return null;
         }
 
-        TypeSymbol tokenType = _registry.GetOrCreateResolution(genericDef: viewingDef, typeArguments: [elementType]);
+        bool writable = !StartsReadOnly(place: element.Object) &&
+                        RootVariable(place: element.Object) is not { IsModifiable: false } &&
+                        _registry.LookupMemberRoutine(type: containerType, memberRoutineName: "modify_at",
+                            isFailable: true) is not null;
+        TypeSymbol tokenType = _registry.GetOrCreateResolution(genericDef: writable ? modifyingDef : viewingDef,
+            typeArguments: [elementType]);
         element.ReadsElementToken = true;
         element.ResolvedType = tokenType;
         return tokenType;
+    }
+
+    /// <summary>The variable a place starts from (<c>team</c> in <c>team.members[0]</c>), or null when it starts
+    /// elsewhere (a call, <c>me</c>).</summary>
+    private VariableInfo? RootVariable(Expression place)
+    {
+        return place switch
+        {
+            IdentifierExpression { Name: not "me" } id => _registry.LookupVariable(name: id.Name),
+            MemberExpression member => RootVariable(place: member.Object),
+            IndexExpression index => RootVariable(place: index.Object),
+            _ => null
+        };
     }
 
     /// <summary>
@@ -1628,6 +1652,8 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        ReportAssignWhileMatched(target: assign.Target);
+        ForgetNarrowing(target: assign.Target);
         TypeSymbol targetType = AnalyzeExpression(expression: assign.Target);
         // A global's initializer stands at the top of start() but was written in the global's own file: its names
         // resolve there (that file's imports and module), not in the entry file.

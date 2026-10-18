@@ -207,8 +207,9 @@ public sealed partial class SemanticVerifier
         // aliased across work running in parallel. `steal` credits ONLY a bare entity: it is single-owner, so a
         // move leaves exactly one live handle. It does NOT credit a type that (transitively) owns a
         // single-threaded RC wrapper: moving one `Retained`/`Tracked` handle does not prove no siblings exist.
+        // A value made right here (`Rx(n: 5)`, a call that hands its result over) has no other holder either.
         bool isEntity = type is EntityTypeSymbol;
-        if (isEntity && value is StealExpression)
+        if (isEntity && value is StealExpression or CreatorExpression or CallExpression or GenericMemberRoutineCallExpression)
         {
             return null;
         }

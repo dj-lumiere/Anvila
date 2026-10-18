@@ -887,6 +887,9 @@ public sealed partial class StdlibLoader
             moduleName: moduleName,
             memberRoutineName: ref memberRoutineName,
             meTypeName: out string? meTypeName, realm: realm);
+        ReceiverSlotRename.Apply(routine: routine,
+            owner: ownerType,
+            namesType: name => (registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name)) != null);
 
         // `needs T is TypeName` declares T as a generic type parameter (equivalent to `[T]`, just a
         // different surface form), handled in the SA/registration layer — NOT a parser rewrite. Fold the
@@ -1007,7 +1010,9 @@ public sealed partial class StdlibLoader
                 Verification.Enums.MutationCategoryExtensions.FromAnnotations(
                     annotations: routine.Annotations),
             IsDangerous = routine.IsDangerous,
-            Visibility = routine.Visibility
+            Visibility = routine.Visibility,
+            WritesOwnMemberVariables = routineKind == RoutineKind.MemberRoutine &&
+                                       MemberVariableWrites.WritesMe(body: routine.Body)
         };
 
         if (routineKind == RoutineKind.Creator &&
@@ -1756,7 +1761,7 @@ public sealed partial class StdlibLoader
     /// miss forward references (e.g. <c>List</c> binds <c>ListEmitter[T]</c> but <c>ListEmitter</c>
     /// is declared further down the file), leaving the binding empty; this fills them in.
     /// </summary>
-    private static void ResolveAssociatedTypeBindings(TypeRegistry registry, Program program)
+    internal static void ResolveAssociatedTypeBindings(TypeRegistry registry, Program program)
     {
         // Find THIS program's types by their module-qualified name. A bare `LookupType(name)` depended on
         // the cross-module short-name scan; with it gone a module type (e.g. `IterTools.WhereIterable`)

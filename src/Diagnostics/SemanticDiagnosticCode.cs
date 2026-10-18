@@ -354,6 +354,10 @@ public enum SemanticDiagnosticCode
     /// that fits the element type.</summary>
     PresetElementNotConstant = 263,
 
+    /// <summary>A variable matched by a <c>when</c> is given a new value inside an arm that named what it holds
+    /// (<c>is Player as p</c>): the old value ends there while the name still reads it.</summary>
+    AssignWhileMatched = 264,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // CONTROL FLOW AND RETURN ERRORS (RF-S300 - RF-S349)
     // ═══════════════════════════════════════════════════════════════════════════

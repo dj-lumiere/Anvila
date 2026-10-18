@@ -401,7 +401,7 @@ public sealed partial class SemanticVerifier
     private void CollectGlobalDeclaration(VariableDeclaration global)
     {
         // The parser requires a type annotation on every `global`, so global.Type is non-null here.
-        TypeSymbol globalType = ResolveType(typeExpr: global.Type!);
+        TypeSymbol globalType = InFileRealm(resolve: () => ResolveType(typeExpr: global.Type!));
 
         // A RazorForge global is reached from every thread, so its binding is never assigned again (only its
         // initialization, at the top of start()): an Atomic or a Guarded changes what it holds through its own
@@ -424,7 +424,7 @@ public sealed partial class SemanticVerifier
     private void CollectPresetDeclaration(PresetDeclaration preset)
     {
         _presetModules[key: preset] = _currentModuleName ?? GetCurrentModuleName();
-        TypeSymbol presetType = ResolveType(typeExpr: preset.Type);
+        TypeSymbol presetType = InFileRealm(resolve: () => ResolveType(typeExpr: preset.Type));
 
         // A collection-literal preset is only Presettable as a fixed-size `Array[T, N]` or
         // `BitArray[N]` — those lower to a single constant global. Heap collections (List/Set/Dict/
@@ -1012,6 +1012,13 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol? LookupOwnerInFileRealm(string name)
     {
+        return InFileRealm(resolve: () => LookupTypeWithImports(name: name));
+    }
+
+    /// <summary>Runs <paramref name="resolve"/> in the realm of the file being collected (Suflae's own types in a
+    /// Suflae file), which declaration collection does not set yet.</summary>
+    private T InFileRealm<T>(Func<T> resolve)
+    {
         string previousRealm = _registry.ResolutionRealm;
         if (!string.IsNullOrEmpty(value: _currentFilePath) && !IsStdlibFile(filePath: _currentFilePath) &&
             Builder.Frontends.Languages.HasSourceExtension(fileName: _currentFilePath) &&
@@ -1022,7 +1029,7 @@ public sealed partial class SemanticVerifier
 
         try
         {
-            return LookupTypeWithImports(name: name);
+            return resolve();
         }
         finally
         {

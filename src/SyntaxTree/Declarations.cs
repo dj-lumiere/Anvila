@@ -153,6 +153,12 @@ public record VariableDeclaration(
     public bool IsPatternBinding { get; init; }
 
     /// <summary>
+    /// The local an <c>each x in steal xs</c> loop moves <c>xs</c> into before it takes the elements apart. A use of
+    /// <c>xs</c> after the loop names the loop, not this local.
+    /// </summary>
+    public bool IsLoopTakeSource { get; init; }
+
+    /// <summary>
     /// A local a lowering pass made to hold a value it produced (the hoisted subject of a <c>when</c>) and that
     /// owns that value, so it is torn down when its block ends. Scope teardown clears the mark once it has
     /// looked at the local. A local still marked after the type-aware lowering was made after scope teardown
@@ -271,6 +277,10 @@ public record RoutineDeclaration(
     /// primary constructor still initializes it.
     /// </summary>
     public List<string>? GenericParameters { get; set; } = GenericParameters;
+
+    /// <summary>The written return type. Settable so a receiver's parameter names can be renamed to its type's own
+    /// (<c>ReceiverSlotRename</c>) on the declaration every later pass reads.</summary>
+    public TypeExpression? ReturnType { get; set; } = ReturnType;
 
     /// <summary>
     /// The concrete types the routine's own bracket names (<c>routine S64.to![U8]()</c>): a specialization, one

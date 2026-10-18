@@ -55,7 +55,9 @@ internal static class LocalTypeStampPass
 
     private static TypeSymbol? Concrete(TypeSymbol? type)
     {
-        return type is null or ErrorTypeSymbol or GenericParameterTypeSymbol
+        // An associated type (`T/Item`) left on a made-concrete body's expression is the template's, not this
+        // body's: the routine the call is bound to now says the real type.
+        return type is null or ErrorTypeSymbol or GenericParameterTypeSymbol or AssociatedProjectionTypeSymbol
             ? null
             : type;
     }

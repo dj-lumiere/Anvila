@@ -276,8 +276,8 @@ public sealed class ModuleResolver
            .GetValueOrDefault(key: modulePart);
     }
 
-    /// <summary>Header-less project and library files keyed by the module path the build driver
-    /// derives for them. Built on first use.</summary>
+    /// <summary>Project and library files keyed by their module: the declared one, or the path the build driver
+    /// derives for a header-less file. Built on first use.</summary>
     private Dictionary<string, string>? _derivedModuleFiles;
 
     /// <summary>
@@ -305,15 +305,15 @@ public sealed class ModuleResolver
                                        .SelectMany(selector: glob => Directory.EnumerateFiles(path: root,
                                             searchPattern: glob,
                                             searchOption: SearchOption.AllDirectories))
-                                       .Where(predicate: f =>
-                                            Targeting.TargetGate.ShouldCompile(filePath: f) &&
-                                            ModulePathDerivation.ReadDeclaredModule(filePath: f) ==
-                                            null)
+                                       .Where(predicate: f => Targeting.TargetGate.ShouldCompile(filePath: f))
                                        .Order(comparer: StringComparer.Ordinal);
             foreach (string file in files)
             {
+                // A `module` line names the file's module wherever the file lives (`geometry/shapes.sf` with
+                // `module Geometry/Shapes`), so the path it was imported by need not match the folders' case.
                 _derivedModuleFiles.TryAdd(
-                    key: ModulePathDerivation.FromFile(projectRoot: _projectRoot, filePath: file),
+                    key: ModulePathDerivation.ReadDeclaredModule(filePath: file) ??
+                         ModulePathDerivation.FromFile(projectRoot: _projectRoot, filePath: file),
                     value: Path.GetFullPath(path: file));
             }
         }

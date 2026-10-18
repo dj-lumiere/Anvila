@@ -2794,6 +2794,17 @@ public sealed partial class SemanticVerifier
                     return ErrorTypeSymbol.Instance;
                 }
 
+                // The walk an `each x in steal xs` loop asks for: only a collection that can be taken apart has one.
+                if (call.IsSynthesizedLowering && member.MemberName == Declaration.RuntimeContract.TakeEach)
+                {
+                    ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
+                        message: $"'each ... in steal' takes the elements out of a 'List', and '{objectType.Name}' " +
+                                 "can't be taken apart that way. Loop over it without 'steal', or move its elements " +
+                                 "into a 'List' first.",
+                        location: call.Location);
+                    return ErrorTypeSymbol.Instance;
+                }
+
                 string hint = BuildUnresolvedMemberCallHint(callLookupName: callLookupName,
                     namedField: namedField);
                 if (hint.Length == 0)
@@ -3254,17 +3265,21 @@ public sealed partial class SemanticVerifier
 
         // #22: Reject reshaping operations on the collection being iterated (RF-S625). Keyed on
         // the @reshaping marker (via IsReshaping) — the definitional signal, and robust to
-        // member-routine registration paths that leave MutationCategory at its default.
-        // A language that checks shapes as the program runs (Suflae) leaves this to that check.
-        if (!_registry.CompilationRules.ChecksShapeAtRunTime &&
-            member.Object is IdentifierExpression iterTarget &&
+        // member-routine registration paths that leave MutationCategory at its default. Suflae reports the
+        // direct call here too and leaves the hidden ones (inside a called routine) to its run-time check.
+        if (member.Object is IdentifierExpression iterTarget &&
             _activeIterationSources.Contains(item: iterTarget.Name) &&
-            memberRoutine.IsReshaping)
+            (memberRoutine.IsReshaping ||
+             _registry.CompilationRules.ChecksShapeAtRunTime && objectType is EntityTypeSymbol or RecordTypeSymbol
+             {
+                 GenericDefinition.Name: Declaration.RuntimeContract.Roamed
+             } && (memberRoutine.GenericDefinition ?? memberRoutine).WritesOwnMemberVariables))
         {
             ReportError(code: SemanticDiagnosticCode.ReshapingDuringIteration,
                 message:
-                $"Cannot call reshaping member routine '{memberRoutine.Name}' on '{iterTarget.Name}' while iterating over it. " +
-                "Collect changes and apply them after the loop.",
+                $"'{memberRoutine.Name}' adds to or removes from '{iterTarget.Name}' while an 'each' loop goes through " +
+                "it, so the loop could no longer trust that its next element is really the next one. Collect the " +
+                "changes and make them after the loop.",
                 location: call.Location);
         }
 

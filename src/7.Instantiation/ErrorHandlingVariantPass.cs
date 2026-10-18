@@ -1142,6 +1142,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             DropStatement { Expression: var e } => (e, false),
             AssignmentStatement { Value: var v } => (v, false),
             IfStatement { Condition: var c } => (c, false),
+            WhenStatement { Expression: var subject } => (subject, false),
             _ => ((Expression?)null, false)
         };
         if (root == null)
@@ -1181,6 +1182,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             DropStatement ds => ds with { Expression = newRoot },
             AssignmentStatement a => a with { Value = newRoot },
             IfStatement ifs => ifs with { Condition = newRoot },
+            WhenStatement ws => ws with { Expression = newRoot },
             _ => stmt
         };
         return true;

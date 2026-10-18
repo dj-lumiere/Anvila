@@ -1245,9 +1245,13 @@ public sealed partial class SemanticVerifier
 
     private static bool IsVariantMemberAssignable(TypeSymbol source, TypeSymbol target)
     {
+        // A Suflae entity is held in a variant as its handle (`Roamed[Player]`) while the program's own local is still
+        // the entity itself during analysis: the two name the same member.
+        TypeSymbol held = Unroamed(type: source);
         return target is VariantTypeSymbol variant && (variant.Members.Any(predicate: member =>
                    member.Type != null && (member.Type.Name == source.Name ||
-                                           member.Type.FullName == source.FullName)) ||
+                                           member.Type.FullName == source.FullName ||
+                                           Unroamed(type: member.Type).FullName == held.FullName)) ||
                source is VariantTypeSymbol smaller && VariantWidensTo(source: smaller, target: variant));
     }
 

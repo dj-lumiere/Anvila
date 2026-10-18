@@ -329,6 +329,7 @@ public sealed partial class SemanticVerifier
             _registry.DeclareVariable(name: eachStmt.Variable,
                 type: elementType,
                 location: eachStmt.Location);
+            _deadrefVariables.Remove(item: eachStmt.Variable);
         }
         else if (eachStmt.VariablePattern != null)
         {
@@ -400,6 +401,7 @@ public sealed partial class SemanticVerifier
                 ? tupleType.ElementTypes[index: i]
                 : ErrorTypeSymbol.Instance;
             _registry.DeclareVariable(name: binding.BindingName, type: bindingType);
+            _deadrefVariables.Remove(item: binding.BindingName);
         }
     }
 
@@ -418,6 +420,36 @@ public sealed partial class SemanticVerifier
                                          .Where(predicate: n => n != null))
         {
             _registry.DeclareVariable(name: name!, type: ErrorTypeSymbol.Instance);
+        }
+    }
+
+    /// <summary>The variables matched by the <c>when</c> arms being analyzed whose arm named what they hold, with that
+    /// name, innermost last.</summary>
+    private readonly Stack<(string Subject, string Binding)> _matchedSubjects = new();
+
+    /// <summary>RF-S264 for giving <paramref name="target"/> a new value inside an arm that named what it holds.</summary>
+    private void ReportAssignWhileMatched(Expression target)
+    {
+        if (target is not IdentifierExpression id)
+        {
+            return;
+        }
+
+        foreach ((string subject, string binding) in _matchedSubjects)
+        {
+            // A value branch's name is a copy, so only a name that reaches the variant's own value (an entity, a
+            // `Retained`, `Hijacked` or `Maybe`) pins the variable.
+            if (subject == id.Name && _registry.LookupVariable(name: binding)?.Type is { } held &&
+                (held is EntityTypeSymbol || IsMaybeType(type: held) ||
+                 held.BareName is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Hijacked))
+            {
+                ReportError(code: SemanticDiagnosticCode.AssignWhileMatched,
+                    message: $"You give '{subject}' a new value inside the arm where '{binding}' reads what '{subject}' " +
+                             $"holds, so that value would end while '{binding}' still reads it. Give '{subject}' its new " +
+                             "value after the 'when'.",
+                    location: target.Location);
+                return;
+            }
         }
     }
 
@@ -478,7 +510,25 @@ public sealed partial class SemanticVerifier
             }
 
             _registry.EnterScope(kind: ScopeKind.Block, name: "when_clause");
-            bool handled = AnalyzeWhenClause(clause: clause,
+            // In RazorForge the arm's name (`is Player as p`) reads the value inside the matched variable, so that
+            // variable can't be given a new value in the arm.
+            string? armBinding = clause.Pattern switch
+            {
+                TypePattern { VariableName: { } typed } => typed,
+                ElsePattern { VariableName: { } rest } => rest,
+                _ => null
+            };
+            bool pins = whenVarName != null && armBinding != null && !_registry.EntitiesAreShared &&
+                        (whenVariant != null || IsCarrierType(type: matchedType));
+            if (pins)
+            {
+                _matchedSubjects.Push(item: (whenVarName!, armBinding!));
+            }
+
+            bool handled;
+            try
+            {
+            handled = AnalyzeWhenClause(clause: clause,
                 matchedType: matchedType,
                 priorClauses: whenStmt.Clauses.TakeWhile(predicate: c => !ReferenceEquals(objA: c, objB: clause)),
                 ctx: new WhenClauseContext(WhenVarName: whenVarName,
@@ -489,6 +539,15 @@ public sealed partial class SemanticVerifier
                 handledNoneValue: ref handledNoneValue,
                 handledCrashable: ref handledCrashable,
                 handledValue: ref handledValue);
+            }
+            finally
+            {
+                if (pins)
+                {
+                    _matchedSubjects.Pop();
+                }
+            }
+
             armEnds.Add(item: (new HashSet<string>(collection: _deadrefVariables),
                 ControlFlowExits.HasDefiniteExit(statement: clause.Body)));
             if (handled)

@@ -366,9 +366,16 @@ public sealed partial class SemanticVerifier
         string name = $"__agent_arg{hoisted.Count}";
         hoisted.Add(item: (name, analyzed));
         var parameter = new IdentifierExpression(Name: name, Location: pristine.Location);
-        // A value moved into the agent (`produce(out: steal tx)`) moves on from the work's parameter as well.
-        return pristine is StealExpression steal
-            ? steal with { Operand = parameter }
+        // A value moved into the agent (`produce(out: steal tx)`) moves on from the work's parameter as well. So does
+        // any entity: the argument as written was checked where it stands, and the computed value now belongs to the
+        // work alone.
+        if (pristine is StealExpression steal)
+        {
+            return steal with { Operand = parameter };
+        }
+
+        return analyzed.ResolvedType is EntityTypeSymbol
+            ? new StealExpression(Operand: parameter, Location: pristine.Location)
             : parameter;
     }
 

@@ -121,6 +121,11 @@ internal sealed class SignatureResolver
         // routine generic. Mutates the AST decl in place (shared with the monomorph index).
         VariadicParamDesugar.Apply(routine: routine);
 
+        // `routine Box[TItem].peek()` for `record Box[T]`: the receiver's names are the type's own slots.
+        ReceiverSlotRename.Apply(routine: routine,
+            owner: refreshedOwnerType,
+            namesType: name => _sa._registry.LookupType(name: name) != null);
+
         // `needs T is TypeName` declares T as a generic type parameter (equivalent to `[T]`, a different
         // surface form) — fold declared names into the AST decl's GenericParameters HERE (SA layer, not
         // the parser) BEFORE they are read below, so `T` resolves in the signature/body and is inferable
@@ -275,6 +280,8 @@ internal sealed class SignatureResolver
                 AllConstraints: allConstraints));
 
         finalRoutine.IsCheckedPerUse = routine.IsCheckedPerUse;
+        finalRoutine.WritesOwnMemberVariables = pending.Kind == RoutineKind.MemberRoutine &&
+                                                MemberVariableWrites.WritesMe(body: routine.Body);
         RegisterAndValidateRoutine(pending: pending, routine: routine, finalRoutine: finalRoutine);
     }
 

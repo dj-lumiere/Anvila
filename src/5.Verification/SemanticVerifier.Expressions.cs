@@ -177,16 +177,18 @@ public sealed partial class SemanticVerifier
             return ResolveVariableReference(id: id, varInfo: varInfo);
         }
 
+        // A parameter of the routine or type in scope (`needs Bool OPEN`) comes before a choice case of the same name
+        // elsewhere (BuilderQuery's `Visibility.OPEN`): the name in scope is the one the code means.
+        if (TryResolveGenericOrStampedIdentifier(id: id, result: out TypeSymbol? genericOrStamped))
+        {
+            return genericOrStamped!;
+        }
+
         (ChoiceTypeSymbol ChoiceType, ChoiceCaseInfo CaseInfo)? choiceCase =
             _registry.LookupChoiceCase(caseName: id.Name);
         if (choiceCase.HasValue)
         {
             return choiceCase.Value.ChoiceType;
-        }
-
-        if (TryResolveGenericOrStampedIdentifier(id: id, result: out TypeSymbol? genericOrStamped))
-        {
-            return genericOrStamped!;
         }
 
         // Types take precedence over routines when both share a bare name — bare type references for
@@ -594,6 +596,18 @@ public sealed partial class SemanticVerifier
               $"Use '{name}' before line {line}, or give '{name}' a new value first.";
     }
 
+    /// <summary>A variable given a whole new value (<c>seat = "empty"</c> in an arm that matched <c>seat</c> as a
+    /// <c>Player</c>) holds its declared type again: the assignment is checked against that type, and later reads in
+    /// the scope no longer see the matched type.</summary>
+    private void ForgetNarrowing(Expression target)
+    {
+        if (target is IdentifierExpression id && _registry.GetNarrowedType(name: id.Name) is { } narrowed &&
+            _registry.LookupVariable(name: id.Name) is { } variable && narrowed.FullName != variable.Type.FullName)
+        {
+            _registry.NarrowVariable(name: id.Name, narrowedType: variable.Type);
+        }
+    }
+
     /// <summary>Records where a <c>steal</c> of a name moves the value when <paramref name="value"/> is one
     /// (<c>steal mine</c>, or a named argument holding it), for <see cref="UseAfterStealMessage"/>.</summary>
     private void NoteStealDestination(Expression? value, string destination)
@@ -763,6 +777,8 @@ public sealed partial class SemanticVerifier
         if (binary.Operator == BinaryOperator.Assign)
         {
             NoteAssignedPlace(target: binary.Left);
+            ReportAssignWhileMatched(target: binary.Left);
+            ForgetNarrowing(target: binary.Left);
         }
 
         if (binary.Operator == BinaryOperator.Assign && PlaceName(place: binary.Left) is { } assignedPlace)

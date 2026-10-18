@@ -56,6 +56,9 @@ internal sealed class TypeBodyResolver
         {
             ResolveTypeBody(node: declaration);
         }
+
+        // `record Words relates Text as Item`: the program's own associated types, the way the library's are bound.
+        StdlibLoader.ResolveAssociatedTypeBindings(registry: _sa._registry, program: program);
     }
 
     private void ResolveTypeBody(ISyntaxTreeNode node)

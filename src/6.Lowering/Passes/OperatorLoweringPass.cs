@@ -888,8 +888,11 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return typewiseIdent;
         }
 
-        // `var b = boxes[0]` on an entity element holds a read token on it (see IndexExpression.ReadsElementToken).
-        if (idx.ReadsElementToken && MintElementToken(element: idx, write: false) is { } elementToken)
+        // `var b = boxes[0]` on an entity element holds a token on it, with the permission analysis gave it (see
+        // IndexExpression.ReadsElementToken).
+        if (idx.ReadsElementToken &&
+            MintElementToken(element: idx,
+                write: idx.ResolvedType is { BareName: Declaration.RuntimeContract.Modifying }) is { } elementToken)
         {
             return elementToken;
         }

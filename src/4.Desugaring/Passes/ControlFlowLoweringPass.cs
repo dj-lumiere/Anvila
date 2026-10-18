@@ -650,7 +650,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Location: value.Location);
     }
 
-    private BlockStatement LowerEach(EachStatement eachStmt)
+    private BlockStatement LowerEach(EachStatement eachStmt, string walkRoutine = Declaration.RuntimeContract.Iter)
     {
         // A loop over a value nothing holds (`each w in make()`, `each w in text.words()`) walks a temporary
         // the iterator only borrows: name it in a block around the loop, so it lives until the loop is done
@@ -663,11 +663,23 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             var sourceDecls = new List<Statement>();
             Expression source = NameTemporaryReceivers(expr: eachStmt.Iterable, into: sourceDecls);
             string sourceName = $"_lf_src_{_iterCount++}";
-            sourceDecls.Add(item: SourceDeclaration(name: sourceName, value: source));
-            BlockStatement loop = LowerEach(eachStmt: eachStmt with
+            // `each x in steal xs`: the loop takes `xs` and hands each element over (`take_each`), not a token on it.
+            bool takes = source is StealExpression;
+            DeclarationStatement sourceDecl = SourceDeclaration(name: sourceName, value: source);
+            if (takes)
             {
-                Iterable = new IdentifierExpression(Name: sourceName, Location: eachStmt.Iterable.Location)
-            });
+                sourceDecl = sourceDecl with
+                {
+                    Declaration = ((VariableDeclaration)sourceDecl.Declaration) with { IsLoopTakeSource = true }
+                };
+            }
+
+            sourceDecls.Add(item: sourceDecl);
+            BlockStatement loop = LowerEach(eachStmt: eachStmt with
+                {
+                    Iterable = new IdentifierExpression(Name: sourceName, Location: eachStmt.Iterable.Location)
+                },
+                walkRoutine: takes ? Declaration.RuntimeContract.TakeEach : Declaration.RuntimeContract.Iter);
             sourceDecls.Add(item: loop);
             return new BlockStatement(Statements: sourceDecls, Location: srcLoc);
         }
@@ -686,7 +698,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         // -----------------------------------------------------------------------------
         var iterCallExpr = new CallExpression(
             Callee: new MemberExpression(Object: eachStmt.Iterable,
-                MemberName: "iter",
+                MemberName: walkRoutine,
                 Location: loc),
             Arguments: [],
             Location: loc) { IsSynthesizedLowering = true };

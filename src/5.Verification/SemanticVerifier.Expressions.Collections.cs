@@ -201,7 +201,14 @@ public sealed partial class SemanticVerifier
                 expectedType: expectedElementType);
             // With the element type written, every element is checked against it, the first one too.
             bool written = list.ElementType != null && expectedElementType is not ErrorTypeSymbol;
-            TypeSymbol elementType = written ? expectedElementType! : first;
+            // An element type the context gives (`var keys: List[Key] = [1, "two"]`) is the type when the first
+            // element fits it, so the elements after it are held to that type, not to the first one's.
+            TypeSymbol elementType = written ||
+                                     expectedElementType is not null and not ErrorTypeSymbol &&
+                                     first is not ErrorTypeSymbol &&
+                                     IsAssignableTo(source: first, target: expectedElementType)
+                ? expectedElementType!
+                : first;
 
             // Validate all elements have compatible types.
             // Use inferred element type as context for subsequent elements (e.g., [] in [[1,2], []]).

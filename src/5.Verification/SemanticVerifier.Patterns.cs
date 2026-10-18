@@ -30,8 +30,10 @@ public sealed partial class SemanticVerifier
                 location: location);
         }
 
-        // Still declare the variable even if shadowing, to avoid cascading errors
+        // Still declare the variable even if shadowing, to avoid cascading errors. A new binding of a name holds a
+        // value again, whatever an earlier `steal` did to a variable of that name.
         _registry.DeclareVariable(name: name, type: type, location: location);
+        _deadrefVariables.Remove(item: name);
     }
 
     private void AnalyzePattern(Pattern pattern, TypeSymbol matchedType)

@@ -1064,6 +1064,19 @@ public sealed partial class TypeRegistry
             return true;
         }
 
+        // `import Collections.SortedDict`: one type of a library module split over several files. Its file leans on
+        // the module's other files (`SortedTree`), so the module loads whole and registers together, as
+        // `import Collections` does.
+        int typeDot = importPath.LastIndexOf(value: '.');
+        if (typeDot > 0 && _stdlibLoader.LoadModule(registry: this, moduleName: importPath[..typeDot]))
+        {
+            string owningModule = importPath[..typeDot];
+            _loadedModules.Add(item: moduleId);
+            effectiveModule = owningModule;
+            _moduleNames[key: moduleId] = effectiveModule;
+            return true;
+        }
+
         // Initialize the module resolver if needed
         _moduleResolver ??= new ModuleResolver(
             projectRoot: Path.GetDirectoryName(path: currentFile) ??

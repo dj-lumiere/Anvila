@@ -1566,7 +1566,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // monomorphized builder). The literal elements are packed into an inline `Array[T, K]`.
         if (list.ResolvedLiteralBuilder is { Parameters.Count: >= 1 } listBuilder)
         {
-            (List<Statement> h, List<Expression> elems) = LowerElements(elements: list.Elements);
+            (List<Statement> h, List<Expression> elems) = LowerElements(elements: list.Elements,
+                elementType: LiteralElementType(builder: listBuilder));
             return (h,
                 MakeFromLiteralCall(builder: listBuilder,
                     arrayElements: elems,
@@ -1674,7 +1675,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // A SetLiteral-conforming type lowers to `Type.from_literal(a, b, c)`.
         if (set.ResolvedLiteralBuilder is { Parameters.Count: >= 1 } setBuilder)
         {
-            (List<Statement> h, List<Expression> elems) = LowerElements(elements: set.Elements);
+            (List<Statement> h, List<Expression> elems) = LowerElements(elements: set.Elements,
+                elementType: LiteralElementType(builder: setBuilder));
             return (h,
                 MakeFromLiteralCall(builder: setBuilder,
                     arrayElements: elems,
@@ -2140,9 +2142,15 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return new DropStatement(Expression: call, Location: loc);
     }
 
+    /// <summary>The element type a <c>from_literal(elements: Array[E, K])</c> builder takes.</summary>
+    private static TypeSymbol? LiteralElementType(RoutineInfo builder)
+    {
+        return builder.Parameters[index: 0].Type.TypeArguments is [{ } element, ..] ? element : null;
+    }
+
     /// <summary>Lowers a list of element expressions, collecting their hoisted statements.</summary>
     private (List<Statement> Hoisted, List<Expression> Lowered) LowerElements(
-        List<Expression> elements)
+        List<Expression> elements, TypeSymbol? elementType = null)
     {
         var hoisted = new List<Statement>();
         var lowered = new List<Expression>(capacity: elements.Count);
@@ -2150,7 +2158,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         {
             (List<Statement> h, Expression low) = LowerExpr(expr: el);
             HoistAfter(hoisted: hoisted, setup: h, earlier: lowered);
-            lowered.Add(item: low);
+            // An element of a variant collection (`List[Integer | Text]`) is held as the variant.
+            lowered.Add(item: TryWrapVariantArm(targetType: elementType, init: low) ?? low);
         }
 
         return (hoisted, lowered);
