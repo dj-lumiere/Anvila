@@ -511,6 +511,8 @@ internal static class PresetEvaluation
                                                      !l.StartsWith(value: "Stack trace", comparisonType: StringComparison.Ordinal) &&
                                                      !l.StartsWith(value: ValueMarker, comparisonType: StringComparison.Ordinal) &&
                                                      !System.Text.RegularExpressions.Regex.IsMatch(input: l, pattern: "^[0-9]+: at ") &&
+                                                     // The crash location: the diagnostic already points at the preset.
+                                                     !l.StartsWith(value: "at ", comparisonType: StringComparison.Ordinal) &&
                                                      !l.Contains(value: "preset_dump_", comparisonType: StringComparison.Ordinal) &&
                                                      !l.Contains(value: ".start()", comparisonType: StringComparison.Ordinal))
                               .Take(count: 4)

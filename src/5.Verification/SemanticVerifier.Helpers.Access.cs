@@ -435,10 +435,18 @@ public sealed partial class SemanticVerifier
         }
 
         string bareName = type.BareName;
+        // The routines a program can call to build one: its own creators (`Money(...)`) and the common routines that
+        // return it. A routine the builder writes for itself (`from_serial`) is no way in.
         List<string> builders = _registry.GetMemberRoutinesForType(type: type)
-                                         .Where(predicate: r => r.IsCommon && r.Visibility != VisibilityModifier.Secret &&
-                                                                r.ReturnType?.BareName == bareName)
-                                         .Select(selector: r => $"'{bareName}.{r.Name}(...)'")
+                                         .Where(predicate: r => r.Visibility != VisibilityModifier.Secret &&
+                                                                !r.IsSynthesized &&
+                                                                r.Name != Instantiation.AutoWiredRegistrationPass.FromSerialRoutineName &&
+                                                                (r.IsCreator && r.Parameters.Count > 0 ||
+                                                                 r.IsCommon && !r.IsCreator &&
+                                                                 r.ReturnType?.BareName == bareName))
+                                         .Select(selector: r => r.IsCreator
+                                              ? $"'{bareName}({string.Join(separator: ", ", values: r.Parameters.Select(selector: p => p.Name + ": ..."))})'"
+                                              : $"'{bareName}.{r.Name}(...)'")
                                          .Distinct()
                                          .ToList();
         string fix = builders.Count > 0

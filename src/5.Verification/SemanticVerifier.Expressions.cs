@@ -981,8 +981,11 @@ public sealed partial class SemanticVerifier
                 or BinaryOperator.PowerUnchecked && !InDangerBlock && !rawIeee)
         {
             ReportError(code: SemanticDiagnosticCode.UncheckedOperatorOutsideDanger,
-                message: $"Unchecked operator '{binary.Operator.ToStringRepresentation()}' " +
-                         "requires a 'danger' block or '@dangerous' routine.",
+                message: _registry.EntitiesAreShared
+                    ? $"There is no unchecked '{binary.Operator.ToStringRepresentation()}' here. Use the checked " +
+                      "operator, or the wrapping one ('+%', '-%', '*%') where the value may wrap."
+                    : $"Unchecked operator '{binary.Operator.ToStringRepresentation()}' needs a 'danger' block or a " +
+                      "'dangerous routine'.",
                 location: binary.Location);
             return true;
         }
@@ -1004,8 +1007,8 @@ public sealed partial class SemanticVerifier
             case BinaryOperator.Or when leftType is FlagsTypeSymbol || rightType is FlagsTypeSymbol:
                 ReportError(code: SemanticDiagnosticCode.FlagsOrInAssignment,
                     message:
-                    "Cannot use 'or' to combine flags values. Use 'flags have FLAG_A or FLAG_B' for testing, " +
-                    "or separate flag assignments.",
+                    "Flags combine with 'and' ('READ and WRITE'), not 'or'. Test them with 'has' (every one is on) " +
+                    "or 'has_any' (at least one is): 'perms.has_any(READ and WRITE)'.",
                     location: binary.Location);
                 result = leftType;
                 return true;
@@ -1849,7 +1852,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,
                 message:
                 $"Cannot mutate member variable '{member.MemberName}' in a @readonly member routine. " +
-                "Use @reshaping to allow mutations.",
+                "Take '@readonly' off the routine to let it change 'me'.",
                 location: location);
         }
     }
@@ -2113,9 +2116,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.CompoundAssignmentNotSupported,
                 message:
                 $"Entity type '{targetType.Name}' does not support compound assignment '{opSymbol}='. " +
-                $"Define in-place operator '{inPlaceMemberRoutine}'" +
-                (_registry.CompilationRules.ChecksReadonly ? " (with @reshaping)" : "") +
-                " to allow compound assignment.",
+                $"Define the in-place operator '{inPlaceMemberRoutine}' to allow compound assignment.",
                 location: compound.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -2299,7 +2300,7 @@ public sealed partial class SemanticVerifier
                     ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,
                         message:
                         $"Cannot mutate member variable '{member.MemberName}' in a @readonly member routine. " +
-                        "Use @reshaping to allow mutations.",
+                        "Take '@readonly' off the routine to let it change 'me'.",
                         location: compound.Location);
                 }
 

@@ -77,9 +77,12 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.ModuleLevelVarNotAllowed,
                     message:
                     $"'var {varDecl.Name}' is not allowed at module level. 'var' declares a routine-local " +
-                    "binding — move it inside a routine. " + (_registry.Rules.HasModuleGlobals
-                        ? $"For module-level mutable state use 'global {varDecl.Name}: <Type> = ...'."
-                        : $"{_registry.Rules.Name} has no module-level mutable state."),
+                    "binding — move it inside a routine. " + (!_registry.Rules.HasModuleGlobals
+                        ? $"{_registry.Rules.Name} has no module-level mutable state."
+                        : _registry.EntitiesAreShared
+                            ? $"For module-level mutable state use 'global {varDecl.Name}: <Type> = ...'."
+                            : $"A value every routine reads goes in 'global {varDecl.Name}: <Type> = ...', which is " +
+                              "only read. Shared state that changes goes in a global Atomic or Guarded."),
                     location: varDecl.Location);
                 break;
         }
@@ -1375,17 +1378,8 @@ public sealed partial class SemanticVerifier
         // After Owned retirement: a bare entity-typed variable is the normal bound form.
         // Duplicate-handle prohibition is enforced at copy sites (the block above).
 
-        // Variant copy prohibition: `var box2 = box1` is not allowed
-        // Variants must be dismantled immediately with pattern matching
-        // Binding from routine calls (`var result = make_shape()`) is allowed
-        if (varDecl.Initializer is IdentifierExpression && varType is VariantTypeSymbol)
-        {
-            ReportError(code: SemanticDiagnosticCode.VariantCopyNotAllowed,
-                message:
-                $"Variant type '{varType.Name}' cannot be copied to variable '{varDecl.Name}'. " +
-                "Variants must be dismantled immediately with pattern matching.",
-                location: varDecl.Location);
-        }
+        // A variant is copied like the values it holds: one holding only values copies (decided 2026-10-14), one that
+        // may hold an entity is the kept-entity case above (RF-S413).
 
         // #96: Amending[T] cannot be copied or aliased — exclusive lock token
         if (varDecl.Initializer is IdentifierExpression && Wrappers.IsAmendingType(type: varType))
@@ -1845,7 +1839,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,
                 message:
                 $"Cannot mutate member variable '{member.MemberName}' in a @readonly member routine. " +
-                "Use @reshaping to allow mutations.",
+                "Take '@readonly' off the routine to let it change 'me'.",
                 location: assign.Location);
         }
     }

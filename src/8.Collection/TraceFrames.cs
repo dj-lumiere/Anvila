@@ -32,15 +32,58 @@ internal static class TraceFrames
 
     /// <summary>The name a frame shows: the routine with its failability and parameter types. A recovery variant
     /// shows as the failable routine it runs, and a routine the builder wrote with a trace name shows that.</summary>
-    public static string Name(RoutineInfo routine)
+    public static string Name(RoutineInfo routine, bool sharedEntities = false)
     {
         if (routine.TraceName != null)
         {
             return routine.TraceName;
         }
 
-        string parameters = string.Join(separator: ", ", values: routine.Parameters.Select(selector: p => p.Type.FullName));
-        bool failable = routine.IsFailable || routine.IsRecoveryVariant;
-        return $"{routine.BaseName}{(failable ? "!" : "")}({parameters})";
+        // A recovery variant shows its routine as written: with `!` only when that routine is declared failable.
+        bool failable = routine.IsFailable || routine.RecoveryOf is { IsFailable: true };
+        if (!sharedEntities)
+        {
+            string parameters = string.Join(separator: ", ",
+                values: routine.Parameters.Select(selector: p => p.Type.FullName));
+            return $"{routine.BaseName}{(failable ? "!" : "")}({parameters})";
+        }
+
+        // Where entities are shared handles, the frame speaks of the program's own types: a handle shows as the
+        // entity it stands for, and no type names the library's language.
+        string owner = routine.OwnerType != null
+            ? $"{Shown(type: routine.OwnerType)}.{routine.Name}"
+            : routine.BaseName;
+        string shownParameters = string.Join(separator: ", ",
+            values: routine.Parameters.Select(selector: p => Shown(type: p.Type)));
+        return $"{owner}{(failable ? "!" : "")}({shownParameters})";
+    }
+
+    /// <summary>A type as a frame shows it where entities are shared: <c>Roamed[X]</c> as <c>X</c>, at any depth,
+    /// and each type by its module and name alone.</summary>
+    private static string Shown(TypeModel.Types.TypeSymbol type)
+    {
+        if (type is TypeModel.Types.RecordTypeSymbol { GenericDefinition.Name: "Roamed", TypeArguments: [var held] })
+        {
+            return Shown(type: held);
+        }
+
+        TypeModel.Types.TypeSymbol? definition = type switch
+        {
+            TypeModel.Types.RecordTypeSymbol r => r.GenericDefinition,
+            TypeModel.Types.EntityTypeSymbol e => e.GenericDefinition,
+            _ => null
+        };
+        if (definition != null && type.TypeArguments is { Count: > 0 } arguments)
+        {
+            return $"{Qualified(type: definition)}[{string.Join(separator: ", ", values: arguments.Select(selector: Shown))}]";
+        }
+
+        return type.TypeArguments is { Count: > 0 } ? type.Name : Qualified(type: type);
+    }
+
+    /// <summary>A type's module and name, without its realm.</summary>
+    private static string Qualified(TypeModel.Types.TypeSymbol type)
+    {
+        return string.IsNullOrEmpty(value: type.Module) ? type.Name : $"{type.Module}.{type.Name}";
     }
 }

@@ -337,6 +337,10 @@ public partial class LlvmEmitter
     /// </summary>
     private bool _traceCurrentRoutine;
 
+    /// <summary>True while emitting a routine whose frame names the library instead of a file position (a library
+    /// routine in a build that shares entities): its frame keeps line 0.</summary>
+    private bool _traceHidesPosition;
+
     /// <summary>Which emitted routines can crash; set before routine definitions are generated.</summary>
     private Builder.Collection.CrashReachability? _crashReachability;
 

@@ -834,9 +834,9 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.NonExhaustiveMatch,
                 message: someValueTaken
                     ? $"This `when` on '{matchedType.Name}' takes some kinds of '{valueName}' but not all of them. " +
-                      $"Add an arm for each one left, or one for the whole value (`is {valueName} v`).{missing}"
+                      $"Add an arm for each one left, or one for the whole value (`is {valueName} as v`).{missing}"
                     : $"This `when` on '{matchedType.Name}' never takes the success value. Add an arm for it " +
-                      $"(`is {valueName} v`).{missing}",
+                      $"(`is {valueName} as v`).{missing}",
                 location: whenStmt.Location);
         }
         else

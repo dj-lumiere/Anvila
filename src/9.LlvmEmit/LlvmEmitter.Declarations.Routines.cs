@@ -688,6 +688,7 @@ public partial class LlvmEmitter
     /// </summary>
     private void EmitTracePush(StringBuilder sb, RoutineInfo routine)
     {
+        _traceHidesPosition = false;
         _traceCurrentRoutine = ShouldEmitTrace &&
                                Builder.Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability);
         if (!_traceCurrentRoutine)
@@ -695,10 +696,22 @@ public partial class LlvmEmitter
             return;
         }
 
-        string routineName = Builder.Collection.TraceFrames.Name(routine: routine);
+        string routineName = Builder.Collection.TraceFrames.Name(routine: routine,
+            sharedEntities: _registry.EntitiesAreShared);
         string fileName = routine.Location?.FileName ?? "";
         int line = routine.Location?.Line ?? 0;
         int col = routine.Location?.Column ?? 0;
+        // Where entities are shared handles, a library frame names the library instead of its file.
+        if (_registry.EntitiesAreShared)
+        {
+            if (_registry.IsStandardLibraryFile(filePath: fileName))
+            {
+                fileName = "standard library";
+                line = 0;
+                col = 0;
+                _traceHidesPosition = true;
+            }
+        }
         string routineCStr = EmitCStringConstant(value: routineName);
         string fileCStr = EmitCStringConstant(value: fileName);
         EmitLine(sb: sb,

@@ -969,6 +969,13 @@ public sealed partial class SemanticVerifier
     /// <param name="location">Source location for error reporting.</param>
     private void ValidateCapturedType(string varName, TypeSymbol varType, SourceLocation location)
     {
+        // Where entities are shared handles there is no token and no single holder: a lambda keeps one more
+        // handle like any other name does.
+        if (_registry.EntitiesAreShared)
+        {
+            return;
+        }
+
         // Check for memory tokens (scope-bound, cannot be captured)
         if (IsMemoryToken(type: varType))
         {
@@ -976,7 +983,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.LambdaCaptureToken,
                 message: $"Cannot capture '{varName}' of type '{tokenKind}' in lambda - " +
                          $"scope-bound tokens cannot escape their scope. " +
-                         $"Use a handle type (Guarded[T] or Witnessed[T]) instead.",
+                         $"Capture a handle that can be shared instead (Retained[T], or Guarded[T] across agents).",
                 location: location);
             return;
         }
@@ -988,7 +995,8 @@ public sealed partial class SemanticVerifier
                 message:
                 $"Cannot capture raw entity '{varName}' of type '{varType.Name}' in lambda - " +
                 $"raw entities cannot be captured. " +
-                $"Wrap in a handle type (Guarded[T] or Witnessed[T]) before capturing.",
+                $"Put it under a manager that can share it first (Retained[T], or Guarded[T] across agents) and " +
+                $"capture that.",
                 location: location);
         }
     }

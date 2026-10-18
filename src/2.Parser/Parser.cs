@@ -315,8 +315,11 @@ public partial class Parser
     /// </summary>
     private List<ISyntaxTreeNode> WrapScriptStatementsIntoStart(List<ISyntaxTreeNode> nodes)
     {
-        // Trigger only on a loose top-level STATEMENT — a pure module file (declarations only) is untouched.
-        if (!nodes.Any(predicate: n => n is Statement))
+        // Trigger on a loose top-level STATEMENT — a pure module file (declarations only) is untouched. A file of only
+        // `var` lines (`var total = 1 + 2`) is a script too, as long as it writes no `routine start()` of its own.
+        bool varsOnlyScript = nodes.Any(predicate: n => n is VariableDeclaration { IsGlobal: false }) &&
+                              !nodes.Any(predicate: n => n is RoutineDeclaration { Name: "start" });
+        if (!nodes.Any(predicate: n => n is Statement) && !varsOnlyScript)
         {
             return nodes;
         }

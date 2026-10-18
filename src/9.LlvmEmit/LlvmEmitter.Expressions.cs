@@ -263,7 +263,7 @@ public partial class LlvmEmitter
     /// </summary>
     private void EmitTraceLocUpdate(StringBuilder sb, SourceLocation? location)
     {
-        if (!_traceCurrentRoutine)
+        if (!_traceCurrentRoutine || _traceHidesPosition)
         {
             return;
         }

@@ -881,9 +881,13 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
 
         Dictionary<string, TypeSymbol> captureTypes =
             CollectCaptureTypesFromBody(body: lambda.Body, captureNames: captureNameList);
+        // In a file that shares entities a captured entity is the handle the code holds (`Roamed[Box]`), and the
+        // payload keeps one more of it.
         var closureCaptures = captureNameList.Where(predicate: captureTypes.ContainsKey)
                                              .Select(selector: n =>
-                                                  (Name: n, Type: captureTypes[key: n]))
+                                                  (Name: n, Type: ctx.Registry.RoamEntitySlotIn(written: null,
+                                                      filePath: lambda.Location.FileName,
+                                                      resolved: captureTypes[key: n])))
                                              .ToList();
 
         if (includeMe && ContainsIdentifier(expression: lambda.Body, name: "me"))
@@ -934,6 +938,16 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     type: closureCaptures[index: i].Type,
                     slot: i));
             }
+        }
+
+        // A captured name whose local became a shared handle reads as one in the body too, so the handle machinery
+        // (projection, access lock) reaches the entity through it.
+        var handleCaptures = closureCaptures.Where(predicate: c => captureTypes[key: c.Name] is EntityTypeSymbol &&
+                                                                  c.Type is not EntityTypeSymbol)
+                                            .ToDictionary(keySelector: c => c.Name, elementSelector: c => c.Type);
+        if (handleCaptures.Count > 0)
+        {
+            loweredBody = new HandleCaptureRetyper(handles: handleCaptures).VisitExpression(expr: loweredBody);
         }
 
         liftedStatements.Add(item: new ReturnStatement(Value: loweredBody, Location: lambda.Location));
@@ -2218,6 +2232,18 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     yield return nested;
                 }
             }
+        }
+    }
+
+    /// <summary>Retypes the references to captured names that are held as shared handles in the lifted body.</summary>
+    private sealed class HandleCaptureRetyper(Dictionary<string, TypeSymbol> handles) : AstRewriter
+    {
+        public override Expression VisitExpression(Expression expr)
+        {
+            return expr is IdentifierExpression e && handles.TryGetValue(key: e.Name, value: out TypeSymbol? handle) &&
+                   e.ResolvedType is EntityTypeSymbol
+                ? e with { ResolvedType = handle }
+                : base.VisitExpression(expr: expr);
         }
     }
 }

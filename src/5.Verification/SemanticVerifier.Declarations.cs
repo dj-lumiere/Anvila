@@ -1167,7 +1167,8 @@ public sealed partial class SemanticVerifier
         if (routine.Annotations.Contains(item: "crash_only") && !routine.IsFailable)
         {
             ReportError(code: SemanticDiagnosticCode.CrashOnlyOnNonFailable,
-                message: "'@crash_only' is only valid on failable (!) routines.",
+                message: "'@crash_only' goes only on a routine that can fail. Declare it with '!' " +
+                         "('routine name!(...)'), or drop the annotation.",
                 location: routine.Location);
         }
 
@@ -1391,6 +1392,23 @@ public sealed partial class SemanticVerifier
 
     }
 
+    /// <summary>The message for a type that obeys a protocol and lacks one of its routines: the routine to write, in
+    /// the type's own terms.</summary>
+    private string RequiredRoutineMessage(TypeSymbol type, ProtocolTypeSymbol protocol,
+        ProtocolMemberRoutineInfo required)
+    {
+        string parameters = string.Join(separator: ", ",
+            values: required.ParameterNames.Select(selector: (n, i) =>
+                $"{n}: {_registry.ReplaceProtocolSelf(type: required.ParameterTypes[index: i], owner: type).Name}"));
+        string result = required.ReturnType is { IsNone: false } returned
+            ? $" -> {_registry.ReplaceProtocolSelf(type: returned, owner: type).Name}"
+            : "";
+        string owner = required.IsInstanceMemberRoutine ? "routine" : "common routine";
+        string bang = required.IsFailable ? "!" : "";
+        return $"'{type.Name}' obeys '{protocol.Name}', which needs the routine '{required.Name}', and " +
+               $"'{type.Name}' has none. Write `{owner} {type.Name}.{required.Name}{bang}({parameters}){result}`.";
+    }
+
     /// <summary>
     /// A protocol's creator requirement (<c>routine Me!(text: Text)</c>) is met by a creator of the type that
     /// takes the same parameters, by name and type, with <c>Me</c> standing for the type. A creator that
@@ -1498,8 +1516,7 @@ public sealed partial class SemanticVerifier
         if (typeMemberRoutine == null)
         {
             ReportError(code: SemanticDiagnosticCode.MissingProtocolMemberRoutine,
-                message:
-                $"Type '{type.Name}' declares 'obeys {protocol.Name}' but does not implement required memberRoutine '{requiredMemberRoutine.Name}'.",
+                message: RequiredRoutineMessage(type: type, protocol: protocol, required: requiredMemberRoutine),
                 location: type.Location ?? _conformanceDeclaredAt ?? new SourceLocation(FileName: "",
                     Line: 0,
                     Column: 0,

@@ -3170,7 +3170,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.MutationInReadonlyMemberRoutine,
                 message:
                 $"Cannot call non-readonly member routine '{memberRoutine.Name}' on 'me' in a @readonly member routine. " +
-                "Mark the called member routine @readonly or use @reshaping.",
+                $"Mark '{memberRoutine.Name}' @readonly if it only reads, or take '@readonly' off this routine.",
                 location: call.Location);
         }
 
