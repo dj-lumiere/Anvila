@@ -946,8 +946,14 @@ public sealed partial class SemanticVerifier
     private bool TryReportFixedWidthMismatch(BinaryExpression binary, TypeSymbol leftType,
         TypeSymbol rightType)
     {
-        if (leftType.Name != rightType.Name && IsFixedWidthNumericType(type: leftType) &&
-            IsFixedWidthNumericType(type: rightType) && !IsLogicalOperator(op: binary.Operator) &&
+        // An `Integer` mixed with a fixed-width number is the same mismatch: only `Integer` and `Decimal` mix. A
+        // bare number on either side takes the other side's type, so it is no mix.
+        bool integerWithFixed = binary.Left is not LiteralExpression && binary.Right is not LiteralExpression &&
+                                (leftType.Name == IntegerTypeName && IsFixedWidthNumericType(type: rightType) ||
+                                 rightType.Name == IntegerTypeName && IsFixedWidthNumericType(type: leftType));
+        if (leftType.Name != rightType.Name &&
+            (IsFixedWidthNumericType(type: leftType) && IsFixedWidthNumericType(type: rightType) || integerWithFixed) &&
+            !IsLogicalOperator(op: binary.Operator) &&
             !IsComparisonOperator(op: binary.Operator) && !IsShiftOperator(op: binary.Operator))
         {
             ReportError(code: SemanticDiagnosticCode.FixedWidthTypeMismatch,
@@ -1229,11 +1235,15 @@ public sealed partial class SemanticVerifier
             // user code the protocol gate reports this first, but that gate is off for stdlib bodies, and
             // returning the operand type here let the call reach the LLVM emitter with nothing to call. (Other
             // scalar types can get operators synthesized later, e.g. ByteSize's `*%`, so they are not judged.)
-            if (memberRoutine == null && IsFixedWidthNumericType(type: leftType))
+            if (memberRoutine == null &&
+                (IsFixedWidthNumericType(type: leftType) || leftType.Name is IntegerTypeName or "Decimal"))
             {
                 ReportError(code: SemanticDiagnosticCode.BinaryOperatorNotFound,
-                    message:
-                    $"Operator '{binary.Operator.ToStringRepresentation()}' is not defined for '{leftType.Name}'.",
+                    message: leftType.Name == rightType.Name
+                        ? $"Operator '{binary.Operator.ToStringRepresentation()}' is not defined for '{leftType.Name}'."
+                        : $"Operator '{binary.Operator.ToStringRepresentation()}' is not defined between " +
+                          $"{Article.For(name: leftType.Name)} '{leftType.Name}' and {Article.For(name: rightType.Name)} " +
+                          $"'{rightType.Name}'.",
                     location: binary.Location);
                 return ErrorTypeSymbol.Instance;
             }
@@ -1808,6 +1818,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
         ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: location);
+        ReportWriteThroughReadOnlyPlace(member: member, objectType: objectType, location: location);
 
         ValidateMemberVariableWriteAccess(objectType: objectType,
             memberVariableName: member.MemberName,
@@ -2215,6 +2226,28 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <summary>A member variable written (<c>=</c> or <c>+=</c>) through a read-only wrapper, a <c>Viewing</c> token or
     /// a ReadOnly <c>Guarded</c>: the write is an error.</summary>
+    /// <summary>
+    /// Reports a write to a member variable of a value reached through a read-only token further back in the place
+    /// (<c>boxes[0].n += 1</c> with <c>boxes</c> a <c>Viewing[List[Box]]</c>): the element is read through the token,
+    /// so it only reads too. A place whose own type is the read-only token is reported by
+    /// <see cref="ReportWriteThroughReadOnly"/>.
+    /// </summary>
+    private void ReportWriteThroughReadOnlyPlace(MemberExpression member, TypeSymbol objectType,
+        SourceLocation location)
+    {
+        if (Wrappers.IsReadOnlyWrapper(type: objectType) || member.Object is IdentifierExpression ||
+            !StartsReadOnly(place: member.Object))
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.WriteThroughReadOnlyWrapper,
+            message: $"You are writing member '{member.MemberName}' of a value reached through a read-only token, " +
+                     "so it only reads that value. Where it has to change, take a 'Modifying' token instead (a " +
+                     "parameter typed Modifying[...], or '.modify()').",
+            location: location);
+    }
+
     private void ReportWriteThroughReadOnly(TypeSymbol objectType, string memberName, SourceLocation location)
     {
         if (!Wrappers.IsReadOnlyWrapper(type: objectType))
@@ -2254,6 +2287,7 @@ public sealed partial class SemanticVerifier
                 TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
                 ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName,
                     location: compound.Location);
+                ReportWriteThroughReadOnlyPlace(member: member, objectType: objectType, location: compound.Location);
                 ValidateMemberVariableWriteAccess(objectType: objectType,
                     memberVariableName: member.MemberName,
                     location: compound.Location);

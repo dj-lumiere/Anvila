@@ -1344,6 +1344,13 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                 }
 
                 break;
+            case ChainedComparisonExpression chained:
+                foreach (Expression operand in chained.Operands)
+                {
+                    yield return operand;
+                }
+
+                break;
         }
     }
 

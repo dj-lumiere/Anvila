@@ -547,6 +547,20 @@ public sealed partial class SemanticVerifier
             AnalyzeExpression(expression: index.Index, expectedType: sliceRange);
         }
 
+        // A slice is a copy of the elements, which an entity element can't be: the range `getitem` is written for
+        // copyable elements only (`needs RecordType T`).
+        if (slice && getItem != null && lookupType.TypeArguments is { Count: > 0 } &&
+            !_registry.OwnerKindGatesAdmit(routine: getItem, owner: lookupType))
+        {
+            ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+                message: $"A slice of '{lookupType.Name}' would be a copy of its elements, and an element of " +
+                         $"'{lookupType.TypeArguments[index: 0].Name}' is an entity, which is not copied. Walk the " +
+                         "part you need instead: 'xs.skip(a).take(n)'.",
+                location: index.Location);
+            // Reported once: the slice keeps its type, so nothing after it is reported again.
+            return getItem;
+        }
+
         // Look for getitem memberRoutine — LookupMemberRoutine handles generic resolutions
         getItem ??= _registry.LookupMemberRoutine(type: lookupType,
             memberRoutineName: GetItemMemberRoutineName);
@@ -822,22 +836,17 @@ public sealed partial class SemanticVerifier
             }
             else
             {
-                // No annotation AND no typed context to infer from. RazorForge is statically typed with
-                // no runtime routine lookup, so this parameter has no resolvable type — report it (else
-                // it silently becomes ErrorTypeSymbol, lifts to an `@[lambda]…(<error>,…)` symbol whose
-                // body is never emitted, and blows up at the linker). Suflae is left as-is: its
-                // open-world `Unknown` top + runtime dispatch will default un-inferable params to Unknown
-                // (gated on that machinery being real — see [[cabi-callback-ffi]]/[[object-top-type]]).
-                if (_registry.Rules.RequiresInferableLambdaParameters)
-                {
-                    ReportError(code: SemanticDiagnosticCode.LambdaParameterTypeNotInferable,
-                        message:
-                        $"Cannot infer the type of lambda parameter '{param.Name}' — there is no type " +
-                        "annotation and no typed target to infer from. Annotate it (e.g. " +
-                        "`(a: S32, b: S32) => a + b`) or assign the lambda to a typed target " +
-                        "(`var f: Callable[(S32, S32), S32] = …`).",
-                        location: param.Location);
-                }
+                // No annotation AND no typed context to infer from: the parameter has no type, and there is no
+                // routine lookup while the program runs to stand in for one (it would silently become the error
+                // type and stop the LLVM emitter). Both languages report it.
+                string number = _registry.EntitiesAreShared ? "Integer" : "S32";
+                ReportError(code: SemanticDiagnosticCode.LambdaParameterTypeNotInferable,
+                    message:
+                    $"Cannot infer the type of lambda parameter '{param.Name}' — there is no type " +
+                    $"annotation and no typed target to infer from. Annotate it (e.g. " +
+                    $"`(a: {number}, b: {number}) => a + b`) or assign the lambda to a typed target " +
+                    $"(`var f: Callable[({number}, {number}), {number}] = …`).",
+                    location: param.Location);
 
                 paramType = ErrorTypeSymbol.Instance;
             }

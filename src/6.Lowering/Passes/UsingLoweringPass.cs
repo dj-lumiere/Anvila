@@ -1,3 +1,4 @@
+using Builder.Declaration;
 using SyntaxTree;
 using TypeModel.Symbols;
 using TypeModel.Types;
@@ -33,9 +34,23 @@ namespace Builder.Lowering.Passes;
 /// <para>Nested usings are lowered bottom-up: the body is recursively lowered before the outer
 /// using is processed, so inner <c>exit()</c> calls appear before outer ones in every escape path.</para>
 /// </summary>
-internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
+internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry registry) : AstRewriter
 {
     private int _tempCount;
+
+    public UsingLoweringPass(PostprocessingContext ctx) : this(ctx: ctx, registry: ctx.Registry)
+    {
+    }
+
+    /// <summary>
+    /// Lowers every <c>using</c> of one routine body to its <c>enter</c>/<c>exit</c> calls ahead of the Phase-8 pass:
+    /// Suflae does it before its entity lowering, so the scope's bindings are plain locals that lowering turns into
+    /// shared handles like any other.
+    /// </summary>
+    public static Statement LowerBody(Statement body, TypeRegistry registry)
+    {
+        return new UsingLoweringPass(ctx: null, registry: registry).VisitStatement(stmt: body);
+    }
 
     private string NextResTemp()
     {
@@ -44,12 +59,12 @@ internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
 
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: registry, program: program, lower: r => VisitStatement(stmt: r.Body));
     }
 
     public void RunOnVariantBodies()
     {
-        BodyDispatch.RunOnVariantBodies(registry: ctx.Registry, bodies: ctx.VariantBodies,
+        BodyDispatch.RunOnVariantBodies(registry: registry, bodies: ctx!.VariantBodies,
             lower: (_, body) => VisitStatement(stmt: body));
     }
 
@@ -83,10 +98,10 @@ internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
         };
 
         RoutineInfo? enterMemberRoutine = resourceType != null
-            ? ctx.Registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "enter")
+            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "enter")
             : null;
         RoutineInfo? exitMemberRoutine = resourceType != null
-            ? ctx.Registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "exit")
+            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "exit")
             : null;
 
         var stmts = new List<Statement>();
@@ -243,10 +258,10 @@ internal sealed class UsingLoweringPass(PostprocessingContext ctx) : AstRewriter
         };
 
         RoutineInfo? tryEnterMemberRoutine = resourceType != null
-            ? ctx.Registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "try_enter")
+            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "try_enter")
             : null;
         RoutineInfo? exitMemberRoutine = resourceType != null
-            ? ctx.Registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "exit")
+            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "exit")
             : null;
 
         var stmts = new List<Statement>();

@@ -348,6 +348,8 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol memberVariableType = ResolveType(typeExpr: memberVariable.Type);
+        ReportProtocolValueType(type: memberVariableType, location: memberVariable.Location,
+            what: $"member variable '{memberVariable.Name}'");
 
         // Validate that tokens cannot be stored in member variables
         ValidateNotTokenMemberVariableType(type: memberVariableType,

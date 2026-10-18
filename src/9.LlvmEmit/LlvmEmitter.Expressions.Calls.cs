@@ -1186,6 +1186,12 @@ public partial class LlvmEmitter
             return (argValue, expectedLlvm);
         }
 
+        // `None` has one value and no bits: produced it is `void`, as a parameter it is the empty struct.
+        if (actualType.IsNone && parameterType.IsNone)
+        {
+            return ("zeroinitializer", expectedLlvm);
+        }
+
         throw new InvalidOperationException(
             message: $"An argument of type '{actualType.FullName}' ({actualLlvm}) reached a parameter of type " +
                      $"'{parameterType.FullName}' ({expectedLlvm}) in a call to '{callee.RegistryKey}' in " +

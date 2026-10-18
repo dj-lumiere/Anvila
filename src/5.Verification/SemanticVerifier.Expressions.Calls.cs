@@ -1593,6 +1593,23 @@ public sealed partial class SemanticVerifier
                 argTypes: creatorArgTypes) ?? creator;
         }
 
+        // A memberwise construction that leaves out a member variable with no written default has nothing to put
+        // there: name what is missing instead of leaving the call unbound for the emitter.
+        if (creator == null && MissingMemberwiseFields(callableType: callableType, call: call) is { Count: > 0 } missing)
+        {
+            List<MemberVariableInfo> fields = callableType is EntityTypeSymbol e
+                ? e.MemberVariables
+                : ((RecordTypeSymbol)callableType).MemberVariables;
+            string all = string.Join(separator: ", ", values: fields.Select(selector: f => $"{f.Name}: ..."));
+            ReportError(code: SemanticDiagnosticCode.MissingRequiredMemberVariable,
+                message: $"'{callableType.Name}' is built from its member variables, and this leaves out " +
+                         $"'{string.Join(separator: "', '", values: missing)}', which " +
+                         (missing.Count == 1 ? "has" : "have") + " no default. Give each one a value: " +
+                         $"'{callableType.Name}({all})'.",
+                location: call.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         // Trailing defaulted parameters may be left out; the emitter fills them in.
         if (creator == null || creator.Parameters.Any(predicate: p => p.IsVariadicParam) ||
             !RoutineCanAcceptArgCount(routine: creator, argCount: creatorArgTypes.Count))
@@ -1899,6 +1916,34 @@ public sealed partial class SemanticVerifier
     /// Null when the call is not a name-complete field-init (arity/name mismatch, positional, or a
     /// non-aggregate target) — so it never displaces a genuine by-type overload match.
     /// </summary>
+    /// <summary>
+    /// The member variables a field-by-field construction leaves out that have no written default, when every
+    /// argument names a member variable of a record or entity (<c>Size(width: 3)</c> for a <c>Size</c> with
+    /// <c>width</c> and <c>height</c>). Null when the call is not such a construction.
+    /// </summary>
+    private static List<string>? MissingMemberwiseFields(TypeSymbol callableType, CallExpression call)
+    {
+        List<MemberVariableInfo>? fields = callableType switch
+        {
+            EntityTypeSymbol e => e.MemberVariables,
+            RecordTypeSymbol r => r.MemberVariables,
+            _ => null
+        };
+        if (fields is not { Count: > 0 } || call.Arguments.Count >= fields.Count ||
+            !call.Arguments.All(predicate: a =>
+                a is NamedArgumentExpression named && fields.Any(predicate: f => f.Name == named.Name)))
+        {
+            return null;
+        }
+
+        var provided = call.Arguments.OfType<NamedArgumentExpression>()
+                           .Select(selector: a => a.Name)
+                           .ToHashSet(comparer: StringComparer.Ordinal);
+        return fields.Where(predicate: f => !f.HasDefaultValue && !provided.Contains(item: f.Name))
+                     .Select(selector: f => f.Name)
+                     .ToList();
+    }
+
     private RoutineInfo? FallbackMemberwiseCreatorByFieldNames(TypeSymbol callableType, CallExpression call)
     {
         List<MemberVariableInfo>? fields = callableType switch
@@ -4188,6 +4233,20 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.SpecializationNotFound,
                     message: $"{Article.Capital(name: type.Name)} '{type.Name}' is not built{from}: no creator of '{type.Name}' takes these arguments." +
                              hint,
+                    location: call.Location);
+                return ErrorTypeSymbol.Instance;
+            }
+            else if (type is VariantTypeSymbol variant &&
+                     !(argTypes is [{ } given] && (given.FullName == type.FullName || given.IsNone)) &&
+                     call.Arguments is not [LiteralExpression { LiteralType: TokenType.NoneValue }])
+            {
+                // A variant is built from a value of one of its member types, which then becomes it.
+                string from = argTypes is [{ } only] ? $"{Article.For(name: only.Name)} '{only.Name}'" : "these arguments";
+                string members = string.Join(separator: ", ",
+                    values: variant.Members.Where(predicate: m => m.Type != null).Select(selector: m => m.Type!.Name));
+                ReportError(code: SemanticDiagnosticCode.SpecializationNotFound,
+                    message: $"'{type.Name}' is not built from {from}: it holds one of {members}, and no creator of " +
+                             $"'{type.Name}' takes {from}. Convert the value to one of those types first.",
                     location: call.Location);
                 return ErrorTypeSymbol.Instance;
             }

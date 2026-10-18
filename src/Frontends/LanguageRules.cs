@@ -157,9 +157,6 @@ public abstract class LanguageRules
     /// <summary><c>var x: T</c> without an initializer is rejected (<c>lateinit var</c> defers it).</summary>
     public abstract bool RequiresLateinitForDeferredInit { get; }
 
-    /// <summary>A lambda parameter with no annotation and no typed target to infer from is rejected.</summary>
-    public abstract bool RequiresInferableLambdaParameters { get; }
-
     /// <summary>A <c>using</c> target must obey <c>Enterable</c>.</summary>
     public abstract bool RequiresEnterableForUsing { get; }
 

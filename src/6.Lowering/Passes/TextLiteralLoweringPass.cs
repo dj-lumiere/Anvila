@@ -58,6 +58,7 @@ internal sealed class TextLiteralLoweringPass(TypeSymbol character, TypeSymbol b
             {
                 Value: string text,
                 LiteralType: TokenType.TextLiteral or TokenType.RawText or TokenType.BytesLiteral
+                or TokenType.BytesRawLiteral
             } literal => Lower(literal: literal, text: text),
             // `none` is the zero value of the optional (or handle) it stands for.
             LiteralExpression { LiteralType: TokenType.NoneValue, ResolvedType: { IsNone: false } type } none =>
@@ -77,7 +78,7 @@ internal sealed class TextLiteralLoweringPass(TypeSymbol character, TypeSymbol b
                          $"not a record starting with '{DataField}' and '{CountField}'.");
         }
 
-        bool bytes = literal.LiteralType == TokenType.BytesLiteral;
+        bool bytes = literal.LiteralType is TokenType.BytesLiteral or TokenType.BytesRawLiteral;
         List<long> elements = bytes
             ? text.Select(selector: c => (long)(c & 0xFF))
                   .ToList()

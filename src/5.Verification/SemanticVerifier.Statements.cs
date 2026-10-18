@@ -349,7 +349,38 @@ public sealed partial class SemanticVerifier
                 : null;
             _registry.DeclareVariable(name: param.Name, type: param.Type, location: paramLoc,
                 isParameter: true, isNullable: param.IsNullable);
+            ReportProtocolValueType(type: param.Type, location: paramLoc ?? routine.Location,
+                what: $"parameter '{param.Name}'");
         }
+    }
+
+    /// <summary>
+    /// Reports a protocol written where a type of values goes (a variable, a parameter, a member variable, or an
+    /// element type such as <c>List[Named]</c>) in the program's own code: a protocol names what types can do, and
+    /// every value has one concrete type, so nothing could be stored there. A variant holds values of several types,
+    /// a generic routine takes any type that obeys the protocol.
+    /// </summary>
+    private void ReportProtocolValueType(TypeSymbol type, SourceLocation location, string what)
+    {
+        if (string.IsNullOrEmpty(value: location.FileName) || location.FileName.StartsWith(value: '<') ||
+            IsStdlibFile(filePath: location.FileName) || ProtocolIn(type: type) is not { } protocol)
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+            message: $"'{protocol.Name}' is a protocol, not a type of values, so {what} can't hold one. To keep " +
+                     $"values of several types, declare a variant of them. To take any type that obeys " +
+                     $"'{protocol.Name}', make the routine generic: 'needs T obeys {protocol.Name}'.",
+            location: location);
+    }
+
+    /// <summary>The protocol <paramref name="type"/> is or holds as a type argument, at any depth.</summary>
+    private static ProtocolTypeSymbol? ProtocolIn(TypeSymbol type)
+    {
+        return type is ProtocolTypeSymbol protocol
+            ? protocol
+            : (type.TypeArguments ?? []).Select(selector: ProtocolIn).FirstOrDefault(predicate: p => p != null);
     }
 
     /// <summary>
@@ -1068,6 +1099,8 @@ public sealed partial class SemanticVerifier
                 location: varDecl.Location);
             varType = ErrorTypeSymbol.Instance;
         }
+
+        ReportProtocolValueType(type: varType, location: varDecl.Location, what: $"'{varDecl.Name}'");
 
         // #16: Plain `var x: T` without an initializer is disallowed.
         // Use `lateinit var x: T` (eager allocation, late initialization).
@@ -1795,6 +1828,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
         ReportWriteThroughReadOnly(objectType: objectType, memberName: member.MemberName, location: assign.Location);
+        ReportWriteThroughReadOnlyPlace(member: member, objectType: objectType, location: assign.Location);
 
         ValidateMemberVariableWriteAccess(objectType: objectType,
             memberVariableName: member.MemberName,

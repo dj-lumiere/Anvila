@@ -1427,6 +1427,13 @@ public sealed partial class TypeRegistry
         return OwnerConstraintsSatisfied(memberRoutine: gatesOnly, ownerType: ownerType);
     }
 
+    /// <summary>Whether the kind gates of <paramref name="routine"/>'s definition (<c>needs RecordType T</c> on a
+    /// <c>List[T]</c> routine) hold for <paramref name="owner"/>'s type arguments.</summary>
+    public bool OwnerKindGatesAdmit(RoutineInfo routine, TypeSymbol owner)
+    {
+        return OwnerKindGatesSatisfied(memberRoutine: routine.GenericDefinition ?? routine, ownerType: owner);
+    }
+
     /// <summary>Whether <paramref name="routine"/> has kind-split implementations (see <see cref="SelectKindVariant"/>).</summary>
     public bool HasKindVariants(RoutineInfo routine)
     {

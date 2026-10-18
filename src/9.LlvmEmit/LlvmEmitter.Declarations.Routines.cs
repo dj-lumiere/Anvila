@@ -1138,6 +1138,8 @@ public partial class LlvmEmitter
             "i1" => "false",
             "half" or "float" or "double" or "fp128" => "0.0",
             "ptr" => "null",
+            // `None` stored as a value is the empty struct `{}`.
+            "void" => "zeroinitializer",
             // Aggregate types ([N x T] arrays, {...} structs, %"Named" struct types) require
             // `zeroinitializer`, not the integer literal `0`. Without this, BitArray[N]() and
             // similar no-arg constructors emit `store [1 x i8] 0, ...` which opt rejects with

@@ -9,7 +9,7 @@ namespace Builder.Lowering.Passes;
 /// Answers, before the backend, the zero-argument member calls whose meaning is about the caller's storage
 /// rather than the value:
 /// <list type="bullet">
-/// <item><c>x.hijack()</c> on a record (or a non-pointer primitive) is the address of <c>x</c>'s storage, an
+/// <item><c>x.hijack()</c> on a record (or a non-pointer primitive, or a variant) is the address of <c>x</c>'s storage, an
 /// <see cref="AddressOfExpression"/>. The body would only see a copy of <c>x</c>, whose address dies with the
 /// call.</item>
 /// <item><c>x.get_address()</c> on a struct record is that address as an <c>Address</c>: the same
@@ -62,6 +62,9 @@ internal sealed class AddressLoweringPass(TypeRegistry registry) : AstRewriter
                 when receiver is RecordTypeSymbol { BackendType: null or not "ptr" } record:
                 return AddressOf(storage: member.Object, type: record, location: call.Location);
 
+            case RuntimeContract.RawPointer.Hijack when receiver is VariantTypeSymbol variant:
+                return AddressOf(storage: member.Object, type: variant, location: call.Location);
+
             case "get_address" when receiver is RecordTypeSymbol { BackendType: null } record:
                 return new BackendCastExpression(
                     Value: AddressOf(storage: member.Object, type: record, location: call.Location),
@@ -76,7 +79,7 @@ internal sealed class AddressLoweringPass(TypeRegistry registry) : AstRewriter
     }
 
     /// <summary>The address of <paramref name="storage"/>, typed <c>Hijacked[T]</c> of its type.</summary>
-    private AddressOfExpression AddressOf(Expression storage, RecordTypeSymbol type, SourceLocation location)
+    private AddressOfExpression AddressOf(Expression storage, TypeSymbol type, SourceLocation location)
     {
         return new AddressOfExpression(Target: storage, Location: location)
         {
