@@ -164,6 +164,14 @@ public sealed class DebugOptions
 
     /// <summary>Path to dump the maysuspend analysis (<c>maysuspend-dump</c>); null = off.</summary>
     public string? MaySuspendDump { get; set; }
+
+    /// <summary>Whether agents waiting on each other for access stop the program with a crash naming them
+    /// (<c>deadlock-check</c>); null for the mode's default: on in a debug build, off in the release modes.</summary>
+    public bool? DeadlockCheck { get; set; }
+
+    /// <summary>Whether two accesses taken in opposite orders stop the program before they can wait on each other
+    /// (<c>access-order</c>). Off unless the manifest turns it on: it costs time on every access.</summary>
+    public bool AccessOrder { get; set; }
 }
 
 /// <summary>How a foreign C library is linked.</summary>

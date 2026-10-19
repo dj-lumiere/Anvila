@@ -82,33 +82,12 @@ public sealed partial class SemanticVerifier
         {
             return $"'{name}' is a global, which every thread reaches, so the global itself is never assigned again: " +
                    $"{what}. Change what it holds through its own routines ('{name}.store(...)', " +
-                   $"'{name}.fetch_add(...)', or inside 'using {name}.modify() as v').";
+                   $"'{name}.fetch_add(...)', or inside 'modifying {name} as v').";
         }
 
         return $"'{name}' is a global, which every thread reaches, so it is only read: {what}. Shared state that " +
                $"changes goes in a global of a type made for it: an Atomic (counters, flags) or a Guarded, changed " +
-               $"inside 'using {name}.modify() as v'.";
-    }
-
-    /// <summary>RF-S629: <c>view()</c> / <c>modify()</c> on a Guarded with a lock, called anywhere but as the resource of a
-    /// <c>using</c> block.</summary>
-    private void ReportGuardOpenedOutsideUsing(CallExpression call, MemberExpression member, TypeSymbol objectType)
-    {
-        string holder = member.Object is IdentifierExpression named ? named.Name : "the handle";
-        string verb = member.MemberName;
-        string token = verb.Contains(value: "view") ? "v" : "m";
-        if (token == holder)
-        {
-            token += "2";
-        }
-
-        string policy = Wrappers.GuardedPolicy(type: objectType) is { } p ? $" with the {p} policy" : "";
-        ReportError(code: SemanticDiagnosticCode.MtTokenRequiresUsing,
-            message: $"'{holder}.{verb}()' takes the lock of '{holder}', a Guarded{policy}, and the lock is held exactly " +
-                     $"as long as the 'using' block that opens it, so '{verb}()' is written only as a 'using' resource: " +
-                     $"'using {holder}.{verb}() as {token}', then use '{token}' inside the block. It cannot be used " +
-                     "inline, passed as an argument, or bound to a variable.",
-            location: call.Location);
+               $"inside 'modifying {name} as v'.";
     }
 
     private void ReportGuardedReachedWithoutLock(TypeSymbol wrapperType, string memberName, Expression receiver,
@@ -117,12 +96,12 @@ public sealed partial class SemanticVerifier
         string holder = receiver is IdentifierExpression named ? named.Name : "the handle";
         string policy = Wrappers.GuardedPolicy(type: wrapperType)!;
         string open = policy == "MultiRead"
-            ? $"'using {holder}.view() as v' to read it, 'using {holder}.modify() as v' to change it"
-            : $"'using {holder}.modify() as v'";
+            ? $"'viewing {holder} as v' to read it, 'modifying {holder} as v' to change it"
+            : $"'modifying {holder} as v'";
         ReportError(code: SemanticDiagnosticCode.GuardedReachedWithoutLock,
             message: $"'{memberName}' is on the value inside '{holder}', a Guarded with the {policy} policy, and that value " +
-                     $"is reached only while its lock is held: open it with {open}, then use 'v.{memberName}{(isCall ? "()" : "")}'. " +
-                     "Only a Guarded with the ReadOnly policy, which has no lock, is read directly.",
+                     $"is reached only while you hold its access: open it with {open}, then use 'v.{memberName}{(isCall ? "()" : "")}'. " +
+                     "Only a Guarded with the ReadOnly policy, which nothing may change, is read directly.",
             location: location);
     }
 
@@ -157,7 +136,7 @@ public sealed partial class SemanticVerifier
                     message:
                     $"{holder} is a Guarded with the ReadOnly policy, so its value is only read: it can call only " +
                     $"routines marked @readonly, and '{memberRoutine.Name}' is not. To change the value, share it " +
-                    "under the Exclusive or MultiRead policy and open it with 'using ... modify()', or mark " +
+                    "under the Exclusive or MultiRead policy and open it with 'modifying', or mark " +
                     $"'{memberRoutine.Name}' @readonly if it does not change anything.",
                     location: location);
                 return;

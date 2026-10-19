@@ -37,6 +37,14 @@ public static class DiagnosticFlags
     /// <summary>Path to dump the maysuspend analysis, or null. Was <c>RF_MAYSUSPEND_DUMP</c>.</summary>
     public static string? MaySuspendDump { get; set; }
 
+    /// <summary><c>[debug] deadlock-check</c>: whether agents waiting on each other for access stop the program, or
+    /// null for the build mode's default (on in debug). The emitted <c>main</c> passes it to the runtime's
+    /// AccessManager. It replaces the <c>RF_DEADLOCK_DETECT</c> environment variable.</summary>
+    public static bool? DeadlockCheck { get; set; }
+
+    /// <summary><c>[debug] access-order</c>: whether accesses taken in opposite orders stop the program.</summary>
+    public static bool AccessOrder { get; set; }
+
     /// <summary>Clears every flag. Call at the start of each build (esp. each daemon request) so a prior
     /// request's flags never leak into the next.</summary>
     public static void Reset()
@@ -48,5 +56,7 @@ public static class DiagnosticFlags
         DumpTessera = false;
         ReachabilityDump = null;
         MaySuspendDump = null;
+        DeadlockCheck = null;
+        AccessOrder = false;
     }
 }

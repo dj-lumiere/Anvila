@@ -772,10 +772,12 @@ public enum SemanticDiagnosticCode
     /// resolvable type. Annotate it (`(a: S32, b: S32) => …`) or assign the lambda to a typed target.</summary>
     LambdaParameterTypeNotInferable = 638,
 
-    /// <summary>A `using ... fallback` target must have `try_enter` (non-blocking acquisition).</summary>
-    UsingFallbackRequiresTryEnter = 611,
+    /// <summary><c>try viewing</c> / <c>try modifying</c> names a target that can't be tried without waiting: only a
+    /// <c>Guarded</c> with an <c>Exclusive</c> or <c>MultiRead</c> policy has access that may be taken.</summary>
+    TryAccessOnUntryable = 611,
 
-    /// <summary>Using target must have enter/exit for resource management.</summary>
+    /// <summary>Using target must have enter/exit for resource management. Access is opened with <c>viewing</c> /
+    /// <c>modifying</c>, not <c>using</c>.</summary>
     UsingTargetMissingEnterExit = 612,
 
     /// <summary>Using-bound token cannot escape the using block scope.</summary>
@@ -812,14 +814,10 @@ public enum SemanticDiagnosticCode
     /// <summary>.hijack() on Guarded/Witnessed requires danger block.</summary>
     SnatchRequiresDanger = 628,
 
-    /// <summary>What takes a Guarded's lock (<c>view()</c> / <c>modify()</c> on an <c>Exclusive</c> / <c>MultiRead</c>
-    /// handle, <c>multimodify</c> on two handles) is written only as the resource of a `using` block: the lock is held
-    /// exactly as long as that block, so it cannot be used inline, passed, or bound.</summary>
-    MtTokenRequiresUsing = 629,
-
-    /// <summary>Readers-XOR-writer violation: a `using g.modify()` (writer) inside another `using` that holds the same
-    /// Guarded's lock, or a `using g.view()` (reader) inside a writer's block.</summary>
-    ReadersXorWriter = 630,
+    /// <summary>A <c>viewing</c> / <c>modifying</c> block (or a <c>g.view()</c> / <c>g.modify()</c> argument) opens a
+    /// <c>Guarded</c> that an enclosing block of the same routine already opened, for reading or for writing: the
+    /// agent would wait for itself, or see its own block's work half done.</summary>
+    GuardedOpenedAgain = 630,
 
     /// <summary>The source of a live access token (or something that owns it) is reassigned or stolen
     /// while the token is in use — inside the token's `using` block, or in the same call the token is
@@ -828,7 +826,8 @@ public enum SemanticDiagnosticCode
 
     /// <summary>A token on an element of one container is held while another token or handle to the same kind of
     /// container changes shape, and the two may be the same container: the element could be moved or freed under
-    /// the held token. Two tokens taken together by <c>multimodify</c> are known to differ.</summary>
+    /// the held token. Two tokens opened together by one <c>viewing</c> / <c>modifying</c> block are known to
+    /// differ.</summary>
     HeldElementOfAliasReshaped = 640,
 
     /// <summary>One call is handed the same container as a write token and as another token: the two are the same
@@ -879,6 +878,20 @@ public enum SemanticDiagnosticCode
     /// itself, outside a <c>using … modify()</c> / <c>view()</c> that holds its lock. Only a
     /// <c>Guarded[T, ReadOnly]</c>, which has no lock, is read directly.</summary>
     GuardedReachedWithoutLock = 649,
+
+    /// <summary>One <c>viewing</c> / <c>modifying</c> block names the same target, or gives the same name, twice.</summary>
+    AccessTargetNamedTwice = 650,
+
+    /// <summary>A <c>viewing</c> / <c>modifying</c> target that the block can't open that way: not a <c>Guarded</c>, an
+    /// access token or an entity, a verb its policy doesn't have (<c>modifying</c> a <c>ReadOnly</c>, <c>viewing</c> an
+    /// <c>Exclusive</c>), write access asked of a read token, or a target with no name of its own and no
+    /// <c>as</c>.</summary>
+    AccessTargetNotOpenable = 651,
+
+    /// <summary><c>view()</c> / <c>modify()</c> on a <c>Guarded</c> with an <c>Exclusive</c> or <c>MultiRead</c> policy
+    /// somewhere other than a call argument: the access is held for that call, so it has to be an argument (or
+    /// opened with a block).</summary>
+    GuardAccessOutsideArgument = 652,
 
     /// <summary>A binding from outside an <c>if</c>, a <c>when</c> or a loop is taken with <c>steal</c> on some paths
     /// that go on past it and kept on others (or taken inside a loop, so it is gone on the next turn): what a scope

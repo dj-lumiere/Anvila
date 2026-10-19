@@ -1241,6 +1241,8 @@ public partial class LlvmEmitter
             ? "tessera_deep_calls_report"
             : "tessera_stack_overflow_report";
         output.AppendLine(handler: $"declare void @{overflowReport}(i64)");
+        output.AppendLine(value: "declare void @rf_access_configure(i32, i32, i32, ptr)");
+        output.AppendLine(value: "declare void @ingrid_access_place(ptr)");
 
         output.AppendLine();
         output.AppendLine(value: "; Entry point");
@@ -1252,12 +1254,28 @@ public partial class LlvmEmitter
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
         // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace.
         output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
+        // The AccessManager's checks ([debug] deadlock-check, on in debug, and access-order), the language its
+        // reports speak, and where the program's code is when it takes an access (the crash trace's top frame).
+        (int deadlockCheck, int accessOrder, int language) = AccessChecks(registry: _registry, mode: _buildMode);
+        output.AppendLine(handler:
+            $"  call void @rf_access_configure(i32 {deadlockCheck}, i32 {accessOrder}, i32 {language}, ptr @ingrid_access_place)");
 
         output.AppendLine(handler: $"  call void @{startFunc}()");
         output.AppendLine(value: "  %set = call i32 @rf_exit_code()");
         output.AppendLine(value: "  %status = call i32 @rf_heap_limit_status(i32 %set)");
         output.AppendLine(value: "  ret i32 %status");
         output.AppendLine(value: "}");
+    }
+
+    /// <summary>What the emitted entry passes the runtime's AccessManager: whether the deadlock check is on
+    /// (<c>[debug] deadlock-check</c>, else on in a debug build), whether the access-order check is
+    /// (<c>[debug] access-order</c>), and the language its reports speak (1 RazorForge, 2 Suflae).</summary>
+    internal static (int DeadlockCheck, int AccessOrder, int Language) AccessChecks(TypeRegistry registry,
+        RfBuildMode mode)
+    {
+        bool deadlockCheck = Diagnostics.DiagnosticFlags.DeadlockCheck ?? mode == RfBuildMode.Debug;
+        return (deadlockCheck ? 1 : 0, Diagnostics.DiagnosticFlags.AccessOrder ? 1 : 0,
+            registry.Language == Language.Suflae ? 2 : 1);
     }
 
     /// <summary>

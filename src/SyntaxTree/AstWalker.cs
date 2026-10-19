@@ -156,7 +156,8 @@ public static class AstWalker
             {
                 s.Body
             },
-            UsingStatement s => UsingStatementChildren(s: s),
+            UsingStatement s => new object[] { s.Resource, s.Body },
+            AccessStatement s => AccessStatementChildren(s: s),
             PassStatement or BreakStatement or ContinueStatement => Enumerable
                .Empty<object>(),
             _ => null
@@ -215,13 +216,17 @@ public static class AstWalker
         }
     }
 
-    private static IEnumerable<object> UsingStatementChildren(UsingStatement s)
+    private static IEnumerable<object> AccessStatementChildren(AccessStatement s)
     {
-        yield return s.Resource;
-        yield return s.Body;
-        if (s.FallbackBody != null)
+        foreach (AccessTarget target in s.Targets)
         {
-            yield return s.FallbackBody;
+            yield return target.Target;
+        }
+
+        yield return s.Body;
+        if (s.ElseBody != null)
+        {
+            yield return s.ElseBody;
         }
     }
 

@@ -40,6 +40,11 @@ internal static class ControlFlowExits
                                       whenStmt.Clauses.All(predicate: c =>
                                           AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: c.Body)),
             DangerStatement danger => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: danger.Body),
+            // A `viewing` / `modifying` block runs its body. A `try` block runs its body or its `else`.
+            AccessStatement access => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: access.Body) &&
+                                      (!access.IsTry || access.ElseBody != null &&
+                                          AlwaysTerminates(exhaustiveWhens: exhaustiveWhens,
+                                              statement: access.ElseBody)),
             // An unconditional `loop` has a fall-through edge ONLY through a `break` that targets it.
             // With no such break, control leaves the loop only via `return`/`throw`/`absent`, so a
             // routine whose control reaches the loop always terminates through it. This does NOT prove
@@ -71,6 +76,8 @@ internal static class ControlFlowExits
             WhenStatement whenStmt => whenStmt.Clauses.Any(predicate: c =>
                 LoopBodyCanBreakOut(statement: c.Body)),
             DangerStatement danger => LoopBodyCanBreakOut(statement: danger.Body),
+            AccessStatement access => LoopBodyCanBreakOut(statement: access.Body) ||
+                                      access.ElseBody != null && LoopBodyCanBreakOut(statement: access.ElseBody),
             // Nested loops swallow their own breaks — do not descend.
             LoopStatement or WhileStatement or EachStatement => false,
             _ => false
@@ -94,6 +101,9 @@ internal static class ControlFlowExits
             IfStatement { ElseStatement: not null } ifStmt =>
                 HasDefiniteExit(statement: ifStmt.ThenStatement) &&
                 HasDefiniteExit(statement: ifStmt.ElseStatement),
+            AccessStatement access => HasDefiniteExit(statement: access.Body) &&
+                                      (!access.IsTry || access.ElseBody != null &&
+                                          HasDefiniteExit(statement: access.ElseBody)),
             _ => false
         };
     }

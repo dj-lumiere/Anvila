@@ -111,6 +111,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
             DropStatement dsc => FoldDropStmt(stmt: stmt, dsc: dsc),
             ThrowStatement ts => FoldThrowStmt(stmt: stmt, ts: ts),
             UsingStatement us => FoldUsingStmt(stmt: stmt, us: us),
+            AccessStatement access => FoldAccessStmt(stmt: stmt, access: access),
             DangerStatement dg => FoldDangerStmt(stmt: stmt, dg: dg),
             _ => stmt
         };
@@ -254,13 +255,20 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
     private Statement FoldUsingStmt(Statement stmt, UsingStatement us)
     {
         Statement body = FoldReflectionStmt(stmt: us.Body);
-        Statement? fb = us.FallbackBody != null
-            ? FoldReflectionStmt(stmt: us.FallbackBody)
-            : null;
-        return ReferenceEquals(objA: body, objB: us.Body) &&
-               ReferenceEquals(objA: fb, objB: us.FallbackBody)
+        return ReferenceEquals(objA: body, objB: us.Body)
             ? stmt
-            : us with { Body = body, FallbackBody = fb };
+            : us with { Body = body };
+    }
+
+    private Statement FoldAccessStmt(Statement stmt, AccessStatement access)
+    {
+        Statement body = FoldReflectionStmt(stmt: access.Body);
+        Statement? elseBody = access.ElseBody != null
+            ? FoldReflectionStmt(stmt: access.ElseBody)
+            : null;
+        return ReferenceEquals(objA: body, objB: access.Body) && ReferenceEquals(objA: elseBody, objB: access.ElseBody)
+            ? stmt
+            : access with { Body = body, ElseBody = elseBody };
     }
 
     private Statement FoldDangerStmt(Statement stmt, DangerStatement dg)

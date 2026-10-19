@@ -258,9 +258,17 @@ internal sealed class CallOverloadResolutionPass
                 break;
             case UsingStatement us:
                 WalkStatement(stmt: us.Body);
-                if (us.FallbackBody != null)
+                break;
+            case AccessStatement access:
+                foreach (AccessTarget target in access.Targets)
                 {
-                    WalkStatement(stmt: us.FallbackBody);
+                    WalkExpression(expr: target.Target);
+                }
+
+                WalkStatement(stmt: access.Body);
+                if (access.ElseBody != null)
+                {
+                    WalkStatement(stmt: access.ElseBody);
                 }
 
                 break;

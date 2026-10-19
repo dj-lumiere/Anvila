@@ -19,4 +19,18 @@ internal static class AccessPaths
         return path == prefix || path.StartsWith(value: prefix + ".") ||
                path.StartsWith(value: prefix + "[");
     }
+
+    /// <summary>The dotted path of an identifier / member chain (<c>a</c>, <c>a.b</c>), or null for anything else (an
+    /// index, a call).</summary>
+    internal static string? Of(Expression expr)
+    {
+        return expr switch
+        {
+            IdentifierExpression id => id.Name,
+            MemberExpression { Object: var inner, MemberName: var member } => Of(expr: inner) is { } prefix
+                ? $"{prefix}.{member}"
+                : null,
+            _ => null
+        };
+    }
 }

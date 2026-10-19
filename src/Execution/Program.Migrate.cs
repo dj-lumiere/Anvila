@@ -31,9 +31,9 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules"))
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules" or "access"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names or modules");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules or access");
             return 2;
         }
 
@@ -68,6 +68,14 @@ internal partial class Program
         if (step == "modules")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteModules);
+        }
+
+        // `--step access`: access to an entity is opened with a `viewing` / `modifying` block (`using g.modify() as m` is
+        // `modifying g as m`, `using ... fallback` is `try modifying ... else`, `multimodify` is one block), and the
+        // lock names are access names.
+        if (step == "access")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAccess);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
@@ -1459,7 +1467,8 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
-            if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.Todo or TokenType.ReservedWord))
+            if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.Todo or TokenType.ReservedWord
+                or TokenType.Viewing or TokenType.Modifying))
             {
                 continue;
             }

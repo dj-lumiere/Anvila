@@ -83,11 +83,6 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
         // Lower body first -> nested usings expand bottom-up.
         Statement loweredBody = VisitStatement(stmt: u.Body);
 
-        if (u.FallbackBody != null)
-        {
-            return LowerFallibleUsing(u: u, loweredBody: loweredBody);
-        }
-
         TypeSymbol? resourceType = u.Resource.ResolvedType;
         SourceLocation loc = u.Location;
 
@@ -229,107 +224,17 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
     }
 
     /// <summary>
-    /// Lowers a fallible <c>using resource as x { body } fallback { alt }</c> to:
-    /// <code>
-    /// {
-    ///   var __uf_N = resource
-    ///   if __uf_N.try_enter():        // Bool: did the non-blocking acquire succeed?
-    ///     var x = __uf_N.entered()    // or `var x = __uf_N` when the type has no `entered`
-    ///     [body, with exit() injected before every escape]
-    ///     __uf_N.exit()               // normal-path release
-    ///   else:
-    ///     [fallback]                    // nothing acquired -> no exit
-    /// }
-    /// </code>
-    /// The hold is released by <c>exit</c> on every exit from the success branch only; the
-    /// fallback branch never acquired it, so it carries no teardown.
+    /// Puts <paramref name="exitStmt"/> before every way out of <paramref name="stmt"/> that leaves the scope: every
+    /// <c>return</c>, <c>throw</c> and variant return, and every <c>break</c> / <c>continue</c> that isn't inside a loop
+    /// of the scope's own (<paramref name="loopDepth"/> counts those). The access blocks reuse it to give up their
+    /// accesses.
     /// </summary>
-    private BlockStatement LowerFallibleUsing(UsingStatement u, Statement loweredBody)
+    internal static Statement InjectExitBeforeEscapes(Statement stmt, Statement exitStmt, int loopDepth)
     {
-        Statement loweredFallback = VisitStatement(stmt: u.FallbackBody!);
-
-        TypeSymbol? resourceType = u.Resource.ResolvedType;
-        SourceLocation loc = u.Location;
-
-        string resTemp = NextResTemp();
-        var resTempIdent = new IdentifierExpression(Name: resTemp, Location: loc)
-        {
-            ResolvedType = resourceType
-        };
-
-        RoutineInfo? tryEnterMemberRoutine = resourceType != null
-            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "try_enter")
-            : null;
-        RoutineInfo? exitMemberRoutine = resourceType != null
-            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "exit")
-            : null;
-
-        var stmts = new List<Statement>();
-
-        // var __uf_N = resource
-        stmts.Add(item: MakeBinding(name: resTemp,
-            value: u.Resource,
-            type: resourceType,
-            loc: loc));
-
-        // Condition: __uf_N.try_enter()  (Bool; SA has already verified try_enter exists)
-        var tryEnterCallee = new MemberExpression(
-            Object: resTempIdent,
-            MemberName: "try_enter",
-            Location: loc);
-        var tryEnterCall = new CallExpression(Callee: tryEnterCallee, Arguments: [], Location: loc)
-        {
-            ResolvedRoutine = tryEnterMemberRoutine,
-            ResolvedType = tryEnterMemberRoutine?.ReturnType
-        };
-
-        // Success branch: bind the token, run body with exit injected, then normal-path exit. A resource whose scope
-        // binds something other than itself (a Guarded opener binds its token) gives that through `entered`.
-        RoutineInfo? enteredMemberRoutine = resourceType != null
-            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: RuntimeContract.Entered)
-            : null;
-        Expression boundValue = resTempIdent;
-        TypeSymbol? boundType = resourceType;
-        if (enteredMemberRoutine?.ReturnType is { IsNone: false } enteredType)
-        {
-            boundValue = new CallExpression(
-                Callee: new MemberExpression(Object: resTempIdent, MemberName: RuntimeContract.Entered, Location: loc),
-                Arguments: [],
-                Location: loc) { ResolvedRoutine = enteredMemberRoutine, ResolvedType = enteredType };
-            boundType = enteredType;
-        }
-
-        var thenStmts = new List<Statement>
-        {
-            MakeBinding(name: u.Name,
-                value: boundValue,
-                type: boundType,
-                loc: loc)
-        };
-
-        ExpressionStatement? exitCallStmt = MakeExitCallStmt(exitMemberRoutine: exitMemberRoutine,
-            resTempIdent: resTempIdent,
-            loc: loc);
-
-        Statement successBody = exitCallStmt != null
-            ? InjectExitBeforeEscapes(stmt: loweredBody, exitStmt: exitCallStmt, loopDepth: 0)
-            : loweredBody;
-        thenStmts.Add(item: successBody);
-        if (exitCallStmt != null)
-        {
-            thenStmts.Add(item: exitCallStmt);
-        }
-
-        var ifStmt = new IfStatement(Condition: tryEnterCall,
-            ThenStatement: new BlockStatement(Statements: thenStmts, Location: loc),
-            ElseStatement: loweredFallback,
-            Location: loc);
-
-        stmts.Add(item: ifStmt);
-        return new BlockStatement(Statements: stmts, Location: loc);
+        return InjectExit(stmt: stmt, exitStmt: exitStmt, loopDepth: loopDepth);
     }
 
-    private static Statement InjectExitBeforeEscapes(Statement stmt, ExpressionStatement exitStmt,
+    private static Statement InjectExit(Statement stmt, Statement exitStmt,
         int loopDepth)
     {
         switch (stmt)
@@ -356,7 +261,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
 
             case LoopStatement loop:
             {
-                Statement body = InjectExitBeforeEscapes(stmt: loop.Body,
+                Statement body = InjectExit(stmt: loop.Body,
                     exitStmt: exitStmt,
                     loopDepth: loopDepth + 1);
                 return !ReferenceEquals(objA: body, objB: loop.Body)
@@ -366,7 +271,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
 
             case DangerStatement d:
             {
-                Statement body = InjectExitBeforeEscapes(stmt: d.Body,
+                Statement body = InjectExit(stmt: d.Body,
                     exitStmt: exitStmt,
                     loopDepth: loopDepth);
                 return !ReferenceEquals(objA: body, objB: d.Body)
@@ -379,7 +284,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
         }
     }
 
-    private static BlockStatement InjectIntoBlock(BlockStatement b, ExpressionStatement exitStmt,
+    private static BlockStatement InjectIntoBlock(BlockStatement b, Statement exitStmt,
         int loopDepth)
     {
         bool changed = false;
@@ -387,7 +292,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
         foreach (Statement s in b.Statements)
         {
             Statement n =
-                InjectExitBeforeEscapes(stmt: s, exitStmt: exitStmt, loopDepth: loopDepth);
+                InjectExit(stmt: s, exitStmt: exitStmt, loopDepth: loopDepth);
             stmts.Add(item: n);
             if (!ReferenceEquals(objA: n, objB: s))
             {
@@ -400,14 +305,14 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
             : b;
     }
 
-    private static IfStatement InjectIntoIf(IfStatement ifs, ExpressionStatement exitStmt,
+    private static IfStatement InjectIntoIf(IfStatement ifs, Statement exitStmt,
         int loopDepth)
     {
-        Statement then = InjectExitBeforeEscapes(stmt: ifs.ThenStatement,
+        Statement then = InjectExit(stmt: ifs.ThenStatement,
             exitStmt: exitStmt,
             loopDepth: loopDepth);
         Statement? elseS = ifs.ElseStatement != null
-            ? InjectExitBeforeEscapes(stmt: ifs.ElseStatement,
+            ? InjectExit(stmt: ifs.ElseStatement,
                 exitStmt: exitStmt,
                 loopDepth: loopDepth)
             : null;
@@ -418,7 +323,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
             : ifs;
     }
 
-    private static WhenStatement InjectIntoWhen(WhenStatement w, ExpressionStatement exitStmt,
+    private static WhenStatement InjectIntoWhen(WhenStatement w, Statement exitStmt,
         int loopDepth)
     {
         bool changed = false;
@@ -426,7 +331,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
         foreach (WhenClause c in w.Clauses)
         {
             Statement body =
-                InjectExitBeforeEscapes(stmt: c.Body, exitStmt: exitStmt, loopDepth: loopDepth);
+                InjectExit(stmt: c.Body, exitStmt: exitStmt, loopDepth: loopDepth);
             clauses.Add(item: !ReferenceEquals(objA: body, objB: c.Body)
                 ? c with { Body = body }
                 : c);

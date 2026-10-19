@@ -524,9 +524,20 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
     {
         Visit(e: node.Resource);
         Visit(s: node.Body);
-        if (node.FallbackBody != null)
+        return false;
+    }
+
+    public bool VisitAccessStatement(AccessStatement node)
+    {
+        foreach (AccessTarget target in node.Targets)
         {
-            Visit(s: node.FallbackBody);
+            Visit(e: target.Target);
+        }
+
+        Visit(s: node.Body);
+        if (node.ElseBody != null)
+        {
+            Visit(s: node.ElseBody);
         }
 
         return false;

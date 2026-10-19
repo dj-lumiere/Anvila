@@ -11,7 +11,7 @@ namespace Builder;
 internal static class ManifestCache
 {
     /// <summary>Bumped whenever the cached field sequence changes.</summary>
-    private const int FormatVersion = 3;
+    private const int FormatVersion = 4;
 
     /// <summary>Reads the cached manifest for this path and text, or returns false.</summary>
     public static bool TryRead(string fullPath, string content, out ProjectManifest? manifest)
@@ -53,6 +53,9 @@ internal static class ManifestCache
             loaded.Debug.DumpTessera = reader.ReadBoolean();
             loaded.Debug.ReachabilityDump = ReadNullable(reader: reader);
             loaded.Debug.MaySuspendDump = ReadNullable(reader: reader);
+            sbyte deadlockCheck = reader.ReadSByte();
+            loaded.Debug.DeadlockCheck = deadlockCheck < 0 ? null : deadlockCheck != 0;
+            loaded.Debug.AccessOrder = reader.ReadBoolean();
             manifest = loaded;
             return true;
         }
@@ -99,6 +102,8 @@ internal static class ManifestCache
                 writer.Write(value: manifest.Debug.DumpTessera);
                 WriteNullable(writer: writer, value: manifest.Debug.ReachabilityDump);
                 WriteNullable(writer: writer, value: manifest.Debug.MaySuspendDump);
+                writer.Write(value: manifest.Debug.DeadlockCheck switch { null => (sbyte)-1, true => (sbyte)1, false => (sbyte)0 });
+                writer.Write(value: manifest.Debug.AccessOrder);
             }
 
             File.Move(sourceFileName: temp, destFileName: file, overwrite: true);

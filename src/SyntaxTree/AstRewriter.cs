@@ -39,6 +39,7 @@ public abstract class AstRewriter
             WhenStatement s => VisitWhen(s: s),
             DangerStatement s => VisitDanger(s: s),
             UsingStatement s => VisitUsing(s: s),
+            AccessStatement s => VisitAccess(s: s),
             ReturnStatement s => VisitReturn(s: s),
             ThrowStatement s => VisitThrow(s: s),
             CrashStatement s => VisitCrash(s: s),
@@ -299,8 +300,8 @@ public abstract class AstRewriter
     }
 
     /// <summary>
-    /// Rewrites a <see cref="UsingStatement"/> by visiting its resource expression, body, and optional
-    /// fallback body (the cleanup branch when acquisition fails). Returns the original node when nothing changed.
+    /// Rewrites a <see cref="UsingStatement"/> by visiting its resource expression and body. Returns the original node
+    /// when nothing changed.
     /// </summary>
     /// <param name="s">The using statement to rewrite.</param>
     /// <returns>The rewritten using statement, or the original reference if nothing changed.</returns>
@@ -308,14 +309,38 @@ public abstract class AstRewriter
     {
         Expression resource = VisitExpression(expr: s.Resource);
         Statement body = VisitStatement(stmt: s.Body);
-        Statement? fallback = s.FallbackBody != null
-            ? VisitStatement(stmt: s.FallbackBody)
-            : null;
-        return ReferenceEquals(objA: resource, objB: s.Resource) &&
-               ReferenceEquals(objA: body, objB: s.Body) &&
-               ReferenceEquals(objA: fallback, objB: s.FallbackBody)
+        return ReferenceEquals(objA: resource, objB: s.Resource) && ReferenceEquals(objA: body, objB: s.Body)
             ? s
-            : s with { Resource = resource, Body = body, FallbackBody = fallback };
+            : s with { Resource = resource, Body = body };
+    }
+
+    /// <summary>
+    /// Rewrites an <see cref="AccessStatement"/> by visiting each target's expression, the body, and the <c>else</c>
+    /// body. Returns the original node when nothing changed.
+    /// </summary>
+    /// <param name="s">The viewing / modifying block to rewrite.</param>
+    /// <returns>The rewritten block, or the original reference if nothing changed.</returns>
+    protected virtual Statement VisitAccess(AccessStatement s)
+    {
+        bool changed = false;
+        var targets = new List<AccessTarget>(capacity: s.Targets.Count);
+        foreach (AccessTarget target in s.Targets)
+        {
+            Expression rewritten = VisitExpression(expr: target.Target);
+            changed |= !ReferenceEquals(objA: rewritten, objB: target.Target);
+            targets.Add(item: ReferenceEquals(objA: rewritten, objB: target.Target)
+                ? target
+                : target with { Target = rewritten });
+        }
+
+        Statement body = VisitStatement(stmt: s.Body);
+        Statement? elseBody = s.ElseBody != null
+            ? VisitStatement(stmt: s.ElseBody)
+            : null;
+        changed |= !ReferenceEquals(objA: body, objB: s.Body) || !ReferenceEquals(objA: elseBody, objB: s.ElseBody);
+        return changed
+            ? s with { Targets = targets, Body = body, ElseBody = elseBody }
+            : s;
     }
 
     /// <summary>

@@ -48,10 +48,14 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
 
     private void RunPasses(Program program)
     {
+        // The `viewing` / `modifying` blocks and `g.view()` / `g.modify()` arguments were made plain calls before
+        // scope teardown (SemanticVerifier). A lambda's body is a routine of its own only once it is lifted, so the
+        // lowering runs again for those after lifting.
         // Lift lambdas FIRST: a lifted lambda is an ordinary routine appended to the program, so every pass
         // below lowers its body (f-strings, conversions, operators) like any other. Lifted last, its body
         // reached the emitter unlowered — the rewriters do not descend into a lambda expression.
         new LambdaLiftingPass(ctx: ctx).Run(program: program);
+        new AccessLoweringPass(registry: ctx.Registry).Run(program: program);
         // Route Suflae module-level `global`s through the hidden __ModuleGlobals entity FIRST, so every
         // subsequent pass (f-string, operator, Roamed projection/lock-bracket) sees the field accesses
         // and the globals inherit the entity's thread-safe access-lock brackets.
@@ -128,6 +132,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
     {
         // Lift the lambdas of variant bodies first, as Run does for a program (their routines join their
         // file's program when it is lowered).
+        new AccessLoweringPass(registry: ctx.Registry).RunOnVariantBodies(ctx: ctx);
         new LambdaLiftingPass(ctx: ctx).RunOnVariantBodies();
         ctx.Registry.CompilationRules.LowerFirstInVariantBodies(ctx: ctx);
         new VariantReturnLoweringPass(ctx: ctx).RunOnVariantBodies();

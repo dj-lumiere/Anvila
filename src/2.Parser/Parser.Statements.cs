@@ -1506,62 +1506,33 @@ public partial class Parser
         // Parse the indented body
         Statement body = ParseBody();
 
-        // Optional `fallback` block — the contention branch of a fallible `using`
-        // (runs when the resource's non-blocking `try_enter()` fails to acquire; no
-        // resource is held on that path). Single-resource only.
-        //
-        // `fallback` is a CONTEXTUAL keyword: it stays a normal identifier everywhere else
-        // (it's a common variable name — e.g. `unwrap_or(fallback:)`). It is only the block
-        // keyword here, recognised as an identifier `fallback` immediately followed by an
-        // indented block right after a `using` body.
-        BlockStatement? fallbackBody =
-            ParseOptionalUsingFallbackBlock(resourceCount: resources.Count);
+        // `fallback` after a `using` body was the branch for a lock that was taken. A Guarded is opened with
+        // `try viewing` / `try modifying` and `else` now: reject the old spelling where it stands.
+        if (IsContextualFallbackBlock())
+        {
+            throw ThrowParseError(
+                message: "You wrote a 'fallback' branch after 'using', and 'using' no longer opens a Guarded. Open it " +
+                         "without waiting with 'try modifying g as x' (or 'try viewing g as x') and put the branch for " +
+                         "a taken one under 'else'. 'migrate --step access' rewrites it.");
+        }
 
         // Build nested UsingStatements from inside out (last resource is innermost).
-        // `fallback` (single-resource only) attaches to the sole using.
         Statement result = body;
         for (int i = resources.Count - 1; i >= 0; i--)
         {
             result = new UsingStatement(Resource: resources[index: i].Resource,
                 Name: resources[index: i].Name,
                 Body: result,
-                Location: location,
-                FallbackBody: i == 0
-                    ? fallbackBody
-                    : null) { Parts = resources[index: i].Parts };
+                Location: location) { Parts = resources[index: i].Parts };
         }
 
         return result;
     }
 
     /// <summary>
-    /// Parses the optional contextual <c>fallback</c> block that may follow a <c>using</c> body. Rejects
-    /// it on a multi-resource <c>using</c> (fallible acquisition binds exactly one resource). Returns the
-    /// fallback body, or null when no fallback block is present.
-    /// </summary>
-    private BlockStatement? ParseOptionalUsingFallbackBlock(int resourceCount)
-    {
-        if (!IsContextualFallbackBlock())
-        {
-            return null;
-        }
-
-        Advance(); // consume the `fallback` identifier
-        if (resourceCount > 1)
-        {
-            throw ThrowParseError(
-                message: "'fallback' is only allowed on a single-resource 'using' " +
-                         "(a fallible acquisition binds exactly one resource).");
-        }
-
-        return ParseBody();
-    }
-
-    /// <summary>
-    /// Recognises the contextual `fallback` block that may follow a `using` body: a bare
-    /// identifier <c>fallback</c> immediately followed by an indented block. Requiring the
-    /// following INDENT keeps a real identifier `fallback` used as an ordinary statement
-    /// (rare, but legal) from being misread as the keyword.
+    /// Recognises a bare identifier <c>fallback</c> followed by an indented block right after a <c>using</c> body: the
+    /// old branch for a taken lock. Requiring the following INDENT keeps a real identifier <c>fallback</c> used as an
+    /// ordinary statement from being misread.
     /// </summary>
     private bool IsContextualFallbackBlock()
     {
@@ -1575,6 +1546,61 @@ public partial class Parser
            .Type == TokenType.Indent || PeekToken(offset: 1)
            .Type == TokenType.Newline && PeekToken(offset: 2)
            .Type == TokenType.Indent;
+    }
+
+    /// <summary>
+    /// Parses a block that opens access: <c>viewing rates, modifying payer as from, to</c>, then its indented body. A
+    /// verb applies to the targets after it until another verb comes, and each target takes its own <c>as</c> (a target
+    /// without one keeps its own name). After <c>try</c> (consumed by the caller) the block only tries, and an
+    /// <c>else</c> block follows for when a target is taken.
+    /// </summary>
+    /// <param name="isTry">Whether the block was written <c>try viewing</c> / <c>try modifying</c>.</param>
+    /// <returns>An <see cref="AccessStatement"/>.</returns>
+    private AccessStatement ParseAccessStatement(bool isTry)
+    {
+        SourceLocation location = GetLocation(token: isTry ? PeekToken(offset: -1) : CurrentToken);
+        var targets = new List<AccessTarget>();
+        bool isWrite = false;
+        do
+        {
+            if (Check(type: TokenType.Viewing) || Check(type: TokenType.Modifying))
+            {
+                isWrite = CurrentToken.Type == TokenType.Modifying;
+                Advance();
+            }
+
+            SourceLocation at = GetLocation();
+            Expression target = ParseExpression();
+            if (CheckAndAdvance(type: TokenType.As))
+            {
+                string alias = ConsumeIdentifier(errorMessage: "Expected the token's name after 'as'");
+                targets.Add(item: new AccessTarget(IsWrite: isWrite, Target: target, Name: alias, HasAlias: true,
+                    Location: at));
+                continue;
+            }
+
+            // Without `as` the token keeps the target's own name. A target that has none is reported by the analysis.
+            string name = target is IdentifierExpression id ? id.Name : "";
+            targets.Add(item: new AccessTarget(IsWrite: isWrite, Target: target, Name: name, HasAlias: false,
+                Location: at));
+        } while (CheckAndAdvance(type: TokenType.Comma));
+
+        Statement body = ParseBody();
+        Statement? elseBody = null;
+        if (isTry)
+        {
+            if (!CheckAndAdvance(type: TokenType.Else))
+            {
+                throw ThrowParseError(
+                    message: "You wrote a 'try' block without its 'else' block. Add 'else' after the body with what to " +
+                             "do when a target is taken right now ('pass' to do nothing).");
+            }
+
+            elseBody = ParseBody();
+        }
+
+        return new AccessStatement(Targets: targets, Body: body, IsTry: isTry, ElseBody: elseBody,
+            Location: location);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

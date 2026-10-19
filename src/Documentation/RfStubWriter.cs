@@ -40,10 +40,10 @@ internal sealed class RfStubWriter
     private static readonly string[] UnsharedFiles =
     [
         "System/NativeDeclarations.rf", "System/Memory/Closure.rf", "System/Memory/CycleCollector.rf",
-        "System/Memory/Exclusive.rf", "System/Memory/GuardManager.rf", "System/Memory/LockPolicy.rf",
+        "System/Memory/Exclusive.rf", "System/Memory/GuardManager.rf", "System/Memory/AccessPolicy.rf",
         "System/Memory/MultiRead.rf", "System/Memory/ReadOnly.rf", "System/Memory/RetainManager.rf",
-        "System/Memory/RoamManager.rf", "System/Memory/GuardedAccess.rf", "System/Memory/Guarded.rf",
-        "System/Memory/Hijacked.rf", "System/Memory/Modifying.rf", "System/Memory/MultiModifying.rf",
+        "System/Memory/RoamManager.rf", "System/Memory/Guarded.rf",
+        "System/Memory/Hijacked.rf", "System/Memory/Modifying.rf",
         "System/Memory/Retained.rf", "System/Memory/Roamed.rf", "System/Memory/Tracked.rf",
         "System/Memory/Viewing.rf", "System/Memory/Watched.rf", "System/Memory/Witnessed.rf"
     ];
@@ -56,7 +56,8 @@ internal sealed class RfStubWriter
     {
         "Accessing", "Controlling", "Assignable", "AtomicType", "Splittable", "CPtr", "Address", "IngridWords",
         "Hijacked", "Viewing", "Modifying", "Retained", "Tracked", "Roamed", "Guarded", "Witnessed", "Watched",
-        "ViewingGuarded", "ModifyingGuarded", "MultiModifyingGuarded", "ListEmittable", "CircularListEmittable", "SplitListEmittable",
+        "ReenterDuringAccessError",
+        "ListEmittable", "CircularListEmittable", "SplitListEmittable",
         "SplitArrayEmittable", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
         "DD", "FloatDigits", "FloatParsed", "D32Parts", "D64Parts", "D128Parts", "ComplexTextParts",
         "IntegerLimbView", "IntV", "Exposed", "Wielded",

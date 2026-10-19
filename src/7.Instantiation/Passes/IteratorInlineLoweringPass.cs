@@ -140,6 +140,16 @@ internal sealed class IteratorInlineLoweringPass
                 return RewriteWhen(w: w);
             case UsingStatement u:
                 return RewriteUsing(u: u);
+            case AccessStatement access:
+            {
+                Statement b = Rewrite(stmt: access.Body);
+                Statement? e = access.ElseBody != null
+                    ? Rewrite(stmt: access.ElseBody)
+                    : null;
+                return !ReferenceEquals(objA: b, objB: access.Body) || !ReferenceEquals(objA: e, objB: access.ElseBody)
+                    ? access with { Body = b, ElseBody = e }
+                    : access;
+            }
             case DangerStatement d:
             {
                 Statement lowered = Rewrite(stmt: d.Body);
@@ -231,12 +241,8 @@ internal sealed class IteratorInlineLoweringPass
     private UsingStatement RewriteUsing(UsingStatement u)
     {
         Statement b = Rewrite(stmt: u.Body);
-        Statement? fb = u.FallbackBody != null
-            ? Rewrite(stmt: u.FallbackBody)
-            : null;
-        return !ReferenceEquals(objA: b, objB: u.Body) ||
-               !ReferenceEquals(objA: fb, objB: u.FallbackBody)
-            ? u with { Body = b, FallbackBody = fb }
+        return !ReferenceEquals(objA: b, objB: u.Body)
+            ? u with { Body = b }
             : u;
     }
 
@@ -574,10 +580,7 @@ internal sealed class IteratorInlineLoweringPass
             UsingStatement u => u with
             {
                 Resource = CloneExpression(expr: u.Resource, ctx: ctx),
-                Body = RewriteNextStatement(stmt: u.Body, ctx: ctx),
-                FallbackBody = u.FallbackBody != null
-                    ? RewriteNextStatement(stmt: u.FallbackBody, ctx: ctx)
-                    : null
+                Body = RewriteNextStatement(stmt: u.Body, ctx: ctx)
             },
             DangerStatement d => d with
             {
@@ -736,10 +739,7 @@ internal sealed class IteratorInlineLoweringPass
                 return u with
                 {
                     Resource = CloneExpression(expr: u.Resource, ctx: ctx),
-                    Body = CloneStatement(stmt: u.Body, ctx: ctx),
-                    FallbackBody = u.FallbackBody != null
-                        ? CloneStatement(stmt: u.FallbackBody, ctx: ctx)
-                        : null
+                    Body = CloneStatement(stmt: u.Body, ctx: ctx)
                 };
 
             case DangerStatement d:
@@ -985,11 +985,6 @@ internal sealed class IteratorInlineLoweringPass
                 break;
             case UsingStatement u:
                 WalkStatements(stmt: u.Body, visit: visit);
-                if (u.FallbackBody != null)
-                {
-                    WalkStatements(stmt: u.FallbackBody, visit: visit);
-                }
-
                 break;
             case DangerStatement d:
                 WalkStatements(stmt: d.Body, visit: visit);

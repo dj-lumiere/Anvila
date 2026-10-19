@@ -433,31 +433,36 @@ public static class RuntimeContract
     /// <summary>Controller behind <c>Retained[T]</c> / <c>Tracked[T]</c>.</summary>
     public const string RetainManager = "RetainManager";
 
-    /// <summary>Controller behind <c>Guarded[T, P]</c> / <c>Witnessed[T, P]</c>. It also holds the lock and so who is
-    /// using the entity right now (the readers, the one writer).</summary>
+    /// <summary>Controller behind <c>Guarded[T, P]</c> / <c>Witnessed[T, P]</c>. It also holds the access policy's
+    /// state, which the runtime's AccessManager reads: who is using the entity right now (the readers, the one
+    /// writer).</summary>
     public const string GuardManager = "GuardManager";
 
-    /// <summary>What <c>view()</c> / <c>try_view()</c> on a locking <c>Guarded</c> hand to <c>using</c>: its
-    /// <c>enter</c> takes the read hold and binds a plain <c>Viewing[T]</c>, its <c>exit</c> releases the hold.</summary>
-    public const string ViewingGuarded = "ViewingGuarded";
-
-    /// <summary>What <c>modify()</c> / <c>try_modify()</c> on a <c>Guarded</c> hand to <c>using</c>: its <c>enter</c>
-    /// takes the write hold and binds a plain <c>Modifying[T]</c>, its <c>exit</c> releases the hold.</summary>
-    public const string ModifyingGuarded = "ModifyingGuarded";
-
-    /// <summary>What <c>multimodify</c> on two <c>Guarded</c> handles hands to <c>using</c>: its <c>enter</c> takes both
-    /// write holds in address order and binds two plain <c>Modifying[T]</c>.</summary>
-    public const string MultiModifyingGuarded = "MultiModifyingGuarded";
-
-    /// <summary>The types a <c>Guarded</c> hands to <c>using</c> to take its lock for exactly the block: the tokens
-    /// the block binds are lock-backed (judged by where they came from, not by their type), and the opener itself is
-    /// legal only as the resource of a <c>using</c>.</summary>
-    public static readonly IReadOnlySet<string> GuardOpenerTypes =
-        new HashSet<string>(comparer: StringComparer.Ordinal) { ViewingGuarded, ModifyingGuarded, MultiModifyingGuarded };
-
-    /// <summary>The routine a <c>using ... fallback</c> resource provides when its scope binds something other than
-    /// the resource: once <c>try_enter</c> took the hold, it gives what <c>enter</c> would have bound.</summary>
-    public const string Entered = "entered";
+    /// <summary>
+    /// The routines a <c>viewing</c> / <c>modifying</c> block and a <c>g.view()</c> / <c>g.modify()</c> argument are
+    /// lowered to (AccessLoweringPass). A block with one <c>Guarded</c> target takes its access with
+    /// <see cref="OpenView"/> / <see cref="OpenModify"/> (or tries with <see cref="TryView"/> / <see cref="TryModify"/>);
+    /// a block with several names each target with <see cref="EnlistView"/> / <see cref="EnlistModify"/> (a token or an
+    /// entity with <see cref="EnlistIdentity"/>), then opens them together in address order with
+    /// <see cref="OpenEnlisted"/> / <see cref="TryOpenEnlisted"/>. The token is <see cref="View"/> / <see cref="Modify"/>
+    /// on the handle, and every way out gives the access up with <see cref="CloseView"/> / <see cref="CloseModify"/>.
+    /// </summary>
+    public static class AccessBlock
+    {
+        public const string View = "view";
+        public const string Modify = "modify";
+        public const string OpenView = "open_view";
+        public const string OpenModify = "open_modify";
+        public const string TryView = "try_view";
+        public const string TryModify = "try_modify";
+        public const string CloseView = "close_view";
+        public const string CloseModify = "close_modify";
+        public const string EnlistView = "enlist_view";
+        public const string EnlistModify = "enlist_modify";
+        public const string EnlistIdentity = "enlist_identity";
+        public const string OpenEnlisted = "access_open_enlisted";
+        public const string TryOpenEnlisted = "access_try_open_enlisted";
+    }
 
     /// <summary>Controller behind <c>Roamed[T]</c>.</summary>
     public const string RoamManager = "RoamManager";

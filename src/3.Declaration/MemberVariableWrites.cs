@@ -22,7 +22,8 @@ internal static class MemberVariableWrites
             LoopStatement loop => WritesMe(body: loop.Body),
             WhenStatement whenStmt => whenStmt.Clauses.Any(predicate: c => WritesMe(body: c.Body)),
             DangerStatement danger => WritesMe(body: danger.Body),
-            UsingStatement usingStmt => WritesMe(body: usingStmt.Body) || WritesMe(body: usingStmt.FallbackBody),
+            UsingStatement usingStmt => WritesMe(body: usingStmt.Body),
+            AccessStatement access => WritesMe(body: access.Body) || WritesMe(body: access.ElseBody),
             _ => false
         };
     }

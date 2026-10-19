@@ -1516,11 +1516,30 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         var sb = new StringBuilder();
         sb.AppendLine(handler: $"{I}using {node.Resource.Accept(visitor: this)} as {node.BoundText}");
         sb.Append(value: PrintBodyOf(stmt: node.Body));
-        if (node.FallbackBody != null)
+        return sb.ToString()
+                 .TrimEnd();
+    }
+
+    /// <inheritdoc/>
+    public string VisitAccessStatement(AccessStatement node)
+    {
+        var sb = new StringBuilder();
+        var parts = new List<string>();
+        bool? verb = null;
+        foreach (AccessTarget target in node.Targets)
+        {
+            string shown = target.Target.Accept(visitor: this) + (target.HasAlias ? $" as {target.Name}" : "");
+            parts.Add(item: verb == target.IsWrite ? shown : (target.IsWrite ? "modifying " : "viewing ") + shown);
+            verb = target.IsWrite;
+        }
+
+        sb.AppendLine(handler: $"{I}{(node.IsTry ? "try " : "")}{string.Join(separator: ", ", values: parts)}");
+        sb.Append(value: PrintBodyOf(stmt: node.Body));
+        if (node.ElseBody != null)
         {
             sb.AppendLine();
-            sb.AppendLine(handler: $"{I}fallback");
-            sb.Append(value: PrintBodyOf(stmt: node.FallbackBody));
+            sb.AppendLine(handler: $"{I}else");
+            sb.Append(value: PrintBodyOf(stmt: node.ElseBody));
         }
 
         return sb.ToString()

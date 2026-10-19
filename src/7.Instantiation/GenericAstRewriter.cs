@@ -2770,9 +2770,17 @@ internal static class GenericAstRewriter
             UsingStatement us => us with
             {
                 Resource = RewriteExpression(expr: us.Resource, ctx: ctx),
-                Body = RewriteStatement(stmt: us.Body, ctx: ctx),
-                FallbackBody = us.FallbackBody != null
-                    ? RewriteStatement(stmt: us.FallbackBody, ctx: ctx)
+                Body = RewriteStatement(stmt: us.Body, ctx: ctx)
+            },
+
+            AccessStatement access => access with
+            {
+                Targets = access.Targets
+                    .Select(selector: t => t with { Target = RewriteExpression(expr: t.Target, ctx: ctx) })
+                    .ToList(),
+                Body = RewriteStatement(stmt: access.Body, ctx: ctx),
+                ElseBody = access.ElseBody != null
+                    ? RewriteStatement(stmt: access.ElseBody, ctx: ctx)
                     : null
             },
 

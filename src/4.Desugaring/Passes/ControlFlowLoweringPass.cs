@@ -129,6 +129,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             IfStatement ifs => LowerIf(ifs: ifs),
             WhenStatement w => LowerWhen(w: w),
             UsingStatement u => LowerUsing(u: u),
+            AccessStatement a => LowerAccess(a: a),
             DangerStatement d => LowerDanger(d: d),
             AssignmentStatement { Target: TupleLiteralExpression left, Value: TupleLiteralExpression right } assign
                 when SwapSources(left: left.Elements, right: right.Elements) is { } sources =>
@@ -234,13 +235,20 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     private UsingStatement LowerUsing(UsingStatement u)
     {
         Statement body = LowerStatement(stmt: u.Body);
-        Statement? fb = u.FallbackBody != null
-            ? LowerStatement(stmt: u.FallbackBody)
-            : null;
-        return !ReferenceEquals(objA: body, objB: u.Body) ||
-               !ReferenceEquals(objA: fb, objB: u.FallbackBody)
-            ? u with { Body = body, FallbackBody = fb }
+        return !ReferenceEquals(objA: body, objB: u.Body)
+            ? u with { Body = body }
             : u;
+    }
+
+    private AccessStatement LowerAccess(AccessStatement a)
+    {
+        Statement body = LowerStatement(stmt: a.Body);
+        Statement? elseBody = a.ElseBody != null
+            ? LowerStatement(stmt: a.ElseBody)
+            : null;
+        return !ReferenceEquals(objA: body, objB: a.Body) || !ReferenceEquals(objA: elseBody, objB: a.ElseBody)
+            ? a with { Body = body, ElseBody = elseBody }
+            : a;
     }
 
     private DangerStatement LowerDanger(DangerStatement d)

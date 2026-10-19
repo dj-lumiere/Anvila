@@ -340,11 +340,6 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                 break;
             case UsingStatement u:
                 RecurseStmt(stmt: u.Body);
-                if (u.FallbackBody != null)
-                {
-                    RecurseStmt(stmt: u.FallbackBody);
-                }
-
                 break;
             case WhenStatement whenStmt:
                 foreach (WhenClause clause in whenStmt.Clauses)

@@ -474,20 +474,26 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 return;
             case UsingStatement usingStmt:
                 CheckOwnExpressions(exprs: [usingStmt.Resource], guards: guards);
-                // `using multimodify(first: a, second: b) as (x, y)` checked that the two differ.
-                bool distinct = DistinctPair(usingStmt: usingStmt) is { } pair && _distinct.Add(item: pair);
                 CheckStatementShapes(stmt: usingStmt.Body, guards: guards, preceding: []);
-                if (distinct)
+                return;
+            case AccessStatement access:
+            {
+                CheckOwnExpressions(exprs: access.Targets.Select(selector: t => t.Target).ToList(), guards: guards);
+                // A block that opens several targets checked that they are different entities.
+                List<(string, string)> added = DistinctPairs(access: access).Where(predicate: _distinct.Add).ToList();
+                CheckStatementShapes(stmt: access.Body, guards: guards, preceding: []);
+                foreach ((string, string) pair in added)
                 {
-                    _distinct.Remove(item: DistinctPair(usingStmt: usingStmt)!.Value);
+                    _distinct.Remove(item: pair);
                 }
 
-                if (usingStmt.FallbackBody is { } fallback)
+                if (access.ElseBody is { } otherwise)
                 {
-                    CheckStatementShapes(stmt: fallback, guards: guards, preceding: []);
+                    CheckStatementShapes(stmt: otherwise, guards: guards, preceding: []);
                 }
 
                 return;
+            }
             default:
                 CheckOwnExpressions(exprs: OwnExpressions(stmt: stmt), guards: guards);
                 return;
@@ -644,8 +650,8 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     string change = callee.Length == 0 ? $"pass '{shown}' to a routine value" : $"change '{shown}' through '{callee}'";
                     string same = $"'{shown}' and '{g.Shown}' are both tokens or shared handles on a {AliasInner(type: g.Type)!.Name}, " +
                                   "so they may be the same one";
-                    string multi = $"take both with `using multimodify(first: {RootName(path: path)}, second: {RootName(path: g.Path)}) as (a, b)`, " +
-                                   "which checks that they differ";
+                    string other = g.IsLoop ? $"viewing {RootName(path: g.Path)}" : RootName(path: g.Path);
+                    string multi = $"open both with `modifying {RootName(path: path)}, {other}`, which checks that they differ";
                     if (g.Holder != null)
                     {
                         report(code: SemanticDiagnosticCode.HeldElementOfAliasReshaped,
@@ -673,15 +679,21 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
         }
     }
 
-    /// <summary>The two-token pairs taken by <c>multimodify</c> whose bodies are being checked.</summary>
+    /// <summary>The pairs of names, opened together by a <c>viewing</c> / <c>modifying</c> block, whose body is being
+    /// checked: the block checked that they are different entities.</summary>
     private readonly HashSet<(string, string)> _distinct = [];
 
-    /// <summary>The names a <c>using multimodify(...)</c> binds, in name order.</summary>
-    private static (string, string)? DistinctPair(UsingStatement usingStmt)
+    /// <summary>Every pair of the names a block binds, each in name order.</summary>
+    private static IEnumerable<(string, string)> DistinctPairs(AccessStatement access)
     {
-        return usingStmt is { Parts: [var a, var b], Resource: CallExpression { Callee: IdentifierExpression { Name: "multimodify" } } }
-            ? string.CompareOrdinal(strA: a, strB: b) < 0 ? (a, b) : (b, a)
-            : null;
+        for (int i = 0; i < access.Targets.Count; i++)
+        {
+            for (int j = i + 1; j < access.Targets.Count; j++)
+            {
+                string a = access.Targets[index: i].Name, b = access.Targets[index: j].Name;
+                yield return string.CompareOrdinal(strA: a, strB: b) < 0 ? (a, b) : (b, a);
+            }
+        }
     }
 
     /// <summary>The guard a statement opens when it binds a variable to a token on an element of a named container:
@@ -710,7 +722,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
 
     /// <summary>Whether the container <paramref name="operand"/> changes may be the one <paramref name="guard"/> holds
     /// an element of: both are tokens or shared handles on the same kind of container (a bare entity has one owner,
-    /// so two names of bare entities are two entities), and no <c>multimodify</c> showed they differ.</summary>
+    /// so two names of bare entities are two entities), and no block that opened both showed they differ.</summary>
     private bool MayBeSameContainer(Expression operand, string path, ShapeGuard guard)
     {
         TypeSymbol? a = AliasInner(type: operand.ResolvedType);

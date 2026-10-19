@@ -170,6 +170,9 @@ internal sealed partial class AstPrinter
             case UsingStatement usingStatement:
                 PrintUsing(statement: usingStatement, start: start, depth: depth, prefix: prefix);
                 break;
+            case AccessStatement accessStatement:
+                PrintAccess(statement: accessStatement, start: start, depth: depth, prefix: prefix);
+                break;
             default:
                 throw Unsupported(node: statement, at: statement.Location);
         }
@@ -303,8 +306,7 @@ internal sealed partial class AstPrinter
         {
             resources.Add(item: Doc.Concat(Expr(expression: current.Resource, context: ExprContext.ListItem),
                 Doc.Text(text: " as " + current.BoundText)));
-            if (current.Body is UsingStatement inner && inner.Location == current.Location &&
-                inner.FallbackBody == null)
+            if (current.Body is UsingStatement inner && inner.Location == current.Location)
             {
                 current = inner;
                 continue;
@@ -326,9 +328,46 @@ internal sealed partial class AstPrinter
 
         EmitHead(start: start, depth: depth, head: Doc.Concat(parts: head));
         PrintBody(body: current.Body, depth: depth + 1, at: statement.Location);
-        if (statement.FallbackBody != null)
+    }
+
+    /// <summary>Prints a <c>viewing</c> / <c>modifying</c> block: the verb before the first target and before each
+    /// target where it changes, each target with its <c>as</c> name when it has one, then the body and a
+    /// <c>try</c> block's <c>else</c>.</summary>
+    private void PrintAccess(AccessStatement statement, int start, int depth, Doc prefix)
+    {
+        var head = new List<Doc> { prefix };
+        if (statement.IsTry)
         {
-            PrintContinuation(keyword: "fallback", body: statement.FallbackBody, depth: depth, at: statement.Location);
+            head.Add(item: Doc.Text(text: "try "));
+        }
+
+        bool? verb = null;
+        for (int i = 0; i < statement.Targets.Count; i++)
+        {
+            AccessTarget target = statement.Targets[index: i];
+            if (i > 0)
+            {
+                head.Add(item: Doc.Text(text: ", "));
+            }
+
+            if (verb != target.IsWrite)
+            {
+                head.Add(item: Doc.Text(text: target.IsWrite ? "modifying " : "viewing "));
+                verb = target.IsWrite;
+            }
+
+            head.Add(item: Expr(expression: target.Target, context: ExprContext.ListItem));
+            if (target.HasAlias)
+            {
+                head.Add(item: Doc.Text(text: " as " + target.Name));
+            }
+        }
+
+        EmitHead(start: start, depth: depth, head: Doc.Concat(parts: head));
+        PrintBody(body: statement.Body, depth: depth + 1, at: statement.Location);
+        if (statement.ElseBody != null)
+        {
+            PrintContinuation(keyword: "else", body: statement.ElseBody, depth: depth, at: statement.Location);
         }
     }
 

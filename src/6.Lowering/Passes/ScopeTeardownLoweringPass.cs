@@ -276,6 +276,17 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             case UsingStatement u:
                 return LowerUsingStatement(u: u, live: live, loopBoundary: loopBoundary);
 
+            // A `viewing` / `modifying` block is still a block here (AccessLoweringPass runs later in Phase 8): its body
+            // and its `else` are scopes of their own, whose owned locals are torn down like any block's.
+            case AccessStatement access:
+                return access with
+                {
+                    Body = LowerStatement(stmt: access.Body, live: Copy(live: live), loopBoundary: loopBoundary),
+                    ElseBody = access.ElseBody != null
+                        ? LowerStatement(stmt: access.ElseBody, live: Copy(live: live), loopBoundary: loopBoundary)
+                        : null
+                };
+
             case ReturnStatement or ThrowStatement or VariantReturnStatement:
                 return PrefixDestroys(exit: stmt,
                     live: live,
@@ -389,12 +400,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         return u with
         {
             Body =
-            LowerStatement(stmt: u.Body, live: Copy(live: live), loopBoundary: loopBoundary),
-            FallbackBody = u.FallbackBody != null
-                ? LowerStatement(stmt: u.FallbackBody,
-                    live: Copy(live: live),
-                    loopBoundary: loopBoundary)
-                : null
+            LowerStatement(stmt: u.Body, live: Copy(live: live), loopBoundary: loopBoundary)
         };
     }
 

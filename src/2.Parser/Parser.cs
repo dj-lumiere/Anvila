@@ -1204,6 +1204,11 @@ public partial class Parser
             case TokenType.Using:
                 Advance();
                 return ParseUsingStatement();
+            case TokenType.Viewing or TokenType.Modifying:
+                return ParseAccessStatement(isTry: false);
+            case TokenType.Try when PeekToken(offset: 1).Type is TokenType.Viewing or TokenType.Modifying:
+                Advance();
+                return ParseAccessStatement(isTry: true);
             case TokenType.Drop:
                 Advance();
                 return ParseDropStatement();

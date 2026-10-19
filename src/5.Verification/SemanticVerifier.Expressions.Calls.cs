@@ -1506,9 +1506,9 @@ public sealed partial class SemanticVerifier
         {
             ("view" or "try_view", "Exclusive") =>
                 $" A Guarded with the Exclusive policy lets one user in at a time, for reading too: read it inside " +
-                $"'using {holder}.modify() as m', or share the value under the MultiRead policy to let readers in together.",
+                $"'modifying {holder} as m', or share the value under the MultiRead policy to let readers in together.",
             ("modify" or "try_modify", "ReadOnly") =>
-                $" A Guarded with the ReadOnly policy is never changed, so it has no write lock: read it directly or " +
+                $" A Guarded with the ReadOnly policy is never changed, so nothing may write to it: read it directly or " +
                 $"with '{holder}.view()', or share the value under the Exclusive or MultiRead policy to change it.",
             _ => ""
         };
@@ -2687,8 +2687,8 @@ public sealed partial class SemanticVerifier
         }
 
         // Inference can also succeed against an overload the arguments do not fit: `T` comes from the first
-        // argument alone, so `multimodify(first: Modifying[T], second: Modifying[T])` infers `T` for a call
-        // whose second argument is a `Viewing`. A sibling that both infers and takes every argument wins then.
+        // argument alone, so `merge(into: Modifying[T], from: Modifying[T])` infers `T` for a call whose second
+        // argument is a `Viewing`. A sibling that both infers and takes every argument wins then.
         if (inferred != null && !TakesInferredArguments(call: call, generic: routine, inferred: inferred))
         {
             PreferGenericSiblingTakingArguments(call: call,
@@ -3389,8 +3389,8 @@ public sealed partial class SemanticVerifier
         }
 
         // `view` and `modify` on a Guarded are ordinary member routines: their policy legality (`modify` not on
-        // ReadOnly, `view` not on Exclusive) is enforced by the type-equality constraint (RF-S160), and the lock's
-        // lifetime by the using-resource rule below.
+        // ReadOnly, `view` not on Exclusive) is enforced by the type-equality constraint (RF-S160), and where the
+        // access may be held (a call argument, held for that call) by GuardAccessArgumentChecker (RF-S652).
 
         // Enforce a memberRoutine's `needs P in [...]` (TypeEquality) constraint when the
         // constrained parameter is INHERITED FROM THE RECEIVER (e.g.
@@ -3403,15 +3403,6 @@ public sealed partial class SemanticVerifier
             member: member,
             location: call.Location);
 
-        // What `view()` / `modify()` on a locking Guarded return takes the lock in its `using` block's `enter` and
-        // releases it in `exit`, so it is only legal as the immediate resource of a `using` block: the lock lives exactly
-        // as long as that block. Reject every other position — inline use, an argument, a binding — with RF-S629.
-        if (memberRoutine.ReturnType is { } opener &&
-            Declaration.RuntimeContract.GuardOpenerTypes.Contains(item: opener.BareName) &&
-            !ReferenceEquals(objA: call, objB: _usingResourceNode))
-        {
-            ReportGuardOpenedOutsideUsing(call: call, member: member, objectType: objectType);
-        }
     }
 
     /// <summary>

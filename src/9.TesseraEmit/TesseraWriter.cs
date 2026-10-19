@@ -1116,6 +1116,15 @@ internal sealed class TesseraWriter
 
     // ── Entry ─────────────────────────────────────────────────────────────────
 
+    /// <summary>The deadlock check, the access-order check and the language, as the runtime's AccessManager takes
+    /// them.</summary>
+    private string AccessCheckArguments()
+    {
+        (int deadlockCheck, int accessOrder, int language) =
+            LlvmEmitter.AccessChecks(registry: _input.Registry, mode: _input.BuildMode);
+        return $"{deadlockCheck}, {accessOrder}, {language}";
+    }
+
     /// <summary>Tessera's entry point <c>start</c>: initializes the runtime, runs the entry module's <c>start</c>, and
     /// hands the exit status the program set (the runtime's <c>rf_exit_code</c>) to Tessera's <c>set_exit_code</c>,
     /// which the <c>main</c> Tessera writes returns.</summary>
@@ -1138,12 +1147,17 @@ internal sealed class TesseraWriter
                "routine c_tessera_stack_overflow_report(stack_size: U64) -> Void\n\n" +
                "@external(\"c\")\n@symbol(\"rf_exit_code\")\n" +
                "routine c_rf_exit_code() -> S32\n\n" +
+               "@external(\"c\")\n@symbol(\"rf_access_configure\")\n" +
+               "routine c_rf_access_configure(deadlock_check: U32, access_order: U32, language: U32, place: Addr) -> Void\n\n" +
                "routine start() -> Void\n" +
                "    rf_runtime_init()\n" +
                // Trace mode 2 is the shadow stack (debug and release), 0 none, as the LLVM emitter sets it.
                $"    c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +
                // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
                "    c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
+               // The AccessManager's checks and the language its reports speak. The places in its reports come from
+               // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
+               $"    c_rf_access_configure({AccessCheckArguments()}, .hollow())\n" +
                $"    {RoutineName(routine: start)}()\n" +
                "    Standard/Os/set_exit_code(c_rf_exit_code())\n" +
                "    return\n";

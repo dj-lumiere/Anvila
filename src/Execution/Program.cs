@@ -858,6 +858,8 @@ internal partial class Program
         DiagnosticFlags.DumpTessera = manifest.Debug.DumpTessera;
         DiagnosticFlags.ReachabilityDump = manifest.Debug.ReachabilityDump;
         DiagnosticFlags.MaySuspendDump = manifest.Debug.MaySuspendDump;
+        DiagnosticFlags.DeadlockCheck = manifest.Debug.DeadlockCheck;
+        DiagnosticFlags.AccessOrder = manifest.Debug.AccessOrder;
     }
 
     /// <summary>

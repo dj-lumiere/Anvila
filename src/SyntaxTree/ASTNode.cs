@@ -474,6 +474,9 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the using statement</returns>
     T VisitUsingStatement(UsingStatement node);
 
+    /// <summary>Visits a <c>viewing</c> / <c>modifying</c> block.</summary>
+    T VisitAccessStatement(AccessStatement node);
+
     /// <summary>Visits a drop statement node (a result dropped on purpose)</summary>
     /// <param name="node">The drop statement to visit</param>
     /// <returns>Result of visiting the drop statement</returns>

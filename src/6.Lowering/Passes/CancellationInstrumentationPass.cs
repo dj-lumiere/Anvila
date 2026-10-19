@@ -308,11 +308,6 @@ public sealed class CancellationInstrumentationPass
                 break;
             case UsingStatement u:
                 RecurseStmt(stmt: u.Body, locals: locals);
-                if (u.FallbackBody != null)
-                {
-                    RecurseStmt(stmt: u.FallbackBody, locals: locals);
-                }
-
                 break;
             case WhenStatement whenStmt:
                 foreach (WhenClause clause in whenStmt.Clauses)

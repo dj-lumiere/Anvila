@@ -181,18 +181,14 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     {
         (List<Statement> hoisted, Expression loweredRes) = LowerExpr(expr: u.Resource);
         Statement body = LowerStatementFull(stmt: u.Body);
-        Statement? fb = u.FallbackBody != null
-            ? LowerStatementFull(stmt: u.FallbackBody)
-            : null;
         bool changed = !ReferenceEquals(objA: loweredRes, objB: u.Resource) ||
-                       !ReferenceEquals(objA: body, objB: u.Body) ||
-                       !ReferenceEquals(objA: fb, objB: u.FallbackBody);
+                       !ReferenceEquals(objA: body, objB: u.Body);
         if (!changed && hoisted.Count == 0)
         {
             return ([], u);
         }
 
-        return (hoisted, u with { Resource = loweredRes, Body = body, FallbackBody = fb });
+        return (hoisted, u with { Resource = loweredRes, Body = body });
     }
 
     // Lowers an if-statement: lowers the condition and both branches.

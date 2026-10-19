@@ -800,6 +800,10 @@ public sealed partial class SemanticVerifier
                 AnalyzeUsingStatement(usingStmt: usingStmt);
                 break;
 
+            case AccessStatement access:
+                AnalyzeAccessStatement(access: access);
+                break;
+
             default:
                 ReportWarning(code: SemanticWarningCode.UnknownStatementType,
                     message:
@@ -1424,20 +1428,9 @@ public sealed partial class SemanticVerifier
 
         // A token (`var v = a.view()`, `var m = a.modify()`, `var b = boxes[0]`) is a variable like any other:
         // RazorForge's TokenLifetimeChecker follows where it came from and rejects a use after that object changed.
-        // What a Guarded hands to `using` to take its lock is the exception: `view()` / `modify()` on a handle are
-        // reported where they are called (RF-S629), any other one (`multimodify` on two handles) here.
-        if (_registry.Rules.ChecksAccessTokens &&
-            Declaration.RuntimeContract.GuardOpenerTypes.Contains(item: varType.BareName) &&
-            varDecl.Initializer is not CallExpression { Callee: MemberExpression })
-        {
-            ReportError(code: SemanticDiagnosticCode.MtTokenRequiresUsing,
-                message:
-                $"You bind '{varDecl.Name}' to what takes a Guarded's lock, but the lock is held exactly as long as " +
-                $"the 'using' block that opens it, so this is written only as a 'using' resource: " +
-                $"'using <expression> as {varDecl.Name}'. The block takes the lock and releases it on every way out.",
-                location: varDecl.Location);
-        }
-        else if (!(_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType)))
+        // A Guarded's `view()` / `modify()` is held for one call, so it goes only where an argument does (RF-S652,
+        // GuardAccessArgumentChecker).
+        if (!(_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType)))
         {
             CheckImplicitWrapperCopyOnInit(varDecl: varDecl, varType: varType);
         }
@@ -2010,6 +2003,12 @@ public sealed partial class SemanticVerifier
                 return danger;
             case UsingStatement u:
                 return u with { Body = GiveBackBoxBeforeReturns(statement: u.Body) };
+            case AccessStatement access:
+                return access with
+                {
+                    Body = GiveBackBoxBeforeReturns(statement: access.Body),
+                    ElseBody = access.ElseBody == null ? null : GiveBackBoxBeforeReturns(statement: access.ElseBody)
+                };
             case WhenStatement whenStatement:
                 for (int c = 0; c < whenStatement.Clauses.Count; c++)
                 {

@@ -479,6 +479,12 @@ public enum TokenType
     /// <summary>Using statement keyword for resource management (using db.open() as conn)</summary>
     Using,
 
+    /// <summary>Opens read access for a block (<c>viewing rates as r</c>), RazorForge only.</summary>
+    Viewing,
+
+    /// <summary>Opens write access for a block (<c>modifying payer, payee</c>), RazorForge only.</summary>
+    Modifying,
+
     /// <summary>Type alias/Resource management as keyword (type Foo as Bar, or 'as' in scoped access blocks)</summary>
     As,
 

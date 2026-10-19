@@ -460,13 +460,9 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private Statement LowerUsingStatement(UsingStatement usingStmt, Statement stmt)
     {
         Statement newBody = LowerStatement(stmt: usingStmt.Body);
-        Statement? fb = usingStmt.FallbackBody != null
-            ? LowerStatement(stmt: usingStmt.FallbackBody)
-            : null;
-        return ReferenceEquals(objA: newBody, objB: usingStmt.Body) &&
-               ReferenceEquals(objA: fb, objB: usingStmt.FallbackBody)
+        return ReferenceEquals(objA: newBody, objB: usingStmt.Body)
             ? stmt
-            : usingStmt with { Body = newBody, FallbackBody = fb };
+            : usingStmt with { Body = newBody };
     }
 
     private Statement LowerDangerStatement(DangerStatement danger, Statement stmt)

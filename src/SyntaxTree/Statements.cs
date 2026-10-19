@@ -1274,7 +1274,8 @@ public record VariantReturnStatement(
 /// </summary>
 /// <remarks>
 /// <para>Syntax: <c>using open("file.txt") as file</c></para>
-/// <para>The resource expression must return an object that implements a disposable/closeable protocol.</para>
+/// <para>The resource expression must return an object that implements a disposable/closeable protocol.
+/// Access to an entity is not a resource: it is opened with <see cref="AccessStatement"/>.</para>
 /// <para>Example:</para>
 /// <code>
 /// using open("file.txt") as file
@@ -1287,8 +1288,7 @@ public record UsingStatement(
     Expression Resource,
     string Name,
     Statement Body,
-    SourceLocation Location,
-    Statement? FallbackBody = null) : Statement(Location: Location)
+    SourceLocation Location) : Statement(Location: Location)
 {
     /// <summary>The names of <c>using r as (a, b)</c>, one per item of the tuple the scope binds, which then goes by
     /// the hidden <see cref="Name"/>. Null for <c>using r as x</c>.</summary>
@@ -1301,5 +1301,72 @@ public record UsingStatement(
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
         return visitor.VisitUsingStatement(node: this);
+    }
+}
+
+/// <summary>
+/// One target of a <c>viewing</c> / <c>modifying</c> block: whether the block writes through it, what it opens, and
+/// the name its token goes by inside the block.
+/// </summary>
+/// <param name="IsWrite">True under <c>modifying</c>, false under <c>viewing</c>.</param>
+/// <param name="Target">What the block opens: a <c>Guarded</c>, an access token, or an entity.</param>
+/// <param name="Name">The name of the token inside the block: the one after <c>as</c>, else the target's own name.</param>
+/// <param name="HasAlias">Whether the target was written with <c>as</c>.</param>
+/// <param name="Location">Source location of the target.</param>
+public sealed record AccessTarget(bool IsWrite, Expression Target, string Name, bool HasAlias, SourceLocation Location);
+
+/// <summary>
+/// A block that opens access for its body: <c>viewing rates, modifying payer, payee</c>. A verb applies to the targets
+/// after it until another verb comes, a target without <c>as</c> keeps its own name as its token, and the targets are
+/// opened in the order of their addresses (so two agents naming the same targets in different orders can't wait on
+/// each other). Every way out of the body gives the accesses up. With <see cref="IsTry"/>
+/// (<c>try modifying seats as s</c> ... <c>else</c>), the block opens the targets only if every one is free right
+/// now, and otherwise runs <see cref="ElseBody"/> with none of them open.
+/// </summary>
+/// <param name="Targets">The targets, in source order.</param>
+/// <param name="Body">The block body, where each target's name is its token.</param>
+/// <param name="IsTry">Whether the block only tries, without waiting.</param>
+/// <param name="ElseBody">What runs when a <c>try</c> block finds a target taken, else null.</param>
+/// <param name="Location">Source location of the block.</param>
+public record AccessStatement(
+    List<AccessTarget> Targets,
+    Statement Body,
+    bool IsTry,
+    Statement? ElseBody,
+    SourceLocation Location) : Statement(Location: Location)
+{
+    /// <summary>The block's verbs and targets as written (<c>viewing rates, modifying payer, payee</c>), for
+    /// messages.</summary>
+    public string Text
+    {
+        get
+        {
+            var parts = new List<string>();
+            bool? verb = null;
+            foreach (AccessTarget target in Targets)
+            {
+                string shown = target.HasAlias ? $"{AccessTargetText(target: target)} as {target.Name}" : target.Name;
+                parts.Add(item: verb == target.IsWrite ? shown : $"{(target.IsWrite ? "modifying" : "viewing")} {shown}");
+                verb = target.IsWrite;
+            }
+
+            return (IsTry ? "try " : "") + string.Join(separator: ", ", values: parts);
+        }
+    }
+
+    private static string AccessTargetText(AccessTarget target)
+    {
+        return target.Target switch
+        {
+            IdentifierExpression id => id.Name,
+            MemberExpression { Object: IdentifierExpression o, MemberName: var m } => $"{o.Name}.{m}",
+            _ => "..."
+        };
+    }
+
+    /// <summary>Accepts a visitor for AST traversal and transformation</summary>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitAccessStatement(node: this);
     }
 }

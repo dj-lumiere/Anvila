@@ -1220,34 +1220,8 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeUsingStatement(UsingStatement usingStmt)
     {
-        // Mark the resource node so what `view()` / `modify()` on a locking Guarded return is accepted
-        // directly here; the same call anywhere else is rejected (RF-S629), keeping its lock strictly
-        // `using`-scoped. Save/restore to support nested `using`.
-        ISyntaxTreeNode? previousUsingResource = _usingResourceNode;
-        _usingResourceNode = usingStmt.Resource;
         // Analyze the resource expression to get its type
         TypeSymbol resourceType = AnalyzeExpression(expression: usingStmt.Resource);
-        _usingResourceNode = previousUsingResource;
-
-        // Readers-XOR-writer (RF-S630): if this `using` takes a Guarded's lock (`view()` / `modify()` on a
-        // named handle), check it against the holds already live in the enclosing `using` scopes on the SAME
-        // handle. A writer (`modify`) conflicts with any other hold; readers (`view`) coexist.
-        // The hold is pushed for the duration of the body and popped on exit, so only OVERLAPPING
-        // scopes conflict (sequential `using`s on the same handle are fine).
-        string accessBase = resourceType.BareName;
-        bool opensLock = accessBase is Declaration.RuntimeContract.ViewingGuarded
-            or Declaration.RuntimeContract.ModifyingGuarded;
-        bool isWriter = accessBase is Declaration.RuntimeContract.ModifyingGuarded
-            or Declaration.RuntimeContract.MultiModifyingGuarded;
-        string? accessHandle = opensLock
-            ? ExtractAccessReceiverName(resource: usingStmt.Resource)
-            : null;
-        if (accessHandle != null)
-        {
-            CheckReadersXorWriter(usingStmt: usingStmt,
-                isWriter: isWriter,
-                accessHandle: accessHandle);
-        }
 
         // The bound variable type defaults to the resource type, but may be overridden
         // by enter's return type when it returns non-void.
@@ -1275,46 +1249,45 @@ public sealed partial class SemanticVerifier
             DeclareUsingParts(usingStmt: usingStmt, boundType: boundType);
         }
 
-        // The tokens a Guarded opener's `enter` binds are backed by its lock for this block: recorded by where they came
-        // from, since their type is a plain Viewing / Modifying.
-        List<VariableInfo> lockBacked = Declaration.RuntimeContract.GuardOpenerTypes.Contains(item: accessBase)
-            ? (usingStmt.Parts ?? [usingStmt.Name])
-             .Select(selector: name => _registry.LookupVariable(name: name))
-             .OfType<VariableInfo>()
-             .ToList()
-            : [];
-        foreach (VariableInfo token in lockBacked)
-        {
-            _lockBackedTokens[key: token] = isWriter;
-        }
-
         // Analyze the body. (A token's use after its source changed is RazorForge's TokenLifetimeChecker's, RF-S643.)
         AnalyzeStatement(statement: usingStmt.Body);
-
-        // #171/#172: Token/resource scope escape — validate that the using-bound variable
-        // is not returned or stored in outer scope (handled by ValidateNotTokenReturnType
-        // for tokens, and conceptually enforced by scope exit for resources)
-
-        foreach (VariableInfo token in lockBacked)
-        {
-            _lockBackedTokens.Remove(key: token);
-        }
-
         _registry.ExitScope();
+    }
 
-        // Pop the MT access hold now that the scope has closed (readers-XOR-writer, RF-S630).
-        if (accessHandle != null)
+    /// <summary>
+    /// Validates a RazorForge `using` resource obeys `Enterable`; when it does, overrides the bound
+    /// variable type with `enter`'s non-void return.
+    /// </summary>
+    private void ValidateEnterableResource(UsingStatement usingStmt, TypeSymbol resourceType,
+        ref TypeSymbol boundType)
+    {
+        // A resource whose own analysis failed has been reported already: no second error about its type.
+        if (resourceType.Category == TypeCategory.Error)
         {
-            _activeAccessHolds.RemoveAt(index: _activeAccessHolds.Count - 1);
+            return;
         }
 
-        // The `fallback` branch runs when acquisition fails: no hold is taken and the bound
-        // name is NOT in scope. Analyze it in its own fresh scope, outside the access hold.
-        if (usingStmt.FallbackBody != null)
+        if (!ImplementsProtocol(type: resourceType, protocolName: "Enterable"))
         {
-            _registry.EnterScope(kind: ScopeKind.Block, name: "using-fallback");
-            AnalyzeStatement(statement: usingStmt.FallbackBody);
-            _registry.ExitScope();
+            string access = resourceType.BareName is Declaration.RuntimeContract.Viewing
+                or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Guarded
+                ? " Access to an entity is not a resource: open it with 'viewing x as v' or 'modifying x as m', " +
+                  "which 'migrate --step access' writes for 'using x.view() as v'."
+                : "";
+            ReportError(code: SemanticDiagnosticCode.UsingTargetMissingEnterExit,
+                message:
+                $"You give 'using' a {resourceType.Name}, which can't be opened and closed: a 'using' resource obeys " +
+                $"'Enterable', which gives it 'enter' and 'exit'.{access}",
+                location: usingStmt.Location);
+            return;
+        }
+
+        // The bound variable's type is `enter`'s return type when non-void (pass-through).
+        RoutineInfo? enterMemberRoutine =
+            _registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "enter");
+        if (enterMemberRoutine?.ReturnType is { IsNone: false } enterReturn)
+        {
+            boundType = enterReturn;
         }
     }
 
@@ -1324,15 +1297,6 @@ public sealed partial class SemanticVerifier
         List<string> parts = usingStmt.Parts!;
         if (boundType is ErrorTypeSymbol)
         {
-            return;
-        }
-
-        if (usingStmt.FallbackBody != null)
-        {
-            ReportError(code: SemanticDiagnosticCode.DestructuringArityMismatch,
-                message: "A 'using' with a 'fallback' binds the resource itself, so it takes one name after 'as', " +
-                         $"not '{usingStmt.BoundText}'.",
-                location: usingStmt.Location);
             return;
         }
 
@@ -1356,115 +1320,274 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>The most targets one <c>viewing</c> / <c>modifying</c> block opens: the AccessManager keeps a block's
+    /// targets in a list of this many until it opens them.</summary>
+    internal const int MaxAccessTargets = 16;
+
     /// <summary>
-    /// RF-S630 readers-XOR-writer: reports a conflict when the access token this `using` opens
-    /// overlaps an active hold in an enclosing scope (a writer excludes all; readers coexist), then
-    /// pushes this hold onto the active-holds stack for the duration of the body.
+    /// Analyzes a <c>viewing</c> / <c>modifying</c> block. Each target is a <c>Guarded</c> (its access taken for the
+    /// block), an access token (only checked to differ from the others), or an entity (whose token the block gives),
+    /// and its name inside the block is a <c>Viewing</c> or <c>Modifying</c> token. A target named twice is RF-S650,
+    /// one that can't be opened with its verb RF-S651, a <c>try</c> on one that can't be tried RF-S611, and a
+    /// <c>Guarded</c> an enclosing block of the routine already opened RF-S630.
     /// </summary>
-    private void CheckReadersXorWriter(UsingStatement usingStmt, bool isWriter, string accessHandle)
+    private void AnalyzeAccessStatement(AccessStatement access)
     {
-        int accessIdentity = GetOrAssignHandleIdentity(path: accessHandle);
-        foreach ((string Handle, int Identity, bool IsWriter, SourceLocation Location) hold in
-                 _activeAccessHolds)
+        if (!_registry.Rules.ChecksAccessTokens)
         {
-            // Two holds touch the same memory when they resolve to the same controller identity
-            // (aliased handles — `s` and `s2 = s.share()`) OR when their syntactic paths overlap
-            // on a field boundary (a parent handle and one of its sub-handles).
-            bool sameMemory = hold.Identity == accessIdentity ||
-                              PathsOverlap(a: hold.Handle, b: accessHandle);
-            if (!sameMemory || !isWriter && !hold.IsWriter)
+            ReportError(code: SemanticDiagnosticCode.FeatureNotInSuflae,
+                message: $"A {_registry.Rules.Name} program has no 'viewing' or 'modifying' block: an entity it shares is " +
+                         "used directly.",
+                location: access.Location);
+            return;
+        }
+
+        if (access.Targets.Count > MaxAccessTargets)
+        {
+            ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                message: $"This block opens {access.Targets.Count} targets, and one block opens at most " +
+                         $"{MaxAccessTargets}. Split it into blocks that each open what belongs together.",
+                location: access.Location);
+        }
+
+        var opened = new List<(AccessTarget Target, TypeSymbol Token, bool LockBacked, string? Path)>();
+        var seenPaths = new Dictionary<string, AccessTarget>(comparer: StringComparer.Ordinal);
+        var seenNames = new HashSet<string>(comparer: StringComparer.Ordinal);
+        foreach (AccessTarget target in access.Targets)
+        {
+            TypeSymbol type = AnalyzeExpression(expression: target.Target);
+            string? path = BuildAccessPath(expr: target.Target);
+            string shown = path ?? "this target";
+            if (path != null && !seenPaths.TryAdd(key: path, value: target))
+            {
+                ReportError(code: SemanticDiagnosticCode.AccessTargetNamedTwice,
+                    message: $"You name '{path}' twice in this block. A block opens each target once: name it once, " +
+                             "with the verb it needs ('modifying' also reads).",
+                    location: target.Location);
+                continue;
+            }
+
+            if (target.Name.Length == 0)
+            {
+                ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                    message: "This target has no name of its own for its token inside the block. Give it one with " +
+                             "'as': 'modifying accounts[0] as first'.",
+                    location: target.Location);
+                continue;
+            }
+
+            if (!seenNames.Add(item: target.Name))
+            {
+                ReportError(code: SemanticDiagnosticCode.AccessTargetNamedTwice,
+                    message: $"Two targets of this block go by '{target.Name}' inside it. Give each its own name " +
+                             "with 'as'.",
+                    location: target.Location);
+                continue;
+            }
+
+            if (type is ErrorTypeSymbol)
             {
                 continue;
             }
 
-            string newKind = isWriter
-                ? "modify()"
-                : "view()";
-            string heldKind = hold.IsWriter
-                ? "modify()"
-                : "view()";
-            string overlapNote;
-            if (hold.Handle == accessHandle)
+            if (AccessTargetToken(target: target, type: type, isTry: access.IsTry, shown: shown,
+                    lockBacked: out bool lockBacked) is not { } token)
             {
-                overlapNote = "the same shared handle";
-            }
-            else if (hold.Identity == accessIdentity)
-            {
-                overlapNote = $"the aliased handle '{hold.Handle}' (same shared data)";
-            }
-            else
-            {
-                overlapNote = $"the overlapping handle '{hold.Handle}'";
+                continue;
             }
 
-            ReportError(code: SemanticDiagnosticCode.ReadersXorWriter,
-                message:
-                $"'using {accessHandle}.{newKind}' waits for the lock that the enclosing 'using ... {heldKind}' on " +
-                $"{overlapNote} holds until its block ends, so this block would never start. A writer ('modify') " +
-                "excludes every other hold, and readers ('view') share the lock only with other readers. Close the " +
-                "outer block first, or use the token it already bound.",
-                location: usingStmt.Location);
-            break;
+            if (lockBacked && path != null)
+            {
+                CheckGuardedOpenedAgain(path: path, isWrite: target.IsWrite, location: target.Location);
+            }
+
+            opened.Add(item: (target, token, lockBacked, path));
         }
 
-        _activeAccessHolds.Add(item: (accessHandle, accessIdentity, isWriter, usingStmt.Location));
+        int holdsBefore = _activeAccessHolds.Count;
+        foreach ((AccessTarget target, TypeSymbol _, bool lockBacked, string? path) in opened)
+        {
+            if (lockBacked && path != null)
+            {
+                _activeAccessHolds.Add(item: (path, GetOrAssignHandleIdentity(path: path), target.IsWrite,
+                    target.Location));
+            }
+        }
+
+        _registry.EnterScope(kind: ScopeKind.Block, name: "access");
+        var lockBackedTokens = new List<VariableInfo>();
+        foreach ((AccessTarget target, TypeSymbol token, bool lockBacked, string? _) in opened)
+        {
+            _registry.DeclareVariable(name: target.Name, type: token, location: target.Location);
+            if (lockBacked && _registry.LookupVariable(name: target.Name) is { } variable)
+            {
+                _lockBackedTokens[key: variable] = target.IsWrite;
+                lockBackedTokens.Add(item: variable);
+            }
+        }
+
+        AnalyzeStatement(statement: access.Body);
+        foreach (VariableInfo token in lockBackedTokens)
+        {
+            _lockBackedTokens.Remove(key: token);
+        }
+
+        _registry.ExitScope();
+        _activeAccessHolds.RemoveRange(index: holdsBefore, count: _activeAccessHolds.Count - holdsBefore);
+
+        // The `else` branch runs when a target was taken: nothing is open and no token is in scope.
+        if (access.ElseBody != null)
+        {
+            _registry.EnterScope(kind: ScopeKind.Block, name: "access-else");
+            AnalyzeStatement(statement: access.ElseBody);
+            _registry.ExitScope();
+        }
     }
 
     /// <summary>
-    /// Validates a RazorForge `using` resource obeys `Enterable`; when it does, overrides the bound
-    /// variable type with `enter`'s non-void return and requires `try_enter` for a `fallback` branch.
+    /// The token type a <c>viewing</c> / <c>modifying</c> target binds inside its block, or null after reporting why the
+    /// target can't be opened that way. <paramref name="lockBacked"/> says whether the block takes the target's access
+    /// (a <c>Guarded</c> with an <c>Exclusive</c> or <c>MultiRead</c> policy).
     /// </summary>
-    private void ValidateEnterableResource(UsingStatement usingStmt, TypeSymbol resourceType,
-        ref TypeSymbol boundType)
+    private TypeSymbol? AccessTargetToken(AccessTarget target, TypeSymbol type, bool isTry, string shown,
+        out bool lockBacked)
     {
-        // A resource whose own analysis failed has been reported already: no second error about its type.
-        if (resourceType.Category == TypeCategory.Error)
+        lockBacked = false;
+        string verb = target.IsWrite ? "modifying" : "viewing";
+        TypeSymbol? inner;
+        if (type.BareName == Declaration.RuntimeContract.Guarded)
         {
+            string? policy = Wrappers.GuardedPolicy(type: type);
+            inner = type.TypeArguments is [{ } t, ..] ? t : null;
+            if (policy == "ReadOnly" && target.IsWrite)
+            {
+                ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                    message: $"You open '{shown}' with 'modifying', but it is a Guarded with the ReadOnly policy, which " +
+                             "nothing may change. Read it directly, or keep it under the Exclusive or MultiRead policy.",
+                    location: target.Location);
+                return null;
+            }
+
+            if (policy == "Exclusive" && !target.IsWrite)
+            {
+                ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                    message: $"You open '{shown}' with 'viewing', but it is a Guarded with the Exclusive policy, which " +
+                             "lets in one user at a time and has only 'modifying'. Open it with 'modifying', which " +
+                             "also reads.",
+                    location: target.Location);
+                return null;
+            }
+
+            if (isTry && policy == "ReadOnly")
+            {
+                ReportTryOnUntryable(target: target, shown: shown,
+                    why: "it is a Guarded with the ReadOnly policy, which every reader gets into at once");
+                return null;
+            }
+
+            lockBacked = Declaration.GuardAccess.TakesAccess(type: type);
+        }
+        else if (type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
+        {
+            inner = Wrappers.GetWrapperInnerType(wrapperType: type);
+            if (target.IsWrite && type.BareName == Declaration.RuntimeContract.Viewing)
+            {
+                ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                    message: $"You open '{shown}' with 'modifying', but it is a Viewing token, permission to read only. " +
+                             "Open it with 'viewing', or take a Modifying token where it comes from.",
+                    location: target.Location);
+                return null;
+            }
+
+            if (isTry)
+            {
+                ReportTryOnUntryable(target: target, shown: shown,
+                    why: "it is an access token, which nothing else holds open");
+                return null;
+            }
+        }
+        else if (type is EntityTypeSymbol)
+        {
+            inner = type;
+            // An entity of the routine's own is a variable. One inside another (a member variable, an element) is
+            // reached through the token of what holds it: opening it apart would hand out a second token on part of
+            // what that token already reaches.
+            if (target.Target is not IdentifierExpression)
+            {
+                ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                    message: $"You open '{shown}' with '{verb}', but it is an entity inside another one. Reach it " +
+                             "through the token of the entity that holds it, and open that one if you have no token " +
+                             "for it yet.",
+                    location: target.Location);
+                return null;
+            }
+
+            if (isTry)
+            {
+                ReportTryOnUntryable(target: target, shown: shown,
+                    why: "it is an entity of this routine's own, which nothing else holds open");
+                return null;
+            }
+        }
+        else
+        {
+            string what = BuildAccessPath(expr: target.Target) is { } named
+                ? $"You open '{named}' with '{verb}', but it is {Article.For(name: type.Name)} {type.Name}."
+                : $"You open {Article.For(name: type.Name)} {type.Name} with '{verb}'.";
+            ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                message: $"{what} A block opens a Guarded, an access token (Viewing, Modifying) or an entity.",
+                location: target.Location);
+            return null;
+        }
+
+        if (inner == null ||
+            _registry.LookupType(name: target.IsWrite
+                ? Declaration.RuntimeContract.Modifying
+                : Declaration.RuntimeContract.Viewing) is not { } tokenDef)
+        {
+            return null;
+        }
+
+        return _registry.GetOrCreateResolution(genericDef: tokenDef, typeArguments: [inner]);
+    }
+
+    /// <summary>RF-S611: <c>try viewing</c> / <c>try modifying</c> on a target whose access can't be taken by someone
+    /// else.</summary>
+    private void ReportTryOnUntryable(AccessTarget target, string shown, string why)
+    {
+        ReportError(code: SemanticDiagnosticCode.TryAccessOnUntryable,
+            message: $"You try to open '{shown}' without waiting, but {why}: opening it never waits. Remove 'try' and " +
+                     "the 'else' block.",
+            location: target.Location);
+    }
+
+    /// <summary>
+    /// RF-S630: reports opening the Guarded at <paramref name="path"/> while an enclosing block of the same routine has
+    /// it (or an alias of it) open, for reading or for writing.
+    /// </summary>
+    private void CheckGuardedOpenedAgain(string path, bool isWrite, SourceLocation location)
+    {
+        int identity = GetOrAssignHandleIdentity(path: path);
+        foreach ((string Handle, int Identity, bool IsWriter, SourceLocation Location) hold in _activeAccessHolds)
+        {
+            bool sameMemory = hold.Identity == identity || PathsOverlap(a: hold.Handle, b: path);
+            if (!sameMemory)
+            {
+                continue;
+            }
+
+            string held = hold.Handle == path
+                ? $"'{path}'"
+                : $"'{hold.Handle}', which is '{path}' under another name,";
+            string verb = isWrite ? "modifying" : "viewing";
+            string heldVerb = hold.IsWriter ? "modifying" : "viewing";
+            ReportError(code: SemanticDiagnosticCode.GuardedOpenedAgain,
+                message: $"You open '{path}' with '{verb}' inside a '{heldVerb}' block (line {hold.Location.Line}) that " +
+                         $"already has {held} open. Waiting here would never end, since the outer block can't end " +
+                         "while it waits, and going in would see that block's work half done. Use the token the outer " +
+                         "block gives, and pass it to the routines you call.",
+                location: location);
             return;
-        }
-
-        if (!ImplementsProtocol(type: resourceType, protocolName: "Enterable"))
-        {
-            ReportError(code: SemanticDiagnosticCode.UsingTargetMissingEnterExit,
-                message:
-                $"Using target of type '{resourceType.Name}' must obey 'Enterable' (which provides " +
-                "'enter'/'exit') for scope-managed resource access.",
-                location: usingStmt.Location);
-            return;
-        }
-
-        // The bound variable's type is `enter`'s return type when non-void (pass-through).
-        // LookupMemberRoutine handles generic fallback (Viewing[Point].enter -> Viewing.enter).
-        RoutineInfo? enterMemberRoutine =
-            _registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "enter");
-        if (enterMemberRoutine?.ReturnType is { IsNone: false } enterReturn)
-        {
-            boundType = enterReturn;
-        }
-
-        // With a `fallback`, `try_enter` takes the hold instead of `enter`, so the scope binds what `entered` gives
-        // (a Guarded opener's token), or the resource itself when the type has no `entered`.
-        if (usingStmt.FallbackBody != null)
-        {
-            boundType = _registry.LookupMemberRoutine(type: resourceType,
-                    memberRoutineName: Declaration.RuntimeContract.Entered)?.ReturnType is { IsNone: false } entered
-                ? entered
-                : resourceType;
-        }
-
-        // A `fallback` branch drives a non-blocking acquisition — the resource must
-        // provide `try_enter` (returns Bool: did the hold succeed?). Types whose entry
-        // can only block (no `try_enter`) cannot take a `fallback`.
-        if (usingStmt.FallbackBody != null &&
-            _registry.LookupMemberRoutine(type: resourceType, memberRoutineName: "try_enter") ==
-            null)
-        {
-            ReportError(code: SemanticDiagnosticCode.UsingFallbackRequiresTryEnter,
-                message:
-                $"'using ... fallback' requires the resource type '{resourceType.Name}' to " +
-                "provide 'try_enter' (a non-blocking acquisition). This type only supports " +
-                "blocking entry — drop the 'fallback' branch.",
-                location: usingStmt.Location);
         }
     }
 

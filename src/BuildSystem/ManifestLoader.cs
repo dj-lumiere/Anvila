@@ -192,6 +192,16 @@ public static class ManifestLoader
         {
             d.MaySuspendDump = md.ToString();
         }
+
+        if (debugTable.TryGetValue(key: "deadlock-check", value: out object? dc) && dc is bool deadlockCheck)
+        {
+            d.DeadlockCheck = deadlockCheck;
+        }
+
+        if (debugTable.TryGetValue(key: "access-order", value: out object? ao))
+        {
+            d.AccessOrder = ao is true;
+        }
     }
 
     /// <summary>Resolves each external library dependency directory relative to the manifest,

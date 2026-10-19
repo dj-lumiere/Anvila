@@ -629,6 +629,22 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 registry: registry,
                 nextOnly: nextOnly),
 
+            AccessStatement access => access with
+            {
+                Body = TransformBodyCore(body: access.Body,
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly),
+                ElseBody = access.ElseBody != null
+                    ? TransformBodyCore(body: access.ElseBody,
+                        kind: kind,
+                        rewriter: rewriter,
+                        registry: registry,
+                        nextOnly: nextOnly)
+                    : null
+            },
+
             DangerStatement danger => danger with
             {
                 Body = (BlockStatement)TransformBodyCore(body: danger.Body,
@@ -893,14 +909,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 kind: kind,
                 rewriter: rewriter,
                 registry: registry,
-                nextOnly: nextOnly),
-            FallbackBody = us.FallbackBody != null
-                ? TransformBodyCore(body: us.FallbackBody,
-                    kind: kind,
-                    rewriter: rewriter,
-                    registry: registry,
-                    nextOnly: nextOnly)
-                : null
+                nextOnly: nextOnly)
         };
     }
 

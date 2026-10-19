@@ -258,26 +258,22 @@ public sealed partial class SemanticVerifier
     /// <summary>Routine declarations collected in Phase 3/4, pending resolution and registration in Phase 4.1.</summary>
     internal readonly List<PendingRoutine> _pendingRoutines = [];
 
-    /// <summary>The resource expression currently being analyzed as a `using` target, if any. What
-    /// <c>view()</c> / <c>modify()</c> on a locking <c>Guarded</c> return is only legal in this exact position —
-    /// any other use is rejected (RF-S629) so its lock is always `using`-scoped.</summary>
-    private ISyntaxTreeNode? _usingResourceNode;
-
-    /// <summary>The tokens a <c>using</c> over a <c>Guarded</c> opener bound, live for that block's body, with whether
-    /// each one writes. Such a token is a plain <c>Viewing[T]</c> / <c>Modifying[T]</c>: that it is backed by the lock
-    /// is where it came from, so the checks that care (an agent argument, the same write token passed twice) ask
-    /// here instead of its type. Keyed by the variable itself, so a shadowing local is not mistaken for it.</summary>
+    /// <summary>The tokens a <c>viewing</c> / <c>modifying</c> block bound for a <c>Guarded</c> whose access it took,
+    /// live for that block's body, with whether each one writes. Such a token is a plain <c>Viewing[T]</c> /
+    /// <c>Modifying[T]</c>: that the block holds its access is where it came from, so the checks that care (an agent
+    /// argument, the same write token passed twice) ask here instead of its type. Keyed by the variable itself, so a
+    /// shadowing local is not mistaken for it.</summary>
     private readonly Dictionary<VariableInfo, bool> _lockBackedTokens = new(comparer: ReferenceEqualityComparer.Instance);
 
     /// <summary>The argument lists of the calls already reported for passing one lock-backed write token twice
     /// (RF-S603), so the general same-container check (RF-S623) does not report the same mistake again.</summary>
     private readonly HashSet<List<Expression>> _lockTokenDuplicateCalls = new(comparer: ReferenceEqualityComparer.Instance);
 
-    /// <summary>Stack of MT access holds (`view`/`modify` on a locking Guarded) live in the enclosing `using` scopes.
-    /// Each hold records the syntactic handle path AND the controller-identity it resolves to (see
-    /// <see cref="_sharedHandleIdentity"/>), so aliased handles (`s2 = s.share()`) conflict even
-    /// though their names differ. Pushed on `using` entry, popped on exit, so a nested `using` sees
-    /// the holds it overlaps — the basis of the readers-XOR-writer check (RF-S630).</summary>
+    /// <summary>The Guarded accesses the enclosing <c>viewing</c> / <c>modifying</c> blocks of the routine hold. Each
+    /// hold records the syntactic handle path AND the controller identity it resolves to (see
+    /// <see cref="_sharedHandleIdentity"/>), so aliased handles (<c>s2 = s.share()</c>) count as the same one even
+    /// though their names differ. Pushed on a block's entry, popped on its exit, so a nested block sees the holds it
+    /// overlaps: opening one again is RF-S630.</summary>
     private readonly List<(string Handle, int Identity, bool IsWriter, SourceLocation Location)>
         _activeAccessHolds = [];
 
@@ -734,6 +730,7 @@ public sealed partial class SemanticVerifier
             (_shapeEffects ??= new ShapeEffectChecker(report: ReportError, reportedCalls: _lockTokenDuplicateCalls))
                 .Check(programs: list);
             new AgentOneThreadChecker(report: ReportError).Check(programs: list);
+            new GuardAccessArgumentChecker(report: ReportError).Check(programs: list);
             new AgentCollectedChecker(warn: ReportWarning).Check(programs: list);
         }
 
@@ -1051,6 +1048,17 @@ public sealed partial class SemanticVerifier
                 elementSelector: kvp => kvp.Value.Body),
             target: _target,
             buildMode: _buildMode);
+
+        // The `viewing` / `modifying` blocks and `g.view()` / `g.modify()` arguments become plain calls here, before
+        // scope teardown, so the handles they keep are torn down like any local, and before reachability, so their
+        // calls drive liveness. (The checks that need the blocks as written ran in Phase 5.)
+        var accessLowering = new Lowering.Passes.AccessLoweringPass(registry: _registry);
+        foreach ((Program program, _, _) in _registry.UserPrograms)
+        {
+            accessLowering.Run(program: program);
+        }
+
+        accessLowering.RunOnVariantBodies(ctx: markerCtx);
 
         // Suflae only: lower `entity E` bindings to a `Roamed[E]` biased-RC backing. MUST run BEFORE
         // scope-teardown below so teardown inserts `Roamed.destroy` (→ release → cycle-collector
@@ -2116,6 +2124,7 @@ public sealed partial class SemanticVerifier
                 _registry.CompilationRules.LowerEntities(program: entry.Program, registry: _registry);
             }
 
+            new Lowering.Passes.AccessLoweringPass(registry: _registry).Run(program: entry.Program);
             new ScopeTeardownLoweringPass(ctx: pctx).Run(program: entry.Program);
             new PostprocessingPipeline(ctx: pctx).Run(program: entry.Program);
             new ScopeTeardownLoweringPass(ctx: pctx).RunLate(program: entry.Program);

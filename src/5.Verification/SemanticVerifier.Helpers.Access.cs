@@ -67,8 +67,8 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.TokenReturnNotAllowed,
             message:
-            $"Cannot return {GetTokenKindDescription(type: type)} from here. A lock token is opened with 'using', " +
-            "and a block result cannot be a token.",
+            $"Cannot return {GetTokenKindDescription(type: type)} from here. A token a 'viewing' or 'modifying' block " +
+            "opened lasts as long as the block, and a block result cannot be a token.",
             location: location);
     }
 
@@ -104,7 +104,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Validates that a lock-backed write token (bound by <c>using g.modify() as m</c>) is not passed twice in one call:
+    /// Validates that a lock-backed write token (bound by <c>modifying g as m</c>) is not passed twice in one call:
     /// the lock admits one writer, and the two parameters would be one entity changed through two names.
     /// </summary>
     private void ValidateExclusiveTokenUniqueness(List<Expression> arguments,
@@ -132,9 +132,9 @@ public sealed partial class SemanticVerifier
                 _lockTokenDuplicateCalls.Add(item: arguments);
                 ReportError(code: SemanticDiagnosticCode.ExclusiveTokenDuplicate,
                     message:
-                    $"You pass '{name}' twice in one call, and '{name}' is the write token of a Guarded's lock, which " +
+                    $"You pass '{name}' twice in one call, and '{name}' is the write token a 'modifying' block opened on a Guarded, which " +
                     "admits one writer at a time: the two parameters would change one entity through two names. Pass " +
-                    $"'{name}' once, or open two different Guarded handles with 'using multimodify(first: a, second: b) as (x, y)'.",
+                    $"'{name}' once, or open two different Guarded handles together with 'modifying a, b'.",
                     location: location);
             }
         }
@@ -148,8 +148,7 @@ public sealed partial class SemanticVerifier
     /// one live handle);</item>
     /// <item>trivially copyable: passed BY VALUE as an independent copy;</item>
     /// <item>a thread-shareable wrapper (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>), which carries its own
-    /// synchronization (an atomic refcount), or a token a <c>using</c> over a <c>Guarded</c> opener bound, backed by the
-    /// lock (judged by where it came from);</item>
+    /// synchronization (an atomic refcount);</item>
     /// <item>a <c>Roamed</c> handle, which is promoted before the Agent is built.</item>
     /// </list>
     /// Anything else (a bare entity passed by copy, a record transitively owning a single-threaded wrapper
@@ -189,9 +188,32 @@ public sealed partial class SemanticVerifier
     /// <summary>Checks one argument of an <c>agent</c> call (see <see cref="ValidateAgentArguments"/>).</summary>
     private string? ValidateAgentArgument(Expression value, TypeSymbol type)
     {
-        if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type) ||
-            IsLockBackedToken(value: value, writes: out _))
+        if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type))
         {
+            return null;
+        }
+
+        // `g.view()` / `g.modify()` holds the access for the statement that passes it, and the agent runs past it.
+        if (Declaration.GuardAccess.LockingReceiver(expression: value, isWrite: out _) != null)
+        {
+            ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
+                message: "You pass a Guarded's access to an agent, but the access is held only for this statement, and " +
+                         "the agent runs on after it. Hand the agent the Guarded itself, and open it inside the " +
+                         "agent's work.",
+                location: value.Location);
+            return null;
+        }
+
+        // A token a `viewing` / `modifying` block opened on a Guarded lasts as long as the block, and the agent can run
+        // past it: hand the agent the Guarded, and let it open its own access.
+        if (IsLockBackedToken(value: value, writes: out _))
+        {
+            string token = ((IdentifierExpression)value).Name;
+            ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
+                message: $"You pass `{token}` to an agent, but it is the token of a Guarded that this block opened, and " +
+                         "the access ends with the block while the agent can run on. Hand the agent the Guarded itself, " +
+                         "and open it inside the agent's work.",
+                location: value.Location);
             return null;
         }
 
