@@ -31,9 +31,9 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules" or "access"))
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules" or "access" or "cpu-events"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules or access");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules, access or cpu-events");
             return 2;
         }
 
@@ -76,6 +76,13 @@ internal partial class Program
         if (step == "access")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAccess);
+        }
+
+        // `--step cpu-events`: the Signals module is CpuEventManager in System/Cpu, seen without an import, so its import
+        // goes and `when_interrupted(h)` is `CpuEventManager.when_interrupted(h)`. A call passing a context is listed.
+        if (step == "cpu-events")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteCpuEvents);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.

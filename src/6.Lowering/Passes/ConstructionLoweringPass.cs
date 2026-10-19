@@ -227,7 +227,9 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
             return Memberwise(call: call, type: owner);
         }
 
-        if (routine == null && call.Arguments.Count == 0 &&
+        // A call of a routine value that returns nothing (`handler()`) has the type None, a record with no member
+        // variables, and stays a call.
+        if (routine == null && call.Arguments.Count == 0 && call.Callee.ResolvedType is not RoutineTypeSymbol &&
             (constructed ?? call.ResolvedType) is RecordTypeSymbol { MemberVariables.Count: 0 } empty and
                 not VariantTypeSymbol)
         {

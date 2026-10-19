@@ -1214,6 +1214,13 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
+        // A routine value (a named routine or a lambda) goes where a `Callable[...]?` is wanted as a present one.
+        if (source is RoutineTypeSymbol && IsMaybeType(type: target) &&
+            target.TypeArguments is [RoutineTypeSymbol inner] && IsAssignableTo(source: source, target: inner))
+        {
+            return true;
+        }
+
         // Maybe auto-wrap cases.
         if (IsMaybeAssignable(source: source, target: target))
         {

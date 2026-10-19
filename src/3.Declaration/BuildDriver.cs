@@ -422,10 +422,8 @@ public sealed class BuildDriver
         // Truly unresolved — report it (TryResolveImport, unlike ResolveImport, records
         // no error of its own).
         _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.ModuleNotFound,
-            Message: StandardModules.MovedModule(module: import.ModulePath) is { } now
-                ? $"Module '{import.ModulePath}' is gone: its names are in {now}, which every file sees without " +
-                  "an import. Leave the import out (migrate --step modules does it)."
-                : $"Cannot resolve import '{import.ModulePath}'. Module not found.",
+            Message: StandardModules.GoneModuleMessage(module: import.ModulePath) ??
+                     $"Cannot resolve import '{import.ModulePath}'. Module not found.",
             Location: import.Location));
     }
 

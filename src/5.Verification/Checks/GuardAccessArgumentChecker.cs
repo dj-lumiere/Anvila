@@ -8,7 +8,8 @@ namespace Builder.Verification;
 /// A <c>Guarded</c>'s <c>g.view()</c> / <c>g.modify()</c> holds the access for one call: the builder takes it before
 /// the statement and gives it up after. So such a call is written only as a call argument (or the receiver of a member
 /// call, its <c>me</c>), in a statement of its own
-/// (an expression statement, a <c>var</c>, an assignment, a <c>return</c> or a <c>throw</c>): anywhere else is RF-S652.
+/// (an expression statement, a <c>var</c>, an assignment, a <c>return</c> or a <c>throw</c>): anywhere else is RF-S652,
+/// except as a <c>using</c> resource, which is RF-S612.
 /// Passing one for a <c>Guarded</c> that an enclosing block of the routine has open is RF-S630. Runs over the analyzed
 /// user bodies.
 /// </summary>
@@ -86,7 +87,13 @@ internal sealed class GuardAccessArgumentChecker(DiagnosticReporter report)
                 Walk(stmt: danger.Body, open: open);
                 return;
             case UsingStatement usingStmt:
-                CheckOwn(expr: usingStmt.Resource, inOwnStatement: false, open: open);
+                // `using g.view() as v` is RF-S612 already, which says to write `viewing g as v`: no second error
+                // about the same call.
+                if (GuardAccess.LockingReceiver(expression: usingStmt.Resource, isWrite: out bool _) == null)
+                {
+                    CheckOwn(expr: usingStmt.Resource, inOwnStatement: false, open: open);
+                }
+
                 Walk(stmt: usingStmt.Body, open: open);
                 return;
             case AccessStatement access:

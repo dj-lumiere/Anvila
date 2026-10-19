@@ -2523,7 +2523,7 @@ public sealed partial class SemanticVerifier
 
         // `LookupGenericOverload` returns the first same-arity overload; it cannot
         // choose among generic overloads that differ only in PARAMETER TYPE (e.g.
-        // `when_interrupted[T, P](Guarded[T, P])` vs `when_interrupted[T](Roamed[T])`).
+        // `watch[T, P](Guarded[T, P])` vs `watch[T](Roamed[T])`).
         // If the first pick does not unify, try the sibling overloads.
         TryRebindFreeOverloadAsGenericWithSiblings(call: call,
             callName: callName,
@@ -2676,7 +2676,7 @@ public sealed partial class SemanticVerifier
 
         // The initial pick is first-wins by name+arity, which is not enough to choose among
         // several generic overloads that differ only in PARAMETER TYPE (e.g.
-        // `when_interrupted[T, P](Guarded[T, P])` vs `when_interrupted[T](Roamed[T])`). If it
+        // `watch[T, P](Guarded[T, P])` vs `watch[T](Roamed[T])`). If it
         // does not unify with the arguments, try the sibling overloads and take the one that does.
         if (inferred == null)
         {
@@ -4045,7 +4045,7 @@ public sealed partial class SemanticVerifier
 
         // `LookupGenericOverload` returns the first same-name overload; it cannot
         // choose among generic overloads that differ only in PARAMETER TYPE (e.g.
-        // `when_interrupted[T, P](Guarded[T, P])` vs `when_interrupted[T](Roamed[T])`).
+        // `watch[T, P](Guarded[T, P])` vs `watch[T](Roamed[T])`).
         // If the first pick does not unify, try the sibling overloads of matching arity.
         RoutineInfo? genericImport = _registry.LookupGenericOverload(name: callName,
             preferredArity: call.Arguments.Count);
@@ -4086,8 +4086,8 @@ public sealed partial class SemanticVerifier
             expectedType: expectedType);
 
         // First-wins by name+arity cannot choose among generic overloads that differ only in
-        // PARAMETER TYPE (e.g. `when_interrupted[T, P](Guarded[T, P])` vs
-        // `when_interrupted[T](Roamed[T])`). If the initial pick does not unify, try the
+        // PARAMETER TYPE (e.g. `watch[T, P](Guarded[T, P])` vs
+        // `watch[T](Roamed[T])`). If the initial pick does not unify, try the
         // sibling overloads and take the one that does.
         if (inferredImportGen == null)
         {

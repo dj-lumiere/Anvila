@@ -244,10 +244,8 @@ public sealed partial class SemanticVerifier
         if (!success)
         {
             ReportError(code: SemanticDiagnosticCode.ModuleNotFound,
-                message: StandardModules.MovedModule(module: import.ModulePath) is { } now
-                    ? $"Module '{import.ModulePath}' is gone: its names are in {now}, which every file sees without " +
-                      "an import. Leave the import out (migrate --step modules does it)."
-                    : $"Cannot resolve import '{import.ModulePath}'. Module not found.",
+                message: StandardModules.GoneModuleMessage(module: import.ModulePath) ??
+                         $"Cannot resolve import '{import.ModulePath}'. Module not found.",
                 location: import.Location);
             return;
         }

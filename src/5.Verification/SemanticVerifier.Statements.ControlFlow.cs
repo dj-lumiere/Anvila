@@ -1353,6 +1353,9 @@ public sealed partial class SemanticVerifier
         var opened = new List<(AccessTarget Target, TypeSymbol Token, bool LockBacked, string? Path)>();
         var seenPaths = new Dictionary<string, AccessTarget>(comparer: StringComparer.Ordinal);
         var seenNames = new HashSet<string>(comparer: StringComparer.Ordinal);
+        // The names of targets the block can't open, reported already: each is still declared inside the block (of the
+        // error type), so a use of it there is not a second error about an unknown name.
+        var unopened = new List<AccessTarget>();
         foreach (AccessTarget target in access.Targets)
         {
             TypeSymbol type = AnalyzeExpression(expression: target.Target);
@@ -1364,6 +1367,11 @@ public sealed partial class SemanticVerifier
                     message: $"You name '{path}' twice in this block. A block opens each target once: name it once, " +
                              "with the verb it needs ('modifying' also reads).",
                     location: target.Location);
+                if (target.Name.Length > 0 && seenNames.Add(item: target.Name))
+                {
+                    unopened.Add(item: target);
+                }
+
                 continue;
             }
 
@@ -1385,14 +1393,11 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            if (type is ErrorTypeSymbol)
-            {
-                continue;
-            }
-
-            if (AccessTargetToken(target: target, type: type, isTry: access.IsTry, shown: shown,
+            if (type is ErrorTypeSymbol ||
+                AccessTargetToken(target: target, type: type, isTry: access.IsTry, shown: shown,
                     lockBacked: out bool lockBacked) is not { } token)
             {
+                unopened.Add(item: target);
                 continue;
             }
 
@@ -1415,6 +1420,11 @@ public sealed partial class SemanticVerifier
         }
 
         _registry.EnterScope(kind: ScopeKind.Block, name: "access");
+        foreach (AccessTarget target in unopened)
+        {
+            _registry.DeclareVariable(name: target.Name, type: ErrorTypeSymbol.Instance, location: target.Location);
+        }
+
         var lockBackedTokens = new List<VariableInfo>();
         foreach ((AccessTarget target, TypeSymbol token, bool lockBacked, string? _) in opened)
         {

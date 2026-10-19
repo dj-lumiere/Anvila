@@ -64,4 +64,22 @@ internal static class StandardModules
             ? Base + "/Numerics"
             : null;
     }
+
+    /// <summary>The message of an import that names a module this release took away, or null when
+    /// <paramref name="module"/> is not one.</summary>
+    public static string? GoneModuleMessage(string module)
+    {
+        string path = module.Replace(oldChar: '.', newChar: '/');
+        if (path == "Signals" || path.StartsWith(value: "Signals/", comparisonType: StringComparison.Ordinal))
+        {
+            return $"Module '{module}' is gone: its handlers are 'CpuEventManager.when_interrupted' and " +
+                   "'CpuEventManager.when_terminated' in System/Cpu, which every file sees without an import. Leave " +
+                   "the import out and call them on CpuEventManager (migrate --step cpu-events does both).";
+        }
+
+        return MovedModule(module: module) is { } now
+            ? $"Module '{module}' is gone: its names are in {now}, which every file sees without an import. Leave " +
+              "the import out (migrate --step modules does it)."
+            : null;
+    }
 }
