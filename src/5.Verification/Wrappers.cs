@@ -7,18 +7,14 @@ namespace Builder.Verification;
 
 /// <summary>
 /// What the builder knows about the access-token and shared-handle wrapper types (Viewing, Modifying,
-/// Consulting, Amending, Retained, Tracked, …): which one a type is, its inner type, and whether it may
+/// Retained, Tracked, Guarded, …): which one a type is, its inner type, and whether it may
 /// be copied implicitly or cross a thread. Pure functions of a type, shared by the checks that need them.
 /// </summary>
 internal static class Wrappers
 {
     internal const string ModifyingWrapperName = Declaration.RuntimeContract.Modifying;
 
-    internal const string AmendingWrapperName = Declaration.RuntimeContract.Amending;
-
     internal const string ViewingWrapperName = Declaration.RuntimeContract.Viewing;
-
-    internal const string ConsultingWrapperName = Declaration.RuntimeContract.Consulting;
 
     internal const string ScopedNoEscapeHint = "(none — scoped, can't escape)";
 
@@ -29,15 +25,6 @@ internal static class Wrappers
     {
         return type.Name == ModifyingWrapperName ||
                type.Name.StartsWith(value: ModifyingWrapperName + "[");
-    }
-
-    /// <summary>
-    /// Checks if a type is a Amending&lt;T&gt; token type.
-    /// </summary>
-    internal static bool IsAmendingType(TypeSymbol type)
-    {
-        return type.Name == AmendingWrapperName ||
-               type.Name.StartsWith(value: AmendingWrapperName + "[");
     }
 
     /// <summary>
@@ -83,7 +70,7 @@ internal static class Wrappers
     }
 
     /// <summary>
-    /// Checks if a wrapper type is read-only (Viewing, Consulting).
+    /// Checks if a wrapper type is read-only (Viewing, a ReadOnly Guarded).
     /// </summary>
     /// <param name="type">The wrapper type to check.</param>
     /// <returns>True if the wrapper is read-only.</returns>
@@ -163,19 +150,7 @@ internal static class Wrappers
     internal static readonly HashSet<string> InlineOnlyTokenTypes =
     [
         ViewingWrapperName, // Read-only single-threaded token
-        ModifyingWrapperName, // Mutable (non-exclusive) single-threaded token
-        ConsultingWrapperName, // Read-only multi-threaded token
-        AmendingWrapperName // Exclusive write multi-threaded token
-    ];
-
-    /// <summary>
-    /// Token types that require uniqueness validation (cannot be passed twice in same call).
-    /// Only the multi-threaded exclusive write token qualifies: single-threaded Modifying is
-    /// non-exclusive (shared-mutable aliasing is harmless without a second thread).
-    /// </summary>
-    internal static readonly HashSet<string> ExclusiveTokenTypes =
-    [
-        AmendingWrapperName // Cannot pass same Amending token twice
+        ModifyingWrapperName // Write token
     ];
 
     /// <summary>
@@ -193,9 +168,7 @@ internal static class Wrappers
             // stay non-implicitly-copyable (copying one would let a borrow escape its scope). Thread-boundary
             // crossing is a SEPARATE axis — see `IsThreadUnsafeReferenceWrapper`.
             [key: ViewingWrapperName] = ScopedNoEscapeHint,
-            [key: ModifyingWrapperName] = ScopedNoEscapeHint,
-            [key: ConsultingWrapperName] = ScopedNoEscapeHint,
-            [key: AmendingWrapperName] = ScopedNoEscapeHint
+            [key: ModifyingWrapperName] = ScopedNoEscapeHint
         };
 
     /// <summary>
@@ -212,10 +185,9 @@ internal static class Wrappers
     /// async spawn boundary (<c>threaded</c> OR <c>suspended</c> under M:N — both are potentially
     /// parallel) by reference, aliasing the spawner's cell safely. These are the atomic /
     /// shared-ownership wrappers — <c>Atomic[T]</c>, <c>Guarded[T,P]</c>, <c>Witnessed[T,P]</c> (atomic
-    /// refcount) — plus the <em>multi-threaded</em> lock-backed tokens <c>Consulting[T,P]</c>
-    /// (read-only) and <c>Amending[T,P]</c> (exclusive), whose mutex/rwlock makes concurrent access
-    /// sound. The single-threaded tokens <c>Viewing</c>/<c>Modifying</c> are deliberately NOT here —
-    /// they are unsynchronized (see the 2×2 in <c>internal-wiki/v0.3.x-mn-scheduler.md</c> §4). Every
+    /// refcount). A <c>Viewing</c>/<c>Modifying</c> token is not here by its type: one bound by a <c>using</c>
+    /// over a <c>Guarded</c> opener is lock-backed, which the agent-argument check judges by where it came from
+    /// (<c>SemanticVerifier.IsLockBackedToken</c>). Every
     /// other type must be trivially copyable (passed by value as an independent copy) or
     /// <c>steal</c>-moved so unsynchronized state can never alias across the boundary.
     /// </summary>
@@ -226,18 +198,17 @@ internal static class Wrappers
 
     /// <summary>
     /// The SINGLE source of truth for the thread-safe classification: true when a wrapper carries its own
-    /// cross-thread synchronization (an atomic refcount — <c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c> — or
-    /// a multi-threaded lock — <c>Consulting</c>/<c>Amending</c>) and may therefore cross an async spawn
+    /// cross-thread synchronization (an atomic refcount — <c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>) and may
+    /// therefore cross an async spawn
     /// boundary by reference. Both <see cref="IsThreadShareable"/> and the thread-crossing offender check
     /// (<see cref="IsThreadUnsafeReferenceWrapper"/>) derive from this, so the safe and unsafe sets can never
     /// disagree — the bug the old hand-maintained <c>ThreadUnsafeReferenceWrappers</c> set had, where it
-    /// listed Guarded/Witnessed/Consulting/Amending as unsafe while this predicate called them safe.
+    /// listed Guarded/Witnessed as unsafe while this predicate called them safe.
     /// </summary>
     internal static bool IsThreadShareableName(string bareName)
     {
         return bareName is Declaration.RuntimeContract.Atomic
-            or Declaration.RuntimeContract.Guarded or Declaration.RuntimeContract.Witnessed
-            or Declaration.RuntimeContract.Consulting or Declaration.RuntimeContract.Amending;
+            or Declaration.RuntimeContract.Guarded or Declaration.RuntimeContract.Witnessed;
     }
 
     /// <summary>
@@ -329,7 +300,7 @@ internal static class Wrappers
     /// across parallel workers). DECOUPLED from the copy-policy dict so the two axes move independently: RC is
     /// now implicitly copyable (<c>var b = rc</c>) yet a value owning single-thread RC is still barred from
     /// crossing a boundary. The offender set is DERIVED from <see cref="IsThreadUnsafeReferenceWrapper"/>, so
-    /// the thread-SAFE wrappers (Guarded/Witnessed atomic, Consulting/Amending lock-backed) that cross fine as
+    /// the thread-SAFE wrappers (Guarded/Witnessed, atomic refcount) that cross fine as
     /// a bare param ALSO cross fine when merely OWNED by a record — the former hand-maintained set wrongly
     /// barred those.
     /// </summary>

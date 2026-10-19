@@ -234,7 +234,7 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
     /// {
     ///   var __uf_N = resource
     ///   if __uf_N.try_enter():        // Bool: did the non-blocking acquire succeed?
-    ///     var x = __uf_N
+    ///     var x = __uf_N.entered()    // or `var x = __uf_N` when the type has no `entered`
     ///     [body, with exit() injected before every escape]
     ///     __uf_N.exit()               // normal-path release
     ///   else:
@@ -283,12 +283,27 @@ internal sealed class UsingLoweringPass(PostprocessingContext? ctx, TypeRegistry
             ResolvedType = tryEnterMemberRoutine?.ReturnType
         };
 
-        // Success branch: bind the token, run body with exit injected, then normal-path exit.
+        // Success branch: bind the token, run body with exit injected, then normal-path exit. A resource whose scope
+        // binds something other than itself (a Guarded opener binds its token) gives that through `entered`.
+        RoutineInfo? enteredMemberRoutine = resourceType != null
+            ? registry.LookupMemberRoutine(type: resourceType, memberRoutineName: RuntimeContract.Entered)
+            : null;
+        Expression boundValue = resTempIdent;
+        TypeSymbol? boundType = resourceType;
+        if (enteredMemberRoutine?.ReturnType is { IsNone: false } enteredType)
+        {
+            boundValue = new CallExpression(
+                Callee: new MemberExpression(Object: resTempIdent, MemberName: RuntimeContract.Entered, Location: loc),
+                Arguments: [],
+                Location: loc) { ResolvedRoutine = enteredMemberRoutine, ResolvedType = enteredType };
+            boundType = enteredType;
+        }
+
         var thenStmts = new List<Statement>
         {
             MakeBinding(name: u.Name,
-                value: resTempIdent,
-                type: resourceType,
+                value: boundValue,
+                type: boundType,
                 loc: loc)
         };
 

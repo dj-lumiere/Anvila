@@ -582,12 +582,12 @@ public partial class LlvmEmitter
             return false;
         }
 
-        // A generic DEFINITION type itself (e.g. `RoamManager[T]`, `Amending[T, P]`) has no concrete
+        // A generic DEFINITION type itself (e.g. `RoamManager[T]`, `Guarded[T, P]`) has no concrete
         // layout — its own type parameters are unbound, so its `TypeArguments` are the param placeholders
         // (or null). Treat it as non-concrete so an INSTANCE routine anchored on a generic-def owner (a
         // template like `RoamManager[T].member_type_id`, wrongly demand-collected under its generic-def
         // key) is skipped, not emitted by-value — emitting its `me` param recurses into a generic-def field
-        // (`Amending`) with no LLVM layout and detonates codegen. Concrete instances emit under their own key.
+        // (`Guarded`) with no LLVM layout and detonates codegen. Concrete instances emit under their own key.
         if (type.IsGenericDefinition)
         {
             return true;

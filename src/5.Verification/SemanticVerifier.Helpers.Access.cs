@@ -24,9 +24,7 @@ public sealed partial class SemanticVerifier
         return baseName switch
         {
             Declaration.RuntimeContract.Viewing => "read-only token (Viewing)",
-            Declaration.RuntimeContract.Modifying => "exclusive write token (Modifying)",
-            Declaration.RuntimeContract.Consulting => "shared read token (Consulting)",
-            Declaration.RuntimeContract.Amending => "exclusive shared write token (Amending)",
+            Declaration.RuntimeContract.Modifying => "write token (Modifying)",
             _ => "token"
         };
     }
@@ -94,8 +92,20 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>Whether <paramref name="value"/> names a token a <c>using</c> over a <c>Guarded</c> opener bound (a
+    /// <c>Viewing</c> / <c>Modifying</c> backed by the lock), and if so whether it writes. Judged by where the token
+    /// came from: its type is the same as any other token's.</summary>
+    private bool IsLockBackedToken(Expression value, out bool writes)
+    {
+        writes = false;
+        return value is IdentifierExpression named &&
+               _registry.LookupVariable(name: named.Name) is { } variable &&
+               _lockBackedTokens.TryGetValue(key: variable, value: out writes);
+    }
+
     /// <summary>
-    /// Validates that exclusive tokens (Amending) are not passed multiple times in a single call.
+    /// Validates that a lock-backed write token (bound by <c>using g.modify() as m</c>) is not passed twice in one call:
+    /// the lock admits one writer, and the two parameters would be one entity changed through two names.
     /// </summary>
     private void ValidateExclusiveTokenUniqueness(List<Expression> arguments,
         SourceLocation location)
@@ -105,37 +115,26 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // Track which exclusive token expressions we've seen
         var seenExclusiveTokens = new HashSet<string>();
-
         foreach (Expression arg in arguments)
         {
-            // Get the expression's type
-            if (arg.ResolvedType == null)
+            Expression value = arg is NamedArgumentExpression namedArg
+                ? namedArg.Value
+                : arg;
+            if (!IsLockBackedToken(value: value, writes: out bool writes) || !writes)
             {
                 continue;
             }
 
-            // Convert AST TypeSymbol back to get the type name
-            string baseName = arg.ResolvedType.BareName;
-
-            if (!Wrappers.ExclusiveTokenTypes.Contains(value: baseName))
+            string name = ((IdentifierExpression)value).Name;
+            if (!seenExclusiveTokens.Add(item: name))
             {
-                continue;
-            }
-
-            // Get a string representation of the expression for uniqueness checking
-            string? exprKey = GetExpressionKey(expression: arg);
-            if (string.IsNullOrEmpty(value: exprKey))
-            {
-                continue;
-            }
-
-            if (!seenExclusiveTokens.Add(item: exprKey))
-            {
+                _lockTokenDuplicateCalls.Add(item: arguments);
                 ReportError(code: SemanticDiagnosticCode.ExclusiveTokenDuplicate,
                     message:
-                    $"Cannot pass the same {baseName} token '{exprKey}' multiple times in a single call. Exclusive tokens require unique access.",
+                    $"You pass '{name}' twice in one call, and '{name}' is the write token of a Guarded's lock, which " +
+                    "admits one writer at a time: the two parameters would change one entity through two names. Pass " +
+                    $"'{name}' once, or open two different Guarded handles with 'using multimodify(first: a, second: b) as (x, y)'.",
                     location: location);
             }
         }
@@ -148,8 +147,9 @@ public sealed partial class SemanticVerifier
     /// <item><c>steal</c>-moved: exclusive transfer, the caller loses access (a moved bare entity leaves exactly
     /// one live handle);</item>
     /// <item>trivially copyable: passed BY VALUE as an independent copy;</item>
-    /// <item>a thread-shareable wrapper (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>/<c>Consulting</c>/
-    /// <c>Amending</c>), which carries its own synchronization (atomic refcount or lock);</item>
+    /// <item>a thread-shareable wrapper (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>), which carries its own
+    /// synchronization (an atomic refcount), or a token a <c>using</c> over a <c>Guarded</c> opener bound, backed by the
+    /// lock (judged by where it came from);</item>
     /// <item>a <c>Roamed</c> handle, which is promoted before the Agent is built.</item>
     /// </list>
     /// Anything else (a bare entity passed by copy, a record transitively owning a single-threaded wrapper
@@ -189,7 +189,8 @@ public sealed partial class SemanticVerifier
     /// <summary>Checks one argument of an <c>agent</c> call (see <see cref="ValidateAgentArguments"/>).</summary>
     private string? ValidateAgentArgument(Expression value, TypeSymbol type)
     {
-        if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type))
+        if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type) ||
+            IsLockBackedToken(value: value, writes: out _))
         {
             return null;
         }
@@ -245,21 +246,6 @@ public sealed partial class SemanticVerifier
             message: $"You pass {what} to an agent, but {reason}. {fix}.",
             location: value.Location);
         return null;
-    }
-
-    /// <summary>
-    /// Gets a string key representing an expression for uniqueness checking.
-    /// Returns null for complex expressions that can't be easily tracked.
-    /// </summary>
-    private static string? GetExpressionKey(Expression expression)
-    {
-        return expression switch
-        {
-            IdentifierExpression id => id.Name,
-            MemberExpression member =>
-                $"{GetExpressionKey(expression: member.Object)}.{member.MemberName}",
-            _ => null
-        };
     }
 
     /// <summary>

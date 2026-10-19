@@ -244,9 +244,6 @@ public partial class LlvmEmitter
                 message: $"Member conversion '.{member.MemberName}()' reached codegen unlowered.");
         }
 
-        // A forwarded entity routine on a Consulting/Amending token already has the entity as its
-        // receiver (WrapperProjectionLoweringPass).
-
         // Suflae `Roamed[E]` receiver transparency is now lowered to real AST nodes by
         // RoamedProjectionLoweringPass (Phase 8): a bare-`me` inner memberRoutine's receiver is rewritten to
         // `receiver.raw_inner()` and a wrapper-shadowed represent/diagnose is re-resolved to the

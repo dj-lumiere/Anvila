@@ -1371,10 +1371,58 @@ public sealed partial class TypeRegistry
     private readonly Dictionary<string, List<RoutineInfo>> _kindVariants = new(comparer: StringComparer.Ordinal);
 
     /// <summary>Whether <paramref name="routine"/> is one implementation of a kind-split routine
-    /// (<c>@overridable</c> / <c>@override</c> on a routine of a generic type).</summary>
+    /// (<c>@overridable</c> / <c>@override</c> on a routine of a generic type), or of a routine split by an owner
+    /// parameter's <c>needs P in [...]</c> (<see cref="IsPolicySplit"/>).</summary>
     internal static bool IsKindVariant(RoutineInfo routine)
     {
-        return routine.Annotations.Contains(value: "overridable") || routine.Annotations.Contains(value: "override");
+        return routine.Annotations.Contains(value: "overridable") || routine.Annotations.Contains(value: "override") ||
+               IsPolicySplit(routine: routine);
+    }
+
+    /// <summary>Whether <paramref name="routine"/> is gated by a <c>needs P in [...]</c> on a parameter of its generic
+    /// owner. Several such routines of one name may coexist when their sets do not overlap, each with its own return
+    /// type (<c>Guarded[T, TPolicy].view()</c>: a lock-free <c>Viewing[T]</c> for <c>ReadOnly</c>, what <c>using</c>
+    /// opens for <c>MultiRead</c>). The owner's type arguments pick one (<see cref="SelectKindVariant"/>).</summary>
+    internal static bool IsPolicySplit(RoutineInfo routine)
+    {
+        return routine.OwnerType is { GenericParameters: { Count: > 0 } ownerParams } &&
+               (routine.GenericConstraints ?? []).Any(predicate: c =>
+                   c.ConstraintType == ConstraintKind.TypeEquality && ownerParams.Contains(item: c.ParameterName));
+    }
+
+    /// <summary>Whether every owner-parameter <c>needs P in [...]</c> of <paramref name="memberRoutine"/> holds for
+    /// <paramref name="ownerType"/>'s type arguments. A parameter still generic holds.</summary>
+    private static bool OwnerTypeEqualitySatisfied(RoutineInfo memberRoutine, TypeSymbol ownerType)
+    {
+        List<string>? paramNames = ownerType switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } recordDef } => recordDef.GenericParameters,
+            EntityTypeSymbol { GenericDefinition: { } entityDef } => entityDef.GenericParameters,
+            _ => null
+        };
+        List<TypeSymbol>? args = ownerType.TypeArguments;
+        if (paramNames is null || args is null)
+        {
+            return true;
+        }
+
+        foreach (GenericConstraintDeclaration c in memberRoutine.GenericConstraints ?? [])
+        {
+            int index = paramNames.IndexOf(item: c.ParameterName);
+            if (c.ConstraintType != ConstraintKind.TypeEquality || index < 0 || index >= args.Count ||
+                args[index: index] is GenericParameterTypeSymbol)
+            {
+                continue;
+            }
+
+            TypeSymbol bound = args[index: index];
+            if (!(c.ConstraintTypes ?? []).Any(predicate: t => t.Name == bound.Name || t.Name == bound.BareName))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void RecordKindVariants(string registryKey, RoutineInfo existing, RoutineInfo incoming)
@@ -1423,7 +1471,10 @@ public sealed partial class TypeRegistry
             return routine;
         }
 
-        return MostSpecific(variants: variants, holds: v => OwnerConstraintsSatisfied(memberRoutine: v, ownerType: owner)) ??
+        return MostSpecific(variants: variants,
+                   holds: v => OwnerConstraintsSatisfied(memberRoutine: v, ownerType: owner) &&
+                               OwnerTypeEqualitySatisfied(memberRoutine: v, ownerType: owner)) ??
+               MostSpecific(variants: variants, holds: v => OwnerConstraintsSatisfied(memberRoutine: v, ownerType: owner)) ??
                MostSpecific(variants: variants, holds: v => OwnerKindGatesSatisfied(memberRoutine: v, ownerType: owner)) ??
                routine;
     }
@@ -1472,6 +1523,16 @@ public sealed partial class TypeRegistry
     public bool OwnerKindGatesAdmit(RoutineInfo routine, TypeSymbol owner)
     {
         return OwnerKindGatesSatisfied(memberRoutine: routine.GenericDefinition ?? routine, ownerType: owner);
+    }
+
+    /// <summary>The implementations of a kind- or policy-split routine (see <see cref="SelectKindVariant"/>), or
+    /// <paramref name="routine"/> alone when it is not split.</summary>
+    public IReadOnlyList<RoutineInfo> KindVariantsOf(RoutineInfo routine)
+    {
+        return _kindVariants.TryGetValue(key: RealmRoutineKey(routine: routine.GenericDefinition ?? routine),
+            value: out List<RoutineInfo>? variants)
+            ? variants
+            : [routine];
     }
 
     /// <summary>Whether <paramref name="routine"/> has kind-split implementations (see <see cref="SelectKindVariant"/>).</summary>
@@ -2419,7 +2480,7 @@ public sealed partial class TypeRegistry
         }
 
         // Keep constraints on the memberRoutine's own generic params, PLUS `in [...]` (TypeEquality)
-        // constraints on the OWNER's params (e.g. `Guarded[T, P].amend() needs P in [...]`). The
+        // constraints on the OWNER's params (e.g. `Guarded[T, P].modify() needs P in [...]`). The
         // owner param is already substituted on the resolved instance, but the constraint is not
         // validated here — it is preserved so the call-site verifier can check it against the
         // receiver's bound argument (otherwise a memberRoutine constraint on an inherited param vanishes
@@ -2599,6 +2660,14 @@ public sealed partial class TypeRegistry
             return memberRoutine;
         }
 
+        // A routine split by an owner parameter's `needs P in [...]` has one implementation per set, each with its own
+        // return type: the owner's type arguments pick the one this owner gets.
+        if (memberRoutine.OwnerType is { IsGenericDefinition: true } && IsPolicySplit(routine: memberRoutine) &&
+            HasKindVariants(routine: memberRoutine))
+        {
+            memberRoutine = SelectKindVariant(routine: memberRoutine, owner: resolvedOwner);
+        }
+
         var substitution2 = new Dictionary<string, TypeSymbol>();
         for (int i = 0;
              i < genericDef.GenericParameters.Count && i < resolvedOwner.TypeArguments.Count;
@@ -2676,7 +2745,7 @@ public sealed partial class TypeRegistry
         }
 
         // Keep memberRoutine-level constraints PLUS owner-param `in [...]` (TypeEquality) constraints, so a
-        // memberRoutine constraint on an inherited param (e.g. `Guarded[T, P].amend() needs P in [...]`)
+        // memberRoutine constraint on an inherited param (e.g. `Guarded[T, P].modify() needs P in [...]`)
         // survives to be validated at the call site against the receiver's bound argument.
         var memberRoutineOnlyConstraints2 = memberRoutine.GenericConstraints
                                                         ?.Where(predicate: c =>

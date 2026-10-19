@@ -293,8 +293,6 @@ public sealed partial class SemanticVerifier
     /// Non-stealable types (build error):
     /// - Viewing[T]    (read-only wrapper, scope-bound)
     /// - Modifying[T]  (exclusive wrapper, scope-bound)
-    /// - Consulting[T] (thread-safe read wrapper, scope-bound)
-    /// - Amending[T]   (thread-safe exclusive wrapper, scope-bound)
     /// - Retained[T]  (shared-ownership wrapper)
     /// - Tracked[T]   (reference-counted wrapper)
     /// - Guarded[T, P] (shared-ownership wrapper)

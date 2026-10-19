@@ -3893,8 +3893,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             RuntimeContract.Viewing,
             RuntimeContract.Modifying,
             RuntimeContract.Hijacked,
-            RuntimeContract.Consulting,
-            RuntimeContract.Amending,
             RuntimeContract.Retained,
             RuntimeContract.Tracked,
             RuntimeContract.Guarded,
@@ -3951,7 +3949,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 ConstraintKind.VariantType => actual is VariantTypeSymbol,
                 ConstraintKind.Crashable => actual is CrashableTypeSymbol,
                 ConstraintKind.ConstGeneric => CheckStructuralConstGeneric(c: c, actual: actual),
-                _ => true // Obeys/TypeEquality: trust SA
+                // `needs P in [...]`: several implementations of one routine may split on it (Guarded's `view()` per
+                // policy), so the bound argument picks among them.
+                ConstraintKind.TypeEquality => actual is GenericParameterTypeSymbol || c.ConstraintTypes is not { Count: > 0 } ||
+                                               c.ConstraintTypes.Any(predicate: t =>
+                                                   t.Name == actual.Name || t.Name == actual.BareName),
+                _ => true // Obeys: trust SA
             };
             if (!ok)
             {

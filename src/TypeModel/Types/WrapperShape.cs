@@ -3,7 +3,7 @@ using Builder.Declaration;
 namespace TypeModel.Types;
 
 /// <summary>
-/// Recognizes a wrapper type (Viewing, Modifying, Consulting, Amending, Guarded, Witnessed, Retained,
+/// Recognizes a wrapper type (Viewing, Modifying, Guarded, Witnessed, Retained,
 /// Tracked, Hijacked, Roamed, and the builder's own Owned): the standard library record's resolution
 /// (<c>Hijacked[S64]</c>).
 /// </summary>
@@ -55,7 +55,7 @@ public static class WrapperShape
             : null;
     }
 
-    /// <summary>True for the read-only wrappers (Viewing, Consulting).</summary>
+    /// <summary>True for the read-only wrappers (Viewing).</summary>
     public static bool IsReadOnly(TypeSymbol? type)
     {
         return TryGet(type: type, name: out string name, inner: out _) &&

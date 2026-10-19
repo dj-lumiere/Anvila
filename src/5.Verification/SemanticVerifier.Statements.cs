@@ -954,8 +954,7 @@ public sealed partial class SemanticVerifier
     {
         return type is RecordTypeSymbol { TypeArguments: [var inner, ..] } handle &&
                (handle.GenericDefinition ?? handle).BareName is Declaration.RuntimeContract.Viewing
-                   or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Consulting
-                   or Declaration.RuntimeContract.Amending or Declaration.RuntimeContract.Retained
+                   or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Retained
                    or Declaration.RuntimeContract.Roamed
             ? inner
             : type;
@@ -1411,15 +1410,6 @@ public sealed partial class SemanticVerifier
         // A variant is copied like the values it holds: one holding only values copies (decided 2026-10-14), one that
         // may hold an entity is the kept-entity case above (RF-S413).
 
-        // #96: Amending[T] cannot be copied or aliased — exclusive lock token
-        if (varDecl.Initializer is IdentifierExpression && Wrappers.IsAmendingType(type: varType))
-        {
-            ReportError(code: SemanticDiagnosticCode.AmendingCopyNotAllowed,
-                message: $"Cannot copy or alias 'Amending[T]' variable to '{varDecl.Name}'. " +
-                         "Amending tokens are exclusive and cannot be duplicated — use the original variable directly.",
-                location: varDecl.Location);
-        }
-
         // #81: Result/Lookup cannot be copied from variable to variable
         // `var r = check parse(data)` then `when r` is allowed (call result)
         // `var r2 = r1` where r1: Result[T] is not allowed (variable copy)
@@ -1432,21 +1422,22 @@ public sealed partial class SemanticVerifier
                 location: varDecl.Location);
         }
 
-        // A single-thread token (`var v = a.view()`, `var m = a.modify()`, `var b = boxes[0]`) is a variable like
-        // any other: RazorForge's TokenLifetimeChecker follows where it came from and rejects a use after that object changed.
-        // A lock token (Consulting / Amending) still needs `using`, which takes and releases the lock.
-        if (_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType))
+        // A token (`var v = a.view()`, `var m = a.modify()`, `var b = boxes[0]`) is a variable like any other:
+        // RazorForge's TokenLifetimeChecker follows where it came from and rejects a use after that object changed.
+        // What a Guarded hands to `using` to take its lock is the exception: `view()` / `modify()` on a handle are
+        // reported where they are called (RF-S629), any other one (`multimodify` on two handles) here.
+        if (_registry.Rules.ChecksAccessTokens &&
+            Declaration.RuntimeContract.GuardOpenerTypes.Contains(item: varType.BareName) &&
+            varDecl.Initializer is not CallExpression { Callee: MemberExpression })
         {
-            if (varType.BareName is Declaration.RuntimeContract.Consulting or Declaration.RuntimeContract.Amending)
-            {
-                ReportError(code: SemanticDiagnosticCode.ImplicitWrapperCopy,
-                    message:
-                    $"'{varType.BareName}[…]' holds a lock and cannot be stored in '{varDecl.Name}'. " +
-                    $"Open it with 'using expr as {varDecl.Name}', which takes the lock and releases it at the end.",
-                    location: varDecl.Location);
-            }
+            ReportError(code: SemanticDiagnosticCode.MtTokenRequiresUsing,
+                message:
+                $"You bind '{varDecl.Name}' to what takes a Guarded's lock, but the lock is held exactly as long as " +
+                $"the 'using' block that opens it, so this is written only as a 'using' resource: " +
+                $"'using <expression> as {varDecl.Name}'. The block takes the lock and releases it on every way out.",
+                location: varDecl.Location);
         }
-        else
+        else if (!(_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType)))
         {
             CheckImplicitWrapperCopyOnInit(varDecl: varDecl, varType: varType);
         }

@@ -9,8 +9,7 @@ namespace Builder.Lowering.Passes;
 /// Makes the value behind a borrow or sharing wrapper explicit, so the emitter never decides how to reach it.
 ///
 /// <para>A field read or write through a wrapper (<c>w.count</c> where <c>w</c> is a <c>Retained[Node]</c>,
-/// <c>Viewing[Node]</c>, <c>Roamed[Node]</c>, …) and a call of a forwarded entity routine on a
-/// <c>Consulting</c>/<c>Amending</c> token both act on the inner entity. This pass wraps the object of such an
+/// <c>Viewing[Node]</c>, <c>Roamed[Node]</c>, …) acts on the inner entity. This pass wraps the object of such an
 /// access in a <see cref="WrapperProjectionExpression"/> typed as the entity, stamped with how the entity
 /// pointer comes out of the wrapper: the controller's <c>data</c> field, the wrapper pointer itself, or the
 /// struct field holding a <c>Hijacked[T]</c>. The emitter then translates an ordinary entity access.</para>
@@ -68,21 +67,8 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
                 : rewritten;
         }
 
-        // The callee is a routine, not a field: only its receiver is rewritten. A Consulting/Amending
-        // token points at the shared GuardManager, so a forwarded routine owned by the guarded entity
-        // gets the entity as its receiver. The token's own routines (enter/exit/refer/control/…) keep it.
+        // The callee is a routine, not a field: only its receiver is rewritten.
         Expression receiver = VisitExpression(expr: callee.Object);
-        if (e.ResolvedRoutine is { OwnerType: { } owner } &&
-            receiver.ResolvedType is RecordTypeSymbol
-            {
-                GenericDefinition.BareName: RuntimeContract.Consulting or RuntimeContract.Amending,
-                TypeArguments: [EntityTypeSymbol guarded, _, ..]
-            } &&
-            guarded.FullName == owner.FullName &&
-            Project(wrapper: receiver, ownMemberName: null) is { } projected)
-        {
-            receiver = projected;
-        }
 
         List<Expression> args = RewriteList(items: e.Arguments, rewrite: VisitExpression);
         if (ReferenceEquals(objA: receiver, objB: callee.Object) &&
@@ -193,7 +179,7 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
 
     /// <summary>
     /// The field of a struct wrapper that holds the inner entity as a <c>Hijacked[T]</c>
-    /// (e.g. Consulting[T] has ptr=0). Defaults to 0.
+    /// Defaults to 0.
     /// </summary>
     private static int HijackedFieldIndex(RecordTypeSymbol wrapper, EntityTypeSymbol inner)
     {

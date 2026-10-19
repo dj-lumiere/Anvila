@@ -334,7 +334,7 @@ public sealed class RoutineInfo
     /// <summary>Annotations on this routine (e.g., @readonly, @inline).</summary>
     public List<string> Annotations { get; init; } = [];
 
-    /// <summary>Whether this routine is marked @readonly (can be called through Viewing/Consulting).</summary>
+    /// <summary>Whether this routine is marked @readonly (can be called through Viewing).</summary>
     public bool IsReadOnly =>
         Annotations.Contains(value: "readonly") || MutationCategory == MutationCategory.Readonly;
 

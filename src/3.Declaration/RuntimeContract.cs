@@ -406,12 +406,6 @@ public static class RuntimeContract
     /// <summary>Exclusive-write single-threaded borrow token.</summary>
     public const string Modifying = "Modifying";
 
-    /// <summary>Read-only multi-threaded borrow token.</summary>
-    public const string Consulting = "Consulting";
-
-    /// <summary>Exclusive-write multi-threaded borrow token.</summary>
-    public const string Amending = "Amending";
-
     /// <summary>Reference-counted single-threaded handle.</summary>
     public const string Retained = "Retained";
 
@@ -427,6 +421,9 @@ public static class RuntimeContract
     /// <summary>Unmanaged raw-pointer handle.</summary>
     public const string Hijacked = "Hijacked";
 
+    /// <summary>An observer of an entity that doesn't keep it alive.</summary>
+    public const string Watched = "Watched";
+
     /// <summary>Biased-reference-counted, auto-promoting handle (Suflae `entity` backing). Registered
     /// as an RC wrapper for lifetime (retain/release), but deliberately NOT in the forwarding /
     /// read-only / coercion sets: access is builder-inserted lock-wrapping, never <c>refer</c>/
@@ -436,9 +433,31 @@ public static class RuntimeContract
     /// <summary>Controller behind <c>Retained[T]</c> / <c>Tracked[T]</c>.</summary>
     public const string RetainManager = "RetainManager";
 
-    /// <summary>Controller behind <c>Guarded[T, P]</c> / <c>Witnessed[T, P]</c> and their
-    /// <c>Consulting</c> / <c>Amending</c> tokens.</summary>
+    /// <summary>Controller behind <c>Guarded[T, P]</c> / <c>Witnessed[T, P]</c>. It also holds the lock and so who is
+    /// using the entity right now (the readers, the one writer).</summary>
     public const string GuardManager = "GuardManager";
+
+    /// <summary>What <c>view()</c> / <c>try_view()</c> on a locking <c>Guarded</c> hand to <c>using</c>: its
+    /// <c>enter</c> takes the read hold and binds a plain <c>Viewing[T]</c>, its <c>exit</c> releases the hold.</summary>
+    public const string ViewingGuarded = "ViewingGuarded";
+
+    /// <summary>What <c>modify()</c> / <c>try_modify()</c> on a <c>Guarded</c> hand to <c>using</c>: its <c>enter</c>
+    /// takes the write hold and binds a plain <c>Modifying[T]</c>, its <c>exit</c> releases the hold.</summary>
+    public const string ModifyingGuarded = "ModifyingGuarded";
+
+    /// <summary>What <c>multimodify</c> on two <c>Guarded</c> handles hands to <c>using</c>: its <c>enter</c> takes both
+    /// write holds in address order and binds two plain <c>Modifying[T]</c>.</summary>
+    public const string MultiModifyingGuarded = "MultiModifyingGuarded";
+
+    /// <summary>The types a <c>Guarded</c> hands to <c>using</c> to take its lock for exactly the block: the tokens
+    /// the block binds are lock-backed (judged by where they came from, not by their type), and the opener itself is
+    /// legal only as the resource of a <c>using</c>.</summary>
+    public static readonly IReadOnlySet<string> GuardOpenerTypes =
+        new HashSet<string>(comparer: StringComparer.Ordinal) { ViewingGuarded, ModifyingGuarded, MultiModifyingGuarded };
+
+    /// <summary>The routine a <c>using ... fallback</c> resource provides when its scope binds something other than
+    /// the resource: once <c>try_enter</c> took the hold, it gives what <c>enter</c> would have bound.</summary>
+    public const string Entered = "entered";
 
     /// <summary>Controller behind <c>Roamed[T]</c>.</summary>
     public const string RoamManager = "RoamManager";
@@ -457,7 +476,7 @@ public static class RuntimeContract
         return wrapperBaseName switch
         {
             Retained or Tracked => RetainManager,
-            Guarded or Witnessed or Consulting or Amending => GuardManager,
+            Guarded or Witnessed => GuardManager,
             Roamed => RoamManager,
             _ => null
         };
@@ -478,13 +497,26 @@ public static class RuntimeContract
         {
             Viewing,
             Modifying,
-            Consulting,
-            Amending,
             Guarded,
             Witnessed,
             Retained,
             Tracked,
             Hijacked,
+            Roamed
+        };
+
+    /// <summary>The wrapper types <c>===</c> / <c>!==</c> (<c>same</c> / <c>notsame</c>) take besides an entity: the
+    /// handles through which two names can reach one entity. The access tokens (<c>Viewing</c>, <c>Modifying</c>) are
+    /// left out: they are permission to reach an entity, so the entity itself is compared.</summary>
+    public static readonly IReadOnlySet<string> IdentityComparableWrapperTypes =
+        new HashSet<string>(comparer: StringComparer.Ordinal)
+        {
+            Hijacked,
+            Watched,
+            Guarded,
+            Witnessed,
+            Retained,
+            Tracked,
             Roamed
         };
 
@@ -495,8 +527,6 @@ public static class RuntimeContract
         {
             Viewing,
             Modifying,
-            Consulting,
-            Amending,
             Guarded,
             Witnessed,
             Retained,
@@ -507,7 +537,7 @@ public static class RuntimeContract
     /// <summary>Read-only borrow tokens (only <c>@readonly</c> memberRoutines reachable). Mirrors
     /// WrapperForwardingPass.ReadOnlyWrapperTypes.</summary>
     public static readonly IReadOnlySet<string> ReadOnlyWrapperTypes =
-        new HashSet<string>(comparer: StringComparer.Ordinal) { Viewing, Consulting };
+        new HashSet<string>(comparer: StringComparer.Ordinal) { Viewing };
 
     /// <summary>Borrow/view wrappers whose value points INTO another value, so a memberRoutine returning one
     /// may ALIAS its receiver. Mirrors TemporaryTeardownPass.ReferringWrapperNAmes.</summary>
@@ -516,8 +546,6 @@ public static class RuntimeContract
         {
             Viewing,
             Modifying,
-            Consulting,
-            Amending,
             Retained
         };
 
@@ -526,9 +554,7 @@ public static class RuntimeContract
         new HashSet<string>(comparer: StringComparer.Ordinal)
         {
             Viewing,
-            Modifying,
-            Consulting,
-            Amending
+            Modifying
         };
 
     /// <summary>The reference-counting wrapper base names: a value of one of these co-owns a

@@ -17,22 +17,22 @@ namespace Builder.Verification.Enums;
 ///   - Repeat until fixpoint (no changes)
 ///
 /// Step 3 (Token Checking):
-///   - Viewing/Consulting tokens can only call Readonly memberRoutines
-///   - Modifying/Amending tokens can call Readonly or Writable memberRoutines
+///   - Viewing tokens can only call Readonly memberRoutines
+///   - Modifying tokens can call Readonly or Writable memberRoutines
 ///   - Only owned/non-token access can call Reshaping memberRoutines
 /// </remarks>
 public enum MutationCategory
 {
     /// <summary>
     /// Read-only access, doesn't mutate me.
-    /// Works with all token types: Viewing, Modifying, Consulting, Amending.
+    /// Works with both token types: Viewing, Modifying.
     /// </summary>
     Readonly,
 
     /// <summary>
     /// Mutates in-place within existing memory allocation.
-    /// Needs modifiable token: Modifying or Amending.
-    /// Cannot be called through Viewing or Consulting tokens.
+    /// Needs a modifiable token: Modifying.
+    /// Cannot be called through Viewing tokens.
     /// </summary>
     Writable,
 

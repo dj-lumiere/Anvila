@@ -832,7 +832,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// <summary>
     /// Every type has a `destruct`, so by default it's called at scope exit (the per-type
     /// `destruct` is a cheap no-op when there's nothing to free). The ONLY exclusions are the
-    /// access/borrow tier — `Viewing`/`Modifying`/`Consulting`/`Amending` views, the `Accessing`/
+    /// access/borrow tier — `Viewing`/`Modifying` views, the `Accessing`/
     /// `Controlling` access protocols, and the unmanaged `Hijacked` pointer — whose referent is
     /// owned elsewhere, so destroying them here would free a caller's value. Abstract types
     /// (generic params, protocols) likewise have no concrete destructor to call.

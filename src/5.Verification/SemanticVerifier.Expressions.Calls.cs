@@ -1488,11 +1488,32 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Validates a called memberRoutine's <c>needs P in [...]</c> (<see cref="ConstraintKind.TypeEquality"/>)
     /// constraints when the constrained parameter is inherited from the receiver type rather than
-    /// supplied as an explicit type argument — e.g. <c>Guarded[T, P].amend() needs P in [Exclusive,
+    /// supplied as an explicit type argument — e.g. <c>Guarded[T, P].modify() needs P in [Exclusive,
     /// MultiRead]</c> called on a <c>Guarded[Counter, ReadOnly]</c>. The standard constraint validator
     /// (<c>TypeResolver.ValidateTypeEqualityConstraint</c>) only fires when a generic type/memberRoutine is
     /// explicitly instantiated, so receiver-bound parameters would otherwise go unchecked.
     /// </summary>
+    /// <summary>What a Guarded's policy offers instead of the access it refused, or empty for any other receiver.</summary>
+    private static string GuardedPolicyHint(TypeSymbol receiverType, MemberExpression member, string policy)
+    {
+        if (receiverType.BareName != Declaration.RuntimeContract.Guarded)
+        {
+            return "";
+        }
+
+        string holder = member.Object is IdentifierExpression named ? named.Name : "the handle";
+        return (member.MemberName, policy) switch
+        {
+            ("view" or "try_view", "Exclusive") =>
+                $" A Guarded with the Exclusive policy lets one user in at a time, for reading too: read it inside " +
+                $"'using {holder}.modify() as m', or share the value under the MultiRead policy to let readers in together.",
+            ("modify" or "try_modify", "ReadOnly") =>
+                $" A Guarded with the ReadOnly policy is never changed, so it has no write lock: read it directly or " +
+                $"with '{holder}.view()', or share the value under the Exclusive or MultiRead policy to change it.",
+            _ => ""
+        };
+    }
+
     private void ValidateReceiverInheritedTypeEqualityConstraints(RoutineInfo memberRoutine,
         TypeSymbol receiverType, MemberExpression member, SourceLocation location)
     {
@@ -1539,12 +1560,22 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
+            // A routine split by this constraint (Guarded's `view()` per policy) is available for every set it is split
+            // into, so the message names them all.
             string allowedList = string.Join(separator: ", ",
-                values: allowed.Select(selector: t => t.Name));
+                values: _registry.KindVariantsOf(routine: memberRoutine)
+                                 .SelectMany(selector: v => v.GenericConstraints ?? [])
+                                 .Where(predicate: c => c.ConstraintType == ConstraintKind.TypeEquality &&
+                                                        c.ParameterName == constraint.ParameterName)
+                                 .SelectMany(selector: c => c.ConstraintTypes ?? [])
+                                 .Select(selector: t => t.Name)
+                                 .Distinct()
+                                 .Order(comparer: StringComparer.Ordinal));
             ReportError(code: SemanticDiagnosticCode.TypeEqualityConstraintViolation,
                 message: $"'{member.MemberName}()' is not available on '{receiverType.Name}': " +
                          $"'{boundShort}' is not in [{allowedList}] " +
-                         $"(constraint on '{constraint.ParameterName}').",
+                         $"(constraint on '{constraint.ParameterName}')." +
+                         GuardedPolicyHint(receiverType: receiverType, member: member, policy: boundShort),
                 location: location);
         }
     }
@@ -3184,7 +3215,7 @@ public sealed partial class SemanticVerifier
     private void ValidateMemberCallMutability(CallExpression call, MemberExpression member,
         TypeSymbol objectType, TypeSymbol dispatchType, RoutineInfo memberRoutine)
     {
-        // A read token (`Viewing[T]`, `Consulting[T]`) reaches only the inner value's `@readonly` routines: a call
+        // A read token (`Viewing[T]`) reaches only the inner value's `@readonly` routines: a call
         // that changes the value goes through a write token. The token's own routines and builder-written calls
         // are left out.
         if (!_isInCompilerGeneratedBody && !call.IsSynthesizedLowering && Wrappers.IsLockedGuarded(type: dispatchType) &&
@@ -3284,9 +3315,10 @@ public sealed partial class SemanticVerifier
         }
 
         // #47: .grasp() on @initonly record warns — record is frozen after construction
-        // Check if the variable holding the record is @initonly bound
+        // Check if the variable holding the record is @initonly bound. A handle's `modify()` (a Guarded's) changes the
+        // entity behind it, not the record, so it is left out.
         if (member.MemberName == ModifyMemberRoutineName && objectType is RecordTypeSymbol &&
-            member.Object is IdentifierExpression graspTarget)
+            !Wrappers.IsWrapperType(type: objectType) && member.Object is IdentifierExpression graspTarget)
         {
             VariableInfo? targetVar = _registry.LookupVariable(name: graspTarget.Name);
             if (targetVar is { IsModifiable: false })
@@ -3356,14 +3388,13 @@ public sealed partial class SemanticVerifier
                 location: call.Location);
         }
 
-        // `consult` and `amend` are ordinary Guarded member routines now — their
-        // policy legality (consult not on Exclusive, amend not on ReadOnly) is enforced by
-        // the type-equality constraint (RF-S160), and their lifetime by the using-binding
-        // rule. The earlier ad-hoc validation was replaced by the type system.
+        // `view` and `modify` on a Guarded are ordinary member routines: their policy legality (`modify` not on
+        // ReadOnly, `view` not on Exclusive) is enforced by the type-equality constraint (RF-S160), and the lock's
+        // lifetime by the using-resource rule below.
 
         // Enforce a memberRoutine's `needs P in [...]` (TypeEquality) constraint when the
         // constrained parameter is INHERITED FROM THE RECEIVER (e.g.
-        // `Guarded[T, P].amend() needs P in [Exclusive, MultiRead]`, with P bound by the
+        // `Guarded[T, P].modify() needs P in [Exclusive, MultiRead]`, with P bound by the
         // receiver `Guarded[Counter, ReadOnly]`). The general constraint validator only
         // fires for explicitly-instantiated generics, so a receiver-bound param — which
         // carries no explicit type args at the call site — is validated here instead.
@@ -3372,29 +3403,21 @@ public sealed partial class SemanticVerifier
             member: member,
             location: call.Location);
 
-        // A multi-threaded access token (Consulting/Amending, produced by
-        // consult()/amend()) is only legal as the immediate resource of a `using` block,
-        // so its lock spans exactly that scope. Reject every other position — inline use,
-        // a function argument, an unbound statement — with RF-S629. (The "cannot bind to a
-        // var" half is already enforced for inline-only tokens at var-declaration sites.)
-        if (memberRoutine.ReturnType is { } mtReturn &&
-            mtReturn.BareName is Declaration.RuntimeContract.Consulting
-                or Declaration.RuntimeContract.Amending &&
+        // What `view()` / `modify()` on a locking Guarded return takes the lock in its `using` block's `enter` and
+        // releases it in `exit`, so it is only legal as the immediate resource of a `using` block: the lock lives exactly
+        // as long as that block. Reject every other position — inline use, an argument, a binding — with RF-S629.
+        if (memberRoutine.ReturnType is { } opener &&
+            Declaration.RuntimeContract.GuardOpenerTypes.Contains(item: opener.BareName) &&
             !ReferenceEquals(objA: call, objB: _usingResourceNode))
         {
-            ReportError(code: SemanticDiagnosticCode.MtTokenRequiresUsing,
-                message:
-                $"'{member.MemberName}()' returns a scope-bound access token and must be " +
-                $"opened with 'using' (e.g. 'using …{member.MemberName}() as v'). It " +
-                "cannot be used inline, passed as an argument, or stored.",
-                location: call.Location);
+            ReportGuardOpenedOutsideUsing(call: call, member: member, objectType: objectType);
         }
     }
 
     /// <summary>
     /// Validates the view/modify access-token usage rules: partial entity-field access prohibition
     /// (entity.field.view()/grasp()), nested grasping prohibition, re-grasping prohibition, and
-    /// view-downgrade prohibition on Modifying/Amending tokens.
+    /// view-downgrade prohibition on Modifying tokens.
     /// </summary>
     private void ValidateAccessTokenViewModifyRules(CallExpression call, MemberExpression member,
         TypeSymbol objectType)
@@ -3418,14 +3441,14 @@ public sealed partial class SemanticVerifier
                 location: call.Location);
         }
 
-        // #170: Downgrade prohibition — cannot call .view() on Modifying/Amending
-        // A Modifying or Amending token handed to a Viewing parameter narrows implicitly: the builder writes that.
+        // #170: Downgrade prohibition — cannot call .view() on Modifying
+        // A Modifying token handed to a Viewing parameter narrows implicitly: the builder writes that.
         if (member.MemberName == "view" && !call.IsSynthesizedLowering &&
-            (Wrappers.IsModifyingType(type: objectType) || Wrappers.IsAmendingType(type: objectType)))
+            Wrappers.IsModifyingType(type: objectType))
         {
             ReportError(code: SemanticDiagnosticCode.TokenDowngradeProhibited,
                 message: $"Cannot downgrade '{objectType.Name}' with '.view()'. " +
-                         "Modifying/Amending tokens already have write access — use them directly.",
+                         "A Modifying token already has write access — use it directly.",
                 location: call.Location);
         }
     }

@@ -23,11 +23,6 @@ public enum PointerFlavor
     /// <summary>Modifying borrow (Modifying[T]).</summary>
     Modifying,
 
-    /// <summary>Consulting borrow (read-only, internal use).</summary>
-    Consulting,
-
-    /// <summary>Amending borrow (exclusive, internal use).</summary>
-    Amending,
 
     /// <summary>Reference-counted shared pointer (Retained[T]).</summary>
     Retained,

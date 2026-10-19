@@ -125,6 +125,10 @@ public static class ModularStdlibCache
         /// <summary>Routine resolution table (short/alias key → RoutineInfo) for this module.</summary>
         public Dictionary<string, RoutineInfo> RoutineResolutions { get; set; } = new();
 
+        /// <summary>The implementations of each routine split by kind or by an owner <c>needs P in [...]</c>, keyed by
+        /// their shared registry key.</summary>
+        public Dictionary<string, List<RoutineInfo>> KindVariants { get; set; } = new();
+
         /// <summary>Preset (constant/inline) variable declarations owned by this module.</summary>
         public Dictionary<string, VariableInfo> Presets { get; set; } = new();
 
@@ -400,6 +404,12 @@ public static class ModularStdlibCache
                .PresetsByQualifiedName[key: kv.Key] = kv.Value;
         }
 
+        foreach (KeyValuePair<string, List<RoutineInfo>> kv in reg.KindVariants)
+        {
+            getSlice(arg: kv.Value.Select(selector: ModuleOf).FirstOrDefault() ?? Misc)
+               .KindVariants[key: kv.Key] = kv.Value;
+        }
+
         foreach (KeyValuePair<string, Dictionary<string, List<RoutineInfo>>> kv in reg
                     .RoutinesByOwner)
         {
@@ -587,6 +597,7 @@ public static class ModularStdlibCache
             RoutinesByQualifiedName = merged.RoutinesByQualifiedName,
             RoutinesByOwner = merged.RoutinesByOwner,
             RoutineResolutions = merged.RoutineResolutions,
+            KindVariants = merged.KindVariants,
             Presets = merged.Presets,
             PresetsByQualifiedName = merged.PresetsByQualifiedName,
             LoadedModules = index.LoadedModules,
@@ -686,6 +697,11 @@ public static class ModularStdlibCache
         foreach (KeyValuePair<string, RoutineInfo> kv in src.RoutineResolutions)
         {
             dst.RoutineResolutions[key: kv.Key] = kv.Value;
+        }
+
+        foreach (KeyValuePair<string, List<RoutineInfo>> kv in src.KindVariants)
+        {
+            dst.KindVariants[key: kv.Key] = kv.Value;
         }
     }
 

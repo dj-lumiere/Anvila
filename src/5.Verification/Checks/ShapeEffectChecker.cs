@@ -25,7 +25,7 @@ namespace Builder.Verification;
 /// <para>One checker serves a whole build: the user routines it has seen accumulate across
 /// <see cref="Check"/> calls, so a routine analyzed in an earlier file still lends its effect.</para>
 /// </summary>
-internal sealed class ShapeEffectChecker(DiagnosticReporter report)
+internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet<List<Expression>> reportedCalls)
 {
     private const string MeSlot = "me";
 
@@ -35,8 +35,6 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
         {
             "view",
             "modify",
-            "consult",
-            "amend",
             RuntimeContract.Access,
             RuntimeContract.Control
         };
@@ -102,7 +100,8 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
     /// </summary>
     private void CheckSameContainerTwice(CallExpression call)
     {
-        if (call.ResolvedRoutine is not { } routine)
+        // Passing a Guarded's write token twice was reported with the lock named (RF-S603).
+        if (call.ResolvedRoutine is not { } routine || reportedCalls.Contains(item: call.Arguments))
         {
             return;
         }
@@ -674,13 +673,13 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
         }
     }
 
-    /// <summary>The two-token pairs taken by <c>multimodify</c>/<c>multiamend</c> whose bodies are being checked.</summary>
+    /// <summary>The two-token pairs taken by <c>multimodify</c> whose bodies are being checked.</summary>
     private readonly HashSet<(string, string)> _distinct = [];
 
-    /// <summary>The names a <c>using multimodify(...)</c> / <c>using multiamend(...)</c> binds, in name order.</summary>
+    /// <summary>The names a <c>using multimodify(...)</c> binds, in name order.</summary>
     private static (string, string)? DistinctPair(UsingStatement usingStmt)
     {
-        return usingStmt is { Parts: [var a, var b], Resource: CallExpression { Callee: IdentifierExpression { Name: "multimodify" or "multiamend" } } }
+        return usingStmt is { Parts: [var a, var b], Resource: CallExpression { Callee: IdentifierExpression { Name: "multimodify" } } }
             ? string.CompareOrdinal(strA: a, strB: b) < 0 ? (a, b) : (b, a)
             : null;
     }
@@ -728,7 +727,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report)
     /// <summary>The container a token or a shared handle reaches, or null for a bare value.</summary>
     private static TypeSymbol? AliasInner(TypeSymbol? type)
     {
-        return type?.BareName is "Modifying" or "Viewing" or "Consulting" or "Amending" && type.TypeArguments is [{ } inner, ..]
+        return type?.BareName is "Modifying" or "Viewing" && type.TypeArguments is [{ } inner, ..]
             ? inner
             : type is null ? null : SharedHandleInner(type: type);
     }

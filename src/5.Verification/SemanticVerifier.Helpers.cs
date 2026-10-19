@@ -651,8 +651,8 @@ public sealed partial class SemanticVerifier
             {
                 // A read token handed to a write-token parameter says what to pass instead, so it gets that message
                 // alone rather than a bare type mismatch next to it.
-                if (argType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Consulting &&
-                    paramType.BareName is Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Amending)
+                if (argType.BareName is Declaration.RuntimeContract.Viewing &&
+                    paramType.BareName is Declaration.RuntimeContract.Modifying)
                 {
                     ReportError(code: SemanticDiagnosticCode.WritableMemberRoutineThroughReadOnlyWrapper,
                         message:
@@ -773,7 +773,7 @@ public sealed partial class SemanticVerifier
             if (hint != null)
             {
                 string verb = Wrappers.NonTriviallyAssignableWrappers[key: hint.Value.Wrapper];
-                // A scoped access token (Viewing/Modifying/Consulting/Amending) has NO copy verb —
+                // A scoped access token (Viewing/Modifying) has NO copy verb —
                 // it is a can't-escape borrow. Passing one as a call argument is always a by-reference
                 // borrow (into a marker-bound / token param), never an implicit copy, so there is
                 // nothing to force. Emitting RF-S420 here would ask the user to "spell out (none)".

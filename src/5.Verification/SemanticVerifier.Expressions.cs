@@ -671,13 +671,13 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <summary>
     /// A type carries a comparable object identity iff it is an <c>entity</c> or one of the forwarding
-    /// wrappers (Viewing/Modifying/Consulting/Amending/Retained/Tracked/Guarded/Witnessed/Roamed). Hijacked
+    /// wrappers (Viewing/Modifying/Retained/Tracked/Guarded/Witnessed/Roamed). Hijacked
     /// is deliberately excluded (its <c>==</c> is already identity). Value types have no identity.
     /// </summary>
     private static bool IsIdentityComparable(TypeSymbol type)
     {
         return type is EntityTypeSymbol ||
-               Declaration.RuntimeContract.ForwardingWrapperTypes.Contains(item: type.BareName);
+               Declaration.RuntimeContract.IdentityComparableWrapperTypes.Contains(item: type.BareName);
     }
 
     /// <summary>Reports RF-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>
@@ -690,10 +690,14 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
+        bool token = type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying;
         ReportError(code: SemanticDiagnosticCode.IdentityOperandNotReference,
-            message:
-            $"'{op.ToStringRepresentation()}' asks whether two names refer to the same entity, and '{type.Name}' is " +
-            "a value, which has no identity of its own. Compare values with '=='.",
+            message: token
+                ? $"'{op.ToStringRepresentation()}' asks whether two names refer to the same entity, and '{type.Name}' is " +
+                  "a token, permission to reach an entity rather than a handle to it. Compare the entities the tokens " +
+                  "came from."
+                : $"'{op.ToStringRepresentation()}' asks whether two names refer to the same entity, and '{type.Name}' is " +
+                  "a value, which has no identity of its own. Compare values with '=='.",
             location: location);
         return false;
     }
@@ -2094,13 +2098,13 @@ public sealed partial class SemanticVerifier
 
         ValidateCompoundAssignmentTarget(compound: compound);
 
-        // #67: Cannot use compound assignment on read-only token (Viewing or Consulting)
+        // #67: Cannot use compound assignment on read-only token (Viewing)
         if (WrapperShape.IsReadOnly(type: targetType))
         {
             ReportError(code: SemanticDiagnosticCode.CompoundAssignmentOnReadOnlyToken,
                 message:
                 $"Cannot use compound assignment on read-only token '{targetType.BareName}'. " +
-                "Read-only tokens (Viewing, Consulting) do not allow modifications.",
+                "A read-only token (Viewing) does not allow modifications.",
                 location: compound.Location);
             return ErrorTypeSymbol.Instance;
         }

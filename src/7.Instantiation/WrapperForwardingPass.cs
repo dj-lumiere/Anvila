@@ -23,7 +23,7 @@ namespace Builder.Instantiation;
 /// transitively through raw.extract() to the concrete inner type.
 ///
 /// Policy:
-///   - Read-only wrappers (Viewing, Consulting) forward ONLY @readonly memberRoutines of T.
+///   - Read-only wrappers (Viewing) forward ONLY @readonly memberRoutines of T.
 ///   - All other wrappers forward any modification category.
 ///
 /// Signature synthesis: params/return are taken from the inner memberRoutine's signature
@@ -280,7 +280,7 @@ internal sealed class WrapperForwardingPass
             _ => wrapperType
         };
 
-        // The held value is the first parameter (`Amending[T, TPolicy]` holds a `T`).
+        // The held value is the first parameter (`Guarded[T, TPolicy]` holds a `T`).
         if (wrapperDef == null || !wrapperDef.IsGenericDefinition ||
             wrapperDef.GenericParameters is not { Count: >= 1 })
         {
@@ -696,7 +696,7 @@ internal sealed class WrapperForwardingPass
                 ctx: callCtx);
         }
         else if (wrapperType.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying
-                 or RuntimeContract.Amending or RuntimeContract.Consulting or RuntimeContract.Retained
+                 or RuntimeContract.Retained
                  or RuntimeContract.Guarded)
         {
             // A Guarded is reached directly only under the ReadOnly policy (analysis rejects the rest), so only to
@@ -1180,7 +1180,7 @@ internal sealed class WrapperForwardingPass
     }
 
     /// <summary>
-    /// Checks if a wrapper type is read-only (Viewing, Consulting).
+    /// Checks if a wrapper type is read-only (Viewing).
     /// </summary>
     private static bool IsReadOnlyWrapper(TypeSymbol type)
     {

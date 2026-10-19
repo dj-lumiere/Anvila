@@ -495,7 +495,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Wrapper type resolutions cache for synthesized scoped/RC wrappers
-    /// (Viewing, Modifying, Consulting, Amending, Hijacked, Retained, Guarded, Tracked, Witnessed).
+    /// (Viewing, Modifying, Hijacked, Retained, Guarded, Tracked, Witnessed).
     /// </summary>
 
     /// <summary>
@@ -1860,7 +1860,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The concrete controller entity behind a pointer-backed wrapper (<c>Retained[E]</c> →
-    /// <c>RetainManager[E]</c>, <c>Consulting[E, P]</c> → <c>GuardManager[E, P]</c>), derived from the
+    /// <c>RetainManager[E]</c>, <c>Guarded[E, P]</c> → <c>GuardManager[E, P]</c>), derived from the
     /// wrapper's structure: its base name picks the controller (<see cref="RuntimeContract.ControllerOf"/>)
     /// and its type arguments instantiate it. Null when the wrapper has no controller.
     /// </summary>
@@ -2712,12 +2712,12 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Gets or creates a synthesized wrapper type (Modifying, Consulting, Amending, Viewing).
+    /// Gets or creates a synthesized wrapper type (Modifying, Viewing).
     /// These are builder-intrinsic types that don't need to be defined in the program.
     /// </summary>
     /// <param name="wrapperName">The name of the wrapper type (e.g., "Modifying").</param>
     /// <param name="innerType">The type being wrapped.</param>
-    /// <param name="isReadOnly">Whether this is a read-only wrapper (Viewing, Consulting).</param>
+    /// <param name="isReadOnly">Whether this is a read-only wrapper (Viewing).</param>
     /// <returns>The cached or newly created wrapper type.</returns>
     public TypeSymbol GetOrCreateWrapperType(string wrapperName, TypeSymbol innerType,
         bool isReadOnly)

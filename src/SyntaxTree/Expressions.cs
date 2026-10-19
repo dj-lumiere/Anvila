@@ -1443,7 +1443,7 @@ public record CrashableDispatchExpression(
 public enum WrapperProjectionKind
 {
     /// <summary>The wrapper handle points at a controller (Retained/Tracked, Guarded/Witnessed and their
-    /// Consulting/Amending tokens, Roamed) and the entity is the controller's <c>data</c> field.</summary>
+    /// Roamed) and the entity is the controller's <c>data</c> field.</summary>
     ControllerData,
 
     /// <summary>The wrapper is a plain pointer to the entity (Viewing, Modifying, Hijacked).</summary>
@@ -1569,7 +1569,7 @@ public record ClosureValueExpression(IdentifierExpression Function, Expression B
 /// Steal expression rules:
 /// <list type="bullet">
 /// <item>Can steal: raw entities</item>
-/// <item>Cannot steal: Viewing&lt;T&gt;, Modifying&lt;T&gt;, Retained&lt;T&gt;, Tracked&lt;T&gt;, Guarded&lt;T, P&gt;, Witnessed&lt;T, P&gt;, Consulting&lt;T&gt;, Amending&lt;T&gt;, Hijacked&lt;T&gt;</item>
+/// <item>Cannot steal: Viewing&lt;T&gt;, Modifying&lt;T&gt;, Retained&lt;T&gt;, Tracked&lt;T&gt;, Guarded&lt;T, P&gt;, Witnessed&lt;T, P&gt;, Hijacked&lt;T&gt;</item>
 /// <item>After stealing, source becomes deadref (using it is a build error)</item>
 /// <item>Used for: ownership transfer (steal node), container push (list.push(steal node)),
 /// and consuming iteration (for item in steal list)</item>

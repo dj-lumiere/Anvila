@@ -1220,30 +1220,32 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeUsingStatement(UsingStatement usingStmt)
     {
-        // Mark the resource node so a multi-threaded access token (Consulting/Amending) produced
-        // directly here is accepted; the same token produced anywhere else is rejected (RF-S629),
-        // keeping its lock strictly `using`-scoped. Save/restore to support nested `using`.
+        // Mark the resource node so what `view()` / `modify()` on a locking Guarded return is accepted
+        // directly here; the same call anywhere else is rejected (RF-S629), keeping its lock strictly
+        // `using`-scoped. Save/restore to support nested `using`.
         ISyntaxTreeNode? previousUsingResource = _usingResourceNode;
         _usingResourceNode = usingStmt.Resource;
         // Analyze the resource expression to get its type
         TypeSymbol resourceType = AnalyzeExpression(expression: usingStmt.Resource);
         _usingResourceNode = previousUsingResource;
 
-        // Readers-XOR-writer (RF-S630): if this `using` opens an MT access token on a named Guarded
-        // handle, check it against the holds already live in the enclosing `using` scopes on the SAME
-        // handle. A writer (`amend`) conflicts with any other hold; readers (`consult`) coexist.
+        // Readers-XOR-writer (RF-S630): if this `using` takes a Guarded's lock (`view()` / `modify()` on a
+        // named handle), check it against the holds already live in the enclosing `using` scopes on the SAME
+        // handle. A writer (`modify`) conflicts with any other hold; readers (`view`) coexist.
         // The hold is pushed for the duration of the body and popped on exit, so only OVERLAPPING
         // scopes conflict (sequential `using`s on the same handle are fine).
         string accessBase = resourceType.BareName;
-        bool opensAccessToken = accessBase is Declaration.RuntimeContract.Consulting
-            or Declaration.RuntimeContract.Amending;
-        string? accessHandle = opensAccessToken
+        bool opensLock = accessBase is Declaration.RuntimeContract.ViewingGuarded
+            or Declaration.RuntimeContract.ModifyingGuarded;
+        bool isWriter = accessBase is Declaration.RuntimeContract.ModifyingGuarded
+            or Declaration.RuntimeContract.MultiModifyingGuarded;
+        string? accessHandle = opensLock
             ? ExtractAccessReceiverName(resource: usingStmt.Resource)
             : null;
         if (accessHandle != null)
         {
             CheckReadersXorWriter(usingStmt: usingStmt,
-                accessBase: accessBase,
+                isWriter: isWriter,
                 accessHandle: accessHandle);
         }
 
@@ -1273,12 +1275,30 @@ public sealed partial class SemanticVerifier
             DeclareUsingParts(usingStmt: usingStmt, boundType: boundType);
         }
 
+        // The tokens a Guarded opener's `enter` binds are backed by its lock for this block: recorded by where they came
+        // from, since their type is a plain Viewing / Modifying.
+        List<VariableInfo> lockBacked = Declaration.RuntimeContract.GuardOpenerTypes.Contains(item: accessBase)
+            ? (usingStmt.Parts ?? [usingStmt.Name])
+             .Select(selector: name => _registry.LookupVariable(name: name))
+             .OfType<VariableInfo>()
+             .ToList()
+            : [];
+        foreach (VariableInfo token in lockBacked)
+        {
+            _lockBackedTokens[key: token] = isWriter;
+        }
+
         // Analyze the body. (A token's use after its source changed is RazorForge's TokenLifetimeChecker's, RF-S643.)
         AnalyzeStatement(statement: usingStmt.Body);
 
         // #171/#172: Token/resource scope escape — validate that the using-bound variable
         // is not returned or stored in outer scope (handled by ValidateNotTokenReturnType
         // for tokens, and conceptually enforced by scope exit for resources)
+
+        foreach (VariableInfo token in lockBacked)
+        {
+            _lockBackedTokens.Remove(key: token);
+        }
 
         _registry.ExitScope();
 
@@ -1341,10 +1361,8 @@ public sealed partial class SemanticVerifier
     /// overlaps an active hold in an enclosing scope (a writer excludes all; readers coexist), then
     /// pushes this hold onto the active-holds stack for the duration of the body.
     /// </summary>
-    private void CheckReadersXorWriter(UsingStatement usingStmt, string accessBase,
-        string accessHandle)
+    private void CheckReadersXorWriter(UsingStatement usingStmt, bool isWriter, string accessHandle)
     {
-        bool isWriter = accessBase == Declaration.RuntimeContract.Amending;
         int accessIdentity = GetOrAssignHandleIdentity(path: accessHandle);
         foreach ((string Handle, int Identity, bool IsWriter, SourceLocation Location) hold in
                  _activeAccessHolds)
@@ -1360,11 +1378,11 @@ public sealed partial class SemanticVerifier
             }
 
             string newKind = isWriter
-                ? "amend()"
-                : "consult()";
+                ? "modify()"
+                : "view()";
             string heldKind = hold.IsWriter
-                ? "amend()"
-                : "consult()";
+                ? "modify()"
+                : "view()";
             string overlapNote;
             if (hold.Handle == accessHandle)
             {
@@ -1381,9 +1399,10 @@ public sealed partial class SemanticVerifier
 
             ReportError(code: SemanticDiagnosticCode.ReadersXorWriter,
                 message:
-                $"'{newKind}' on '{accessHandle}' conflicts with an active '{heldKind}' on " +
-                $"{overlapNote} in an enclosing 'using' scope. A writer ('amend') excludes all other " +
-                "access; readers ('consult') may coexist only with other readers.",
+                $"'using {accessHandle}.{newKind}' waits for the lock that the enclosing 'using ... {heldKind}' on " +
+                $"{overlapNote} holds until its block ends, so this block would never start. A writer ('modify') " +
+                "excludes every other hold, and readers ('view') share the lock only with other readers. Close the " +
+                "outer block first, or use the token it already bound.",
                 location: usingStmt.Location);
             break;
         }
@@ -1423,6 +1442,16 @@ public sealed partial class SemanticVerifier
             boundType = enterReturn;
         }
 
+        // With a `fallback`, `try_enter` takes the hold instead of `enter`, so the scope binds what `entered` gives
+        // (a Guarded opener's token), or the resource itself when the type has no `entered`.
+        if (usingStmt.FallbackBody != null)
+        {
+            boundType = _registry.LookupMemberRoutine(type: resourceType,
+                    memberRoutineName: Declaration.RuntimeContract.Entered)?.ReturnType is { IsNone: false } entered
+                ? entered
+                : resourceType;
+        }
+
         // A `fallback` branch drives a non-blocking acquisition — the resource must
         // provide `try_enter` (returns Bool: did the hold succeed?). Types whose entry
         // can only block (no `try_enter`) cannot take a `fallback`.
@@ -1440,10 +1469,10 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Extracts a path key for the Guarded handle of an `consult`/`amend` access expression — the
-    /// receiver of `s.consult()` / `s.amend()`, as a dotted path so distinct fields are distinct
-    /// handles: `s` → "s", `s.a` → "s.a". This makes `s.a.amend()` and `s.b.amend()` independent
-    /// (both amendable in one scope) while `s.a` amended twice still conflicts. Returns null for
+    /// Extracts a path key for the Guarded handle of a `view`/`modify` access expression — the
+    /// receiver of `s.view()` / `s.modify()`, as a dotted path so distinct fields are distinct
+    /// handles: `s` → "s", `s.a` → "s.a". This makes `s.a.modify()` and `s.b.modify()` independent
+    /// (both open in one scope) while `s.a` opened for writing twice still conflicts. Returns null for
     /// receivers that aren't a pure identifier/field path (indexing, call results), which the
     /// readers-XOR-writer check conservatively skips (no false positives).
     /// </summary>

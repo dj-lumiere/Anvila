@@ -718,8 +718,7 @@ public sealed partial class SemanticVerifier
     private static TypeSymbol? HandleInnerType(TypeSymbol type)
     {
         return type.BareName is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed
-                   or Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying
-                   or Declaration.RuntimeContract.Consulting or Declaration.RuntimeContract.Amending &&
+                   or Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
                type.TypeArguments is [{ } inner, ..]
             ? inner
             : null;

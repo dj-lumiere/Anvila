@@ -1447,8 +1447,7 @@ public sealed partial class SemanticVerifier
 
         string handle = argType.BareName;
         TypeSymbol inner = handle is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed
-                               or Declaration.RuntimeContract.Modifying or Declaration.RuntimeContract.Amending
-                               or Declaration.RuntimeContract.Consulting && argType.TypeArguments is [{ } held, ..]
+                               or Declaration.RuntimeContract.Modifying && argType.TypeArguments is [{ } held, ..]
             ? argType.TypeArguments![index: 0]
             : argType;
         return _registry.LookupType(name: tokenKind) is { } tokenDef

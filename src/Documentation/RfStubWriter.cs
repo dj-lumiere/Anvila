@@ -46,7 +46,7 @@ internal sealed class RfStubWriter
     {
         "Accessing", "Controlling", "Assignable", "AtomicType", "Splittable", "CPtr", "Address", "IngridWords",
         "Hijacked", "Viewing", "Modifying", "Retained", "Tracked", "Roamed", "Guarded", "Witnessed", "Watched",
-        "Consulting", "Amending", "ListEmittable", "CircularListEmittable", "SplitListEmittable",
+        "ViewingGuarded", "ModifyingGuarded", "MultiModifyingGuarded", "ListEmittable", "CircularListEmittable", "SplitListEmittable",
         "SplitArrayEmittable", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
         "DD", "FloatDigits", "FloatParsed", "D32Parts", "D64Parts", "D128Parts", "ComplexTextParts",
         "IntegerLimbView", "IntV", "Exposed", "Wielded",

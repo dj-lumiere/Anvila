@@ -568,12 +568,12 @@ public enum SemanticDiagnosticCode
     /// RF entity has no reference count, so passing it by value across an SF routine boundary would let
     /// SF's scope-exit teardown destroy the same object more than once (caller + callee + return) →
     /// heap corruption. Hold it as a field of an SF entity, or hand it across as <c>Retained[T]</c>
-    /// (persistent) / <c>Consulting[T]</c>·<c>Amending[T]</c> (in-call access) instead.</summary>
+    /// (persistent) / <c>Viewing[T]</c>·<c>Modifying[T]</c> (in-call access) instead.</summary>
     SuflaeBareRfEntityInSignature = 439,
 
     /// <summary>An operand of the reference-identity operator <c>===</c>/<c>!==</c> is not a
     /// reference-carrying type. Identity ("same object?") is only meaningful for an <c>entity</c> or a
-    /// forwarding wrapper (Viewing/Modifying/Consulting/Amending/Retained/Tracked/Guarded/Witnessed/Roamed);
+    /// forwarding wrapper (Viewing/Modifying/Retained/Tracked/Guarded/Witnessed/Roamed);
     /// a value (record/scalar/Text-as-value) has no identity — use <c>==</c> for value equality.</summary>
     IdentityOperandNotReference = 440,
 
@@ -787,7 +787,7 @@ public enum SemanticDiagnosticCode
     /// <summary>A name is used after a <c>steal</c> moved its value out.</summary>
     UseAfterSteal = 615,
 
-    /// <summary>Cannot downgrade token permission (e.g., .view() on Modifying/Amending).</summary>
+    /// <summary>Cannot downgrade token permission (e.g., .view() on Modifying).</summary>
     TokenDowngradeProhibited = 618,
 
     /// <summary>Suflae: member access on a possibly-none (`E?`) entity reference that has not been
@@ -803,10 +803,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Reshaping operation on collection during iteration is not allowed.</summary>
     ReshapingDuringIteration = 625,
 
-    /// <summary>Amending[T] cannot be copied or aliased.</summary>
-    AmendingCopyNotAllowed = 626,
-
-    /// <summary>Cannot write to member variable through read-only wrapper (Viewing, Consulting).</summary>
+    /// <summary>Cannot write to member variable through a read-only wrapper (Viewing, a ReadOnly Guarded).</summary>
     WriteThroughReadOnlyWrapper = 631,
 
     /// <summary>Hijacked[T] memberRoutine calls require danger block.</summary>
@@ -815,12 +812,13 @@ public enum SemanticDiagnosticCode
     /// <summary>.hijack() on Guarded/Witnessed requires danger block.</summary>
     SnatchRequiresDanger = 628,
 
-    /// <summary>A multi-threaded access token (Consulting/Amending from consult()/amend()) must be
-    /// opened with a `using` block — it cannot be used inline or stored.</summary>
+    /// <summary>What takes a Guarded's lock (<c>view()</c> / <c>modify()</c> on an <c>Exclusive</c> / <c>MultiRead</c>
+    /// handle, <c>multimodify</c> on two handles) is written only as the resource of a `using` block: the lock is held
+    /// exactly as long as that block, so it cannot be used inline, passed, or bound.</summary>
     MtTokenRequiresUsing = 629,
 
-    /// <summary>Readers-XOR-writer violation: an `amend()` (writer) coexists with another `amend()`
-    /// or an `consult()` (reader) on the same Guarded handle in an overlapping `using` scope.</summary>
+    /// <summary>Readers-XOR-writer violation: a `using g.modify()` (writer) inside another `using` that holds the same
+    /// Guarded's lock, or a `using g.view()` (reader) inside a writer's block.</summary>
     ReadersXorWriter = 630,
 
     /// <summary>The source of a live access token (or something that owns it) is reassigned or stolen
@@ -830,7 +828,7 @@ public enum SemanticDiagnosticCode
 
     /// <summary>A token on an element of one container is held while another token or handle to the same kind of
     /// container changes shape, and the two may be the same container: the element could be moved or freed under
-    /// the held token. Two tokens taken together by <c>multimodify</c>/<c>multiamend</c> are known to differ.</summary>
+    /// the held token. Two tokens taken together by <c>multimodify</c> are known to differ.</summary>
     HeldElementOfAliasReshaped = 640,
 
     /// <summary>One call is handed the same container as a write token and as another token: the two are the same
@@ -878,7 +876,7 @@ public enum SemanticDiagnosticCode
     ThreadArgNotShareable = 632,
 
     /// <summary>The value inside a <c>Guarded[T, Exclusive]</c> / <c>Guarded[T, MultiRead]</c> is reached on the handle
-    /// itself, outside a <c>using … amend()</c> / <c>consult()</c> that holds its lock. Only a
+    /// itself, outside a <c>using … modify()</c> / <c>view()</c> that holds its lock. Only a
     /// <c>Guarded[T, ReadOnly]</c>, which has no lock, is read directly.</summary>
     GuardedReachedWithoutLock = 649,
 
@@ -990,7 +988,7 @@ public enum SemanticDiagnosticCode
     /// Code number reserved to avoid reuse.</summary>
     IndexOperatorTypeKindRestriction = 765,
 
-    /// <summary>Cannot use compound assignment on a read-only token (Viewing or Consulting).</summary>
+    /// <summary>Cannot use compound assignment on a read-only token (Viewing).</summary>
     CompoundAssignmentOnReadOnlyToken = 766,
 
     /// <summary>Fixed-width numeric types must match exactly; explicit conversion required.</summary>

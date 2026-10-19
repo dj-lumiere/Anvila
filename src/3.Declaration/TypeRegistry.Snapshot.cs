@@ -49,6 +49,11 @@ partial class TypeRegistry
         /// <summary>Resolved routine instances (concrete-owner substitutions) keyed by RegistryKey.</summary>
         public Dictionary<string, RoutineInfo> RoutineResolutions { get; init; } = null!;
 
+        /// <summary>The implementations of each routine split by kind or by an owner <c>needs P in [...]</c>, keyed by
+        /// their shared registry key: the registry itself holds one of them, so a restored registry needs the set to
+        /// pick the one an owner gets.</summary>
+        public Dictionary<string, List<RoutineInfo>> KindVariants { get; init; } = new();
+
         // Preset storage
         /// <summary>Preset variables keyed by short name.</summary>
         public Dictionary<string, VariableInfo> Presets { get; init; } = null!;
@@ -129,6 +134,8 @@ partial class TypeRegistry
                         elementSelector: m => new List<RoutineInfo>(collection: m.Value))),
             RoutineResolutions =
                 new Dictionary<string, RoutineInfo>(dictionary: _routineResolutions),
+            KindVariants = _kindVariants.ToDictionary(keySelector: kv => kv.Key,
+                elementSelector: kv => new List<RoutineInfo>(collection: kv.Value)),
             Presets = new Dictionary<string, VariableInfo>(dictionary: _presets),
             PresetsByQualifiedName =
                 new Dictionary<string, VariableInfo>(dictionary: _presetsByQualifiedName),
@@ -238,6 +245,11 @@ partial class TypeRegistry
         foreach (KeyValuePair<string, RoutineInfo> kv in snapshot.RoutineResolutions)
         {
             _routineResolutions[key: kv.Key] = kv.Value;
+        }
+
+        foreach (KeyValuePair<string, List<RoutineInfo>> kv in snapshot.KindVariants)
+        {
+            _kindVariants[key: kv.Key] = new List<RoutineInfo>(collection: kv.Value);
         }
     }
 

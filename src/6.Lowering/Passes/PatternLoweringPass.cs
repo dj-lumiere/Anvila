@@ -154,7 +154,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         if (subjectType is { } tokenType && Declaration.RuntimeContract.AccessTokenTypes.Contains(item: tokenType.BareName) &&
             Verification.Wrappers.GetWrapperInnerType(wrapperType: tokenType) is { } reached)
         {
-            string reach = tokenType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Consulting
+            string reach = tokenType.BareName is Declaration.RuntimeContract.Viewing
                 ? Declaration.RuntimeContract.Access
                 : Declaration.RuntimeContract.Control;
             RoutineInfo? reachRoutine = ctx.Registry.LookupMemberRoutine(type: tokenType, memberRoutineName: reach);

@@ -528,8 +528,20 @@ public partial class LlvmEmitter
     {
         string left = EmitExpression(sb: sb, expr: binary.Left);
         string right = EmitExpression(sb: sb, expr: binary.Right);
+        string type = binary.Left.ResolvedType is { } leftType ? GetLlvmType(type: leftType) : "ptr";
+        string compared = "ptr";
+        // A handle that holds its manager's address as an integer field (`Watched[T]` is `{ i64 }`) is the same
+        // object exactly when the addresses match: compare the field.
+        if (type.StartsWith(value: "%", comparisonType: StringComparison.Ordinal) || type.StartsWith(value: "{", comparisonType: StringComparison.Ordinal))
+        {
+            string l = NextTemp();
+            string r = NextTemp();
+            EmitLine(sb: sb, line: $"  {l} = extractvalue {type} {left}, 0");
+            EmitLine(sb: sb, line: $"  {r} = extractvalue {type} {right}, 0");
+            (left, right, compared) = (l, r, "i64");
+        }
         string result = NextTemp();
-        EmitLine(sb: sb, line: $"  {result} = icmp {cmpOp} ptr {left}, {right}");
+        EmitLine(sb: sb, line: $"  {result} = icmp {cmpOp} {compared} {left}, {right}");
         return result;
     }
 

@@ -258,12 +258,22 @@ public sealed partial class SemanticVerifier
     /// <summary>Routine declarations collected in Phase 3/4, pending resolution and registration in Phase 4.1.</summary>
     internal readonly List<PendingRoutine> _pendingRoutines = [];
 
-    /// <summary>The resource expression currently being analyzed as a `using` target, if any. A
-    /// multi-threaded access token (Consulting/Amending) is only legal in this exact position —
+    /// <summary>The resource expression currently being analyzed as a `using` target, if any. What
+    /// <c>view()</c> / <c>modify()</c> on a locking <c>Guarded</c> return is only legal in this exact position —
     /// any other use is rejected (RF-S629) so its lock is always `using`-scoped.</summary>
     private ISyntaxTreeNode? _usingResourceNode;
 
-    /// <summary>Stack of MT access holds (`consult`/`amend`) live in the enclosing `using` scopes.
+    /// <summary>The tokens a <c>using</c> over a <c>Guarded</c> opener bound, live for that block's body, with whether
+    /// each one writes. Such a token is a plain <c>Viewing[T]</c> / <c>Modifying[T]</c>: that it is backed by the lock
+    /// is where it came from, so the checks that care (an agent argument, the same write token passed twice) ask
+    /// here instead of its type. Keyed by the variable itself, so a shadowing local is not mistaken for it.</summary>
+    private readonly Dictionary<VariableInfo, bool> _lockBackedTokens = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>The argument lists of the calls already reported for passing one lock-backed write token twice
+    /// (RF-S603), so the general same-container check (RF-S623) does not report the same mistake again.</summary>
+    private readonly HashSet<List<Expression>> _lockTokenDuplicateCalls = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>Stack of MT access holds (`view`/`modify` on a locking Guarded) live in the enclosing `using` scopes.
     /// Each hold records the syntactic handle path AND the controller-identity it resolves to (see
     /// <see cref="_sharedHandleIdentity"/>), so aliased handles (`s2 = s.share()`) conflict even
     /// though their names differ. Pushed on `using` entry, popped on exit, so a nested `using` sees
@@ -721,7 +731,8 @@ public sealed partial class SemanticVerifier
         List<Program> list = programs.ToList();
         if (_registry.Rules.ChecksOwnership)
         {
-            (_shapeEffects ??= new ShapeEffectChecker(report: ReportError)).Check(programs: list);
+            (_shapeEffects ??= new ShapeEffectChecker(report: ReportError, reportedCalls: _lockTokenDuplicateCalls))
+                .Check(programs: list);
             new AgentOneThreadChecker(report: ReportError).Check(programs: list);
             new AgentCollectedChecker(warn: ReportWarning).Check(programs: list);
         }

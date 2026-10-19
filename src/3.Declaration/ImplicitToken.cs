@@ -6,7 +6,7 @@ namespace Builder.Declaration;
 /// A <c>Viewing[T]</c> or <c>Modifying[T]</c> parameter takes whatever can give that access, converted at the
 /// call: the value itself (an entity through <c>.view()</c>/<c>.modify()</c>, a record or a type parameter through
 /// the address of the place it is in), or a handle or token over a <c>T</c> that allows as much
-/// (<c>Retained[T]</c>, <c>Roamed[T]</c>, <c>Amending[T]</c>, <c>Consulting[T]</c> for reading, <c>Modifying[T]</c>
+/// (<c>Retained[T]</c>, <c>Roamed[T]</c>, <c>Modifying[T]</c>
 /// for reading). The conversion only narrows what can be done, so it changes neither the value nor the cost.
 /// </summary>
 internal static class ImplicitToken
@@ -28,7 +28,7 @@ internal static class ImplicitToken
     }
 
     /// <summary>
-    /// The handle or token kind <paramref name="source"/> is (<c>Retained</c>, <c>Amending</c>, ...) over a value of
+    /// The handle or token kind <paramref name="source"/> is (<c>Retained</c>, <c>Modifying</c>, ...) over a value of
     /// <paramref name="target"/>'s type, when it may stand for a token of <paramref name="tokenKind"/>, or null.
     /// </summary>
     public static string? HandleOver(TypeSymbol source, string tokenKind, TypeSymbol target)
@@ -36,8 +36,7 @@ internal static class ImplicitToken
         string handle = source.BareName;
         bool allowed = tokenKind == RuntimeContract.Viewing
             ? handle is RuntimeContract.Retained or RuntimeContract.Roamed or RuntimeContract.Modifying
-                or RuntimeContract.Amending or RuntimeContract.Consulting
-            : handle is RuntimeContract.Retained or RuntimeContract.Roamed or RuntimeContract.Amending;
+            : handle is RuntimeContract.Retained or RuntimeContract.Roamed;
         return allowed && source.TypeArguments is [{ } inner, ..] && Matches(value: inner, target: target)
             ? handle
             : null;
