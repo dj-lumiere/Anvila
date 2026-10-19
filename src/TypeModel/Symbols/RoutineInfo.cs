@@ -186,14 +186,14 @@ public sealed class RoutineInfo
         return type.FullName;
     }
 
-    /// <summary>The module-qualified name (e.g., "Core/S8.add", "IO/Console.show").</summary>
+    /// <summary>The module-qualified name (e.g., "System/S8.add", "IO/Console.show").</summary>
     public string QualifiedName
     {
         get
         {
             if (OwnerType != null)
             {
-                // Member routine: Module/OwnerType.routine (e.g., "Core/S8.add")
+                // Member routine: Module/OwnerType.routine (e.g., "System/S8.add")
                 return $"{OwnerType.FullName}.{Name}";
             }
 
@@ -328,7 +328,7 @@ public sealed class RoutineInfo
     /// <summary>The module this routine belongs to.</summary>
     public string? Module { get; init; }
 
-    /// <summary>Module path segments (e.g., ["Core", "Memory", "Wrapper"]).</summary>
+    /// <summary>Module path segments (e.g., ["System", "Memory", "Wrapper"]).</summary>
     public List<string>? ModulePath { get; init; }
 
     /// <summary>Annotations on this routine (e.g., @readonly, @inline).</summary>

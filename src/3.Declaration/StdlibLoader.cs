@@ -7,7 +7,7 @@ namespace Builder.Declaration;
 
 /// <summary>
 /// Loads the standard library based on module declarations.
-/// Files declaring "module Core" are loaded eagerly (auto-imported).
+/// Files declaring "module System" are loaded eagerly (auto-imported).
 /// Other modules are loaded on-demand when imported.
 /// Supports both RazorForge (.rf) and Suflae (.sf) stdlib files.
 /// </summary>
@@ -15,8 +15,8 @@ public sealed partial class StdlibLoader
 {
     /// <summary>
     /// The stdlib scan roots — each a (directory, glob) pair scanned in order. RazorForge is always
-    /// present (the RF-realm Core, and — for a Suflae compile — the bridged delegation backend reached via
-    /// <c>RF::</c>). A Suflae compile ALSO scans <c>Standard/Suflae/*.sf</c> (the SF-realm Core surface).
+    /// present (the RF-realm System, and — for a Suflae compile — the bridged delegation backend reached via
+    /// <c>RF::</c>). A Suflae compile ALSO scans <c>Standard/Suflae/*.sf</c> (the SF-realm System surface).
     /// Realm is stamped per file from its extension at registration (see StdlibLoader.Registration).
     /// </summary>
     private readonly List<(string Dir, string Glob)> _scanRoots;
@@ -24,23 +24,23 @@ public sealed partial class StdlibLoader
     /// <summary>The language being built.</summary>
     private readonly Language _language;
 
-    /// <summary>Parsed Core module programs with their file paths and module.</summary>
+    /// <summary>Parsed System module programs with their file paths and module.</summary>
     private readonly List<(Program Program, string FilePath, string Module)> _corePrograms = [];
 
-    /// <summary>Cache of parsed non-Core programs by module.</summary>
+    /// <summary>Cache of parsed non-System programs by module.</summary>
     private readonly Dictionary<string, List<(Program Program, string FilePath, string Module)>>
         _modulePrograms = new(comparer: StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Set of already scanned directories to avoid re-scanning.</summary>
     private bool _stdlibScanned;
 
-    /// <summary>True when this loader belongs to a WARM-restore registry whose <c>module Core</c> programs
+    /// <summary>True when this loader belongs to a WARM-restore registry whose <c>module System</c> programs
     /// were already parsed, analyzed and lowered at snapshot capture (served from the registry's restored
     /// set). A warm compile still needs the fresh loader to <see cref="ScanStdlibFiles"/> so on-demand
-    /// non-Core imports (e.g. <c>Collections.CircularList</c>) resolve from <see cref="_modulePrograms"/> — but that
-    /// scan also re-parses every Core file into <see cref="_corePrograms"/> as UNANALYZED/UNLOWERED ASTs.
+    /// non-System imports (e.g. <c>Collections.CircularList</c>) resolve from <see cref="_modulePrograms"/> — but that
+    /// scan also re-parses every System file into <see cref="_corePrograms"/> as UNANALYZED/UNLOWERED ASTs.
     /// When this flag is set, <see cref="AllLoadedPrograms"/> excludes <see cref="_corePrograms"/> so those
-    /// stale Core copies never re-enter <c>FreshlyLoadedStdlibPrograms</c> and get re-lowered (which throws
+    /// stale System copies never re-enter <c>FreshlyLoadedStdlibPrograms</c> and get re-lowered (which throws
     /// on any never-analyzed node, e.g. a D128 ternary — the warm-restore crash this guards).</summary>
     public bool CoreResident { get; set; }
 
@@ -48,12 +48,12 @@ public sealed partial class StdlibLoader
     private readonly HashSet<string> _loadedModules =
         new(comparer: StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Gets the parsed Core module programs.</summary>
+    /// <summary>Gets the parsed System module programs.</summary>
     public List<(Program Program, string FilePath, string Module)> ParsedPrograms =>
         _corePrograms;
 
     /// <summary>
-    /// Scans the stdlib once and returns every NON-Core module name found (e.g. "Collections.CircularList",
+    /// Scans the stdlib once and returns every NON-System module name found (e.g. "Collections.CircularList",
     /// "IO.Console"). Used by the daemon snapshot capture to import — and therefore pre-load into the
     /// resident snapshot — the entire stdlib, so warm compiles short-circuit on-demand imports instead of
     /// re-parsing the whole stdlib per run to resolve one import.
@@ -97,8 +97,8 @@ public sealed partial class StdlibLoader
     {
         get
         {
-            // Warm restore: Core is already lowered in the registry's restored set — exclude the fresh
-            // (unanalyzed) Core re-parse so it is not reported as freshly-loaded and re-lowered.
+            // Warm restore: System is already lowered in the registry's restored set — exclude the fresh
+            // (unanalyzed) System re-parse so it is not reported as freshly-loaded and re-lowered.
             List<(Program, string, string)> all = CoreResident
                 ? new List<(Program, string, string)>()
                 : new List<(Program, string, string)>(collection: _corePrograms);
@@ -124,10 +124,10 @@ public sealed partial class StdlibLoader
     public StdlibLoader(string stdlibRoot, Language language)
     {
         _language = language;
-        // RazorForge is always scanned: it is the RF-realm Core, and — under a Suflae compile — the bridged
-        // delegation backend an SF wrapper reaches via `RF::Core.X`. A Suflae compile ALSO scans
-        // Standard/Suflae/*.sf, the SF-realm Core surface (types there declare `module Core` too; they are
-        // stamped Realm="SF" at registration, so they key distinctly from the RF-realm `Core.*`). Each file's
+        // RazorForge is always scanned: it is the RF-realm System, and — under a Suflae compile — the bridged
+        // delegation backend an SF wrapper reaches via `RF::System.X`. A Suflae compile ALSO scans
+        // Standard/Suflae/*.sf, the SF-realm System surface (types there declare `module System` too; they are
+        // stamped Realm="SF" at registration, so they key distinctly from the RF-realm `System.*`). Each file's
         // realm is derived from its extension (`.sf`→SF, `.rf`→RF) — see StdlibLoader.Registration.RealmOf.
         _scanRoots = Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: stdlibRoot, language: language);
         _razorForgeRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),
@@ -138,8 +138,8 @@ public sealed partial class StdlibLoader
     private readonly string _razorForgeRoot;
 
     /// <summary>
-    /// Loads the Core module types into the type registry.
-    /// Scans all stdlib files and loads those declaring "module Core".
+    /// Loads the System module types into the type registry.
+    /// Scans all stdlib files and loads those declaring "module System".
     /// </summary>
     /// <param name="registry">The type registry to populate.</param>
     public void LoadCoreModule(TypeRegistry registry)
@@ -155,7 +155,7 @@ public sealed partial class StdlibLoader
 
         RunCoreRegistrationPasses(registry: registry, corePrograms: _corePrograms);
 
-        // Pass 1b.1: Load modules imported by Core files so their types are available
+        // Pass 1b.1: Load modules imported by System files so their types are available
         // for member variable resolution (e.g., Set imports Collections.SortedSet).
         LoadCoreImportedModules(registry: registry);
 
@@ -164,7 +164,7 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// Runs the realm-stamped protocol + type-shell registration passes (1a through 1a.2, 1b) over
-    /// the Core programs. Extracted from <see cref="LoadCoreModule"/> so the passes stay in
+    /// the System programs. Extracted from <see cref="LoadCoreModule"/> so the passes stay in
     /// a static context.
     /// </summary>
     private static void RunCoreRegistrationPasses(TypeRegistry registry,
@@ -200,13 +200,13 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// Runs the realm-stamped deferred resolution + routine registration passes (1c through 3) over
-    /// the Core programs. Extracted from <see cref="LoadCoreModule"/> so the passes stay in
+    /// the System programs. Extracted from <see cref="LoadCoreModule"/> so the passes stay in
     /// a static context.
     /// </summary>
     private static void RunCoreDeferredResolutionPasses(TypeRegistry registry,
         List<(Program Program, string FilePath, string Module)> corePrograms)
     {
-        // Each file's imports are in scope while its signatures resolve: Suflae's own `Core` types name
+        // Each file's imports are in scope while its signatures resolve: Suflae's own `System` types name
         // `Integer` from the imported `Numerics`, loaded by now.
         IReadOnlyCollection<string>? savedImports = registry.ActiveRegistrationImports;
         string savedRealm = registry.ResolutionRealm;
@@ -266,7 +266,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Pass 1a: registers every Core program's protocol type shells (names + generic params, no
+    /// Pass 1a: registers every System program's protocol type shells (names + generic params, no
     /// memberRoutines yet), realm-stamped per program.
     /// </summary>
     private static void RegisterCoreProtocolShells(TypeRegistry registry,
@@ -287,7 +287,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Pass 1a.1: fills in protocol memberRoutine signatures across every Core program (all protocols
+    /// Pass 1a.1: fills in protocol memberRoutine signatures across every System program (all protocols
     /// are now registered for cross-refs).
     /// </summary>
     private static void FillCoreProtocolMemberRoutines(TypeRegistry registry,
@@ -306,8 +306,8 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Pass 1b.1: loads the top-level modules imported by Core files so their types are available for
-    /// member variable resolution (e.g., Set imports Collections.SortedSet). Core and already-loaded
+    /// Pass 1b.1: loads the top-level modules imported by System files so their types are available for
+    /// member variable resolution (e.g., Set imports Collections.SortedSet). System and already-loaded
     /// modules are excluded.
     /// </summary>
     private void LoadCoreImportedModules(TypeRegistry registry)
@@ -327,7 +327,7 @@ public sealed partial class StdlibLoader
                         moduleName = moduleName[..dotIndex];
                     }
 
-                    if (!moduleName.Equals(value: "Core",
+                    if (!moduleName.Equals(value: "System",
                             comparisonType: StringComparison.OrdinalIgnoreCase) &&
                         !_loadedModules.Contains(item: moduleName))
                     {
@@ -360,7 +360,7 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// Scans all stdlib files recursively and categorizes them by module.
-    /// Files with "module Core" go to _corePrograms.
+    /// Files with "module System" go to _corePrograms.
     /// Other modules are cached in _modulePrograms for on-demand loading.
     /// </summary>
     private void ScanStdlibFiles()
@@ -375,8 +375,8 @@ public sealed partial class StdlibLoader
         // Scan every root (RazorForge always; Suflae too under an SF compile). Recursively find files
         // matching each root's glob. Sort by ordinal path so the scan/registration order is identical on
         // every OS (Directory.GetFiles order is OS-dependent) — otherwise memberRoutine resolution becomes
-        // order-dependent across platforms. RazorForge sorts before Suflae so the RF-realm Core registers
-        // first (the SF-realm Core keys distinctly by realm, so order does not cause collision either way).
+        // order-dependent across platforms. RazorForge sorts before Suflae so the RF-realm System registers
+        // first (the SF-realm System keys distinctly by realm, so order does not cause collision either way).
         foreach (string filePath in StdlibFilePaths())
         {
             try
@@ -391,9 +391,8 @@ public sealed partial class StdlibLoader
                 string? fileModule = GetDeclaredModule(program: ast);
                 fileModule ??= DeriveModuleFromPath(filePath: filePath);
 
-                // Categorize by module
-                if (fileModule.Equals(value: "Core",
-                        comparisonType: StringComparison.OrdinalIgnoreCase))
+                // Categorize by module: System and every module under it load eagerly, as one namespace.
+                if (StandardModules.IsSystem(module: fileModule))
                 {
                     _corePrograms.Add(item: (ast, filePath, fileModule));
                 }
@@ -434,6 +433,7 @@ public sealed partial class StdlibLoader
         var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
         Program program = parser.Parse();
         _parseErrors.AddRange(collection: parser.GetErrors());
+        TakeModuleFromFolder(program: program, filePath: filePath);
 
         // An `@rf("...")` declaration shows a shared RazorForge declaration in the file's language and creates
         // nothing: it leaves the program here, before any pass sees it, and is checked against its target by
@@ -481,6 +481,38 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
+    /// A standard library file is the module its folder names: a <c>module</c> line may only repeat it. The line is
+    /// then replaced by the namespace the module registers under (<see cref="StandardModules.Identity"/>), so every
+    /// pass that reads the file's module sees <c>System</c> for a module under <c>System</c>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The module line names another module than the folder.</exception>
+    private void TakeModuleFromFolder(Program program, string filePath)
+    {
+        if (FolderModuleOf(filePath: filePath) is not { } folder)
+        {
+            return;
+        }
+
+        for (int i = 0; i < program.Declarations.Count; i++)
+        {
+            if (program.Declarations[index: i] is not ModuleDeclaration declared)
+            {
+                continue;
+            }
+
+            if (!declared.Path.Equals(value: folder, comparisonType: StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    message: $"line {declared.Location.Line}: this file is in the folder of module {folder}, so it is " +
+                             $"in that module: write module {folder}, or leave the line out");
+            }
+
+            program.Declarations[index: i] = declared with { Path = StandardModules.Identity(module: folder) };
+            return;
+        }
+    }
+
+    /// <summary>
     /// Gets the declared module from a program AST.
     /// </summary>
     private static string? GetDeclaredModule(Program program)
@@ -492,52 +524,55 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Derives a module from the file path relative to the standard library root.
-    /// Example: standard/razorforge/Collections/List.rf -> Collections
-    /// Example: standard/razorforge/Text/Encoding/UTF8.rf -> Text.Encoding
-    /// Files directly in the language root default to Core.
+    /// The module a standard library file is in: its folder relative to the library's root (the <c>Shared</c>
+    /// folder of a language's library left out), registered under its namespace (<see cref="StandardModules.Identity"/>).
+    /// Example: Standard/RazorForge/Collections/SortedDict.rf is in Collections, and
+    /// Standard/RazorForge/System/Numerics/S64.rf in System.
     /// </summary>
-    private string DeriveModuleFromPath(string filePath)
+    private string DeriveModuleFromPath(string filePath) =>
+        StandardModules.Identity(module: FolderModuleOf(filePath: filePath) ?? StandardModules.Base);
+
+    /// <summary>
+    /// The folder of a standard library file relative to the library's root, written as a module path: each folder
+    /// below the root joined by <c>/</c> (Standard/RazorForge/IO/Console/Console.rf is IO/Console). A file of a
+    /// language's <c>Shared</c> folder is the module of its folder below <c>Shared</c>. A file directly in the root is
+    /// in System. Null for a file outside the library (a module of the program that an import reached).
+    /// </summary>
+    private string? FolderModuleOf(string filePath)
     {
-        try
+        string? fileDir = Path.GetDirectoryName(path: filePath);
+        if (fileDir == null)
         {
-            string? fileDir = Path.GetDirectoryName(path: filePath);
-            if (fileDir == null)
-            {
-                return "Core";
-            }
-
-            string normalizedFileDir = Path.GetFullPath(path: fileDir);
-            // The file may live under any scan root (RazorForge or, in an SF compile, Suflae). Find the
-            // root that contains it and derive the module path relative to THAT root.
-            string? normalizedStdlibPath = _scanRoots
-                                          .Select(selector: r => Path.GetFullPath(path: r.Dir))
-                                          .FirstOrDefault(predicate: root =>
-                                               normalizedFileDir.StartsWith(value: root,
-                                                   comparisonType: StringComparison
-                                                      .OrdinalIgnoreCase));
-
-            if (normalizedStdlibPath == null)
-            {
-                return "Core";
-            }
-
-            string relativePath = normalizedFileDir[normalizedStdlibPath.Length..]
-               .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-            if (string.IsNullOrEmpty(value: relativePath))
-            {
-                return "Core";
-            }
-
-            // Convert directory separators to module path separators
-            return relativePath.Replace(oldChar: Path.DirectorySeparatorChar, newChar: '/')
-                               .Replace(oldChar: Path.AltDirectorySeparatorChar, newChar: '/');
+            return null;
         }
-        catch
+
+        string normalizedFileDir = Path.GetFullPath(path: fileDir);
+        // The file may live under any scan root (RazorForge or, in an SF compile, Suflae). Find the
+        // root that contains it and derive the module path relative to THAT root.
+        string? root = _scanRoots
+                      .Select(selector: r => Path.GetFullPath(path: r.Dir))
+                      .FirstOrDefault(predicate: r =>
+                           (normalizedFileDir + Path.DirectorySeparatorChar).StartsWith(
+                               value: r.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                               comparisonType: StringComparison.OrdinalIgnoreCase));
+        if (root == null)
         {
-            return "Core";
+            return null;
         }
+
+        var parts = Path.GetRelativePath(relativeTo: root, path: normalizedFileDir)
+                        .Split(separator: [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                             options: StringSplitOptions.RemoveEmptyEntries)
+                        .Where(predicate: part => part != ".")
+                        .ToList();
+        if (parts.Count > 0 && parts[index: 0] == StandardModules.SharedFolder)
+        {
+            parts.RemoveAt(index: 0);
+        }
+
+        return parts.Count == 0
+            ? StandardModules.Base
+            : string.Join(separator: '/', values: parts);
     }
 
     /// <summary>
@@ -551,8 +586,8 @@ public sealed partial class StdlibLoader
         // Ensure stdlib is scanned
         ScanStdlibFiles();
 
-        // Core is already loaded
-        if (moduleName.Equals(value: "Core", comparisonType: StringComparison.OrdinalIgnoreCase))
+        // System and the modules under it are already loaded
+        if (StandardModules.IsSystem(module: moduleName))
         {
             return true;
         }
@@ -641,7 +676,10 @@ public sealed partial class StdlibLoader
         _filesByModule = new Dictionary<string, List<string>>(comparer: StringComparer.OrdinalIgnoreCase);
         foreach (string filePath in StdlibFilePaths())
         {
-            string module = ReadModuleLine(filePath: filePath) ?? DeriveModuleFromPath(filePath: filePath);
+            string? line = ReadModuleLine(filePath: filePath);
+            string module = line != null
+                ? StandardModules.Identity(module: line)
+                : DeriveModuleFromPath(filePath: filePath);
             if (!_filesByModule.TryGetValue(key: module, value: out List<string>? files))
             {
                 files = [];
@@ -892,7 +930,7 @@ public sealed partial class StdlibLoader
         }
 
         // A name prefers the types of the realm it was written in: `List` in a Suflae library file is Suflae's
-        // list, `RF::Core.List` there is RazorForge's. A type written without a source file keeps the realm
+        // list, `RF::System.List` there is RazorForge's. A type written without a source file keeps the realm
         // in effect.
         string realm = typeExpr.Realm ??
                        (Builder.Frontends.Languages.HasSourceExtension(fileName: typeExpr.Location.FileName)
@@ -974,7 +1012,7 @@ public sealed partial class StdlibLoader
             }
         }
 
-        // Own-module FIRST, then the bare (auto-import/Core-prefix) lookup — see the generic-def branch
+        // Own-module FIRST, then the bare (auto-import/System-prefix) lookup — see the generic-def branch
         // above for why the overlay's same-named types must not collapse to the RazorForge realm.
         TypeSymbol? resolved = (moduleName != null
             ? registry.LookupType(name: $"{moduleName}.{typeName}")
@@ -1025,9 +1063,9 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Import-scoped fallback: a bare cross-module type name (e.g. <c>Integer</c> in a <c>module Core</c>
+    /// Import-scoped fallback: a bare cross-module type name (e.g. <c>Integer</c> in a <c>module System</c>
     /// file that <c>import Numerics.Integer</c>) no longer resolves via a global short-name scan (removed),
-    /// and its module loads on-demand — so it is unresolved at eager Core registration. When re-resolved on
+    /// and its module loads on-demand — so it is unresolved at eager System registration. When re-resolved on
     /// demand (the imported module now loaded) with the file's imports installed, try each imported namespace
     /// as a prefix. Mirrors the body-analysis TypeResolver, scoped to genuine imports only. Returns null when
     /// no import qualifies the name.
@@ -1190,9 +1228,9 @@ public sealed partial class StdlibLoader
         }
 
         // Own-module FIRST: a bare `List` in `module Suflae` (e.g. the overlay constructor's
-        // `-> List[T]` return) must resolve to `Suflae.List`, not the auto-imported `Core.List`
-        // (LookupType's Core-prefix fast path). A dotted/RF::-qualified `Core.List` misses the
-        // `Suflae.Core.List` probe and correctly falls back to the RazorForge `Core.List`.
+        // `-> List[T]` return) must resolve to `Suflae.List`, not the auto-imported `System.List`
+        // (LookupType's System-prefix fast path). A dotted/RF::-qualified `System.List` misses the
+        // `Suflae.System.List` probe and correctly falls back to the RazorForge `System.List`.
         TypeSymbol? genericDef = (moduleName != null
             ? registry.LookupType(name: $"{moduleName}.{typeName}")
             : null) ?? registry.LookupType(name: typeName) ??

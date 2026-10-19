@@ -264,7 +264,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             _ => null
         };
 
-        // "List[Core.S64]" must also match memberRoutines owned by the bare "List" definition.
+        // "List[System.S64]" must also match memberRoutines owned by the bare "List" definition.
         string baseName = type.BareName;
 
         var seen = new HashSet<string>(comparer: StringComparer.Ordinal);
@@ -346,7 +346,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             }
 
             // Owners are registered under bracketed generic-def names ("List[T]"),
-            // receivers arrive as resolutions ("List[Core.S64]") — compare base names.
+            // receivers arrive as resolutions ("List[System.S64]") — compare base names.
             bool ownerMatches = ReferenceEquals(objA: owner, objB: type) ||
                                 genericDef != null &&
                                 ReferenceEquals(objA: owner, objB: genericDef) ||

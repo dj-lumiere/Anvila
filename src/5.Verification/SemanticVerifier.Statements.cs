@@ -294,7 +294,7 @@ public sealed partial class SemanticVerifier
             return pinned;
         }
 
-        // A routine of the other realm's same-named type (Suflae's own `Core.List` next to RazorForge's), or a
+        // A routine of the other realm's same-named type (Suflae's own `System.List` next to RazorForge's), or a
         // realm's surface routine on a shared type (Suflae's `Array.count() -> Integer`), shares its name with
         // the ambient one, and the name lookups below find the ambient one. The info pinned at registration is
         // its own.
@@ -322,7 +322,7 @@ public sealed partial class SemanticVerifier
             isFailable: routine.IsFailable);
         routineInfo ??= _registry.LookupRoutine(fullName: baseName);
 
-        // Extension routines registered under a concrete owner (e.g. Core.List[U16].decode_as_utf16).
+        // Extension routines registered under a concrete owner (e.g. System.List[U16].decode_as_utf16).
         if (routineInfo == null && routine.Name.Contains(value: '['))
         {
             string? module = GetCurrentModuleName();
@@ -623,9 +623,9 @@ public sealed partial class SemanticVerifier
 
             // Fallback: extension memberRoutines on concrete generic specializations
             // (e.g., `List[Byte].create`) register under the concrete owner type,
-            // producing a RegistryKey like `Core.List[Core.Byte].create#Core.Bytes`.
+            // producing a RegistryKey like `System.List[System.Byte].create#System.Bytes`.
             // The first lookup above used the generic-def-normalized owner
-            // (`Core.List[T].create`), so it missed. Resolve the concrete owner
+            // (`System.List[T].create`), so it missed. Resolve the concrete owner
             // type from the routine name and rebuild the canonical key.
             if (routineInfo == null && routine.HasReceiverTypeArgs &&
                 routine.ReceiverType is { } ownerExpr && routine.MemberRoutineName is { } mName)
@@ -1900,7 +1900,7 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
-        // A realm qualifier (`SF::Core.List[T]`) is the expression's realm, not part of its name.
+        // A realm qualifier (`SF::System.List[T]`) is the expression's realm, not part of its name.
         string? realm = null;
         int realmIdx = text.IndexOf(value: "::", comparisonType: StringComparison.Ordinal);
         if (realmIdx > 0 && (text.IndexOf(value: '[') < 0 || realmIdx < text.IndexOf(value: '[')))

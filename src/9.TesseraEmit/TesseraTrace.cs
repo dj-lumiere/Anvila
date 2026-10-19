@@ -6,7 +6,7 @@ namespace Builder.TesseraEmit;
 /// <summary>
 /// The crash trace in Tessera, the same shadow stack the LLVM emitter writes: each thread has 32 frames of
 /// (routine name, file, line, column) and a depth. A routine that can crash pushes a frame on entry, moves the
-/// frame's position before each call, and pops it at each return. Core's <c>crash_report</c> reads the frames
+/// frame's position before each call, and pops it at each return. System's <c>crash_report</c> reads the frames
 /// through the <c>LLVM::trace_depth</c> and <c>LLVM::trace_frames</c> primitives and prints them itself.
 /// </summary>
 internal static class TesseraTrace
@@ -80,7 +80,7 @@ internal static class TesseraTrace
             frames: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]()
             return frames
 
-        ### A copy of the trace in a caught error's object, laid out as Core's Crashables reads it: the 32 frames,
+        ### A copy of the trace in a caught error's object, laid out as System's Crashables reads it: the 32 frames,
         ### then the depth.
         record RfTraceSnapshot
             frames: Array[RfTraceFrame, 32]

@@ -428,7 +428,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Type with this name is already defined.</summary>
     DuplicateTypeDefinition = 400,
 
-    /// <summary>Module 'Core' is reserved for standard library.</summary>
+    /// <summary>Module 'System' is reserved for standard library.</summary>
     ReservedModuleCore = 401,
 
     /// <summary>

@@ -41,7 +41,7 @@ public sealed class TupleTypeSymbol : RecordTypeSymbol
     {
         ElementTypes = elementTypes;
         IsValueTuple = elementTypes.All(predicate: IsRecordLike);
-        Module = "Core";
+        Module = "System";
 
         var memberVariables = new List<MemberVariableInfo>(capacity: elementTypes.Count);
         for (int i = 0; i < elementTypes.Count; i++)

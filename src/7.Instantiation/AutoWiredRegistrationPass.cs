@@ -562,7 +562,7 @@ internal sealed class AutoWiredRegistrationPass
     private TypeSymbol? CaseCountType(TypeSymbol type, TypeSymbol? u64Type)
     {
         return HasOwnRealmDerive(type: type, name: "count")
-            ? _registry.LookupType(name: "Numerics.Integer") ?? u64Type
+            ? _registry.LookupType(name: "System.Integer") ?? u64Type
             : u64Type;
     }
 

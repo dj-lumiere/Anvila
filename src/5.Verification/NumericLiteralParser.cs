@@ -106,7 +106,7 @@ public static partial class NumericLiteralParser
     // D128B uses a SINGLE-form BID layout: bit127 = sign, bits126..113 = biased exponent
     // (q + 6176, 14 bits), bits112..0 = the coefficient as a PLAIN binary integer. This works
     // because Pmax=34 and 10^34 < 2^113, so the whole coefficient always fits the trailing field
-    // with no combination "Form 2" — matching Core.D128B.decode(). Specials use the combination
+    // with no combination "Form 2" — matching System.D128B.decode(). Specials use the combination
     // prefix (top5 = 0x1E Inf, 0x1F NaN), which the finite biased range (<= 12287) never reaches.
     // Overflow rounds to ±Inf, underflow flushes toward ±0; rounding is round-half-to-even (RNE).
     //
@@ -365,7 +365,7 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Encodes a decimal literal into a software decimal128 (Core.D128B) BID bit pattern.
+    /// Encodes a decimal literal into a software decimal128 (System.D128B) BID bit pattern.
     /// Replaces the <c>rf_d128_from_string</c> (decNumber/DPD) FFI path.
     /// </summary>
     public static D128 EncodeD128Bid(string str)
@@ -398,8 +398,8 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Encodes a decimal literal into a software decimal64 (Core.D64) two-form BID bit pattern.
-    /// Matches Core.D64B.decode()/d64b_of_parts: Form 1 (coeff &lt; 2^53) packs the coefficient in
+    /// Encodes a decimal literal into a software decimal64 (System.D64) two-form BID bit pattern.
+    /// Matches System.D64B.decode()/d64b_of_parts: Form 1 (coeff &lt; 2^53) packs the coefficient in
     /// bits 52:0 with the biased exponent in bits 62:53; Form 2 (larger coeff) sets bits 62:61=11,
     /// the exponent in bits 60:51, and the low 51 coefficient bits (the implicit 2^53 is restored on
     /// decode). bias 398, Pmax 16. inf/NaN use the combination prefix at bits 62:58.
@@ -436,8 +436,8 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Encodes a decimal literal into a software decimal32 (Core.D32) two-form BID bit pattern.
-    /// Matches Core.D32B.decode()/d32b_of_parts: Form 1 (coeff &lt; 2^23) packs the coefficient in
+    /// Encodes a decimal literal into a software decimal32 (System.D32) two-form BID bit pattern.
+    /// Matches System.D32B.decode()/d32b_of_parts: Form 1 (coeff &lt; 2^23) packs the coefficient in
     /// bits 22:0 with the biased exponent in bits 30:23; Form 2 sets bits 30:29=11, the exponent in
     /// bits 28:21, and the low 21 coefficient bits (implicit 2^23 restored on decode). bias 101,
     /// Pmax 7. inf/NaN use the combination prefix at bits 30:26.
@@ -474,7 +474,7 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Encodes a decimal literal into IEEE binary128 (Core.B128, @llvm("i128")) bits, correctly
+    /// Encodes a decimal literal into IEEE binary128 (System.B128, @llvm("i128")) bits, correctly
     /// rounded to nearest-even via exact BigInteger arithmetic. Used by both analysis and the LLVM
     /// emitter. Throws <see cref="OverflowException"/> when the value is out
     /// of binary128's finite range (a buildtime literal overflow); the explicit <c>inf</c>/
@@ -623,7 +623,7 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Canonicalizes a finite <c>Core.Decimal</c> (decimal128) coefficient/exponent pair — stripping
+    /// Canonicalizes a finite <c>System.Decimal</c> (decimal128) coefficient/exponent pair — stripping
     /// FRACTIONAL trailing zeros so equal values share bits (2.50 and 2.5 → 25*10^-1), while leaving
     /// integers (exp &gt;= 0) as-is (100 stays 100*10^0). Mirrors the runtime <c>decimal_canon</c> so
     /// a literal and the arithmetic result of the same value are bit-identical. (Kept out of
@@ -649,7 +649,7 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Encodes a decimal literal into the finite-only software <c>Core.Decimal</c> (decimal128) BID
+    /// Encodes a decimal literal into the finite-only software <c>System.Decimal</c> (decimal128) BID
     /// bit pattern. Decimal shares D128's i128 layout (bit127 = sign, bits126..113 = biased exponent
     /// q + 6176, bits112..0 = coefficient as a plain binary integer &lt; 10^34 &lt; 2^113), but is
     /// RazorForge's CANONICAL decimal: fractional trailing zeros are stripped so equal values share

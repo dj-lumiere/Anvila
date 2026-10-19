@@ -105,7 +105,7 @@ public sealed partial class SemanticVerifier
                 _registry.LookupType(name: "U64") ?? ErrorTypeSymbol.Instance,
             // `visibilityof(m)` yields the member's OPEN/POSTED/SECRET visibility as the existing
             // `Visibility` choice (BuilderQuery), narrowed by `is SECRET` etc. at the use site. Resolve
-            // through imports (Visibility lives in BuilderQuery, not Core) so the matched value is the
+            // through imports (Visibility lives in BuilderQuery, not System) so the matched value is the
             // concrete choice type — that lets the `is SECRET` pattern bind the case directly instead of
             // resolving `SECRET` as a bare type via the cross-module short-name scan.
             "visibilityof" => LookupTypeWithImports(name: "Visibility") ?? ErrorTypeSymbol.Instance,
@@ -605,10 +605,10 @@ public sealed partial class SemanticVerifier
             callableType = new GenericParameterTypeSymbol(name: callName,
                 slot: _typeResolver.GenericParameterSlot(name: callName));
         }
-        // Honor an explicit `RF::`/`SF::` realm on a constructor call (`RF::Core.List[T]()`): the
+        // Honor an explicit `RF::`/`SF::` realm on a constructor call (`RF::System.List[T]()`): the
         // lookup above is realm-blind (prefers the file's resolution realm), so inside an SF file
-        // `RF::Core.List[T]()` would resolve to the SF-realm list and the SF wrapper's constructor
-        // `return List[T](inner: RF::Core.List[T]())` would self-recurse. Swap to the qualified realm.
+        // `RF::System.List[T]()` would resolve to the SF-realm list and the SF wrapper's constructor
+        // `return List[T](inner: RF::System.List[T]())` would self-recurse. Swap to the qualified realm.
         if (id.Realm is { } calleeRealm && callableType is TypeSymbol calleeDef &&
             calleeDef.Realm != calleeRealm &&
             _registry.ReResolveInRealm(type: calleeDef, realm: calleeRealm) is { } realmDef)
@@ -678,7 +678,7 @@ public sealed partial class SemanticVerifier
         // The current module's routine comes first (e.g., "infinite_loop" -> "HelloWorld.infinite_loop"):
         // another module's routine of the same bare name must not shadow it, and neither may a foreign
         // (C/LLVM) routine, reachable only through its realm qualifier (the bare lookup falls back to
-        // `Core.add`, which the `LLVM::add[T]` intrinsic owns).
+        // `System.add`, which the `LLVM::add[T]` intrinsic owns).
         // A call never writes `!`, so the module's failable routine (`two_sum!`) is its routine too: a non-failable
         // one of the same name elsewhere (the library's `two_sum`) must not win over it.
         RoutineInfo? routine = _currentModuleName != null && !callName.Contains(value: '.')
@@ -795,14 +795,14 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Import-fallback call path: looks up a module-prefixed free routine (e.g. `Core.normalize_duration`),
+    /// Import-fallback call path: looks up a module-prefixed free routine (e.g. `System.normalize_duration`),
     /// refines it via arity/inference/overload resolution, and delegates to
     /// <see cref="AnalyzeFallbackFreeRoutine"/>.
     /// </summary>
     private TypeSymbol? AnalyzeImportFallbackCall(CallExpression call, IdentifierExpression id,
         string callName, TypeSymbol? expectedType)
     {
-        // Try module-prefixed routine lookup (e.g., Core.normalize_duration)
+        // Try module-prefixed routine lookup (e.g., System.normalize_duration)
         // This is done after type creator check to avoid shadowing type creators
         // with identically-named convenience functions (e.g., "routine U32(from: U8)")
         RoutineInfo? routine = PreferImportedRoutineThatFits(call: call,
@@ -2385,7 +2385,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The free overload of <paramref name="callName"/> for <paramref name="argTypes"/> a call may rebind to:
     /// the bound routine's own overload set first (its module-qualified base name), then any overload by the
-    /// bare name — but only one visible here (this module, Core, or an imported module). A routine of the same
+    /// bare name — but only one visible here (this module, System, or an imported module). A routine of the same
     /// name in a module this file does not import must not take the call.
     /// </summary>
     private RoutineInfo? LookupVisibleFreeOverload(string callName, RoutineInfo routine, List<TypeSymbol> argTypes)
@@ -2419,10 +2419,10 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Whether a free routine is visible in the file being analyzed: declared in this module, in
-    /// Core, or in an imported module.</summary>
+    /// System, or in an imported module.</summary>
     private bool IsFreeRoutineVisible(RoutineInfo routine)
     {
-        return string.IsNullOrEmpty(value: routine.Module) || routine.Module == "Core" ||
+        return string.IsNullOrEmpty(value: routine.Module) || routine.Module == "System" ||
                routine.Module == _currentModuleName || _importedModules.Contains(item: routine.Module);
     }
 

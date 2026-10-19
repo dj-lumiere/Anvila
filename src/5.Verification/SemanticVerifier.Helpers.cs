@@ -1135,8 +1135,8 @@ public sealed partial class SemanticVerifier
     /// No implicit numeric or widening conversions are performed.
     /// </summary>
     /// <summary>
-    /// The Suflae type handed where the RazorForge type of the same name is wanted (`SF::Core.List[S64]` for
-    /// `RF::Core.List[S64]`, either one maybe behind a shared handle), or null.
+    /// The Suflae type handed where the RazorForge type of the same name is wanted (`SF::System.List[S64]` for
+    /// `RF::System.List[S64]`, either one maybe behind a shared handle), or null.
     /// </summary>
     private static TypeSymbol? OtherRealmOfSameType(TypeSymbol source, TypeSymbol target)
     {
@@ -1158,7 +1158,7 @@ public sealed partial class SemanticVerifier
     {
         if (source.Name == target.Name || source.FullName == target.FullName)
         {
-            // One stdlib source makes a type in each language (`SF::Core.List` and `RF::Core.List`): the same name in
+            // One stdlib source makes a type in each language (`SF::System.List` and `RF::System.List`): the same name in
             // two realms is two types, which a value crosses only through a conversion (`xs.to[RF::List]()`).
             return source.Realm == target.Realm || source.Category == TypeCategory.Error;
         }

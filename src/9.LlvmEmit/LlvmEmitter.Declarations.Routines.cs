@@ -745,7 +745,7 @@ public partial class LlvmEmitter
 
         // Structured attribute prefix — the routine's PROPERTIES (kind, failability, async mode,
         // storage) are obfuscated into a bracketed list so the name itself carries only the
-        // module-qualified raw identifier. E.g. `[member] Core.Address.create(...)`,
+        // module-qualified raw identifier. E.g. `[member] System.Address.create(...)`,
         // `[independent, crashable] Foo.parse(...)`. Wired-ness is deliberately NOT in the prefix
         // (see below). External("C") routines are EXEMPT (they keep the
         // raw C symbol so the LLVM declare links against the native lib), so this is not called there.
@@ -815,7 +815,7 @@ public partial class LlvmEmitter
             }
         }
 
-        // Labeled parameter list — `(label: Core.Type, …)` — the label participates in overload
+        // Labeled parameter list — `(label: System.Type, …)` — the label participates in overload
         // identity (RazorForge dispatches on named args), so it belongs in the mangled symbol.
         static string LabeledParams(RoutineInfo r)
         {
@@ -962,7 +962,7 @@ public partial class LlvmEmitter
     /// or the original `T` colliding with the wrapper's own param) to the concrete inner
     /// type argument for symbol mangling. Without this, a forwarder body for
     /// `Retained[ListNode[S64]].chain_contains(T)` emits as `chain_contains(__rfwd_T__)`
-    /// while the rewritten call site emits `chain_contains(Core.S64)` — linker miss.
+    /// while the rewritten call site emits `chain_contains(System.S64)` — linker miss.
     /// </summary>
     private static string MangleParamTypeName(RoutineInfo routine, TypeSymbol paramType)
     {

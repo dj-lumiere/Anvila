@@ -24,9 +24,9 @@ internal sealed record RfStubResult(int Files, int Types, int Routines, List<str
 internal sealed class RfStubWriter
 {
     /// <summary>RazorForge folders whose types a Suflae program never works with: buildtime reflection (Suflae reflects
-    /// at runtime through ObjectHacker), raw memory and its handles, C structures, and SIMD lanes.</summary>
+    /// at runtime through ObjectHacker), C structures, and SIMD lanes.</summary>
     private static readonly string[] UnsharedFolders =
-        ["BuilderExpansion", "BuilderQuery", "Core/Memory", "Core/CSubsystem", "Simd"];
+        ["BuilderExpansion", "BuilderQuery", "System/CSubSystem", "Simd"];
 
     /// <summary>Public RazorForge routines that only the builder's own code calls (the size of an Agent recipe
     /// slot, used when the builder lays a recipe out).</summary>
@@ -35,8 +35,18 @@ internal sealed class RfStubWriter
         "recipe_slot_size"
     };
 
-    /// <summary>RazorForge files that hold only C declarations and the builder's own helpers.</summary>
-    private static readonly string[] UnsharedFiles = ["Core/NativeDeclarations.rf"];
+    /// <summary>RazorForge files that hold only C declarations and the builder's own helpers, and the files of raw memory
+    /// and its handles (a Suflae program works with none of them, only with `ByteSize` from the same folder).</summary>
+    private static readonly string[] UnsharedFiles =
+    [
+        "System/NativeDeclarations.rf", "System/Memory/Closure.rf", "System/Memory/CycleCollector.rf",
+        "System/Memory/Exclusive.rf", "System/Memory/GuardManager.rf", "System/Memory/LockPolicy.rf",
+        "System/Memory/MultiRead.rf", "System/Memory/ReadOnly.rf", "System/Memory/RetainManager.rf",
+        "System/Memory/RoamManager.rf", "System/Memory/GuardedAccess.rf", "System/Memory/Guarded.rf",
+        "System/Memory/Hijacked.rf", "System/Memory/Modifying.rf", "System/Memory/MultiModifying.rf",
+        "System/Memory/Retained.rf", "System/Memory/Roamed.rf", "System/Memory/Tracked.rf",
+        "System/Memory/Viewing.rf", "System/Memory/Watched.rf", "System/Memory/Witnessed.rf"
+    ];
 
     /// <summary>
     /// RazorForge types a Suflae program does not use: access tokens and raw memory, protocols about them, the walks

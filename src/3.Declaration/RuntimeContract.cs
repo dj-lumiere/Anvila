@@ -172,7 +172,7 @@ public static class RuntimeContract
     /// <summary>The teardown member routine every entity has: what scope exit and a last strong release run.</summary>
     public const string Destroy = "destruct";
 
-    /// <summary>The entity-footprint allocation primitive <c>hollow[T]()</c> (Core, bodyless).</summary>
+    /// <summary>The entity-footprint allocation primitive <c>hollow[T]()</c> (System, bodyless).</summary>
     public const string Hollow = "hollow";
 
     /// <summary>The intrinsic that reads a value's bits as another type (<c>LLVM::reinterpret_bits[From, To]</c>).</summary>
@@ -255,11 +255,11 @@ public static class RuntimeContract
     /// <remarks>Sites: LlvmEmitter.Statements.Returns, WiredRoutinePass, RoutineReachabilityPass.</remarks>
     public const string CrashMessage = "crash_message";
 
-    /// <summary>Core's <c>crash_report(type_name:, message:, file:, line:, column:)</c>: every crash the
+    /// <summary>System's <c>crash_report(type_name:, message:, file:, line:, column:)</c>: every crash the
     /// builder writes out (CrashLoweringPass) calls it.</summary>
     public const string CrashReport = "crash_report";
 
-    /// <summary>Core's <c>crash_report_rethrown(type_name:, message:, error:, file:, line:, column:)</c>: the crash of a
+    /// <summary>System's <c>crash_report_rethrown(type_name:, message:, error:, file:, line:, column:)</c>: the crash of a
     /// caught error thrown again (a <c>Crashables</c>), which reports the trace the error was first thrown with
     /// (CrashLoweringPass).</summary>
     public const string CrashReportRethrown = "crash_report_rethrown";

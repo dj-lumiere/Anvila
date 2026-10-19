@@ -1491,7 +1491,7 @@ internal static class GenericAstRewriter
             // type name. BuilderQueryInliningPass handles the static/concrete cases:
             // this fold handles the residual case where the receiver name still matches a
             // type-param string substitution (e.g., the receiver is IdentifierExpression("T")
-            // and stringSubs["T"] = "Core.Byte" -> the name hasn't been rewritten yet when
+            // and stringSubs["T"] = "System.Byte" -> the name hasn't been rewritten yet when
             // the switch arm fires).
             CallExpression
                 {
@@ -2333,7 +2333,7 @@ internal static class GenericAstRewriter
         // `T(0)` parses as CallExpression(Callee=IdentifierExpression("T")). The plain
         // IdentifierExpression rewrite arm doesn't substitute names (variables vs. type
         // params are ambiguous). For a CallExpression callee that *is* a generic-param
-        // identifier, swap "T" -> "Core.S64" so codegen emits the right constructor.
+        // identifier, swap "T" -> "System.S64" so codegen emits the right constructor.
         if (rewrittenCallee is IdentifierExpression idCallee &&
             ctx.StringSubs.TryGetValue(key: idCallee.Name, value: out string? sub))
         {
@@ -2382,7 +2382,7 @@ internal static class GenericAstRewriter
 
         MemberExpression rewritten = me with { Object = newObj };
         // Substitute the member-access type through the type map: a field read `me.inner` typed
-        // `Core.List[T]` on the generic def must become `Core.List[Core.S32]` in the instantiation.
+        // `System.List[T]` on the generic def must become `System.List[System.S32]` in the instantiation.
         // Copying the raw generic-def type left `T` unsubstituted, so a downstream re-resolution of the
         // unresolved-`T` receiver mis-bound the memberRoutine to the shadowing same-named type (the SF-overlay
         // wrapper) → self-recursion.
@@ -2394,7 +2394,7 @@ internal static class GenericAstRewriter
 
     /// <summary>
     /// Attempts to fold <c>T.BS_ROUTINE()</c> to a literal expression when the receiver
-    /// can be resolved through the string-substitution map (e.g. T ??"Core.Byte").
+    /// can be resolved through the string-substitution map (e.g. T ??"System.Byte").
     /// This covers the monomorphization case where the receiver name hasn't been rewritten
     /// to the concrete identifier yet when the switch arm fires.
     /// Returns null if the type cannot be resolved (caller falls back to normal rewrite).
@@ -3256,7 +3256,7 @@ internal static class GenericAstRewriter
                 ctx.ActiveMemberIndex = vm.Ordinal;
 
                 // The arm's type as it is: re-resolving its bare name finds nothing when the variant was written in
-                // place (`Circle | Square` lives in Core, its arms in the program's module).
+                // place (`Circle | Square` lives in System, its arms in the program's module).
                 var typeExpr =
                     new TypeExpression(Name: vm.Type.Name, GenericArguments: null, Location: loc)
                     {

@@ -313,8 +313,8 @@ partial class TypeRegistry
             _stdlibLoader =
                 new StdlibLoader(stdlibRoot: snapshot.StdlibRootPath, language: language)
                 {
-                    // Core is restored (already lowered) — an on-demand import re-scans stdlib and re-parses
-                    // every Core file into the loader's _corePrograms; flag it so those stale unanalyzed copies
+                    // System is restored (already lowered) — an on-demand import re-scans stdlib and re-parses
+                    // every System file into the loader's _corePrograms; flag it so those stale unanalyzed copies
                     // are NOT reported as freshly-loaded (they'd be re-lowered and crash — the D128 ternary bug).
                     CoreResident = true
                 };

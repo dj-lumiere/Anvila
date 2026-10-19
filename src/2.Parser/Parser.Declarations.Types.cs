@@ -980,7 +980,7 @@ public partial class Parser
         List<(string Realm, string Name)>? realmImports = null;
 
         // Parse module path - could be multiple identifiers separated by slashes
-        // Dot marks a specific type within the module: import razorforge/Core.Bool
+        // Dot marks a specific type within the module: import razorforge/System.Bool
         do
         {
             modulePathSb.Append(value: ConsumeIdentifier(errorMessage: "Expected module name"));
@@ -1021,7 +1021,7 @@ public partial class Parser
     /// <summary>
     /// Parses the clause following a <c>.</c> in an import path (the dot is already consumed): either a
     /// selective import (<c>Module.[A, B, C]</c>), a realm-qualified foreign routine
-    /// (<c>Module.C::qsort</c>), or a single type (<c>Core.Bool</c>). Mutates the accumulating module
+    /// (<c>Module.C::qsort</c>), or a single type (<c>System.Bool</c>). Mutates the accumulating module
     /// path and the selective/realm import lists.
     /// </summary>
     private void ParseImportDotClause(System.Text.StringBuilder modulePathSb,
@@ -1043,7 +1043,7 @@ public partial class Parser
         }
         else
         {
-            // Single member after the dot. `Core.Bool` selects a type; `Module.C::qsort`
+            // Single member after the dot. `System.Bool` selects a type; `Module.C::qsort`
             // selects a realm-qualified foreign routine to bring into BARE scope (the `::`
             // disambiguates it from a plain type import).
             string member = ConsumeIdentifier(errorMessage: "Expected name after '.'");
@@ -1057,7 +1057,7 @@ public partial class Parser
             }
             else
             {
-                // Single type: Core.Bool -> module "Core", type "Bool"
+                // Single type: System.Bool -> module "System", type "Bool"
                 modulePathSb.Append(value: '.');
                 modulePathSb.Append(value: member);
             }

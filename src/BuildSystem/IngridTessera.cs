@@ -267,16 +267,8 @@ internal static class IngridTessera
                 isLibrary: false));
         }
 
-        string stdlib = TesseraBackend.StdlibDirectory();
-        foreach (string file in Directory.GetFiles(path: stdlib, searchPattern: "*.te",
-                         searchOption: SearchOption.AllDirectories)
-                     .Order(comparer: StringComparer.Ordinal))
-        {
-            string shown = Path.Combine(path1: "Standard", path2: Path.GetRelativePath(relativeTo: stdlib, path: file));
-            decls.AddRange(collection: TesseraBackend.Parse(file: shown,
-                source: Tessera.SourceText.Read(path: file, shown: shown),
-                isLibrary: true));
-        }
+        // Each standard library file is the module its folder names (Tessera.StandardLibrary).
+        decls.AddRange(collection: Tessera.StandardLibrary.Load(directory: TesseraBackend.StdlibDirectory()));
 
         try
         {

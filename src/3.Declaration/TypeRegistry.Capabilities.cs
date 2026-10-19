@@ -148,7 +148,7 @@ public sealed partial class TypeRegistry
         }
 
         // No backend-type shortcut: scalar primitives still define `eq`/`hash` explicitly
-        // (see Core/Numerics/*.rf) and will be picked up by the LookupMemberRoutine fallback below.
+        // (see System/Numerics/*.rf) and will be picked up by the LookupMemberRoutine fallback below.
         // The shortcut used to fire on every `@llvm("…")`-backed record — including aggregate-
         // backed records like `Array[T, N]` (`@llvm("[{N} x {T}]")`) — which masked the
         // generic-constraint check we need for correctness.
@@ -709,7 +709,7 @@ public sealed partial class TypeRegistry
             return null;
         }
 
-        // A generic INSTANCE (e.g. `Dict[S64, S64]`) — or a REALM-BRIDGED copy of a type (the SF-realm `Core.Dict`
+        // A generic INSTANCE (e.g. `Dict[S64, S64]`) — or a REALM-BRIDGED copy of a type (the SF-realm `System.Dict`
         // an `.sf` file resolves to) — can carry an EMPTY own ImplementedProtocols: the declared conformances
         // (`obeys Container, Iterable, …`) are populated by the eager Phase-3 conformance pass onto the AMBIENT
         // (RF-realm) generic DEFINITION only. Without inheriting them, `x in dict` in an SF file false-fires

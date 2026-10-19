@@ -645,7 +645,8 @@ public sealed partial class SemanticVerifier
         foreach (TypeSymbol t in _registry.GetAllTypes())
         {
             if (t is { Visibility: VisibilityModifier.Secret } && t.Name == name &&
-                t.Module != _currentModuleName)
+                !(_currentModuleName != null &&
+                  Builder.Declaration.StandardModules.IsUnder(module: _currentModuleName, parent: t.Module)))
             {
                 ReportError(code: SemanticDiagnosticCode.SecretTypeAccess,
                     message:

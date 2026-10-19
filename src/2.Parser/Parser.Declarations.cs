@@ -896,7 +896,7 @@ public partial class Parser
     /// </summary>
     private static string SerializeTypeExpression(TypeExpression type)
     {
-        // A realm qualifier (`SF::Core.List[T]`) is part of the name: the bracket names that language's type.
+        // A realm qualifier (`SF::System.List[T]`) is part of the name: the bracket names that language's type.
         string name = type.Realm != null ? $"{type.Realm}::{type.Name}" : type.Name;
         if (type.GenericArguments is not { Count: > 0 })
         {

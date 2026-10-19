@@ -6,7 +6,7 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Writes every crash out as a call of Core's <c>crash_report</c>, so the emitter only translates a call.
+/// Writes every crash out as a call of System's <c>crash_report</c>, so the emitter only translates a call.
 ///
 /// <para>A <c>throw</c> nothing recovers, an <c>absent</c> in a failable routine and a crashable returned
 /// from a failable routine each become a <see cref="CrashStatement"/>:
@@ -61,12 +61,12 @@ internal sealed class CrashLoweringPass : AstRewriter
 
         (TypeSymbol text, TypeSymbol s32, RoutineInfo crashReport) = CrashReportParts(registry: registry);
         TypeSymbol crashables = registry.LookupType(name: RuntimeContract.Crashables) ??
-                                throw new InvalidOperationException(message: "Core.Crashables is not registered.");
+                                throw new InvalidOperationException(message: "System.Crashables is not registered.");
         RoutineInfo crashReportRethrown = registry.LookupRoutineOverload(
-                                              baseName: $"Core.{RuntimeContract.CrashReportRethrown}",
+                                              baseName: $"System.{RuntimeContract.CrashReportRethrown}",
                                               argTypes: [text, text, crashables, text, s32, s32]) ??
                                           throw new InvalidOperationException(
-                                              message: $"Core.{RuntimeContract.CrashReportRethrown} is not registered.");
+                                              message: $"System.{RuntimeContract.CrashReportRethrown} is not registered.");
         var pass = new CrashLoweringPass(registry: registry,
             routine: routine,
             crashReport: crashReport,
@@ -236,14 +236,14 @@ internal sealed class CrashLoweringPass : AstRewriter
     private static (TypeSymbol Text, TypeSymbol S32, RoutineInfo CrashReport) CrashReportParts(TypeRegistry registry)
     {
         TypeSymbol text = registry.LookupType(name: "Text") ??
-                          throw new InvalidOperationException(message: "Core.Text is not registered.");
+                          throw new InvalidOperationException(message: "System.Text is not registered.");
         TypeSymbol s32 = registry.LookupType(name: "S32") ??
-                         throw new InvalidOperationException(message: "Core.S32 is not registered.");
+                         throw new InvalidOperationException(message: "System.S32 is not registered.");
         RoutineInfo crashReport = registry.LookupRoutineOverload(
-                                      baseName: $"Core.{RuntimeContract.CrashReport}",
+                                      baseName: $"System.{RuntimeContract.CrashReport}",
                                       argTypes: [text, text, text, s32, s32]) ??
                                   throw new InvalidOperationException(
-                                      message: $"Core.{RuntimeContract.CrashReport} is not registered.");
+                                      message: $"System.{RuntimeContract.CrashReport} is not registered.");
         return (text, s32, crashReport);
     }
 

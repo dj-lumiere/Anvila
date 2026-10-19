@@ -53,7 +53,7 @@ internal static class RfBindingCheck
                     .Select(selector: g => g.First())
                     .ToList())
         {
-            if (!module.Equals(value: "Core", comparisonType: StringComparison.Ordinal))
+            if (!module.Equals(value: "System", comparisonType: StringComparison.Ordinal))
             {
                 registry.LoadModule(importPath: module, currentFile: file, location: declaration.Location,
                     effectiveModule: out _);

@@ -3090,7 +3090,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
         TypeSymbol? boolType = ctx.Registry.LookupType(name: "Bool");
         TypeSymbol crashables = ctx.Registry.LookupType(name: Builder.Declaration.RuntimeContract.Crashables) ??
-                                throw new InvalidOperationException(message: "Core.Crashables is not registered.");
+                                throw new InvalidOperationException(message: "System.Crashables is not registered.");
         if (carrier is not IdentifierExpression)
         {
             string name = NextTempName(prefix: "carrier");

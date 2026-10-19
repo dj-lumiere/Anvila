@@ -146,7 +146,7 @@ public static class LspServer
 
     /// <summary>
     /// A type as its reader writes it: short names without module paths (<c>List[S64]</c>, not
-    /// <c>List[Core.S64]</c>), in the words of the served language (a Suflae entity without its handle), at every
+    /// <c>List[System.S64]</c>), in the words of the served language (a Suflae entity without its handle), at every
     /// depth of its arguments.
     /// </summary>
     private static string TypeText(TypeSymbol type)
@@ -163,13 +163,13 @@ public static class LspServer
             : ShortName(name: shown.Name);
     }
 
-    /// <summary>A type name without its module path (<c>Core.S64</c> reads <c>S64</c>).</summary>
+    /// <summary>A type name without its module path (<c>System.S64</c> reads <c>S64</c>).</summary>
     private static string ShortName(string name)
     {
         return name[(name.LastIndexOf(value: '.') + 1)..];
     }
 
-    // The module path in front of a type name inside a spelled-out type (`Core.` in `Tuple[Core.S64, Text]`).
+    // The module path in front of a type name inside a spelled-out type (`System.` in `Tuple[System.S64, Text]`).
     private static readonly System.Text.RegularExpressions.Regex ModulePath =
         new(pattern: @"(?<![\w.])(?:[A-Za-z_]\w*\.)+(?=[A-Za-z_])");
 
@@ -1303,7 +1303,8 @@ public static class LspServer
                 tokens.SkipWhile(predicate: t => t.Type != TokenType.Module)
                       .Skip(count: 1)
                       .TakeWhile(predicate: t => t.Type != TokenType.Newline)
-                      .Select(selector: t => t.Text) is var header && string.Concat(values: header) != module)
+                      .Select(selector: t => t.Text) is var header &&
+                StandardModules.Identity(module: string.Concat(values: header)) != module)
             {
                 continue;
             }
@@ -4465,9 +4466,9 @@ public static class LspServer
 
     /// <summary>
     /// The source a standard library file was copied from. The build lays the stdlib out next to the executable
-    /// (<c>bin/.../Standard/RazorForge/Core/X.rf</c>), and the editor runs the server from a copy of that folder
+    /// (<c>bin/.../Standard/RazorForge/System/X.rf</c>), and the editor runs the server from a copy of that folder
     /// (whose build folder it names in <c>ANVILA_BUILD_DIR</c>). A location in either copy is shown in the project's
-    /// <c>Standard/Core/X.rf</c>, so go-to-definition opens the file that is edited, not one a build overwrites. Any
+    /// <c>Standard/System/X.rf</c>, so go-to-definition opens the file that is edited, not one a build overwrites. Any
     /// other file, or one whose source isn't there, is itself.
     /// </summary>
     private static string SourceFileOf(string fileName)

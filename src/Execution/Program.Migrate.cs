@@ -31,9 +31,9 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names"))
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable or names");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names or modules");
             return 2;
         }
 
@@ -61,6 +61,13 @@ internal partial class Program
         if (step == "names")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteRoutineNames);
+        }
+
+        // `--step modules`: the base module is System, seen with every module under it without an import, so an import
+        // of Core or Numerics goes and a name qualified by Core is qualified by System.
+        if (step == "modules")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteModules);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
@@ -1009,7 +1016,7 @@ internal partial class Program
 
     /// <summary>
     /// The name a pattern binds the old way, written straight after the type of <c>is</c> (<c>is Weapon w</c>,
-    /// <c>is RF::Core.List[S64] xs</c>, <c>is $typeof(m) v</c>) or straight after <c>else</c> (<c>else p =></c>), or
+    /// <c>is RF::System.List[S64] xs</c>, <c>is $typeof(m) v</c>) or straight after <c>else</c> (<c>else p =></c>), or
     /// null. The type is skipped over: names joined by <c>.</c> or <c>::</c>, a <c>$</c> splice with its
     /// parentheses, and a bracketed argument list.
     /// </summary>

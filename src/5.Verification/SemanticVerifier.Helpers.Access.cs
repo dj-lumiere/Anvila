@@ -495,10 +495,11 @@ public sealed partial class SemanticVerifier
                 // null and reject every call, even from the routine's own module).
                 if (!IsAccessingFromSameModule(memberModule: memberModule ?? ownerType?.Module))
                 {
-                    string typeName = ownerType?.Name ?? "type";
                     ReportError(code: SemanticDiagnosticCode.SecretMemberAccess,
-                        message:
-                        $"Cannot access secret {memberKind} '{memberName}' of '{typeName}' from outside its module.",
+                        message: ownerType != null
+                            ? $"Cannot access secret {memberKind} '{memberName}' of '{ownerType.Name}' from outside its module."
+                            : $"The {memberKind} '{memberName}' is secret to module '{memberModule}', so only that " +
+                              "module and the modules under it can call it.",
                         location: accessLocation);
                 }
 
@@ -513,8 +514,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Checks if the current access context is within the same module as the member.
-    /// Module comparison is exact (sub-modules are different modules).
+    /// Checks if the current access context reaches a <c>secret</c> member of <paramref name="memberModule"/>: code
+    /// of that module or of a module under it (<c>Garden/Tools</c> reaches <c>Garden</c>'s secrets, not the other way
+    /// around).
     /// </summary>
     private bool IsAccessingFromSameModule(string? memberModule)
     {
@@ -534,8 +536,7 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
-        // Module comparison is exact - sub-modules are different modules
-        return currentModuleName == memberModule;
+        return Builder.Declaration.StandardModules.IsUnder(module: currentModuleName, parent: memberModule);
     }
 
     /// <summary>
@@ -571,7 +572,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Checks whether a file path is inside the stdlib directory.
-    /// Used to allow stdlib files to use reserved features (e.g., module Core).
+    /// Used to allow stdlib files to use reserved features (e.g., module System).
     /// </summary>
     /// <summary>True when <paramref name="filePath"/> names a file of the program being built: not one of the
     /// library's, and not the empty or placeholder name of a body the builder writes.</summary>

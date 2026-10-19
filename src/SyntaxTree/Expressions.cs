@@ -1012,7 +1012,7 @@ public record TypeExpression(
     List<TypeExpression>? GenericArguments,
     SourceLocation Location,
     bool IsRvalue = false,
-    // Cross-language realm tag from a `Realm::Name` qualifier (e.g. `RF::Core.List`). "RF" = the
+    // Cross-language realm tag from a `Realm::Name` qualifier (e.g. `RF::System.List`). "RF" = the
     // RazorForge/bare realm (the resolver skips Suflae's entity->Roamed lowering for it); null = the
     // ambient realm of the file. Only "RF" is wired for now (Suflae wrappers holding a bare RF entity).
     string? Realm = null,
@@ -1536,7 +1536,7 @@ public record AddressOfExpression(Expression Target, SourceLocation Location) : 
 /// <summary>
 /// A capturing lambda's value, produced by lowering (never parsed): <c>LambdaLiftingPass</c> lifts the lambda
 /// into a routine that takes its bound payload as a trailing <c>__bound: CPtr</c> parameter, and builds the
-/// payload as <see cref="Bound"/> (a chain of Core's <c>closure_new</c>/<c>closure_put</c> calls). The emitter
+/// payload as <see cref="Bound"/> (a chain of System's <c>closure_new</c>/<c>closure_put</c> calls). The emitter
 /// pairs the lifted routine's symbol with the payload into the Routine value <c>{ fn, bound, recover }</c>, whose
 /// recovering entry is the lifted routine's lookup-shaped recovery variant when the lambda can fail beneath its
 /// call (<c>Function.RecoverRoutine</c>).

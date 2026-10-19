@@ -107,7 +107,7 @@ public sealed class MaySuspendAnalysis
 /// <summary>
 /// Single source of truth for which routines are coroutine suspend primitives. v0.2.0 ships no
 /// suspend keyword (design §8); the substrate is the native <c>rf_coro_*</c> functions declared in
-/// <c>Core/NativeDeclarations.rf</c>. The park point is <c>rf_coro_yield</c>; v0.3.0 channels add
+/// <c>System/NativeDeclarations.rf</c>. The park point is <c>rf_coro_yield</c>; v0.3.0 channels add
 /// <c>rf_channel_feed</c> / <c>rf_channel_next</c>, which park the calling coroutine internally
 /// (rf_sched_park_external) on a full/empty buffer exactly like a yield.
 /// </summary>

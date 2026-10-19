@@ -81,7 +81,7 @@ internal static class RoutineSpecialization
 
     /// <summary>
     /// The type a bracket entry names: a plain name by <paramref name="resolve"/>, an entry with type arguments or a
-    /// realm (`SF::Core.List[T]`, the serialized form the parser keeps) by <paramref name="resolveExpression"/>
+    /// realm (`SF::System.List[T]`, the serialized form the parser keeps) by <paramref name="resolveExpression"/>
     /// over the parsed expression. Null when the entry is not a type.
     /// </summary>
     private static TypeSymbol? ResolveEntry(string name, Func<string, TypeSymbol?> resolve,

@@ -210,17 +210,19 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Validates a module declaration.
-    /// Rejects "module Core" as it's reserved for stdlib (user code cannot declare it).
+    /// Rejects "module System" and the modules under it, which are the standard library's (user code cannot declare
+    /// them).
     /// </summary>
     private void ValidateModuleDeclaration(ModuleDeclaration ns)
     {
-        // Module "Core" is reserved for stdlib only
-        if (ns.Path.Equals(value: "Core", comparisonType: StringComparison.OrdinalIgnoreCase) &&
+        // Module "System" is reserved for stdlib only
+        if (StandardModules.IsSystem(module: ns.Path) && !StandardModules.BuildingLibraryExport &&
             !IsStdlibFile(filePath: _currentFilePath))
         {
             ReportError(code: SemanticDiagnosticCode.ReservedModuleCore,
                 message:
-                "Module 'Core' is reserved for the standard library and cannot be used in user code.",
+                $"Module '{ns.Path}' is the standard library's: System and the modules under it are reserved for it, " +
+                "so give your module another name.",
                 location: ns.Location);
         }
     }
@@ -231,22 +233,9 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void ProcessImportDeclaration(ImportDeclaration import)
     {
-        // Prefix/package import: `import A/B` also pulls in every submodule under `A/B` (recursively) —
-        // e.g. `import Tests/Stdlib` imports Tests/Stdlib/AddressApi, .../AgentApi, … at once, instead
-        // of one line per module. Each submodule's leaf becomes callable (leaf-qualified resolution),
-        // with cross-module name clashes disambiguated by a longer namespace prefix (RF-S513). When the
-        // prefix is a leaf module (no submodules), this list is empty and we fall through to the plain
-        // single-module load below.
-        IReadOnlyList<string> submodules =
-            _registry.EnumerateSubmodules(prefix: import.ModulePath);
-        if (submodules.Count > 0)
-        {
-            ProcessPrefixImport(import: import, submodules: submodules);
-            return;
-        }
-
-        // Load the module on-demand
-        // This handles both Core modules and non-Core modules (Collections, ErrorHandling, etc.)
+        // An import brings the module it names, never the modules under it: `import A` doesn't bring `A/B`.
+        // Load the module on-demand.
+        // This handles both System modules and non-System modules (Collections, ErrorHandling, etc.)
         bool success = _registry.LoadModule(importPath: import.ModulePath,
             currentFile: _currentFilePath,
             location: import.Location,
@@ -255,7 +244,10 @@ public sealed partial class SemanticVerifier
         if (!success)
         {
             ReportError(code: SemanticDiagnosticCode.ModuleNotFound,
-                message: $"Cannot resolve import '{import.ModulePath}'. Module not found.",
+                message: StandardModules.MovedModule(module: import.ModulePath) is { } now
+                    ? $"Module '{import.ModulePath}' is gone: its names are in {now}, which every file sees without " +
+                      "an import. Leave the import out (migrate --step modules does it)."
+                    : $"Cannot resolve import '{import.ModulePath}'. Module not found.",
                 location: import.Location);
             return;
         }
@@ -287,39 +279,6 @@ public sealed partial class SemanticVerifier
             {
                 _importedForeignAliases.Add(item: $"{realm}::{routineName}");
             }
-        }
-    }
-
-    /// <summary>
-    /// Handles a prefix/package import where the module path matches multiple submodules. Loads each
-    /// submodule (plus the prefix itself if it is also a real module). Reports an error if none loaded.
-    /// </summary>
-    private void ProcessPrefixImport(ImportDeclaration import, IReadOnlyList<string> submodules)
-    {
-        bool anyLoaded = false;
-        // Load the prefix module itself too if it happens to be a real module (a namespace-only
-        // prefix just fails silently here — the submodules are what matter).
-        foreach (string modulePath in submodules.Prepend(element: import.ModulePath)
-                                                .Distinct())
-        {
-            if (_registry.LoadModule(importPath: modulePath,
-                    currentFile: _currentFilePath,
-                    location: import.Location,
-                    effectiveModule: out string? subEffective))
-            {
-                anyLoaded = true;
-                if (subEffective != null)
-                {
-                    _importedModules.Add(item: subEffective);
-                }
-            }
-        }
-
-        if (!anyLoaded)
-        {
-            ReportError(code: SemanticDiagnosticCode.ModuleNotFound,
-                message: $"Cannot resolve import '{import.ModulePath}'. Module not found.",
-                location: import.Location);
         }
     }
 
@@ -1363,7 +1322,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void ValidateTypeProtocolImplementation(TypeSymbol type)
     {
-        // Skip stdlib/fallback types (types without source location or in Core module)
+        // Skip stdlib/fallback types (types without source location or in System module)
         // These are pre-defined types that may not have full member routine implementations in test environments
         if (type.Location == null || string.IsNullOrEmpty(value: type.Location.FileName))
         {

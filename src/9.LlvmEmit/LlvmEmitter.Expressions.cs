@@ -716,7 +716,7 @@ public partial class LlvmEmitter
         // Every mold member that returns is a `-> Text` routine taking the crashable by reference, so one return ABI
         // fits them all.
         TypeSymbol text = _registry.LookupType(name: "Text") ??
-                          throw new InvalidOperationException(message: "Core.Text is not registered.");
+                          throw new InvalidOperationException(message: "System.Text is not registered.");
         var shape = new RoutineInfo(name: dispatch.MemberName) { ReturnType = text };
         string retLlvm = GetLlvmType(type: text);
         string resultSlot = NextTemp();

@@ -66,7 +66,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
         // An `n` literal has no scalar form (a raw one reaches the emitter as `store %Record.Integer 42n`), so
         // it becomes the Integer record itself. Integer lives in `module Numerics` — qualify (a bare lookup
         // depended on the cross-module short-name scan, and when it missed the literal reached the emitter raw).
-        _integerType = (ctx.Registry.LookupType(name: "Numerics.Integer") ??
+        _integerType = (ctx.Registry.LookupType(name: "System.Integer") ??
                         ctx.Registry.LookupType(name: "Integer")) as RecordTypeSymbol;
         _boolType = ctx.Registry.LookupType(name: "Bool");
         _u64Type = ctx.Registry.LookupType(name: "U64");
@@ -272,7 +272,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
     /// </summary>
     internal static CreatorExpression IntegerCreator(TypeRegistry registry, BigInteger value, SourceLocation loc)
     {
-        RecordTypeSymbol integer = (registry.LookupType(name: "Numerics.Integer") ??
+        RecordTypeSymbol integer = (registry.LookupType(name: "System.Integer") ??
                                     registry.LookupType(name: "Integer")) as RecordTypeSymbol ??
                                    throw new InvalidOperationException(message: "Integer is not registered.");
         return IntegerCreator(integer: integer,

@@ -126,7 +126,7 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
         TypeSymbol annotated, TypeExpression? typeExpr = null)
     {
         // An `RF::`-qualified annotation opts OUT of the entity->Roamed lowering: ResolveType already
-        // honored the realm and left it BARE (a wrapper's `inner: RF::Core.List[T]` holds a bare RF
+        // honored the realm and left it BARE (a wrapper's `inner: RF::System.List[T]` holds a bare RF
         // entity, not a re-roamed `Roamed[List]`). Do NOT re-roam it here — this is the SA twin of
         // TypeResolver.ResolveType's `Realm != "RF"` gate; the realm tag lives on the TypeExpression,
         // not on the already-resolved TypeSymbol, so it must be threaded in explicitly.

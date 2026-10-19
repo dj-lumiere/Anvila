@@ -226,7 +226,7 @@ internal partial class Program
 
             /// <summary>True when the routine's owner, type arguments, parameters or return type involve a type
             /// declared in a user module. Names alone miss it: a free generic instance is mangled with the short
-            /// type name (<c>Core.hijacked_none(Box)</c>).</summary>
+            /// type name (<c>System.hijacked_none(Box)</c>).</summary>
             private static bool UsesUserTypes(RoutineInfo routine, HashSet<string> userModules)
             {
                 return IsUserType(type: routine.OwnerType, userModules: userModules) ||

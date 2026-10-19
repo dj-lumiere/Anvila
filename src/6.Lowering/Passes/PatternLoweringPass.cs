@@ -1136,7 +1136,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
     private TypeSymbol CrashablesType =>
         ctx.Registry.LookupType(name: Builder.Declaration.RuntimeContract.Crashables) ??
-        throw new InvalidOperationException(message: "Core.Crashables is not registered.");
+        throw new InvalidOperationException(message: "System.Crashables is not registered.");
 
     /// <summary>Builds <c>subject.type_id == 0_u64</c> for a None/absent check on Result/Lookup.</summary>
     private static BinaryExpression MakeTypeIdIsZero(Expression subject, SourceLocation loc,

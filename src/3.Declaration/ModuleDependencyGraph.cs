@@ -6,7 +6,7 @@ namespace Builder.Declaration;
 
 /// <summary>
 /// Represents a module in the dependency graph.
-/// A module corresponds to a unique module path (e.g., "Collections", "Banking/Core").
+/// A module corresponds to a unique module path (e.g., "Collections", "Banking/System").
 /// </summary>
 public sealed class ModuleNode
 {
@@ -28,7 +28,7 @@ public sealed class ModuleNode
     /// <summary>
     /// Initializes a new <see cref="ModuleNode"/> with the given module path.
     /// </summary>
-    /// <param name="modulePath">The fully-qualified module path (e.g., "Collections", "Banking/Core").</param>
+    /// <param name="modulePath">The fully-qualified module path (e.g., "Collections", "Banking/System").</param>
     public ModuleNode(string modulePath)
     {
         ModulePath = modulePath;

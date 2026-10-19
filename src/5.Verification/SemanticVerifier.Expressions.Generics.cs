@@ -790,10 +790,10 @@ public sealed partial class SemanticVerifier
         GenericMemberRoutineCallExpression generic, IdentifierExpression typeId, TypeSymbol typeSymbol,
         List<TypeSymbol> typeArgs)
     {
-        // Honor an explicit `RF::`/`SF::` realm on a generic construction (`RF::Core.List[T]()`): the
+        // Honor an explicit `RF::`/`SF::` realm on a generic construction (`RF::System.List[T]()`): the
         // Object was resolved realm-blind (prefers the file's resolution realm), so inside an SF file
-        // `RF::Core.List[T]()` would resolve to the SF-realm list and the SF wrapper's constructor
-        // `return List[T](inner: RF::Core.List[T]())` would self-recurse. Swap the generic DEF to the
+        // `RF::System.List[T]()` would resolve to the SF-realm list and the SF wrapper's constructor
+        // `return List[T](inner: RF::System.List[T]())` would self-recurse. Swap the generic DEF to the
         // qualified realm before resolving, so the inner construction reaches the RazorForge list.
         if (typeId.Realm is { } genCtorRealm && typeSymbol.Realm != genCtorRealm &&
             _registry.ReResolveInRealm(type: typeSymbol, realm: genCtorRealm) is TypeSymbol

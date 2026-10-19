@@ -688,7 +688,7 @@ internal partial class Program
 
             Flush(writer: writer, library: true);
 
-            // Validation covers Core and what Core imports. The other modules (IO, Math3D, Random, ...) are loaded
+            // Validation covers System and what System imports. The other modules (IO, Math3D, Random, ...) are loaded
             // first and validated the same way.
             try
             {

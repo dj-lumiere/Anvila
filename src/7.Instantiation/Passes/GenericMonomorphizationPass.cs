@@ -454,7 +454,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Core's <c>crash_report</c>: CrashLoweringPass (Phase 9, after collection) turns every throw, every
+    /// System's <c>crash_report</c>: CrashLoweringPass (Phase 9, after collection) turns every throw, every
     /// absent in a failable routine and every crashable return from one into a call of it, so a body with
     /// one of those needs it live.
     /// </summary>
@@ -465,12 +465,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return null;
         }
 
-        return registry.LookupRoutineOverload(baseName: $"Core.{RuntimeContract.CrashReport}",
+        return registry.LookupRoutineOverload(baseName: $"System.{RuntimeContract.CrashReport}",
             argTypes: [text, text, text, s32, s32]);
     }
 
     /// <summary>
-    /// Core's <c>crash_report_rethrown</c>: CrashLoweringPass turns a throw of a caught error (a <c>Crashables</c>)
+    /// System's <c>crash_report_rethrown</c>: CrashLoweringPass turns a throw of a caught error (a <c>Crashables</c>)
     /// into a call of it, so a body that throws one needs it live.
     /// </summary>
     internal static RoutineInfo? CrashReportRethrownRoutine(TypeRegistry registry)
@@ -481,7 +481,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return null;
         }
 
-        return registry.LookupRoutineOverload(baseName: $"Core.{RuntimeContract.CrashReportRethrown}",
+        return registry.LookupRoutineOverload(baseName: $"System.{RuntimeContract.CrashReportRethrown}",
             argTypes: [text, text, crashables, text, s32, s32]);
     }
 
@@ -1472,7 +1472,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         ///   <item>choice / flags: <c>return choice_from_serial[T](value: value)</c> / <c>flags_from_serial</c></item>
         ///   <item>variant: <c>variant_from_serial[T]</c>, behind an <c>is None => return none</c> clause when it has a <c>None</c> arm</item>
         /// </list>
-        /// The helpers live in <c>Core/Serialization/FromSerial.rf</c>.
+        /// The helpers live in <c>System/Serialization/FromSerial.rf</c>.
         /// </summary>
         private void MaterializeFromSerialBodyIfNeeded(RoutineInfo r, string key)
         {
@@ -1894,7 +1894,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // (4) Text.replace — FStringLoweringPass synthesizes it for `:?`/`?` in-flight-entity interpolation.
         private void SeedEntitySelfFreeIfApplicable(TypeSymbol type)
         {
-            if (type is { Name: "Text", Module: "Core" })
+            if (type is { Name: "Text", Module: "System" })
             {
                 Discover(r: _ctx.Registry.LookupMemberRoutine(type: type,
                     memberRoutineName: RuntimeContract.Collection.Replace));
@@ -2204,7 +2204,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
     /// <summary>
     /// Builds the owner type-parameter substitution maps for a concrete generic instance.
-    /// stringSubs uses FullName (e.g. "T" → "Core.S64") so rewritten AST type-expression names are
+    /// stringSubs uses FullName (e.g. "T" → "System.S64") so rewritten AST type-expression names are
     /// fully qualified; typeSubs carries the resolved TypeSymbol for ResolvedType annotation in
     /// GenericAstRewriter.
     /// </summary>
@@ -2539,8 +2539,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             expectedOwnerModule: resolvedRoutine.OwnerType?.FullName is { } ownerFn
                 ? TypeSymbol.StripTypeArgs(name: ownerFn)
                 : null,
-            // Realm-scoped: an SF overlay (`SF::Core.Dict[K,V]`) and the RF type it wraps
-            // (`Core.Dict[K,V]`) share the same bare AST name AND owner module (`Core.Dict`), so a
+            // Realm-scoped: an SF overlay (`SF::System.Dict[K,V]`) and the RF type it wraps
+            // (`System.Dict[K,V]`) share the same bare AST name AND owner module (`System.Dict`), so a
             // module-only match binds the SF overlay's forwarder instance to the RF body — e.g. the SF
             // `Dict.add` forwarder (`me.inner.add`) gets the RF `Dict.add` body (`me.keys`), which then
             // reaches codegen calling `me.keys` on the fieldless overlay. Pass the owner realm so the SF
@@ -2646,8 +2646,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // Check if the generic definition has a synthesized body in VariantBodies.
         // ProcessConcreteType->BuildBody checks genMemberRoutine.RegistryKey (the generic def key),
         // but this path only checked resolvedRoutine.RegistryKey (the concrete key).
-        // Example: List[T].eq body is stored under "Core.List[T].eq#Core.List[T]",
-        // but resolvedRoutine.RegistryKey is "Core.List[Core.Byte].eq#Core.List[Core.Byte]".
+        // Example: List[T].eq body is stored under "System.List[T].eq#System.List[T]",
+        // but resolvedRoutine.RegistryKey is "System.List[System.Byte].eq#System.List[System.Byte]".
         string genDefRoutineKey = resolvedRoutine.GenericDefinition!.RegistryKey;
         if (ctx.VariantBodies.TryGetValue(key: genDefRoutineKey,
                 value: out Statement? defVariantBody))
@@ -3697,7 +3697,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         string? expectedOwnerRealm)
     {
         // Module-scoped disambiguation: the same bare AST name (`List[T].add_last`) is declared in both
-        // the RazorForge-realm `Core.List` and the Suflae-realm overlay `Suflae.List`. Prefer the
+        // the RazorForge-realm `System.List` and the Suflae-realm overlay `Suflae.List`. Prefer the
         // candidate whose registered owner module matches; fall back to the full set when none match.
         if (expectedOwnerModule != null)
         {
@@ -3904,7 +3904,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// and the AST's bare <c>SortedSet</c> compare equal.</summary>
     private static string MatchableBaseName(string typeName)
     {
-        // A qualified spelling (`RF::Core.List[T]` is written `Core.List`) matches by its last segment.
+        // A qualified spelling (`RF::System.List[T]` is written `System.List`) matches by its last segment.
         string baseName = StripGenericSuffix(typeName: typeName);
         baseName = baseName[(baseName.LastIndexOf(value: '.') + 1)..];
         if (BorrowWrapperNames.Contains(item: baseName) &&

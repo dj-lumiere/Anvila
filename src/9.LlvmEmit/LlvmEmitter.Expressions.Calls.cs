@@ -285,7 +285,7 @@ public partial class LlvmEmitter
         // Synthesized/lowered bodies (programmatic eq/compare/hash, operator-lowered calls) never
         // pass through SemanticVerifier, so they arrive without a stamped ResolvedRoutine. Once the
         // concrete argument types are known, resolve the exact overload here so failable operators
-        // like add!/sub! do not degrade to undecorated placeholder symbols (Core.S32.add). This
+        // like add!/sub! do not degrade to undecorated placeholder symbols (System.S32.add). This
         // is resolution for SA-bypassing bodies, NOT intent-rediscovery on user calls — every
         // SA-analyzed member call is already stamped or rejected (RF-S458). The former bare
         // `LookupMemberRoutine(name)` that resolved a non-failable name to its failable variant was

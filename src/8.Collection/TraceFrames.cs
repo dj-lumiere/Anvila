@@ -20,7 +20,7 @@ internal static class TraceFrames
     /// True when <paramref name="routine"/> pushes a frame: a routine of the program (not one the builder wrote,
     /// except a recovery variant, which runs the program's own routine for a <c>try</c> / <c>check</c> call), not
     /// <c>@inline</c> (an implementation detail that adds no navigable frame) or <c>@untraced</c> (a frame that is
-    /// noise in a trace, like Core's crash_report), that can crash. A recovery variant's frame is what the trace a
+    /// noise in a trace, like System's crash_report), that can crash. A recovery variant's frame is what the trace a
     /// caught error keeps shows of the routines between its throw and the catcher.
     /// </summary>
     public static bool Pushes(RoutineInfo routine, CrashReachability? reachability)

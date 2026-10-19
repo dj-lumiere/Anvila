@@ -208,8 +208,8 @@ public partial class SemanticVerifier
     /// </summary>
     public static CompiledStdlibState CaptureCompiledStdlib(Language language)
     {
-        // Prime the snapshot with the WHOLE stdlib, not just Core: a daemon should hold the entire
-        // analyzed stdlib resident in RAM. Without this, a warm compile of a program importing any non-Core
+        // Prime the snapshot with the WHOLE stdlib, not just System: a daemon should hold the entire
+        // analyzed stdlib resident in RAM. Without this, a warm compile of a program importing any non-System
         // module (e.g. Collections.CircularList) finds it absent from _loadedModules and triggers a full
         // ScanStdlibFiles — re-parsing EVERY stdlib file, every run (~0.7 s, the Phase 3 cost). Importing
         // every module here makes the capture load+analyze+lower them once, so those imports short-circuit

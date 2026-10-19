@@ -10,8 +10,8 @@ namespace Builder.Lowering.Passes;
 /// The typed nodes a capturing lambda is lowered to (LambdaLiftingPass): the payload chain
 /// <c>closure_put[V1](bound: closure_put[V0](bound: closure_new(slots: 2), slot: 0, value: a), slot: 1, value: b)</c>
 /// at the lambda, and in the lifted routine a trailing <c>__bound: CPtr</c> parameter plus
-/// <c>var a = closure_get[V0](bound: __bound, slot: 0)</c> per captured value. The helpers live in Core
-/// (<c>Core/Memory/Closure.rf</c>), so the payload's layout and the copy of each captured value are ordinary
+/// <c>var a = closure_get[V0](bound: __bound, slot: 0)</c> per captured value. The helpers live in System
+/// (<c>System/Memory/Closure.rf</c>), so the payload's layout and the copy of each captured value are ordinary
 /// RF code, and the emitter only pairs the lifted routine with the payload.
 /// </summary>
 internal sealed class ClosurePlumbing
@@ -77,8 +77,8 @@ internal sealed class ClosurePlumbing
     /// <summary>The payload chain storing each captured value, in capture order.</summary>
     internal Expression BuildPayload(List<(string Name, TypeSymbol Type)> captures)
     {
-        RoutineInfo closureNew = _registry.LookupRoutineOverload(baseName: "Core.closure_new", argTypes: [_u64]) ??
-                                 throw new InvalidOperationException(message: "Core.closure_new is not registered.");
+        RoutineInfo closureNew = _registry.LookupRoutineOverload(baseName: "System.closure_new", argTypes: [_u64]) ??
+                                 throw new InvalidOperationException(message: "System.closure_new is not registered.");
         Expression bound = Call(routine: closureNew, arguments: [("slots", U64(value: captures.Count))]);
         for (int i = 0; i < captures.Count; i++)
         {
@@ -97,7 +97,7 @@ internal sealed class ClosurePlumbing
         return bound;
     }
 
-    /// <summary>The instance of a Core closure helper for one captured value's type.</summary>
+    /// <summary>The instance of a System closure helper for one captured value's type.</summary>
     private RoutineInfo Instance(string name, TypeSymbol typeArgument)
     {
         if (ContainsGenericParameter(type: typeArgument))
@@ -107,9 +107,9 @@ internal sealed class ClosurePlumbing
                          "payload cannot hold yet.");
         }
 
-        RoutineInfo definition = _registry.LookupGenericOverload(name: name) is { Module: "Core" } found
+        RoutineInfo definition = _registry.LookupGenericOverload(name: name) is { Module: "System" } found
             ? found
-            : throw new InvalidOperationException(message: $"Core.{name} is not registered.");
+            : throw new InvalidOperationException(message: $"System.{name} is not registered.");
         return _registry.GetOrCreateRoutineResolution(genericDef: definition, typeArguments: [typeArgument]);
     }
 
@@ -135,7 +135,7 @@ internal sealed class ClosurePlumbing
     private TypeSymbol Lookup(string name)
     {
         return _registry.LookupType(name: name) ??
-               throw new InvalidOperationException(message: $"Core.{name} is not registered.");
+               throw new InvalidOperationException(message: $"System.{name} is not registered.");
     }
 
     private static bool ContainsGenericParameter(TypeSymbol type)

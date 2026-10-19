@@ -930,7 +930,7 @@ public partial class LlvmEmitter
 
         AppendRfForwardDeclarations(output: output);
 
-        // Shadow-stack helpers, in every mode: Core's crash_report reads the trace through the accessors
+        // Shadow-stack helpers, in every mode: System's crash_report reads the trace through the accessors
         // (a build without a trace pushes nothing, so its depth stays 0).
         // A DELTA build (resident base present, not the base itself) must REFERENCE the base's shared
         // trace TLS globals as extern, not re-define them — else the base+delta JIT combine hits a
@@ -1037,7 +1037,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Appends the inline shadow-stack helpers (push/pop/update-loc, and the two accessors Core's
+    /// Appends the inline shadow-stack helpers (push/pop/update-loc, and the two accessors System's
     /// crash_report reads the trace through). A 32-entry power-of-2 ring; indices mask with AND so
     /// push/pop stay branchless.
     /// </summary>
@@ -1125,7 +1125,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: RetVoidInstruction);
         output.AppendLine(value: "}");
         output.AppendLine();
-        // accessors — Core's crash_report (LLVM::trace_depth / LLVM::trace_frames) reads the trace here
+        // accessors — System's crash_report (LLVM::trace_depth / LLVM::trace_frames) reads the trace here
         output.AppendLine(value: $"define private i32 @_rf_trace_get_depth() alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
@@ -1176,7 +1176,7 @@ public partial class LlvmEmitter
     /// <summary>The trace ring: 32 frames of (routine name, file, line, column).</summary>
     private const string TraceRingType = "[32 x { ptr, ptr, i32, i32 }]";
 
-    /// <summary>A copy of the trace in a caught error's object: the 32 frames, then the depth (Core's
+    /// <summary>A copy of the trace in a caught error's object: the 32 frames, then the depth (System's
     /// <c>Crashables.thrown_trace_frames</c> / <c>thrown_trace_depth</c> read it).</summary>
     private const string CrashTraceType = "{ " + TraceRingType + ", i32 }";
 

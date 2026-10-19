@@ -1263,7 +1263,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
         string v = node.Value.Accept(visitor: this);
         // A None-returning routine prints a bare `return`, not `return None`.
-        return v is "None" or "Core.None" || v.EndsWith(value: ".None")
+        return v is "None" or "System.None" || v.EndsWith(value: ".None")
             ? $"{I}return"
             : $"{I}return {v}";
     }

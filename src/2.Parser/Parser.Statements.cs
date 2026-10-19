@@ -1083,7 +1083,7 @@ public partial class Parser
         string name = CurrentToken.Text;
         Advance();
 
-        // A type of a named realm: `is RF::Core.List[SerialValue] items` in a Suflae file.
+        // A type of a named realm: `is RF::System.List[SerialValue] items` in a Suflae file.
         string? realm = ReadRealmQualifier(name: ref name);
 
         // Check for qualified name: Type.CASE or Type.CASE.SubCase

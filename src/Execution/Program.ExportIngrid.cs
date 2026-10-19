@@ -129,9 +129,22 @@ internal partial class Program
             string entry = Path.Combine(path1: workDir, path2: Path.GetFileName(path: exportFile));
             File.WriteAllText(path: entry, contents: driver.ToString());
             ResolvedEntry resolved = ResolveEntryFile(args: ["codegen", entry], needsOutputArg: false);
-            if (resolved.EntryFile == null ||
-                BuildToLazyJitInputs(entryFile: resolved.EntryFile, inputs: out LazyJitInputs? built,
-                    config: resolved) != 0 || built == null)
+            // The export file is part of the standard library: it declares a module under System.
+            StandardModules.BuildingLibraryExport = true;
+            int status;
+            LazyJitInputs? built = null;
+            try
+            {
+                status = resolved.EntryFile == null
+                    ? 1
+                    : BuildToLazyJitInputs(entryFile: resolved.EntryFile, inputs: out built, config: resolved);
+            }
+            finally
+            {
+                StandardModules.BuildingLibraryExport = false;
+            }
+
+            if (status != 0 || built == null)
             {
                 throw new InvalidOperationException(message: "the export file does not build (see the errors above).");
             }
@@ -201,7 +214,7 @@ internal partial class Program
         else if (FindWorkspaceDir(relative: Path.Combine(path1: "RazorForge", path2: "Standard")) is { } workspaceStdlib)
         {
             // The copy next to the builder keeps each language's library in a folder of its name
-            // (Standard/RazorForge/Core/...), and the workspace keeps RazorForge's in RazorForge/Standard/Core/...
+            // (Standard/RazorForge/System/...), and the workspace keeps RazorForge's in RazorForge/Standard/System/...
             string relative = Path.GetRelativePath(relativeTo: StdlibLoader.GetDefaultStdlibPath(), path: full);
             string[] parts = relative.Split(separator: [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                 count: 2);

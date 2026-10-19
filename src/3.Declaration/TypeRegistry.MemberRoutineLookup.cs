@@ -166,7 +166,7 @@ public sealed partial class TypeRegistry
     public void RegisterRoutine(RoutineInfo routine)
     {
         // Realm-aware storage key: ambient-realm routines key bare (unchanged); a bridged-realm routine
-        // (e.g. the RF-realm Core.List reached via RF:: inside an SF compile) is `{realm}::`-prefixed so it
+        // (e.g. the RF-realm System.List reached via RF:: inside an SF compile) is `{realm}::`-prefixed so it
         // never collides with / shadows the ambient same-signature routine — the two world-lines coexist.
         string registryKey = RealmRoutineKey(routine: routine);
         string baseName = routine.BaseName;
@@ -397,26 +397,26 @@ public sealed partial class TypeRegistry
             return overload;
         }
 
-        // Core-prefix fallback: bare callee names (e.g., "rf_allocate_dynamic_uninit") register
-        // under "Core.rf_allocate_dynamic_uninit#…". Mirror LookupRoutine's behavior so overload
+        // System-prefix fallback: bare callee names (e.g., "rf_allocate_dynamic_uninit") register
+        // under "System.rf_allocate_dynamic_uninit#…". Mirror LookupRoutine's behavior so overload
         // resolution can find module-qualified registrations from unqualified call sites.
         if (!baseName.Contains(value: '.'))
         {
             string coreKey = argTypes.Count == 0
-                ? $"Core.{baseName}"
-                : $"Core.{baseName}#{paramTypeNames}";
+                ? $"System.{baseName}"
+                : $"System.{baseName}#{paramTypeNames}";
             if (_routines.TryGetValue(key: coreKey, value: out RoutineInfo? coreOverload))
             {
                 return coreOverload;
             }
         }
 
-        // Imported-module free overload: a free routine declared in a NON-Core module keys as
+        // Imported-module free overload: a free routine declared in a NON-System module keys as
         // `{Module}.name#…` (its BaseName carries the module), so neither the bare-key nor the
-        // Core-prefix lookup above finds it from an unqualified call. Scan the free-overload index by
+        // System-prefix lookup above finds it from an unqualified call. Scan the free-overload index by
         // the routine's BARE name + exact argument-type identity — this reaches e.g. the module-Numerics
         // free `atan2(y, x)` that an unqualified `atan2(y: a, x: b)` must bind (the
-        // D/F-type atan2 overloads live in module Core and resolve via the Core-prefix above).
+        // D/F-type atan2 overloads live in module System and resolve via the System-prefix above).
         if (MatchFreeOverloadByArgTypes(baseName: baseName, argTypes: argTypes) is { } freeOverload)
         {
             return freeOverload;
@@ -473,7 +473,7 @@ public sealed partial class TypeRegistry
     /// <c>baseName#…</c> overload key) with the same arity as <paramref name="resolvedParams"/>, carrying at
     /// least one <see cref="ErrorTypeSymbol"/> param, whose NON-error params agree with the freshly-resolved
     /// ones. Used by the on-demand signature re-resolution: an <c>&lt;error&gt;</c> param poisons the
-    /// registry key (e.g. <c>round_and_pack#Core.Bool,&lt;error&gt;,&lt;error&gt;,Core.S32</c>), so the
+    /// registry key (e.g. <c>round_and_pack#System.Bool,&lt;error&gt;,&lt;error&gt;,System.S32</c>), so the
     /// exact-type overload lookup by the now-correct types misses the stale entry — this recovers it so
     /// <see cref="UpdateRoutine"/> can rewrite it with the resolved signature (and its correct key).
     /// </summary>
@@ -597,7 +597,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Structural candidate search over the free-overload list for <paramref name="baseName"/> (with the
-    /// Core-prefix fallback): matches positionally by full type identity. Only disambiguates when more
+    /// System-prefix fallback): matches positionally by full type identity. Only disambiguates when more
     /// than one overload exists; returns null otherwise.
     /// </summary>
     private RoutineInfo? MatchStructuralFreeOverload(string baseName, List<TypeSymbol> argTypes)
@@ -605,7 +605,7 @@ public sealed partial class TypeRegistry
         List<RoutineInfo>? overloadCandidates = FreeOverloads(baseName: baseName);
         if (overloadCandidates == null && !baseName.Contains(value: '.'))
         {
-            overloadCandidates = FreeOverloads(baseName: $"Core.{baseName}");
+            overloadCandidates = FreeOverloads(baseName: $"System.{baseName}");
         }
 
         if (overloadCandidates is not { Count: > 1 })
@@ -643,7 +643,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Looks up the routine registered under an exact <see cref="RoutineInfo.RegistryKey"/>.
-    /// Unlike <see cref="LookupRoutineOverload"/> this applies no Core-prefix or generic
+    /// Unlike <see cref="LookupRoutineOverload"/> this applies no System-prefix or generic
     /// fallbacks — it answers "is this precise owner+name+signature slot occupied?", which
     /// reserved-variant collision detection needs to compare a generated variant against any
     /// hand-written routine sharing its key.
@@ -672,7 +672,7 @@ public sealed partial class TypeRegistry
                                _routineResolutions.GetValueOrDefault(key: fullName) ??
                                _routinesByQualifiedName.GetValueOrDefault(key: fullName) ??
                                (!fullName.Contains(value: '.')
-                                   ? _routines.GetValueOrDefault(key: $"Core.{fullName}")
+                                   ? _routines.GetValueOrDefault(key: $"System.{fullName}")
                                    : null);
 
         if (routine == null)
@@ -706,7 +706,7 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Looks up a routine by its module-qualified name (e.g., "Core.S8.add").
+    /// Looks up a routine by its module-qualified name (e.g., "System.S8.add").
     /// </summary>
     public RoutineInfo? LookupRoutineByQualifiedName(string qualifiedName)
     {
@@ -720,7 +720,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     public RoutineInfo? LookupRoutineByName(string name, bool? isFailable = null)
     {
-        // Fast path: the primary _routines index covers the common case; fall back to a Core prefix
+        // Fast path: the primary _routines index covers the common case; fall back to a System prefix
         // and finally a targeted linear scan for codegen short-name lookups.
         if (_routines.TryGetValue(key: name, value: out RoutineInfo? found) &&
             found.OwnerType == null && (isFailable == null || found.IsFailable == isFailable))
@@ -728,7 +728,7 @@ public sealed partial class TypeRegistry
             return found;
         }
 
-        if (_routines.TryGetValue(key: $"Core.{name}", value: out found) &&
+        if (_routines.TryGetValue(key: $"System.{name}", value: out found) &&
             found.OwnerType == null && (isFailable == null || found.IsFailable == isFailable))
         {
             return found;
@@ -1157,7 +1157,7 @@ public sealed partial class TypeRegistry
     /// Finds a CONCRETE free-routine overload by (bare name, exact argument-type identity) via the
     /// free-overload index — which folds every owner-less routine regardless of its declaring module.
     /// This reaches imported-module free routines (BaseName = <c>Module.name</c>) that the module-blind
-    /// <c>{name}#…</c> / <c>Core.{name}#…</c> keys in <see cref="LookupRoutineOverload"/> cannot. Matches
+    /// <c>{name}#…</c> / <c>System.{name}#…</c> keys in <see cref="LookupRoutineOverload"/> cannot. Matches
     /// on full type identity (never assignability), so it only binds a genuinely exact overload.
     /// </summary>
     private RoutineInfo? MatchFreeOverloadByArgTypes(string baseName, List<TypeSymbol> argTypes)
@@ -2087,7 +2087,7 @@ public sealed partial class TypeRegistry
         Func<string, TypeSymbol?>? protocolResolver, Func<TypeExpression, TypeSymbol?>? typeArgumentResolver = null)
     {
         // Resolve the constraint's protocol IMPORT-aware (a user protocol like `Greetable`
-        // lives in the referring module, not Core) — the bare registry lookup only resolved it
+        // lives in the referring module, not System) — the bare registry lookup only resolved it
         // via the cross-module short-name scan. Fall back to the bare lookup when no resolver.
         TypeSymbol? proto = protocolResolver?.Invoke(arg: protocolExpr.Name) ??
                           LookupType(name: protocolExpr.Name);
@@ -2195,7 +2195,7 @@ public sealed partial class TypeRegistry
         // Protocol abstract memberRoutines are never a valid dispatch target on a concrete receiver —
         // RF protocols are abstract-only (no default impls). Including them would let lookup
         // pick `Equatable.eq(Self)` for `S128 == S64`, masking the integer-promotion fallback
-        // and emitting an unresolved `Core.Equatable.eq` symbol at link time.
+        // and emitting an unresolved `System.Equatable.eq` symbol at link time.
         if (type is not ProtocolTypeSymbol)
         {
             candidates.RemoveAll(match: c => c.OwnerType is ProtocolTypeSymbol);
@@ -2682,7 +2682,7 @@ public sealed partial class TypeRegistry
         // call-site `[..]`. Unify MeType against the concrete owner (List[Agent[S64]]) to bind V=S64
         // and fold it into the owner substitution. This makes the resolved memberRoutine FULLY CONCRETE
         // (V dropped from memberRoutine generics, no `[S64]` mangle suffix), so SA, reachability, GMP and
-        // codegen all key on the same name — `Core.List[Agent[S64]].gather`.
+        // codegen all key on the same name — `System.List[Agent[S64]].gather`.
         if (memberRoutine.MeType is { } mePattern)
         {
             // The routine's own parameters shadow the owner's of the same name: in `routine List[Box[T]].items()
@@ -3511,7 +3511,7 @@ public sealed partial class TypeRegistry
         }
 
         // Cache key is realm-QUALIFIED: RF and SF resolutions share a realm-free FullName
-        // (`Core.List[Core.U64]`), so a FullName key would cross-contaminate — the first-computed realm's
+        // (`System.List[System.U64]`), so a FullName key would cross-contaminate — the first-computed realm's
         // member set (e.g. SF List's `inner`-forwarders) would be served for the other realm's instance.
         if (_memberRoutinesForTypeCache.TryGetValue(key: MemberRoutinesCacheKey(type: type),
                 value: out List<RoutineInfo>? cached))
@@ -3573,7 +3573,7 @@ public sealed partial class TypeRegistry
     internal static string? GetRcWrapperBaseName(TypeSymbol type)
     {
         // Prefer the generic DEFINITION's name (a resolution's own Name may carry a module prefix, e.g.
-        // `Core.Roamed[...]`, which would not match the bare `Roamed` allowlist). `BareName` drops the
+        // `System.Roamed[...]`, which would not match the bare `Roamed` allowlist). `BareName` drops the
         // `[typeargs]` suffix, so no manual bracket parsing here.
         string? baseName = type switch
         {

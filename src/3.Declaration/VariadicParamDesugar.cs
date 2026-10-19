@@ -88,8 +88,8 @@ public static class VariadicParamDesugar
             [new TypeExpression(Name: "U64", GenericArguments: null, Location: param.Location)],
             Location: param.Location));
 
-        // nums: T   ->   nums: Array[T, __VarargN]. Array is a `module Core` primitive (auto-imported),
-        // so a bare reference resolves via the import-gated Core prefix in every file.
+        // nums: T   ->   nums: Array[T, __VarargN]. Array is a `module System` primitive (auto-imported),
+        // so a bare reference resolves via the import-gated System prefix in every file.
         var arrayType = new TypeExpression(Name: "Array",
             GenericArguments:
             [

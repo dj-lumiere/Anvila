@@ -286,8 +286,8 @@ public class RecordTypeSymbol : TypeSymbol
                                                         .ToList();
 
         // Build resolved type name using FullName for each type argument so the resolved
-        // type carries fully-qualified inner names (e.g., "Hijacked[Core.Byte]").
-        // TypeSymbol.FullName then prepends the module: "Core.Hijacked[Core.Byte]".
+        // type carries fully-qualified inner names (e.g., "Hijacked[System.Byte]").
+        // TypeSymbol.FullName then prepends the module: "System.Hijacked[System.Byte]".
         string resolvedName = $"{Name}[{string.Join(separator: ", ",
             values: typeArguments.Select(selector: t => t.InstanceArgumentName))}]";
 

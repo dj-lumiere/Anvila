@@ -48,7 +48,7 @@ internal sealed class TypeResolver
         // MODULE-SCOPED resolution (module A's `Point` and module B's `Point` are DISTINCT types):
         //   1. The current module's own declaration SHADOWS everything else.
         //   2. Then imported modules, in import order.
-        //   3. Only if both miss, fall back to the registry's context-free lookup (Core auto-import,
+        //   3. Only if both miss, fall back to the registry's context-free lookup (System auto-import,
         //      resolution cache, and the cross-module short-name scan). The short-name scan returns
         //      an arbitrary first match, so it MUST be last — otherwise a same-named type in an
         //      unrelated module would win over the current module's own type (the old bug: a member
@@ -69,8 +69,9 @@ internal sealed class TypeResolver
             {
                 // `secret record`/`secret entity` are MODULE-PRIVATE: visible only within their own
                 // module (step 1 above), INVISIBLE to importers. Skip so an external reference resolves
-                // as "unknown type" rather than leaking an internal record (e.g. Core's B128Fx).
-                if (imported.Visibility == VisibilityModifier.Secret)
+                // as "unknown type" rather than leaking an internal record (e.g. System's B128Fx).
+                if (imported.Visibility == VisibilityModifier.Secret &&
+                    !SecretReaches(owner: imported.Module))
                 {
                     continue;
                 }
@@ -79,12 +80,12 @@ internal sealed class TypeResolver
             }
         }
 
-        // Context-free fallback (Core auto-import, resolution cache, cross-module short-name scan).
+        // Context-free fallback (System auto-import, resolution cache, cross-module short-name scan).
         // Hide a module-private `secret` type here too when it belongs to a DIFFERENT module than the
         // referrer — a null current-module context must not accidentally expose another module's secret.
         TypeSymbol? fallback = _sa._registry.LookupType(name: name);
         if (fallback is { Visibility: VisibilityModifier.Secret } &&
-            fallback.Module != _sa._currentModuleName)
+            !SecretReaches(owner: fallback.Module))
         {
             return null;
         }
@@ -92,11 +93,17 @@ internal sealed class TypeResolver
         return fallback;
     }
 
+    /// <summary>Whether the code being analyzed reaches a <c>secret</c> type of <paramref name="owner"/>: it is
+    /// in that module or in a module under it.</summary>
+    private bool SecretReaches(string? owner) =>
+        _sa._currentModuleName != null && owner != null &&
+        StandardModules.IsUnder(module: _sa._currentModuleName, parent: owner);
+
     /// <summary>
     /// For a BARE type name, returns the IMPORTED modules (import order, secret-excluded) that declare
     /// it — used to flag an ambiguous cross-module reference (module-scoped names). Returns empty when
     /// the name is qualified, or when the current module declares its own type of that name (own-module
-    /// SHADOWS, so there is no ambiguity to report). Core's auto-import is not an explicit import and is
+    /// SHADOWS, so there is no ambiguity to report). System's auto-import is not an explicit import and is
     /// intentionally not counted here.
     /// </summary>
     internal List<string> ImportedModulesDeclaring(string name)
@@ -126,19 +133,19 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// Looks up a routine by name, searching the Core module and imported modules.
+    /// Looks up a routine by name, searching the System module and imported modules.
     /// Called after type creator resolution to avoid shadowing type creators
     /// with identically-named convenience functions (e.g., "routine U32(from: U8)").
     /// </summary>
     internal RoutineInfo? LookupRoutineWithImports(string name)
     {
-        // Try Core module prefix (Core routines are auto-imported). A foreign (C/LLVM) Core routine is
+        // Try System module prefix (System routines are auto-imported). A foreign (C/LLVM) System routine is
         // reachable only through its realm qualifier, so an imported module's routine of the same name
         // wins over it; the foreign one is returned only when nothing else of that name exists.
         RoutineInfo? core = null;
         if (!name.Contains(value: '.'))
         {
-            core = _sa._registry.LookupRoutine(fullName: $"Core.{name}");
+            core = _sa._registry.LookupRoutine(fullName: $"System.{name}");
             if (core is { IsForeign: false })
             {
                 return core;
@@ -178,7 +185,7 @@ internal sealed class TypeResolver
         // Effective realm = the explicit `RF::`/`SF::` qualifier, else the realm of the file being analyzed:
         // a bare `List` in a `.sf` file is Suflae's own list when Suflae declares one. Name resolution above
         // prefers that realm already; this swap also covers a generic instance resolved through the other
-        // realm's definition, and turns `RF::Core.List` in a `.sf` into the RazorForge list. Null-safe when
+        // realm's definition, and turns `RF::System.List` in a `.sf` into the RazorForge list. Null-safe when
         // the realm declares no such type (the other realm's type stays).
         string effectiveRealm = typeExpr.Realm ?? _sa._registry.ResolutionRealm;
         if (resolved is TypeSymbol ti && effectiveRealm != ti.Realm &&
@@ -189,7 +196,7 @@ internal sealed class TypeResolver
 
         // An `RF::Name` qualifier is an explicit RazorForge/bare-realm reference — it deliberately opts OUT
         // of Suflae's `entity -> Roamed[entity]` lowering (that is the whole point: an SF wrapper entity
-        // holds a BARE `RF::Core.List` inside, without re-roaming it into an infinite `Roamed[List]`). Any
+        // holds a BARE `RF::System.List` inside, without re-roaming it into an infinite `Roamed[List]`). Any
         // other realm (null = ambient) gets the normal Suflae lowering.
         if (typeExpr.Realm != TypeModel.Realms.Shared)
         {

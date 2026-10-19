@@ -637,7 +637,7 @@ public sealed partial class SemanticVerifier
         {
             ResolvedType = variant
         };
-        // The arm's type as it is, not its name: a variant written in place (`Circle | Square`) lives in Core, where
+        // The arm's type as it is, not its name: a variant written in place (`Circle | Square`) lives in System, where
         // the name of an arm from the program's own module finds nothing.
         var typeExpr = new TypeExpression(Name: armType.Name, GenericArguments: null, Location: loc)
         {
@@ -1133,13 +1133,13 @@ public sealed partial class SemanticVerifier
         string ownerTypeName = decl.RenderedReceiver!;
 
         // Stdlib protocol-extension decls like `Iterable[Text].join` register their routines
-        // under the bracketed-owner bucket (FullName = "Core.Iterable[Text]"). Try the
+        // under the bracketed-owner bucket (FullName = "System.Iterable[Text]"). Try the
         // bracketed form first, falling back to the gen-def name. Both lookups can succeed
         // on different types: prefer the one that actually has the candidate memberRoutine.
         string bareLookupName = TypeSymbol.StripTypeArgs(name: ownerTypeName);
 
         // Own-module + own-REALM FIRST: a member decl `routine List[T].add_last` in an SF-realm
-        // `Standard/Suflae/…` file owns the SF-realm `Core.List`, not the RazorForge-realm one that
+        // `Standard/Suflae/…` file owns the SF-realm `System.List`, not the RazorForge-realm one that
         // shares the bare key. The decl's source-file extension (.sf → SF) gives its realm; a realm-
         // blind lookup would type `me` as the RF list (which lacks the SF wrapper's `inner`) → RF-S450.
         string declRealm = Builder.Frontends.Languages.RealmOf(fileName: decl.Location?.FileName);
@@ -1157,7 +1157,7 @@ public sealed partial class SemanticVerifier
             candidates: candidates);
 
         // Protocol-extension decls like `Iterable[Text].join` register their routines under
-        // a bracketed-owner bucket (e.g. owner FullName="Core.Iterable[Text]") that the
+        // a bracketed-owner bucket (e.g. owner FullName="System.Iterable[Text]") that the
         // gen-def lookup misses. Scan all routines for owners whose name shape matches the
         // bracketed form.
         if (ownerTypeName.Contains(value: '[') &&

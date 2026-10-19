@@ -1782,11 +1782,11 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         TypeSymbol? countType = countRoutine?.ReturnType;
         RoutineInfo? resolveRoutine = countType != null
             ? ctx.Registry.LookupRoutineOverload(
-                baseName: $"Core.{Declaration.RuntimeContract.BackResolve}",
+                baseName: $"System.{Declaration.RuntimeContract.BackResolve}",
                 argTypes: [countType, countType])
             : null;
         resolveRoutine ??= ctx.Registry.LookupRoutine(
-                               fullName: $"Core.{Declaration.RuntimeContract.BackResolve}") ??
+                               fullName: $"System.{Declaration.RuntimeContract.BackResolve}") ??
                            ctx.Registry.LookupRoutine(fullName: Declaration.RuntimeContract.BackResolve);
 
         // The offset must be a scalar U64. An untyped/signed integer-literal operand (e.g. ^1) is retagged

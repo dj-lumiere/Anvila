@@ -227,7 +227,7 @@ internal sealed class TesseraWriter
         module.Append(value: library.Header);
         if (_textBytes != null)
         {
-            module.Append(value: "import Standard/Collections\nimport Standard/Format\nimport Standard/Os\n\n");
+            module.Append(value: "import Standard/Collections\nimport Standard/Os\n\n");
         }
 
         module.Append(value: _records);
@@ -488,7 +488,7 @@ internal sealed class TesseraWriter
 
     /// <summary>
     /// The record a caught crashable lives in on the heap: its type id, so the object says what it holds, the trace
-    /// it was first thrown with (Core's Crashables reads it after the first word), then the crashable. A carrier's
+    /// it was first thrown with (System's Crashables reads it after the first word), then the crashable. A carrier's
     /// error slot holds the address of one. Declared on first use.
     /// </summary>
     public string CrashObjectRecord(CrashableTypeSymbol crashable)

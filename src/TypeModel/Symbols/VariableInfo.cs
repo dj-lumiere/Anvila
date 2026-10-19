@@ -40,7 +40,7 @@ public sealed class VariableInfo
     /// <summary>The module this variable belongs to.</summary>
     public string? Module { get; init; }
 
-    /// <summary>The module-qualified name (e.g., "Core.S8_MIN").</summary>
+    /// <summary>The module-qualified name (e.g., "System.S8_MIN").</summary>
     public string QualifiedName => string.IsNullOrEmpty(value: Module)
         ? Name
         : $"{Module}.{Name}";

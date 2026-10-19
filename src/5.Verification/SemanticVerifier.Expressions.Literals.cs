@@ -381,7 +381,7 @@ public sealed partial class SemanticVerifier
 
             // Unsuffixed literals: type inference resolves these; fallback is S64/B64 (RF) or Integer/Decimal
             // (Suflae). CRITICAL: the Suflae default applies ONLY to Suflae SOURCE. The RF stdlib is shared
-            // by SF ("SF's Core IS RF's Core") and its bodies get (re-)analyzed under an SF compile (generic
+            // by SF ("SF's System IS RF's System") and its bodies get (re-)analyzed under an SF compile (generic
             // monomorphization / variant-body collection) OUTSIDE the AnalyzeStdlibBodies RF-mode override —
             // there `_registry.Language` is Suflae. A stdlib `int_eq[U256](b: 0)` must keep RF's S64 default
             // (coerces to the U256/i256 compare); the SF Integer default is a HEAP RECORD that can't coerce

@@ -335,8 +335,8 @@ public sealed partial class TypeRegistry
     /// set per-file (a <c>.sf</c> file ⇒ <c>"SF"</c>, a <c>.rf</c> file ⇒ <c>"RF"</c>). When it differs
     /// from <see cref="AmbientRealm"/> (i.e. analyzing an SF file while RF stays the ambient/bare realm),
     /// <see cref="LookupType(string)"/> first tries the <c>{ResolutionRealm}::</c>-keyed type before the
-    /// bare ambient one, so a bare <c>List</c> in a Suflae file resolves to the SF-realm <c>Core.List</c>
-    /// (bridged, keyed <c>SF::Core.List</c>) yet still falls back to the RF-realm type for anything the SF
+    /// bare ambient one, so a bare <c>List</c> in a Suflae file resolves to the SF-realm <c>System.List</c>
+    /// (bridged, keyed <c>SF::System.List</c>) yet still falls back to the RF-realm type for anything the SF
     /// surface has not (re)declared. Defaults to <c>"RF"</c> ⇒ equal to the ambient ⇒ zero effect on RF.
     /// </summary>
     public string ResolutionRealm { get; set; } = TypeModel.Realms.Shared;
@@ -345,10 +345,10 @@ public sealed partial class TypeRegistry
     /// The imported-module namespaces of the stdlib file whose declarations are CURRENTLY being
     /// (re-)registered — consulted by the stdlib registration's bare-type resolver as an import-scoped
     /// fallback. The unscoped cross-module short-name scan was removed (a bare <c>Name</c> no longer binds
-    /// ANY module's <c>*.Name</c>), which broke a <c>module Core</c> file that references an on-demand
+    /// ANY module's <c>*.Name</c>), which broke a <c>module System</c> file that references an on-demand
     /// module's type in a SIGNATURE or FIELD (e.g. <c>FloatConvert</c>'s <c>round_and_pack(num_in: Integer)</c>
     /// / a record field <c>mantissa: Integer</c> where <c>Integer</c> lives in the lazily-loaded
-    /// <c>Numerics</c> module): the type is unloaded at eager Core-registration time, so its param/field
+    /// <c>Numerics</c> module): the type is unloaded at eager System-registration time, so its param/field
     /// collapses to <c>&lt;error&gt;</c>. Set (to the file's imports) around the on-demand signature/member
     /// re-resolution, when the imported module IS loaded; null otherwise. Mirrors the body-analysis
     /// <c>TypeResolver</c>'s import-aware lookup, scoped to genuine imports (not the removed unscoped scan).
@@ -508,7 +508,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     private readonly Dictionary<string, TypeSymbol> _entitySpecializations = new();
 
-    /// <summary>Whether Core module has been loaded from stdlib.</summary>
+    /// <summary>Whether System module has been loaded from stdlib.</summary>
     private bool _coreModuleLoaded;
 
     /// <summary>The stdlib loader instance.</summary>
@@ -796,19 +796,19 @@ public sealed partial class TypeRegistry
         _currentScope = GlobalScope;
         _stdlibPath = stdlibPath ?? StdlibLoader.GetDefaultStdlibPath();
 
-        // Register well-known error handling types BEFORE loading the Core module.
-        // This ensures that when Core stdlib routines (e.g. Maybe[T].unwrap) are registered
+        // Register well-known error handling types BEFORE loading the System module.
+        // This ensures that when System stdlib routines (e.g. Maybe[T].unwrap) are registered
         // during LoadCoreModule, LookupType("Maybe") returns the initial Maybe definition
         // (FullName="Maybe", no module prefix), so memberRoutines are keyed under "Maybe" in
         // _routinesByOwner and are reachable via LookupMemberRoutine on Maybe[T] resolutions.
-        // If LoadCoreModule ran first, it would register Core.Maybe (FullName="Core.Maybe")
-        // before the initial Maybe, causing memberRoutine registration under "Core.Maybe" — a key
+        // If LoadCoreModule ran first, it would register System.Maybe (FullName="System.Maybe")
+        // before the initial Maybe, causing memberRoutine registration under "System.Maybe" — a key
         // that LookupMemberRoutine never checks when resolving memberRoutines on Maybe[S64].
         RegisterErrorHandlingTypes();
 
-        // Load Core module eagerly - Core types are fundamental to every program.
-        // NOTE: user-code bare names still resolve to the RF-realm Core (world-line) — a `.sf` file's bare
-        // `List` is the RF `Core.List` roamed, which WORKS end-to-end. Flipping the user resolution realm to
+        // Load System module eagerly - System types are fundamental to every program.
+        // NOTE: user-code bare names still resolve to the RF-realm System (world-line) — a `.sf` file's bare
+        // `List` is the RF `System.List` roamed, which WORKS end-to-end. Flipping the user resolution realm to
         // SF (so bare `List` → the SF wrapper) is DEFERRED: it triggers a pipeline-wide realm cascade
         // (construction create-binding, reachability create-seeding, codegen emission) not yet complete —
         // see [[sf-real-stdlib-direction]]. The SF wrapper is reachable explicitly via `SF::List`.
@@ -818,8 +818,8 @@ public sealed partial class TypeRegistry
     #region Initialization
 
     /// <summary>
-    /// Loads the Core module from stdlib files.
-    /// Called on-demand when Core types are first used or when import Core is encountered.
+    /// Loads the System module from stdlib files.
+    /// Called on-demand when System types are first used or when import System is encountered.
     /// </summary>
     public void LoadCoreModule()
     {
@@ -840,12 +840,12 @@ public sealed partial class TypeRegistry
             string searchPath = _stdlibPath ?? "not specified";
             throw new InvalidOperationException(
                 message: $"Standard library not found at '{searchPath}'. " +
-                         "Ensure standard/ directory exists and contains the Core module.");
+                         "Ensure standard/ directory exists and contains the System module.");
         }
     }
 
     /// <summary>
-    /// Checks if the Core module has been loaded.
+    /// Checks if the System module has been loaded.
     /// </summary>
     public bool IsCoreModuleLoaded => _coreModuleLoaded;
 
@@ -998,16 +998,6 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Every MODULE registered under the namespace <paramref name="prefix"/> (strict descendants:
-    /// `prefix/Sub`, `prefix/Sub/Deep`, …), for the prefix/package import `import A/B`. Empty when the
-    /// resolver isn't injected or the prefix is a leaf module with no submodules.
-    /// </summary>
-    public IReadOnlyList<string> EnumerateSubmodules(string prefix)
-    {
-        return _moduleResolver?.EnumerateSubmodulePaths(prefix: prefix) ?? [];
-    }
-
-    /// <summary>
     /// Loads a module on-demand by its import path.
     /// Handles both stdlib modules and project modules.
     /// </summary>
@@ -1030,15 +1020,15 @@ public sealed partial class TypeRegistry
             return true;
         }
 
-        // Core module is special - always loaded at startup
-        if (moduleId.Equals(value: "Core", comparisonType: StringComparison.OrdinalIgnoreCase) ||
-            moduleId.StartsWith(value: "Core.",
+        // System module is special - always loaded at startup
+        if (moduleId.Equals(value: "System", comparisonType: StringComparison.OrdinalIgnoreCase) ||
+            moduleId.StartsWith(value: "System.",
                 comparisonType: StringComparison.OrdinalIgnoreCase))
         {
             LoadCoreModule();
             _loadedModules.Add(item: moduleId);
-            effectiveModule = "Core";
-            _moduleNames[key: moduleId] = "Core";
+            effectiveModule = "System";
+            _moduleNames[key: moduleId] = "System";
             return true;
         }
 
@@ -1173,22 +1163,22 @@ public sealed partial class TypeRegistry
     private void RegisterErrorHandlingTypes()
     {
         // Register Maybe, Result, Lookup as type shells (name + GenericParameters only).
-        // MemberVariables reference Core types (Bool, U64, Address) that aren't available yet
+        // MemberVariables reference System types (Bool, U64, Address) that aren't available yet
         // because LoadCoreModule hasn't run.  ResolveProgramMemberVariables (pass 1c inside
-        // LoadCoreModule) fills in the members from the stdlib source once all Core types exist.
+        // LoadCoreModule) fills in the members from the stdlib source once all System types exist.
         // We must register the shells HERE (before LoadCoreModule) so that when
         // LoadCoreModule's RegisterProgramRoutines processes Maybe[T].unwrap etc., it calls
         // LookupType("Maybe") and gets this shell (FullName="Maybe"), causing those memberRoutines to
-        // be keyed under "Maybe" in _routinesByOwner rather than "Core.Maybe".
+        // be keyed under "Maybe" in _routinesByOwner rather than "System.Maybe".
         RegisterType(type: new RecordTypeSymbol(name: "Maybe")
         {
-            GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Maybe
+            GenericParameters = ["T"], Module = "System", CarrierKind = CarrierKind.Maybe
         });
         // Check is a variant (`T | Crashables`): its arms come from the stdlib
         // declarations the same way.
         RegisterType(type: new VariantTypeSymbol(name: "Check")
         {
-            GenericParameters = ["T"], Module = "Core", CarrierKind = CarrierKind.Result
+            GenericParameters = ["T"], Module = "System", CarrierKind = CarrierKind.Result
         });
     }
 
@@ -1215,7 +1205,7 @@ public sealed partial class TypeRegistry
     /// The registry key for a type: the realm-free <see cref="TypeSymbol.FullName"/> when the type belongs to
     /// the ambient realm (the common case — keeps the name-resolution hot path realm-blind), or the
     /// realm-marked <see cref="TypeSymbol.RealmQualifiedName"/> when it is a BRIDGED (non-ambient) realm type,
-    /// so a bridged <c>RF::Core.List</c> never collides with the ambient <c>Core.List</c> when both
+    /// so a bridged <c>RF::System.List</c> never collides with the ambient <c>System.List</c> when both
     /// world-lines coexist in one compilation. When <see cref="AmbientRealm"/> is the default <c>"RF"</c> and
     /// every type is <c>Realm="RF"</c>, this is exactly <see cref="TypeSymbol.FullName"/> (no behavior change).
     /// </summary>
@@ -1230,8 +1220,8 @@ public sealed partial class TypeRegistry
     /// The routine-index key for <paramref name="routine"/>: its realm-free
     /// <see cref="RoutineInfo.RegistryKey"/> when its owner is ambient-realm (the common case — RF routines
     /// in an RF compile, SF routines in an SF compile keep bare keys), or that key prefixed with
-    /// <c>{ownerRealm}::</c> when the owner is a BRIDGED realm, so a bridged <c>RF::Core.List.add_last</c>
-    /// never collides with / shadows the ambient <c>Core.List.add_last</c> (the RF-S406 creator clash).
+    /// <c>{ownerRealm}::</c> when the owner is a BRIDGED realm, so a bridged <c>RF::System.List.add_last</c>
+    /// never collides with / shadows the ambient <c>System.List.add_last</c> (the RF-S406 creator clash).
     /// Owner-less (free) routines are never realm-bridged, so they use the bare key.
     /// </summary>
     public static string RealmRoutineKey(RoutineInfo routine)
@@ -1244,7 +1234,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// The variant written in place as <c>A | B</c> over <paramref name="members"/>: one type per set of types,
     /// whatever their order or repetition, named by its types in a fixed order (<c>S64 | Text</c>) and held in
-    /// <c>Core</c> so every module means the same type by it. One distinct type is that type itself.
+    /// <c>System</c> so every module means the same type by it. One distinct type is that type itself.
     /// </summary>
     public TypeSymbol GetOrCreateUnion(List<TypeSymbol> members, SourceLocation? location = null)
     {
@@ -1274,7 +1264,7 @@ public sealed partial class TypeRegistry
 
         var union = new VariantTypeSymbol(name: TypeExpression.UnionName(memberNames: distinct.Select(selector: m => m.Name)))
         {
-            Members = arms, Module = "Core", Location = location
+            Members = arms, Module = "System", Location = location
         };
         _unions[key: key] = union;
         if (!_types.ContainsKey(key: RealmRegistryKey(type: union)))
@@ -1365,7 +1355,7 @@ public sealed partial class TypeRegistry
         // Creating a new object here would leave _resolutions entries (e.g. Maybe[Bool] created
         // from the pre-registered carrier shell) with stale GenericDefinition pointers that have
         // empty MemberVariables — causing "Member variable 'present' not found on record
-        // 'Core.Maybe[Core.Bool]'" errors during codegen of synthesized represent bodies that
+        // 'System.Maybe[System.Bool]'" errors during codegen of synthesized represent bodies that
         // iterate via for-loop (NonePattern lowering emits subject.present access).
         // Mirrors the in-place strategy in UpdateEntityMemberVariables.
         record.MemberVariables = memberVariables;
@@ -1656,7 +1646,7 @@ public sealed partial class TypeRegistry
     /// Looks up a type by name IN A SPECIFIC REALM — the realm-aware sibling of <see cref="LookupType(string)"/>.
     /// The ambient realm keys bare (delegates to the realm-blind lookup); a bridged realm is keyed by
     /// <see cref="TypeSymbol.RealmQualifiedName"/> (<c>{realm}::{FullName}</c>), so this reaches the SF-realm
-    /// <c>Core.List</c> even while the RazorForge-realm <c>Core.List</c> occupies the bare key (and vice
+    /// <c>System.List</c> even while the RazorForge-realm <c>System.List</c> occupies the bare key (and vice
     /// versa). Returns null when no type of that realm is registered (caller decides whether to fall back).
     /// </summary>
     public TypeSymbol? LookupType(string name, string realm)
@@ -1702,10 +1692,10 @@ public sealed partial class TypeRegistry
                 : hit;
         }
 
-        // A type only the file's realm declares (Suflae's `NegativeIndexError`), by its name or Core-prefixed.
+        // A type only the file's realm declares (Suflae's `NegativeIndexError`), by its name or System-prefixed.
         return _types.TryGetValue(key: $"{ResolutionRealm}::{name}", value: out TypeSymbol? own) ||
                (!name.Contains(value: '.') &&
-                _types.TryGetValue(key: $"{ResolutionRealm}::Core.{name}", value: out own))
+                _types.TryGetValue(key: $"{ResolutionRealm}::System.{name}", value: out own))
             ? own
             : null;
     }
@@ -1783,8 +1773,8 @@ public sealed partial class TypeRegistry
             return resolution;
         }
 
-        // Try Core module prefix (Core types are auto-imported)
-        if (!name.Contains(value: '.') && _types.TryGetValue(key: $"Core.{name}", value: out type))
+        // Try System module prefix (System types are auto-imported)
+        if (!name.Contains(value: '.') && _types.TryGetValue(key: $"System.{name}", value: out type))
         {
             return type;
         }
@@ -1793,7 +1783,7 @@ public sealed partial class TypeRegistry
         // module's `*.Name` (an arbitrary first match). It was the over-permissive "leak": it let a bare
         // reference bind a same-named type/routine in an unrelated module, masked missing imports, and
         // made resolution order-dependent. Every load-bearing dependent has been migrated to a
-        // module-qualified or import-aware lookup (own-module / imported-module / Core-prefix above, or
+        // module-qualified or import-aware lookup (own-module / imported-module / System-prefix above, or
         // an explicit `{module}.{name}` at the call site). A bare name that resolves to nothing here is now
         // an honest "unknown type" instead of a silent cross-module capture.
 
@@ -1828,7 +1818,7 @@ public sealed partial class TypeRegistry
         {
             // The target realm's DEFINITION is keyed BARE when it is the ambient realm (RF types under an
             // RF-ambient compile), or `{realm}::`-marked when bridged. Using the ambient (bare) lookup for
-            // the ambient case is what lets `RF::Core.List` reach the RF-realm list (keyed bare `Core.List`).
+            // the ambient case is what lets `RF::System.List` reach the RF-realm list (keyed bare `System.List`).
             TypeSymbol? tDef;
             if (realm == AmbientRealm)
             {
@@ -1942,7 +1932,7 @@ public sealed partial class TypeRegistry
             return genericDef;
         }
 
-        // Primary key uses FullName for each type argument (e.g. "Hijacked[Core.Byte]").
+        // Primary key uses FullName for each type argument (e.g. "Hijacked[System.Byte]").
         // A short-name alias (e.g. "Hijacked[Byte]") is stored as a backward-compatible fallback.
         // Both keys map to the same TypeSymbol, so AllConcreteGenericInstances uses .Distinct()
         // to avoid double-processing.
@@ -1951,20 +1941,20 @@ public sealed partial class TypeRegistry
         string shortKey =
             $"{genericDef.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name))}]";
         // Module-qualified full key: used when @llvm_ir type args are rewritten to fully-qualified
-        // names by GenericAstRewriter (e.g. "Collections.BTreeSetNode[Core.S64]"). A BRIDGED (non-ambient)
-        // realm def gets a leading `RF::`/`SF::` so a bridged `RF::Core.List[S64]` keys distinctly from the
-        // ambient `Core.List[S64]`; the ambient realm adds no prefix (unchanged for a single-realm compile).
+        // names by GenericAstRewriter (e.g. "Collections.BTreeSetNode[System.S64]"). A BRIDGED (non-ambient)
+        // realm def gets a leading `RF::`/`SF::` so a bridged `RF::System.List[S64]` keys distinctly from the
+        // ambient `System.List[S64]`; the ambient realm adds no prefix (unchanged for a single-realm compile).
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        // An argument of the other realm is marked too: `Accessing[SF::Core.List[T]]` is not
-        // `Accessing[Core.List[T]]`.
+        // An argument of the other realm is marked too: `Accessing[SF::System.List[T]]` is not
+        // `Accessing[System.List[T]]`.
         bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
         string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument
             ? $"{realmPrefix}{genericDef.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: ResolutionArgumentKey))}]"
             : null;
 
-        // The module-qualified key is DISTINCT across modules/realms (RazorForge `Core.List` vs the
+        // The module-qualified key is DISTINCT across modules/realms (RazorForge `System.List` vs the
         // Suflae-realm overlay `Suflae.List`), so check it FIRST — the bare fullKey/shortKey below are
         // module-blind aliases that a same-named other-module type can occupy first-wins.
         if (TryGetCachedResolution(fullKey: fullKey,
@@ -1993,7 +1983,7 @@ public sealed partial class TypeRegistry
         // SoA layout falls out of ordinary record layout.
         ExpandSoAColumns(genericDef: bestDef, resolved: resolved, typeArguments: typeArguments);
         // Store the DISTINCT module-qualified key authoritatively. The bare fullKey/shortKey are
-        // module-blind aliases (backward-compatible `LookupType("List[Core.S32]")` / "List[S32]"):
+        // module-blind aliases (backward-compatible `LookupType("List[System.S32]")` / "List[S32]"):
         // write them only when free or already ours, so a same-named OTHER-module type keeps its own
         // bare alias instead of being clobbered (the cross-module collision this all guards against).
         if (moduleFullKey != null && moduleFullKey != fullKey)
@@ -2077,7 +2067,7 @@ public sealed partial class TypeRegistry
         }
 
         // Bare fullKey: accept only when the cached resolution's generic DEFINITION is the one requested
-        // (no-op for single-realm types; rejects a Suflae `List[Core.S32]` for a Core.List request).
+        // (no-op for single-realm types; rejects a Suflae `List[System.S32]` for a System.List request).
         if (_resolutions.TryGetValue(key: fullKey, value: out existing) &&
             ResolutionGenericDefMatches(resolved: existing, genericDef: genericDef) &&
             ResolutionArgumentRealmsMatch(resolved: existing, typeArguments: typeArguments))
@@ -2256,8 +2246,8 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// True when a cached resolution's generic DEFINITION is the one being requested (matched by
     /// module-qualified FullName). Guards the bare, module-blind resolution-cache aliases against
-    /// returning a same-NAMED type from a DIFFERENT module/realm — a request for `Core.List[S32]` must
-    /// not be satisfied by a cached Suflae-realm `Suflae.List[S32]` sharing the bare key `List[Core.S32]`.
+    /// returning a same-NAMED type from a DIFFERENT module/realm — a request for `System.List[S32]` must
+    /// not be satisfied by a cached Suflae-realm `Suflae.List[S32]` sharing the bare key `List[System.S32]`.
     /// For single-realm types (one type of a given name) the definition matches itself, so this is a
     /// no-op; it only bites on genuine cross-module name collisions. Falls back to bare-name equality
     /// when the cached instance records no definition (older/aliased instances).
@@ -2271,9 +2261,9 @@ public sealed partial class TypeRegistry
             ProtocolTypeSymbol p => p.GenericDefinition,
             _ => null
         };
-        // Realm must ALSO match: `FullName`/`BareName` are realm-FREE, so a Suflae-realm `Core.List[S32]`
-        // would otherwise satisfy a request for the RazorForge-realm `Core.List` def via the module-blind
-        // bare alias — handing back the SF wrapper for an `RF::Core.List[T]()` construction, whose `create`
+        // Realm must ALSO match: `FullName`/`BareName` are realm-FREE, so a Suflae-realm `System.List[S32]`
+        // would otherwise satisfy a request for the RazorForge-realm `System.List` def via the module-blind
+        // bare alias — handing back the SF wrapper for an `RF::System.List[T]()` construction, whose `create`
         // then self-recurses. Comparing realm keeps the two world-lines' resolutions distinct.
         return resolvedDef == null
             ? resolved.BareName == genericDef.BareName && resolved.Realm == genericDef.Realm
@@ -2294,8 +2284,8 @@ public sealed partial class TypeRegistry
         string realmPrefix = genericDef.Realm != AmbientRealm
             ? $"{genericDef.Realm}::"
             : "";
-        // An argument of the other realm is marked too: `Accessing[SF::Core.List[T]]` is not
-        // `Accessing[Core.List[T]]`.
+        // An argument of the other realm is marked too: `Accessing[SF::System.List[T]]` is not
+        // `Accessing[System.List[T]]`.
         bool otherRealmArgument = typeArguments.Any(predicate: HasNonAmbientRealm);
         string? moduleFullKey = genericDef.FullName != genericDef.Name || otherRealmArgument
             ? $"{realmPrefix}{genericDef.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: ResolutionArgumentKey))}]"
@@ -3251,7 +3241,7 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Looks up a preset by its module-qualified name (e.g., "Core.S8_MIN").
+    /// Looks up a preset by its module-qualified name (e.g., "System.S8_MIN").
     /// </summary>
     public VariableInfo? LookupPresetByQualifiedName(string qualifiedName)
     {

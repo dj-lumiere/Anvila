@@ -172,7 +172,7 @@ public static class ModularStdlibCache
         /// <summary>Absolute path of the stdlib source file on disk.</summary>
         public string FilePath { get; set; } = "";
 
-        /// <summary>Module label that owns this source file (e.g. "Core", "Collections/List").</summary>
+        /// <summary>Module label that owns this source file (e.g. "System", "Collections/List").</summary>
         public string Module { get; set; } = "";
     }
 

@@ -103,7 +103,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     private TypeSymbol? _byteSizeType;
 
     // Set per-body in RunOnInstantiatedGenericBodies so that
-    // ResolveReceiverType can resolve unbound generic params (e.g. T -> Core.Byte).
+    // ResolveReceiverType can resolve unbound generic params (e.g. T -> System.Byte).
     private Dictionary<string, TypeSymbol>? _currentTypeSubs;
 
     //  Public entry points
@@ -362,7 +362,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         }
 
         // 1b. ResolvedType is a generic param -> look it up in the current body's TypeSubs
-        //     (e.g. T in List[T].getitem! body with TypeSubs {T -> Core.Byte, I -> Core.S64}).
+        //     (e.g. T in List[T].getitem! body with TypeSubs {T -> System.Byte, I -> System.S64}).
         if (receiver.ResolvedType is GenericParameterTypeSymbol gp)
         {
             if (_currentTypeSubs != null &&
@@ -380,7 +380,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         }
 
         // 2. Look up an identifier as a type name (handles post-monomorphization identifiers
-        //    like IdentifierExpression("Core.Byte") produced by GenericAstRewriter).
+        //    like IdentifierExpression("System.Byte") produced by GenericAstRewriter).
         if (receiver is IdentifierExpression { Name: var idName })
         {
             // If identifier name is a generic param name, resolve via TypeSubs first.
@@ -475,7 +475,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             {
                 // Defer when receiver is still a generic definition (no type subs available):
                 // GenericMonomorphizationPass will fold per concrete instance later, producing
-                // the correct "List[S64]" form (full_type_name gives "Core.List[Core.S64]").
+                // the correct "List[S64]" form (full_type_name gives "System.List[System.S64]").
                 // Folding here would bake the bare "List".
                 if (type.IsGenericDefinition && _currentTypeSubs == null)
                 {

@@ -23,7 +23,7 @@ namespace Builder.Desugaring.Passes;
 /// </summary>
 internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
 {
-    // Presets are GLOBAL by default (public constants like `S64_MAX`/`DECIMAL_PI` are part of the Core
+    // Presets are GLOBAL by default (public constants like `S64_MAX`/`DECIMAL_PI` are part of the System
     // prelude and usable everywhere). A `secret preset` is FILE-PRIVATE: inlinable only inside the file
     // that declares it. `_ownPresets` is the set of preset names declared in the file currently
     // being lowered — a secret preset from another file is NOT in it, so it is left un-inlined and a bare

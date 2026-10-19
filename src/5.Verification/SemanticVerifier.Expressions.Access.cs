@@ -429,7 +429,7 @@ public sealed partial class SemanticVerifier
     {
         var types = new List<TypeSymbol>();
         if (_registry.CompilationRules.DefaultsToArbitraryPrecision &&
-            _registry.LookupType(name: "Numerics.Integer") is { } integer)
+            _registry.LookupType(name: "System.Integer") is { } integer)
         {
             types.Add(item: integer);
         }

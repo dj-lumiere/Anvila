@@ -128,7 +128,7 @@ public class EntityTypeSymbol : TypeSymbol
         }
 
         // Build resolved type name using FullName for each type argument so the resolved
-        // type carries fully-qualified inner names (e.g., "List[Core.S64]").
+        // type carries fully-qualified inner names (e.g., "List[System.S64]").
         string resolvedName = $"{Name}[{string.Join(separator: ", ",
             values: typeArguments.Select(selector: t => t.InstanceArgumentName))}]";
 
@@ -204,15 +204,15 @@ public class EntityTypeSymbol : TypeSymbol
 
     // The cycle-detection maps are [ThreadStatic] and SHARED across every entity definition,
     // so they must be keyed by the MODULE-QUALIFIED resolved name. Two same-Named defs from
-    // different modules/realms — RazorForge `Core.List` and the Suflae-realm overlay `Suflae.List`
-    // — both produce the bare `List[Core.S32]`; without the qualifier, a re-entrant instantiation
+    // different modules/realms — RazorForge `System.List` and the Suflae-realm overlay `Suflae.List`
+    // — both produce the bare `List[System.S32]`; without the qualifier, a re-entrant instantiation
     // of one (triggered while substituting a field of the other) hits the "already in progress"
     // branch and returns the WRONG module's in-progress entity. The entity's own Name stays bare
     // (it drives LLVM mangling and the resolution-cache short alias).
-    // …and REALM-qualified too: `Core.List` exists in BOTH the RazorForge realm (real list) and the
+    // …and REALM-qualified too: `System.List` exists in BOTH the RazorForge realm (real list) and the
     // Suflae realm (the `{ inner }` wrapper). They share module AND bare resolved name, so a realm-free
-    // cycleKey lets an in-progress SF `Core.List[S32]` be handed back for an RF `Core.List[S32]`
-    // CreateInstance (and vice versa) — the wrapper's `RF::Core.List[T]()` inner would then resolve to
+    // cycleKey lets an in-progress SF `System.List[S32]` be handed back for an RF `System.List[S32]`
+    // CreateInstance (and vice versa) — the wrapper's `RF::System.List[T]()` inner would then resolve to
     // the SF entity and self-recurse. Prefix the non-ambient realm to keep the two world-lines distinct.
     private string BuildCycleKey(string resolvedName)
     {

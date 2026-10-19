@@ -101,7 +101,7 @@ internal sealed class SignatureResolver
         // For stdlib types the Phase 3 object is mutated in-place, so the lookup returns the
         // same object — no behaviour change there.
         // Realm-aware refresh: keep the owner in ITS OWN realm. A realm-blind lookup by FullName would
-        // rebind an SF-realm `Core.List` routine's owner to the RazorForge-realm `Core.List` (same bare
+        // rebind an SF-realm `System.List` routine's owner to the RazorForge-realm `System.List` (same bare
         // key) → the routine keys bare → collides with / shadows the RF routine (RF-S406). For ambient-realm
         // owners `LookupType(name, realm)` reduces to the plain lookup, so RF is unaffected.
         TypeSymbol? refreshedOwnerType = pending.OwnerType != null

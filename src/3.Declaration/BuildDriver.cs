@@ -355,14 +355,14 @@ public sealed class BuildDriver
 
     /// <summary>
     /// Records the import dependency edge for the just-parsed file. Skips self-dependencies for
-    /// member imports (`.` form) and Core auto-imports — they're no-ops. Returns false when the
+    /// member imports (`.` form) and System auto-imports — they're no-ops. Returns false when the
     /// edge creates a circular dependency (the caller must then stop processing), true otherwise.
     /// </summary>
     private bool TrackImportDependency(string modulePath, string? fromFile,
         SourceLocation? importLocation, string? importPathString)
     {
         // Track dependencies from imports.
-        // Skip self-dependencies for member imports (`.` form) and Core auto-imports — they're no-ops.
+        // Skip self-dependencies for member imports (`.` form) and System auto-imports — they're no-ops.
         if (fromFile != null && importLocation != null)
         {
             string fromModule = GetModuleForFile(filePath: fromFile);
@@ -370,7 +370,7 @@ public sealed class BuildDriver
             bool isMemberImport =
                 importPathString != null && importPathString.Contains(value: '.');
             bool isSelfMemberImport = isMemberImport && fromModule == modulePath;
-            bool isCoreAutoImport = modulePath == "Core";
+            bool isCoreAutoImport = modulePath == "System";
 
             if (!isSelfMemberImport && !isCoreAutoImport)
             {
@@ -391,7 +391,7 @@ public sealed class BuildDriver
 
     /// <summary>
     /// Resolves and recursively processes a single import declaration, trying single-file resolution
-    /// first, then the directory-as-module case, then the prefix/package case, and finally reporting
+    /// first, then the directory-as-module case, and finally reporting
     /// the import as unresolved.
     /// </summary>
     private void ProcessImport(ImportDeclaration import, string filePath)
@@ -418,32 +418,14 @@ public sealed class BuildDriver
             return;
         }
 
-        // Prefix/package import: `import A/B` pulls in every submodule declaring `module A/B/...`
-        // (keyed by DECLARED module path, not directory — a file's path need not mirror its
-        // module). Process each submodule's file into the graph so SA sees them all.
-        IReadOnlyList<string> submodules =
-            _resolver.EnumerateSubmodulePaths(prefix: import.ModulePath);
-        if (submodules.Count > 0)
-        {
-            foreach (string submodule in submodules)
-            {
-                string? subPath = _resolver.TryResolveImport(importPath: submodule);
-                if (subPath != null)
-                {
-                    ProcessFile(filePath: subPath,
-                        fromFile: filePath,
-                        importLocation: import.Location,
-                        importPathString: submodule);
-                }
-            }
-
-            return;
-        }
-
+        // An import never brings the modules under the one it names: `import A/B` doesn't bring `A/B/C`.
         // Truly unresolved — report it (TryResolveImport, unlike ResolveImport, records
         // no error of its own).
         _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.ModuleNotFound,
-            Message: $"Cannot resolve import '{import.ModulePath}'. Module not found.",
+            Message: StandardModules.MovedModule(module: import.ModulePath) is { } now
+                ? $"Module '{import.ModulePath}' is gone: its names are in {now}, which every file sees without " +
+                  "an import. Leave the import out (migrate --step modules does it)."
+                : $"Cannot resolve import '{import.ModulePath}'. Module not found.",
             Location: import.Location));
     }
 
@@ -618,7 +600,7 @@ public sealed class BuildDriver
                 return null;
             }
 
-            // A Suflae project MAY import RazorForge modules — SF's Core IS RF's Core, and a Suflae
+            // A Suflae project MAY import RazorForge modules — SF's System IS RF's System, and a Suflae
             // program consuming a RazorForge library (e.g. an engine module) is the whole point of the
             // realm split. The `.rf` file is parsed with the RazorForge grammar below, so its entities
             // stay RF-realm (bare, not auto-roamed) — an SF↔RF boundary reference, same as `RF::`.

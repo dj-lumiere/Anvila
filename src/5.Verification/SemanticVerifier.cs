@@ -142,7 +142,7 @@ public sealed partial class SemanticVerifier
     /// <summary>The module name declared in the current file (from 'module' declaration).</summary>
     internal string? _currentModuleName;
 
-    /// <summary>Modules imported by the current file. Used for type resolution of non-Core types.</summary>
+    /// <summary>Modules imported by the current file. Used for type resolution of non-System types.</summary>
     internal readonly HashSet<string> _importedModules =
         new(comparer: StringComparer.OrdinalIgnoreCase);
 
@@ -1696,7 +1696,7 @@ public sealed partial class SemanticVerifier
         // Mark the registry so that any concrete generic instances created as side-effects
         // of stdlib body analysis are tagged IsStdlibLazy and excluded from GMP iteration.
         // Types the user program actually needs will be materialized when user SA references them.
-        // The stdlib is always RazorForge source (SF ≡ RF grammar; SF's Core IS RF's Core). Analyze
+        // The stdlib is always RazorForge source (SF ≡ RF grammar; SF's System IS RF's System). Analyze
         // its bodies in RazorForge mode so language-sensitive SA — unsuffixed-literal defaults, the
         // danger/extern gates, generic-call resolution — matches how the stdlib was authored. Under
         // Suflae mode the RF stdlib's generic calls fail to resolve and survive lowering (RF-S954).
@@ -1743,7 +1743,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Sets up one stdlib file's resolution scope (realm + auto-Core + own-module + its <c>import</c>s)
+    /// Sets up one stdlib file's resolution scope (realm + auto-System + own-module + its <c>import</c>s)
     /// and analyzes every body in it. Extracted from <see cref="AnalyzeStdlibBodies"/>'s per-program loop
     /// so the SAME setup can run ON DEMAND (Stage-2 pull/(B)) — <see cref="AnalyzeStdlibProgramOnDemand"/>
     /// calls it the first time the collector reaches a routine declared in this file, instead of the eager
@@ -1765,15 +1765,15 @@ public sealed partial class SemanticVerifier
         _currentFilePath = filePath;
         _currentModuleName = module;
         // Prefer this file's own realm when resolving its bare type names: an SF-realm (`.sf`) stdlib
-        // file's bare `List` resolves to the SF-realm `Core.List` (bridged) it declares, while an RF file
+        // file's bare `List` resolves to the SF-realm `System.List` (bridged) it declares, while an RF file
         // keeps the ambient RF resolution. Zero effect on RF (resolution realm == ambient there).
         _registry.ResolutionRealm = Builder.Frontends.Languages.RealmOf(fileName: filePath);
         _importedModules.Clear();
         _importedSymbolNames.Clear();
         _importedForeignAliases.Clear();
 
-        // Core module types are auto-imported
-        _importedModules.Add(item: "Core");
+        // System module types are auto-imported
+        _importedModules.Add(item: "System");
 
         // Add the file's own module so sibling types resolve
         if (!string.IsNullOrEmpty(value: module))
@@ -1803,11 +1803,11 @@ public sealed partial class SemanticVerifier
         // some other type) is analyzed with this file's imports.
         CaptureCurrentImportStateSnapshot(filePath: filePath);
 
-        // Repair declarations that reference a LAZILY-loaded imported module's type. A `module Core` file
+        // Repair declarations that reference a LAZILY-loaded imported module's type. A `module System` file
         // (eagerly registered) whose signature/field names a type from an on-demand module — e.g.
         // FloatConvert's `round_and_pack(num_in: Integer, …)` or a record field `mantissa: Integer`, where
         // `Integer` lives in the lazily-loaded `Numerics` module — had that param/field collapse to
-        // `<error>`/get dropped at eager Core registration (the removed cross-module short-name scan). Now
+        // `<error>`/get dropped at eager System registration (the removed cross-module short-name scan). Now
         // that this file is being analyzed on demand (its imported modules loaded), re-resolve its member
         // variables + routine signatures with the file's imports installed, so the bare cross-module names
         // bind and the corrected, re-keyed routine is what body analysis below resolves calls against.
@@ -2509,7 +2509,7 @@ public sealed partial class SemanticVerifier
         // Phase 1b: Re-resolve record/entity `obeys` conformances now that ALL files' types AND
         // every referenced (lazily-loaded) protocol are registered. Initial per-file declaration
         // resolution can drop a protocol whose definition wasn't loaded yet — e.g. a user module
-        // record obeying a Core protocol (FloorDivisible) registered before that protocol's file
+        // record obeying a System protocol (FloorDivisible) registered before that protocol's file
         // loaded — leaving ImplementedProtocols short. Re-resolving here (before signature
         // resolution runs the generic-constraint checks, RF-S150) fills them in.
         foreach ((Program program, string _) in files)
@@ -2666,7 +2666,7 @@ public sealed partial class SemanticVerifier
 
         // Per-file resolution realm is a body-analysis convenience only; global passes (synthesis,
         // instantiation, GMP) re-resolve concrete instantiations and must run at the ambient realm so
-        // an explicit `RF::` inside an SF-realm body (the wrapper's `inner: RF::Core.List[T]()`) keeps
+        // an explicit `RF::` inside an SF-realm body (the wrapper's `inner: RF::System.List[T]()`) keeps
         // its RF binding instead of being re-resolved under a leaked SF resolution realm.
         _registry.ResolutionRealm = _registry.AmbientRealm;
         Mark(label: $"Phase 5 per-file -> {nameof(AnalyzeBodies)} (user)");
@@ -2962,8 +2962,8 @@ public sealed partial class SemanticVerifier
         }
 
         // Analyze the builder-generated body in its OWNER's module, not whatever module happens to be
-        // current when the body is first made live. A synthesized failable variant of a Core routine
-        // (e.g. the try variant of `Decimal.logb`) references Core module-private `secret` types; resolved
+        // current when the body is first made live. A synthesized failable variant of a System routine
+        // (e.g. the try variant of `Decimal.logb`) references System module-private `secret` types; resolved
         // under a user module those fail the secret-visibility check and silently become ErrorType,
         // which surfaces later as codegen "Error type found in codegen" for the variant — an
         // order/liveness-dependent (CI-flaky) failure. Pin the module to the routine's owner so
@@ -3095,8 +3095,8 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Restores the import scope for a builder-generated body: from the routine's snapshot when one
-    /// exists, otherwise (single-file path, no stdlib snapshot) a minimal Core + own-module scope so SA
-    /// can resolve Core type annotations (S128, U32, …) referenced in the body.
+    /// exists, otherwise (single-file path, no stdlib snapshot) a minimal System + own-module scope so SA
+    /// can resolve System type annotations (S128, U32, …) referenced in the body.
     /// </summary>
     private void RestoreImportScopeForCompilerGeneratedBody(RoutineInfo routineInfo, Statement? body = null)
     {
@@ -3114,7 +3114,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        _importedModules.Add(item: "Core");
+        _importedModules.Add(item: "System");
         if (!string.IsNullOrEmpty(value: routineInfo.Module))
         {
             _importedModules.Add(item: routineInfo.Module);
@@ -3192,7 +3192,7 @@ public sealed partial class SemanticVerifier
         _currentModuleName = null;
 
         // Prefer this file's own realm when resolving its bare type names. A user `.sf` file's bare
-        // `List` resolves to the SF-realm (bridged) `Core.List` — the approachable SF wrapper — while an
+        // `List` resolves to the SF-realm (bridged) `System.List` — the approachable SF wrapper — while an
         // `.rf` file keeps ambient RF resolution. Mirrors the stdlib-body loop; zero effect on RF
         // (resolution realm == ambient there). Restored to AmbientRealm by the caller after the phase.
         _registry.ResolutionRealm = Builder.Frontends.Languages.OfFile(fileName: filePath) != Language.RazorForge
@@ -3489,7 +3489,7 @@ public sealed partial class SemanticVerifier
         return _typeResolver.ResolveProtocolType(typeExpr: typeExpr);
     }
 
-    /// <summary>Looks up a routine by name, searching Core and imported modules. Delegates to <see cref="TypeResolver"/>.</summary>
+    /// <summary>Looks up a routine by name, searching System and imported modules. Delegates to <see cref="TypeResolver"/>.</summary>
     internal RoutineInfo? LookupRoutineWithImports(string name)
     {
         return _typeResolver.LookupRoutineWithImports(name: name);

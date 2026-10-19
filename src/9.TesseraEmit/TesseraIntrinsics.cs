@@ -127,7 +127,7 @@ internal sealed class TesseraIntrinsics
             // zero_value is zeroed under an older name: every byte of a T zero.
             "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"({Argument(index: 0)} === {Argument(index: 1)})",
-            // The crash trace the routines keep (TesseraTrace), read by Core's crash_report.
+            // The crash trace the routines keep (TesseraTrace), read by System's crash_report.
             "trace_depth" => "RF_TRACE_DEPTH.peek()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
                 ? $"RF_TRACE_STACK.to[@{pointee}]()"

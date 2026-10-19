@@ -64,7 +64,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <summary>
     /// Picks the collection literal's own type from an expected (annotation) type. A Suflae entity slot
-    /// pins the annotation as <c>Roamed[Core.List[T]]</c>, but the literal itself must stay the BARE
+    /// pins the annotation as <c>Roamed[System.List[T]]</c>, but the literal itself must stay the BARE
     /// collection — it builds a fresh <c>create + add_last</c> sequence and the SF binding lowering roams
     /// the result at the var/field/assignment site (exactly like a <c>List[T]()</c> constructor RHS).
     /// Stamping <c>Roamed</c> onto the literal would make its <c>add</c>/<c>add_last</c> calls target the

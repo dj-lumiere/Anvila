@@ -746,12 +746,12 @@ public sealed partial class StdlibLoader
         // on routine.IsFailable.
         string bareName = TypeSymbol.StripTypeArgs(name: routineName);
         // Own-module FIRST: a constructor `routine List(...)` in `module Suflae` owns `Suflae.List`,
-        // NOT the first-registered context-free `List` (Core.List, loaded earlier). Resolving bare
-        // first bound the Suflae overlay's `List()` creator to Core.List → same RegistryKey as
-        // Core's own `List()` → a spurious divergent-duplicate-constructor error (RF-S406). This
+        // NOT the first-registered context-free `List` (System.List, loaded earlier). Resolving bare
+        // first bound the Suflae overlay's `List()` creator to System.List → same RegistryKey as
+        // System's own `List()` → a spurious divergent-duplicate-constructor error (RF-S406). This
         // mirrors LookupTypeWithImports's own-module-shadows rule for the stdlib registration path.
-        // Own-REALM-first: SF-realm `Core.List`'s `List()` constructor must own the SF-realm List, not
-        // the RazorForge-realm `Core.List` (same bare key, both `module Core`) — else both `List()`
+        // Own-REALM-first: SF-realm `System.List`'s `List()` constructor must own the SF-realm List, not
+        // the RazorForge-realm `System.List` (same bare key, both `module System`) — else both `List()`
         // creators share one RegistryKey and trip the divergent-duplicate-constructor check (RF-S406).
         TypeSymbol? ctorOwner =
             registry.LookupType(name: $"{moduleName}.{bareName}",
@@ -786,10 +786,10 @@ public sealed partial class StdlibLoader
            .TrimEnd(trimChar: ']');
         string baseName = typeName[..bracketIndex];
         // Own-module FIRST: `routine List[T].add_last` in `module Suflae` owns `Suflae.List`,
-        // not the earlier-registered context-free `Core.List`. Bare-first bound the Suflae
-        // overlay's List memberRoutines to Core.List, so dispatch on `Roamed[Suflae.List]` found no
-        // such memberRoutine (RF-S458). Falls back to bare for a Core type used from another module.
-        // Own-REALM-first (like the non-bracketed owner path): an SF-realm `Core.List[T]` member
+        // not the earlier-registered context-free `System.List`. Bare-first bound the Suflae
+        // overlay's List memberRoutines to System.List, so dispatch on `Roamed[Suflae.List]` found no
+        // such memberRoutine (RF-S458). Falls back to bare for a System type used from another module.
+        // Own-REALM-first (like the non-bracketed owner path): an SF-realm `System.List[T]` member
         // owns the SF-realm List, not the RazorForge-realm one that shares the bare key.
         TypeSymbol? baseDef =
             registry.LookupType(name: $"{moduleName}.{baseName}",
@@ -848,10 +848,10 @@ public sealed partial class StdlibLoader
     {
         // Own-module FIRST (mirrors the constructor path + LookupTypeWithImports): a member
         // `routine List[T].add_last` in `module Suflae` owns `Suflae.List`, not the earlier-
-        // registered context-free `Core.List`. Falls back to the bare context-free type for a
-        // Core type referenced from another module (e.g. `Collections` memberRoutines on `Core.List`).
-        // Own-REALM-first too: SF-realm `Core.List`'s members must own the SF-realm List, not the
-        // RazorForge-realm `Core.List` that shares the bare key (both are `module Core`).
+        // registered context-free `System.List`. Falls back to the bare context-free type for a
+        // System type referenced from another module (e.g. `Collections` memberRoutines on `System.List`).
+        // Own-REALM-first too: SF-realm `System.List`'s members must own the SF-realm List, not the
+        // RazorForge-realm `System.List` that shares the bare key (both are `module System`).
         TypeSymbol? ownerType =
             registry.LookupType(name: $"{moduleName}.{typeName}",
                 realm: realm) ??
@@ -904,7 +904,7 @@ public sealed partial class StdlibLoader
         List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
             receiverLeaves: receiverLeaves,
             resolve: name => registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name),
-            // A bracket entry with type arguments (`to[SF::Core.List[T]]`) resolves as the written type, the
+            // A bracket entry with type arguments (`to[SF::System.List[T]]`) resolves as the written type, the
             // receiver's own parameters (`T`) in scope.
             resolveExpression: typeExpr => ResolveSimpleType(registry: registry, typeExpr: typeExpr,
                 genericParams: receiverLeaves.ToList(), moduleName: moduleName));
@@ -1052,7 +1052,7 @@ public sealed partial class StdlibLoader
     /// Builds the generic-parameter context list for a stdlib routine registration. Includes any
     /// generic-parameter owner (T in "routine T.view()"), the owner type's own generic params, and
     /// the routine's declared generic params — filtering out receiver-leaf names that resolve to real
-    /// registered types (concrete args like "Text" in "Iterable[Text]" must not shadow Core.Text).
+    /// registered types (concrete args like "Text" in "Iterable[Text]" must not shadow System.Text).
     /// Returns null when the context is empty (no generic params in scope).
     /// </summary>
     private static List<string>? BuildRoutineGenericContext(TypeRegistry registry,
@@ -1231,7 +1231,7 @@ public sealed partial class StdlibLoader
         }
 
         // `ResolveSimpleType` is realm-blind and yields the ambient-realm receiver; keep `me`
-        // in the OWNER's realm so an SF-realm `Core.List` method's `me` isn't the RF-realm List
+        // in the OWNER's realm so an SF-realm `System.List` method's `me` isn't the RF-realm List
         // (which lacks the SF wrapper's `inner` field → spurious RF-S450).
         // The receiver's elements are slots like any other (`List[Agent[T]]` in Suflae is a list of Agent
         // handles); `me` itself stays the bare value.
@@ -1643,8 +1643,8 @@ public sealed partial class StdlibLoader
     {
         // Skip if THIS module's type is already registered (idempotency). The check must be
         // module-qualified: a bare-name check would skip a Suflae-realm overlay `entity List` merely
-        // because the RazorForge-realm `Core.List` (loaded earlier) shares the bare name, leaving
-        // `Suflae.List` unregistered — its constructor/memberRoutines then mis-bind to `Core.List` (spurious
+        // because the RazorForge-realm `System.List` (loaded earlier) shares the bare name, leaving
+        // `Suflae.List` unregistered — its constructor/memberRoutines then mis-bind to `System.List` (spurious
         // RF-S406). Different modules own distinct same-named types.
         string qualifiedName = string.IsNullOrEmpty(value: moduleName)
             ? entity.Name
@@ -2158,7 +2158,7 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// On-demand repair for a stdlib file whose declarations reference a type from a LAZILY-loaded module
-    /// (a <c>module Core</c> file importing <c>Numerics.Integer</c>): at eager Core registration that module
+    /// (a <c>module System</c> file importing <c>Numerics.Integer</c>): at eager System registration that module
     /// was not loaded, so the file's routine signatures and record/entity fields collapsed to
     /// <c>&lt;error&gt;</c>/were dropped. Called when the file is analyzed on demand (the imported module now
     /// loaded), with the file's imports installed on <see cref="TypeRegistry.ActiveRegistrationImports"/> so

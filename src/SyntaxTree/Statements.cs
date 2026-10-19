@@ -218,7 +218,7 @@ public record ThrowStatement(Expression Error, SourceLocation Location, bool IsF
 
 /// <summary>
 /// A crash, produced by lowering (never parsed): <c>CrashLoweringPass</c> turns a <c>throw</c> nothing
-/// recovers, an <c>absent</c> in a failable routine and a crashable returned from one into a call of Core's
+/// recovers, an <c>absent</c> in a failable routine and a crashable returned from one into a call of System's
 /// <c>crash_report</c> (the error type's name, its <c>crash_message()</c>, the source location). The
 /// emitter translates the call and ends the block: <c>crash_report</c> never returns.
 /// </summary>

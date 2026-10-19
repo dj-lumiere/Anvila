@@ -80,7 +80,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     }
 
     // The OWNER type's base name of a `Owner.MemberRoutine` routine name/key (strips generic args + module path):
-    // `Core.Roamed[Main.Box].roam` -> `Roamed`. Empty for a free routine.
+    // `System.Roamed[Main.Box].roam` -> `Roamed`. Empty for a free routine.
     private static string OwnerBase(string nameOrKey)
     {
         int lastDot = nameOrKey.LastIndexOf(value: '.');

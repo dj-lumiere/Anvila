@@ -65,7 +65,7 @@ public abstract class TypeSymbol
     /// single-owner entities, deterministic teardown) or <c>"SF"</c> (Suflae realm — <c>entity</c> lowers
     /// to <c>Roamed</c>, cycle-collected). A structured attribute (like <c>IsFailable</c> /
     /// <c>TypeArguments</c>), never string-parsed off the name. The SAME stdlib source instantiates under
-    /// BOTH realms as DISTINCT identities: <c>RF::Core.List</c> ≠ <c>SF::Core.List</c>. The ambient realm
+    /// BOTH realms as DISTINCT identities: <c>RF::System.List</c> ≠ <c>SF::System.List</c>. The ambient realm
     /// comes from the source file (.rf ⇒ RF, .sf ⇒ SF); an explicit <c>RF::</c>/<c>SF::</c> qualifier
     /// overrides it. Both realms are rendered explicitly in <see cref="FullName"/> (and therefore in LLVM
     /// symbols) so the two world-lines never collide when they coexist in one binary.
@@ -74,7 +74,7 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// The fully qualified name of this type (module + name + generic args), e.g.
-    /// <c>Core.List[Core.S64]</c>. This is the primary identity key across the registry, generic
+    /// <c>System.List[System.S64]</c>. This is the primary identity key across the registry, generic
     /// resolution caches, and name resolution. It is deliberately REALM-FREE: the ambient realm is a
     /// compilation-global constant, so realm-distinctness only matters where the non-ambient realm is
     /// reached via an explicit qualifier — handled by <see cref="RealmQualifiedName"/> / the registry's
@@ -105,8 +105,8 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// This type as a generic instance's name writes it among its type arguments: its <see cref="FullName"/>,
-    /// marked with its realm when that is not the shared one. Suflae's own <c>Core.List</c> and RazorForge's
-    /// share a full name, and an instance over one (<c>Roamed[SF::Core.List[Integer]]</c>) is a different type
+    /// marked with its realm when that is not the shared one. Suflae's own <c>System.List</c> and RazorForge's
+    /// share a full name, and an instance over one (<c>Roamed[SF::System.List[Integer]]</c>) is a different type
     /// from the same instance over the other, so its name, and every key and symbol made from it, differ.
     /// </summary>
     public string InstanceArgumentName => Realm == Realms.Shared
@@ -121,7 +121,7 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// <see cref="FullName"/> with the structured <see cref="Realm"/> rendered as an explicit
-    /// <c>RF::</c>/<c>SF::</c> prefix (recursively over generic args), e.g. <c>RF::Core.List[RF::Core.S64]</c>.
+    /// <c>RF::</c>/<c>SF::</c> prefix (recursively over generic args), e.g. <c>RF::System.List[RF::System.S64]</c>.
     /// This is the SYMMETRIC identity used for LLVM symbol mangling (both world-lines always marked) and as
     /// the cross-realm registry key when RF and SF instances of the same type coexist in one binary.
     /// </summary>
@@ -149,11 +149,11 @@ public abstract class TypeSymbol
         }
     }
 
-    /// <summary>The bare name without any baked-in generic-arg suffix (e.g. "List" for "List[Core.S64]").</summary>
+    /// <summary>The bare name without any baked-in generic-arg suffix (e.g. "List" for "List[System.S64]").</summary>
     public string BareName => StripTypeArgs(name: Name);
 
     /// <summary>
-    /// Drops the baked <c>[typeargs]</c> suffix from a type/routine name STRING (e.g. "List[Core.S64]"
+    /// Drops the baked <c>[typeargs]</c> suffix from a type/routine name STRING (e.g. "List[System.S64]"
     /// → "List"). This is the ONE place the generic-arg suffix is parsed off a name; prefer the
     /// structural <see cref="TypeArguments"/> / <see cref="BareName"/> over calling this. Use it only
     /// for raw name/registry-key strings that have no live <see cref="TypeSymbol"/> to read
@@ -201,7 +201,7 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// Module-qualified name with generic args recursively qualified too
-    /// (e.g. <c>Core.List[Core.S64]</c>, <c>Core.Dict[Core.Text, Core.S64]</c>).
+    /// (e.g. <c>System.List[System.S64]</c>, <c>System.Dict[System.Text, System.S64]</c>).
     /// </summary>
     public string QualifiedTypeName
     {

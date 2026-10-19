@@ -341,7 +341,7 @@ public static class BuilderInfoProvider
 
         // build_mode returns the declared BuildMode choice only. Look it up by its MODULE-qualified name:
         // BuildMode lives in `module BuilderQuery`, so a bare `LookupType("BuildMode")` depended on the
-        // cross-module short-name scan (a Core-prefix auto-import miss) — with that scan gone the bare
+        // cross-module short-name scan (a System-prefix auto-import miss) — with that scan gone the bare
         // lookup returned null and `build_mode` never registered (bare call → UnknownIdentifier).
         TypeSymbol? buildModeType = registry.LookupType(name: "BuilderQuery.BuildMode");
         if (buildModeType != null)

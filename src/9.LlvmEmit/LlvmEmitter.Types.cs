@@ -224,7 +224,7 @@ public partial class LlvmEmitter
     /// Realm-marked mangle base (option-b, ambient-bare): the ambient RF realm renders BARE
     /// (<see cref="TypeSymbol.FullName"/>) so pure-RF IR is byte-identical (zero golden regold); a
     /// non-ambient realm (the SF wrapper world-line) gets a <c>{Realm}::</c> prefix so an SF
-    /// <c>Core.List[S32]</c> (layout <c>{ inner }</c>) never collides with the RF <c>Core.List[S32]</c>
+    /// <c>System.List[S32]</c> (layout <c>{ inner }</c>) never collides with the RF <c>System.List[S32]</c>
     /// (real element storage) — they are DISTINCT LLVM structs/symbols in a mixed binary (bare `List`
     /// in a `.sf` file → SF wrapper delegating to an RF inner, both live at once). Generic args stay in
     /// FullName (ambient/bare) — only the owner's own realm is marked.
@@ -249,7 +249,7 @@ public partial class LlvmEmitter
     /// <summary>The LLVM struct name for an entity — no generation side effect. Used INSIDE
     /// GenerateEntityType (where ensuring would re-enter) and other name-only contexts. Uses the
     /// module-qualified <see cref="TypeSymbol.FullName"/> (e.g. <c>Entity.Random.Random</c>,
-    /// <c>Entity.Core.List[Core.S64]</c>) so same-named entities in different modules never collide
+    /// <c>Entity.System.List[System.S64]</c>) so same-named entities in different modules never collide
     /// into one LLVM struct name (which LLVM would silently rename to <c>.0</c> and miscompile).</summary>
     private static string RawEntityTypeName(EntityTypeSymbol entity)
     {
