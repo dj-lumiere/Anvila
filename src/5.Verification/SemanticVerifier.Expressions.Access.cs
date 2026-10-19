@@ -693,7 +693,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Failability propagation: the resolved getitem may be `!` per its protocol contract
-        // (e.g. Indexable.getitem!). A non-failable caller using `arr[i]` must propagate that.
+        // (e.g. ViewingIndexable.getitem!). A non-failable caller using `arr[i]` must propagate that.
         if (getItem is { IsFailable: true } && _currentRoutine != null)
         {
             _currentRoutine.HasFailableCalls = true;

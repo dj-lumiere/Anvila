@@ -2102,7 +2102,7 @@ public sealed partial class StdlibLoader
             existing.MemberRoutines = [];
             FillProtocolMemberRoutines(registry: registry, protocol: protocolDecl);
 
-            // Cached protocol instances (e.g. MutableIndexable[T] created during List's earlier
+            // Cached protocol instances (e.g. ModifyingIndexable[T] created during List's earlier
             // stdlib registration) copied the pre-refill stale memberRoutines. Refresh them in place so
             // user types obeying the protocol see the corrected arity instead of failing S703.
             registry.RefreshProtocolResolutions(genericDef: existing);

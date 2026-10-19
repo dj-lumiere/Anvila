@@ -2402,10 +2402,10 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Refreshes stale cached protocol resolutions whose memberRoutine signatures are out of date.
     /// Called after <c>ResolveProtocolMemberRoutineReturnTypes</c> (Pass 1e) re-fills a generic protocol
-    /// definition (e.g. MutableIndexable[V]) whose memberRoutines were initially registered with dropped
+    /// definition (e.g. ModifyingIndexable[V]) whose memberRoutines were initially registered with dropped
     /// forward-reference params — a concrete <c>index: U64</c> param silently dropped because U64
     /// wasn't registered yet. Instances created before that re-fill (during earlier stdlib
-    /// registration, e.g. List's <c>obeys MutableIndexable[T]</c>) hold stale memberRoutine signatures and
+    /// registration, e.g. List's <c>obeys ModifyingIndexable[T]</c>) hold stale memberRoutine signatures and
     /// are cached, so user types obeying the protocol pick up the stale 1-param <c>setitem</c> and
     /// wrongly fail conformance (S703). Mirrors <see cref="RefreshEntityResolutions"/> /
     /// <see cref="RefreshRecordResolutions"/> by rebuilding memberRoutines in place so existing references

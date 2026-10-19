@@ -984,7 +984,7 @@ public enum SemanticDiagnosticCode
     VariantCaseContainsInvalidType = 764,
 
     /// <summary>RETIRED: index-operator legality is governed by protocol conformance
-    /// (Indexable/MutableIndexable, enforced by RF-S411 OperatorWithoutProtocol), not by type kind.
+    /// (ViewingIndexable/ModifyingIndexable, enforced by RF-S411 OperatorWithoutProtocol), not by type kind.
     /// Code number reserved to avoid reuse.</summary>
     IndexOperatorTypeKindRestriction = 765,
 

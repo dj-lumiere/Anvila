@@ -335,7 +335,7 @@ public static class WiredRoutineCatalog
                 Name = "getitem",
                 Kind = WiredKind.Indexing,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["Indexable"],
+                Protocols = ["ViewingIndexable"],
                 Failable = true
             },
             new WiredEntry
@@ -343,7 +343,7 @@ public static class WiredRoutineCatalog
                 Name = "setitem",
                 Kind = WiredKind.Indexing,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["MutableIndexable"],
+                Protocols = ["ModifyingIndexable"],
                 Failable = true
             },
 

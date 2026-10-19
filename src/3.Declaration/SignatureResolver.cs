@@ -972,7 +972,7 @@ internal sealed class SignatureResolver
         // Build substitution map for generic protocols (e.g., Supplier[S32]: T -> S32)
         Dictionary<string, string>? substitution = BuildProtocolSubstitution(protocol: protocol);
 
-        // Bare `obeys Indexable` without type args: treat the protocol's generic parameters
+        // Bare `obeys ViewingIndexable` without type args: treat the protocol's generic parameters
         // as inferred-from-impl. We record the first binding we see for each param and check
         // subsequent positions for consistency, so getitem(key: S64)/setitem(key: S64) is
         // accepted but getitem(key: S64)/setitem(key: Text) is not.

@@ -187,7 +187,7 @@ public sealed partial class SemanticVerifier
         // can't bind: their AST name is the bare type ("U64", "List") with no ".create" to key on,
         // so the registry lookup misses and the body would analyze against a stub. Use the structured
         // binding attached at registration (ResolvedInfo) for THAT case only — every other routine
-        // (dotted members, protocol extensions like `MutableIndexable[T].pick`) keeps the existing
+        // (dotted members, protocol extensions like `ModifyingIndexable[T].pick`) keeps the existing
         // path, whose `me`-typing special-casing must not be bypassed.
         bool isConstructorDecl = routine.MemberRoutineName is null && routine.ResolvedInfo is
             { IsCreator: true, OwnerType: not null };

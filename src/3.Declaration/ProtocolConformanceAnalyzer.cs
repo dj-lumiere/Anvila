@@ -353,7 +353,7 @@ internal sealed class ProtocolConformanceAnalyzer
         // the same module-qualified name — an RF `.rf` type and its SF `.sf` wrapper (e.g. `Collections.BitList`
         // in an SF compile) — would otherwise both resolve to the ambient (RF) shell by FullName, so analyzing
         // the SF wrapper (which auto-derives only Equatable/EntityType) OVERWROTE the RF shell's declared
-        // Iterable/MutableIndexable/Sized → RF-S205 "BitList is not iterable" in its own display body.
+        // Iterable/ModifyingIndexable/Sized → RF-S205 "BitList is not iterable" in its own display body.
         string key = type is TypeSymbol ti
             ? _sa._registry.RealmRegistryKey(type: ti)
             : type.FullName;
