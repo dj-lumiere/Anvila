@@ -323,15 +323,15 @@ public static class BinaryOperatorExtensions
                 BinaryOperator.LessEqual => "le",
                 BinaryOperator.Greater => "gt",
                 BinaryOperator.GreaterEqual => "ge",
-                BinaryOperator.ThreeWayComparator => "cmp",
+                BinaryOperator.ThreeWayComparator => "compare",
 
                 // Bitwise
                 BinaryOperator.BitwiseAnd => "bitand",
                 BinaryOperator.BitwiseOr => "bitor",
                 BinaryOperator.BitwiseXor => "bitxor",
-                BinaryOperator.ArithmeticLeftShift => "ashl",
-                BinaryOperator.ArithmeticRightShift => "ashr",
-                BinaryOperator.LogicalRightShift => "lshr",
+                BinaryOperator.ArithmeticLeftShift => "shift_left",
+                BinaryOperator.ArithmeticRightShift => "arith_shift_right",
+                BinaryOperator.LogicalRightShift => "logical_shift_right",
 
                 // Legacy element-first membership (operands reversed in desugaring):
                 // x in coll -> coll.has(x); x notin coll -> coll.lacks(x)
@@ -373,9 +373,9 @@ public static class BinaryOperatorExtensions
                 BinaryOperator.BitwiseXor => "ibitxor",
 
                 // Shift
-                BinaryOperator.ArithmeticLeftShift => "iashl",
-                BinaryOperator.ArithmeticRightShift => "iashr",
-                BinaryOperator.LogicalRightShift => "ilshr",
+                BinaryOperator.ArithmeticLeftShift => "ishift_left",
+                BinaryOperator.ArithmeticRightShift => "iarith_shift_right",
+                BinaryOperator.LogicalRightShift => "ilogical_shift_right",
 
                 // Overflow variants and other operators have no in-place form
                 _ => null

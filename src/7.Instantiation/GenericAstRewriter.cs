@@ -163,7 +163,7 @@ internal static class GenericAstRewriter
         /// Populated by <see cref="Rewrite"/> and the public <c>RewriteStatement</c>
         /// overloads that accept a routine. Used to backfill <c>IdentifierExpression.ResolvedType</c>
         /// when SA failed to annotate a parameter reference (e.g. <c>you.address()</c> in
-        /// <c>Hijacked[T].cmp</c>'s generic-def body).
+        /// <c>Hijacked[T].compare</c>'s generic-def body).
         /// </summary>
         public Dictionary<string, TypeSymbol> ParamTypes { get; } = new();
 
@@ -1824,7 +1824,7 @@ internal static class GenericAstRewriter
             ctx: ctx);
 
         // Stdlib bodies are processed by SA on the generic definition, so some
-        // intermediate call expressions (e.g. me.address() inside cmp or diagnose)
+        // intermediate call expressions (e.g. me.address() inside compare or diagnose)
         // may arrive with ResolvedType=null when the SA annotation on the generic
         // body's call was not preserved through cloning.  If GMP resolved the routine
         // after the switch, propagate its ReturnType so downstream chained calls

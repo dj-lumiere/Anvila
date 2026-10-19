@@ -149,7 +149,7 @@ public sealed partial class SemanticVerifier
 
     private void AnalyzeFunctionBody(RoutineDeclaration routine)
     {
-        // Opt-in-capability derive templates (`@overridable/@override routine T.eq/cmp()` with a
+        // Opt-in-capability derive templates (`@overridable/@override routine T.eq/compare()` with a
         // bare generic-param owner) are buildtime macros consumed ONLY by the wired per-type
         // synthesizer (WiredRoutinePass.CloneUniversalDeriveBody → post-GMP lowering resolves the
         // operators). Unlike represent/diagnose, they are NOT registered as live universal memberRoutines
@@ -471,7 +471,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Whether this routine is an OPT-IN capability-default derive template (`@overridable/@override
-    /// routine T.eq/cmp()` on a bare generic-param owner) that must be skipped by SA — such templates
+    /// routine T.eq/compare()` on a bare generic-param owner) that must be skipped by SA — such templates
     /// aren't registered as live universal member routines, so their `T` placeholder is unbound and
     /// analyzing the raw body would spuriously error. Auto-conferred display derives are excluded.
     /// </summary>

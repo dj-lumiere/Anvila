@@ -30,7 +30,7 @@ public sealed partial class SemanticVerifier
             _builderQueryUserImportedOverride ?? ScanUserProgramsForBuilderQuery();
 
         // The everywhere-derive registration inside the pass consults GetDeriveTemplate to decide which
-        // derived operators (lt/le/gt/ge from cmp) to register per type. AutoRegisterWiredRoutines is
+        // derived operators (lt/le/gt/ge from compare) to register per type. AutoRegisterWiredRoutines is
         // invoked from several phase orderings (single-file Phase-6 stub synthesis runs BEFORE the
         // Analyze-level RegisterStdlibDeriveTemplates; the multi-file global sweep has no equivalent), so
         // guarantee the template store is populated HERE, immediately before the pass. Idempotent (dedups

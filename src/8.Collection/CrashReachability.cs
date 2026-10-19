@@ -8,7 +8,7 @@ namespace Builder.Collection;
 /// Which of the routines about to be emitted can crash, directly or through anything they call. A crash
 /// stack trace only ever shows frames of routines on the path to the crash, so a routine that cannot crash
 /// (and calls nothing that can) never appears in one and needs no trace frame. Without this, every inlined
-/// operator routine (<c>U64.lshr</c>, <c>U128.bitand</c>, ...) kept its trace push/pop and per-call location
+/// operator routine (<c>U64.logical_shift_right</c>, <c>U128.bitand</c>, ...) kept its trace push/pop and per-call location
 /// stores in release builds, about 55 of the 80 ns of a B128 <c>exp</c>.
 /// <para>A routine can crash when it is failable or makes a failable call (checked arithmetic included), calls
 /// a routine VALUE or a routine whose body is not in this build (a C function, a routine in the JIT base),

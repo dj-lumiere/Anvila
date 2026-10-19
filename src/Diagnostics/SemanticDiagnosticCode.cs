@@ -931,7 +931,7 @@ public enum SemanticDiagnosticCode
     CrashableObeyedByNonCrashableKind = 709,
 
     /// <summary>An <c>expand</c> template body applies a GATED wired-protocol operation (e.g. <c>eq</c>
-    /// via <c>==</c>, <c>cmp</c>, <c>hash</c>) to a buildtime member value (<c>me.$nameof(m)</c>) without
+    /// via <c>==</c>, <c>compare</c>, <c>hash</c>) to a buildtime member value (<c>me.$nameof(m)</c>) without
     /// the enclosing routine declaring the matching <c>needs P everywhere</c> gate — so nothing
     /// guarantees every member supports that operation. Add the gate (e.g. <c>needs Equatable
     /// everywhere</c>). Universal operations (represent/diagnose/serialize) need no gate.</summary>

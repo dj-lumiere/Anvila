@@ -836,8 +836,8 @@ public sealed partial class SemanticVerifier
         // written — no dedicated marker:
         //   • @overridable / @override — universal or kind-specialized derives (`represent`, choice `count`).
         //   • an OWNER `obeys` constraint (`routine T.lt() needs T obeys Comparable`) — a capability-conferred
-        //     derived helper (`lt`/`le`/`gt`/`ge` from `cmp`), which is NOT `@overridable` (you override
-        //     `cmp`, not `lt`).
+        //     derived helper (`lt`/`le`/`gt`/`ge` from `compare`), which is NOT `@overridable` (you override
+        //     `compare`, not `lt`).
         // An untagged bare-`T` routine with only a KIND gate (`T.view() needs T is EntityType`) is a normal
         // GENERIC method — one shared body via `_routineBodies` — and must NOT be diverted into the store.
         bool hasDeriveAnnotation = decl.Annotations.Contains(item: "overridable") ||
@@ -888,7 +888,7 @@ public sealed partial class SemanticVerifier
     /// <c>destruct</c> — the never-capability-gated derives). Without the marker the concrete routine is
     /// SILENTLY shadowed by the auto-derive (the Byte.represent → "Byte()" bug), so require it to be
     /// explicit: <c>@override</c> replaces the derive; otherwise it is an error. Opt-in derives
-    /// (eq/cmp/hash/copy/store — capability-gated) are excluded: those only exist when the type
+    /// (eq/compare/hash/copy/store — capability-gated) are excluded: those only exist when the type
     /// <c>obeys</c> the protocol, so a bare user <c>eq</c> is its own definition, not a collision.
     /// Runs after <see cref="CollectStdlibBodiesForVariantGeneration"/> so every template is registered.
     /// </summary>

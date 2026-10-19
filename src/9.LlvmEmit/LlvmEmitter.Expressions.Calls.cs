@@ -282,7 +282,7 @@ public partial class LlvmEmitter
         // evaluate in declaration order — matching free routines — regardless of the call-site
         // writing order. argValues/argTypes hold only the receiver for now; the reordered slot loop
         // (or the unresolved-memberRoutine fallback) rebuilds them.
-        // Synthesized/lowered bodies (programmatic eq/cmp/hash, operator-lowered calls) never
+        // Synthesized/lowered bodies (programmatic eq/compare/hash, operator-lowered calls) never
         // pass through SemanticVerifier, so they arrive without a stamped ResolvedRoutine. Once the
         // concrete argument types are known, resolve the exact overload here so failable operators
         // like add!/sub! do not degrade to undecorated placeholder symbols (Core.S32.add). This

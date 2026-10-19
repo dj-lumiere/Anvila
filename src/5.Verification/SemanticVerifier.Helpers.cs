@@ -1628,7 +1628,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Check the BASE wired memberRoutine, not the derived one: `!=`/`==` are both backed by `eq`
-        // (ne is auto-derived from eq), and all ordering operators are backed by `cmp`
+        // (ne is auto-derived from eq), and all ordering operators are backed by `compare`
         // (lt/le/gt/ge are auto-derived). Protocols (Equatable/Comparable) declare only the
         // base memberRoutine, so checking the derived name would spuriously fail for constrained generics
         // (e.g. `me[i] != other[i]` inside `List[T].eq needs T obeys Equatable`).
@@ -1636,7 +1636,7 @@ public sealed partial class SemanticVerifier
         {
             BinaryOperator.Equal or BinaryOperator.NotEqual => "eq",
             BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater
-                or BinaryOperator.GreaterEqual or BinaryOperator.ThreeWayComparator => "cmp",
+                or BinaryOperator.GreaterEqual or BinaryOperator.ThreeWayComparator => "compare",
             _ => op.GetMemberRoutineName()
         };
         if (memberRoutineName == null)
@@ -1901,10 +1901,10 @@ public sealed partial class SemanticVerifier
         // Clamping arithmetic
         "add_clamp", "sub_clamp", "mul_clamp", "truediv_clamp", "pow_clamp",
         // Comparison
-        "eq", "ne", "lt", "le", "gt", "ge", "cmp",
+        "eq", "ne", "lt", "le", "gt", "ge", "compare",
         // Bitwise
         "bitand", "bitor", "bitxor",
-        "ashl", "ashr", "lshr",
+        "shift_left", "arith_shift_right", "logical_shift_right",
         // Unary
         "neg", "bitnot",
         // Membership
@@ -2009,8 +2009,8 @@ public sealed partial class SemanticVerifier
         }
 
         // Check that types are compatible (same type or error type). A type that writes its comparison against the
-        // other type itself (Suflae's `Integer.cmp(you: Decimal)`) compares with it.
-        string? comparison = op is BinaryOperator.Equal or BinaryOperator.NotEqual ? "eq" : "cmp";
+        // other type itself (Suflae's `Integer.compare(you: Decimal)`) compares with it.
+        string? comparison = op is BinaryOperator.Equal or BinaryOperator.NotEqual ? "eq" : "compare";
         if (!IsAssignableTo(source: left, target: right) &&
             !IsAssignableTo(source: right, target: left) &&
             !DeclaresOperatorRoutine(receiverType: left, operatorMemberRoutine: comparison, argType: right))
@@ -2022,7 +2022,7 @@ public sealed partial class SemanticVerifier
         }
 
         // For overloadable ordering/equality operators, verify the type actually implements the
-        // backing wired memberRoutine (eq for ==/!=, cmp for </<=/>/>=). These are desugared to memberRoutine
+        // backing wired memberRoutine (eq for ==/!=, compare for </<=/>/>=). These are desugared to memberRoutine
         // calls by OperatorLoweringPass (after SA), so without this check an unsupported operator
         // would slip past SA and surface as an undefined-symbol LINKERR at codegen — e.g. a record
         // with no eq whose `==` resolves to the abstract `Equatable.eq`. A LINKERR on SA-passing

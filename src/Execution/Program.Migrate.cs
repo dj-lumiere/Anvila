@@ -31,9 +31,9 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable"))
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent or failable");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable or names");
             return 2;
         }
 
@@ -53,6 +53,14 @@ internal partial class Program
         if (step == "agent")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAgent);
+        }
+
+        // `--step names`: the math routines take the names the three languages share (`expm1` is `exp_m1`, the natural
+        // `log` is `ln`), and the operator routines are `compare`, `shift_left`, `arith_shift_right` and
+        // `logical_shift_right`.
+        if (step == "names")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteRoutineNames);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.

@@ -270,7 +270,7 @@ public sealed partial class SemanticVerifier
     #region Phase 5: Derived Operator Generation
 
     /// <summary>
-    /// Generates derived comparison operators from eq and cmp routines.
+    /// Generates derived comparison operators from eq and compare routines.
     /// </summary>
     private void GenerateDerivedOperators()
     {

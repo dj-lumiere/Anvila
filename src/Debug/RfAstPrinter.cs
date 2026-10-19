@@ -139,7 +139,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         }
 
         // 3. Monomorphized instances (concrete AST bodies), bucketed by owner. INCLUDES synthesized
-        // instances (per-owner derives the collector materializes — represent/eq/cmp/destroy/lt/…):
+        // instances (per-owner derives the collector materializes — represent/eq/compare/destroy/lt/…):
         // codegen EMITS these, so a debuggable dump MUST show them. They were previously skipped, which is
         // exactly why a materialized `ComparisonSign.eq` / `Char.destroy` was invisible in the dump.
         // Each synthesized instance is tagged so the reader can tell it from a normal monomorphization.

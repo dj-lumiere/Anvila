@@ -2678,18 +2678,18 @@ public sealed partial class TypeRegistry
         }
     }
 
-    /// <summary>Auto-registers <c>cmp</c> plus the derived <c>lt/le/gt/ge</c> operators if ALL element
-    /// types support cmp.</summary>
+    /// <summary>Auto-registers <c>compare</c> plus the derived <c>lt/le/gt/ge</c> operators if ALL element
+    /// types support compare.</summary>
     private void RegisterTupleComparisonRoutines(TupleTypeSymbol newType,
         List<TypeSymbol> elementTypes)
     {
         TypeSymbol? boolType = LookupType(name: "Bool");
         TypeSymbol? comparisonSignType = LookupType(name: "ComparisonSign");
         if (boolType != null && comparisonSignType != null && elementTypes.All(predicate: et =>
-                LookupMemberRoutine(type: et, memberRoutineName: "cmp") != null))
+                LookupMemberRoutine(type: et, memberRoutineName: "compare") != null))
         {
             var youParam = new ParamInfo(name: "you", type: newType);
-            RegisterSynthesizedMemberRoutine(name: "cmp",
+            RegisterSynthesizedMemberRoutine(name: "compare",
                 owner: newType,
                 returnType: comparisonSignType,
                 parameters: [youParam]);

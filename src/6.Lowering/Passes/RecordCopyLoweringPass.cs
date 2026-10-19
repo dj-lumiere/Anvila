@@ -266,7 +266,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private Statement LowerIfStatement(IfStatement ifStmt, Statement stmt)
     {
         // The condition holds copy positions: `when`/`is` desugar to an if whose condition
-        // is e.g. `(x.cmp(you: v)).eq(ME_SMALL)`, where `v` is a call argument needing a
+        // is e.g. `(x.compare(you: v)).eq(ME_SMALL)`, where `v` is a call argument needing a
         // retaining `store`. Without lowering the condition, the callee `destruct`s the
         // by-value param while the caller never copied it -> double-free of the reused source.
         Expression newCond = StripStealFromExpr(expr: ifStmt.Condition);
@@ -285,7 +285,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private Statement LowerWhenStatement(WhenStatement whenStmt, Statement stmt)
     {
         bool changed = false;
-        // The subject holds copy positions too (e.g. `when x.cmp(you: v) is ...` — `v` is a
+        // The subject holds copy positions too (e.g. `when x.compare(you: v) is ...` — `v` is a
         // call argument that needs a retaining `store`). Mirrors the WhenExpression case.
         Expression newSubject = StripStealFromExpr(expr: whenStmt.Expression);
         if (!ReferenceEquals(objA: newSubject, objB: whenStmt.Expression))
@@ -752,10 +752,10 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
             : bin with { Right = newRight };
     }
 
-    // A `when` used as an EXPRESSION (e.g. `acc +% when x.cmp(you: v) is ... => ...`).
+    // A `when` used as an EXPRESSION (e.g. `acc +% when x.compare(you: v) is ... => ...`).
     // The subject and the arm bodies hold copy positions (call arguments, RHS values) that
     // must be lowered — without this, an argument like `v` inside the subject call never
-    // gets its retaining `store`, yet the callee (e.g. `Integer.cmp`) still `destruct`s the
+    // gets its retaining `store`, yet the callee (e.g. `Integer.compare`) still `destruct`s the
     // by-value parameter, double-freeing the reused source on the next iteration.
     private WhenExpression StripStealFromWhen(WhenExpression whenExpr)
     {

@@ -1309,7 +1309,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The protocol check of <see cref="ValidateTypeProtocolImplementation"/> for every type the stdlib declares.
     /// Stdlib types are registered without a location, so a user build skips them, and `validate-stdlib` is where a
-    /// stdlib type that leaves out a routine its protocols require (an `Integer` without `ashl`) is caught.
+    /// stdlib type that leaves out a routine its protocols require (an `Integer` without `shift_left`) is caught.
     /// </summary>
     private void ValidateStdlibProtocolImplementations()
     {

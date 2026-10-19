@@ -33,7 +33,7 @@ public enum WiredKind
     /// <summary>Object creation (create, from_literal).</summary>
     Creator,
 
-    /// <summary>Equality and ordering (eq, cmp, etc.).</summary>
+    /// <summary>Equality and ordering (eq, compare, etc.).</summary>
     Comparison,
 
     /// <summary>Checked arithmetic (add, sub, mul, div, mod, floordiv, pow).</summary>
@@ -117,7 +117,7 @@ public sealed class WiredEntry
 
     /// <summary>The canonical wired routine the capability gate looks up on the owner. Defaults to
     /// <see cref="Name"/>; overridden for derived operators that share a base
-    /// (e.g. <c>ne</c>→<c>eq</c>, <c>lt</c>→<c>cmp</c>, <c>mod</c>→<c>floordiv</c>).</summary>
+    /// (e.g. <c>ne</c>→<c>eq</c>, <c>lt</c>→<c>compare</c>, <c>mod</c>→<c>floordiv</c>).</summary>
     public string? CapabilityWiredOverride { get; init; }
 
     /// <summary>True for routines that must be emitted for every live owner regardless of call-site
@@ -153,11 +153,11 @@ public static class WiredRoutineCatalog
     private const string BitwiseableProtocol = "Bitwiseable";
     private const string BitandCapability = "bitand";
     private const string ShiftableProtocol = "Shiftable";
-    private const string AshlCapability = "ashl";
+    private const string ShiftLeftCapability = "shift_left";
     private const string InPlaceBitandeableProtocol = "InPlaceBitwiseable";
     private const string IbitandCapability = "ibitand";
     private const string InPlaceShiftableProtocol = "InPlaceShiftable";
-    private const string IashlCapability = "iashl";
+    private const string IshiftLeftCapability = "ishift_left";
 
     /// <summary>All wired-routine entries in canonical order. Every consumer projection is a filtered view of this list.</summary>
     public static readonly IReadOnlyList<WiredEntry> All = BuildAll();
@@ -242,7 +242,7 @@ public static class WiredRoutineCatalog
                 Protocols = ["Hashable"]
             },
 
-            // ---- Comparison (cmp family shares the cmp body; ne shares eq) ----
+            // ---- Comparison (compare family shares the compare body; ne shares eq) ----
             new WiredEntry
             {
                 Name = "eq",
@@ -260,7 +260,7 @@ public static class WiredRoutineCatalog
             },
             new WiredEntry
             {
-                Name = "cmp",
+                Name = "compare",
                 Kind = WiredKind.Comparison,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ComparableProtocol]
@@ -271,7 +271,7 @@ public static class WiredRoutineCatalog
                 Kind = WiredKind.Comparison,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ComparableProtocol],
-                CapabilityWiredOverride = "cmp"
+                CapabilityWiredOverride = "compare"
             },
             new WiredEntry
             {
@@ -279,7 +279,7 @@ public static class WiredRoutineCatalog
                 Kind = WiredKind.Comparison,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ComparableProtocol],
-                CapabilityWiredOverride = "cmp"
+                CapabilityWiredOverride = "compare"
             },
             new WiredEntry
             {
@@ -287,7 +287,7 @@ public static class WiredRoutineCatalog
                 Kind = WiredKind.Comparison,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ComparableProtocol],
-                CapabilityWiredOverride = "cmp"
+                CapabilityWiredOverride = "compare"
             },
             new WiredEntry
             {
@@ -295,7 +295,7 @@ public static class WiredRoutineCatalog
                 Kind = WiredKind.Comparison,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ComparableProtocol],
-                CapabilityWiredOverride = "cmp"
+                CapabilityWiredOverride = "compare"
             },
 
             // ---- Container / iteration / indexing ----
@@ -565,30 +565,30 @@ public static class WiredRoutineCatalog
                 Protocols = ["Invertible"]
             },
 
-            // ---- Shift (the ashl body covers all four) ----
+            // ---- Shift (the shift_left body covers all three) ----
             new WiredEntry
             {
-                Name = AshlCapability,
+                Name = ShiftLeftCapability,
                 Kind = WiredKind.Shift,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ShiftableProtocol],
-                CapabilityWiredOverride = AshlCapability
+                CapabilityWiredOverride = ShiftLeftCapability
             },
             new WiredEntry
             {
-                Name = "ashr",
+                Name = "arith_shift_right",
                 Kind = WiredKind.Shift,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ShiftableProtocol],
-                CapabilityWiredOverride = AshlCapability
+                CapabilityWiredOverride = ShiftLeftCapability
             },
             new WiredEntry
             {
-                Name = "lshr",
+                Name = "logical_shift_right",
                 Kind = WiredKind.Shift,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [ShiftableProtocol],
-                CapabilityWiredOverride = AshlCapability
+                CapabilityWiredOverride = ShiftLeftCapability
             },
 
             // ---- In-place arithmetic (imod shares ifloordiv) ----
@@ -669,30 +669,30 @@ public static class WiredRoutineCatalog
                 CapabilityWiredOverride = IbitandCapability
             },
 
-            // ---- In-place shift (iashr/ilshr share iashl) ----
+            // ---- In-place shift (iarith_shift_right and ilogical_shift_right share ishift_left) ----
             new WiredEntry
             {
-                Name = IashlCapability,
+                Name = IshiftLeftCapability,
                 Kind = WiredKind.InPlaceShift,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [InPlaceShiftableProtocol],
-                CapabilityWiredOverride = IashlCapability
+                CapabilityWiredOverride = IshiftLeftCapability
             },
             new WiredEntry
             {
-                Name = "iashr",
+                Name = "iarith_shift_right",
                 Kind = WiredKind.InPlaceShift,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [InPlaceShiftableProtocol],
-                CapabilityWiredOverride = IashlCapability
+                CapabilityWiredOverride = IshiftLeftCapability
             },
             new WiredEntry
             {
-                Name = "ilshr",
+                Name = "ilogical_shift_right",
                 Kind = WiredKind.InPlaceShift,
                 Views = Cap | Known | Proto | Seed,
                 Protocols = [InPlaceShiftableProtocol],
-                CapabilityWiredOverride = IashlCapability
+                CapabilityWiredOverride = IshiftLeftCapability
             }
         ];
     }

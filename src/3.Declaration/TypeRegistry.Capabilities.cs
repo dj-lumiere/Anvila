@@ -103,10 +103,10 @@ public sealed partial class TypeRegistry
     {
         return TypeHasWiredRoutine(type: type, wiredName: "hash");
     }
-    /// <summary>Returns true if the type implements <c>Comparable</c> (cmp).</summary>
+    /// <summary>Returns true if the type implements <c>Comparable</c> (compare).</summary>
     public bool TypeHasComparison(TypeSymbol type)
     {
-        return TypeHasWiredRoutine(type: type, wiredName: "cmp");
+        return TypeHasWiredRoutine(type: type, wiredName: "compare");
     }
 
     private bool HasCapability(TypeSymbol type, string protocol, string wiredName)

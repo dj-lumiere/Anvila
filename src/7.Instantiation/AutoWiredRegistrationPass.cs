@@ -419,7 +419,7 @@ internal sealed class AutoWiredRegistrationPass
         // None maps to LLVM void — it cannot appear as a parameter type.
         // Skip comparison/hash/copy stubs; two Nones are trivially equal.
         // Wrapper types (Retained, Viewing, etc.) are transparent forwarders —
-        // WrapperForwardingPass lazily synthesizes their hash/eq/cmp from the inner T.
+        // WrapperForwardingPass lazily synthesizes their hash/eq/compare from the inner T.
         // Don't register field-based stubs here: for zero-field wrappers (T)
         // WiredRoutinePass would generate wrong bodies (returns 0 / returns true).
         bool isWrapper = type is RecordTypeSymbol &&
@@ -613,7 +613,7 @@ internal sealed class AutoWiredRegistrationPass
         // universal template `routine S32(from: ChoiceType T)` in Derivation.rf (`LLVM::reinterpret_bits`),
         // which the demand collector materializes into a real bitcast body per concrete choice. A bodyless
         // phantom here would resolve as a call to a never-defined symbol (link error); the template gives it
-        // a real definition. The choice eq/cmp/represent derives + `is` pattern lowering consume it.
+        // a real definition. The choice eq/compare/represent derives + `is` pattern lowering consume it.
 
         if (textType != null)
         {
@@ -1052,7 +1052,7 @@ internal sealed class AutoWiredRegistrationPass
         // Every obeyed protocol + its parent chain. The structural-vs-opt-in split is enforced by the
         // CONFERRAL layer, not here: Assignable/Copyable are auto-conferred (so a value record obeys them
         // and gets assign/copy), while Equatable/Comparable/Hashable are NOT auto-conferred (so only a type
-        // that explicitly `obeys` them appears here and gets eq/cmp/hash). Marker protocols (RecordType/…)
+        // that explicitly `obeys` them appears here and gets eq/compare/hash). Marker protocols (RecordType/…)
         // also appear but are filtered below — they carry no `everywhere` self-constraint.
         var explicitClosure =
             new Dictionary<string, ProtocolTypeSymbol>(comparer: StringComparer.Ordinal);
@@ -1073,7 +1073,7 @@ internal sealed class AutoWiredRegistrationPass
             }
 
             // The `everywhere` structural gate is evaluated PER-MEMBER below, not for the whole protocol:
-            // it applies only to field-walk BASE derives (cmp/eq/hash/assign), NOT to delegation derives
+            // it applies only to field-walk BASE derives (compare/eq/hash/assign), NOT to delegation derives
             // (lt/le/gt/ge), which simply call the type's own base op and are valid whenever the type obeys
             // P (already true — p came from the obeyed-protocol closure).
             bool everywhereObeys =
@@ -1111,15 +1111,15 @@ internal sealed class AutoWiredRegistrationPass
             return true;
         }
 
-        // BASE derive (cmp/eq/hash/assign — CapabilityWired == own name) vs DERIVED operator
-        // (lt/le/gt/ge from cmp, ne from eq, notcontains from contains — CapabilityWired == base).
+        // BASE derive (compare/eq/hash/assign — CapabilityWired == own name) vs DERIVED operator
+        // (lt/le/gt/ge from compare, ne from eq, notcontains from contains — CapabilityWired == base).
         isDerivedOperator = we.CapabilityWired != member.Name;
         int memberArity = member.ParameterTypes.Count;
 
         if (isDerivedOperator)
         {
             // A DERIVED operator registers here ONLY when a universal derive-template body exists for
-            // it (DeriveText.rf lt/le/gt/ge → `me.cmp(you) == ME_SMALL` etc.). Routing these through
+            // it (DeriveText.rf lt/le/gt/ge → `me.compare(you) == ME_SMALL` etc.). Routing these through
             // the everywhere-derive template mechanism (registered + materialized by the collector) is
             // what makes `a < b` resolve uniformly for Char/numerics/records — the C#
             // DerivedOperatorPass bodies did not survive the collector/warm codegen path. Delegation
@@ -1131,7 +1131,7 @@ internal sealed class AutoWiredRegistrationPass
         }
 
         // A field-walk BASE derive is only VALID when every member obeys P (its body field-walks into
-        // `member.cmp/eq/…`). A concrete type that declares `obeys P` but fails this is a conformance
+        // `member.compare/eq/…`). A concrete type that declares `obeys P` but fails this is a conformance
         // error surfaced elsewhere; we don't fabricate an ill-typed body. A generic DEF defers to
         // instantiation (everywhereObeys is forced true for a def above).
         if (!everywhereObeys)
@@ -1141,12 +1141,12 @@ internal sealed class AutoWiredRegistrationPass
 
         // 0-memvar rule (per member, not per type): a field-less type (an `@llvm` scalar like U64,
         // an empty record, choice/flags) has no members to walk, so a FIELD-WALK BASE derive
-        // (eq/cmp/hash → returns Bool/ComparisonSign/U64) would produce a WRONG empty-walk body
+        // (eq/compare/hash → returns Bool/ComparisonSign/U64) would produce a WRONG empty-walk body
         // (`return true` / `SAME` / `0`) — such a type must IMPLEMENT those itself (`@override`).
         // But an IDENTITY derive (assign/copy → returns `Me`) is CORRECT as `return me` even with no
         // members, so it still auto-derives (signal = return type is the self type). A DELEGATION
-        // derive (lt = `me.cmp(you) == ME_SMALL`) is likewise correct regardless of member count —
-        // it calls the type's own cmp, native on a field-less scalar — so the rule does not gate it.
+        // derive (lt = `me.compare(you) == ME_SMALL`) is likewise correct regardless of member count —
+        // it calls the type's own compare, native on a field-less scalar — so the rule does not gate it.
         if (memberCount == 0 && member.ReturnType is not ProtocolSelfTypeSymbol)
         {
             return true;
@@ -1154,7 +1154,7 @@ internal sealed class AutoWiredRegistrationPass
 
         // Uniform "already provided" check — NO type-category special rule: skip when the type
         // already resolves a CONCRETE (non-abstract) impl of this member, whether a hand-written
-        // routine, an earlier hardcoded stub, or a native/wired op on an @llvm scalar (U64.cmp etc.).
+        // routine, an earlier hardcoded stub, or a native/wired op on an @llvm scalar (U64.compare etc.).
         // A resolution to the ABSTRACT protocol member (OwnerType is a protocol) does NOT count —
         // that is the obligation this derive fulfils. Mirrors ComputeCapability's `direct` check.
         // For a BASE derive, skip when the type already resolves a CONCRETE (non-abstract) impl of

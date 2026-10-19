@@ -735,7 +735,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeBinaryExpression(BinaryExpression binary, TypeSymbol? expectedType = null)
     {
         // Buildtime `expand` gate: a comparison/equality on a buildtime member value (me.$nameof(m)) is a
-        // gated wired op (eq/cmp) — it needs the enclosing template's `needs P everywhere` guarantee.
+        // gated wired op (eq/compare) — it needs the enclosing template's `needs P everywhere` guarantee.
         EnforceBinaryBuildtimeMemberGate(binary: binary);
 
         // A tuple of places on the left that the right doesn't reorder (a swap is a PlaceSwapStatement by now) would
@@ -1298,7 +1298,7 @@ public sealed partial class SemanticVerifier
         // Substitute Me -> leftType for protocol-sourced member routines (`Accessing[Me]` too).
         paramType = _registry.ReplaceProtocolSelf(type: paramType, owner: leftType);
 
-        // A read token parameter (`cmp(you: Viewing[Me])`) takes the operand itself: the call reads it in place.
+        // A read token parameter (`compare(you: Viewing[Me])`) takes the operand itself: the call reads it in place.
         if (Wrappers.IsReadOnlyWrapper(type: paramType) && paramType.TypeArguments is [{ } viewed] &&
             IsAssignableTo(source: rightType, target: viewed))
         {

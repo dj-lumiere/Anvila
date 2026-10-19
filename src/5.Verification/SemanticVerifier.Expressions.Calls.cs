@@ -374,8 +374,8 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeCallExpressionCore(CallExpression call,
         TypeSymbol? expectedType = null)
     {
-        // Buildtime `expand` gate: a member-routine call on a buildtime member value (me.$nameof(m).cmp()/
-        // .hash()/…) is a wired op — a GATED one (cmp/hash/…) needs the enclosing template's `needs P
+        // Buildtime `expand` gate: a member-routine call on a buildtime member value (me.$nameof(m).compare()/
+        // .hash()/…) is a wired op — a GATED one (compare/hash/…) needs the enclosing template's `needs P
         // everywhere` guarantee; a universal one (represent/serialize) passes freely.
         if (call.Callee is MemberExpression
             {
@@ -3373,7 +3373,7 @@ public sealed partial class SemanticVerifier
         // `dangerous` (peek/poke/as_entity/invalidate/… — real deref/free/UB ops). That is
         // already enforced uniformly by the `routine.IsDangerous` gate in
         // ValidateRoutineAccess, so there is NO blanket "any Hijacked member routine needs danger"
-        // rule: the pointer-value ops (address/type_name/is_none/cmp/hash/represent) read
+        // rule: the pointer-value ops (address/type_name/is_none/compare/hash/represent) read
         // an integer without dereferencing and are safe outside danger (danger-audit).
 
         // #98: .hijack() on Guarded/Witnessed requires danger block

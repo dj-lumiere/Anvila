@@ -779,9 +779,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// owners that <see cref="ProcessConcreteType"/> never visits. The result is a live aggregate
     /// whose leaf callee is declared-but-undefined at link time:
     /// <list type="bullet">
-    ///   <item>derived <c>lt/le/gt/ge</c> → owner <c>cmp</c> + <c>ComparisonSign.eq/ne</c></item>
+    ///   <item>derived <c>lt/le/gt/ge</c> → owner <c>compare</c> + <c>ComparisonSign.eq/ne</c></item>
     ///   <item><c>ne</c> → owner <c>eq</c>; <c>notcontains</c> → owner <c>contains</c></item>
-    ///   <item>composite <c>destroy/store/hash/eq/cmp</c> → the same wired verb on
+    ///   <item>composite <c>destroy/store/hash/eq/compare</c> → the same wired verb on
     ///         each field/element type (recursing to a fixed point)</item>
     /// </list>
     /// This mirrors <c>RoutineReachabilityPass.ExpandSyntheticSiblings</c> + its synthesized-body
@@ -1358,16 +1358,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             }
         }
 
-        // A reached derive member (lt/le/gt/ge from cmp, or ANY capability-conferred derive — cmp/eq/hash/
+        // A reached derive member (lt/le/gt/ge from compare, or ANY capability-conferred derive — compare/eq/hash/
         // represent — on a concrete owner that does not hand-write it) whose per-type body lives ONLY in the
-        // derive-template store (DeriveText.rf `T.lt() -> me.cmp(you) is ME_SMALL`, etc.). NOTHING else
+        // derive-template store (DeriveText.rf `T.lt() -> me.compare(you) is ME_SMALL`, etc.). NOTHING else
         // materializes these: they are not hand-written (programBodies), not synthesized by DerivedOperatorPass
         // (synthesizedBodies holds only ne/notcontains/crash_title/wrapper-forwarders), and not a generic
         // INSTANCE (BuildGenericInstanceIfNeeded). Clone the template for this concrete owner (T → owner) so the
-        // walk steps THROUGH the body (discovering its cmp/eq callees) AND codegen has a body to emit. The clone
+        // walk steps THROUGH the body (discovering its compare/eq callees) AND codegen has a body to emit. The clone
         // lands in InstantiatedGenericBodies as a FRESH entry, so the collector's LowerFreshBodies sweep lowers
         // it (the stored template body is the raw, pre-lowering decl body). Higher-priority body sources win via
-        // the guards below, so a type that hand-writes the member (U64.cmp, Text.eq) keeps its own body.
+        // the guards below, so a type that hand-writes the member (U64.compare, Text.eq) keeps its own body.
         private void MaterializeDeriveTemplateBodyIfNeeded(RoutineInfo r, string key)
         {
             // An EMPTY synthesized sentinel (0-statement body) already in InstantiatedGenericBodies means
@@ -1844,7 +1844,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         private static bool IsCallDrivenWiredName(string wiredName)
         {
             return wiredName is RepresentMemberRoutineName or "diagnose" or "hash" or "serialize"
-                or "duplicate" or "share" or "eq" or "ne" or "cmp" or "lt" or "le" or "gt" or "ge"
+                or "duplicate" or "share" or "eq" or "ne" or "compare" or "lt" or "le" or "gt" or "ge"
                 or "has" or "lacks" or "getitem" or "setitem" or "iter";
         }
 
@@ -2017,7 +2017,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         switch (routine.Name)
         {
-            case "lt" or "le" or "gt" or "ge" or "cmp":
+            case "lt" or "le" or "gt" or "ge" or "compare":
                 foreach (RoutineInfo r in YieldComparisonWiredCallees(owner: owner,
                              routineName: routine.Name))
                 {
@@ -2053,14 +2053,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Yields the wired callees for comparison routines (lt, le, gt, ge, cmp): the owner's cmp,
-    /// the ComparisonSign eq/ne testers, and for composite cmp the field-wise cmp callees.
+    /// Yields the wired callees for comparison routines (lt, le, gt, ge, compare): the owner's compare,
+    /// the ComparisonSign eq/ne testers, and for composite compare the field-wise compare callees.
     /// </summary>
     private IEnumerable<RoutineInfo> YieldComparisonWiredCallees(TypeSymbol owner,
         string routineName)
     {
-        if (routineName != "cmp" &&
-            ctx.Registry.LookupMemberRoutine(type: owner, memberRoutineName: "cmp") is { } cmp)
+        if (routineName != "compare" &&
+            ctx.Registry.LookupMemberRoutine(type: owner, memberRoutineName: "compare") is { } cmp)
         {
             yield return cmp;
         }
@@ -2078,9 +2078,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             }
         }
 
-        if (routineName == "cmp")
+        if (routineName == "compare")
         {
-            foreach (RoutineInfo fc in MemberVariableWiredCallees(owner: owner, verb: "cmp"))
+            foreach (RoutineInfo fc in MemberVariableWiredCallees(owner: owner, verb: "compare"))
             {
                 yield return fc;
             }
@@ -2162,7 +2162,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // — gating on `LiveOwnerTypeNames.Count > 0` would misread that as "filter off" and fan out
         // over every concrete instance in the registry (BuilderQuery/BTree/numeric machinery),
         // force-emitting wired operators whose plain-helper callees (add_with_overflow, recast_as,
-        // cmp) are never emitted → LINKERR. Mirror the per-routine gate at the BuildBody site below,
+        // compare) are never emitted → LINKERR. Mirror the per-routine gate at the BuildBody site below,
         // which already keys off LiveRoutineKeys. Both empty = legacy fan-out (reachability skipped).
         if (ctx.LiveRoutineKeys.Count > 0 &&
             !ctx.LiveOwnerTypeNames.Contains(item: concreteType.FullName))
@@ -2804,7 +2804,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             "duplicate",
             "eq",
             "ne",
-            "cmp",
+            "compare",
             "hash"
         };
 

@@ -142,7 +142,7 @@ public sealed class InstantiationContext
 
     /// <summary>
     /// Demand hook for a derive-template body materialized on reach (a scalar's <c>lt</c>/<c>le</c>/
-    /// <c>gt</c>/<c>ge</c>, or a plain type's <c>represent</c>/<c>cmp</c>/… cloned from the DeriveText.rf
+    /// <c>gt</c>/<c>ge</c>, or a plain type's <c>represent</c>/<c>compare</c>/… cloned from the DeriveText.rf
     /// <c>T.&lt;name&gt;</c> template): the stored template body is RAW source AST, so after the collector
     /// substitutes <c>T</c> → the concrete owner it must be semantically analyzed (types/calls resolved) in
     /// the owner's context BEFORE the fresh-body lowering sweep — otherwise operators (<c>me.type_name() +

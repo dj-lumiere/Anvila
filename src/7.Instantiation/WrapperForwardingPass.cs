@@ -90,7 +90,7 @@ internal sealed class WrapperForwardingPass
         // forward to inner T (e.g. Text.eq -> Text.eq).
         "eq",
         "ne",
-        "cmp",
+        "compare",
         "lt",
         "le",
         "gt",

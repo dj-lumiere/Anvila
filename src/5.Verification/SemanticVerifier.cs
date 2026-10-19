@@ -580,7 +580,7 @@ public sealed partial class SemanticVerifier
             Mark(label: "CollectStdlibBodies");
             // Skip in snapshot/warm mode: the derive-marker validation is a property of the STDLIB SOURCE,
             // already enforced in the cold capture run. The opt-in-derive marking (_optInDeriveMemberRoutines,
-            // which excludes eq/cmp/assign/copy) is NOT part of the serialized snapshot, so re-running here
+            // which excludes eq/compare/assign/copy) is NOT part of the serialized snapshot, so re-running here
             // over the restored stdlib would false-positive on Array.assign/Dict.copy/etc.
             if (!_memo.IsWarm)
             {
@@ -1169,7 +1169,7 @@ public sealed partial class SemanticVerifier
         // stdlib file on first touch. No-op until the Stage-5 flip (guarded by _eagerStdlibAnalyzed).
         ctx.AnalyzeRoutineOnDemand = AnalyzeStdlibProgramOnDemand;
         // Bind the sibling hook that SA-annotates a derive-template body the collector clones per concrete
-        // owner (lt/le/gt/ge from cmp, represent/cmp/… on a plain type) — the raw template body needs types
+        // owner (lt/le/gt/ge from compare, represent/compare/… on a plain type) — the raw template body needs types
         // resolved in the owner's context before the fresh-body lowering sweep folds its operators.
         ctx.AnalyzeMaterializedDeriveBody = AnalyzeMaterializedDeriveBodyOnDemand;
         ctx.AnalyzePerUseBody = AnalyzePerUseBodyOnDemand;
@@ -1934,7 +1934,7 @@ public sealed partial class SemanticVerifier
     /// SA-annotates a derive-template body the collector cloned for a concrete owner (T→owner already
     /// substituted): resolves types/calls in the owner's context via <see cref="AnalyzeCompilerGeneratedBody"/>
     /// so the fresh-body lowering sweep can fold its operators (<c>me.type_name() + "("</c>) and resolve its
-    /// delegated calls (<c>me.cmp(you)</c>). Annotates in place; returns the same body. Bound to
+    /// delegated calls (<c>me.compare(you)</c>). Annotates in place; returns the same body. Bound to
     /// <see cref="InstantiationContext.AnalyzeMaterializedDeriveBody"/>.
     /// </summary>
     private Statement AnalyzePerUseBodyOnDemand(RoutineInfo routine, Statement body)

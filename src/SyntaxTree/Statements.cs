@@ -606,7 +606,7 @@ public enum ExpandSourceKind
     OpenMemberVariables,
 
     /// <summary><c>allmemvarof(T)</c> — ALL member variables incl <c>secret</c>, declaration order.
-    /// Use for full-state internal derives (hash/cmp/represent/diagnose/destroy).</summary>
+    /// Use for full-state internal derives (hash/compare/represent/diagnose/destroy).</summary>
     AllMemberVariables,
 
     /// <summary><c>branchof(T)</c> — the arms of a variant, tag order. Used inside a <c>when</c> to

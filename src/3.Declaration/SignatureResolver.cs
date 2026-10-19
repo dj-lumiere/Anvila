@@ -1058,7 +1058,7 @@ internal sealed class SignatureResolver
         List<string>? inferableParams = ctx.InferableParams;
         SourceLocation? location = ctx.Location;
 
-        // `you: Viewing[Me]`: the routine only reads the other value (`eq`, `cmp`).
+        // `you: Viewing[Me]`: the routine only reads the other value (`eq`, `compare`).
         if (expectedType is { TypeArguments: [ProtocolSelfTypeSymbol] } readsMe &&
             readsMe.BareName == RuntimeContract.Viewing)
         {

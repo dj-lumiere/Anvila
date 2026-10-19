@@ -1218,8 +1218,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     }
 
     /// <summary>
-    /// An ordering of two different types that only a <c>cmp</c> taking the other type answers
-    /// (<c>Integer.cmp(you: Decimal)</c>): <c>a &lt; b</c> becomes <c>S32(from: a.cmp(you: b)) &lt; 0</c>, the sign read as
+    /// An ordering of two different types that only a <c>compare</c> taking the other type answers
+    /// (<c>Integer.compare(you: Decimal)</c>): <c>a &lt; b</c> becomes <c>S32(from: a.compare(you: b)) &lt; 0</c>, the sign read as
     /// its number (-1, 0, 1). The derived <c>lt</c>/<c>le</c>/<c>gt</c>/<c>ge</c> take only their own type, so resolving the
     /// operator by name would pick that one and read the other operand as the wrong type. Null when the operator is
     /// not an ordering, the types are the same, or the receiver has an ordering routine for the other type itself.
@@ -1232,7 +1232,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             left.FullName == right.FullName || bin.Operator.GetMemberRoutineName() is not { } name ||
             TakesExactly(routine: ctx.Registry.LookupMemberRoutineOverload(type: left, memberRoutineName: name,
                 argTypes: [right]), argType: right) ||
-            ctx.Registry.LookupMemberRoutineOverload(type: left, memberRoutineName: "cmp", argTypes: [right]) is not
+            ctx.Registry.LookupMemberRoutineOverload(type: left, memberRoutineName: "compare", argTypes: [right]) is not
                 { } cmp || !TakesExactly(routine: cmp, argType: right) ||
             ctx.Registry.LookupType(name: "S32") is not { } s32)
         {
@@ -1240,7 +1240,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         }
 
         var sign = new CallExpression(
-            Callee: new MemberExpression(Object: bin.Left, MemberName: "cmp", Location: bin.Location)
+            Callee: new MemberExpression(Object: bin.Left, MemberName: "compare", Location: bin.Location)
             {
                 IsFailable = cmp.IsFailable
             },

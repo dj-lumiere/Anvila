@@ -18,14 +18,14 @@ namespace Builder.Verification;
 internal static class ExpandMemberGate
 {
     /// <summary>The wired routine a comparison/equality operator lowers to (<c>==</c>/<c>!=</c> → eq,
-    /// the ordering operators → cmp), or null for any other operator.</summary>
+    /// the ordering operators → compare), or null for any other operator.</summary>
     internal static string? WiredNameForOperator(BinaryOperator op)
     {
         return op switch
         {
             BinaryOperator.Equal or BinaryOperator.NotEqual => "eq",
             BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater
-                or BinaryOperator.GreaterEqual => "cmp",
+                or BinaryOperator.GreaterEqual => "compare",
             _ => null
         };
     }

@@ -10,7 +10,7 @@ using TypeModel.Types;
 namespace Builder.Instantiation;
 
 /// <summary>
-/// Phase 2.6: Generates derived comparison operators from eq and cmp routines,
+/// Phase 2.6: Generates derived comparison operators from eq and compare routines,
 /// and synthesizes crash_title() bodies for all crashable types.
 /// </summary>
 internal sealed class DerivedOperatorPass
@@ -33,7 +33,7 @@ internal sealed class DerivedOperatorPass
     }
 
     /// <summary>
-    /// Generates derived comparison operators from eq and cmp routines.
+    /// Generates derived comparison operators from eq and compare routines.
     /// </summary>
     public void Run()
     {
@@ -89,8 +89,8 @@ internal sealed class DerivedOperatorPass
 
         // lt/le/gt/ge are NOT generated here: they are registered by the everywhere-derive pass and their
         // bodies materialized by the collector from the DeriveText.rf `T.lt/le/gt/ge` universal templates
-        // (`me.cmp(you) == ME_SMALL` etc.). Routing them through the template mechanism — the same path as
-        // cmp/represent — is what makes them survive the collector/warm codegen path (the C#-synthesized
+        // (`me.compare(you) == ME_SMALL` etc.). Routing them through the template mechanism — the same path as
+        // compare/represent — is what makes them survive the collector/warm codegen path (the C#-synthesized
         // bodies here did not), so `a < b` resolves uniformly for Char/numerics/records.
 
         // Look for contains memberRoutine
