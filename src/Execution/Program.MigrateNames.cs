@@ -11,7 +11,10 @@ internal partial class Program
     /// languages share (<c>expm1</c> is <c>exp_m1</c>, the natural <c>log</c> is <c>ln</c>, <c>tgamma</c> is
     /// <c>gamma</c>), and the operator routines are <c>compare</c> for <c>&lt;=&gt;</c>, <c>shift_left</c> for
     /// <c>&lt;&lt;</c>, <c>arith_shift_right</c> for <c>&gt;&gt;</c> and <c>logical_shift_right</c> for
-    /// <c>&gt;&gt;&gt;</c>. Each math name's <c>_unchecked</c> form follows it.
+    /// <c>&gt;&gt;&gt;</c>. The float routines named after C take the shared names too: <c>fma</c> is
+    /// <c>mul_add</c>, <c>fmod</c> is <c>mod_trunc</c>, <c>remainder</c> is <c>rem</c>, <c>fmax</c> / <c>fmin</c> are
+    /// <c>max</c> / <c>min</c>, <c>frac</c> is <c>fract</c>, <c>total_order</c> is <c>total_compare</c> and
+    /// <c>signbit</c> is <c>is_sign_negative</c>. Each math name's <c>_unchecked</c> form follows it.
     /// </summary>
     private static readonly Dictionary<string, string> RenamedRoutines = BuildRenamedRoutines();
 
@@ -24,7 +27,10 @@ internal partial class Program
             [key: "sinpi"] = "sin_pi", [key: "cospi"] = "cos_pi", [key: "tanpi"] = "tan_pi",
             [key: "asinpi"] = "asin_pi", [key: "acospi"] = "acos_pi", [key: "atanpi"] = "atan_pi",
             [key: "atan2pi"] = "atan2_pi", [key: "rsqrt"] = "recip_sqrt", [key: "sincos"] = "sin_cos",
-            [key: "lgamma"] = "ln_gamma", [key: "tgamma"] = "gamma"
+            [key: "lgamma"] = "ln_gamma", [key: "tgamma"] = "gamma",
+            [key: "fma"] = "mul_add", [key: "fmod"] = "mod_trunc", [key: "remainder"] = "rem",
+            [key: "fmax"] = "max", [key: "fmin"] = "min", [key: "frac"] = "fract",
+            [key: "total_order"] = "total_compare", [key: "signbit"] = "is_sign_negative"
         };
         var all = new Dictionary<string, string>(comparer: StringComparer.Ordinal);
         foreach ((string old, string now) in math)
@@ -54,13 +60,20 @@ internal partial class Program
         options: RegexOptions.Compiled);
 
     /// <summary>An old name in a comment: written as code there (<c>`expm1`</c>, <c>.cmp(</c>) or as a word that is
-    /// only ever the routine. The natural <c>log</c> and the Integer-only <c>shl</c> / <c>shr</c> are renamed in a
+    /// only ever the routine. The natural <c>log</c>, the Integer-only <c>shl</c> / <c>shr</c> and the float names
+    /// that are also English words or C names (<c>remainder</c>, <c>frac</c>, <c>fma</c>, ...) are renamed in a
     /// comment only between backticks or after a dot, since the plain words have other meanings.</summary>
     private static readonly Regex RenamedCommentWord = new(
         pattern: @"(?<![\w$])(?<name>[a-z][a-z0-9_]*)(?![\w])", options: RegexOptions.Compiled);
 
     /// <summary><c>--step names</c>: the math and operator routines are renamed where they are called, declared
     /// and quoted in comments, and in the <c>@rf("Type.name")</c> bindings of a Suflae library.</summary>
+    /// <summary>Old names a comment keeps as plain words: English words and C function names.</summary>
+    private static readonly HashSet<string> PlainWordKept = new(collection:
+    [
+        "fma", "fma_unchecked", "fmod", "remainder", "fmax", "fmin", "frac", "total_order", "signbit"
+    ], comparer: StringComparer.Ordinal);
+
     private static string RewriteRoutineNames(string file, string source, Language language, int lineOffset)
     {
         string[] lines = source.Split(separator: '\n');
@@ -274,7 +287,7 @@ internal partial class Program
                 return m.Value;
             }
 
-            bool plainWordIsAmbiguous = name is "shl" or "shr";
+            bool plainWordIsAmbiguous = name is "shl" or "shr" || PlainWordKept.Contains(item: name);
             return !plainWordIsAmbiguous || quoted || member ? now : m.Value;
         });
     }
