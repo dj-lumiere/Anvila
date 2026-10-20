@@ -1377,30 +1377,21 @@ internal sealed class TesseraRoutineWriter
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
         Emit(line: $"{slot}.{tagField}.poke({tag})");
-        if (tagged.Payload is { ResolvedType: CrashableTypeSymbol crashable } error && HoldsErrorObject(carrier: carrier))
+        if (tagged.Payload is { ResolvedType: CrashableTypeSymbol crashable } error && IsRecoveryCarrier(carrier: carrier))
         {
-            // A thrown crashable moves into a heap object of its own, and the error arm holds its address (the
-            // `Crashables`), whatever the crashable's size.
+            // A thrown crashable goes into the carrier's Crashables: its type id, the number of the failure (where it
+            // was thrown, which the thread notes), and the crashable itself in the room every crashable fits in.
             string value = Value(operand: Evaluate(expression: error));
-            string allocate = _module.RuntimeRoutine(symbol: "rf_allocate_dynamic", parameters: "size: U64",
-                returnType: "Addr");
-            string objectRecord = _module.CrashObjectRecord(crashable: crashable);
-            string size = $"t{_temps++}";
-            Emit(line: $"{size}: U64 = sizeof[{objectRecord}]().to[U64]()");
-            string errorObject = $"t{_temps++}";
-            Emit(line: $"{errorObject}: Addr = {allocate}({size})");
-            string typeId = $"t{_temps++}";
-            Emit(line: $"{typeId}: U64 = 0x{TypeIdHelper.ComputeTypeId(fullName: crashable.FullName):X}");
-            Emit(line: $"{errorObject}.to[@{objectRecord}]().type_id.poke({typeId})");
-            // The trace's top frame moves to the throw, so the copy the error keeps points at it.
+            string crashables = $"{slot}.{payloadField}.to[@{TypeText(type: _module.CrashablesType)}]()";
+            Emit(line: $"{crashables}.type_id.poke(0x{TypeIdHelper.ComputeTypeId(fullName: crashable.FullName):X})");
+            // The trace's top frame moves to the throw, so the failure noted points at it.
             if (_traced && tagged.Location is { } at && (at.Line > 0 || at.Column > 0))
             {
                 Emit(line: $"{TesseraTrace.UpdateLocation}(line: {at.Line}, column: {at.Column})");
             }
 
-            Emit(line: $"{TesseraTrace.Snapshot}({errorObject}.to[@{objectRecord}]().trace)");
-            Emit(line: $"{errorObject}.to[@{objectRecord}]().error.poke({value})");
-            Emit(line: $"{slot}.{payloadField}.to[@Addr]().poke({errorObject})");
+            Emit(line: $"{crashables}.failure.poke({TesseraTrace.FailureNote}())");
+            Emit(line: $"{crashables}.data.to[@{TypeText(type: crashable)}]().poke({value})");
         }
         else if (tagged.Payload is { } payload)
         {
@@ -1413,10 +1404,10 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>
-    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot
-    /// holds the address of the caught crashable's object rather than the crashable itself.
+    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot holds
+    /// a <c>Crashables</c>: the caught crashable's type id, its failure number, and the crashable itself.
     /// </summary>
-    private static bool HoldsErrorObject(TypeSymbol? carrier)
+    private static bool IsRecoveryCarrier(TypeSymbol? carrier)
     {
         return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result };
     }
@@ -1434,13 +1425,12 @@ internal sealed class TesseraRoutineWriter
 
         TypeSymbol valueType = payload.ResolvedType ?? payload.ConcreteType.ResolvedType ??
                                throw Unsupported(what: "a payload read of an unresolved type");
-        if (valueType is CrashableTypeSymbol && HoldsErrorObject(carrier: carrier.Type))
+        if (valueType is CrashableTypeSymbol && IsRecoveryCarrier(carrier: carrier.Type))
         {
-            // The error slot holds the address of the object the caught crashable lives in.
-            string errorObject = $"t{_temps++}";
-            Emit(line: $"{errorObject}: Addr = {Place(operand: carrier)}.{payloadField}.to[@Addr]().peek()");
-            string objectRecord = _module.CrashObjectRecord(crashable: (CrashableTypeSymbol)valueType);
-            return new Operand(Text: $"{errorObject}.to[@{objectRecord}]().error", Type: valueType, IsPlace: true);
+            // The error slot holds a Crashables, and the crashable sits in its room.
+            return new Operand(
+                Text: $"{Place(operand: carrier)}.{payloadField}.to[@{TypeText(type: _module.CrashablesType)}]().data.to[@{TypeText(type: valueType)}]()",
+                Type: valueType, IsPlace: true);
         }
 
         return new Operand(Text: $"{Place(operand: carrier)}.{payloadField}.to[@{TypeText(type: valueType)}]()",
@@ -1450,29 +1440,29 @@ internal sealed class TesseraRoutineWriter
     /// <summary>
     /// A Crashable member (<c>represent</c>, <c>diagnose</c>, …) called on the error a Check/Lookup carrier holds:
     /// a call to the module's dispatch routine for that member (<c>TesseraWriter.CrashableDispatch</c>) with the
-    /// carrier's type id and the error's entity address, which an error keeps in the payload's first bytes.
+    /// error's type id and the address of the crashable in its <c>Crashables</c>.
     /// </summary>
     private Operand EvaluateCrashableDispatch(CrashableDispatchExpression dispatch)
     {
-        // The receiver is a `Crashables`: the address of the error's heap object, whose first field is the type id.
         Operand crashables = Evaluate(expression: dispatch.Carrier);
-        if (crashables.Type is not RecordTypeSymbol { MemberVariables.Count: 1 } record)
+        if (crashables.Type is not RecordTypeSymbol { Name: Declaration.RuntimeContract.Crashables })
         {
             throw Unsupported(what: $"a crashable dispatch on {crashables.Type?.FullName ?? "an untyped value"}");
         }
 
-        string address = $"t{_temps++}";
-        Emit(line: $"{address}: Addr = {Place(operand: crashables)}.{record.MemberVariables[index: 0].Name}.to[@Addr]().peek()");
+        string place = Place(operand: crashables);
         TypeSymbol typeIdType = _module.U64Type;
-        string typeId = Temp(type: typeIdType, expression: $"{address}.to[@U64]().peek()");
+        string typeId = Temp(type: typeIdType, expression: $"{place}.type_id.peek()");
         if (dispatch.MemberName == Declaration.RuntimeContract.CrashTypeId)
         {
             return new Operand(Text: typeId, Type: typeIdType, IsPlace: false);
         }
 
+        string address = $"t{_temps++}";
+        Emit(line: $"{address}: Addr = {place}.data.to[Addr]()");
         if (dispatch.MemberName == Declaration.RuntimeContract.Destroy)
         {
-            Emit(line: $"{_module.CrashObjectDestroy(typeIdType: typeIdType)}({typeId}, {address})");
+            Emit(line: $"{_module.CrashableDestroy(typeIdType: typeIdType)}({typeId}, {address})");
             return new Operand(Text: string.Empty, Type: null, IsPlace: false);
         }
 

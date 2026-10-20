@@ -185,11 +185,18 @@ public sealed partial class SemanticVerifier
         //    non-pessimistic) — otherwise the both-shape yields lookup and no check exists.
         bool check = recovery.Kind == RecoveryKind.Check;
         string baseName = $"__recover_{_recoveryCompositionSeq++}";
+        // In a generic routine the captured values and the result may name its type parameters (`T` of
+        // `List[Agent[T]].gather_all`): the base is generic over the ones they name, and the call passes them, so each
+        // instance of the enclosing routine reaches its own instance of the base (and of its variant).
+        List<string> typeParameters = RecoveryTypeParameters(types: freeParams.Select(selector: p => p.Type)
+                                                                              .Append(element: innerType));
         var baseRoutine = new RoutineInfo(name: baseName)
         {
             Kind = RoutineKind.FreeRoutine,
             Parameters = freeParams,
             ReturnType = innerType,
+            GenericParameters = typeParameters.Count > 0 ? typeParameters : null,
+            GenericConstraints = typeParameters.Count > 0 ? RecoveryConstraints(names: typeParameters) : null,
             IsFailable = true,
             IsSynthesized = true,
             HasThrow = check,
@@ -258,10 +265,68 @@ public sealed partial class SemanticVerifier
             ResolvedRoutine = variant,
             ResolvedType = variant.ReturnType,
             LoweringKind = ClassifyStandaloneRoutineCall(routine: variant),
-            IsPreAnalyzed = true
+            IsPreAnalyzed = true,
+            // The enclosing routine's own type parameters, which its instances replace with their types.
+            TypeArguments = typeParameters.Count > 0
+                ? typeParameters.Select(selector: n => new TypeExpression(Name: n, GenericArguments: null,
+                                         Location: recovery.Location))
+                                .ToList()
+                : null
         };
         recovery.LoweredCall = loweredCall;
         return variant.ReturnType ?? ErrorTypeSymbol.Instance;
+    }
+
+    /// <summary>
+    /// The type parameters (of the routine being analyzed, or of its owner type) that <paramref name="types"/> name, in
+    /// the order they are first met: what a composition base in a generic routine is generic over.
+    /// </summary>
+    private static List<string> RecoveryTypeParameters(IEnumerable<TypeSymbol> types)
+    {
+        var names = new List<string>();
+
+        void Visit(TypeSymbol type)
+        {
+            if (type is GenericParameterTypeSymbol parameter)
+            {
+                if (!names.Contains(item: parameter.Name))
+                {
+                    names.Add(item: parameter.Name);
+                }
+
+                return;
+            }
+
+            foreach (TypeSymbol argument in type.TypeArguments ?? [])
+            {
+                Visit(type: argument);
+            }
+        }
+
+        foreach (TypeSymbol type in types)
+        {
+            Visit(type: type);
+        }
+
+        return names;
+    }
+
+    /// <summary>The constraints of the routine being analyzed (and of its owner type) on <paramref name="names"/>: the
+    /// composition base calls what the routine's body calls on them.</summary>
+    private List<GenericConstraintDeclaration>? RecoveryConstraints(List<string> names)
+    {
+        IEnumerable<GenericConstraintDeclaration> own = _currentRoutine?.GenericConstraints ?? [];
+        TypeSymbol? ownerType = _currentRoutine?.OwnerType;
+        IEnumerable<GenericConstraintDeclaration> owner = ownerType switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } def } => def.GenericConstraints ?? [],
+            EntityTypeSymbol { GenericDefinition: { } def } => def.GenericConstraints ?? [],
+            _ => ownerType?.GenericConstraints ?? []
+        };
+        List<GenericConstraintDeclaration> kept = own.Concat(second: owner)
+                                                     .Where(predicate: c => names.Contains(item: c.ParameterName))
+                                                     .ToList();
+        return kept.Count > 0 ? kept : null;
     }
 
     /// <summary>

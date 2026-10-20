@@ -478,53 +478,35 @@ internal sealed class TesseraWriter
                 message: $"The Tessera backend dispatches a caught error's members only on crashables, not on {routine.OwnerType?.FullName}.");
         }
 
-        string error = $"error.to[@{CrashObjectRecord(crashable: crashable)}]().error";
+        string error = $"error.to[@{TypeText(type: crashable)}]()";
         return Declaration.ReceiverFacts.MeByReference(ownerType: crashable)
             ? error
             : $"{error}.peek()";
     }
 
-    private readonly Dictionary<string, string> _crashObjectRecords = new(comparer: StringComparer.Ordinal);
+    /// <summary>System's <c>Crashables</c>, which a carrier's error slot holds.</summary>
+    public TypeSymbol CrashablesType => _input.Registry.LookupType(name: Declaration.RuntimeContract.Crashables) ??
+                                        throw new NotSupportedException(message: "System.Crashables is not registered.");
+
+    private string? _crashableDestroy;
 
     /// <summary>
-    /// The record a caught crashable lives in on the heap: its type id, so the object says what it holds, the trace
-    /// it was first thrown with (System's Crashables reads it after the first word), then the crashable. A carrier's
-    /// error slot holds the address of one. Declared on first use.
+    /// The routine that gives back what a caught crashable holds: given its type id and its address in its
+    /// <c>Crashables</c>, it calls that crashable's <c>destruct</c> (a crashable whose type has none live has nothing to
+    /// give back in its fields). Written once.
     /// </summary>
-    public string CrashObjectRecord(CrashableTypeSymbol crashable)
+    public string CrashableDestroy(TypeSymbol typeIdType)
     {
-        if (_crashObjectRecords.TryGetValue(key: crashable.FullName, value: out string? existing))
+        if (_crashableDestroy != null)
         {
-            return existing;
-        }
-
-        string name = VerbatimName(text: $"crash object {crashable.FullName}");
-        _crashObjectRecords[key: crashable.FullName] = name;
-        _records.Append(value: $"{Private}record {name}\n    type_id: U64\n    trace: {TesseraTrace.SnapshotRecord}\n" +
-                               $"    error: {TypeText(type: crashable)}\n\n");
-        return name;
-    }
-
-    private string? _crashObjectDestroy;
-
-    /// <summary>
-    /// The routine that frees a caught crashable: given the carrier's type id and the address of the object the
-    /// error lives in, it calls that crashable's <c>destruct</c> (a crashable whose type has none live has nothing
-    /// to free in its fields), then frees the object. Written once.
-    /// </summary>
-    public string CrashObjectDestroy(TypeSymbol typeIdType)
-    {
-        if (_crashObjectDestroy != null)
-        {
-            return _crashObjectDestroy;
+            return _crashableDestroy;
         }
 
         _liveKeySet ??= new HashSet<string>(collection: LiveKeys, comparer: StringComparer.Ordinal);
         List<(ulong TypeId, RoutineInfo Member)> arms = Collection.CrashableDispatchArms.For(
             memberName: Declaration.RuntimeContract.Destroy, registry: _input.Registry, liveRoutineKeys: _liveKeySet);
-        string free = RuntimeRoutine(symbol: "rf_invalidate", parameters: "ptr: Addr", returnType: "Void");
-        string name = VerbatimName(text: $"crash object destroy {ArmsTag(arms: arms)}");
-        _crashObjectDestroy = name;
+        string name = VerbatimName(text: $"crashable destroy {ArmsTag(arms: arms)}");
+        _crashableDestroy = name;
         string idType = TypeText(type: typeIdType);
         var text = new StringBuilder();
         text.Append(value: $"{Private}routine {name}(type_id: {idType}, error: Addr) -> Void\n");
@@ -534,11 +516,10 @@ internal sealed class TesseraWriter
             text.Append(value: $"    is_{i}: Bool = ieq[{idType}](type_id, 0x{id:X})\n")
                 .Append(value: $"    if is_{i}\n")
                 .Append(value: $"        {RoutineName(routine: routine)}({CrashObjectReceiver(routine: routine)})\n")
-                .Append(value: $"        {free}(error)\n")
                 .Append(value: "        return\n");
         }
 
-        text.Append(value: $"    {free}(error)\n    return\n\n");
+        text.Append(value: "    return\n\n");
         _definitions.Append(value: text);
         return name;
     }

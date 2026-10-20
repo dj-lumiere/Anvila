@@ -131,7 +131,7 @@ internal sealed class CrashLoweringPass : AstRewriter
             Location: location) { ResolvedRoutine = _crashReportRethrown };
     }
 
-    /// <summary>A member of a caught error (a <c>Crashables</c>), called through its mold.</summary>
+    /// <summary>A member of a caught error (a <c>Crashables</c>), dispatched on its type id.</summary>
     private CrashableDispatchExpression CaughtError(Expression error, string member)
     {
         return new CrashableDispatchExpression(Carrier: error, MemberName: member, Location: error.Location)

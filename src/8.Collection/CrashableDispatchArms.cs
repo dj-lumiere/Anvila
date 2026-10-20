@@ -33,4 +33,22 @@ internal static class CrashableDispatchArms
 
         return arms;
     }
+
+    /// <summary>The arms for every crashable of the registry with <paramref name="memberName"/>: a build that keeps the
+    /// whole standard library (a resident base), where no live set prunes it.</summary>
+    public static List<(ulong TypeId, RoutineInfo Member)> All(string memberName, TypeRegistry registry)
+    {
+        var arms = new List<(ulong TypeId, RoutineInfo Member)>();
+        foreach (TypeSymbol type in registry.GetTypesByCategory(category: TypeCategory.Crashable))
+        {
+            if (type is CrashableTypeSymbol crashable &&
+                registry.LookupMemberRoutine(type: crashable, memberRoutineName: memberName, isFailable: false) is
+                    { IsGenericDefinition: false } member)
+            {
+                arms.Add(item: (TypeIdHelper.ComputeTypeId(fullName: crashable.FullName), member));
+            }
+        }
+
+        return arms;
+    }
 }

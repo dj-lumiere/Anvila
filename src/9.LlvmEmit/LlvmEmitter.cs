@@ -949,6 +949,9 @@ public partial class LlvmEmitter
             output.Append(value: _functionDefinitions);
         }
 
+        // The dispatch on caught errors, one function per member a caught error is asked for.
+        output.Append(value: _crashableDispatchDefinitions);
+
         AppendRecoverEntryTable(output: output);
 
         AppendMainEntryPoint(output: output);
@@ -1141,19 +1144,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "  ret ptr @_rf_trace_stack");
         output.AppendLine(value: "}");
         output.AppendLine();
-        // snapshot helper — copies the 32 frames and the depth into a caught error's object (CrashTraceType), so a
-        // report of the error thrown again shows the trace it was first thrown with
-        output.AppendLine(value: $"define private void @_rf_trace_snapshot(ptr %into) {CpuAttributes} {{");
-        output.AppendLine(value: EntryLabel);
-        output.AppendLine(value: $"  %frames = load {TraceRingType}, ptr @_rf_trace_stack");
-        output.AppendLine(value: $"  %framesPtr = getelementptr {CrashTraceType}, ptr %into, i32 0, i32 0");
-        output.AppendLine(value: $"  store {TraceRingType} %frames, ptr %framesPtr");
-        output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
-        output.AppendLine(value: $"  %depthPtr = getelementptr {CrashTraceType}, ptr %into, i32 0, i32 1");
-        output.AppendLine(value: "  store i32 %d, ptr %depthPtr");
-        output.AppendLine(value: RetVoidInstruction);
-        output.AppendLine(value: "}");
-        output.AppendLine();
+        AppendFailureRing(output: output);
 
         // Exported entry points for the modules that do not own the stack (see AppendShadowStackForwarders).
         foreach ((string name, string returns, string parameters, string arguments) in ShadowStackHelpers)
@@ -1174,15 +1165,80 @@ public partial class LlvmEmitter
         ("_rf_trace_update_loc", "void", "i32 %ln, i32 %col", "i32 %ln, i32 %col"),
         ("_rf_trace_get_depth", "i32", "", ""),
         ("_rf_trace_get_frames", "ptr", "", ""),
-        ("_rf_trace_snapshot", "void", "ptr %into", "ptr %into")
+        ("_rf_failure_note", "i64", "", ""),
+        ("_rf_failure_get_frames", "ptr", "i64 %seq", "i64 %seq"),
+        ("_rf_failure_get_depth", "i32", "i64 %seq", "i64 %seq")
     ];
 
     /// <summary>The trace ring: 32 frames of (routine name, file, line, column).</summary>
     private const string TraceRingType = "[32 x { ptr, ptr, i32, i32 }]";
 
-    /// <summary>A copy of the trace in a caught error's object: the 32 frames, then the depth (System's
-    /// <c>Crashables.thrown_trace_frames</c> / <c>thrown_trace_depth</c> read it).</summary>
-    private const string CrashTraceType = "{ " + TraceRingType + ", i32 }";
+    /// <summary>One failure the thread remembers: its number, the depth of the trace when it was thrown, and the trace's
+    /// 32 frames (System's <c>Crashables.thrown_trace_frames</c> / <c>thrown_trace_depth</c> read it).</summary>
+    private const string FailureEntryType = "{ i64, i32, " + TraceRingType + " }";
+
+    /// <summary>How many failures the program remembers where they were thrown: the most recent ones, from any thread
+    /// (a failure an Agent threw is reported where it is retrieved, on another thread).</summary>
+    private const int FailureRingSize = 64;
+
+    /// <summary>
+    /// The ring of recent failures, one for the program: when a crashable lands in a carrier, <c>_rf_failure_note</c>
+    /// copies the thread's trace into the entry its new number picks (unique, never 0) and gives the number, which the
+    /// carrier's <c>Crashables</c> keeps. A report of the error thrown again (on any thread) finds the trace by the
+    /// number, or reports none when later failures took its place. Nothing is allocated.
+    /// </summary>
+    private void AppendFailureRing(StringBuilder output)
+    {
+        output.AppendLine(handler: $"@_rf_failure_ring = global [{FailureRingSize} x {FailureEntryType}] zeroinitializer");
+        output.AppendLine(value: "@_rf_failure_count = global i64 0");
+        output.AppendLine();
+        output.AppendLine(value: $"define private i64 @_rf_failure_note() {CpuAttributes} {{");
+        output.AppendLine(value: EntryLabel);
+        output.AppendLine(value: "  %prev = atomicrmw add ptr @_rf_failure_count, i64 1 monotonic");
+        output.AppendLine(value: "  %seq = add i64 %prev, 1");
+        output.AppendLine(handler: $"  %slot = and i64 %prev, {FailureRingSize - 1}");
+        output.AppendLine(handler: $"  %slotPtr = getelementptr inbounds [{FailureRingSize} x {FailureEntryType}], ptr @_rf_failure_ring, i64 0, i64 %slot");
+        output.AppendLine(handler: $"  %seqPtr = getelementptr inbounds {FailureEntryType}, ptr %slotPtr, i32 0, i32 0");
+        output.AppendLine(value: "  store atomic i64 0, ptr %seqPtr release, align 8");
+        output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
+        output.AppendLine(handler: $"  %depthPtr = getelementptr inbounds {FailureEntryType}, ptr %slotPtr, i32 0, i32 1");
+        output.AppendLine(value: "  store i32 %d, ptr %depthPtr");
+        output.AppendLine(handler: $"  %frames = load {TraceRingType}, ptr @_rf_trace_stack");
+        output.AppendLine(handler: $"  %framesPtr = getelementptr inbounds {FailureEntryType}, ptr %slotPtr, i32 0, i32 2");
+        output.AppendLine(handler: $"  store {TraceRingType} %frames, ptr %framesPtr");
+        output.AppendLine(value: "  store atomic i64 %seq, ptr %seqPtr release, align 8");
+        output.AppendLine(value: "  ret i64 %seq");
+        output.AppendLine(value: "}");
+        output.AppendLine();
+        foreach ((string name, int field, string returns, string missing) in new[]
+                 {
+                     ("_rf_failure_get_frames", 2, "ptr", "null"), ("_rf_failure_get_depth", 1, "i32", "0")
+                 })
+        {
+            output.AppendLine(value: $"define private {returns} @{name}(i64 %seq) {CpuAttributes} {{");
+            output.AppendLine(value: EntryLabel);
+            output.AppendLine(value: "  %none = icmp eq i64 %seq, 0");
+            output.AppendLine(value: "  br i1 %none, label %missing, label %look");
+            output.AppendLine(value: "look:");
+            output.AppendLine(value: "  %i = phi i64 [ 0, %entry ], [ %i1, %next ]");
+            output.AppendLine(handler: $"  %at = getelementptr inbounds [{FailureRingSize} x {FailureEntryType}], ptr @_rf_failure_ring, i64 0, i64 %i");
+            output.AppendLine(handler: $"  %seqPtr = getelementptr inbounds {FailureEntryType}, ptr %at, i32 0, i32 0");
+            output.AppendLine(value: "  %held = load atomic i64, ptr %seqPtr acquire, align 8");
+            output.AppendLine(value: "  %found = icmp eq i64 %held, %seq");
+            output.AppendLine(value: "  br i1 %found, label %hit, label %next");
+            output.AppendLine(value: "next:");
+            output.AppendLine(value: "  %i1 = add i64 %i, 1");
+            output.AppendLine(handler: $"  %more = icmp ult i64 %i1, {FailureRingSize}");
+            output.AppendLine(value: "  br i1 %more, label %look, label %missing");
+            output.AppendLine(value: "hit:");
+            output.AppendLine(handler: $"  %fieldPtr = getelementptr inbounds {FailureEntryType}, ptr %at, i32 0, i32 {field}");
+            output.AppendLine(value: returns == "ptr" ? "  ret ptr %fieldPtr" : "  %v = load i32, ptr %fieldPtr\n  ret i32 %v");
+            output.AppendLine(value: "missing:");
+            output.AppendLine(value: $"  ret {returns} {missing}");
+            output.AppendLine(value: "}");
+            output.AppendLine();
+        }
+    }
 
     /// <summary>The body of a helper that forwards to <paramref name="callee"/>: the call, then its value.</summary>
     private static string ForwardingCall(string returns, string callee, string arguments)

@@ -135,12 +135,11 @@ public partial class LlvmEmitter
                                          message: $"The payload of a tagged creator at {tagged.Location} has no type.");
             string payloadPtr = NextTemp();
             EmitLine(sb: sb, line: $"  {payloadPtr} = getelementptr {llvmType}, ptr {slot}, i32 0, i32 1");
-            if (payloadType is CrashableTypeSymbol crashable && HoldsErrorObject(carrier: type))
+            if (payloadType is CrashableTypeSymbol crashable && IsRecoveryCarrier(carrier: type))
             {
-                // The trace's top frame moves to the throw, so the copy the error keeps points at it.
+                // The trace's top frame moves to the throw, so the failure noted points at it.
                 EmitTraceLocUpdate(sb: sb, location: tagged.Location);
-                EmitLine(sb: sb,
-                    line: $"  store ptr {EmitCrashObject(sb: sb, crashable: crashable, value: value)}, ptr {payloadPtr}");
+                EmitCrashablesInto(sb: sb, crashable: crashable, value: value, at: payloadPtr);
             }
             else
             {
@@ -154,97 +153,130 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot
-    /// holds the address of the caught crashable's object rather than the crashable itself.
+    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot holds a
+    /// <c>Crashables</c>: the caught crashable's type id, its failure number, and the crashable itself.
     /// </summary>
-    private static bool HoldsErrorObject(TypeSymbol carrier)
+    private static bool IsRecoveryCarrier(TypeSymbol carrier)
     {
         return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result };
     }
 
-    /// <summary>
-    /// Moves a caught crashable into the heap object a carrier's error slot holds: <c>{ mold, trace, crashable }</c>,
-    /// the mold naming the crashable's routines (<see cref="EnsureCrashMold"/>) so a call on the error needs no
-    /// knowledge of its type, and the trace a copy of the calling thread's crash trace, taken here where the error is
-    /// first thrown. Returns the object's address.
-    /// </summary>
-    private string EmitCrashObject(StringBuilder sb, CrashableTypeSymbol crashable, string value)
+    /// <summary>The LLVM type of System's <c>Crashables</c>: <c>{ type id, failure number, [8 x i64] room }</c>.</summary>
+    private string CrashablesLlvmType()
     {
-        string typeName = EnsureRecordTypeDeclared(record: crashable);
-        string objectType = CrashObjectType(crashableType: typeName);
-        string sizePtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {sizePtr} = getelementptr {objectType}, ptr null, i32 1");
-        string size = NextTemp();
-        EmitLine(sb: sb, line: $"  {size} = ptrtoint ptr {sizePtr} to i64");
-        string objectPtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {objectPtr} = call ptr @rf_allocate_dynamic(i64 {size})");
-        EmitLine(sb: sb, line: $"  store ptr {EnsureCrashMold(crashable: crashable)}, ptr {objectPtr}");
-        string tracePtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {tracePtr} = getelementptr {objectType}, ptr {objectPtr}, i32 0, i32 1");
-        EmitLine(sb: sb, line: $"  call void @_rf_trace_snapshot(ptr {tracePtr})");
-        string errorPtr = NextTemp();
-        EmitLine(sb: sb,
-            line: $"  {errorPtr} = getelementptr {objectType}, ptr {objectPtr}, i32 0, i32 {CrashObjectErrorField}");
-        EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {errorPtr}");
-        return objectPtr;
+        return EnsureRecordTypeDeclared(record: _registry.LookupType(name: Declaration.RuntimeContract.Crashables) as
+                                            RecordTypeSymbol ??
+                                        throw new InvalidOperationException(
+                                            message: "System.Crashables is not registered."));
     }
 
-    /// <summary>The heap object a caught crashable lives in: its mold's address, the trace it was first thrown with,
-    /// then the crashable.</summary>
-    private static string CrashObjectType(string crashableType)
-    {
-        return $"{{ ptr, {CrashTraceType}, {crashableType} }}";
-    }
-
-    /// <summary>The field of <see cref="CrashObjectType"/> holding the crashable.</summary>
-    private const int CrashObjectErrorField = 2;
+    /// <summary>The field of <see cref="CrashablesLlvmType"/> holding the crashable.</summary>
+    private const int CrashablesRoomField = 2;
 
     /// <summary>
-    /// A mold: <c>{ type id, the crashable's offset in its object, then one routine per <c>CrashMoldMembers</c> }</c>.
+    /// Writes a caught crashable into the <c>Crashables</c> at <paramref name="at"/>: its type id, the number of the
+    /// failure (the thread notes where it was thrown in its ring of recent failures), and the crashable itself in the
+    /// room every crashable fits in (RF-S711). Nothing is allocated, and nothing about it is looked up at run time.
     /// </summary>
-    private static readonly string CrashMoldType =
-        "{ i64, i64" + string.Concat(Enumerable.Repeat(element: ", ptr",
-            count: Declaration.RuntimeContract.CrashMoldMembers.Length)) + " }";
-
-    /// <summary>The field of <see cref="CrashMoldType"/> holding the first routine.</summary>
-    private const int CrashMoldFirstMember = 2;
-
-    private readonly HashSet<string> _crashMolds = new(comparer: StringComparer.Ordinal);
-
-    /// <summary>
-    /// The mold of <paramref name="crashable"/>, a constant written once: its type id, where the crashable sits in
-    /// its heap object, and the routines a call on a caught error of unknown type reaches (crash_title,
-    /// crash_message, represent, diagnose, destroy). The demand collector makes them live for every crashable a
-    /// carrier can catch.
-    /// </summary>
-    private string EnsureCrashMold(CrashableTypeSymbol crashable)
+    private void EmitCrashablesInto(StringBuilder sb, CrashableTypeSymbol crashable, string value, string at)
     {
-        string name = $"@{Q(name: $"crash.mold.{RealmMangleBase(t: crashable)}")}";
-        if (!_crashMolds.Add(item: name))
-        {
-            return name;
-        }
-
+        string crashables = CrashablesLlvmType();
         string typeName = EnsureRecordTypeDeclared(record: crashable);
         long typeId = unchecked((long)TypeIdHelper.ComputeTypeId(fullName: crashable.FullName));
-        var fields = new List<string>
+        string idPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {idPtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 0");
+        EmitLine(sb: sb, line: $"  store i64 {typeId}, ptr {idPtr}");
+        string seq = NextTemp();
+        EmitLine(sb: sb, line: $"  {seq} = call i64 @_rf_failure_note()");
+        string seqPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {seqPtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 1");
+        EmitLine(sb: sb, line: $"  store i64 {seq}, ptr {seqPtr}");
+        string roomPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {roomPtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 {CrashablesRoomField}");
+        EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {roomPtr}, align 8");
+    }
+
+    private readonly Dictionary<string, (string Name, string Returns)> _crashableDispatches =
+        new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The function that calls <paramref name="member"/> on a caught crashable of any type the program throws: given the
+    /// crashable's address in its <c>Crashables</c> and its type id, it switches on the id over the live crashables
+    /// (<see cref="Collection.CrashableDispatchArms"/>, every crashable a carrier can hold) and calls that crashable's
+    /// own member. Written once per member, at the end of the module's functions.
+    /// </summary>
+    private (string Name, string Returns) EnsureCrashableDispatch(string member)
+    {
+        if (_crashableDispatches.TryGetValue(key: member, value: out (string, string) known))
         {
-            $"i64 {typeId}",
-            $"i64 ptrtoint (ptr getelementptr ({CrashObjectType(crashableType: typeName)}, ptr null, i32 0, i32 {CrashObjectErrorField}) to i64)"
-        };
-        foreach (string member in Declaration.RuntimeContract.CrashMoldMembers)
-        {
-            RoutineInfo routine = _registry.LookupMemberRoutine(type: crashable, memberRoutineName: member) ??
-                                  throw new InvalidOperationException(
-                                      message: $"The crashable '{crashable.FullName}' has no '{member}' for its mold.");
-            GenerateRoutineDeclaration(routine: routine);
-            fields.Add(item: $"ptr @{MangleRoutineName(routine: routine)}");
+            return known;
         }
 
-        EmitLine(sb: _globalDeclarations,
-            line: $"{name} = internal constant {CrashMoldType} {{ {string.Join(separator: ", ", values: fields)} }}");
-        return name;
+        List<(ulong TypeId, RoutineInfo Member)> arms = _liveRoutineKeys.Count > 0
+            ? Collection.CrashableDispatchArms.For(memberName: member, registry: _registry,
+                liveRoutineKeys: _liveRoutineKeys)
+            : Collection.CrashableDispatchArms.All(memberName: member, registry: _registry);
+        bool destroys = member == Declaration.RuntimeContract.Destroy;
+        string returns = "void";
+        if (!destroys)
+        {
+            TypeSymbol text = _registry.LookupType(name: "Text") ??
+                              throw new InvalidOperationException(message: "System.Text is not registered.");
+            returns = GetLlvmType(type: text);
+        }
+
+        string name = $"@{Q(name: $"crashable.dispatch.{member}")}";
+        _crashableDispatches[key: member] = (name, returns);
+        var f = new StringBuilder();
+        f.AppendLine(handler: $"define internal {returns} {name}(ptr %error, i64 %type_id) {CpuAttributes} {{");
+        f.AppendLine(value: "entry:");
+        string? slot = null;
+        if (!destroys)
+        {
+            slot = "%result";
+            f.AppendLine(handler: $"  {slot} = alloca {returns}");
+        }
+
+        var cases = new StringBuilder();
+        for (int i = 0; i < arms.Count; i++)
+        {
+            cases.Append(handler: $" i64 {unchecked((long)arms[index: i].TypeId)}, label %arm{i}");
+        }
+
+        f.AppendLine(handler: $"  switch i64 %type_id, label %none [{cases} ]");
+        for (int i = 0; i < arms.Count; i++)
+        {
+            RoutineInfo routine = arms[index: i].Member;
+            GenerateRoutineDeclaration(routine: routine);
+            string callee = $"@{MangleRoutineName(routine: routine)}";
+            f.AppendLine(handler: $"arm{i}:");
+            if (destroys)
+            {
+                f.AppendLine(handler: $"  call void {callee}(ptr %error)");
+                f.AppendLine(value: "  ret void");
+                continue;
+            }
+
+            var shape = new RoutineInfo(name: member) { ReturnType = _registry.LookupType(name: "Text") };
+            EmitCrashableMemberCallIntoSlot(sb: f, routine: shape, callee: callee, entity: "%error", retLlvm: returns,
+                resultSlot: slot!);
+            string loaded = NextTemp();
+            f.AppendLine(handler: $"  {loaded} = load {returns}, ptr {slot}");
+            f.AppendLine(handler: $"  ret {returns} {loaded}");
+        }
+
+        f.AppendLine(value: "none:");
+        // A type id no crashable of the program has: a Crashables that holds nothing (all zero), whose teardown has
+        // nothing to give back, and which nothing else can reach.
+        f.AppendLine(value: destroys ? "  ret void" : "  unreachable");
+        f.AppendLine(value: "}");
+        f.AppendLine();
+        _crashableDispatchDefinitions.Append(value: f);
+        return (name, returns);
     }
+
+    /// <summary>The dispatch functions <see cref="EnsureCrashableDispatch"/> wrote, appended after the routines.</summary>
+    private readonly StringBuilder _crashableDispatchDefinitions = new();
 
     /// <summary>
     /// Generates code to construct an entity with member variable values.

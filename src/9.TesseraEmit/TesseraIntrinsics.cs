@@ -132,6 +132,11 @@ internal sealed class TesseraIntrinsics
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
                 ? $"RF_TRACE_STACK.to[@{pointee}]()"
                 : "RF_TRACE_STACK",
+            // The trace a failure was first thrown with (TesseraTrace's ring of recent failures).
+            "failure_trace_depth" => $"rf_failure_get_depth({Argument(index: 0)})",
+            "failure_trace_frames" => _typeText(arg: _resultType) is ['@', .. var framePointee]
+                ? $"rf_failure_get_frames({Argument(index: 0)}).to[@{framePointee}]()"
+                : $"rf_failure_get_frames({Argument(index: 0)})",
             "element_pointer" => ElementPointer(),
             // A signed byte count: Tessera's Addr moves only by a ByteSize, a pointer by a signed count.
             "byte_offset" => $"{Argument(index: 0)}.to[@Byte]().offset(bytes: {Argument(index: 1)}).to[Addr]()",

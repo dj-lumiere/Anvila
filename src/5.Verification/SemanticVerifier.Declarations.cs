@@ -1236,7 +1236,112 @@ public sealed partial class SemanticVerifier
         {
             ValidateTypeProtocolImplementation(type: type);
             ValidateCrashMessage(type: type);
+            ValidateCrashableSize(type: type);
         }
+    }
+
+    /// <summary>
+    /// A <c>@throws([A, B])</c> on a failable routine fixes what it may throw (an exported routine says so, and what it
+    /// is built from may change): every crashable the builder collected for it (its own throws and those of the
+    /// failable routines it calls) must be in the list (RF-S712). On a routine that isn't failable, or naming
+    /// something that isn't a crashable, it is RF-S713.
+    /// </summary>
+    private void ValidateThrowsLists()
+    {
+        foreach (RoutineInfo routine in _registry.GetAllRoutines())
+        {
+            if (routine.Location is not { FileName.Length: > 0 } at || routine.IsRecoveryVariant ||
+                routine.GenericDefinition is { } instanceOf && !ReferenceEquals(objA: instanceOf, objB: routine) ||
+                routine.Annotations.FirstOrDefault(predicate: a => a.StartsWith(value: "throws(", comparisonType: StringComparison.Ordinal)) is not { } annotation)
+            {
+                continue;
+            }
+
+            if (!routine.IsFailable)
+            {
+                ReportError(code: SemanticDiagnosticCode.ThrowsListMisplaced,
+                    message: $"'{routine.Name}' isn't failable, so it throws nothing for '@throws' to list. Declare it " +
+                             $"'failable routine {routine.Name}', or remove the annotation.",
+                    location: at);
+                continue;
+            }
+
+            string inner = annotation["throws(".Length..^1].Trim();
+            if (!inner.StartsWith(value: '[') || !inner.EndsWith(value: ']'))
+            {
+                ReportError(code: SemanticDiagnosticCode.ThrowsListMisplaced,
+                    message: "'@throws' lists the crashables the routine may throw: '@throws([NotFoundError, ParseError])'.",
+                    location: at);
+                continue;
+            }
+
+            var listed = new List<TypeSymbol>();
+            bool valid = true;
+            foreach (string name in inner[1..^1].Split(separator: ',', options: StringSplitOptions.RemoveEmptyEntries |
+                         StringSplitOptions.TrimEntries))
+            {
+                if ((_registry.LookupType(name: name) ?? _registry.LookupType(name: $"{routine.Module}.{name}")) is
+                    CrashableTypeSymbol crashable)
+                {
+                    listed.Add(item: crashable);
+                    continue;
+                }
+
+                valid = false;
+                ReportError(code: SemanticDiagnosticCode.ThrowsListMisplaced,
+                    message: $"'@throws' lists crashables, and '{name}' isn't one (a crashable is declared 'crashable {name}').",
+                    location: at);
+            }
+
+            if (!valid)
+            {
+                continue;
+            }
+
+            List<string> missing = routine.ThrowableTypes
+                                          .OfType<CrashableTypeSymbol>()
+                                          .Where(predicate: t => !listed.Any(predicate: l => l.FullName == t.FullName))
+                                          .Select(selector: t => t.Name)
+                                          .Distinct()
+                                          .ToList();
+            if (missing.Count == 0)
+            {
+                continue;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.ThrowsListIncomplete,
+                message: $"'{routine.Name}' can throw {string.Join(separator: ", ", values: missing)}, which its '@throws' " +
+                         $"doesn't list. Add {(missing.Count == 1 ? "it" : "them")} to the list, or recover " +
+                         $"{(missing.Count == 1 ? "it" : "them")} inside with 'check'.",
+                location: at);
+        }
+    }
+
+    /// <summary>The bytes a caught error holds its crashable in (<c>Crashables.data</c>): every crashable fits.</summary>
+    internal const int CrashableRoomBytes = 64;
+
+    /// <summary>
+    /// A crashable carries a few values (RF-S711): a caught error holds it in a room of
+    /// <see cref="CrashableRoomBytes"/> bytes, so a <c>Check</c> never takes memory of its own.
+    /// </summary>
+    private void ValidateCrashableSize(TypeSymbol type)
+    {
+        if (type is not CrashableTypeSymbol crashable || crashable.Location is not { FileName.Length: > 0 })
+        {
+            return;
+        }
+
+        int size = crashable.SizeBytes(pointerSize: 8);
+        if (size <= CrashableRoomBytes)
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.CrashableTooLarge,
+            message:
+            $"The crashable '{crashable.Name}' takes {size} bytes, and a failure carries at most {CrashableRoomBytes}: " +
+            "keep a few values in it (numbers, a Text), and leave the rest to where the failure is reported.",
+            location: crashable.Location);
     }
 
     /// <summary>

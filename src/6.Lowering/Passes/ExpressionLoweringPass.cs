@@ -3077,7 +3077,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// <c>x is NopeError</c> on a <c>Check</c>/<c>Lookup</c>: x holds an error (its tag is the <c>Crashables</c> arm's),
-    /// and that error's type id, read from its mold, is <c>NopeError</c>'s. A carrier that is not a plain name is
+    /// and that error's type id, read from its <c>Crashables</c>, is <c>NopeError</c>'s. A carrier that is not a plain name is
     /// read once, into a temp.
     /// </summary>
     private (List<Statement> Hoisted, Expression Expr) CaughtCrashableTest(Expression carrier,

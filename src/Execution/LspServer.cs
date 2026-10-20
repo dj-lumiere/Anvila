@@ -3973,10 +3973,45 @@ public static class LspServer
             });
         }
 
-        foreach (ISyntaxTreeNode node in AllNodes(program: doc.Program))
+        List<ISyntaxTreeNode> nodes = AllNodes(program: doc.Program);
+        // The calls a `try` / `check` takes the failure of: every node under the expression after the keyword.
+        var recovered = new HashSet<ISyntaxTreeNode>(comparer: ReferenceEqualityComparer.Instance);
+        foreach (RecoveryExpression recovery in nodes.OfType<RecoveryExpression>())
+        {
+            var under = new List<ISyntaxTreeNode>();
+            CollectAllNodes(node: recovery.Inner, acc: under,
+                seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
+            recovered.UnionWith(other: under);
+        }
+
+        foreach (ISyntaxTreeNode node in nodes)
         {
             switch (node)
             {
+                // A call of a failable routine that no `try` / `check` takes: a failure there stops the program on
+                // this line, which the hint after the call says.
+                case CallExpression { ResolvedRoutine: { IsFailable: true, IsRecoveryVariant: false } } call
+                    when !recovered.Contains(item: call) && call.Location.Line > 0:
+                {
+                    if (CallEnd(tokens: doc.Tokens, call: call) is { } end)
+                    {
+                        hints.Add(item: new Dictionary<string, object?>
+                        {
+                            [key: "position"] = new Dictionary<string, object?>
+                            {
+                                [key: "line"] = end.Line - 1, [key: PropCharacter] = end.Column
+                            },
+                            [key: PropLabel] = "may stop",
+                            [key: "kind"] = 2,
+                            [key: "paddingLeft"] = true,
+                            [key: "tooltip"] = "A failure of this call stops the program on this line. " +
+                                               "Recover it with try or check in front of the call."
+                        });
+                    }
+
+                    break;
+                }
+
                 // `var x = expr` with no written type → an inferred `: Type` hint after the name. Skip a
                 // failed inference (`<error>`, e.g. reading a dead value) — a bogus hint is worse than none.
                 case VariableDeclaration { Type: null, Initializer: { ResolvedType: { } vt } } vd
@@ -4010,6 +4045,41 @@ public static class LspServer
         }
 
         WriteResult(stdout: stdout, id: id, result: hints);
+    }
+
+    /// <summary>The closing parenthesis of <paramref name="call"/>'s arguments, found from the first <c>(</c> after where
+    /// the call starts, or null when the tokens don't show one.</summary>
+    private static Token? CallEnd(List<Token> tokens, CallExpression call)
+    {
+        int start = tokens.FindIndex(match: t => t.Line > call.Location.Line ||
+                                                 t.Line == call.Location.Line && t.Column >= call.Location.Column);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        int depth = 0;
+        for (int i = start; i < tokens.Count; i++)
+        {
+            switch (tokens[index: i].Type)
+            {
+                case TokenType.LeftParen:
+                    depth++;
+                    break;
+                case TokenType.RightParen:
+                    depth--;
+                    if (depth == 0)
+                    {
+                        return tokens[index: i];
+                    }
+
+                    break;
+                case TokenType.Newline when depth == 0:
+                    return null;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -99,7 +99,7 @@ public partial class Parser
         "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "no_optimize",
         "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking",
         RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rf",
-        "test", "case", "time_limit", "memory_limit", "skip"
+        "test", "case", "time_limit", "memory_limit", "skip", "throws"
     ];
 
     /// <summary>Whether <paramref name="name"/> is an annotation the builder knows. An unknown one is reported and left
@@ -210,6 +210,22 @@ public partial class Parser
 
             Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after the tuple in an annotation argument");
             return "(" + string.Join(separator: ", ", values: items) + ")";
+        }
+
+        // A list of names: `@throws([NotFoundError, ParseError])`, stored as `[NotFoundError, ParseError]`.
+        if (CheckAndAdvance(type: TokenType.LeftBracket))
+        {
+            var names = new List<string>();
+            if (!Check(type: TokenType.RightBracket))
+            {
+                do
+                {
+                    names.Add(item: ParseAnnotationValue());
+                } while (CommaContinuesList(close: TokenType.RightBracket));
+            }
+
+            Consume(type: TokenType.RightBracket, errorMessage: "Expected ']' after the list in an annotation argument");
+            return "[" + string.Join(separator: ", ", values: names) + "]";
         }
 
         // A negative number: `@case(input: (-1, 5))`.

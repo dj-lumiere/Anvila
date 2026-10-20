@@ -528,24 +528,24 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// </summary>
     private bool EnliveThrowCrashMessage(object? node)
     {
-        // A throw a recovery variant turns into its carrier: the heap object the carrier holds points at the error
-        // type's mold, which names these routines.
+        // A throw a recovery variant turns into its carrier: the dispatch on caught errors has an arm for the error's
+        // type, which calls these routines.
         if (node is VariantReturnStatement
             {
                 SiteKind: VariantSiteKind.FromThrow, Value.ResolvedType: CrashableTypeSymbol caught
             } && ctx.LiveRoutineKeys.Count > 0)
         {
-            bool moldChanged = false;
-            foreach (string member in RuntimeContract.CrashMoldMembers)
+            bool dispatchChanged = false;
+            foreach (string member in RuntimeContract.CrashDispatchMembers)
             {
                 if (ctx.Registry.LookupMemberRoutine(type: caught, memberRoutineName: member) is
                     { IsGenericDefinition: false } routine)
                 {
-                    moldChanged |= ctx.LiveRoutineKeys.Add(item: routine.RegistryKey);
+                    dispatchChanged |= ctx.LiveRoutineKeys.Add(item: routine.RegistryKey);
                 }
             }
 
-            return moldChanged;
+            return dispatchChanged;
         }
 
         if (!MayBecomeCrash(node: node) || ctx.LiveRoutineKeys.Count == 0)
@@ -622,16 +622,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         Dictionary<string, TypeSymbol> newOwners, ref bool registeredRoutine)
     {
         bool changed = false;
-        // A carrier built around a caught crashable: its heap object points at the crashable's mold, which names
+        // A carrier built around a caught crashable: the dispatch on caught errors has an arm for it, which calls
         // these routines.
         if (CaughtCrashable(expr: expr) is { } caughtType && ctx.LiveRoutineKeys.Count > 0)
         {
-            foreach (string member in RuntimeContract.CrashMoldMembers)
+            foreach (string member in RuntimeContract.CrashDispatchMembers)
             {
                 if (ctx.Registry.LookupMemberRoutine(type: caughtType, memberRoutineName: member) is
-                    { IsGenericDefinition: false } moldMember)
+                    { IsGenericDefinition: false } dispatchMember)
                 {
-                    changed |= ctx.LiveRoutineKeys.Add(item: moldMember.RegistryKey);
+                    changed |= ctx.LiveRoutineKeys.Add(item: dispatchMember.RegistryKey);
                 }
             }
         }
@@ -1151,10 +1151,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     if (n is VariantReturnStatement { SiteKind: VariantSiteKind.FromThrow, Value: { } caught })
                     {
                         MarkOwner(t: caught.ResolvedType);
-                        // The heap object the carrier holds points at its type's mold, which names these routines.
+                        // The dispatch on caught errors has an arm for its type, which calls these routines.
                         if (caught.ResolvedType is CrashableTypeSymbol crashable)
                         {
-                            foreach (string member in RuntimeContract.CrashMoldMembers)
+                            foreach (string member in RuntimeContract.CrashDispatchMembers)
                             {
                                 Discover(r: _ctx.Registry.LookupMemberRoutine(type: crashable,
                                     memberRoutineName: member));
@@ -1197,15 +1197,27 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 });
             var walkedExpressions = new List<Expression>();
             AstWalker.WalkExpressions(root: body, visit: walkedExpressions.Add);
+            // The name a call is written with is the call's, not a routine value: the call's own (rebound)
+            // routine is the one it reaches. In a generic routine's instance the name may still carry the
+            // template's binding (`twice[T]`'s variant), which is never emitted.
+            var callees = new HashSet<Expression>(comparer: ReferenceEqualityComparer.Instance);
+            foreach (Expression e in walkedExpressions)
+            {
+                if (e is CallExpression { Callee: IdentifierExpression callee })
+                {
+                    callees.Add(item: callee);
+                }
+            }
+
             walkedExpressions.ForEach(
                 action: expr =>
                 {
-                    // A carrier built around a caught crashable: its heap object points at the crashable's mold,
-                    // which names these routines.
+                    // A carrier built around a caught crashable: the dispatch on caught errors has an arm for it,
+                    // which calls these routines.
                     if (CaughtCrashable(expr: expr) is { } caughtType)
                     {
                         MarkOwner(t: caughtType);
-                        foreach (string member in RuntimeContract.CrashMoldMembers)
+                        foreach (string member in RuntimeContract.CrashDispatchMembers)
                         {
                             Discover(r: _ctx.Registry.LookupMemberRoutine(type: caughtType,
                                 memberRoutineName: member));
@@ -1243,7 +1255,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                         // RoutineTypeSymbol (codegen resolves it by name+param-types via TryResolveRoutineReference,
                         // e.g. a routine passed to a C function pointer like `rf_coro_create(entry: coro_body)`).
                         // A routine value also carries its recovering entry (the routine's recovery variant).
-                        case IdentifierExpression { ResolvedRoutine: { } ir } routineValue:
+                        case IdentifierExpression { ResolvedRoutine: { } ir } routineValue
+                            when !callees.Contains(item: routineValue):
                             Discover(r: ir);
                             Discover(r: routineValue.RecoverRoutine);
                             break;

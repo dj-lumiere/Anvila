@@ -142,7 +142,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         new GenericCallLoweringPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies)
            .RunOnVariantBodies();
         // As in Run(): f-strings first, so the represent/diagnose an f-string part renders through on a
-        // Crashables (`f"{e}"`) is there for CrashableExpansionPass to turn into a call through the error's mold.
+        // Crashables (`f"{e}"`) is there for CrashableExpansionPass to turn into a dispatch on the error's type id.
         new FStringLoweringPass(ctx: ctx).RunOnVariantBodies();
         // Expand `is Crashable` clauses (synthesized by non-tail propagation in check/lookup
         // variants) into per-type TypePatterns before PatternLowering can lower them. No-op for

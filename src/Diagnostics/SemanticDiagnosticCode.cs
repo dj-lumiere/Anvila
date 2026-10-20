@@ -943,6 +943,17 @@ public enum SemanticDiagnosticCode
     /// type kind. Declare the type with the <c>crashable</c> keyword instead.</summary>
     CrashableObeyedByNonCrashableKind = 709,
 
+    /// <summary>A crashable takes more than the 64 bytes a caught error holds it in: a failure carries a few values,
+    /// and a <c>Check</c> is as big as the largest one.</summary>
+    CrashableTooLarge = 711,
+
+    /// <summary>A routine's <c>@throws([...])</c> leaves out a crashable the routine can throw.</summary>
+    ThrowsListIncomplete = 712,
+
+    /// <summary><c>@throws([...])</c> on a routine that isn't failable, or a list that names something other than
+    /// crashables.</summary>
+    ThrowsListMisplaced = 713,
+
     /// <summary>An <c>expand</c> template body applies a GATED wired-protocol operation (e.g. <c>eq</c>
     /// via <c>==</c>, <c>compare</c>, <c>hash</c>) to a buildtime member value (<c>me.$nameof(m)</c>) without
     /// the enclosing routine declaring the matching <c>needs P everywhere</c> gate — so nothing

@@ -13,7 +13,7 @@ namespace Builder.Lowering.Passes;
 /// <see cref="PatternLoweringPass"/> turns into the error-arm test and the binding of <c>e</c>;</item>
 /// <item>a call of a <c>Crashables</c> routine the builder supplies (<c>@innate</c>: crash_title, crash_message,
 /// represent, diagnose, crash_type_id, free) becomes a <see cref="CrashableDispatchExpression"/>, which a backend
-/// translates into a call through the mold of the object the error lives in.</item>
+/// translates into a switch on the error's type id over the crashables the program throws.</item>
 /// </list>
 /// </summary>
 internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
@@ -153,7 +153,7 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
 
             return member.Object.ResolvedType?.Name == RuntimeContract.Crashables &&
                    (member.MemberName is RuntimeContract.CrashTypeId or RuntimeContract.CrashFree ||
-                    RuntimeContract.CrashMoldMembers.Contains(value: member.MemberName));
+                    RuntimeContract.CrashDispatchMembers.Contains(value: member.MemberName));
         }
 
         /// <summary>The binding of a carrier's error arm: <c>is Crashables e</c>, an already lowered

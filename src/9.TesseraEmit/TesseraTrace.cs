@@ -20,11 +20,9 @@ internal static class TesseraTrace
     /// <summary>The routine that moves the top frame to another source position.</summary>
     public const string UpdateLocation = "rf_trace_update_loc";
 
-    /// <summary>The routine that copies the trace into a caught error's object.</summary>
-    public const string Snapshot = "rf_trace_snapshot";
-
-    /// <summary>The record that copy is, a field of every caught error's object.</summary>
-    public const string SnapshotRecord = "RfTraceSnapshot";
+    /// <summary>The routine that notes the trace of a new failure in the thread's ring of recent failures and gives its
+    /// number, which a caught error's Crashables keeps.</summary>
+    public const string FailureNote = "rf_failure_note";
 
     /// <summary>The frame stack, the depth, and the routines over them.</summary>
     public const string Support = """
@@ -80,21 +78,59 @@ internal static class TesseraTrace
             frames: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]()
             return frames
 
-        ### A copy of the trace in a caught error's object, laid out as System's Crashables reads it: the 32 frames,
-        ### then the depth.
-        record RfTraceSnapshot
-            frames: Array[RfTraceFrame, 32]
+        ### One failure a thread remembers: its number, the depth of the trace when it was thrown, and the trace.
+        record RfFailure
+            seq: U64
             depth: S32
+            frames: Array[RfTraceFrame, 32]
 
-        ### Copies the trace into a caught error's object where the error is first thrown, so a report of the error
-        ### thrown again shows where it began.
-        routine rf_trace_snapshot(into: @RfTraceSnapshot) -> Void
-            RF_TRACE_DEPTH.peek().poke_into(into.depth)
+        ### The program's most recent failures, a ring of 64: a failure an agent threw is reported where it is retrieved,
+        ### on another thread.
+        global RF_FAILURES: @Array[RfFailure, 64]
+
+        ### The number of the last failure, on every thread.
+        global RF_FAILURE_COUNT: @U64
+
+        ### Notes the running thread's trace as a new failure's, in the entry its number picks, and gives the failure's
+        ### number (never 0), which a caught error keeps so a report of it thrown again shows where it began.
+        routine rf_failure_note() -> U64
+            previous: U64 = RF_FAILURE_COUNT.atomic_fetch_add_relaxed(1)
+            seq: U64 = add[U64](previous, 1)
+            entry: @RfFailure = RF_FAILURES.to[@RfFailure]().stride(band[U64](previous, 63))
+            entry.seq.poke_atomic(0)
+            RF_TRACE_DEPTH.peek().poke_into(entry.depth)
             each i in 0 til 32
                 from: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(i)
-                to: @RfTraceFrame = into.frames.to[@RfTraceFrame]().stride(i)
+                to: @RfTraceFrame = entry.frames.to[@RfTraceFrame]().stride(i)
                 to.poke(from.peek())
-            return
+            entry.seq.poke_atomic(seq)
+            return seq
+
+        ### The entry of failure `seq`, or a hollow pointer when the thread doesn't remember it.
+        routine rf_failure_find(seq: U64) -> @RfFailure
+            if ieq[U64](seq, 0)
+                return .hollow()
+            each i in 0 til 64
+                entry: @RfFailure = RF_FAILURES.to[@RfFailure]().stride(i)
+                if ieq[U64](entry.seq.peek_atomic(), seq)
+                    return entry
+            return .hollow()
+
+        ### The 32 frames of failure `seq`'s trace, under the name the LLVM emitter exports them by, or a hollow pointer.
+        @export("_rf_failure_get_frames_shared")
+        routine rf_failure_get_frames(seq: U64) -> @RfTraceFrame
+            entry: @RfFailure = rf_failure_find(seq)
+            if entry.is_hollow()
+                return .hollow()
+            return entry.frames.to[@RfTraceFrame]()
+
+        ### The depth of failure `seq`'s trace, under the name the LLVM emitter exports it by, or 0.
+        @export("_rf_failure_get_depth_shared")
+        routine rf_failure_get_depth(seq: U64) -> S32
+            entry: @RfFailure = rf_failure_find(seq)
+            if entry.is_hollow()
+                return 0
+            return entry.depth.peek()
 
 
         """;

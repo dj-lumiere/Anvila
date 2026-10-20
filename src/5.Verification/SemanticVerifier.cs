@@ -844,6 +844,9 @@ public sealed partial class SemanticVerifier
         };
         new DesugaringPipeline(ctx: ctx).RunGlobal();
         SubMark(label: $"{nameof(DesugaringPipeline)}.RunGlobal");
+        // Every failable routine's crashables are collected now (ErrorHandlingVariantPass): a `@throws` list is checked
+        // against them.
+        ValidateThrowsLists();
         // Capture variant bodies produced by ErrorHandlingVariantPass for codegen. On the warm-restore
         // path _variantBodies is pre-seeded with the captured stdlib variants, so ErrorHandlingVariantPass
         // only ADDS user variants here — the seeded restored ones survive for codegen.

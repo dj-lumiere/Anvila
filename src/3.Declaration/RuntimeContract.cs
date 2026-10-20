@@ -272,18 +272,17 @@ public static class RuntimeContract
     /// <summary>The stdlib record any caught crashable is seen as: <c>is Crashables e</c>.</summary>
     public const string Crashables = "Crashables";
 
-    /// <summary>The <c>Crashables</c> routine reading the caught error's type id from its mold.</summary>
+    /// <summary>The <c>Crashables</c> routine reading the caught error's type id.</summary>
     public const string CrashTypeId = "crash_type_id";
 
-    /// <summary>The <c>Crashables</c> routine freeing the caught error and its object (its carrier's).</summary>
+    /// <summary>The <c>Crashables</c> routine giving back what the caught error holds (its carrier's).</summary>
     public const string CrashFree = "free";
 
     /// <summary>
-    /// The routines a crashable's mold names, in the mold's slot order after its type id: the heap object a carrier
-    /// holds a caught crashable in points at its type's mold, and a call on a caught error of unknown type goes
-    /// through it.
+    /// The routines a call on a caught error of unknown type (a <c>Crashables</c>) reaches: the builder writes, for each
+    /// one, a switch on the error's type id over the crashables the program throws, so each crashable's own is live.
     /// </summary>
-    public static readonly string[] CrashMoldMembers =
+    public static readonly string[] CrashDispatchMembers =
         [CrashTitle, CrashMessage, Display.Represent, Display.Diagnose, Destroy];
 
     // =====================================================================================

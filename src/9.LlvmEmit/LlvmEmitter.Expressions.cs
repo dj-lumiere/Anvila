@@ -647,16 +647,15 @@ public partial class LlvmEmitter
             line:
             $"  {payloadPtr} = getelementptr {carrierLlvmType}, ptr {spillAddr}, i32 0, i32 1");
 
-        if (concreteType is CrashableTypeSymbol crashable && HoldsErrorObject(carrier: carrierType))
+        if (concreteType is CrashableTypeSymbol crashable && IsRecoveryCarrier(carrier: carrierType))
         {
-            string objectPtr = NextTemp();
-            EmitLine(sb: sb, line: $"  {objectPtr} = load ptr, ptr {payloadPtr}");
+            // The error slot holds a Crashables, and the crashable sits in its room.
             string crashableType = EnsureRecordTypeDeclared(record: crashable);
-            string errorPtr = NextTemp();
+            string roomPtr = NextTemp();
             EmitLine(sb: sb,
-                line: $"  {errorPtr} = getelementptr {CrashObjectType(crashableType: crashableType)}, ptr {objectPtr}, i32 0, i32 {CrashObjectErrorField}");
+                line: $"  {roomPtr} = getelementptr {CrashablesLlvmType()}, ptr {payloadPtr}, i32 0, i32 {CrashablesRoomField}");
             string error = NextTemp();
-            EmitLine(sb: sb, line: $"  {error} = load {crashableType}, ptr {errorPtr}");
+            EmitLine(sb: sb, line: $"  {error} = load {crashableType}, ptr {roomPtr}, align 8");
             return error;
         }
 
@@ -681,85 +680,47 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a <see cref="CrashableDispatchExpression"/>: a member of a caught error of unknown type, called through the
-    /// mold the error's heap object points at (<see cref="EnsureCrashMold"/>). The receiver is a <c>Crashables</c>.
-    /// <c>crash_type_id</c> reads the mold's type id, and <c>destruct</c> also frees the object.
+    /// Emits a <see cref="CrashableDispatchExpression"/>: a member of a caught error of unknown type. The receiver is a
+    /// <c>Crashables</c>: <c>crash_type_id</c> reads its type id, and every other member goes through the module's
+    /// dispatch function for it (<see cref="EnsureCrashableDispatch"/>), which switches on the type id over the
+    /// crashables the program throws.
     /// </summary>
     private string EmitCrashableDispatchExpression(StringBuilder sb,
         CrashableDispatchExpression dispatch)
     {
-        // The receiver is a `Crashables`: the address of the error's heap object, in its first (only) word.
         string crashablesVal = EmitExpression(sb: sb, expr: dispatch.Carrier);
         string crashablesLlvmType = GetLlvmType(type: dispatch.Carrier.ResolvedType!);
         string spillAddr = NextTemp();
         EmitEntryAlloca(llvmName: spillAddr, llvmType: crashablesLlvmType);
         EmitLine(sb: sb, line: $"  store {crashablesLlvmType} {crashablesVal}, ptr {spillAddr}");
-        string errorObject = NextTemp();
-        EmitLine(sb: sb, line: $"  {errorObject} = load ptr, ptr {spillAddr}");
-
+        string idPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {idPtr} = getelementptr {crashablesLlvmType}, ptr {spillAddr}, i32 0, i32 0");
+        string typeId = NextTemp();
+        EmitLine(sb: sb, line: $"  {typeId} = load i64, ptr {idPtr}");
         if (dispatch.MemberName == Declaration.RuntimeContract.CrashTypeId)
         {
-            string mold = NextTemp();
-            EmitLine(sb: sb, line: $"  {mold} = load ptr, ptr {errorObject}");
-            string typeId = NextTemp();
-            EmitLine(sb: sb, line: $"  {typeId} = load i64, ptr {mold}");
             return typeId;
         }
 
-        int slot = Array.IndexOf(array: Declaration.RuntimeContract.CrashMoldMembers, value: dispatch.MemberName);
-        if (slot < 0)
+        if (!Declaration.RuntimeContract.CrashDispatchMembers.Contains(value: dispatch.MemberName))
         {
             throw new InvalidOperationException(
-                message: $"'{dispatch.MemberName}' is not a member a caught error's mold names.");
+                message: $"'{dispatch.MemberName}' is not a member a caught error is dispatched to.");
         }
 
-        (string member, string data) = EmitCrashMoldLookup(sb: sb, errorObject: errorObject, slot: slot);
-        if (dispatch.MemberName == Declaration.RuntimeContract.Destroy)
+        string roomPtr = NextTemp();
+        EmitLine(sb: sb,
+            line: $"  {roomPtr} = getelementptr {crashablesLlvmType}, ptr {spillAddr}, i32 0, i32 {CrashablesRoomField}");
+        (string function, string returns) = EnsureCrashableDispatch(member: dispatch.MemberName);
+        if (returns == "void")
         {
-            EmitLine(sb: sb, line: $"  call void {member}(ptr {data})");
-            EmitLine(sb: sb, line: $"  call void @rf_invalidate(ptr {errorObject})");
+            EmitLine(sb: sb, line: $"  call void {function}(ptr {roomPtr}, i64 {typeId})");
             return string.Empty;
         }
 
-        // Every mold member that returns is a `-> Text` routine taking the crashable by reference, so one return ABI
-        // fits them all.
-        TypeSymbol text = _registry.LookupType(name: "Text") ??
-                          throw new InvalidOperationException(message: "System.Text is not registered.");
-        var shape = new RoutineInfo(name: dispatch.MemberName) { ReturnType = text };
-        string retLlvm = GetLlvmType(type: text);
-        string resultSlot = NextTemp();
-        EmitEntryAlloca(llvmName: resultSlot, llvmType: retLlvm);
-        EmitCrashableMemberCallIntoSlot(sb: sb,
-            routine: shape,
-            callee: member,
-            entity: data,
-            retLlvm: retLlvm,
-            resultSlot: resultSlot);
         string result = NextTemp();
-        EmitLine(sb: sb, line: $"  {result} = load {retLlvm}, ptr {resultSlot}");
+        EmitLine(sb: sb, line: $"  {result} = call {returns} {function}(ptr {roomPtr}, i64 {typeId})");
         return result;
-    }
-
-    /// <summary>
-    /// Reads mold slot <paramref name="slot"/> (an index into <c>CrashMoldMembers</c>) of a caught error's heap object:
-    /// returns the routine it names and the address of the error inside the object.
-    /// </summary>
-    private (string Member, string Data) EmitCrashMoldLookup(StringBuilder sb, string errorObject, int slot)
-    {
-        string mold = NextTemp();
-        EmitLine(sb: sb, line: $"  {mold} = load ptr, ptr {errorObject}");
-        string offsetPtr = NextTemp();
-        EmitLine(sb: sb, line: $"  {offsetPtr} = getelementptr {CrashMoldType}, ptr {mold}, i32 0, i32 1");
-        string offset = NextTemp();
-        EmitLine(sb: sb, line: $"  {offset} = load i64, ptr {offsetPtr}");
-        string data = NextTemp();
-        EmitLine(sb: sb, line: $"  {data} = getelementptr i8, ptr {errorObject}, i64 {offset}");
-        string memberPtr = NextTemp();
-        EmitLine(sb: sb,
-            line: $"  {memberPtr} = getelementptr {CrashMoldType}, ptr {mold}, i32 0, i32 {slot + CrashMoldFirstMember}");
-        string member = NextTemp();
-        EmitLine(sb: sb, line: $"  {member} = load ptr, ptr {memberPtr}");
-        return (member, data);
     }
 
     /// <summary>

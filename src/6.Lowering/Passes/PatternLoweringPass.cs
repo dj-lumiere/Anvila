@@ -1105,7 +1105,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
     /// <summary>
     /// <c>is NopeError e</c> straight on a <c>Check</c>/<c>Lookup</c>: the carrier holds an error, and the error's type
-    /// id (from its mold) is <c>NopeError</c>'s. <c>e</c> is the crashable inside the error's object.
+    /// id (its <c>Crashables</c>' first field) is <c>NopeError</c>'s. <c>e</c> is the crashable the <c>Crashables</c> holds.
     /// </summary>
     private (Expression? Cond, Statement? Binding) GetCaughtCrashableCondition(Expression subject,
         CrashableTypeSymbol crashable, string? bindName, SourceLocation loc, TypeSymbol? boolType)
