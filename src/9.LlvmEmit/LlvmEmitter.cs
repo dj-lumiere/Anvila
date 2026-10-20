@@ -1250,6 +1250,8 @@ public partial class LlvmEmitter
         output.AppendLine(value: "declare void @rf_set_crash_report(ptr)");
         output.AppendLine(value: "declare void @tessera_runtime_crash_report(ptr, ptr, ptr)");
         output.AppendLine(value: "declare void @tessera_set_library_folder(ptr)");
+        // The arguments the program was started with, kept by the runtime for OsEnvironment.arguments().
+        output.AppendLine(value: "declare void @tessera_set_arguments(i32, ptr)");
         // The standard library's folder, so a crash the runtime raises names where the program called into the library.
         string library = _registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "";
         output.AppendLine(handler:
@@ -1262,6 +1264,7 @@ public partial class LlvmEmitter
         // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RF_MEMORY_LIMIT).
         output.AppendLine(value: "  call void @rf_heap_limit_init()");
         output.AppendLine(value: "  call void @rf_runtime_init()");
+        output.AppendLine(value: "  call void @tessera_set_arguments(i32 %argc, ptr %argv)");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
         // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace, and so
         // is a crash the runtime raises (a deadlock, a failed allocation).

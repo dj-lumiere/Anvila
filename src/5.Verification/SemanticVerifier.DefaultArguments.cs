@@ -100,6 +100,12 @@ public sealed partial class SemanticVerifier
         string? previousModuleName = _currentModuleName;
 
         RestoreImportScopeForCompilerGeneratedBody(routineInfo: declaring);
+        // The default is written in the routine's file, so it sees what that file imports (`Directory(at: "")` in a
+        // module that imports IO/File) even when the routine's own import snapshot is not there.
+        if (declaring.Location?.FileName is { Length: > 0 } declaringFile)
+        {
+            _importedModules.UnionWith(other: ImportsOfFile(filePath: declaringFile));
+        }
         string? ownerModule = declaring.OwnerType?.Module ?? declaring.Module;
         if (!string.IsNullOrEmpty(value: ownerModule))
         {

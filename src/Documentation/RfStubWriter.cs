@@ -60,7 +60,7 @@ internal sealed class RfStubWriter
         "ListEmittable", "CircularListEmittable", "SplitListEmittable",
         "SplitArrayEmittable", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
         "DD", "FloatDigits", "FloatParsed", "D32Parts", "D64Parts", "D128Parts", "ComplexTextParts",
-        "IntegerLimbView", "IntV", "Exposed", "Wielded",
+        "IntegerLimbView", "IntV",
         // Suflae has its own lists and no structure-of-arrays layouts.
         "SplitList", "SplitArray", "CircularList"
     };

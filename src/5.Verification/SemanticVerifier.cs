@@ -983,6 +983,52 @@ public sealed partial class SemanticVerifier
         return mergedVariantBodies;
     }
 
+    /// <summary>
+    /// Adds to the variant bodies the wrapper forwarders onto a generic inner type synthesized since
+    /// <paramref name="synthesizedBefore"/> was taken, ones <see cref="BuildMergedVariantBodies"/> would have added
+    /// had they existed when it ran, lowered by the passes the variant bodies get before instantiation. A body
+    /// already there is kept.
+    /// </summary>
+    private void MergeLateInstantiableBodies(HashSet<string> synthesizedBefore)
+    {
+        var late = new Dictionary<string, Statement>(comparer: StringComparer.Ordinal);
+        foreach ((string key, (RoutineInfo Routine, Statement Body) pair) in _synthesizedBodies)
+        {
+            if (synthesizedBefore.Contains(item: key) || _variantBodies.ContainsKey(key: key))
+            {
+                continue;
+            }
+
+            // Only a forwarder onto a generic inner type (`Viewing[T].getitem` over `List[T]`): its instances need the
+            // template rewritten for the concrete type. One onto a plain type (`Modifying[T].find` over `Text`) is
+            // taken from the synthesized bodies by the collector as it is.
+            if (pair.Routine.WrapperForwarderInnerGenericDef is { IsGenericDefinition: true })
+            {
+                late[key: key] = pair.Body;
+            }
+        }
+
+        if (late.Count == 0)
+        {
+            return;
+        }
+
+        // The passes RunPhase7Instantiation runs on the variant bodies before instantiation, on these alone.
+        var lateCtx = new PostprocessingContext(registry: _registry,
+            variantBodies: late,
+            synthesizedBodies: _synthesizedBodies.ToDictionary(keySelector: kvp => kvp.Key,
+                elementSelector: kvp => kvp.Value.Body),
+            target: _target,
+            buildMode: _buildMode);
+        new Lowering.Passes.AccessLoweringPass(registry: _registry).RunOnVariantBodies(ctx: lateCtx);
+        new ScopeTeardownLoweringPass(ctx: lateCtx).RunOnVariantBodies();
+        new TemporaryTeardownPass(ctx: lateCtx).RunOnBodies(bodies: lateCtx.VariantBodies);
+        foreach ((string key, Statement body) in lateCtx.VariantBodies)
+        {
+            _variantBodies[key: key] = body;
+        }
+    }
+
     /// <summary>Instantiation context retained from <see cref="RunPhase7Instantiation"/> so the pull
     /// collector's shadow can run post-Phase-9 (see <c>_shadowCtx</c> assignment / RunPhase8Postprocessing).</summary>
     private InstantiationContext? _shadowCtx;
@@ -1534,11 +1580,17 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
+            RoutineInfo? variantRoutine = _registry.LookupRoutine(fullName: key) ??
+                                          (_synthesizedBodies.TryGetValue(key: key,
+                                              value: out (RoutineInfo Routine, Statement Body) synthesized)
+                                              ? synthesized.Routine
+                                              : null);
             AnnotateBodyForBackend(body: body,
                 everStolen: null,
-                routine: _registry.LookupRoutine(fullName: key));
+                routine: variantRoutine);
             reprPass.Run(statement: body);
-            foreach (SemanticError error in validator.ValidateStatement(statement: body))
+            foreach (SemanticError error in validator.ValidateStatement(statement: body,
+                         parameterNames: variantRoutine?.Parameters.Select(selector: p => p.Name)))
             {
                 AddError(error: error with { Message = $"[{key}] {error.Message}" });
             }
@@ -2089,6 +2141,11 @@ public sealed partial class SemanticVerifier
             _registry.StdlibSignatureRepairOccurred = false;
         }
 
+        // The wrapper forwarders this file's analysis synthesizes (a `Viewing[List[Text]].getitem` reached only from
+        // this file) join the variant bodies instantiation already holds, as BuildMergedVariantBodies adds the
+        // ones synthesized before it ran. Without that, their concrete instances get an empty sentinel body.
+        var synthesizedBefore = new HashSet<string>(collection: _synthesizedBodies.Keys, comparer: StringComparer.Ordinal);
+
         try
         {
             AnalyzeOneStdlibProgram(program: entry.Program,
@@ -2142,6 +2199,8 @@ public sealed partial class SemanticVerifier
             {
                 FinalizeEnqueuedVariantBodies();
             }
+
+            MergeLateInstantiableBodies(synthesizedBefore: synthesizedBefore);
         }
         finally
         {

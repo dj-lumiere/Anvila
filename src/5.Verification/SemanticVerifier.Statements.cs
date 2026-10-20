@@ -392,7 +392,7 @@ public sealed partial class SemanticVerifier
     /// undismantled Lookup variables, and snapshots stolen variable names for teardown.
     /// </summary>
     /// <summary>Whether <paramref name="routine"/> implements a failable requirement of a protocol its owner
-    /// obeys (<c>Exposed[T].enter!</c> for <c>Enterable</c>'s <c>enter!</c>).</summary>
+    /// obeys (<c>FileSource.enter!</c> for <c>Enterable</c>'s <c>enter!</c>).</summary>
     private bool ImplementsFailableRequirement(RoutineInfo routine)
     {
         List<TypeSymbol>? protocols = routine.OwnerType switch

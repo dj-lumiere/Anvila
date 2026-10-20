@@ -30,6 +30,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "RoamController" => "RoamManager",
             "Queue" => "Mailbox",
             "Address" or "CPtr" => "Addr",
+            "Exposed" or "Wielded" => "FileStorage",
             _ => null
         };
         // `Callable` is the builder's own type of routine values, not a registered one.
@@ -70,6 +71,24 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " A key is tested with 'has_key'.";
             case "is_none" when type.BareName == RuntimeContract.Addr:
                 return " An address is tested with 'is_hollow()' / 'is_not_hollow()'.";
+            case "subdir" when MemberSuggestionCandidates(type: type).Contains(value: "go_to"):
+                return " It is called 'go_to' now (migrate --step files rewrites it).";
+            case "current_directory" or "temp_directory" or "home_directory" or "set_current_directory"
+                when type.BareName is "FileManager" or "OsFileManager":
+                return name == "set_current_directory"
+                    ? " The working directory isn't changed any more: keep the Directory and build paths from it, and " +
+                      "give a child process its own with 'run_program(..., working_directory:)'."
+                    : $" It is 'OsEnvironment.{(name == "current_directory" ? "working_directory" : name)}()' now " +
+                      "(IO/Environment).";
+            case "expose" or "wield" or "expose_range" or "wield_range"
+                when MemberSuggestionCandidates(type: type).Contains(value: "open_storage"):
+                return $" A file is opened as storage with '{(name.EndsWith(value: "_range") ? "open_storage_range" : "open_storage")}' now, a FileStorage[T].";
+            case "move" when type.BareName is "FileManager" or "OsFileManager":
+                return " 'move(from:, to:)' is two routines of OsFileManager now: 'rename(at:, to: name)' changes a " +
+                       "name, 'move(at:, into: directory)' puts it into another directory (migrate --step files).";
+            case not null when type.BareName == "FileManager":
+                return " FileManager is the role of a file manager: the operating system's is 'OsFileManager' " +
+                       $"('OsFileManager.{name}', migrate --step files).";
         }
 
         return DidYouMean(target: name, candidates: MemberSuggestionCandidates(type: type));

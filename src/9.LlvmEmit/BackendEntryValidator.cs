@@ -40,11 +40,21 @@ public sealed class BackendEntryValidator
     }
 
     /// <summary>
-    /// Validates a synthesized statement body and returns any residual-node errors.
+    /// Validates a synthesized statement body and returns any residual-node errors. The names of the parameters of
+    /// the routine it belongs to are its own, like the names it binds itself: a parameter named like a preset
+    /// (`letter` beside a preset `letter`) is the parameter.
     /// </summary>
-    public List<SemanticError> ValidateStatement(Statement statement)
+    public List<SemanticError> ValidateStatement(Statement statement, IEnumerable<string>? parameterNames = null)
     {
-        return ValidateNode(node: statement, registry: _registry);
+        var errors = new List<SemanticError>();
+        HashSet<string> locals = AstWalker.BoundNames(node: statement);
+        if (parameterNames != null)
+        {
+            locals.UnionWith(other: parameterNames);
+        }
+
+        Walk(node: statement, errors: errors, registry: _registry, locals: locals);
+        return errors;
     }
 
     /// <summary>

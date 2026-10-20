@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules" or "access" or "cpu-events"
-                or "addr"))
+                or "addr" or "files"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules, access, cpu-events or addr");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules, access, cpu-events, addr or files");
             return 2;
         }
 
@@ -90,6 +90,14 @@ internal partial class Program
         if (step == "addr")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAddr);
+        }
+
+        // `--step files`: FileManager is the role and OsFileManager the OS's file manager, the process's directories are
+        // OsEnvironment's, `subdir` is `go_to`, `move(from:, to:)` is `rename` or `move(at:, into:)`, and a mapped file
+        // is a FileStorage.
+        if (step == "files")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteFiles);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.

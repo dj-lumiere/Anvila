@@ -21,6 +21,7 @@ public partial class LlvmEmitter
             return;
         }
 
+        DumpRoutineBodyIfRequested(info: routine, body: body);
         List<string> paramList = BuildSynthesizedParameterList(routine: routine);
 
         string returnType = ComputeDefinitionReturnType(info: routine);
