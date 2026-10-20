@@ -133,7 +133,8 @@ internal sealed class TesseraIntrinsics
                 ? $"RF_TRACE_STACK.to[@{pointee}]()"
                 : "RF_TRACE_STACK",
             "element_pointer" => ElementPointer(),
-            "byte_offset" => $"{Argument(index: 0)}.offset(bytes: {Argument(index: 1)})",
+            // A signed byte count: Tessera's Addr moves only by a ByteSize, a pointer by a signed count.
+            "byte_offset" => $"{Argument(index: 0)}.to[@Byte]().offset(bytes: {Argument(index: 1)}).to[Addr]()",
             "atomic_load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_atomic()",
             "atomic_store" => Atomic(method: "atomic_store"),
             "atomic_add" => Atomic(method: "atomic_fetch_add"),

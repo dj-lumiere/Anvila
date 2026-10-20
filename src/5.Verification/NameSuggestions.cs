@@ -37,8 +37,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         if (renamed != null && (renamed == "Callable" || TypeSuggestionCandidates().Contains(value: renamed)))
         {
             return renamed == "Addr"
-                ? " It is called 'Addr' now (migrate --step addr rewrites it): compare two with '===' and move one with " +
-                  "'offset(bytes:)'."
+                ? " It is called 'Addr' now (migrate --step addr rewrites it): compare two with '===' and move one by a " +
+                  "'ByteSize' with '+%' / '-%'."
                 : $" It is called '{renamed}' now.";
         }
 

@@ -2050,26 +2050,45 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports an operator other than <c>===</c> / <c>!==</c> with an <c>Addr</c> operand, pointing at what is written
-    /// instead: an address names a place, so two are compared by identity, and it has no ordering or arithmetic
-    /// besides moving it with <c>offset(bytes:)</c>. Returns whether it reported one.
+    /// Reports an operator on an <c>Addr</c> operand that addresses don't have, pointing at what is written instead: an
+    /// address names a place, so two are compared by identity (<c>===</c> / <c>!==</c>), it moves by a
+    /// <c>ByteSize</c> with <c>+%</c> / <c>-%</c>, and <c>b -% a</c> is the distance from <c>a</c> to <c>b</c>. It has
+    /// no ordering and no other arithmetic. Returns whether it reported one.
     /// </summary>
     private bool ReportAddressOperator(TypeSymbol left, TypeSymbol right, BinaryOperator op, SourceLocation location)
     {
-        if (left.BareName != Declaration.RuntimeContract.Addr && right.BareName != Declaration.RuntimeContract.Addr ||
+        string addr = Declaration.RuntimeContract.Addr;
+        if (left.BareName != addr && right.BareName != addr ||
             op is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual or BinaryOperator.Assign or
                 BinaryOperator.And or BinaryOperator.Or or BinaryOperator.NoneCoalesce)
         {
             return false;
         }
 
+        // The wrapping moves and the distance: Addr +% ByteSize, Addr -% ByteSize, Addr -% Addr.
+        bool moves = left.BareName == addr && right.BareName == "ByteSize" &&
+                     op is BinaryOperator.AddWrap or BinaryOperator.SubtractWrap;
+        bool measures = left.BareName == addr && right.BareName == addr && op is BinaryOperator.SubtractWrap;
+        if (moves || measures)
+        {
+            return false;
+        }
+
         string written = op.ToStringRepresentation();
-        string message = op is BinaryOperator.Equal or BinaryOperator.NotEqual
-            ? $"'{written}' compares two values, and an 'Addr' names a place rather than holding a value. Ask " +
-              $"whether two addresses name the same place with '{(op == BinaryOperator.Equal ? "===" : "!==")}', or " +
-              "whether one is the address 0 with 'is_hollow()'."
-            : $"'{written}' has no meaning on an 'Addr': an address names a place, with no ordering and no " +
-              "arithmetic. Move one with 'offset(bytes:)', and compare or subtract the numbers 'to[U64]()' gives.";
+        string message = op switch
+        {
+            BinaryOperator.Equal or BinaryOperator.NotEqual =>
+                $"'{written}' compares two values, and an 'Addr' names a place rather than holding a value. Ask " +
+                $"whether two addresses name the same place with '{(op == BinaryOperator.Equal ? "===" : "!==")}', or " +
+                "whether one is the address 0 with 'is_hollow()'.",
+            BinaryOperator.Add or BinaryOperator.Subtract =>
+                $"'{written}' isn't defined on an 'Addr': an address moves by a 'ByteSize' only with '+%' and '-%', " +
+                "which wrap around and check no bounds, and 'b -% a' is the distance from 'a' to 'b'. Write " +
+                $"'{(op == BinaryOperator.Add ? "+%" : "-%")}' here.",
+            _ =>
+                $"'{written}' has no meaning on an 'Addr': an address names a place, with no ordering. It moves by a " +
+                "'ByteSize' with '+%' / '-%', and 'b -% a' is the distance from 'a' to 'b'."
+        };
         ReportError(code: SemanticDiagnosticCode.OrderingNotSupported, message: message, location: location);
         return true;
     }

@@ -419,14 +419,14 @@ public static class WiredRoutineCatalog
                 Name = "add_wrap",
                 Kind = WiredKind.ArithmeticWrap,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["WrappingAddable"]
+                Protocols = ["WrappingAddable", "WrappingOffsetAddable"]
             },
             new WiredEntry
             {
                 Name = "sub_wrap",
                 Kind = WiredKind.ArithmeticWrap,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["WrappingSubtractable"]
+                Protocols = ["WrappingSubtractable", "WrappingOffsetSubtractable"]
             },
             new WiredEntry
             {

@@ -86,7 +86,8 @@ internal partial class Program
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteCpuEvents);
         }
 
-        // `--step addr`: `Address` and `CPtr` are one type, `Addr`, compared with `===` and moved with `offset(bytes:)`.
+        // `--step addr`: `Address` and `CPtr` are one type, `Addr`, compared with `===` and moved by a ByteSize with `+%` /
+        // `-%` (`a.offset(bytes: 8)` is `a +% 8b`).
         if (step == "addr")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAddr);

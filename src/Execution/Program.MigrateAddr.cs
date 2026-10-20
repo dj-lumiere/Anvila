@@ -37,6 +37,17 @@ internal partial class Program
         pattern: $@"(?<![\w.])(?<left>{ComparedOperand})\s*(?<op>==|!=)\s*(?<right>{ComparedOperand})(?![\w.(\[])",
         options: RegexOptions.Compiled);
 
+    /// <summary><c>a.offset(bytes: 8)</c> (or <c>a.offset(8)</c>) with a whole-number literal, on a name or member chain
+    /// that may be an address, and whether a member or an index follows the call.</summary>
+    private static readonly Regex LiteralOffsetCall = new(
+        pattern:
+        $@"(?<![\w.])(?<operand>{ComparedOperand})\.offset\(\s*(?:bytes\s*:\s*)?(?<sign>-)?\s*(?<n>0[xX][0-9A-Fa-f_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*)\s*\)(?<after>[.\[])?",
+        options: RegexOptions.Compiled);
+
+    /// <summary>An <c>offset(</c> call left after the literal ones are rewritten.</summary>
+    private static readonly Regex OffsetCall = new(pattern: @"(?<operand>[A-Za-z_][\w.\[\]()]*?)\.offset\(",
+        options: RegexOptions.Compiled);
+
     /// <summary><c>x.is_none()</c> on a name or member chain.</summary>
     private static readonly Regex IsNoneCall = new(
         pattern: @"(?<![\w.])(?<operand>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*(?:\(\))?)*)\.is_none\(\)",
@@ -49,8 +60,9 @@ internal partial class Program
     /// address against 0 with <c>is_hollow()</c>: where a side of an <c>==</c> / <c>!=</c> is known to be an address
     /// from this file (a name declared or started as one, a <c>get_address()</c> / <c>address()</c> call) the
     /// comparison is rewritten, and <c>x.is_none()</c> on such a name is <c>x.is_hollow()</c>. Comparisons and
-    /// arithmetic it cannot type are listed: an address has no ordering and no <c>+%</c> / <c>-%</c>, it moves with
-    /// <c>offset(bytes:)</c> and is measured through <c>to[U64]()</c>.
+    /// arithmetic it cannot type are listed. An address has no ordering: it moves by a <c>ByteSize</c> with <c>+%</c> /
+    /// <c>-%</c>, and <c>b -% a</c> is the distance from <c>a</c> to <c>b</c>. So <c>a.offset(bytes: 8)</c> on an address
+    /// becomes <c>a +% 8b</c> (<c>-8</c> is <c>a -% 8b</c>), and an <c>offset</c> whose distance is not a literal is listed.
     /// </summary>
     private static string RewriteAddr(string file, string source, Language language, int lineOffset)
     {
@@ -77,6 +89,27 @@ internal partial class Program
             replacement: m => IsAddressOperand(operand: m.Groups[groupname: "operand"].Value, names: names)
                 ? $"{m.Groups[groupname: "operand"].Value}.is_hollow()"
                 : m.Value);
+        text = ReplaceInCode(text: text, pattern: LiteralOffsetCall, replacement: m =>
+        {
+            string operand = m.Groups[groupname: "operand"].Value;
+            if (!IsAddressOperand(operand: operand, names: names))
+            {
+                return m.Value;
+            }
+
+            string digits = m.Groups[groupname: "n"].Value.Replace(oldValue: "_", newValue: "");
+            ulong bytes = digits.Length > 2 && digits[index: 1] is 'x' or 'X'
+                ? Convert.ToUInt64(value: digits[2..], fromBase: 16)
+                : digits.Length > 2 && digits[index: 1] is 'b' or 'B'
+                    ? Convert.ToUInt64(value: digits[2..], fromBase: 2)
+                    : digits.Length > 2 && digits[index: 1] is 'o' or 'O'
+                        ? Convert.ToUInt64(value: digits[2..], fromBase: 8)
+                        : ulong.Parse(s: digits);
+            string op = m.Groups[groupname: "sign"].Success ? "-%" : "+%";
+            string after = m.Groups[groupname: "after"].Value;
+            string moved = $"{operand} {op} {bytes}b";
+            return after.Length > 0 ? $"({moved}){after}" : moved;
+        });
         text = ReplaceInCode(text: text, pattern: SimpleEquality, replacement: m =>
         {
             string left = m.Groups[groupname: "left"].Value;
@@ -119,26 +152,32 @@ internal partial class Program
     /// name known to be an address: what is left for a person to write.</summary>
     private static void ListAddressLeftovers(string file, string text, HashSet<string> names, int lineOffset)
     {
-        if (names.Count == 0)
-        {
-            return;
-        }
-
-        var word = new Regex(pattern: $@"(?<![\w$`])(?:{string.Join(separator: "|", values: names.Select(selector: Regex.Escape))})(?![\w`])");
+        Regex? word = names.Count == 0
+            ? null
+            : new Regex(pattern: $@"(?<![\w$`])(?:{string.Join(separator: "|", values: names.Select(selector: Regex.Escape))})(?![\w`])");
         string[] lines = text.Split(separator: '\n');
         for (int i = 0; i < lines.Length; i++)
         {
             string code = CodePart(line: lines[i]);
-            if (!word.IsMatch(input: code))
+            if (OffsetCall.Matches(input: code)
+                          .Any(predicate: m => IsAddressOperand(operand: m.Groups[groupname: "operand"].Value, names: names)))
+            {
+                Console.WriteLine(
+                    value: $"{file}:{lineOffset + i + 1}: moves an Addr with 'offset': an address moves by a ByteSize " +
+                           "with '+%' / '-%' now ('a +% size', 'a -% size'), and this distance is not a literal");
+                continue;
+            }
+
+            if (word == null || !word.IsMatch(input: code))
             {
                 continue;
             }
 
             string? what = Regex.IsMatch(input: code, pattern: @"(?<![=!<>])(?:==|!=)(?!=)")
                 ? "compares with '==' / '!=': if a side is an Addr, write '===' / '!==' (or 'is_hollow()' against 0)"
-                : Regex.IsMatch(input: code, pattern: @"\+%|-%|\badd_wrap\b|\bsub_wrap\b|(?<![=!<>-])(?:<=?|>=?)(?![=>])")
-                    ? "does arithmetic or ordering: if a side is an Addr, move it with 'offset(bytes:)' and measure " +
-                      "it with 'to[U64]()'"
+                : Regex.IsMatch(input: code, pattern: @"(?<![+\-*/%^!<>=])[+-](?![%^!=>])|\badd\(|\bsub\(|(?<![=!<>-])(?:<=?|>=?)(?![=>])")
+                    ? "does arithmetic or ordering: if a side is an Addr, move it by a ByteSize with '+%' / '-%', " +
+                      "and measure two with 'b -% a'"
                     : null;
             if (what != null)
             {
