@@ -180,8 +180,9 @@ public partial class Parser
         _sawHole = false;
         try
         {
-            // Check for named argument: identifier followed by colon
-            if (Check(type: TokenType.Identifier) && PeekToken(offset: 1)
+            // Check for named argument: identifier followed by colon. The keyword `with` names an argument too
+            // (`p.replace(text, with: "-")`): it starts no expression, so before a colon it can only be a name.
+            if ((Check(type: TokenType.Identifier) || Check(type: TokenType.With)) && PeekToken(offset: 1)
                    .Type == TokenType.Colon)
             {
                 string argName = CurrentToken.Text;

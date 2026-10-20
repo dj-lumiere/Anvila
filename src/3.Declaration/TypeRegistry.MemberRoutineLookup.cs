@@ -1171,7 +1171,10 @@ public sealed partial class TypeRegistry
             // (`Numerics.atan2`) or a bare name denotes a free routine. Distinguish by the prefix: a
             // generic owner carries `[`, and a non-generic owner resolves as a registered TYPE.
             string prefix = baseName[..baseName.LastIndexOf(value: '.')];
-            if (prefix.Contains(value: '[') || LookupType(name: prefix) != null)
+            // A module path of several parts (`Text/Patterns`) names a module even when its first part is also a
+            // type's name.
+            bool modulePath = prefix.Contains(value: '/') && !prefix.Contains(value: '[');
+            if (!modulePath && (prefix.Contains(value: '[') || LookupType(name: prefix) != null))
             {
                 return null;
             }

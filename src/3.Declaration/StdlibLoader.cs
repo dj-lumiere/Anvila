@@ -658,6 +658,14 @@ public sealed partial class StdlibLoader
             : [];
     }
 
+    /// <summary>How many standard library files declare <paramref name="module"/> (from each file's head, nothing
+    /// parsed). A module of several files (<c>Text/Patterns</c>) loads whole through <see cref="LoadModule(TypeRegistry,
+    /// string)"/>, since an import path resolves to one file.</summary>
+    internal int ModuleFileCount(string module)
+    {
+        return FilesByModule().TryGetValue(key: module, value: out List<string>? files) ? files.Count : 0;
+    }
+
     /// <summary>The standard library files of each module, read from each file's <c>module</c> line (or its folder
     /// when it has none) without parsing the file.</summary>
     private Dictionary<string, List<string>>? _filesByModule;

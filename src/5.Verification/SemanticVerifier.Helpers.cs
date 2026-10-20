@@ -371,7 +371,7 @@ public sealed partial class SemanticVerifier
         int NonMeParamCount);
 
     /// <summary>
-    /// Processes a single positional argument: validates naming rules (S510/W258/S507), determines
+    /// Processes a single positional argument: validates naming rules (S510/S507), determines
     /// whether the argument falls in a variadic slot, records the binding, and advances the positional
     /// index. Extracted from <see cref="BuildArgumentBindings"/>.
     /// </summary>
@@ -379,8 +379,7 @@ public sealed partial class SemanticVerifier
         List<ParamInfo> parameters, int totalParams, Dictionary<int, Expression> boundParams,
         PositionalArgContext ctx, ref int positionalIndex)
     {
-        bool requiresNamedArgs = ctx.RequiresNamedArgs,
-            recommendsNamedArgs = ctx.RecommendsNamedArgs;
+        bool requiresNamedArgs = ctx.RequiresNamedArgs;
         bool isPositional = ctx.IsPositional, isMixed = ctx.IsMixed, seenNamed = ctx.SeenNamed;
         int nonMeParamCount = ctx.NonMeParamCount;
         if (requiresNamedArgs && !isMixed)
@@ -388,13 +387,6 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
                 message:
                 $"Routine '{routine.Name}' has {nonMeParamCount} parameters - all arguments must be named.",
-                location: arg.Location);
-        }
-        else if (recommendsNamedArgs && !isMixed)
-        {
-            ReportWarning(code: SemanticWarningCode.NamedArgumentRecommended,
-                message:
-                $"Routine '{routine.Name}' has 2 parameters - naming arguments is recommended for clarity.",
                 location: arg.Location);
         }
         else if (seenNamed && !isPositional && !isMixed)

@@ -41,6 +41,13 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     /// other presets is left as an identifier (reported downstream) instead of recursing forever.</summary>
     private readonly HashSet<string> _inlining = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>The names the routine being lowered binds itself (parameters, variables, loop and pattern names): a
+    /// preset of the same name is out of sight there (`each letter in word` next to a preset `letter`).</summary>
+    private HashSet<string> _locals = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The presets of each library module, over all its files, once computed.</summary>
+    private Dictionary<string, Dictionary<string, PresetDeclaration>>? _stdlibPresetsByModule;
+
     /// <summary>Every <c>preset</c> declared in the current file, keyed by name (public or secret).</summary>
     private static Dictionary<string, PresetDeclaration> CollectOwnPresets(Program program)
     {
@@ -62,12 +69,26 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     public void Run(Program program)
     {
         _ownPresets = CollectOwnPresets(program: program);
+        // A secret preset of a library module is the module's: another file of the module may name it.
+        if (ctx.Registry.StdlibPrograms.FirstOrDefault(predicate: p => ReferenceEquals(objA: p.Program, objB: program))
+                is { Module: { } module, FilePath: { } path } &&
+            (_stdlibPresetsByModule ??= StdlibPresetsByModule()).TryGetValue(key: ModuleKey(module: module, file: path),
+                value: out Dictionary<string, PresetDeclaration>? shared))
+        {
+            foreach ((string name, PresetDeclaration preset) in shared)
+            {
+                _ownPresets.TryAdd(key: name, value: preset);
+            }
+        }
+
         for (int i = 0; i < program.Declarations.Count; i++)
         {
+            _locals = new HashSet<string>(comparer: StringComparer.Ordinal);
             switch (program.Declarations[index: i])
             {
                 case RoutineDeclaration r:
                 {
+                    _locals = AstWalker.BoundNames(node: r);
                     Statement newBody = VisitStatement(stmt: r.Body);
                     if (!ReferenceEquals(objA: newBody, objB: r.Body))
                     {
@@ -103,6 +124,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
         // values it reaches keeps its body as written). Public presets inline via the registry.
         var empty = new Dictionary<string, PresetDeclaration>(comparer: StringComparer.Ordinal);
         Dictionary<string, Dictionary<string, PresetDeclaration>>? presetsByFile = null;
+        Dictionary<string, Dictionary<string, PresetDeclaration>>? presetsByModule = null;
         foreach (string key in ctx.VariantBodies.Keys.ToList())
         {
             if (ctx.RestoredVariantKeys.Contains(item: key))
@@ -110,18 +132,75 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
                 continue; // already inlined at snapshot capture
             }
 
-            string? file = ctx.Registry.GetRoutineByExactKey(registryKey: key)?.Location?.FileName;
+            RoutineInfo? recovered = ctx.Registry.GetRoutineByExactKey(registryKey: key);
+            string? file = recovered?.Location?.FileName;
             presetsByFile ??= StdlibPresetsByFile();
-            _ownPresets = file != null && presetsByFile.TryGetValue(key: file, value: out var own)
-                ? own
-                : empty;
+            presetsByModule ??= StdlibPresetsByModule();
+            // A secret preset is the module's: the routine's own file, or another file of its module.
+            _ownPresets = recovered?.Module is { } module && file != null &&
+                          presetsByModule.TryGetValue(key: ModuleKey(module: module, file: file), value: out var mine)
+                ? mine
+                : file != null && presetsByFile.TryGetValue(key: file, value: out var own)
+                    ? own
+                    : empty;
             Statement body = ctx.VariantBodies[key: key];
+            _locals = AstWalker.BoundNames(node: body);
+            if (recovered != null)
+            {
+                _locals.UnionWith(other: recovered.Parameters.Select(selector: p => p.Name));
+            }
+
             Statement lowered = VisitStatement(stmt: body);
             if (!ReferenceEquals(objA: lowered, objB: body))
             {
                 ctx.VariantBodies[key: key] = lowered;
             }
         }
+    }
+
+    /// <summary>The presets each library module declares, over all its files, by module. Only a module of several
+    /// files whose presets don't share a name across them is listed (else its files' own presets decide).</summary>
+    private Dictionary<string, Dictionary<string, PresetDeclaration>> StdlibPresetsByModule()
+    {
+        var byModule = new Dictionary<string, Dictionary<string, PresetDeclaration>>(comparer: StringComparer.Ordinal);
+        var clashing = new HashSet<string>(comparer: StringComparer.Ordinal);
+        foreach ((Program program, string filePath, string module) in ctx.Registry.StdlibPrograms)
+        {
+            // System's files stay file-scoped: widening its secret presets to the module pruned reachability.
+            if (StandardModules.IsSystem(module: module))
+            {
+                continue;
+            }
+
+            foreach (PresetDeclaration preset in program.Declarations.OfType<PresetDeclaration>())
+            {
+                string key = ModuleKey(module: module, file: filePath);
+                if (!byModule.TryGetValue(key: key, value: out Dictionary<string, PresetDeclaration>? presets))
+                {
+                    presets = new Dictionary<string, PresetDeclaration>(comparer: StringComparer.Ordinal);
+                    byModule[key: key] = presets;
+                }
+
+                if (!presets.TryAdd(key: preset.Name, value: preset))
+                {
+                    clashing.Add(item: key);
+                }
+            }
+        }
+
+        foreach (string module in clashing)
+        {
+            byModule.Remove(key: module);
+        }
+
+        return byModule;
+    }
+
+    /// <summary>The key of a module's presets: the module and the language its file is written in (a Suflae surface
+    /// of a module declares presets of the same names as the RazorForge files of that module).</summary>
+    private static string ModuleKey(string module, string file)
+    {
+        return module + "|" + Path.GetExtension(path: file);
     }
 
     /// <summary>The presets each library file declares, by file.</summary>
@@ -165,6 +244,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
                 continue;
             }
 
+            _locals = AstWalker.BoundNames(node: entry.Ast);
             Statement lowered = VisitStatement(stmt: body);
             if (!ReferenceEquals(objA: lowered, objB: body))
             {
@@ -185,6 +265,8 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
                 continue;
             }
 
+
+            _locals = AstWalker.BoundNames(node: m);
             Statement newBody = VisitStatement(stmt: m.Body);
             if (!ReferenceEquals(objA: newBody, objB: m.Body))
             {
@@ -239,6 +321,11 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     /// </summary>
     private Expression LowerIdentifier(Expression expr, IdentifierExpression id)
     {
+        if (_locals.Contains(item: id.Name))
+        {
+            return expr;
+        }
+
         VariableInfo? v = ctx.Registry.LookupVariable(name: id.Name);
 
         // A `secret preset` is MODULE-private: inline it inside any file of the module that declares

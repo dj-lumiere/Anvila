@@ -3617,9 +3617,98 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        betterMemberRoutine ??= OverloadForBareNumberRanges(call: call,
+            memberRoutineName: callLookupName,
+            dispatchType: dispatchType,
+            argTypes: resolvedArgTypes);
+
         if (betterMemberRoutine != null)
         {
             memberRoutine = betterMemberRoutine;
+        }
+    }
+
+    /// <summary>
+    /// The overload a call means when one of its arguments is a range of bare numbers (<c>p.repeat(2 to 4)</c>) and no
+    /// overload took the arguments as first analyzed: the range was typed against the first overload's parameter and
+    /// fell back to <c>Range[S64]</c>, while a bare number takes the type of the place it goes. The one overload whose
+    /// parameter there is a <c>Range</c> (and whose other parameters take the other arguments) is the call's, and the
+    /// range is analyzed again against it. Null when there is none or more than one.
+    /// </summary>
+    private RoutineInfo? OverloadForBareNumberRanges(CallExpression call, string memberRoutineName,
+        TypeSymbol dispatchType, List<TypeSymbol> argTypes)
+    {
+        List<Expression> values = call.Arguments.Select(selector: UnwrapNamedArgument).ToList();
+        if (values.Count != argTypes.Count || !values.Any(predicate: IsBareNumberRange))
+        {
+            return null;
+        }
+
+        var candidates = new List<RoutineInfo>();
+        _registry.CollectMemberRoutineCandidates(type: dispatchType,
+            memberRoutineName: memberRoutineName,
+            candidates: candidates);
+        RoutineInfo? found = null;
+        foreach (RoutineInfo candidate in candidates)
+        {
+            if (candidate.IsGenericDefinition || candidate.Parameters.Count != values.Count)
+            {
+                continue;
+            }
+
+            bool fits = true;
+            for (int i = 0; i < values.Count && fits; i++)
+            {
+                TypeSymbol paramType = candidate.Parameters[index: i].Type;
+                fits = IsBareNumberRange(expression: values[index: i])
+                    ? paramType.BareName == "Range"
+                    : IsAssignableTo(source: argTypes[index: i], target: paramType);
+            }
+
+            if (!fits)
+            {
+                continue;
+            }
+
+            if (found != null && !ReferenceEquals(objA: found, objB: candidate))
+            {
+                return null;
+            }
+
+            found = candidate;
+        }
+
+        if (found == null)
+        {
+            return null;
+        }
+
+        for (int i = 0; i < values.Count; i++)
+        {
+            if (IsBareNumberRange(expression: values[index: i]))
+            {
+                AnalyzeExpression(expression: values[index: i], expectedType: found.Parameters[index: i].Type);
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>Whether an expression is a range whose bounds (and step) are bare whole numbers, maybe negated.</summary>
+    private static bool IsBareNumberRange(Expression expression)
+    {
+        return expression is RangeExpression range && IsBareWholeNumber(expression: range.Start) &&
+               IsBareWholeNumber(expression: range.End) &&
+               (range.Step == null || IsBareWholeNumber(expression: range.Step));
+
+        static bool IsBareWholeNumber(Expression expression)
+        {
+            return expression switch
+            {
+                LiteralExpression { LiteralType: TokenType.IntegerLiteral } => true,
+                UnaryExpression { Operand: var operand } => IsBareWholeNumber(expression: operand),
+                _ => false
+            };
         }
     }
 
@@ -4014,6 +4103,9 @@ public sealed partial class SemanticVerifier
             firstArgTypeImport.FullName == firstParamTypeImport.FullName ||
             IsAssignableTo(source: firstArgTypeImport, target: firstParamTypeImport))
         {
+            // The first argument fits, a later one may not (`capture("year", digit)` bound the overload taking a
+            // `BytesPiece`): the concrete overload whose parameters take every argument, when there is one.
+            ResolveFallbackFreeOverloadByLaterArguments(call: call, routine: ref routine);
             return;
         }
 
@@ -4068,6 +4160,44 @@ public sealed partial class SemanticVerifier
                 typeArguments: inferredImport)
             : genericImport;
         call.ResolvedRoutine = routine;
+    }
+
+    /// <summary>
+    /// Rebinds an import-resolved free call whose first argument fits the bound overload but a later one doesn't, to
+    /// the concrete overload of the same set that takes every argument. Leaves the call as it is when none does.
+    /// </summary>
+    private void ResolveFallbackFreeOverloadByLaterArguments(CallExpression call, ref RoutineInfo? routine)
+    {
+        if (routine == null || call.Arguments.Count < 2 || routine.Parameters.Count != call.Arguments.Count ||
+            !HasArgumentTypeMismatch(call: call, routine: routine))
+        {
+            return;
+        }
+
+        var argTypes = new List<TypeSymbol>(capacity: call.Arguments.Count);
+        foreach (Expression argument in OrderByParameters(arguments: call.Arguments, routine: routine))
+        {
+            Expression value = UnwrapNamedArgument(argument: argument);
+            if (value is LambdaExpression)
+            {
+                return;
+            }
+
+            TypeSymbol argType = AnalyzeExpression(expression: value);
+            if (argType == ErrorTypeSymbol.Instance)
+            {
+                return;
+            }
+
+            argTypes.Add(item: argType);
+        }
+
+        if (_registry.LookupRoutineOverload(baseName: routine.BaseName, argTypes: argTypes) is
+                { IsGenericDefinition: false } better && better != routine)
+        {
+            routine = better;
+            call.ResolvedRoutine = routine;
+        }
     }
 
     private void InferFallbackFreeTypeArguments(CallExpression call, TypeSymbol? expectedType,

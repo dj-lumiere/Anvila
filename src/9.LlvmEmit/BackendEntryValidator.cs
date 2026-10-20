@@ -100,8 +100,15 @@ public sealed class BackendEntryValidator
     /// Traverses the tree, collecting every residual-node error instead of failing fast.
     /// </summary>
     private static void Walk(ISyntaxTreeNode node, List<SemanticError> errors,
-        TypeRegistry registry)
+        TypeRegistry registry, HashSet<string>? locals = null, ISyntaxTreeNode? callee = null)
     {
+        // The names a routine binds itself hide a preset of the same name inside it (`each letter in word` beside
+        // a preset `letter`).
+        if (node is RoutineDeclaration || locals == null)
+        {
+            locals = node is RoutineDeclaration or Statement ? AstWalker.BoundNames(node: node) : locals;
+        }
+
         // Skip bodies of generic routine declarations: their expressions legitimately carry
         // GenericParameterTypeSymbol in ResolvedType (e.g. `me.tree[i]` on `me.tree: List[V]`
         // is typed V in the gen-def template). The monomorphized clones are validated
@@ -119,16 +126,20 @@ public sealed class BackendEntryValidator
             return;
         }
 
-        if (TryCreateResidualError(node: node,
+        if (!(node is IdentifierExpression local && locals != null && locals.Contains(item: local.Name)) &&
+            !ReferenceEquals(objA: node, objB: callee) &&
+            TryCreateResidualError(node: node,
                 registry: registry,
                 error: out SemanticError? error))
         {
             errors.Add(item: error!);
         }
 
+        // The bare name a call is made by names a routine or a type, not a preset of that name.
+        ISyntaxTreeNode? calledName = node is CallExpression { Callee: IdentifierExpression name } ? name : null;
         foreach (ISyntaxTreeNode child in EnumerateChildren(node: node))
         {
-            Walk(node: child, errors: errors, registry: registry);
+            Walk(node: child, errors: errors, registry: registry, locals: locals, callee: calledName);
         }
     }
 

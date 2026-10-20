@@ -158,7 +158,8 @@ public partial class LlvmEmitter
 
         // Aggregate (Array[T,N]) presets are not inlined — they live in a shared `@preset.*`
         // constant global. A value-position read loads the whole array from the global.
-        if (ResolveAggregatePreset(name: identifier.Name) is { } aggregatePreset)
+        if (!_localVariables.ContainsKey(key: identifier.Name) &&
+            ResolveAggregatePreset(name: identifier.Name) is { } aggregatePreset)
         {
             string presetSym = EmitOrGetPresetGlobal(preset: aggregatePreset);
             string arrLlvm = GetLlvmType(type: aggregatePreset.Type);
@@ -169,7 +170,10 @@ public partial class LlvmEmitter
 
         // Scalar presets must be inlined before backend entry. Codegen should not read declaration
         // AST to recover their values on demand.
-        if (_registry.LookupVariable(name: identifier.Name) is { IsPreset: true })
+        // A local of the routine shadows a preset of the same name (`each letter in word` beside a preset
+        // `letter`).
+        if (!_localVariables.ContainsKey(key: identifier.Name) &&
+            _registry.LookupVariable(name: identifier.Name) is { IsPreset: true })
         {
             throw new InvalidOperationException(
                 message:

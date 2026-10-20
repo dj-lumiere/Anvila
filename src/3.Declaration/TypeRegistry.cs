@@ -1044,9 +1044,14 @@ public sealed partial class TypeRegistry
         // Bare module name (e.g. `import Collections`) — load every file declaring `module <Name>`
         // via the multi-file overload. Filesystem fallback can't handle directory-as-module unless
         // the directory contains a same-named anchor file (e.g. BuilderQuery/BuilderQuery.rf).
+        // A module path whose module is several files (`import Text/Patterns`) loads the same way: an import path
+        // otherwise resolves to one of its files.
         bool isBareModuleName =
             !importPath.Contains(value: '/') && !importPath.Contains(value: '.');
-        if (isBareModuleName && _stdlibLoader.LoadModule(registry: this, moduleName: importPath))
+        bool isMultiFileModule = !isBareModuleName && !importPath.Contains(value: '.') &&
+                                 _stdlibLoader.ModuleFileCount(module: importPath) > 1;
+        if ((isBareModuleName || isMultiFileModule) &&
+            _stdlibLoader.LoadModule(registry: this, moduleName: importPath))
         {
             _loadedModules.Add(item: moduleId);
             effectiveModule = importPath;

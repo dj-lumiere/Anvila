@@ -29,6 +29,38 @@ public static class AstWalker
         }
     }
 
+    /// <summary>The names a routine (or a body) binds: its parameters, its variables, the names its loops, its
+    /// patterns, its access and `using` blocks and its `steal ... as` statements give.</summary>
+    public static HashSet<string> BoundNames(object node)
+    {
+        var names = new HashSet<string>(comparer: StringComparer.Ordinal);
+        Walk(root: node,
+            visit: n =>
+            {
+                string? name = n switch
+                {
+                    Parameter parameter => parameter.Name,
+                    VariableDeclaration variable => variable.Name,
+                    EachStatement each => each.Variable,
+                    CarriedValue carried => carried.Name,
+                    TypePattern type => type.VariableName,
+                    CrashablePattern crashable => crashable.VariableName,
+                    ElsePattern other => other.VariableName,
+                    SpliceTypePattern splice => splice.VariableName,
+                    DestructuringBinding binding => binding.BindingName,
+                    StealStatement steal => steal.Name,
+                    UsingStatement usingBlock => usingBlock.Name,
+                    AccessTarget target => target.Name,
+                    _ => null
+                };
+                if (name != null)
+                {
+                    names.Add(item: name);
+                }
+            });
+        return names;
+    }
+
     /// <summary>
     /// Convenience overload that only invokes <paramref name="visit"/> on
     /// <see cref="Expression"/> nodes encountered during the walk.
