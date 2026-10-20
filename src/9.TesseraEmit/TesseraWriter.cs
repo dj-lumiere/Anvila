@@ -1145,6 +1145,12 @@ internal sealed class TesseraWriter
                // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
                $"@external(\"c\")\n@symbol(\"{(_input.Registry.Language == TypeModel.Enums.Language.Suflae ? "tessera_deep_calls_report" : "tessera_stack_overflow_report")}\")\n" +
                "routine c_tessera_stack_overflow_report(stack_size: U64) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"rf_set_crash_report\")\n" +
+               "routine c_rf_set_crash_report(report: Addr) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"tessera_runtime_crash_report\")\n" +
+               "routine c_tessera_runtime_crash_report(name: CStrView, message: CStrView, place: Addr) -> Void\n\n" +
+               "@external(\"c\")\n@symbol(\"tessera_set_library_folder\")\n" +
+               "routine c_tessera_set_library_folder(library: CStrView) -> Void\n\n" +
                "@external(\"c\")\n@symbol(\"rf_exit_code\")\n" +
                "routine c_rf_exit_code() -> S32\n\n" +
                "@external(\"c\")\n@symbol(\"rf_access_configure\")\n" +
@@ -1155,6 +1161,10 @@ internal sealed class TesseraWriter
                $"    c_rf_set_trace_mode({(Traces ? 2 : 0)})\n" +
                // A stack overflow is reported by Ingrid's crash report, linked in with the crash trace.
                "    c_rf_set_stack_overflow_report(c_tessera_stack_overflow_report.addr())\n" +
+               // So is a crash the runtime raises (a deadlock, a failed allocation), named by where the program called
+               // into the standard library.
+               "    c_rf_set_crash_report(c_tessera_runtime_crash_report.addr())\n" +
+               $"    c_tessera_set_library_folder({TesseraTrace.CString(text: _input.Registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "")})\n" +
                // The AccessManager's checks and the language its reports speak. The places in its reports come from
                // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
                $"    c_rf_access_configure({AccessCheckArguments()}, .hollow())\n" +

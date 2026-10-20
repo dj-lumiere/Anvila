@@ -185,7 +185,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Every protocol <paramref name="type"/> obeys, through the protocols those extend.</summary>
-    private static IEnumerable<ProtocolTypeSymbol> ProtocolsOf(TypeSymbol type)
+    internal static IEnumerable<ProtocolTypeSymbol> ProtocolsOf(TypeSymbol type)
     {
         List<TypeSymbol> declared = type switch
         {

@@ -1,4 +1,8 @@
+using Builder.Declaration;
 using Builder.Targeting;
+using SyntaxTree;
+using TypeModel;
+using TypeModel.Enums;
 using TypeModel.Symbols;
 
 namespace Builder.Collection;
@@ -84,5 +88,69 @@ internal static class TraceFrames
     private static string Qualified(TypeModel.Types.TypeSymbol type)
     {
         return string.IsNullOrEmpty(value: type.Module) ? type.Name : $"{type.Module}.{type.Name}";
+    }
+}
+
+/// <summary>
+/// Where entities are shared (Suflae), which standard library routines push a frame: the ones a program can name. A
+/// routine of Suflae's library is one when neither it nor its type is <c>secret</c>, and a routine of RazorForge's
+/// library when an open <c>@rf</c> declaration binds it and its type. The library's own helpers push none, so a crash
+/// trace shows the program's routines and the library routines it called, never what those called inside the library.
+/// </summary>
+internal sealed class LibraryFrames(TypeRegistry registry)
+{
+    private readonly HashSet<string> _open = RfBindingCheck.BoundNames(registry: registry, openOnly: true);
+
+    /// <summary>True when <paramref name="routine"/> is a library routine no program can name.</summary>
+    public bool Hides(RoutineInfo routine)
+    {
+        RoutineInfo definition = routine.GenericDefinition ?? routine;
+        string? file = definition.Location?.FileName;
+        if (registry.IsLanguageLibraryFile(filePath: file, language: Language.Suflae))
+        {
+            return definition.Visibility == VisibilityModifier.Secret ||
+                   definition.OwnerType is { } own && !Open(type: own);
+        }
+
+        if (!registry.IsStandardLibraryFile(filePath: file))
+        {
+            return false;
+        }
+
+        bool bound = _open.Contains(item: RfBindingCheck.ShapeOf(routine: routine)) ||
+                     definition.OwnerType is { } owner &&
+                     Verification.SemanticVerifier.ProtocolsOf(type: owner)
+                                 .Any(predicate: p => _open.Contains(
+                                      item: RfBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)));
+        return !bound || definition.OwnerType is { } type && !Open(type: type);
+    }
+
+    /// <summary>Whether a program can name <paramref name="type"/>: a type of Suflae's library that is not
+    /// <c>secret</c>, a RazorForge library type an open <c>@rf</c> declaration binds, or a type of the
+    /// program.</summary>
+    private bool Open(TypeModel.Types.TypeSymbol type)
+    {
+        // A handle stands for the entity it holds.
+        if (type is TypeModel.Types.RecordTypeSymbol { GenericDefinition.Name: "Roamed", TypeArguments: [var held] })
+        {
+            return Open(type: held);
+        }
+
+        TypeModel.Types.TypeSymbol definition = type switch
+        {
+            TypeModel.Types.RecordTypeSymbol { GenericDefinition: { } record } => record,
+            TypeModel.Types.EntityTypeSymbol { GenericDefinition: { } entity } => entity,
+            TypeModel.Types.ProtocolTypeSymbol { GenericDefinition: { } protocol } => protocol,
+            _ => type
+        };
+        // A Suflae library type of the same name (Suflae's own `List`) is stamped with Suflae's realm.
+        if (definition.Realm == Realms.Shared &&
+            registry.RazorForgeLibraryTypes.Contains(item: $"{definition.Module}.{definition.BareName}"))
+        {
+            return _open.Contains(item: definition.BareName);
+        }
+
+        return definition.Visibility != VisibilityModifier.Secret ||
+               !registry.IsLanguageLibraryFile(filePath: definition.Location?.FileName, language: Language.Suflae);
     }
 }

@@ -91,12 +91,16 @@ internal static class RfBindingCheck
     /// its call shape (see <see cref="ShapeOf(RoutineInfo)"/>). A protocol binding lends the shapes of the routines it
     /// lists.
     /// </summary>
-    internal static HashSet<string> BoundNames(TypeRegistry registry)
+    /// <param name="registry">The registry whose bindings are read.</param>
+    /// <param name="openOnly">True to leave out the <c>secret</c> bindings: what a program may name, not only what
+    ///     Suflae's library (and the builder's lowerings of it) may.</param>
+    internal static HashSet<string> BoundNames(TypeRegistry registry, bool openOnly = false)
     {
         var bound = new HashSet<string>(comparer: StringComparer.Ordinal);
         foreach ((SyntaxTree.Declaration declaration, _, _) in registry.RfBindings)
         {
-            if (TargetOf(declaration: declaration) is not { } target)
+            if (TargetOf(declaration: declaration) is not { } target ||
+                openOnly && VisibilityOf(declaration: declaration) == VisibilityModifier.Secret)
             {
                 continue;
             }
@@ -158,6 +162,22 @@ internal static class RfBindingCheck
         return name.StartsWith(value: "Me.", comparisonType: StringComparison.Ordinal)
             ? name["Me.".Length..]
             : name;
+    }
+
+    /// <summary>The visibility a binding is written with.</summary>
+    private static VisibilityModifier VisibilityOf(SyntaxTree.Declaration declaration)
+    {
+        return declaration switch
+        {
+            RoutineDeclaration routine => routine.Visibility,
+            RecordDeclaration record => record.Visibility,
+            EntityDeclaration entity => entity.Visibility,
+            CrashableDeclaration crashable => crashable.Visibility,
+            ChoiceDeclaration choice => choice.Visibility,
+            FlagsDeclaration flags => flags.Visibility,
+            ProtocolDeclaration protocol => protocol.Visibility,
+            _ => VisibilityModifier.Open
+        };
     }
 
     private static List<string>? AnnotationsOf(SyntaxTree.Declaration declaration)

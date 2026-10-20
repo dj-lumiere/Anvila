@@ -689,8 +689,13 @@ public partial class LlvmEmitter
     private void EmitTracePush(StringBuilder sb, RoutineInfo routine)
     {
         _traceHidesPosition = false;
+        // Where entities are shared, a library routine the program can't name (the library's own helper) pushes no
+        // frame: the trace shows the library routine the program called, and where in the program it was called.
         _traceCurrentRoutine = ShouldEmitTrace &&
-                               Builder.Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability);
+                               Builder.Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability) &&
+                               !(_registry.EntitiesAreShared &&
+                                 (_libraryFrames ??= new Builder.Collection.LibraryFrames(registry: _registry))
+                                .Hides(routine: routine));
         if (!_traceCurrentRoutine)
         {
             return;

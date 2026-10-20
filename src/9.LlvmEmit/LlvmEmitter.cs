@@ -341,6 +341,10 @@ public partial class LlvmEmitter
     /// routine in a build that shares entities): its frame keeps line 0.</summary>
     private bool _traceHidesPosition;
 
+    /// <summary>Where entities are shared, the library routines whose frames the crash trace leaves out, made on the
+    /// first traced routine.</summary>
+    private Builder.Collection.LibraryFrames? _libraryFrames;
+
     /// <summary>Which emitted routines can crash; set before routine definitions are generated.</summary>
     private Builder.Collection.CrashReachability? _crashReachability;
 
@@ -1243,6 +1247,13 @@ public partial class LlvmEmitter
         output.AppendLine(handler: $"declare void @{overflowReport}(i64)");
         output.AppendLine(value: "declare void @rf_access_configure(i32, i32, i32, ptr)");
         output.AppendLine(value: "declare void @ingrid_access_place(ptr)");
+        output.AppendLine(value: "declare void @rf_set_crash_report(ptr)");
+        output.AppendLine(value: "declare void @tessera_runtime_crash_report(ptr, ptr, ptr)");
+        output.AppendLine(value: "declare void @tessera_set_library_folder(ptr)");
+        // The standard library's folder, so a crash the runtime raises names where the program called into the library.
+        string library = _registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "";
+        output.AppendLine(handler:
+            $"@.crash.library = private unnamed_addr constant [{Encoding.UTF8.GetByteCount(s: library) + 1} x i8] c\"{LlvmCStringBody(value: library)}\"");
 
         output.AppendLine();
         output.AppendLine(value: "; Entry point");
@@ -1252,8 +1263,11 @@ public partial class LlvmEmitter
         output.AppendLine(value: "  call void @rf_heap_limit_init()");
         output.AppendLine(value: "  call void @rf_runtime_init()");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
-        // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace.
+        // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace, and so
+        // is a crash the runtime raises (a deadlock, a failed allocation).
         output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
+        output.AppendLine(value: "  call void @rf_set_crash_report(ptr @tessera_runtime_crash_report)");
+        output.AppendLine(value: "  call void @tessera_set_library_folder(ptr @.crash.library)");
         // The AccessManager's checks ([debug] deadlock-check, on in debug, and access-order), the language its
         // reports speak, and where the program's code is when it takes an access (the crash trace's top frame).
         (int deadlockCheck, int accessOrder, int language) = AccessChecks(registry: _registry, mode: _buildMode);
@@ -1566,9 +1580,19 @@ public partial class LlvmEmitter
         }
 
         string name = $"@.cstr.{_cstrCounter++}";
-        byte[] utf8 = Encoding.UTF8.GetBytes(s: value + "\0");
+        EmitLine(sb: _globalDeclarations,
+            line:
+            $"{name} = private unnamed_addr constant [{Encoding.UTF8.GetByteCount(s: value) + 1} x i8] c\"{LlvmCStringBody(value: value)}\"");
+        _cstrConstants[key: value] = name;
+        return name;
+    }
+
+    /// <summary>The body of an LLVM <c>c"..."</c> constant holding <paramref name="value"/> as UTF-8 with a NUL at the
+    /// end: printable ASCII as it is, every other byte (and <c>\</c> and <c>"</c>) as <c>\XX</c>.</summary>
+    private static string LlvmCStringBody(string value)
+    {
         var sb = new StringBuilder();
-        foreach (byte b in utf8)
+        foreach (byte b in Encoding.UTF8.GetBytes(s: value + "\0"))
         {
             if (b is >= 0x20 and < 0x7F && b != (byte)'\\' && b != (byte)'"')
             {
@@ -1580,10 +1604,7 @@ public partial class LlvmEmitter
             }
         }
 
-        EmitLine(sb: _globalDeclarations,
-            line: $"{name} = private unnamed_addr constant [{utf8.Length} x i8] c\"{sb}\"");
-        _cstrConstants[key: value] = name;
-        return name;
+        return sb.ToString();
     }
 
     #endregion
