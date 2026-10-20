@@ -124,7 +124,7 @@ public enum TokenType
     /// <summary>Arbitrary precision integer literal</summary>
     IntegerLiteral,
 
-    /// <summary>Address-sized unsigned integer literal</summary>
+    /// <summary>A whole number written for an address (<c>Addr</c>): the address it names</summary>
     AddressLiteral,
 
     // Floating point

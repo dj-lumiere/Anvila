@@ -54,7 +54,7 @@ internal static class LiteralTypeStampPass
             TokenType.D32Literal => "D32",
             TokenType.D64Literal => "D64",
             TokenType.D128Literal => "D128",
-            TokenType.AddressLiteral => "Address",
+            TokenType.AddressLiteral => RuntimeContract.Addr,
             TokenType.True or TokenType.False => "Bool",
             TokenType.TextLiteral or TokenType.RawText => "Text",
             TokenType.BytesLiteral or TokenType.BytesRawLiteral => "Bytes",

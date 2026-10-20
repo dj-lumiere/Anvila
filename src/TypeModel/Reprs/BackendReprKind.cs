@@ -26,6 +26,6 @@ public enum BackendReprKind
     /// <summary>FreeRoutine pointer (routine reference).</summary>
     RoutineRef,
 
-    /// <summary>Untyped raw pointer (CPtr / Address).</summary>
+    /// <summary>Untyped raw pointer (Addr).</summary>
     RawPtr
 }

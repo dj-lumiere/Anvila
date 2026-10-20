@@ -14,7 +14,7 @@ namespace Builder.Instantiation.Passes;
 ///
 /// <para>The call <c>data.as_entity().roam_trace_ref()</c> is replaced by a
 /// <see cref="NativeRoutineExpression"/> over the concrete <c>roam_trace</c> / <c>roam_free</c> of the concrete
-/// entity: the collector calls the hook natively through a CPtr slot, so a backend writes the routine's bare
+/// entity: the collector calls the hook natively through an Addr slot, so a backend writes the routine's bare
 /// address, and the pass, not a backend, picks the routine.</para>
 ///
 /// <para>The <c>as_entity()</c> receiver is a pure reinterpret whose only purpose was to name the

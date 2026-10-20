@@ -184,7 +184,7 @@ public partial class LlvmEmitter
         // routine hook). The routine is already known, so skip name-based lookup — the bare name may
         // be a memberRoutine that lookup cannot resolve without the owner type. Falls through the same
         // closure-materialization path (memberRoutines are handled via the member-aware closure path). The
-        // node keeps the surrounding-context type (e.g. CPtr for a hook field), so we gate on the
+        // node keeps the surrounding-context type (e.g. Addr for a hook field), so we gate on the
         // resolved routine alone rather than its ResolvedType label.
         if (identifier.ResolvedRoutine is { } preResolved)
         {
@@ -534,15 +534,19 @@ public partial class LlvmEmitter
         string right = EmitExpression(sb: sb, expr: binary.Right);
         string type = binary.Left.ResolvedType is { } leftType ? GetLlvmType(type: leftType) : "ptr";
         string compared = "ptr";
-        // A handle that holds its manager's address as an integer field (`Watched[T]` is `{ i64 }`) is the same
-        // object exactly when the addresses match: compare the field.
+        // A handle that holds its manager's address as a field (`Watched[T]` is `{ ptr }`) is the same object exactly
+        // when the addresses match: compare the field.
         if (type.StartsWith(value: "%", comparisonType: StringComparison.Ordinal) || type.StartsWith(value: "{", comparisonType: StringComparison.Ordinal))
         {
             string l = NextTemp();
             string r = NextTemp();
             EmitLine(sb: sb, line: $"  {l} = extractvalue {type} {left}, 0");
             EmitLine(sb: sb, line: $"  {r} = extractvalue {type} {right}, 0");
-            (left, right, compared) = (l, r, "i64");
+            string field = binary.Left.ResolvedType is RecordTypeSymbol { MemberVariables: [var first, ..] }
+                ? GetLlvmType(type: first.Type)
+                : throw new InvalidOperationException(
+                    message: $"An identity compare of '{type}' has no field to compare at {binary.Location}.");
+            (left, right, compared) = (l, r, field);
         }
         string result = NextTemp();
         EmitLine(sb: sb, line: $"  {result} = icmp {cmpOp} {compared} {left}, {right}");

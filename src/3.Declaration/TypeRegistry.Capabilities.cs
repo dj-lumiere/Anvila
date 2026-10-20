@@ -304,7 +304,7 @@ public sealed partial class TypeRegistry
     ///   <item><description>Routines: yes — a routine value is a NON-OWNING ptr (fnptr / closure blob), bitwise-copyable like a stored C function pointer.</description></item>
     ///   <item><description>Generic parameters: false (decision deferred to instantiation).</description></item>
     /// </list>
-    /// Raw-pointer types like <c>Hijacked[T]</c> and <c>CPtr</c> are ptr-shaped and
+    /// Raw-pointer types like <c>Hijacked[T]</c> and <c>Addr</c> are ptr-shaped and
     /// therefore must opt in manually with a trivial <c>assign() -> Me  return me</c>.
     /// </summary>
     public bool CanAutoDeriveAssignable(TypeSymbol type)
@@ -360,7 +360,7 @@ public sealed partial class TypeRegistry
         // wrappers (Retained/Guarded/Tracked/Witnessed/Roamed) now obey it (copy = an implicit retain/share),
         // so a record holding one is freely copyable via this TypeObeysProtocol path. An `entity` field does
         // NOT obey Assignable → the containing record is entity-kind (move-only), not copyable. A raw
-        // `Hijacked`/`CPtr` field is left as-is (it opts into `assign` manually, or the record stays
+        // `Hijacked`/`Addr` field is left as-is (it opts into `assign` manually, or the record stays
         // non-Assignable) — the raw-pointer escape hatch is the user's responsibility.
         bool MemberVariableAssignable(TypeSymbol f)
         {
@@ -477,7 +477,7 @@ public sealed partial class TypeRegistry
     /// conformance query (<see cref="TypeObeysProtocol"/>), matching how <c>needs T obeys P</c> is
     /// checked. Empty member set (field-less record, choice/flags) ⇒ vacuously true.
     /// <para>
-    /// WRAPPER types (RC handles, raw-pointer <c>Hijacked</c>/<c>CPtr</c>, scope-bound access tokens) are
+    /// WRAPPER types (RC handles, raw-pointer <c>Hijacked</c>/<c>Addr</c>, scope-bound access tokens) are
     /// excluded up front — a raw/shared handle is never structurally copyable (bitwise dup would alias →
     /// double-free), and the Assignable wrappers declare their conformance explicitly (so the gate would skip
     /// them anyway). An <c>@llvm</c> aggregate (Array[T,N], Vector[T,N]) has NO AST member variables — its

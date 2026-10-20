@@ -13,7 +13,7 @@ namespace Builder.Verification;
 /// </summary>
 public sealed partial class SemanticVerifier
 {
-    private const string AddressTypeName = "Address";
+    private const string AddressTypeName = Declaration.RuntimeContract.Addr;
     private const string IntegerTypeName = "Integer";
 
     /// <summary>
@@ -435,7 +435,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Checks if a type is a fixed-width integer type (S8-S128, U8-U128, Address).
+    /// Checks if a type is a fixed-width integer type (S8-S128, U8-U128).
     /// Uses protocol conformance: fixed-width integer types obey <c>FixedIntegral</c>.
     /// </summary>
     private bool IsFixedWidthIntegerType(TypeSymbol type)
@@ -1280,7 +1280,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Parses an unsigned integer literal (U8-U64, Address) with overflow validation.
+    /// Parses an unsigned integer literal (U8-U64, Addr) with overflow validation.
     /// </summary>
     private ParsedUnsignedInt? ParseUnsignedIntLiteral(LiteralExpression literal, string rawValue,
         string typeName, ulong maxValue, string? suffix = null)

@@ -331,7 +331,7 @@ public sealed partial class SemanticVerifier
                 typeArgs: typeArgs);
         }
 
-        // Standalone generic function call (e.g., ptrtoint[Point, Address](p), hijacked_none[T]())
+        // Standalone generic function call (e.g., ptrtoint[Point, U64](p), hijacked_none[T]())
         // The object is an identifier that resolves to a routine, not a type or variable
         if (generic.Object is IdentifierExpression funcId)
         {
@@ -624,7 +624,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Analyzes a standalone generic FREE-routine call (<c>ptrtoint[Point, Address](p)</c>,
+    /// Analyzes a standalone generic FREE-routine call (<c>ptrtoint[Point, U64](p)</c>,
     /// <c>hijacked_none[T]()</c>): monomorphizes <paramref name="routine"/> against the explicit type
     /// args, types the arguments through the resulting substitution, and returns the (substituted)
     /// return type.

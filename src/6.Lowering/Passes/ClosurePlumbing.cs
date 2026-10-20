@@ -9,7 +9,7 @@ namespace Builder.Lowering.Passes;
 /// <summary>
 /// The typed nodes a capturing lambda is lowered to (LambdaLiftingPass): the payload chain
 /// <c>closure_put[V1](bound: closure_put[V0](bound: closure_new(slots: 2), slot: 0, value: a), slot: 1, value: b)</c>
-/// at the lambda, and in the lifted routine a trailing <c>__bound: CPtr</c> parameter plus
+/// at the lambda, and in the lifted routine a trailing <c>__bound: Addr</c> parameter plus
 /// <c>var a = closure_get[V0](bound: __bound, slot: 0)</c> per captured value. The helpers live in System
 /// (<c>System/Memory/Closure.rf</c>), so the payload's layout and the copy of each captured value are ordinary
 /// RF code, and the emitter only pairs the lifted routine with the payload.
@@ -28,15 +28,15 @@ internal sealed class ClosurePlumbing
     {
         _registry = registry;
         _location = location;
-        _cptr = Lookup(name: "CPtr");
+        _cptr = Lookup(name: RuntimeContract.Addr);
         _u64 = Lookup(name: "U64");
     }
 
-    /// <summary>The lifted routine's <c>__bound: CPtr</c> parameter.</summary>
+    /// <summary>The lifted routine's <c>__bound: Addr</c> parameter.</summary>
     internal Parameter BoundParameter()
     {
         return new Parameter(Name: BoundParameterName,
-            Type: new TypeExpression(Name: "CPtr", GenericArguments: null, Location: _location)
+            Type: new TypeExpression(Name: RuntimeContract.Addr, GenericArguments: null, Location: _location)
             {
                 ResolvedType = _cptr
             },

@@ -31,9 +31,10 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules" or "access" or "cpu-events"))
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules" or "access" or "cpu-events"
+                or "addr"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules, access or cpu-events");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules, access, cpu-events or addr");
             return 2;
         }
 
@@ -83,6 +84,12 @@ internal partial class Program
         if (step == "cpu-events")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteCpuEvents);
+        }
+
+        // `--step addr`: `Address` and `CPtr` are one type, `Addr`, compared with `===` and moved with `offset(bytes:)`.
+        if (step == "addr")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAddr);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
@@ -871,12 +878,12 @@ internal partial class Program
                 continue;
             }
 
-            // Suflae's row of places under every collection, `Buffer[T]`, is `Memory[T]`.
-            if (language == Language.Suflae && token.Text is "Buffer" or "BufferViewShapeError")
+            // Suflae's row of places under every collection, `Buffer[T]`, is `Memory[T]`. A range of one, `mem[a til b]`,
+            // is a `Span[T]`: where a name or a routine's result written `Buffer[T]` holds a range, the build names it.
+            if (language == Language.Suflae && token.Text == "Buffer")
             {
                 edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length,
-                    Replacement: token.Text == "Buffer" ? "Memory" : "MemoryViewShapeError", Line: token.Line,
-                    What: $"{token.Text} → {(token.Text == "Buffer" ? "Memory" : "MemoryViewShapeError")}"));
+                    Replacement: "Memory", Line: token.Line, What: "Buffer → Memory"));
                 continue;
             }
 
@@ -1279,7 +1286,7 @@ internal partial class Program
     [
         "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256",
         "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256",
-        "CStr", "CLong", "CULong", "CWChar", "Q128", "Q256", "Moment", "Bool", "Address", "List", "Set"
+        "CStr", "CLong", "CULong", "CWChar", "Q128", "Q256", "Moment", "Bool", "Address", "Addr", "List", "Set"
     ];
 
     /// <summary>The argument labels a conversion creator was written with.</summary>

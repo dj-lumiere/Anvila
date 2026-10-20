@@ -54,7 +54,7 @@ internal sealed class RfStubWriter
     /// </summary>
     private static readonly HashSet<string> UnsharedTypes = new(comparer: StringComparer.Ordinal)
     {
-        "Accessing", "Controlling", "Assignable", "AtomicType", "Splittable", "CPtr", "Address", "IngridWords",
+        "Accessing", "Controlling", "Assignable", "AtomicType", "Splittable", "Addr", "IngridWords",
         "Hijacked", "Viewing", "Modifying", "Retained", "Tracked", "Roamed", "Guarded", "Witnessed", "Watched",
         "ReenterDuringAccessError",
         "ListEmittable", "CircularListEmittable", "SplitListEmittable",

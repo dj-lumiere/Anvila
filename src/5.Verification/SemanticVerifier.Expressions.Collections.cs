@@ -726,7 +726,7 @@ public sealed partial class SemanticVerifier
             {
                 operandTypes[index: i] = AnalyzeExpression(expression: chain.Operands[index: i],
                     expectedType: numberPeer != null &&
-                                  ConformsToPeer(literal: number, peer: numberPeer, op: BinaryOperator.Less)
+                                  ConformsToPeer(literal: number, peer: numberPeer)
                         ? numberPeer
                         : null);
             }
@@ -756,7 +756,7 @@ public sealed partial class SemanticVerifier
             for (int i = 0; i < chain.Operands.Count; i++)
             {
                 if (LeadingNumber(expression: chain.Operands[index: i]) is { } literal &&
-                    ConformsToPeer(literal: literal, peer: pivot, op: BinaryOperator.Less) &&
+                    ConformsToPeer(literal: literal, peer: pivot) &&
                     operandTypes[index: i].Name != pivot.Name)
                 {
                     operandTypes[index: i] = AnalyzeExpression(

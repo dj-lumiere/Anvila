@@ -912,7 +912,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             inheritedGenericConstraints: genericConstraints,
             includeMe: false);
 
-        // A capturing lambda takes its bound payload as a trailing `__bound: CPtr` and starts by copying
+        // A capturing lambda takes its bound payload as a trailing `__bound: Addr` and starts by copying
         // each captured value out of it into a local of the captured name (System's closure_get).
         ClosurePlumbing? closure = closureCaptures.Count > 0
             ? new ClosurePlumbing(registry: ctx.Registry, location: lambda.Location)

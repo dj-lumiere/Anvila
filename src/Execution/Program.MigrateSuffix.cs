@@ -255,7 +255,7 @@ internal partial class Program
         {
             "n" => "Integer",
             "dn" => "Decimal",
-            "addr" => "Address",
+            "addr" => "Addr",
             _ => suffix.ToUpperInvariant()
         };
     }

@@ -750,7 +750,7 @@ public partial class LlvmEmitter
 
         // Structured attribute prefix — the routine's PROPERTIES (kind, failability, async mode,
         // storage) are obfuscated into a bracketed list so the name itself carries only the
-        // module-qualified raw identifier. E.g. `[member] System.Address.create(...)`,
+        // module-qualified raw identifier. E.g. `[member] System.Addr.create(...)`,
         // `[independent, crashable] Foo.parse(...)`. Wired-ness is deliberately NOT in the prefix
         // (see below). External("C") routines are EXEMPT (they keep the
         // raw C symbol so the LLVM declare links against the native lib), so this is not called there.

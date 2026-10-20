@@ -1261,7 +1261,7 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// Validates a const generic constraint (e.g., requires N is Address).
+    /// Validates a const generic constraint (e.g., requires N is U64).
     /// Const generics are build-time constant values, not types.
     /// </summary>
     private void ValidateConstGenericConstraint(TypeSymbol typeArg,
@@ -1461,8 +1461,7 @@ internal sealed class TypeResolver
             ("u32", "U32"), ("s32", "S32"),
             ("u16", "U16"), ("s16", "S16"),
             ("u8", "U8"), ("s8", "S8"),
-            ("u128", "U128"), ("s128", "S128"),
-            ("addr", "Address")
+            ("u128", "U128"), ("s128", "S128")
         ];
 
         foreach ((string suffix, string typeName) in suffixes)
@@ -1572,7 +1571,7 @@ internal sealed class TypeResolver
                     explicitTypeName: "Bool");
                 return true;
 
-            // A bare number takes the preset's declared type (`preset WIDTH: Address = 16`).
+            // A bare number takes the preset's declared type (`preset WIDTH: U64 = 16`).
             case TokenType.UndecidedInteger:
             case TokenType.IntegerLiteral:
             case TokenType.S8Literal:
@@ -1611,7 +1610,7 @@ internal sealed class TypeResolver
     {
         return declaredType.Name switch
         {
-            "Bool" or "Address" or "U8" or "U16" or "U32" or "U64" or "U128" or "S8" or "S16"
+            "Bool" or "U8" or "U16" or "U32" or "U64" or "U128" or "S8" or "S16"
                 or "S32" or "S64" or "S128" => declaredType.Name,
             _ => null
         };

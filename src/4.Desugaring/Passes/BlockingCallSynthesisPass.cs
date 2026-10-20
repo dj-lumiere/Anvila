@@ -19,12 +19,12 @@ namespace Builder.Desugaring.Passes;
 ///         recipe_put[A](recipe: recipe, slot: 1, value: a)
 ///         blocking_call(entry: __blocking_run_f, recipe: recipe)
 ///         var result = recipe_take[R](recipe: recipe, slot: 0)
-///         rf_invalidate(ptr: recipe)
+///         C::rf_invalidate(ptr: recipe)
 ///         return result
 ///
-/// routine __blocking_run_f(recipe: CPtr)
+/// routine __blocking_run_f(recipe: Addr)
 ///     danger
-///         var r = recipe.get_address()
+///         var r = recipe
 ///         recipe_put[R](recipe: r, slot: 0, value: C::f(a: recipe_take[A](recipe: r, slot: 1)))
 ///     return
 /// </code>
@@ -164,10 +164,10 @@ internal static class BlockingCallSynthesisPass
         }
 
         statements.Add(item: new ExpressionStatement(
-            Expression: Call(name: "rf_invalidate",
-                typeArguments: null,
-                arguments: [Named(name: "ptr", value: Id(name: "recipe", loc: loc))],
-                loc: loc),
+            Expression: new CallExpression(
+                Callee: new IdentifierExpression(Name: "rf_invalidate", Location: loc, Realm: "C"),
+                Arguments: [Named(name: "ptr", value: Id(name: "recipe", loc: loc))],
+                Location: loc),
             Location: loc));
         statements.Add(item: new ReturnStatement(
             Value: external.ReturnType != null
@@ -192,7 +192,7 @@ internal static class BlockingCallSynthesisPass
             Location: loc) { IsDangerous = external.IsDangerous, IsBuilderWritten = true };
     }
 
-    /// <summary><c>__blocking_run_f(recipe: CPtr)</c>: takes the arguments out of the recipe, makes the foreign
+    /// <summary><c>__blocking_run_f(recipe: Addr)</c>: takes the arguments out of the recipe, makes the foreign
     /// call and puts its result in slot 0.</summary>
     private static RoutineDeclaration BuildRun(ExternalDeclaration external)
     {
@@ -219,13 +219,7 @@ internal static class BlockingCallSynthesisPass
 
         var statements = new List<Statement>
         {
-            Var(name: "r",
-                value: new CallExpression(
-                    Callee: new MemberExpression(Object: Id(name: "recipe", loc: loc), MemberName: "get_address",
-                        Location: loc),
-                    Arguments: [],
-                    Location: loc),
-                loc: loc),
+            Var(name: "r", value: Id(name: "recipe", loc: loc), loc: loc),
             new ExpressionStatement(
                 Expression: external.ReturnType != null
                     ? Call(name: "recipe_put",
@@ -244,7 +238,7 @@ internal static class BlockingCallSynthesisPass
         return new RoutineDeclaration(Name: RunPrefix + external.Name,
             Parameters:
             [
-                new Parameter(Name: "recipe", Type: new TypeExpression(Name: "CPtr", GenericArguments: null, Location: loc),
+                new Parameter(Name: "recipe", Type: new TypeExpression(Name: RuntimeContract.Addr, GenericArguments: null, Location: loc),
                     DefaultValue: null, Location: loc)
             ],
             ReturnType: null,

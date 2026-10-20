@@ -71,7 +71,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Warnings visible to a user build: stdlib-internal warnings are excluded (surface them with
     /// the <c>validate-stdlib</c> verb instead). EVERY AnalysisResult must use this — passing the
-    /// raw <c>_warnings</c> list leaks stdlib style warnings (e.g. RF-W258) into user output.
+    /// raw <c>_warnings</c> list leaks stdlib style warnings into user output.
     /// </summary>
     private List<SemanticWarning> UserVisibleWarnings()
     {

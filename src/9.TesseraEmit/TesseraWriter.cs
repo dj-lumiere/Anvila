@@ -1010,8 +1010,8 @@ internal sealed class TesseraWriter
     {
         get
         {
-            TypeSymbol pointer = _input.Registry.LookupType(name: Declaration.RuntimeContract.CPtr) ??
-                                 throw new NotSupportedException(message: "The Tessera backend found no CPtr type.");
+            TypeSymbol pointer = _input.Registry.LookupType(name: Declaration.RuntimeContract.Addr) ??
+                                 throw new NotSupportedException(message: "The Tessera backend found no Addr type.");
             return _input.Registry.GetOrCreateTupleType(elementTypes: [pointer, pointer, pointer]);
         }
     }
@@ -1024,13 +1024,9 @@ internal sealed class TesseraWriter
     public TypeSymbol BoolType => _input.Registry.LookupType(name: "Bool") ??
                                   throw new NotSupportedException(message: "The Tessera backend found no Bool type.");
 
-    /// <summary>The builder's <c>CPtr</c> type: an untyped address, Tessera's <c>Addr</c>.</summary>
-    public TypeSymbol PointerType => _input.Registry.LookupType(name: "CPtr") ??
-                                     throw new NotSupportedException(message: "The Tessera backend found no CPtr type.");
-
-    /// <summary>The builder's <c>Address</c> type.</summary>
-    public TypeSymbol AddressType => _input.Registry.LookupType(name: "Address") ??
-                                     throw new NotSupportedException(message: "The Tessera backend found no Address type.");
+    /// <summary>The builder's <c>Addr</c> type: an untyped address, Tessera's <c>Addr</c>.</summary>
+    public TypeSymbol PointerType => _input.Registry.LookupType(name: Declaration.RuntimeContract.Addr) ??
+                                     throw new NotSupportedException(message: "The Tessera backend found no Addr type.");
 
     /// <summary>True for the unit type <c>None</c>, which has no value.</summary>
     public static bool IsVoid(TypeSymbol? type)
@@ -1077,7 +1073,7 @@ internal sealed class TesseraWriter
             return $"Array[{TypeText(type: element)}, {count}]";
         }
 
-        // Any other integer-backed type (a choice, flags, Address, Char, a C integer alias) is the integer
+        // Any other integer-backed type (a choice, flags, Char, a C integer alias) is the integer
         // of its width. A choice is signed, as in the LLVM emitter; the rest are unsigned bit carriers, and the
         // primitives they reach check signedness against the operand type.
         if (backend.Length > 1 && backend[0] == 'i' && int.TryParse(s: backend[1..], result: out int bits))

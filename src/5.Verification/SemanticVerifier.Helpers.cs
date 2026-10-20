@@ -22,9 +22,6 @@ internal enum NumericTypeKind
     /// <summary>Unsigned fixed-width integers (u8, u16, u32, u64, u128).</summary>
     UnsignedInteger,
 
-    /// <summary>Address-sized unsigned integer (Address).</summary>
-    Address,
-
     /// <summary>Binary floating point (b16, b32, b64, b128).</summary>
     BinaryFloat,
 
@@ -256,7 +253,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Validates named/positional argument ordering and builds the parameter-index to argument-expression
     /// map used by subsequent count and type checks. Reports S505 (unknown named), S506 (duplicate),
-    /// S507 (positional after named), S510 (naming required), S512 (mixed style), W258 (naming recommended).
+    /// S507 (positional after named), S510 (naming required), S512 (mixed style).
     /// Extracted from <see cref="AnalyzeCallArguments"/>.
     /// </summary>
     private Dictionary<int, Expression> BuildArgumentBindings(RoutineInfo routine,
@@ -788,14 +785,14 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// True when a routine argument is a CAPTURING lambda literal handed to a foreign (C::/LLVM::)
-    /// routine's routine/CPtr parameter — a statically-certain C-boundary capture violation. Extracted
+    /// routine's routine/Addr parameter — a statically-certain C-boundary capture violation. Extracted
     /// from <see cref="AnalyzeCallArguments"/>.
     /// </summary>
     private static bool IsForeignCapturingCallbackArg(RoutineInfo routine, TypeSymbol paramType,
         TypeSymbol argType, bool isCapturingLambdaLiteral)
     {
         return routine.IsForeign && argType is RoutineTypeSymbol &&
-               (paramType is RoutineTypeSymbol || paramType.Name == "CPtr") &&
+               (paramType is RoutineTypeSymbol || paramType.Name == Declaration.RuntimeContract.Addr) &&
                isCapturingLambdaLiteral;
     }
 
@@ -1096,14 +1093,14 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// True when <paramref name="argExpr"/> is a bare top-level routine NAME being passed where a
-    /// <c>CPtr</c> is expected — the FFI routine-pointer → C-function-pointer coercion. A bare
+    /// <c>Addr</c> is expected — the FFI routine-pointer → C-function-pointer coercion. A bare
     /// routine reference cannot capture, so its native symbol is a valid C function pointer; codegen
     /// emits <c>ptr @&lt;routine&gt;</c>. Excludes routine-typed locals and lambdas (possible closures).
     /// </summary>
     private bool IsBareRoutineRefToCPtr(Expression argExpr, TypeSymbol argType,
         TypeSymbol paramType)
     {
-        return paramType.Name == "CPtr" && argType is RoutineTypeSymbol &&
+        return paramType.Name == Declaration.RuntimeContract.Addr && argType is RoutineTypeSymbol &&
                argExpr is IdentifierExpression id &&
                _registry.LookupRoutineByName(name: id.Name) != null;
     }
@@ -1321,7 +1318,13 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        return false;
+        // Inside the entity's own template, `me` is the definition (`Memory`) while a handle written in the body
+        // names it with its parameters (`Roamed[Memory[T]]`): the same entity.
+        return source is EntityTypeSymbol { IsGenericDefinition: true } definition &&
+               target is RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed,
+                   TypeArguments: [{ } inner] } &&
+               inner.Realm == definition.Realm &&
+               IsGenericDefinitionResolutionAssignable(source: definition, target: inner);
     }
 
     /// <summary>
@@ -2007,6 +2010,11 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        if (ReportAddressOperator(left: left, right: right, op: op, location: location))
+        {
+            return;
+        }
+
         // Check that types are compatible (same type or error type). A type that writes its comparison against the
         // other type itself (Suflae's `Integer.compare(you: Decimal)`) compares with it.
         string? comparison = op is BinaryOperator.Equal or BinaryOperator.NotEqual ? "eq" : "compare";
@@ -2039,6 +2047,31 @@ public sealed partial class SemanticVerifier
                 $"Type '{left.Name}' does not support comparison operator '{op.ToStringRepresentation()}'.",
                 location: location);
         }
+    }
+
+    /// <summary>
+    /// Reports an operator other than <c>===</c> / <c>!==</c> with an <c>Addr</c> operand, pointing at what is written
+    /// instead: an address names a place, so two are compared by identity, and it has no ordering or arithmetic
+    /// besides moving it with <c>offset(bytes:)</c>. Returns whether it reported one.
+    /// </summary>
+    private bool ReportAddressOperator(TypeSymbol left, TypeSymbol right, BinaryOperator op, SourceLocation location)
+    {
+        if (left.BareName != Declaration.RuntimeContract.Addr && right.BareName != Declaration.RuntimeContract.Addr ||
+            op is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual or BinaryOperator.Assign or
+                BinaryOperator.And or BinaryOperator.Or or BinaryOperator.NoneCoalesce)
+        {
+            return false;
+        }
+
+        string written = op.ToStringRepresentation();
+        string message = op is BinaryOperator.Equal or BinaryOperator.NotEqual
+            ? $"'{written}' compares two values, and an 'Addr' names a place rather than holding a value. Ask " +
+              $"whether two addresses name the same place with '{(op == BinaryOperator.Equal ? "===" : "!==")}', or " +
+              "whether one is the address 0 with 'is_hollow()'."
+            : $"'{written}' has no meaning on an 'Addr': an address names a place, with no ordering and no " +
+              "arithmetic. Move one with 'offset(bytes:)', and compare or subtract the numbers 'to[U64]()' gives.";
+        ReportError(code: SemanticDiagnosticCode.OrderingNotSupported, message: message, location: location);
+        return true;
     }
 
     /// <summary>

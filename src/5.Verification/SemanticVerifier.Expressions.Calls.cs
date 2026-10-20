@@ -4611,14 +4611,13 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Enforces the named-argument rules for type constructors: RF-S510 (3+ fields → all named,
-    /// error) and the related recommendation (2 fields → named preferred, warning).
+    /// Enforces the named-argument rule for type constructors: RF-S510 (3+ fields → all named, error). Two fields may
+    /// go positional.
     /// </summary>
     private void ValidateConstructorArgumentNaming(CallExpression call, IdentifierExpression id,
         TypeSymbol type)
     {
         // S510: Type creators with 3+ fields require all named arguments.
-        // W258: For 2 fields, naming is recommended but only emits a warning.
         int memberCount = type switch
         {
             EntityTypeSymbol e => e.MemberVariables.Count,
@@ -4633,17 +4632,6 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
                     message:
                     $"Type '{id.Name}' has {memberCount} fields - all constructor arguments must be named.",
-                    location: arg.Location);
-            }
-        }
-        else if (memberCount == 2)
-        {
-            foreach (Expression arg in call.Arguments.Where(predicate: a =>
-                         a is not NamedArgumentExpression))
-            {
-                ReportWarning(code: SemanticWarningCode.NamedArgumentRecommended,
-                    message:
-                    $"Type '{id.Name}' has 2 fields - naming constructor arguments is recommended for clarity.",
                     location: arg.Location);
             }
         }

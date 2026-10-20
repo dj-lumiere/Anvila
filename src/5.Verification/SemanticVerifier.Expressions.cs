@@ -677,7 +677,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static bool IsIdentityComparable(TypeSymbol type)
     {
-        return type is EntityTypeSymbol ||
+        return type is EntityTypeSymbol || type.BareName == Declaration.RuntimeContract.Addr ||
                Declaration.RuntimeContract.IdentityComparableWrapperTypes.Contains(item: type.BareName);
     }
 
@@ -824,7 +824,7 @@ public sealed partial class SemanticVerifier
             rightType = AnalyzeExpression(expression: binary.Right, expectedType: rightCtx);
             TypeSymbol peer = ConstGenericValueType(type: rightType) ?? rightType;
             leftType = AnalyzeExpression(expression: binary.Left,
-                expectedType: ConformsToPeer(literal: leadingLeft, peer: peer, op: binary.Operator)
+                expectedType: ConformsToPeer(literal: leadingLeft, peer: peer)
                     ? peer
                     : literalCtx);
         }
@@ -840,7 +840,7 @@ public sealed partial class SemanticVerifier
                 : AnalyzeExpression(expression: binary.Right,
                     expectedType: peerTyped && LeadingNumber(expression: binary.Right) is { } leadingRight &&
                                   LeadingNumber(expression: binary.Left) == null &&
-                                  ConformsToPeer(literal: leadingRight, peer: peer, op: binary.Operator)
+                                  ConformsToPeer(literal: leadingRight, peer: peer)
                         ? peer
                         : rightCtx);
         }
@@ -978,7 +978,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// #117: reports a fixed-width numeric type mismatch (e.g. <c>S32 + S64</c>). System types (Address)
+    /// #117: reports a fixed-width numeric type mismatch (e.g. <c>S32 + S64</c>). System types
     /// and logical/comparison/shift operators are exempt (shifts intentionally use U32 for the amount).
     /// Returns true when a violation was reported.
     /// </summary>
@@ -1419,13 +1419,13 @@ public sealed partial class SemanticVerifier
         TypeSymbol rightPeer = ConstGenericValueType(type: rightType) ?? rightType;
         // An operand made of literals (`(1 << 112) -% 1` beside a U128) conforms as a whole, the way one literal does.
         if (LeadingNumber(expression: binary.Right) is { } literalRight &&
-            ConformsToPeer(literal: literalRight, peer: leftPeer, op: binary.Operator) &&
+            ConformsToPeer(literal: literalRight, peer: leftPeer) &&
             leftPeer.Name != rightType.Name)
         {
             rightType = AnalyzeExpression(expression: binary.Right, expectedType: leftPeer);
         }
         else if (LeadingNumber(expression: binary.Left) is { } literalLeft && !IsShiftOperator(op: binary.Operator) &&
-                 ConformsToPeer(literal: literalLeft, peer: rightPeer, op: binary.Operator) &&
+                 ConformsToPeer(literal: literalLeft, peer: rightPeer) &&
                  leftType.Name != rightPeer.Name)
         {
             leftType = AnalyzeExpression(expression: binary.Left, expectedType: rightPeer);
@@ -1471,14 +1471,13 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Whether a bare number <paramref name="literal"/> takes the type of its operator <paramref name="peer"/>: a
-    /// whole number goes to a fixed-width integer (and to an <c>Address</c> it is compared with, since an offset
-    /// added to an address is a <c>U64</c>), a number with a fraction point goes to a float or decimal type, and so
-    /// does a whole number written in base 10.
+    /// whole number goes to a fixed-width integer, a number with a fraction point goes to a float or decimal type, and
+    /// so does a whole number written in base 10.
     /// </summary>
-    private bool ConformsToPeer(LiteralExpression literal, TypeSymbol peer, BinaryOperator op)
+    private bool ConformsToPeer(LiteralExpression literal, TypeSymbol peer)
     {
         if (literal.LiteralType is TokenType.IntegerLiteral or TokenType.S64Literal or TokenType.UndecidedInteger &&
-            (IsFixedWidthIntegerType(type: peer) || peer.Name == AddressTypeName && IsComparisonOperator(op: op)))
+            IsFixedWidthIntegerType(type: peer))
         {
             return true;
         }
@@ -1613,6 +1612,11 @@ public sealed partial class SemanticVerifier
         // parameters (conformance via `needs` constraints, checked at instantiation) are deferred.
         // Membership operators (`in`/`notin`) reverse to `rhs.contains(lhs)`, so the RIGHT operand is
         // the receiver.
+        if (ReportAddressOperator(left: leftType, right: rightType, op: binary.Operator, location: binary.Location))
+        {
+            return true;
+        }
+
         bool operatorIsReversed = binary.Operator is BinaryOperator.In or BinaryOperator.NotIn;
         TypeSymbol operatorReceiverType = operatorIsReversed
             ? rightType

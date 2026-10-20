@@ -29,12 +29,16 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "Routine" => "Callable",
             "RoamController" => "RoamManager",
             "Queue" => "Mailbox",
+            "Address" or "CPtr" => "Addr",
             _ => null
         };
         // `Callable` is the builder's own type of routine values, not a registered one.
         if (renamed != null && (renamed == "Callable" || TypeSuggestionCandidates().Contains(value: renamed)))
         {
-            return $" It is called '{renamed}' now.";
+            return renamed == "Addr"
+                ? " It is called 'Addr' now (migrate --step addr rewrites it): compare two with '===' and move one with " +
+                  "'offset(bytes:)'."
+                : $" It is called '{renamed}' now.";
         }
 
         // The binary floating-point types are B16, B32, B64 and B128: F64 names B64, not the S64 or U64 an edit away.
@@ -64,6 +68,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " Membership is 'has' / 'lacks' now, and a map's keys are 'has_key' / 'lacks_key'.";
             case "has" when MemberSuggestionCandidates(type: type).Contains(value: "has_key"):
                 return " A key is tested with 'has_key'.";
+            case "is_none" when type.BareName == RuntimeContract.Addr:
+                return " An address is tested with 'is_hollow()' / 'is_not_hollow()'.";
         }
 
         return DidYouMean(target: name, candidates: MemberSuggestionCandidates(type: type));

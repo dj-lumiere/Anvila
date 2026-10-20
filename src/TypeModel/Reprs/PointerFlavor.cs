@@ -39,6 +39,6 @@ public enum PointerFlavor
     /// <summary>Unsafe hijack borrow (Hijacked[T]).</summary>
     Hijacked,
 
-    /// <summary>Untyped raw pointer (CPtr / Address).</summary>
+    /// <summary>Untyped raw pointer (Addr).</summary>
     Raw
 }

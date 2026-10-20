@@ -12,11 +12,11 @@ namespace Builder.Lowering.Passes;
 /// <item><c>x.hijack()</c> on a record (or a non-pointer primitive, or a variant) is the address of <c>x</c>'s storage, an
 /// <see cref="AddressOfExpression"/>. The body would only see a copy of <c>x</c>, whose address dies with the
 /// call.</item>
-/// <item><c>x.get_address()</c> on a struct record is that address as an <c>Address</c>: the same
-/// <see cref="AddressOfExpression"/> under a pointer-to-integer <see cref="BackendCastExpression"/>.</item>
+/// <item><c>x.get_address()</c> on a struct record is that address as an <c>Addr</c>: the same
+/// <see cref="AddressOfExpression"/> under a <see cref="BackendCastExpression"/> (pointer to pointer, the same value).</item>
 /// <item><c>x.var_name()</c> is the text of the receiver's name.</item>
 /// </list>
-/// A pointer-shaped record (<c>CPtr</c>, <c>Hijacked[T]</c>, an RC wrapper) keeps its own body, which returns
+/// A pointer-shaped record (<c>Addr</c>, <c>Hijacked[T]</c>, an RC wrapper) keeps its own body, which returns
 /// the pointer it holds. Runs at Phase 9 over every body that reaches a backend, after monomorphization.
 /// </summary>
 internal sealed class AddressLoweringPass(TypeRegistry registry) : AstRewriter

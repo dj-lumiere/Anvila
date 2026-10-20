@@ -941,7 +941,7 @@ internal sealed class TesseraRoutineWriter
         string Address(Expression side)
         {
             Operand operand = Evaluate(expression: side);
-            return Temp(type: _module.AddressType,
+            return Temp(type: _module.U64Type,
                 expression: $"ptrtoint[{TypeText(type: operand.Type)}, U64]({Value(operand: operand)})");
         }
 
@@ -1104,6 +1104,12 @@ internal sealed class TesseraRoutineWriter
 
     private static string LiteralText(LiteralExpression literal)
     {
+        // An address written as a number: the number converted to an address.
+        if (literal.LiteralType == TokenType.AddressLiteral)
+        {
+            return $"inttoptr[U64, Addr]({LiteralText(literal: literal with { LiteralType = TokenType.U64Literal })})";
+        }
+
         return literal.Value switch
         {
             // The parser keeps an integer literal's text (`48_s32`, `0xFF_u8`): the digits without the suffix.

@@ -1617,8 +1617,8 @@ public sealed partial class SemanticVerifier
         // Route through a user-defined `create` (so its body runs). A self-reference inside the
         // creator, or no user match, falls back to inline field-init / standard validation. The
         // name-set match above only BINDS the named args to a creator's parameters (and separates a
-        // create-call from field-init); when more than one overload binds (e.g. `Hijacked[T](from:
-        // Address)` vs `Hijacked[T](from: CPtr)`) the overload is chosen by ARGUMENT TYPE via the
+        // create-call from field-init). When more than one overload binds (e.g. `Text(from: S64)` vs
+        // `Text(from: B64)`) the overload is chosen by ARGUMENT TYPE via the
         // canonical signature-based resolver — never by name.
         if (insideOwnCreate || userMatches.Count == 0)
         {
@@ -1674,8 +1674,8 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Selects the `create` overload for a named-arg creator call by ARGUMENT TYPE, when more than
-    /// one overload binds the provided parameter names (e.g. `Hijacked[T](from: Address)` vs
-    /// `Hijacked[T](from: CPtr)`). Orders the named args into the shared parameter order — analyzing
+    /// one overload binds the provided parameter names (e.g. `Text(from: S64)` vs
+    /// `Text(from: B64)`). Orders the named args into the shared parameter order — analyzing
     /// each with its parameter type as the expected type so a literal coerces to the parameter's
     /// width — then delegates to the canonical signature-based resolver
     /// <c>LookupCreatorOverload</c>. Returns null (caller falls back to standard validation) when the

@@ -15,7 +15,7 @@ namespace Builder.Lowering.Passes;
 /// <item>A member call on a type name (<c>B64.from(...)</c>) gets the type itself as its receiver, a
 /// <see cref="TypeExpression"/>, rather than an identifier a backend would have to tell apart from a value.</item>
 /// <item><c>hollow[T]()</c> is a fresh zero-filled entity (<see cref="EntityAllocationExpression"/>).</item>
-/// <item>A routine handed to native code (a <c>CPtr</c> parameter, or a routine parameter of a foreign routine) is
+/// <item>A routine handed to native code (an <c>Addr</c> parameter, or a routine parameter of a foreign routine) is
 /// its native code address (<see cref="NativeRoutineExpression"/>), or for a routine value the checked native
 /// callback (<see cref="NativeCallbackExpression"/>).</item>
 /// <item>A member call on a const-generic value (<c>N.represent()</c>) gets the number as its receiver.</item>
@@ -253,7 +253,7 @@ internal sealed class CallBindingPass : AstRewriter
             TypeSymbol parameter = routine.Parameters[index: i].Type;
             // An LLVM intrinsic (`LLVM::store[T]` with a routine type for `T`) is no C boundary: it moves the whole
             // routine value, both its words.
-            if (parameter.Name != RuntimeContract.CPtr &&
+            if (parameter.Name != RuntimeContract.Addr &&
                 !(routine.IsForeign && routine.LlvmIrTemplate == null && parameter is RoutineTypeSymbol))
             {
                 continue;

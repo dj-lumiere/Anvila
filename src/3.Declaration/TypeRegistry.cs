@@ -1168,7 +1168,7 @@ public sealed partial class TypeRegistry
     private void RegisterErrorHandlingTypes()
     {
         // Register Maybe, Result, Lookup as type shells (name + GenericParameters only).
-        // MemberVariables reference System types (Bool, U64, Address) that aren't available yet
+        // MemberVariables reference System types (Bool, U64, Addr) that aren't available yet
         // because LoadCoreModule hasn't run.  ResolveProgramMemberVariables (pass 1c inside
         // LoadCoreModule) fills in the members from the stdlib source once all System types exist.
         // We must register the shells HERE (before LoadCoreModule) so that when

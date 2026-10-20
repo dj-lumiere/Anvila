@@ -121,6 +121,16 @@ public partial class LlvmEmitter
     /// </summary>
     private string EmitLiteral(StringBuilder sb, LiteralExpression literal)
     {
+        // An address written as a number is a pointer constant: LLVM spells the address 0 `null` and any other one as
+        // the number converted to a pointer.
+        if (literal.LiteralType == TokenType.AddressLiteral)
+        {
+            string number = EmitLiteral(sb: sb, literal: literal with { LiteralType = TokenType.U64Literal });
+            return number == "0"
+                ? "null"
+                : $"inttoptr (i64 {number} to ptr)";
+        }
+
         switch (literal.Value)
         {
             // Numeric literals are stored as strings by the parser (e.g., "1_s32", "3.14_b32").

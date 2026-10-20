@@ -178,8 +178,9 @@ public static class RuntimeContract
     /// <summary>The intrinsic that reads a value's bits as another type (<c>LLVM::reinterpret_bits[From, To]</c>).</summary>
     public const string ReinterpretBits = "reinterpret_bits";
 
-    /// <summary>The native pointer record a routine is handed to native code as.</summary>
-    public const string CPtr = "CPtr";
+    /// <summary>The address record (<c>@llvm("ptr")</c>, C's <c>void*</c>): what native code takes and gives back as an
+    /// untyped pointer, and what a routine is handed to native code as.</summary>
+    public const string Addr = "Addr";
 
     /// <summary>The C strings RazorForge makes and the C string pointers they go in place of. A <c>CStr</c>
     /// argument to a <c>CStrView</c> parameter becomes <c>arg.view()</c>, and <c>steal arg</c> becomes

@@ -11,7 +11,7 @@ namespace Builder.Lowering.Passes;
 /// <list type="bullet">
 ///   <item><c>choice</c> ??<c>record</c> with a <c>secret _underlying: S64</c> backing field plus choice memberRoutines.</item>
 ///   <item><c>flags</c>  ??<c>record</c> with a <c>secret _bits: U64</c> backing field.</item>
-///   <item><c>variant</c> ??<c>record</c> with <c>secret _type_id: U64</c> and <c>secret _payload: Address</c> fields.</item>
+///   <item><c>variant</c> ??<c>record</c> with <c>secret _type_id: U64</c> and <c>secret _payload: Addr</c> fields.</item>
 ///   <item><c>crashable</c> ??<c>entity</c> declaration with the <c>Crashable</c> protocol added to its protocol list.</item>
 /// </list>
 ///
@@ -97,7 +97,7 @@ internal sealed class StructuralLoweringPass(PostprocessingContext _)
     }
 
     /// <summary>
-    /// variant Name[T] { ... } -> record Name[T] with secret _type_id: U64 and secret _payload: Address.
+    /// variant Name[T] { ... } -> record Name[T] with secret _type_id: U64 and secret _payload: Addr.
     /// Generic parameters and constraints are preserved.
     /// </summary>
     private static RecordDeclaration LowerVariant(VariantDeclaration variant)
@@ -111,7 +111,7 @@ internal sealed class StructuralLoweringPass(PostprocessingContext _)
             Location: variant.Location);
 
         var payloadField = new VariableDeclaration(Name: "_payload",
-            Type: new TypeExpression(Name: "Address",
+            Type: new TypeExpression(Name: Declaration.RuntimeContract.Addr,
                 GenericArguments: null,
                 Location: variant.Location),
             Initializer: null,

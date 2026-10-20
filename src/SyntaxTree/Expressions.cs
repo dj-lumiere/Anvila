@@ -95,7 +95,7 @@ public abstract record Expression(SourceLocation Location) : SyntaxTreeNode(Loca
 /// <remarks>
 /// Supports the full range of RazorForge/Suflae literal types:
 /// <list type="bullet">
-/// <item>Integers: S8, S16, S32, S64, S128, U8, U16, U32, U64, U128, Address</item>
+/// <item>Integers: S8, S16, S32, S64, S128, U8, U16, U32, U64, U128</item>
 /// <item>Floats: B16, B32, B64, B128</item>
 /// <item>Decimals: D32, D64, D128</item>
 /// <item>Text and characters: Char, Byte, Text, Bytes</item>
@@ -1347,7 +1347,7 @@ public record ZeroValueExpression(SourceLocation Location) : Expression(Location
 
 /// <summary>
 /// A routine's native code address (a C function pointer), not a <c>Routine</c> value: what native code calls back
-/// (a <c>CPtr</c> argument, the cycle collector's trace and free hooks). Produced by lowering (never parsed). Its
+/// (an <c>Addr</c> argument, the cycle collector's trace and free hooks). Produced by lowering (never parsed). Its
 /// resolved type is the pointer the native side takes.
 /// </summary>
 /// <param name="Routine">The reference to the routine: an identifier carrying its <c>ResolvedRoutine</c>.</param>
@@ -1535,14 +1535,14 @@ public record AddressOfExpression(Expression Target, SourceLocation Location) : 
 
 /// <summary>
 /// A capturing lambda's value, produced by lowering (never parsed): <c>LambdaLiftingPass</c> lifts the lambda
-/// into a routine that takes its bound payload as a trailing <c>__bound: CPtr</c> parameter, and builds the
+/// into a routine that takes its bound payload as a trailing <c>__bound: Addr</c> parameter, and builds the
 /// payload as <see cref="Bound"/> (a chain of System's <c>closure_new</c>/<c>closure_put</c> calls). The emitter
 /// pairs the lifted routine's symbol with the payload into the Routine value <c>{ fn, bound, recover }</c>, whose
 /// recovering entry is the lifted routine's lookup-shaped recovery variant when the lambda can fail beneath its
 /// call (<c>Function.RecoverRoutine</c>).
 /// </summary>
 /// <param name="Function">The lifted routine (its <c>ResolvedRoutine</c>).</param>
-/// <param name="Bound">The expression that builds the bound payload (a <c>CPtr</c>).</param>
+/// <param name="Bound">The expression that builds the bound payload (an <c>Addr</c>).</param>
 /// <param name="Location">Source location of the lambda.</param>
 public record ClosureValueExpression(IdentifierExpression Function, Expression Bound, SourceLocation Location)
     : Expression(Location: Location)

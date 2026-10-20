@@ -18,9 +18,9 @@ namespace Builder.Desugaring.Passes;
 ///         recipe_put[B](recipe: recipe, slot: 2, value: p1)
 ///         return agent_recipe[R](entry: __agent_N_run, recipe: recipe)
 ///
-/// routine __agent_N_run(recipe: CPtr)
+/// routine __agent_N_run(recipe: Addr)
 ///     danger
-///         var r = recipe.get_address()
+///         var r = recipe
 ///         var outcome = __agent_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...)
 ///         agent_finish[R](recipe: r, outcome: outcome.hijack())
 ///     return
@@ -102,12 +102,12 @@ internal static class AgentRecipe
             Location: loc) { IsBuilderWritten = true };
     }
 
-    /// <summary>The run routine <c>(recipe: CPtr)</c>, the entry of the fiber or thread that runs the Agent: moves the
+    /// <summary>The run routine <c>(recipe: Addr)</c>, the entry of the fiber or thread that runs the Agent: moves the
     /// arguments out of the recipe, calls the work routine and completes the task with its result.</summary>
     internal static RoutineDeclaration BuildRun(RoutineDeclaration routine, string runName, TypeExpression resultType)
     {
         SourceLocation loc = routine.Location;
-        var cptr = new TypeExpression(Name: "CPtr", GenericArguments: null, Location: loc);
+        var cptr = new TypeExpression(Name: RuntimeContract.Addr, GenericArguments: null, Location: loc);
         List<Parameter> parameters = [new Parameter(Name: "recipe", Type: cptr, DefaultValue: null, Location: loc)];
 
         var arguments = new List<Expression>();
@@ -140,12 +140,7 @@ internal static class AgentRecipe
             new DeclarationStatement(
                 Declaration: new VariableDeclaration(Name: "r",
                     Type: null,
-                    Initializer: new CallExpression(
-                        Callee: new MemberExpression(Object: Id(name: "recipe", loc: loc),
-                            MemberName: "get_address",
-                            Location: loc),
-                        Arguments: [],
-                        Location: loc),
+                    Initializer: Id(name: "recipe", loc: loc),
                     Visibility: VisibilityModifier.Open,
                     Location: loc),
                 Location: loc)
