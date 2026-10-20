@@ -77,10 +77,9 @@ internal sealed class DerivedOperatorPass
         IEnumerable<RoutineInfo> memberRoutines = _registry.GetMemberRoutinesForType(type: type);
         var memberRoutineList = memberRoutines.ToList();
 
-        // Look for eq memberRoutine
-        RoutineInfo? eqMemberRoutine =
-            memberRoutineList.FirstOrDefault(predicate: m => m.Name == "eq");
-        if (eqMemberRoutine != null)
+        // Every eq overload gets its own ne: `Integer.eq(you: Integer)` and `Integer.eq(you: Decimal)` are two
+        // routines, and a ne made from only one of them would take the other's argument type.
+        foreach (RoutineInfo eqMemberRoutine in memberRoutineList.Where(predicate: m => m.Name == "eq").ToList())
         {
             GenerateNeFromEq(type: type,
                 eqMemberRoutine: eqMemberRoutine,
@@ -93,10 +92,8 @@ internal sealed class DerivedOperatorPass
         // compare/represent — is what makes them survive the collector/warm codegen path (the C#-synthesized
         // bodies here did not), so `a < b` resolves uniformly for Char/numerics/records.
 
-        // Look for contains memberRoutine
-        RoutineInfo? containsMemberRoutine =
-            memberRoutineList.FirstOrDefault(predicate: m => m.Name == "has");
-        if (containsMemberRoutine != null)
+        foreach (RoutineInfo containsMemberRoutine in memberRoutineList.Where(predicate: m => m.Name == "has")
+                    .ToList())
         {
             GenerateNotContainsFromContains(type: type,
                 containsMemberRoutine: containsMemberRoutine,
@@ -112,8 +109,8 @@ internal sealed class DerivedOperatorPass
     private void GenerateNeFromEq(TypeSymbol type, RoutineInfo eqMemberRoutine,
         List<RoutineInfo> existingMemberRoutines)
     {
-        RoutineInfo? existingNe =
-            existingMemberRoutines.FirstOrDefault(predicate: m => m.Name == "ne");
+        RoutineInfo? existingNe = existingMemberRoutines.FirstOrDefault(predicate: m =>
+            m.Name == "ne" && SameParameterTypes(a: m, b: eqMemberRoutine));
 
         if (existingNe != null)
         {
@@ -134,7 +131,7 @@ internal sealed class DerivedOperatorPass
             OwnerType = type,
             Parameters = eqMemberRoutine.Parameters,
             ReturnType = boolType,
-            IsFailable = false,
+            IsFailable = eqMemberRoutine.IsFailable,
             DeclaredMutation = MutationCategory.Readonly,
             MutationCategory = MutationCategory.Readonly,
             // Inherit `eq`'s generic-parameter constraints so `ne` is only available
@@ -171,8 +168,8 @@ internal sealed class DerivedOperatorPass
     private void GenerateNotContainsFromContains(TypeSymbol type,
         RoutineInfo containsMemberRoutine, List<RoutineInfo> existingMemberRoutines)
     {
-        RoutineInfo? existingNotContains =
-            existingMemberRoutines.FirstOrDefault(predicate: m => m.Name == "lacks");
+        RoutineInfo? existingNotContains = existingMemberRoutines.FirstOrDefault(predicate: m =>
+            m.Name == "lacks" && SameParameterTypes(a: m, b: containsMemberRoutine));
 
         if (existingNotContains != null)
         {
@@ -191,7 +188,7 @@ internal sealed class DerivedOperatorPass
             OwnerType = type,
             Parameters = containsMemberRoutine.Parameters,
             ReturnType = boolType,
-            IsFailable = false,
+            IsFailable = containsMemberRoutine.IsFailable,
             DeclaredMutation = MutationCategory.Readonly,
             MutationCategory = MutationCategory.Readonly,
             // Inherit `contains`'s constraints so `notcontains` is only available for
@@ -217,6 +214,17 @@ internal sealed class DerivedOperatorPass
             paramName: paramName);
         _synthesizedBodies[key: notContainsMemberRoutine.RegistryKey] =
             (notContainsMemberRoutine, notContainsBody);
+    }
+
+    /// <summary>
+    /// Whether two routines take the same parameter types in the same order.
+    /// </summary>
+    private static bool SameParameterTypes(RoutineInfo a, RoutineInfo b)
+    {
+        return a.Parameters.Count == b.Parameters.Count && a.Parameters
+                                                            .Zip(second: b.Parameters)
+                                                            .All(predicate: pair =>
+                                                                 pair.First.Type.Name == pair.Second.Type.Name);
     }
 
     /// <summary>
