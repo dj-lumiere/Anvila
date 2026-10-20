@@ -23,6 +23,9 @@ env:
   # Tests that assert a wall-clock bound carry the Timing category: the numbers depend on the runner and on what
   # runs beside them, so CI leaves them out. A local `dotnet test` runs them.
   TEST_FILTER: Category!=Timing
+  # The tests' limits on a child process (a build, a built program) catch hangs. A hosted runner builds the stdlib
+  # bundle in 2 to 4.5 minutes, near the 5-minute base limit, so the limits are doubled here (TestHelpers.ChildTimeoutMs).
+  RF_TEST_TIMEOUT_SCALE: '2'
 
 jobs:
   # Two parallel Linux legs share one definition: `test` is the plain build + test gate, `sonar` repeats it
