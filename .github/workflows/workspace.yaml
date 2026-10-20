@@ -20,6 +20,9 @@ env:
   CMAKE_POLICY_VERSION_MINIMUM: '3.5'
   RF_TESTS: RazorForge/tests/RazorForge.Tests.csproj
   SF_TESTS: Suflae/tests/Suflae.Tests.csproj
+  # Tests that assert a wall-clock bound carry the Timing category: the numbers depend on the runner and on what
+  # runs beside them, so CI leaves them out. A local `dotnet test` runs them.
+  TEST_FILTER: Category!=Timing
 
 jobs:
   # Two parallel Linux legs share one definition: `test` is the plain build + test gate, `sonar` repeats it
@@ -28,6 +31,8 @@ jobs:
   build-linux:
     name: build-linux (${{ matrix.leg }})
     runs-on: ubuntu-latest
+    # A hang fails the job here instead of holding the runner for GitHub's six hours.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -129,14 +134,18 @@ jobs:
       - name: Test
         if: matrix.leg == 'test'
         run: |
-          dotnet test "$RF_TESTS" --configuration Release --no-build --verbosity normal
-          dotnet test "$SF_TESTS" --configuration Release --no-build --verbosity normal
+          dotnet test "$RF_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
+          dotnet test "$SF_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
 
+      # The builder a test starts as a child process runs the coverage-instrumented assemblies from the test output
+      # directory, several times slower, so the tests' child time limits are scaled up (TestHelpers.ChildTimeoutMs).
       - name: Test with coverage
         if: matrix.leg == 'sonar'
+        env:
+          RF_TEST_TIMEOUT_SCALE: '3'
         run: |
           for t in "$RF_TESTS" "$SF_TESTS"; do
-            dotnet test "$t" --configuration Release --no-build --verbosity normal \
+            dotnet test "$t" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER" \
               --collect:"XPlat Code Coverage" \
               -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
           done
@@ -147,6 +156,8 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    # A hang fails the job here instead of holding the runner for GitHub's six hours.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout the workspace
@@ -208,12 +219,14 @@ jobs:
       - name: Test
         shell: pwsh
         run: |
-          dotnet test $env:RF_TESTS --configuration Release --no-build --verbosity normal
+          dotnet test $env:RF_TESTS --configuration Release --no-build --verbosity normal --filter $env:TEST_FILTER
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet test $env:SF_TESTS --configuration Release --no-build --verbosity normal
+          dotnet test $env:SF_TESTS --configuration Release --no-build --verbosity normal --filter $env:TEST_FILTER
 
   build-macos:
     runs-on: macos-15
+    # A hang fails the job here instead of holding the runner for GitHub's six hours.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout the workspace
@@ -259,5 +272,5 @@ jobs:
 
       - name: Test
         run: |
-          dotnet test "$RF_TESTS" --configuration Release --no-build --verbosity normal
-          dotnet test "$SF_TESTS" --configuration Release --no-build --verbosity normal
+          dotnet test "$RF_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
+          dotnet test "$SF_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"

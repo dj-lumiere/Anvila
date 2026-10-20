@@ -76,10 +76,16 @@ public sealed class TargetConfig
     /// The <c>"target-cpu"</c> / <c>"target-features"</c> attributes every defined routine carries, as clang resolves
     /// <see cref="Cpu"/> for the triple. The RazorForge module and Ingrid's Tessera library carry the same set: LLVM
     /// inlines a routine only into one whose features cover its own, so a mismatch keeps even a one-line runtime
-    /// helper a call. It also tells opt the CPU, which otherwise optimizes for the triple's baseline.
+    /// helper a call. It also tells opt the CPU, which otherwise optimizes for the triple's baseline. The Tessera
+    /// builder asks clang, so it gets the clang this build resolved first (a release package's bundled one).
     /// </summary>
-    public string FunctionAttributes => _functionAttributes ??=
-        Tessera.CpuModel.For(target: TesseraTarget(), pos: new Tessera.Pos(File: "", Line: 0, Col: 0)).FnAttrs;
+    public string FunctionAttributes => _functionAttributes ??= ResolveFunctionAttributes();
+
+    private string ResolveFunctionAttributes()
+    {
+        NativeToolchain.ShareClangWithTessera();
+        return Tessera.CpuModel.For(target: TesseraTarget(), pos: new Tessera.Pos(File: "", Line: 0, Col: 0)).FnAttrs;
+    }
 
     /// <summary>
     /// Creates a TargetConfig with explicit values.
