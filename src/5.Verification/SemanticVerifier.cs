@@ -852,6 +852,7 @@ public sealed partial class SemanticVerifier
         // only ADDS user variants here — the seeded restored ones survive for codegen.
         _variantBodies = ctx.VariantBodies;
         AnalyzeVariantBodies();
+        LowerLanguageEntitiesInVariantBodies(bodies: _variantBodies);
         SubMark(label: nameof(AnalyzeVariantBodies));
 
         // Phase 8 global: lower variant bodies and stdlib programs with type-aware passes.
@@ -913,6 +914,37 @@ public sealed partial class SemanticVerifier
         }
 
         SubMark(label: $"{nameof(PostprocessingPipeline)}.RunGlobal");
+    }
+
+    /// <summary>The recovery variant bodies whose entity model is lowered already (each is lowered once).</summary>
+    private readonly HashSet<string> _entityLoweredVariantKeys = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// Lowers the entity model in the analyzed recovery variant bodies of routines written where entities are
+    /// shared (a Suflae file): each body is a copy of its base taken before the base was lowered. A body restored
+    /// from a warm snapshot was lowered when it was captured.
+    /// </summary>
+    private void LowerLanguageEntitiesInVariantBodies(Dictionary<string, Statement> bodies)
+    {
+        foreach (string key in bodies.Keys.ToList())
+        {
+            if (_memo.RestoredVariantKeys.Contains(item: key) || _entityLoweredVariantKeys.Contains(item: key) ||
+                _registry.GetRoutineByExactKey(registryKey: key) is not { } routine)
+            {
+                continue;
+            }
+
+            Statement body = bodies[key: key];
+            string? file = routine.Location?.FileName ?? body.Location.FileName;
+            if (file == null || !_registry.EntitiesAreSharedIn(filePath: file))
+            {
+                continue;
+            }
+
+            _entityLoweredVariantKeys.Add(item: key);
+            bodies[key: key] = _registry.CompilationRules.LowerEntitiesInVariantBody(body: body, routine: routine,
+                registry: _registry);
+        }
     }
 
     /// <summary>
@@ -1428,6 +1460,8 @@ public sealed partial class SemanticVerifier
                 AnalyzeCompilerGeneratedBody(routineInfo: variantInfo, body: body);
             }
         }
+
+        LowerLanguageEntitiesInVariantBodies(bodies: fresh);
 
         var dctx = new DesugaringContext(registry: _registry,
             routineBodies: _routineBodies,
@@ -2321,6 +2355,8 @@ public sealed partial class SemanticVerifier
             AnalyzeCompilerGeneratedBody(routineInfo: variantInfo,
                 body: _variantBodies[key: key]);
         }
+
+        LowerLanguageEntitiesInVariantBodies(bodies: _variantBodies);
 
         // Lower the newly-added variant bodies. Both RunGlobal variants iterate ctx.VariantBodies
         // (the SAME _variantBodies object) and are idempotent no-ops on already-lowered bodies, so

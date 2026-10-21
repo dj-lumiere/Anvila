@@ -1330,27 +1330,22 @@ public sealed partial class SemanticVerifier
     private const string ToConversionName = "to";
 
     /// <summary>
-    /// Handles the member-chain constructor path: `"42".S32!()` → `S32.create!(from: "42")`. Infers generic
-    /// type args from the variant arm when the target is a generic definition, then delegates to
-    /// <see cref="AnalyzeMemberConversion"/>. Returns a resolved type on success, null when the member name
-    /// is not a type. Recovery of a failable conversion (`try x.S8()`) is NOT a name here — the `try`/`check`/
-    /// `lookup` keyword resolves the bare conversion, then binds the reader's variant by RESOLVED reference
-    /// in <see cref="BindResolvedVariantCall"/> (no `try_S8` string ever exists).
+    /// A member call named after a type (<c>xs.List()</c>, <c>"42".S32()</c>) that resolved to no routine: a
+    /// conversion is written <c>x.to[T]()</c>, so the error says that. Returns null when the name is not a type.
     /// </summary>
     private TypeSymbol? AnalyzeMemberChainConversion(CallExpression call, MemberExpression member,
         TypeSymbol objectType)
     {
-        // #78: memberRoutine-chain constructor — "42".S32() -> S32.create!(from: "42").
-        string potentialTypeName = member.MemberName;
-        string creatorName = RoutineInfo.CreatorName;
+        if (objectType is ErrorTypeSymbol || LookupTypeWithImports(name: member.MemberName) == null)
+        {
+            return null;
+        }
 
-        TypeSymbol? targetType = LookupTypeWithImports(name: potentialTypeName);
-
-        return AnalyzeMemberConversion(call: call,
-            objectType: objectType,
-            potentialTypeName: potentialTypeName,
-            creatorName: creatorName,
-            targetType: targetType);
+        ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
+            message: $"No routine '{member.MemberName}()' is defined on '{objectType.Name}'. A conversion to " +
+                     $"'{member.MemberName}' is written 'x.to[{member.MemberName}]()'.",
+            location: call.Location);
+        return ErrorTypeSymbol.Instance;
     }
 
     /// <summary>
@@ -1768,6 +1763,7 @@ public sealed partial class SemanticVerifier
             {
                 argExpected = ResolveConstructorArgExpectedType(arg: arg,
                     posIdx: creatorPosIdx,
+                    argCount: call.Arguments.Count,
                     callableType: callableType,
                     ctorMemberVariables: ctorMemberVariables);
                 Expression argVal = arg is NamedArgumentExpression nav
@@ -1831,7 +1827,7 @@ public sealed partial class SemanticVerifier
     /// user constructor's parameter names differ from the field names, then by substituting
     /// generic type parameters for a concrete instantiation.
     /// </summary>
-    private TypeSymbol? ResolveConstructorArgExpectedType(Expression arg, int posIdx,
+    private TypeSymbol? ResolveConstructorArgExpectedType(Expression arg, int posIdx, int argCount,
         TypeSymbol callableType, List<MemberVariableInfo> ctorMemberVariables)
     {
         // Field-init constructor `T(field: value)` — the arg's expected type is the target
@@ -1841,10 +1837,14 @@ public sealed partial class SemanticVerifier
         // this — gating on EntityTypeSymbol alone left RECORD constructors (`Point(x: 1)`)
         // with a null expected type → `1` stayed Integer → codegen `Integer`-into-`i64` /
         // pruned `Integer.from_literal`. Inferring the field type is the builder's job.
-        MemberVariableInfo? field = ResolveCtorField(arg: arg,
-            posIdx: posIdx,
-            ctorMemberVariables: ctorMemberVariables);
-        TypeSymbol? argExpected = field?.Type;
+        // A creator the type's author wrote decides first: `List[S64](count: 2, fill_value: n)` gives `2` the type
+        // of the creator's `count` parameter, not of a member variable that happens to share the name.
+        TypeSymbol? argExpected = WrittenCreatorParameterType(arg: arg, posIdx: posIdx, argCount: argCount,
+            callableType: callableType);
+        MemberVariableInfo? field = argExpected == null
+            ? ResolveCtorField(arg: arg, posIdx: posIdx, ctorMemberVariables: ctorMemberVariables)
+            : null;
+        argExpected ??= field?.Type;
 
         // A USER constructor's PARAMETER names may differ from the field names
         // (`routine Pt(v: S64) -> Pt` with a field `x`), so the field-by-name lookup
@@ -1870,6 +1870,28 @@ public sealed partial class SemanticVerifier
         }
 
         return argExpected;
+    }
+
+    /// <summary>
+    /// The type the written creators of <paramref name="callableType"/> give an argument: the parameter of that
+    /// name, or the one at <paramref name="posIdx"/> among the creators taking exactly <paramref name="argCount"/>
+    /// parameters, when they all agree on its type. Null when no written creator has it, or when they disagree (the
+    /// arguments pick then).
+    /// </summary>
+    private TypeSymbol? WrittenCreatorParameterType(Expression arg, int posIdx, int argCount, TypeSymbol callableType)
+    {
+        TypeSymbol owner = DefinitionOf(type: callableType);
+        List<RoutineInfo> written = _registry.GetMemberRoutinesForType(type: owner)
+                                             .Where(predicate: m => m.IsCreator && !m.IsSynthesized)
+                                             .ToList();
+        IEnumerable<ParamInfo> candidates = arg is NamedArgumentExpression named
+            ? written.SelectMany(selector: m => m.Parameters).Where(predicate: p => p.Name == named.Name)
+            : written.Where(predicate: m => m.Parameters.Count == argCount)
+                     .Select(selector: m => m.Parameters[index: posIdx]);
+        List<TypeSymbol> types = candidates.Select(selector: p => p.Type)
+                                           .DistinctBy(keySelector: t => t.FullName)
+                                           .ToList();
+        return types is [{ } only] ? only : null;
     }
 
     /// <summary>
@@ -1934,7 +1956,9 @@ public sealed partial class SemanticVerifier
         var defCreators = _registry.GetMemberRoutinesForType(type: callableType)
                                    .Where(predicate: m =>
                                         m.IsCreator && m.Parameters.Count == creatorArgTypes.Count &&
-                                        named.All(predicate: n => m.Parameters.Any(predicate: p => p.Name == n)))
+                                        named.All(predicate: n => m.Parameters.Any(predicate: p => p.Name == n)) &&
+                                        TakesFixedParameterArguments(candidate: m, creatorArgTypes: creatorArgTypes,
+                                            arguments: arguments))
                                    .ToList();
         if (defCreators.Count <= 1)
         {
@@ -1974,6 +1998,40 @@ public sealed partial class SemanticVerifier
         return reached.FirstOrDefault(predicate: r => ReferenceEquals(objA: r.Concrete.GenericDefinition,
                            objB: r.Candidate))
                       .Candidate ?? reached[index: 0].Candidate;
+    }
+
+    /// <summary>
+    /// Whether every argument that goes to a parameter whose type names no type parameter fits that parameter:
+    /// <c>List(xs)</c> is not <c>List(capacity: ...)</c>, since a list is no <c>Integer</c>. A parameter that names a
+    /// type parameter is matched by inference, a number literal adapts to its parameter, and an argument whose type
+    /// did not resolve is left to the error already reported for it.
+    /// </summary>
+    private bool TakesFixedParameterArguments(RoutineInfo candidate, List<TypeSymbol> creatorArgTypes,
+        List<Expression> arguments)
+    {
+        for (int i = 0; i < creatorArgTypes.Count && i < arguments.Count; i++)
+        {
+            Expression argument = arguments[index: i];
+            ParamInfo? parameter = argument is NamedArgumentExpression namedArgument
+                ? candidate.Parameters.FirstOrDefault(predicate: p => p.Name == namedArgument.Name)
+                : i < candidate.Parameters.Count
+                    ? candidate.Parameters[index: i]
+                    : null;
+            Expression value = argument is NamedArgumentExpression n ? n.Value : argument;
+            TypeSymbol argType = creatorArgTypes[index: i];
+            if (parameter == null || argType is ErrorTypeSymbol || value is LiteralExpression ||
+                MentionsGenericParameter(type: parameter.Type))
+            {
+                continue;
+            }
+
+            if (!IsAssignableTo(source: argType, target: parameter.Type))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -2868,146 +2926,6 @@ public sealed partial class SemanticVerifier
         }
 
         return "";
-    }
-
-    private TypeSymbol? AnalyzeMemberConversion(CallExpression call, TypeSymbol objectType,
-        string potentialTypeName, string creatorName, TypeSymbol? targetType)
-    {
-        if (targetType == null)
-        {
-            return null;
-        }
-
-        // Look up the creator on the target type, using memberRoutine-overload resolution
-        // to match the object type (e.g., Text -> S32!(from_text: Text)). IsFailable is a separate
-        // flag on the result. A creator is owner-scoped, so LookupMemberRoutineOverload (not
-        // LookupRoutineOverload) is the right entry point — the latter only indexes free functions.
-        RoutineInfo? creator = _registry.LookupMemberRoutineOverload(type: targetType,
-            memberRoutineName: creatorName,
-            argTypes: [objectType]);
-
-        // A method-form conversion `x.Type()` MUST resolve identically to the free creator call `Type(x)`.
-        // When the member resolver above can't place it, route it through the SAME free-construction analysis
-        // as `Type(x)` (positional single arg binds the sole creator param by TYPE, name-agnostic) — this
-        // reaches the generic/reinterpret readers the member-scoped resolver misses, e.g. the choice
-        // discriminant reader `S32(from: T) needs ChoiceType T` (a no-op reinterpret registered as a FREE
-        // routine, not an `S32.create` member). Adopt free-form's resolution verbatim: ResolvedRoutine may be
-        // null for a bare reinterpret, which codegen inlines (EmitMemberRoutineCall's TypeConstructor path).
-        //
-        // A failable conversion `x.S8()` resolves to the failable free reader `S8!(from: S64)` here (bare,
-        // crash-on-failure). Its RECOVERY (`try x.S8()`) is handled by the `try`/`check` keyword,
-        // which analyzes this bare conversion and then binds the reader's variant by RESOLVED reference in
-        // BindResolvedVariantCall — no `try_S8` string is ever formed.
-        if (creator == null && call.Arguments.Count == 0 &&
-            call.Callee is MemberExpression convMember)
-        {
-            var freeCtor = new CallExpression(
-                Callee: new IdentifierExpression(Name: potentialTypeName, Location: call.Location),
-                Arguments: [convMember.Object],
-                Location: call.Location);
-            // The detour is speculative: when `Type(x)` binds no creator (it falls back to a field-wise
-            // construction and reports why), the conversion simply does not exist — drop those
-            // diagnostics and let the caller report the missing conversion.
-            int errorsBefore = _errors.Count;
-            TypeSymbol ctorType = AnalyzeExpression(expression: freeCtor);
-            bool bound = ctorType is not ErrorTypeSymbol && _errors.Count == errorsBefore;
-            if (!bound)
-            {
-                _errors.RemoveRange(index: errorsBefore, count: _errors.Count - errorsBefore);
-            }
-            else
-            {
-                call.ConstructedType = freeCtor.ConstructedType ?? targetType;
-                call.LoweringKind = CallLoweringKind.TypeConstructor;
-                call.ResolvedRoutine = freeCtor.ResolvedRoutine;
-                if (freeCtor.ResolvedRoutine is { } freeCreator)
-                {
-                    TrackFailableMemberRoutineCall(memberRoutine: freeCreator,
-                        location: call.Location);
-                }
-
-                return ctorType;
-            }
-        }
-
-        if (creator == null)
-        {
-            return null;
-        }
-
-        call.ConstructedType = targetType;
-        call.LoweringKind = CallLoweringKind.TypeConstructor;
-        // Stamp the resolved creator so codegen calls it directly rather than
-        // rediscovering intent from a null ResolvedRoutine (task #23). The receiver
-        // is the conversion source — codegen passes it as the `from:` argument.
-        call.ResolvedRoutine = creator;
-
-        TypeSymbol? validationError = ValidateMemberConversionCreator(call: call,
-            objectType: objectType,
-            potentialTypeName: potentialTypeName,
-            creator: creator);
-        if (validationError != null)
-        {
-            return validationError;
-        }
-
-        TrackFailableMemberRoutineCall(memberRoutine: creator, location: call.Location);
-
-        // `create` returns the target type. `call.ConstructedType` stays the target so codegen's
-        // TypeConstructor path passes the receiver as the `from:` arg.
-        return targetType;
-    }
-
-    /// <summary>
-    /// Validates the resolved member-conversion creator: checks that it has exactly one non-me
-    /// parameter, that the call passes no extra arguments, and that the object type is assignable
-    /// to the creator parameter type. Returns <see cref="ErrorTypeSymbol.Instance"/> on failure,
-    /// null on success.
-    /// </summary>
-    private ErrorTypeSymbol? ValidateMemberConversionCreator(CallExpression call, TypeSymbol objectType,
-        string potentialTypeName, RoutineInfo creator)
-    {
-        var nonMeParams = creator.Parameters
-                                 .Where(predicate: p => p.Name != "me")
-                                 .ToList();
-
-        if (nonMeParams.Count != 1)
-        {
-            ReportError(code: SemanticDiagnosticCode.MemberRoutineChainMultiArg,
-                message:
-                $"member routine-chain constructor '{potentialTypeName}' requires exactly one non-'me' parameter, " +
-                $"but 'create' has {nonMeParams.Count}.",
-                location: call.Location);
-            return ErrorTypeSymbol.Instance;
-        }
-
-        if (call.Arguments.Count > 0)
-        {
-            ReportError(code: SemanticDiagnosticCode.MemberRoutineChainMultiArg,
-                message:
-                $"member routine-chain constructor '{potentialTypeName}' takes no additional arguments — " +
-                "the object itself is the argument.",
-                location: call.Location);
-            return ErrorTypeSymbol.Instance;
-        }
-
-        // Type-check the object expression against the constructor parameter.
-        // We only reach the failure branch when LookupMemberRoutineOverload found no
-        // create overload accepting objectType and the fallback above returned
-        // an arbitrary overload (e.g. create(from: S8)). Report the real problem
-        // — the missing conversion routine — rather than a misleading mismatch
-        // against that arbitrary overload's parameter type.
-        if (!IsAssignableTo(source: objectType, target: nonMeParams[index: 0].Type))
-        {
-            ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-                message:
-                $"Type '{objectType.Name}' has no conversion to '{potentialTypeName}': " +
-                $"no '{potentialTypeName}.create(from: {objectType.Name})' is defined.",
-                location: call.Location);
-            return ErrorTypeSymbol.Instance;
-        }
-
-        return null;
     }
 
     private TypeSymbol? AnalyzeResolvedMemberCall(CallExpression call, MemberExpression member,

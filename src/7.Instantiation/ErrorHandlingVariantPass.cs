@@ -1197,9 +1197,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         return true;
     }
 
-    /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>), or a Suflae
-    /// module global, which becomes a member variable of the one shared globals entity later
-    /// (<c>visits = visits + 1</c>).</summary>
+    /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>), an element of
+    /// a collection (<c>xs[0] = xs[0] + 1</c>, which other agents may share), or a Suflae module global, which
+    /// becomes a member variable of the one shared globals entity later (<c>visits = visits + 1</c>).</summary>
     private static bool WritesMemberVariable(Statement stmt)
     {
         Expression? target = stmt switch
@@ -1209,7 +1209,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 assign.Left,
             _ => null
         };
-        return target is MemberExpression or IdentifierExpression { IsModuleGlobal: true };
+        return target is MemberExpression or IndexExpression or IdentifierExpression { IsModuleGlobal: true };
     }
 
     private static int _hoistTemp;

@@ -202,6 +202,15 @@ public abstract class LanguageRules
         return routine;
     }
 
+    /// <summary>Lowers the language's entity model in the body of a recovery variant (the routine <c>try</c> or
+    /// <c>check</c> binds to) of <paramref name="routine"/>'s base, which the builder copied from the base before the
+    /// base's file was lowered.</summary>
+    public virtual Statement LowerEntitiesInVariantBody(Statement body, TypeModel.Symbols.RoutineInfo routine,
+        Declaration.TypeRegistry registry)
+    {
+        return body;
+    }
+
     /// <summary>Lowers the language's own constructs first in the type-aware lowering of
     /// <paramref name="program"/> (Suflae: global reads and writes become singleton field accesses).</summary>
     public virtual void LowerFirst(PostprocessingContext ctx, Program program)
