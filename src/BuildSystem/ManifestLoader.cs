@@ -613,9 +613,10 @@ public static class ManifestLoader
     /// a loose top-level statement (script mode, whose <c>start()</c> the parser synthesizes). Member
     /// routines (<c>routine Type.start()</c>) are excluded — only the bare, module-level <c>start</c> is
     /// an entry point. This is a line scan, not a parse: it only has to pick the entry among files that
-    /// share one declared module name.
+    /// share one declared module name, and the build driver uses it to leave a second program of the entry's
+    /// module out of the build (a file that does not parse still answers).
     /// </summary>
-    private static bool FileDeclaresEntryPoint(string filePath)
+    internal static bool FileDeclaresEntryPoint(string filePath)
     {
         try
         {

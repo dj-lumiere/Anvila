@@ -128,6 +128,121 @@ public sealed partial class SemanticVerifier
                     location: location);
             }
         }
+
+        ValidateConstraintTypeArguments(routine: routine, typeArgs: typeArgs, receiver: null, location: location);
+    }
+
+    /// <summary>
+    /// Reports RF-S150 when a type argument obeys a constraint's protocol with other type arguments than the
+    /// constraint names: <c>you: Iterable[S64]</c> (a hidden <c>__T0 obeys Iterable[S64]</c>) given a
+    /// <c>List[Text]</c>, which obeys <c>Iterable[Text]</c>. The protocol's name alone matches, and the body
+    /// built for it would read every <c>Text</c> as an <c>S64</c>. A constraint argument naming a type parameter
+    /// reads it from <paramref name="typeArgs"/> or from the receiver <paramref name="receiver"/>'s type arguments
+    /// (<c>List[T].add_range(you: Iterable[T])</c> on a <c>List[S64]</c>). Anything still generic, or a
+    /// conformance the type does not declare with arguments, is left alone.
+    /// </summary>
+    internal void ValidateConstraintTypeArguments(RoutineInfo routine, List<TypeSymbol> typeArgs, TypeSymbol? receiver,
+        SourceLocation location)
+    {
+        if (routine.GenericConstraints is not { Count: > 0 } constraints ||
+            routine.GenericParameters is not { Count: > 0 } genParams)
+        {
+            return;
+        }
+
+        var bindings = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal);
+        if (receiver != null)
+        {
+            TypeSymbol ownerValue = Declaration.RoamedTransparency.SharedEntityOf(type: receiver);
+            TypeSymbol? ownerDef = (ownerValue as EntityTypeSymbol)?.GenericDefinition ??
+                                   (ownerValue as RecordTypeSymbol)?.GenericDefinition as TypeSymbol;
+            if (ownerDef?.GenericParameters is { } ownerParams && ownerValue.TypeArguments is { } ownerArgs)
+            {
+                for (int i = 0; i < ownerParams.Count && i < ownerArgs.Count; i++)
+                {
+                    bindings[key: ownerParams[index: i]] = ownerArgs[index: i];
+                }
+            }
+        }
+
+        for (int i = 0; i < genParams.Count && i < typeArgs.Count; i++)
+        {
+            bindings[key: genParams[index: i]] = typeArgs[index: i];
+        }
+
+        foreach (GenericConstraintDeclaration c in constraints)
+        {
+            int idx = genParams.IndexOf(item: c.ParameterName);
+            if (c.ConstraintType != ConstraintKind.Obeys || c.ConstraintTypes is not { } protocols || idx < 0 ||
+                idx >= typeArgs.Count || typeArgs[index: idx] is GenericParameterTypeSymbol or ErrorTypeSymbol)
+            {
+                continue;
+            }
+
+            TypeSymbol arg = typeArgs[index: idx];
+            TypeSymbol conformer = Declaration.RoamedTransparency.SharedEntityOf(type: arg);
+            foreach (TypeExpression protoExpr in protocols)
+            {
+                if (protoExpr.GenericArguments is not { Count: > 0 } expectedArgs ||
+                    ImplementedProtocolsOf(type: conformer)
+                       .FirstOrDefault(predicate: p => p.BareName == protoExpr.Name) is not
+                        { TypeArguments: { } actualArgs } conformance ||
+                    actualArgs.Count != expectedArgs.Count)
+                {
+                    continue;
+                }
+
+                for (int k = 0; k < expectedArgs.Count; k++)
+                {
+                    TypeSymbol? expected = ConstraintArgument(expression: expectedArgs[index: k], bindings: bindings);
+                    if (expected is null or GenericParameterTypeSymbol or ErrorTypeSymbol
+                            or AssociatedProjectionTypeSymbol ||
+                        actualArgs[index: k] is GenericParameterTypeSymbol or ErrorTypeSymbol
+                            or AssociatedProjectionTypeSymbol || actualArgs[index: k].Name == expected.Name)
+                    {
+                        continue;
+                    }
+
+                    string wanted = $"{protoExpr.Name}[{string.Join(separator: ", ", values: expectedArgs.Select(
+                        selector: e => ConstraintArgument(expression: e, bindings: bindings) is { } b
+                            ? ShortTypeName(type: b)
+                            : e.Name))}]";
+                    string given = ShortTypeName(type: conformer);
+                    ReportError(code: SemanticDiagnosticCode.ProtocolConstraintViolation,
+                        message: $"You passed a '{given}' to '{routine.Name}', which takes a value that obeys " +
+                                 $"'{wanted}' here. A '{given}' obeys '{ShortTypeName(type: conformance)}', and " +
+                                 $"'{ShortTypeName(type: actualArgs[index: k])}' is not " +
+                                 $"'{ShortTypeName(type: expected)}'. Pass a value whose type obeys '{wanted}'.",
+                        location: location);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>A type's name with its type arguments, each without its module (<c>List[Text]</c>).</summary>
+    private static string ShortTypeName(TypeSymbol type)
+    {
+        return type.TypeArguments is { Count: > 0 } arguments
+            ? $"{type.BareName}[{string.Join(separator: ", ", values: arguments.Select(selector: ShortTypeName))}]"
+            : type.BareName;
+    }
+
+    /// <summary>The type a constraint's protocol argument names: a type parameter's binding, or a type written
+    /// out (<c>S64</c> in <c>Iterable[S64]</c>). Null for anything else (a nested type, a name not known here).
+    /// </summary>
+    private TypeSymbol? ConstraintArgument(TypeExpression expression, Dictionary<string, TypeSymbol> bindings)
+    {
+        if (expression.GenericArguments is { Count: > 0 })
+        {
+            return null;
+        }
+
+        return bindings.TryGetValue(key: expression.Name, value: out TypeSymbol? bound)
+            ? bound
+            : LookupTypeWithImports(name: expression.Name) is { Category: not TypeCategory.Protocol } named
+                ? named
+                : null;
     }
 
     /// <summary>

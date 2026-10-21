@@ -522,6 +522,16 @@ public sealed class BuildDriver
                 continue;
             }
 
+            // A program has one entry. A sibling with an entry of its own (`routine start()`, or statements at
+            // the top level) is another program that happens to share the module name (`main.sf` next to a
+            // draft `main.next.sf`), not a part of this one: it stays out of the build, so its errors, a parse
+            // error included, are not this build's. Also a line scan, so it answers for a file that does not
+            // parse.
+            if (BuildHasEntryPoint() && ManifestLoader.FileDeclaresEntryPoint(filePath: fullCandidate))
+            {
+                continue;
+            }
+
             // No import edge: same-module siblings are peers, not dependencies.
             ProcessFile(filePath: fullCandidate,
                 fromFile: null,
@@ -529,6 +539,15 @@ public sealed class BuildDriver
                 importPathString: null);
         }
     }
+
+    /// <summary>Whether an entry file of this build declares the program's entry point (computed once).</summary>
+    private bool BuildHasEntryPoint()
+    {
+        _buildHasEntryPoint ??= _entryFiles.Any(predicate: ManifestLoader.FileDeclaresEntryPoint);
+        return _buildHasEntryPoint.Value;
+    }
+
+    private bool? _buildHasEntryPoint;
 
     /// <summary>
     /// Parses a single source file. A warm daemon (the driver was handed a cached stdlib index) reuses the
@@ -960,7 +979,12 @@ public sealed class BuildDriver
             string code = File.ReadAllText(path: filePath);
             Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
             List<Token> tokens = Builder.Tokenizer.Lexers.Tokenize(source: code, fileName: filePath, language: language);
-            var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
+            // An index scan reads files the build may never use: a file's errors are reported only when it is
+            // part of the build (ParseFile).
+            var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath)
+            {
+                PrintsErrors = false
+            };
             return parser.Parse();
         }
         catch

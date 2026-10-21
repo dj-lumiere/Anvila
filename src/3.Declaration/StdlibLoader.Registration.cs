@@ -914,6 +914,8 @@ public sealed partial class StdlibLoader
             ownerType: ownerType,
             moduleName: moduleName);
 
+        ctx = DesugarProtocolParameters(registry: registry, routine: routine, ctx: ctx, moduleName: moduleName);
+
         List<ParamInfo> parameters = ResolveRoutineParameters(registry: registry,
             routine: routine,
             ctx: ctx,
@@ -1046,6 +1048,79 @@ public sealed partial class StdlibLoader
         {
             // Ignore duplicate routine registration
         }
+    }
+
+    /// <summary>
+    /// A library routine taking a protocol (<c>you: Iterable[T]</c>) or a token over one
+    /// (<c>you: Viewing[Iterable[T]]</c>) takes whatever conforms, as a user routine does
+    /// (SignatureResolver.ResolveAndAppendParameter): the parameter becomes a hidden type parameter
+    /// <c>__TN obeys Iterable[T]</c> and the routine is monomorphized for the caller's conformer. The rewrite goes
+    /// onto the declaration itself (its parameters, GenericParameters and GenericConstraints), so registration,
+    /// body analysis and monomorphization all see the same routine. Left as a protocol, the parameter reached
+    /// the LLVM emitter as a protocol type. Running it twice changes nothing, the rewritten parameter names a
+    /// type parameter. Returns the generic context with the new names added.
+    /// </summary>
+    private static List<string>? DesugarProtocolParameters(TypeRegistry registry, RoutineDeclaration routine,
+        List<string>? ctx, string moduleName)
+    {
+        int counter = routine.GenericParameters?.Count(predicate: gp => gp.StartsWith(value: "__T")) ?? 0;
+        for (int index = 0; index < routine.Parameters.Count; index++)
+        {
+            Parameter param = routine.Parameters[index: index];
+            if (param.Type == null || param.Name == "me")
+            {
+                continue;
+            }
+
+            TypeSymbol? paramType = ResolveSimpleType(registry: registry,
+                typeExpr: param.Type,
+                genericParams: ctx,
+                moduleName: moduleName);
+            TypeExpression protocolExpr;
+            string? tokenKind = null;
+            if (paramType is ProtocolTypeSymbol)
+            {
+                protocolExpr = param.Type;
+            }
+            else if (paramType != null &&
+                     ImplicitToken.IsTokenParameter(parameter: paramType, tokenKind: out string kind,
+                         target: out TypeSymbol target) && target is ProtocolTypeSymbol &&
+                     param.Type.GenericArguments is [{ } inner])
+            {
+                protocolExpr = inner;
+                tokenKind = kind;
+            }
+            else
+            {
+                continue;
+            }
+
+            string name;
+            do
+            {
+                name = $"__T{counter++}";
+            } while (routine.GenericParameters?.Contains(item: name) == true);
+
+            SourceLocation typeLocation = param.Type.Location;
+            var generic = new TypeExpression(Name: name, GenericArguments: null, Location: typeLocation);
+            routine.Parameters[index: index] = param with
+            {
+                Type = tokenKind == null
+                    ? generic
+                    : new TypeExpression(Name: tokenKind, GenericArguments: [generic], Location: typeLocation)
+            };
+            routine.GenericParameters = [..routine.GenericParameters ?? [], name];
+            routine.GenericConstraints = [
+                ..routine.GenericConstraints ?? [],
+                new GenericConstraintDeclaration(ParameterName: name,
+                    ConstraintType: ConstraintKind.Obeys,
+                    ConstraintTypes: [protocolExpr],
+                    Location: param.Location)
+            ];
+            ctx = [..ctx ?? [], name];
+        }
+
+        return ctx;
     }
 
     /// <summary>

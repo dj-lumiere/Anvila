@@ -1139,8 +1139,10 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// Deletes stale per-target outputs that can cause buildandrun to execute or link against
-    /// previous artifacts after source, stdlib, or runtime changes.
+    /// Deletes the stale intermediate files of a build (<c>.ll</c>, <c>.opt.ll</c>) before it starts, so a
+    /// failed build leaves none of the previous build's IR behind. The executable, its debug files and the staged
+    /// runtime libraries are left alone: a new link replaces them (<see cref="PromoteLinkStaging"/>), and a failed
+    /// build keeps the last good executable runnable.
     /// </summary>
     internal static void CleanBuildAndRunOutputs(string llFile, string optFile, string exeFile)
     {
@@ -1148,8 +1150,6 @@ internal static class NativeToolchain
         // "smoke.exe" GetDirectoryName returns "" (not null), and enumerating ""
         // throws. Full-path first makes the working-directory case work.
         string outputDir = Path.GetDirectoryName(path: Path.GetFullPath(path: exeFile)) ?? ".";
-        string basePath = Path.Combine(path1: outputDir,
-            path2: Path.GetFileNameWithoutExtension(path: exeFile));
 
         // Sweep any leftover *.stale.* files from prior runs where TryRemoveBuildArtifact
         // had to fall back to rename-aside because the original was locked.
@@ -1167,25 +1167,61 @@ internal static class NativeToolchain
             // Directory unreadable — non-fatal, just skip the sweep.
         }
 
-        string exeOutputDir = Path.GetDirectoryName(path: Path.GetFullPath(path: exeFile)) ?? ".";
-        string[] pathsToDelete =
-        [
-            llFile,
-            optFile,
-            exeFile,
-            basePath + ".obj",
-            basePath + ".pdb",
-            basePath + ".ilk",
-            basePath + ".exp",
-            basePath + ".lib",
-            .. NativeRuntimeDlls.Select(selector: dll =>
-                Path.Combine(path1: exeOutputDir, path2: dll))
-        ];
+        TryRemoveBuildArtifact(path: llFile);
+        TryRemoveBuildArtifact(path: optFile);
+        // A staging folder a killed build left behind.
+        DiscardLinkStaging(stagingDir: LinkStagingDirectory(exeFile: exeFile));
+    }
 
-        foreach (string path in pathsToDelete.Distinct(comparer: StringComparer.OrdinalIgnoreCase))
+    /// <summary>The folder an executable is linked into before it replaces <paramref name="exeFile"/>: next to
+    /// it, so moving the result over is a rename on the same file system.</summary>
+    internal static string LinkStagingDirectory(string exeFile)
+    {
+        string full = Path.GetFullPath(path: exeFile);
+        string outputDir = Path.GetDirectoryName(path: full) ?? ".";
+        return Path.Combine(path1: outputDir, path2: $".{Path.GetFileName(path: full)}.linking");
+    }
+
+    /// <summary>Deletes a link staging folder and what it holds, if it exists.</summary>
+    internal static void DiscardLinkStaging(string stagingDir)
+    {
+        try
         {
-            TryRemoveBuildArtifact(path: path);
+            if (Directory.Exists(path: stagingDir))
+            {
+                Directory.Delete(path: stagingDir, recursive: true);
+            }
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A file in it is still held open: the next build's sweep removes the folder.
+        }
+    }
+
+    /// <summary>
+    /// Moves everything a successful link wrote into <paramref name="stagingDir"/> (the executable, and on Windows
+    /// its <c>.pdb</c>/<c>.ilk</c>/<c>.lib</c>/<c>.exp</c>) next to <paramref name="exeFile"/>, replacing the
+    /// previous build's files, then deletes the folder. A previous file that is held open is moved aside first
+    /// (<see cref="TryRemoveBuildArtifact"/>).
+    /// </summary>
+    internal static void PromoteLinkStaging(string stagingDir, string exeFile)
+    {
+        string outputDir = Path.GetDirectoryName(path: Path.GetFullPath(path: exeFile)) ?? ".";
+        foreach (string built in Directory.GetFiles(path: stagingDir))
+        {
+            string target = Path.Combine(path1: outputDir, path2: Path.GetFileName(path: built));
+            try
+            {
+                File.Move(sourceFileName: built, destFileName: target, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                TryRemoveBuildArtifact(path: target);
+                File.Move(sourceFileName: built, destFileName: target, overwrite: true);
+            }
+        }
+
+        DiscardLinkStaging(stagingDir: stagingDir);
     }
 
     /// <summary>

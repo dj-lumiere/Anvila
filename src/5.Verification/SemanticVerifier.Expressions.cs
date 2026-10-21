@@ -2242,8 +2242,13 @@ public sealed partial class SemanticVerifier
         string? regularMemberRoutine)
     {
         string opSymbol = $"{compound.Operator.ToStringRepresentation()}=";
-        // A token on the right reads its value, as in the binary form (`total += x` over `each x in xs`).
-        if (Declaration.RuntimeContract.AccessTokenTypes.Contains(item: valueType.BareName) &&
+        // A token on the right reads its value, as in the binary form (`total += x` over `each x in xs`). So does
+        // an iterator's `Item` in a generic body (`each x in you` over `you: Iterable[S64]`).
+        if (ProjectionReadTarget(type: valueType) is { } projected)
+        {
+            valueType = projected;
+        }
+        else if (Declaration.RuntimeContract.AccessTokenTypes.Contains(item: valueType.BareName) &&
             Wrappers.GetWrapperInnerType(wrapperType: valueType) is { } read)
         {
             valueType = read;

@@ -1308,7 +1308,9 @@ internal static class GenericAstRewriter
     /// <summary>
     /// A <c>try</c>/<c>check</c> over one member call that could not be bound while its receiver was
     /// still generic (the step of an <c>each</c> loop over <c>List[Agent[V]]</c>, lowered after analysis): with
-    /// the receiver concrete, bind the call to the recovery variant of that receiver's failable routine.
+    /// the receiver concrete, bind the call to the recovery variant of that receiver's failable routine. A shared
+    /// entity's handle (<c>Roamed[E]</c>, a Suflae iterator) binds to the entity's routine, and the call reaches
+    /// the entity through the handle as any call on it does (RoamedProjectionLoweringPass).
     /// Anything else is left as it is.
     /// </summary>
     private static Expression BindRecoveryOnConcreteReceiver(RecoveryExpression recovery, RewriteContext ctx)
@@ -1319,8 +1321,9 @@ internal static class GenericAstRewriter
                 Callee: MemberExpression { Object.ResolvedType: { } receiverType, MemberName: { } name }
             } call ||
             receiverType is ErrorTypeSymbol || receiverType.IsGenericDefinition ||
-            registry.LookupMemberRoutine(type: receiverType, memberRoutineName: name, isFailable: true) is not
-                { } failable ||
+            registry.LookupMemberRoutine(type: RoamedTransparency.SharedEntityOf(type: receiverType),
+                memberRoutineName: name,
+                isFailable: true) is not { } failable ||
             registry.LookupRecoveryVariant(recovered: failable, kind: recovery.Kind) is not { } variant)
         {
             return recovery;

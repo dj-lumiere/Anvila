@@ -1996,7 +1996,8 @@ internal partial class Program
         IReadOnlyList<string> libraryPaths = config.LibraryPaths;
         IReadOnlyDictionary<string, CLibrary> libraryConfigs = config.LibraryConfigs;
 
-        // Remove stale per-target outputs before rebuilding.
+        // Remove the stale intermediate files before rebuilding. The executable stays until a new one is linked
+        // (LinkAndStageExecutable), so a failed build leaves the last good one in place.
         string llFile = Path.ChangeExtension(path: entryFile, extension: ".ll");
         string optFile = Path.ChangeExtension(path: llFile, extension: ".opt.ll");
         exeFile = Path.ChangeExtension(path: llFile, extension: ".exe");
@@ -2131,16 +2132,23 @@ internal partial class Program
             return optResult;
         }
 
+        // Link into a folder of its own and move the result over the old executable only once it is linked: a
+        // build that fails at the link leaves the last good executable (and its debug files) as they were.
+        string stagingDir = NativeToolchain.LinkStagingDirectory(exeFile: exeFile);
+        Directory.CreateDirectory(path: stagingDir);
         int linkResult = NativeToolchain.LinkExecutable(optFile: optFile,
-            exeFile: exeFile,
+            exeFile: Path.Combine(path1: stagingDir, path2: Path.GetFileName(path: exeFile)),
             runtimeLibDir: runtimeLibDir,
             buildMode: buildMode,
             cLibraries: allCLibraries,
             libraryPaths: libraryPaths);
         if (linkResult != 0)
         {
+            NativeToolchain.DiscardLinkStaging(stagingDir: stagingDir);
             return linkResult;
         }
+
+        NativeToolchain.PromoteLinkStaging(stagingDir: stagingDir, exeFile: exeFile);
 
         // Copy the runtime DLL (and its shared-library dependencies) next to the
         // output .exe so the loader can find them at runtime.

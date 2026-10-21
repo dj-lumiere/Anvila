@@ -16,6 +16,17 @@ namespace Builder.Declaration;
 /// </summary>
 internal static class RoamedTransparency
 {
+    /// <summary>The entity a shared-entity handle (<c>Roamed[E]</c>) stands for, else the type itself.</summary>
+    public static TypeSymbol SharedEntityOf(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol
+        {
+            GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [{ } entity]
+        }
+            ? entity
+            : type;
+    }
+
     /// <summary>The outcome of routing a call on a <c>Roamed[T]</c> receiver: the memberRoutine to actually
     /// call, whether the receiver must be projected to the bare inner pointer, and the inner type
     /// (the projected receiver type).</summary>

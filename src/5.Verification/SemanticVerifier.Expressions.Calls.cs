@@ -2541,6 +2541,12 @@ public sealed partial class SemanticVerifier
         // instance that codegen mangled to `show(Point)` but
         // ProcessResolvedMemberRoutineGenericRoutines never picked up — no body
         // emitted, link errors followed.
+        if (inferred != null)
+        {
+            ValidateConstraintTypeArguments(routine: generic, typeArgs: inferred, receiver: null,
+                location: call.Location);
+        }
+
         routine = inferred != null
             ? _registry.GetOrCreateRoutineResolution(genericDef: generic,
                 typeArguments: inferred)
@@ -2677,6 +2683,12 @@ public sealed partial class SemanticVerifier
             TryInferFromGenericSiblings(call: call,
                 generic: ref generic,
                 inferred: ref inferred);
+        }
+
+        if (inferred != null)
+        {
+            ValidateConstraintTypeArguments(routine: generic, typeArgs: inferred, receiver: null,
+                location: call.Location);
         }
 
         routine = inferred != null
@@ -3043,6 +3055,10 @@ public sealed partial class SemanticVerifier
 
             if (inferredMemberRoutineTypeArgs != null)
             {
+                ValidateConstraintTypeArguments(routine: memberRoutine,
+                    typeArgs: inferredMemberRoutineTypeArgs,
+                    receiver: dispatchType,
+                    location: call.Location);
                 memberRoutine = _registry.GetOrCreateRoutineResolution(
                     genericDef: memberRoutine,
                     typeArguments: inferredMemberRoutineTypeArgs);
@@ -4073,6 +4089,12 @@ public sealed partial class SemanticVerifier
                 inferred: ref inferredImport);
         }
 
+        if (inferredImport != null)
+        {
+            ValidateConstraintTypeArguments(routine: genericImport, typeArgs: inferredImport, receiver: null,
+                location: call.Location);
+        }
+
         routine = inferredImport != null
             ? _registry.GetOrCreateRoutineResolution(genericDef: genericImport,
                 typeArguments: inferredImport)
@@ -4147,6 +4169,8 @@ public sealed partial class SemanticVerifier
 
         if (inferredImportGen != null)
         {
+            ValidateConstraintTypeArguments(routine: routine, typeArgs: inferredImportGen, receiver: null,
+                location: call.Location);
             routine = _registry.GetOrCreateRoutineResolution(
                 genericDef: routine,
                 typeArguments: inferredImportGen);
