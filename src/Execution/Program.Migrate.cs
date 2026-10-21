@@ -93,9 +93,9 @@ internal partial class Program
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAddr);
         }
 
-        // `--step files`: FileManager is the role and OsFileManager the OS's file manager, the process's directories are
-        // OsEnvironment's, `subdir` is `go_to`, `move(from:, to:)` is `rename` or `move(at:, into:)`, and a mapped file
-        // is a FileStorage.
+        // `--step files`: OsFileManager / OsEnvironment / OsEntropy are FileManager / Environment / Entropy, the
+        // process's directories are Environment's, `subdir` is `go_to`, `move(from:, to:)` is `rename` or
+        // `move(at:, into:)`, and a mapped file is a FileStorage.
         if (step == "files")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteFiles);

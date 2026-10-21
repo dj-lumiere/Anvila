@@ -16,12 +16,28 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     /// <summary>The suggestion suffix for an unknown identifier.</summary>
     internal string ForIdentifier(string name)
     {
-        return DidYouMean(target: name, candidates: IdentifierSuggestionCandidates());
+        // A type called on itself (`OsFileManager.read_text(...)`) reads as a name first.
+        return OsServiceRename(name: name) ?? DidYouMean(target: name, candidates: IdentifierSuggestionCandidates());
+    }
+
+    /// <summary>The hint for an operating system service written with the <c>Os</c> its name lost in 0.5
+    /// (<c>OsFileManager</c> is <c>FileManager</c>), or null for any other name.</summary>
+    private string? OsServiceRename(string name)
+    {
+        return name is "OsFileManager" or "OsEnvironment" or "OsEntropy" &&
+               TypeSuggestionCandidates().Contains(value: name[2..])
+            ? $" It is called '{name[2..]}' now (migrate --step files rewrites it)."
+            : null;
     }
 
     /// <summary>The suggestion suffix for an unknown type name.</summary>
     internal string ForType(string typeName)
     {
+        if (OsServiceRename(name: typeName) is { } service)
+        {
+            return service;
+        }
+
         // A type renamed for 0.5 names its new name.
         string? renamed = typeName switch
         {
@@ -74,21 +90,18 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             case "subdir" when MemberSuggestionCandidates(type: type).Contains(value: "go_to"):
                 return " It is called 'go_to' now (migrate --step files rewrites it).";
             case "current_directory" or "temp_directory" or "home_directory" or "set_current_directory"
-                when type.BareName is "FileManager" or "OsFileManager":
+                when type.BareName is "FileManager":
                 return name == "set_current_directory"
                     ? " The working directory isn't changed any more: keep the Directory and build paths from it, and " +
                       "give a child process its own with 'run_program(..., working_directory:)'."
-                    : $" It is 'OsEnvironment.{(name == "current_directory" ? "working_directory" : name)}()' now " +
+                    : $" It is 'Environment.{(name == "current_directory" ? "working_directory" : name)}()' now " +
                       "(IO/Environment).";
             case "expose" or "wield" or "expose_range" or "wield_range"
                 when MemberSuggestionCandidates(type: type).Contains(value: "open_storage"):
                 return $" A file is opened as storage with '{(name.EndsWith(value: "_range") ? "open_storage_range" : "open_storage")}' now, a FileStorage[T].";
-            case "move" when type.BareName is "FileManager" or "OsFileManager":
-                return " 'move(from:, to:)' is two routines of OsFileManager now: 'rename(at:, to: name)' changes a " +
+            case "move" when type.BareName is "FileManager":
+                return " 'move(from:, to:)' is two routines of FileManager now: 'rename(at:, to: name)' changes a " +
                        "name, 'move(at:, into: directory)' puts it into another directory (migrate --step files).";
-            case not null when type.BareName == "FileManager":
-                return " FileManager is the role of a file manager: the operating system's is 'OsFileManager' " +
-                       $"('OsFileManager.{name}', migrate --step files).";
         }
 
         return DidYouMean(target: name, candidates: MemberSuggestionCandidates(type: type));

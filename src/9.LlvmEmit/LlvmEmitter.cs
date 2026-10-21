@@ -1306,7 +1306,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "declare void @rf_set_crash_report(ptr)");
         output.AppendLine(value: "declare void @tessera_runtime_crash_report(ptr, ptr, ptr)");
         output.AppendLine(value: "declare void @tessera_set_library_folder(ptr)");
-        // The arguments the program was started with, kept by the runtime for OsEnvironment.arguments().
+        // The arguments the program was started with, kept by the runtime for Environment.arguments().
         output.AppendLine(value: "declare void @tessera_set_arguments(i32, ptr)");
         // The standard library's folder, so a crash the runtime raises names where the program called into the library.
         string library = _registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "";

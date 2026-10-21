@@ -3708,7 +3708,7 @@ public sealed partial class SemanticVerifier
                 }
 
                 // A full-arity match wins. Only when none exists may trailing defaulted parameters be left out
-                // (`OsFileManager.copy(from:, to:)` against `copy(from:, to:, replacing: Bool = false)`).
+                // (`FileManager.copy(from:, to:)` against `copy(from:, to:, replacing: Bool = false)`).
                 var arityMatches = seedCandidates.Where(predicate: c =>
                                                       c.Parameters.Count == call.Arguments.Count && NamesFit(c: c))
                                                  .ToList();

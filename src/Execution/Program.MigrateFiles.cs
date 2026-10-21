@@ -6,9 +6,16 @@ namespace Builder.Execution;
 
 internal partial class Program
 {
-    /// <summary>A call on the file manager type, <c>FileManager.name</c>, up to the routine's name.</summary>
+    /// <summary>A call on the file manager type, <c>FileManager.name</c> or <c>OsFileManager.name</c>, up to the
+    /// routine's name.</summary>
     private static readonly Regex FileManagerCall = new(
-        pattern: @"(?<![\w.`$])FileManager\.(?<name>[A-Za-z_]\w*)",
+        pattern: @"(?<![\w.`$])(?:Os)?FileManager\.(?<name>[A-Za-z_]\w*)",
+        options: RegexOptions.Compiled);
+
+    /// <summary>The operating system services' names with <c>Os</c> in front: <c>OsFileManager</c>,
+    /// <c>OsEnvironment</c>, <c>OsEntropy</c>.</summary>
+    private static readonly Regex OsServiceName = new(
+        pattern: @"(?<![\w.`$])Os(?<name>FileManager|Environment|Entropy)\b",
         options: RegexOptions.Compiled);
 
     /// <summary>A call of <c>subdir</c> on a directory, <c>.subdir(</c>.</summary>
@@ -39,13 +46,13 @@ internal partial class Program
     };
 
     /// <summary>
-    /// <c>--step files</c>: the file batch. <c>FileManager</c> is the role of a file manager now, and the operating
-    /// system's is <c>OsFileManager</c>, so a call <c>FileManager.read_text(...)</c> is
-    /// <c>OsFileManager.read_text(...)</c>. The working, temporary and home directories are
-    /// <c>OsEnvironment.working_directory()</c> / <c>temp_directory()</c> / <c>home_directory()</c> (IO/Environment, its
+    /// <c>--step files</c>: the file batch. The operating system services are <c>FileManager</c>,
+    /// <c>Environment</c> and <c>Entropy</c>, so <c>OsFileManager</c>, <c>OsEnvironment</c> and <c>OsEntropy</c> lose
+    /// their <c>Os</c>. The working, temporary and home directories are
+    /// <c>Environment.working_directory()</c> / <c>temp_directory()</c> / <c>home_directory()</c> (IO/Environment, its
     /// import added), and <c>set_current_directory</c> is gone: each call of it is listed. <c>Directory.subdir</c> is
-    /// <c>go_to</c>. <c>FileManager.move(from:, to:)</c> is <c>OsFileManager.rename(at:, to: name)</c> when only the
-    /// name changes and <c>OsFileManager.move(at:, into: directory)</c> when it keeps its name and goes elsewhere: a
+    /// <c>go_to</c>. <c>FileManager.move(from:, to:)</c> is <c>FileManager.rename(at:, to: name)</c> when only the
+    /// name changes and <c>FileManager.move(at:, into: directory)</c> when it keeps its name and goes elsewhere: a
     /// call whose two paths show which is rewritten, any other is listed. <c>expose</c> / <c>wield</c> (and their
     /// <c>_range</c> forms) are <c>open_storage</c> / <c>open_storage_range</c>, and <c>Exposed[T]</c> /
     /// <c>Wielded[T]</c> are <c>FileStorage[T]</c>: those lines are listed too, since a storage's cells are read with
@@ -69,7 +76,7 @@ internal partial class Program
             int end = call.Index + call.Length;
             if (MovedDirectoryRoutines.TryGetValue(key: name, value: out string? moved))
             {
-                replacement = $"OsEnvironment.{moved}";
+                replacement = $"Environment.{moved}";
                 needsEnvironmentImport = true;
             }
             else if (name == "set_current_directory")
@@ -90,8 +97,8 @@ internal partial class Program
                 if (name == "move")
                 {
                     Console.WriteLine(value: $"{file}:{line}: 'FileManager.move(from:, to:)' is " +
-                                             "'OsFileManager.rename(at:, to: name)' when only the name changes and " +
-                                             "'OsFileManager.move(at:, into: directory)' when it keeps its name and " +
+                                             "'FileManager.rename(at:, to: name)' when only the name changes and " +
+                                             "'FileManager.move(at:, into: directory)' when it keeps its name and " +
                                              "goes into another directory. Rewrite it by hand");
                 }
 
@@ -104,7 +111,7 @@ internal partial class Program
                                              "the lines that use it");
                 }
 
-                replacement = $"OsFileManager.{name}";
+                replacement = $"FileManager.{name}";
             }
 
             result.Append(value: source, startIndex: from, count: call.Index - from);
@@ -115,6 +122,7 @@ internal partial class Program
         result.Append(value: source, startIndex: from, count: source.Length - from);
         string text = ReplaceInCode(text: result.ToString(), pattern: SubdirCall, replacement: _ => ".go_to");
         text = ReplaceInCode(text: text, pattern: OldMappedViewType, replacement: _ => "FileStorage");
+        text = ReplaceInCode(text: text, pattern: OsServiceName, replacement: m => m.Groups[groupname: "name"].Value);
         return needsEnvironmentImport
             ? WithImport(text: text, module: "IO/Environment")
             : text;
@@ -122,9 +130,9 @@ internal partial class Program
 
     /// <summary>
     /// The new form of <c>FileManager.move(from: a, to: b)</c> when its two paths show what it does: the call from the
-    /// routine's name to its closing parenthesis, as <c>OsFileManager.rename(at: a, to: name)</c> when <c>a</c> and
+    /// routine's name to its closing parenthesis, as <c>FileManager.rename(at: a, to: name)</c> when <c>a</c> and
     /// <c>b</c> are <c>d.file(name: x)</c> and <c>d.file(name: y)</c> on the same <c>d</c>, or as
-    /// <c>OsFileManager.move(at: a, into: e)</c> when they are <c>d.file(name: x)</c> and <c>e.file(name: x)</c>. Two
+    /// <c>FileManager.move(at: a, into: e)</c> when they are <c>d.file(name: x)</c> and <c>e.file(name: x)</c>. Two
     /// <c>File(at: "...")</c> literals are told apart by their text the same way. Null when the paths don't show it.
     /// </summary>
     private static (string Text, int End)? RewriteMoveCall(string source, int nameEnd)
@@ -157,7 +165,7 @@ internal partial class Program
 
         if (source1.Parent == target.Parent && source1.Kind == target.Kind)
         {
-            return ($"OsFileManager.rename(at: {fromArgument}, to: {target.Name}{replacing})", call.End);
+            return ($"FileManager.rename(at: {fromArgument}, to: {target.Name}{replacing})", call.End);
         }
 
         if (source1.Name == target.Name && target.Parent.Length > 0)
@@ -165,7 +173,7 @@ internal partial class Program
             string into = target.Kind == "literal"
                 ? $"Directory(at: \"{target.Parent}\")"
                 : target.Parent;
-            return ($"OsFileManager.move(at: {fromArgument}, into: {into}{replacing})", call.End);
+            return ($"FileManager.move(at: {fromArgument}, into: {into}{replacing})", call.End);
         }
 
         return null;
