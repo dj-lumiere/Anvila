@@ -295,10 +295,14 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             return new LoopStatement(Body: loweredBody, Location: loc) { WrittenWhile = literal };
         }
 
-        // Build: if !cond { break }
-        Expression negCond = new UnaryExpression(Operator: UnaryOperator.Not,
-            Operand: whileStmt.Condition,
-            Location: loc);
+        // Build: if !cond { break }. An `until c` is kept as a loop on `not (c)`, so its guard is `if c { break }`
+        // itself: the analysis then narrows after it as after any guard (`until x is None` leaves `x` non-None in the
+        // body).
+        Expression negCond = whileStmt.Condition is UnaryExpression { Operator: UnaryOperator.Not } written
+            ? written.Operand
+            : new UnaryExpression(Operator: UnaryOperator.Not,
+                Operand: whileStmt.Condition,
+                Location: loc);
         Statement guardBreak = new IfStatement(Condition: negCond,
             ThenStatement: new BlockStatement(Statements:
                 [new BreakStatement(Location: loc)],
