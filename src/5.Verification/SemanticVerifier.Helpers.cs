@@ -805,7 +805,7 @@ public sealed partial class SemanticVerifier
     /// explicit <c>steal</c>. Extracted from <see cref="AnalyzeCallArguments"/>.
     /// </summary>
     private void ValidateBareEntityConsumingArg(RoutineInfo routine, ParamInfo param,
-        TypeSymbol paramType, Expression argValue, TypeSymbol argType)
+        TypeSymbol paramType, Expression argValue, TypeSymbol argType, bool isOperator = false)
     {
         // The old check false-positived because it looked at a stripped type; the reliable
         // signal is STRUCTURAL and read here at Phase 4, BEFORE MarkerProtocolDesugarPass strips
@@ -817,9 +817,17 @@ public sealed partial class SemanticVerifier
         // Safety comes from move tracking; this check makes the destructive transfer visible in source.
         // A builder-written body is analyzed after that strip, so a borrow parameter already reads as the bare
         // entity there (`eq(you: Accessing[Box])` as `eq(you: Box)`) and the structure says nothing.
+        // In a generic body of the program a value of a type parameter not kept to values (`needs RecordType T`) may
+        // be an entity, and a parameter of a type parameter keeps what it is given the same way
+        // (`xs.add_last(value: x)` with `x: T`): the call hands it over, so it takes `steal` like an entity does,
+        // checked on the template. The standard library's own generic bodies hand values to lookup helpers that only
+        // read them, and are not judged by this.
+        bool handsOverEntity = argType is EntityTypeSymbol && paramType is EntityTypeSymbol ||
+                               !isOperator && argType is GenericParameterTypeSymbol &&
+                               paramType is GenericParameterTypeSymbol && MayHoldEntity(type: argType) &&
+                               !IsStdlibFile(filePath: _currentFilePath);
         if (ChecksHolderOf(type: argType) && !_isInCompilerGeneratedBody &&
-            ReadsKeptEntity(value: argValue, includeVariables: true) && argType is EntityTypeSymbol &&
-            paramType is EntityTypeSymbol)
+            ReadsKeptEntity(value: argValue, includeVariables: true) && handsOverEntity)
         {
             ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
                 message: KeptEntityMessage(

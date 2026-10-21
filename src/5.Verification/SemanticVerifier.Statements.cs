@@ -751,21 +751,37 @@ public sealed partial class SemanticVerifier
 
                 var deadBeforeLoop = new HashSet<string>(collection: _deadrefVariables);
                 _unassignedAtBreak.Push(item: []);
+                _endedAtContinue.Push(item: []);
                 _registry.EnterScope(kind: ScopeKind.Loop, name: "loop");
                 // A lowered `each x in a` loop carries the surface source name so the
                 // reshaping-during-iteration check can fire even though the EachStatement was
                 // rewritten away before this phase. Track it for the duration of the body.
-                bool tracksIterationSource = loopStmt.IterationSourceName != null &&
-                                             _activeIterationSources.Add(
-                                                 item: loopStmt.IterationSourceName);
+                // An `each` over an adapter chain (`xs.where(...)`) walks the container at its head.
+                if (loopStmt.IterationSourceName is { } sourceName &&
+                    _adapterSourcePaths.TryGetValue(key: sourceName, value: out string? sourceHead))
+                {
+                    loopStmt.AdapterSourcePath = sourceHead;
+                }
+                else if (loopStmt is { IterationSourceName: null, IteratorName: { } iteratorName } &&
+                         _adapterSourcePaths.TryGetValue(key: iteratorName, value: out string? adapterHead))
+                {
+                    loopStmt.AdapterSourcePath = adapterHead;
+                }
+
+                string? adapterWalked = loopStmt.AdapterSourcePath is { } head && !head.Contains(value: '.') &&
+                                        !head.Contains(value: '[')
+                    ? head
+                    : null;
+                string? walkedName = adapterWalked ?? loopStmt.IterationSourceName;
+                bool tracksIterationSource = walkedName != null && _activeIterationSources.Add(item: walkedName);
                 AnalyzeStatement(statement: loopStmt.Body);
                 if (tracksIterationSource)
                 {
-                    _activeIterationSources.Remove(item: loopStmt.IterationSourceName!);
+                    _activeIterationSources.Remove(item: walkedName!);
                 }
 
                 _registry.ExitScope();
-                ReportTakenInLoop(loop: loopStmt, before: deadBeforeLoop);
+                ReportTakenInLoop(loop: loopStmt, before: deadBeforeLoop, atContinue: _endedAtContinue.Pop());
                 // A loop is left only by a `break` (or by leaving the routine), so what is still unassigned after
                 // it is what was unassigned at one of its breaks.
                 HashSet<string> unassignedAtBreak = _unassignedAtBreak.Pop();
@@ -813,6 +829,12 @@ public sealed partial class SemanticVerifier
 
             case ContinueStatement continueStmt:
                 AnalyzeContinueStatement(continueStmt: continueStmt);
+                if (_endedAtContinue.TryPeek(result: out HashSet<string>? atContinue))
+                {
+                    atContinue.UnionWith(other: _deadrefVariables.Where(predicate: n =>
+                        !n.StartsWith(value: UnassignedMark, comparisonType: StringComparison.Ordinal)));
+                }
+
                 break;
 
             case NothingStatement:
@@ -1230,6 +1252,7 @@ public sealed partial class SemanticVerifier
 
         TrackSpecialVariableRegistrations(varDecl: varDecl, varType: varType);
         TrackReadOnlyIterator(varDecl: varDecl);
+        NoteOneThreadLambdaVariable(name: varDecl.Name, initializer: varDecl.Initializer);
     }
 
     /// <summary>
@@ -1240,6 +1263,36 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void TrackReadOnlyIterator(VariableDeclaration varDecl)
     {
+        // An adapter kept in a variable (`var big = xs.where(...)`, or the `_lf_src_N` an `each` over a call names)
+        // walks the container at the head of its chain, and so does an iterator taken from it.
+        CallExpression? adapterChain = varDecl.Initializer switch
+        {
+            CallExpression
+            {
+                IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "iter", Object: CallExpression chain }
+            } => chain,
+            CallExpression
+            {
+                IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "iter", Object: IdentifierExpression }
+            } => null,
+            CallExpression chain => chain,
+            _ => null
+        };
+        string? inheritedHead = varDecl.Initializer is CallExpression
+        {
+            Callee: MemberExpression { Object: IdentifierExpression { Name: var walkedName } }
+        } && _adapterSourcePaths.TryGetValue(key: walkedName, value: out string? walkedHead)
+            ? walkedHead
+            : null;
+        if (((adapterChain != null ? AdapterHeadPath(walk: adapterChain) : null) ?? inheritedHead) is { } headPath)
+        {
+            _adapterSourcePaths[key: varDecl.Name] = headPath;
+        }
+        else
+        {
+            _adapterSourcePaths.Remove(key: varDecl.Name);
+        }
+
         bool readOnly = _registry.Rules.ChecksAccessTokens && varDecl.Initializer switch
         {
             CallExpression { IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "iter", Object: var source } }
@@ -1255,6 +1308,61 @@ public sealed partial class SemanticVerifier
         {
             _readOnlyIterators.Remove(item: varDecl.Name);
         }
+    }
+
+    /// <summary>The iterator variables of <c>each</c> loops over an adapter chain, with the path of the container at
+    /// the chain's head (see <see cref="LoopStatement.AdapterSourcePath"/>).</summary>
+    private readonly Dictionary<string, string> _adapterSourcePaths = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The path of the container an adapter chain walks (<c>xs</c> for <c>xs.where(...).select(...)</c>):
+    /// every call on the way gives an iterator (it has <c>emit</c>), so it walks its receiver in place. Null when a
+    /// call gives anything else (<c>xs.copy()</c> makes a list of its own) or the head is not a name, member variable
+    /// or element.</summary>
+    private string? AdapterHeadPath(CallExpression walk)
+    {
+        Expression current = walk;
+        while (current is CallExpression { Callee: MemberExpression receiver, ResolvedType: { } walked } &&
+               (_registry.LookupMemberRoutine(type: walked, memberRoutineName: "emit", isFailable: true) != null ||
+                KeepsPlaceOf(holder: walked, place: receiver.Object.ResolvedType)))
+        {
+            current = receiver.Object;
+        }
+
+        return current is CallExpression ? null : PlacePath(place: current);
+
+        static string? PlacePath(Expression place)
+        {
+            return place switch
+            {
+                IdentifierExpression id => id.Name,
+                MemberExpression { Object: var inner, MemberName: var field } =>
+                    PlacePath(place: inner) is { } prefix ? $"{prefix}.{field}" : null,
+                IndexExpression { Object: var container } =>
+                    PlacePath(place: container) is { } owner ? $"{owner}[]" : null,
+                _ => null
+            };
+        }
+    }
+
+    /// <summary>Whether <paramref name="holder"/> keeps the address of a <paramref name="place"/> (a member variable
+    /// <c>Hijacked[TSource]</c> with <c>TSource</c> the receiver's type): an adapter like <c>WhereIterable</c> walks
+    /// the container it was made from in place.</summary>
+    private static bool KeepsPlaceOf(TypeSymbol holder, TypeSymbol? place)
+    {
+        if (place == null)
+        {
+            return false;
+        }
+
+        IEnumerable<MemberVariableInfo> members = holder switch
+        {
+            EntityTypeSymbol entity => entity.MemberVariables,
+            RecordTypeSymbol record => record.MemberVariables,
+            _ => []
+        };
+        return members.Any(predicate: m => m.Type is { BareName: Declaration.RuntimeContract.Hijacked, TypeArguments: [{ } kept] } &&
+                                           (kept.Name == place.Name ||
+                                            Wrappers.GetWrapperInnerType(wrapperType: place)?.Name == kept.Name));
     }
 
     /// <summary>Whether a value of <paramref name="type"/> is walked: an iterator (it has <c>emit</c>) or an adapter
@@ -1503,9 +1611,10 @@ public sealed partial class SemanticVerifier
                 ? $"type '{varType.Name}' is a '{hint.Value.Wrapper}[…]' wrapper"
                 : $"field '{hint.Value.Path}' of type '{hint.Value.Wrapper}[…]'";
             ReportError(code: SemanticDiagnosticCode.ImplicitWrapperCopy,
-                message:
-                $"Implicit copy of '{varDecl.Name}': {fieldNote} requires an explicit copy verb. " +
-                $"Spell out '{verb}' at the copy site, or reconstruct the record with each field's verb.",
+                message: verb == Wrappers.ScopedNoEscapeHint
+                    ? TokenCopyMessage(copied: varDecl.Initializer, type: varType)
+                    : $"Implicit copy of '{varDecl.Name}': {fieldNote} requires an explicit copy verb. " +
+                      $"Spell out '{verb}' at the copy site, or reconstruct the record with each field's verb.",
                 location: varDecl.Location);
         }
     }
@@ -1522,15 +1631,20 @@ public sealed partial class SemanticVerifier
     /// next turn would find it gone (RF-S616). A take followed by leaving the loop (`return`, `break`) is fine: the
     /// branch that leaves does not reach the loop's next turn.
     /// </summary>
-    private void ReportTakenInLoop(LoopStatement loop, HashSet<string> before)
+    private void ReportTakenInLoop(LoopStatement loop, HashSet<string> before, HashSet<string> atContinue)
     {
-        if (ControlFlowExits.HasDefiniteExit(statement: loop.Body))
+        // A turn that reaches a `continue` goes on to the next one, whatever the rest of the body does.
+        IEnumerable<string> ended = atContinue;
+        if (!ControlFlowExits.HasDefiniteExit(statement: loop.Body))
         {
-            return; // every turn leaves the loop: there is no next turn
+            ended = ended.Concat(second: _deadrefVariables); // a turn that reaches the body's end goes on too
         }
 
-        foreach (string name in _deadrefVariables.Where(predicate: n => !before.Contains(item: n))
-                                                 .Order(comparer: StringComparer.Ordinal))
+        foreach (string name in ended.Where(predicate: n => !before.Contains(item: n) &&
+                                                           !n.StartsWith(value: UnassignedMark,
+                                                               comparisonType: StringComparison.Ordinal))
+                                     .Distinct()
+                                     .Order(comparer: StringComparer.Ordinal))
         {
             if (_registry.LookupVariable(name: name) is null)
             {
@@ -2149,6 +2263,8 @@ public sealed partial class SemanticVerifier
     {
         bool isDestroyDecl = routine.Name == "destruct" ||
                              routine.Name.EndsWith(value: ".destroy",
+                                 comparisonType: StringComparison.Ordinal) ||
+                             routine.Name.EndsWith(value: ".destruct",
                                  comparisonType: StringComparison.Ordinal);
         // Where entities are shared handles, when one goes is decided by its last holder or by the cycle collector,
         // so a `destruct` of the program's own would run at no point the program can name.
@@ -2159,6 +2275,16 @@ public sealed partial class SemanticVerifier
                 message: $"You write `{routine.Name}` here, but a value here goes when its last holder lets go of it, or " +
                          "when the cycle collector frees it, at no point the program can name. For a resource that " +
                          "must be released at a known point, give the type `enter` and `exit` and use it with `using`.",
+                location: routine.Location);
+        }
+
+        if (isDestroyDecl && routine.IsFailable)
+        {
+            ReportError(code: SemanticDiagnosticCode.DestructNotFailable,
+                message: "You write `destruct` here with `failable`, but the builder calls it at the scope's end or at " +
+                         "`drop x`, where nothing could take a failure from it. Write it as a plain routine " +
+                         $"(`routine {routine.Name}()`), and recover a failing call inside it with `try` or `check` " +
+                         "and `when`.",
                 location: routine.Location);
         }
 

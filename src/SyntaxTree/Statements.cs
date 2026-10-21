@@ -546,6 +546,17 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// itself: the expression is lowered afterwards, and a stale copy here would reach backend validation.
     /// </summary>
     public string? IterationSourcePath { get; init; }
+
+    /// <summary>For a lowered <c>each</c> loop, the name of the iterator variable it walks (<c>_lf_iter_N</c>).</summary>
+    public string? IteratorName { get; init; }
+
+    /// <summary>
+    /// For a lowered <c>each</c> loop over an iterator adapter (<c>each x in xs.where(...)</c>), the path of the
+    /// container at the head of the adapter chain (<c>"xs"</c>), set by analysis once the chain's types are known (an
+    /// adapter has <c>emit</c>, a fresh collection like <c>xs.copy()</c> does not). The shape checks guard it like
+    /// <see cref="IterationSourcePath"/>.
+    /// </summary>
+    public string? AdapterSourcePath { get; set; }
 }
 
 /// <summary>

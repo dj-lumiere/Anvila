@@ -13,9 +13,19 @@ public sealed partial class SemanticVerifier
         {
             if (part is ExpressionPart exprPart)
             {
-                AnalyzeExpression(expression: exprPart.Expression);
+                TypeSymbol inserted = AnalyzeExpression(expression: exprPart.Expression);
                 ValidateFTextFormatSpec(formatSpec: exprPart.FormatSpec,
                     location: exprPart.Location);
+                // `{x}` calls `x.represent()`, `{x?}` calls `x.diagnose()`.
+                string shown = exprPart.FormatSpec?.Contains(value: '?') == true
+                    ? Declaration.RuntimeContract.Display.Diagnose
+                    : Declaration.RuntimeContract.Display.Represent;
+                if (inserted is not ErrorTypeSymbol)
+                {
+                    ValidateDangerousImplicitCall(
+                        routine: _registry.LookupMemberRoutine(type: inserted, memberRoutineName: shown),
+                        written: $"Inserting a '{inserted.ShortTypeName}' into f-text", location: exprPart.Location);
+                }
             }
         }
 
@@ -324,6 +334,21 @@ public sealed partial class SemanticVerifier
         // other value, wrappers included, as it is.
         if (steal.IsImplicitMove && !IsRawEntityType(type: operandType))
         {
+            steal.ResolvedType = operandType;
+            return operandType;
+        }
+
+        // A global lives as long as the program and every agent reaches it, so nothing takes it away: `steal G` would
+        // leave the global empty for every later read, in this routine and in any other.
+        if (steal.Operand is IdentifierExpression { Name: var stolenName } &&
+            _registry.LookupVariable(name: stolenName) is { IsGlobal: true })
+        {
+            ReportError(code: SemanticDiagnosticCode.InvalidDropTarget,
+                message:
+                $"You steal the global '{stolenName}', but a global lives as long as the program and is only read: " +
+                $"every later read of '{stolenName}', here or in another routine, would find it gone. Pass " +
+                $"'{stolenName}' where it is read (a `Viewing` parameter), or make a value of your own from it.",
+                location: steal.Location);
             steal.ResolvedType = operandType;
             return operandType;
         }

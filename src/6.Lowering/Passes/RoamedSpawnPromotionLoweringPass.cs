@@ -132,6 +132,21 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                     {
                         AppendPromotesFor(spawn: call, promotes: promotes);
                     }
+
+                    // A lambda that captures a handle can be called from any job it is handed to (an agent's
+                    // argument, a channel, a field another job reads), and nothing marks where it crosses: the
+                    // capture is the escape, so each captured handle is promoted where the lambda is made.
+                    if (n is ClosureValueExpression closure)
+                    {
+                        AstWalker.WalkExpressions(root: closure.Bound,
+                            visit: part =>
+                            {
+                                if (part is NamedArgumentExpression { Name: "value", Value: var captured })
+                                {
+                                    AppendPromotesForValue(root: captured, promotes: promotes);
+                                }
+                            });
+                    }
                 });
         }
 
@@ -276,7 +291,19 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
 
     private static bool IsSpawnCall(CallExpression call)
     {
-        return call.ResolvedRoutine is { AsyncSpawnOf: not null };
+        return call.ResolvedRoutine is { AsyncSpawnOf: not null } || IsChannelSend(call: call);
+    }
+
+    /// <summary>Whether <paramref name="call"/> sends an item on a channel: the item goes to whichever job receives
+    /// it, so a handle in it crosses like an agent's argument.</summary>
+    private static bool IsChannelSend(CallExpression call)
+    {
+        return call.ResolvedRoutine is
+               {
+                   Name: RuntimeContract.ChannelSend.Transmit or RuntimeContract.ChannelSend.TransmitIfRoom,
+                   OwnerType: { } owner
+               } && (LlvmEmitter.GetGenericBaseNameStatic(type: owner) ?? owner.Name) ==
+               RuntimeContract.ChannelSend.Transmitter;
     }
 
     // Builds `handle.promote()` as an ExpressionStatement when `handle` is a Roamed[T]. promote

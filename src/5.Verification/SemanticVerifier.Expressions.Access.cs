@@ -857,8 +857,19 @@ public sealed partial class SemanticVerifier
             parameterTypes.Add(item: paramType);
         }
 
-        // Analyze body and get return type
-        TypeSymbol returnType = AnalyzeExpression(expression: lambda.Body);
+        // A lambda's body runs where the lambda is called, which may be outside the `danger` block it was written in,
+        // so the block does not reach into it.
+        int dangerDepthAroundLambda = _dangerBlockDepth;
+        _dangerBlockDepth = 0;
+        TypeSymbol returnType;
+        try
+        {
+            returnType = AnalyzeExpression(expression: lambda.Body);
+        }
+        finally
+        {
+            _dangerBlockDepth = dangerDepthAroundLambda;
+        }
 
         // Validate captured variables (RazorForge only)
         // Lambda bodies can reference variables from enclosing scope - these are captures

@@ -389,4 +389,73 @@ internal static class Wrappers
 
         return null;
     }
+
+    /// <summary>
+    /// The first part of <paramref name="type"/> only one thread may use (a <c>Retained</c>, a <c>Tracked</c>, a
+    /// token), looked for everywhere a value of the type can reach it: member variables of records and entities, tuple
+    /// elements, variant members and type arguments (<c>List[Retained[Cell]]</c>, <c>Receiver[Retained[Cell]]</c>).
+    /// A thread-shareable manager (<c>Guarded</c>, <c>Atomic</c>, <c>Witnessed</c>) and a <c>Roamed</c> stop the walk:
+    /// what they hold is reached through their own synchronization. A routine type is not looked into.
+    /// </summary>
+    internal static (string Wrapper, string Path)? FindOneThreadPart(TypeSymbol type)
+    {
+        return FindOneThreadPart(type: type, path: "", visited: new HashSet<TypeSymbol>());
+    }
+
+    /// <summary>Where a part <see cref="FindOneThreadPart(TypeSymbol)"/> found sits, for a message: "a `Retained`",
+    /// "a `Retained` at `r`", "a `Retained` in a type argument".</summary>
+    internal static string DescribeOneThreadPart(string wrapper, string at)
+    {
+        return at == "<value>" ? $"a `{wrapper}`"
+            : at.StartsWith(value: '[') ? $"a `{wrapper}` in its type argument `{at[1..^1]}`"
+            : $"a `{wrapper}` at `{at}`";
+    }
+
+    private static (string Wrapper, string Path)? FindOneThreadPart(TypeSymbol type, string path,
+        HashSet<TypeSymbol> visited)
+    {
+        string bareName = type.BareName;
+        if (IsThreadUnsafeReferenceWrapper(bareName: bareName))
+        {
+            return (bareName, path.Length == 0 ? "<value>" : path);
+        }
+
+        if (IsThreadShareableName(bareName: bareName) || bareName == Declaration.RuntimeContract.Roamed ||
+            type is RoutineTypeSymbol or GenericParameterTypeSymbol || !visited.Add(item: type))
+        {
+            return null;
+        }
+
+        // Type arguments first: a container's elements are named by them (`List[Retained[Cell]]`), not by the buffer
+        // member variable that keeps them.
+        var parts = new List<(TypeSymbol Type, string Path)>();
+        parts.AddRange(collection: (type.TypeArguments ?? []).Select(selector: t => (t, $"{path}[{t.ShortTypeName}]")));
+        string Child(string name) => path.Length == 0 ? name : $"{path}.{name}";
+        switch (type)
+        {
+            case VariantTypeSymbol variant:
+                parts.AddRange(collection: variant.Members.Where(predicate: m => m.Type != null)
+                                                  .Select(selector: m => (m.Type!, path)));
+                break;
+            case RecordTypeSymbol record when !(record is { IsGenericDefinition: true, TypeArguments: not { Count: > 0 } }):
+                parts.AddRange(collection: record.MemberVariables.Select(selector: m => (m.Type, Child(name: m.Name))));
+                break;
+            case EntityTypeSymbol entity:
+                parts.AddRange(collection: entity.MemberVariables.Select(selector: m => (m.Type, Child(name: m.Name))));
+                break;
+            case TupleTypeSymbol tuple:
+                parts.AddRange(collection: tuple.ElementTypes.Select(selector: (t, i) => (t, Child(name: $"{i}"))));
+                break;
+        }
+
+        foreach ((TypeSymbol part, string partPath) in parts)
+        {
+            if (FindOneThreadPart(type: part, path: partPath, visited: visited) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
 }

@@ -161,6 +161,17 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     {
         var handles = new List<Expression>();
         var seen = new HashSet<string>();
+        // A handle the block declares itself (`var __rf_hoist_N = cs[0]` a recovery variant splits out) does not
+        // exist before the block, so it cannot be locked there: the statements that use it bracket it themselves.
+        var declaredInside = new HashSet<string>(comparer: StringComparer.Ordinal);
+        AstWalker.Walk(root: block,
+            visit: n =>
+            {
+                if (n is DeclarationStatement { Declaration: VariableDeclaration declared })
+                {
+                    declaredInside.Add(item: declared.Name);
+                }
+            });
         AstWalker.Walk(root: block,
             visit: n =>
             {
@@ -171,7 +182,10 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
 
                 foreach (Expression h in FieldAccessHandles(stmt: s))
                 {
-                    if (IsHeldPlace(handle: h) && !IsSelfLocking(handle: h) && seen.Add(item: PlaceKey(place: h)))
+                    string key = PlaceKey(place: h);
+                    string root = key.Split(separator: '.')[0];
+                    if (IsHeldPlace(handle: h) && !IsSelfLocking(handle: h) && !declaredInside.Contains(item: root) &&
+                        seen.Add(item: key))
                     {
                         handles.Add(item: h);
                     }
@@ -816,7 +830,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     private static Expression? RoamedCoercionReceiver(MemberExpression member)
     {
         if (member.MemberName is not (RuntimeContract.RoamedMemberRoutine.RawInner
-            or RuntimeContract.Control or RuntimeContract.Access))
+            or RuntimeContract.Control or RuntimeContract.Access or RuntimeContract.ShapeUse.ControlToReshape))
         {
             return null;
         }

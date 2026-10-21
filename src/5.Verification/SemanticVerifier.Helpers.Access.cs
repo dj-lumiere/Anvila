@@ -103,12 +103,27 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static TypeSymbol? TokenInTypeArguments(TypeSymbol type)
     {
-        if (type is RoutineTypeSymbol)
+        return TokenInTypeArguments(type: type, seen: []);
+    }
+
+    /// <summary>The walk behind <see cref="TokenInTypeArguments(TypeSymbol)"/>. The members of a variant written in
+    /// place (<c>Viewing[Cell] | S64</c>) count as its type arguments. <paramref name="seen"/> stops a variant that
+    /// holds itself through a container (<c>List[SerialValue]</c> in <c>SerialValue</c>).</summary>
+    private static TypeSymbol? TokenInTypeArguments(TypeSymbol type, HashSet<TypeSymbol> seen)
+    {
+        if (type is RoutineTypeSymbol || !seen.Add(item: type))
         {
             return null;
         }
 
-        foreach (TypeSymbol argument in type.TypeArguments ?? [])
+        IEnumerable<TypeSymbol> parts = type.TypeArguments ?? [];
+        if (type is VariantTypeSymbol variant)
+        {
+            parts = parts.Concat(second: variant.Members.Where(predicate: m => m.Type != null)
+                                                .Select(selector: m => m.Type!));
+        }
+
+        foreach (TypeSymbol argument in parts)
         {
             if (argument is RoutineTypeSymbol)
             {
@@ -120,7 +135,7 @@ public sealed partial class SemanticVerifier
                 return argument;
             }
 
-            if (TokenInTypeArguments(type: argument) is { } deeper)
+            if (TokenInTypeArguments(type: argument, seen: seen) is { } deeper)
             {
                 return deeper;
             }
@@ -227,6 +242,44 @@ public sealed partial class SemanticVerifier
             $"after that place is gone. Keep each token in a variable of its own, or keep the `{target}` itself in " +
             $"the container (`List[{target}]`), or under a manager (`Retained[{target}]`).",
             location: location);
+    }
+
+    /// <summary>
+    /// Rejects a generic routine whose type parameter a call makes a token (RF-S601): <c>same(x: l.view())</c> makes
+    /// <c>T</c> a <c>Viewing[Cell]</c>, and the routine's body is free to keep a <c>T</c> (in a list, a result, a
+    /// field of a value it builds), so the token could outlive the place it points at. Inferred and written type
+    /// arguments alike. A builder-written body is left alone.
+    /// </summary>
+    private void ValidateNoTokenRoutineTypeArgument(RoutineInfo routine, List<TypeSymbol> typeArgs,
+        SourceLocation location)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || _isInCompilerGeneratedBody ||
+            routine.GenericParameters is not { Count: > 0 } genParams)
+        {
+            return;
+        }
+
+        for (int i = 0; i < genParams.Count && i < typeArgs.Count; i++)
+        {
+            TypeSymbol arg = typeArgs[index: i];
+            TypeSymbol? token = IsInlineOnlyTokenType(type: arg) ? arg : TokenInTypeArguments(type: arg);
+            if (token == null || !_tokenTypeArgumentReported.Add(item: (location.FileName, location.Line)))
+            {
+                continue;
+            }
+
+            string target = token.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "the entity";
+            string parameter = genParams[index: i];
+            ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
+                message:
+                $"This call makes '{parameter}' of '{routine.Name}' the type `{arg.ShortTypeName}`, and `{token.ShortTypeName}` " +
+                $"is a token. A token can't be a type argument: '{routine.Name}' may keep a '{parameter}' (in a list, in " +
+                $"its result), and the token would still point at the `{target}` after the place it is in is gone. Hand " +
+                $"over what you need from it (a member variable read like `v.n`), or give '{routine.Name}' a " +
+                $"`Viewing[{parameter}]` / `Modifying[{parameter}]` parameter and pass the `{target}` itself.",
+                location: location);
+            return;
+        }
     }
 
     /// <summary>Whether <paramref name="value"/> names a token a <c>using</c> over a <c>Guarded</c> opener bound (a
@@ -368,30 +421,40 @@ public sealed partial class SemanticVerifier
         // move leaves exactly one live handle. It does NOT credit a type that (transitively) owns a
         // single-threaded RC wrapper: moving one `Retained`/`Tracked` handle does not prove no siblings exist.
         // A value made right here (`Rx(n: 5)`, a call that hands its result over) has no other holder either.
-        bool isEntity = type is EntityTypeSymbol;
-        if (isEntity && value is StealExpression or CreatorExpression or CallExpression or GenericMemberRoutineCallExpression)
+        // What a value of the type reaches, at any depth (an entity's member variables, a list's elements, a channel
+        // end's items), and what a lambda captured: a single-thread handle in any of them is the same handle in the
+        // caller and in the work.
+        string what = value is IdentifierExpression named
+            ? $"`{named.Name}` ({type.ShortTypeName})"
+            : $"this {type.ShortTypeName} argument";
+        if (type is RoutineTypeSymbol)
         {
-            return null;
+            return OneThreadCapture(value: value) is { } captured
+                ? $"{what}, a lambda that captured {captured}"
+                : null;
         }
 
-        (string Wrapper, string Path)? offender = isEntity
-            ? null
-            : Wrappers.FindThreadUnsafeWrapper(type: type);
+        bool isEntity = type is EntityTypeSymbol;
+        (string Wrapper, string Path)? offender = Wrappers.FindOneThreadPart(type: type);
+        if (isEntity && value is StealExpression or CreatorExpression or CallExpression or GenericMemberRoutineCallExpression)
+        {
+            return offender is { Wrapper: var held, Path: var heldAt }
+                ? $"{what}, which holds {Wrappers.DescribeOneThreadPart(wrapper: held, at: heldAt)}"
+                : null;
+        }
+
         if (!isEntity && offender == null)
         {
             return null;
         }
 
-        string what = value is IdentifierExpression named
-            ? $"`{named.Name}` ({type.Name})"
-            : $"this {type.Name} argument";
         // A token or a single-thread handle is fine on the thread that made the Agent: it is noted, and the verb that
         // starts the Agent decides.
-        if (offender is { Wrapper: var wrapper, Path: var at } && OneThreadWrappers.Contains(item: wrapper))
+        if (!isEntity && offender is { Wrapper: var wrapper, Path: var at } && OneThreadWrappers.Contains(item: wrapper))
         {
             return at == "<value>"
                 ? what
-                : $"{what}, which holds a `{wrapper}` at `{at}`";
+                : $"{what}, which holds {Wrappers.DescribeOneThreadPart(wrapper: wrapper, at: at)}";
         }
 
         string reason = isEntity
@@ -405,6 +468,47 @@ public sealed partial class SemanticVerifier
             message: $"You pass {what} to an agent, but {reason}. {fix}.",
             location: value.Location);
         return null;
+    }
+
+    /// <summary>The lambda values whose captures hold a part only one thread may use, keyed by the variable that keeps
+    /// the lambda (`var f = () given (r) => r.n` with `r` a <c>Retained</c>), described for a message.</summary>
+    private readonly Dictionary<VariableInfo, string> _oneThreadLambdaVariables = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>What a routine value <paramref name="value"/> captured that only one thread may use: a lambda written
+    /// here (its <c>given</c> names), or a variable a lambda like that was bound to. Null otherwise.</summary>
+    private string? OneThreadCapture(Expression value)
+    {
+        switch (value)
+        {
+            case LambdaExpression { Captures: { } captures }:
+                foreach (string name in captures)
+                {
+                    if (_registry.LookupVariable(name: name) is { } captured &&
+                        Wrappers.FindOneThreadPart(type: captured.Type) is { Wrapper: var wrapper, Path: var at })
+                    {
+                        return at == "<value>"
+                            ? $"`{name}` (a `{wrapper}`)"
+                            : $"`{name}`, which holds {Wrappers.DescribeOneThreadPart(wrapper: wrapper, at: at)}";
+                    }
+                }
+
+                return null;
+            case IdentifierExpression id when _registry.LookupVariable(name: id.Name) is { } variable:
+                return _oneThreadLambdaVariables.GetValueOrDefault(key: variable);
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>Notes a variable bound to a lambda that captured a part only one thread may use, so handing the
+    /// variable to an agent is checked like handing it the lambda.</summary>
+    private void NoteOneThreadLambdaVariable(string name, Expression? initializer)
+    {
+        if (initializer is LambdaExpression lambda && OneThreadCapture(value: lambda) is { } captured &&
+            _registry.LookupVariable(name: name) is { } variable)
+        {
+            _oneThreadLambdaVariables[key: variable] = captured;
+        }
     }
 
     /// <summary>
@@ -551,6 +655,39 @@ public sealed partial class SemanticVerifier
                 $"Dangerous routine '{routine.Name}' can only be called inside a 'danger' block.",
                 location: accessLocation);
         }
+    }
+
+    /// <summary>The RF-S420 message for a token copied from a name or a member variable (<c>w = m</c>): a token is
+    /// taken from its entity where it is used, never copied from another token, which may belong to a block that ends
+    /// before the copy does.</summary>
+    private static string TokenCopyMessage(Expression copied, TypeSymbol type)
+    {
+        string name = copied is IdentifierExpression id ? $"'{id.Name}'" : "this token";
+        string target = Wrappers.GetWrapperInnerType(wrapperType: type)?.ShortTypeName ?? "the entity";
+        string verb = type.BareName == Declaration.RuntimeContract.Viewing ? "view" : "modify";
+        return $"You copy {name}, a `{type.ShortTypeName}` token, into another place, but a token is not copied: the " +
+               $"copy could outlive the block or the entity {name} belongs to. Take a token from the `{target}` " +
+               $"itself where you need it (`x.{verb}()`), or keep using {name} where it is.";
+    }
+
+    /// <summary>
+    /// RF-S609 for a dangerous routine the builder calls for a piece of syntax that shows no call: an operator
+    /// (<c>a + b</c> on a dangerous <c>add</c>), an f-text insertion (<c>f"{p}"</c> on a dangerous <c>represent</c>).
+    /// The syntax is the call, so it stands inside <c>danger</c> like the call would.
+    /// </summary>
+    private void ValidateDangerousImplicitCall(RoutineInfo? routine, string written, SourceLocation location)
+    {
+        if (routine is not { IsDangerous: true } || InDangerBlock || _isInCompilerGeneratedBody)
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.DangerousCallOutsideDangerBlock,
+            message:
+            $"{written} calls '{routine.Name}', which is dangerous, so it can only be written inside a 'danger' block. " +
+            "Put this line in 'danger', or make the routine safe to call anywhere (a plain routine with a 'danger' " +
+            "block inside).",
+            location: location);
     }
 
     /// <summary>

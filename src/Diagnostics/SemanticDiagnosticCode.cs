@@ -1084,6 +1084,10 @@ public enum SemanticDiagnosticCode
     /// so `dangerous` on it is the old spelling.</summary>
     DestroyNotDangerous = 807,
 
+    /// <summary>`destruct` is never failable: it runs at the scope's end, at `drop x`, or while a failure already
+    /// unwinds, with no caller to hand a failure to.</summary>
+    DestructNotFailable = 815,
+
     /// <summary>A program does not call `destruct` itself: a value is torn down at its scope's end, or now with
     /// `drop x`. Only a type's own `destruct` body calls its members' `destruct`.</summary>
     DestructIsBuilderCalled = 812,

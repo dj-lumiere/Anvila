@@ -1658,6 +1658,21 @@ public sealed partial class SemanticVerifier
                 return null;
             }
 
+            // A global is only read (every agent reaches it), and a block on an entity takes no access of its own, so
+            // `modifying` it would change it with no lock. A Guarded global has the pair and takes its access above.
+            if (target.IsWrite && target.Target is IdentifierExpression { Name: var globalName } &&
+                _registry.LookupVariable(name: globalName) is { IsGlobal: true, IsModifiable: false })
+            {
+                ReportError(code: SemanticDiagnosticCode.ModifyingCallOnImmutable,
+                    message: $"You open the global '{shown}' with 'modifying', but a global is only read: every agent " +
+                             $"reaches it, and a block on a plain entity takes no access that would keep the others " +
+                             $"out. Open it with 'viewing' to read it, or declare it as a Guarded " +
+                             $"(`global {shown}: Guarded[{type.ShortTypeName}, Exclusive]`) and change it inside " +
+                             "'modifying'.",
+                    location: target.Location);
+                return null;
+            }
+
             if (isTry)
             {
                 ReportTryOnUntryable(target: target, shown: shown,

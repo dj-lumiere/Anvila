@@ -61,6 +61,7 @@ internal static class ImplicitCallContract
         yield return (liveType, RuntimeContract.ShapeUse.Begin);
         yield return (liveType, RuntimeContract.ShapeUse.End);
         yield return (liveType, RuntimeContract.ShapeUse.RequireFree);
+        yield return (liveType, RuntimeContract.ShapeUse.ControlToReshape);
 
         // Display transparency: codegen re-resolves represent/diagnose on the Roamed handle to the
         // INNER value's, so the inner display routines must be live even when the inner type is only

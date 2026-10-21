@@ -199,6 +199,10 @@ public sealed partial class SemanticVerifier
     /// it, which are the marks the code after the loop starts with.</summary>
     private readonly Stack<HashSet<string>> _unassignedAtBreak = new();
 
+    /// <summary>For each loop being analyzed, the bindings already taken (<c>steal</c>) or dropped at one of its
+    /// <c>continue</c>s: that turn goes on to the next one, where the binding is gone.</summary>
+    private readonly Stack<HashSet<string>> _endedAtContinue = new();
+
     /// <summary>Clears the not-yet-assigned mark of <paramref name="name"/>: it is being given a value.</summary>
     private void NoteAssigned(string name)
     {

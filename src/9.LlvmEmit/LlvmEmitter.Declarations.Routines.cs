@@ -551,6 +551,7 @@ public partial class LlvmEmitter
     /// </summary>
     private void GenerateRoutineBody(StringBuilder sb, Statement body, RoutineInfo routine)
     {
+        DumpRoutineBodyIfRequested(info: routine, body: body);
         EmitRoutineBodyInner(sb: sb, body: body, routine: routine);
     }
 

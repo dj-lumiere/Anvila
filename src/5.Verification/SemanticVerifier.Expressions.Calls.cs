@@ -3010,9 +3010,12 @@ public sealed partial class SemanticVerifier
                 location: call.Location);
         }
 
+        // The `iter()` / `emit()` an `each` loop is lowered to are the loop the program wrote, so a dangerous one
+        // needs the loop inside `danger` like any other call.
         ValidateRoutineAccess(routine: memberRoutine,
             accessLocation: call.Location,
-            isCompilerSynthesized: call.IsSynthesizedLowering);
+            isCompilerSynthesized: call.IsSynthesizedLowering &&
+                                   memberRoutine.Name is not ("iter" or "emit"));
 
         ValidateMemberCallMutability(call: call,
             member: member,

@@ -81,6 +81,7 @@ public sealed partial class SemanticVerifier
     internal void ValidateRoutineGenericConstraints(RoutineInfo routine, List<TypeSymbol> typeArgs,
         SourceLocation location)
     {
+        ValidateNoTokenRoutineTypeArgument(routine: routine, typeArgs: typeArgs, location: location);
         if (routine.GenericConstraints is not { Count: > 0 } constraints ||
             routine.GenericParameters is not { Count: > 0 } genParams)
         {
@@ -144,6 +145,7 @@ public sealed partial class SemanticVerifier
     internal void ValidateConstraintTypeArguments(RoutineInfo routine, List<TypeSymbol> typeArgs, TypeSymbol? receiver,
         SourceLocation location)
     {
+        ValidateNoTokenRoutineTypeArgument(routine: routine, typeArgs: typeArgs, location: location);
         if (routine.GenericConstraints is not { Count: > 0 } constraints ||
             routine.GenericParameters is not { Count: > 0 } genParams)
         {

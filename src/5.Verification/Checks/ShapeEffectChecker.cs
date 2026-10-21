@@ -445,7 +445,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
             case LoopStatement loop:
             {
                 List<ShapeGuard> inner = guards;
-                string? sourcePath = loop.IterationSourcePath ?? loop.IterationSourceName;
+                string? sourcePath = loop.AdapterSourcePath ?? loop.IterationSourcePath ?? loop.IterationSourceName;
                 if (sourcePath != null)
                 {
                     TypeSymbol? sourceType = LoopSourceType(path: sourcePath, preceding: preceding);

@@ -773,7 +773,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             iterationSourceName: iterationSourceName,
             iterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable),
             loc: loc,
-            failureClause: failureClause);
+            failureClause: failureClause,
+            iteratorName: iterName);
     }
 
     /// <summary>The iterator step an <c>each</c> loop recovers with <c>try</c>.</summary>
@@ -929,7 +930,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     private static BlockStatement BuildPlainFor(Expression tryNextCall, Statement elseBody,
         string? elseVarName, Statement iterVarStmt, string? iterationSourceName,
         string? iterationSourcePath,
-        SourceLocation loc, WhenClause? failureClause)
+        SourceLocation loc, WhenClause? failureClause, string? iteratorName = null)
     {
         Statement noneBody = new BlockStatement(Statements:
             [new BreakStatement(Location: loc)],
@@ -953,7 +954,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 Location: loc)
             {
                 IsIteratorEachLoop = true, IterationSourceName = iterationSourceName,
-                IterationSourcePath = iterationSourcePath
+                IterationSourcePath = iterationSourcePath, IteratorName = iteratorName
             };
 
         return new BlockStatement(Statements: [iterVarStmt, loopStmt], Location: loc);

@@ -189,7 +189,18 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeGenericMemberRoutineCallExpressionCore(
         GenericMemberRoutineCallExpression generic)
     {
-        TypeSymbol objectType = AnalyzeExpression(expression: generic.Object);
+        // `f[T](...)` names the routine it calls: the name is not a routine value.
+        IdentifierExpression? calleeBefore = _freeGenericCallee;
+        _freeGenericCallee = generic.IsFree ? generic.Object as IdentifierExpression : null;
+        TypeSymbol objectType;
+        try
+        {
+            objectType = AnalyzeExpression(expression: generic.Object);
+        }
+        finally
+        {
+            _freeGenericCallee = calleeBefore;
+        }
 
         // Resolve type arguments
         var typeArgs = new List<TypeSymbol>();

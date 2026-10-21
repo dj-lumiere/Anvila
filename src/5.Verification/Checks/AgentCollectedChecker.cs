@@ -5,9 +5,10 @@ namespace Builder.Verification;
 
 /// <summary>
 /// Warns about an Agent bound to a variable that is started and then only left to its scope's end (RF-W009): the
-/// end cancels it and waits for it to stop, so its work may be cut short and what it came to is lost. Taking its value
-/// (`retrieve`, `waitfor`), ending it on purpose (`drop job`), or handing it on (an argument, `steal`, `return`) is
-/// what a program that means it writes. Runs over the analyzed user bodies.
+/// end cancels it and waits for it to stop, so its work may be cut short, its value is lost, and a failure it came to
+/// crashes the program there. Taking its value (`retrieve`, `waitfor`), cancelling it on purpose (`job.cancel()`, which
+/// also throws away a failure), ending it (`drop job`), or handing it on (an argument, `steal`, `return`) is what a
+/// program that means it writes. Runs over the analyzed user bodies.
 /// </summary>
 internal sealed class AgentCollectedChecker(Action<SemanticWarningCode, string, SourceLocation> warn)
 {
@@ -19,7 +20,7 @@ internal sealed class AgentCollectedChecker(Action<SemanticWarningCode, string, 
     /// <summary>The calls on an Agent that neither take what it came to nor hand it on.</summary>
     private static readonly HashSet<string> LeavingVerbs = new(comparer: StringComparer.Ordinal)
     {
-        "start_now", "start_here", "start_apart", "cancel", "cancelled", "is_done", "is_running"
+        "start_now", "start_here", "start_apart", "cancelled", "is_done", "is_running"
     };
 
     /// <summary>Checks every routine of <paramref name="programs"/>.</summary>
@@ -99,8 +100,9 @@ internal sealed class AgentCollectedChecker(Action<SemanticWarningCode, string, 
             {
                 warn(arg1: SemanticWarningCode.AgentNeverCollected,
                     arg2: $"'{name}' is started, but nothing takes what it came to: the end of its scope cancels it and " +
-                          $"waits for it to stop. Take its value with '{name}.retrieve()', or end it on purpose with " +
-                          $"'drop {name}'.",
+                          "waits for it to stop, and a failure it came to crashes the program there. Take its value " +
+                          $"with '{name}.retrieve()' (and its failure with 'try' or 'check'), or call '{name}.cancel()' " +
+                          "when you mean to throw away what it comes to.",
                     arg3: declaration.Location);
             }
         }

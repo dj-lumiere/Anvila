@@ -91,6 +91,25 @@ public static class RuntimeContract
 
         /// <summary>Crashes while a use is open; injected at the start of `@reshaping` routines.</summary>
         public const string RequireFree = "require_shape_free";
+
+        /// <summary>The checked form of <c>control()</c>: the held entity, or a crash while a use is open. Put on the
+        /// receiver of a `@reshaping` call that no statement-level <see cref="RequireFree"/> can name.</summary>
+        public const string ControlToReshape = "control_to_reshape";
+    }
+
+    /// <summary>The channel routines that hand a value to whatever job receives it: a handle sent through them
+    /// reaches another job as surely as an agent's argument does.</summary>
+    /// <remarks>Site: RoamedSpawnPromotionLoweringPass (promotes a <c>Roamed</c> item before the send).</remarks>
+    public static class ChannelSend
+    {
+        /// <summary>The sending end of a channel.</summary>
+        public const string Transmitter = "Transmitter";
+
+        /// <summary>Sends an item, waiting for room.</summary>
+        public const string Transmit = "transmit";
+
+        /// <summary>Sends an item when there is room.</summary>
+        public const string TransmitIfRoom = "transmit_if_room";
     }
 
     /// <summary>The hidden storage of module-level <c>global</c>s: every global is a field of one
@@ -379,7 +398,7 @@ public static class RuntimeContract
     public static readonly IReadOnlySet<string> ViewVerbs =
         new HashSet<string>(comparer: StringComparer.Ordinal)
         {
-            RawPointer.AsEntity, Access, Control
+            RawPointer.AsEntity, Access, Control, ShapeUse.ControlToReshape
         };
 
     /// <summary>An iterator's step (`Emittable.emit!`): what it returns is the iterator's `Item`.</summary>

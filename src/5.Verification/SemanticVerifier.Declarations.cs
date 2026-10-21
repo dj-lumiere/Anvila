@@ -359,7 +359,37 @@ public sealed partial class SemanticVerifier
     {
         // The parser requires a type annotation on every `global`, so global.Type is non-null here.
         TypeSymbol globalType = InFileRealm(resolve: () => ResolveType(typeExpr: global.Type!));
+        if (_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: globalType))
+        {
+            string target = globalType.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "the entity";
+            ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
+                message:
+                $"You declare global '{global.Name}' as `{globalType.ShortTypeName}`, but a token lives in a routine's " +
+                $"variables and is never kept in a global: the global would still point at the `{target}` after the " +
+                $"place it is in is gone. Keep the `{target}` itself in the global (`global {global.Name}: {target}`), " +
+                $"or under a manager (`Guarded[{target}, MultiRead]`), and take the token where you use it.",
+                location: global.Location);
+        }
+
         ValidateNoTokenTypeArgument(type: globalType, what: $"global '{global.Name}'", location: global.Location);
+
+        // Every agent reaches a global, so a single-thread handle in one (`Retained`, `Tracked`) would have its count
+        // changed by several threads at once.
+        if (_registry.Rules.ChecksOwnership && !IsInlineOnlyTokenType(type: globalType) &&
+            TokenInTypeArguments(type: globalType) == null &&
+            Wrappers.FindOneThreadPart(type: globalType) is { Wrapper: var wrapper, Path: var at })
+        {
+            string holds = at == "<value>"
+                ? $"which is a `{wrapper}`"
+                : $"which holds {Wrappers.DescribeOneThreadPart(wrapper: wrapper, at: at)}";
+            ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
+                message:
+                $"You declare global '{global.Name}' as `{globalType.ShortTypeName}`, {holds}. " +
+                $"Every agent reaches a global, and a `{wrapper}` may be used by one thread only. Use " +
+                "`Guarded[...]` (or `Witnessed` for a weak handle) to share an entity between agents, or keep the " +
+                $"`{wrapper}` in a variable of the routine that uses it.",
+                location: global.Location);
+        }
 
         // A RazorForge global is reached from every thread, so its binding is never assigned again (only its
         // initialization, at the top of start()): an Atomic or a Guarded changes what it holds through its own

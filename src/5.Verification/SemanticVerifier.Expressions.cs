@@ -169,6 +169,10 @@ public sealed partial class SemanticVerifier
         return false;
     }
 
+    /// <summary>The name a free generic call `f[T](...)` is analyzing as its callee, which names the routine it calls
+    /// and is no routine value.</summary>
+    private IdentifierExpression? _freeGenericCallee;
+
     private TypeSymbol AnalyzeIdentifierExpression(IdentifierExpression id)
     {
         if (TryResolveSpecialIdentifier(id: id, result: out TypeSymbol? special))
@@ -216,6 +220,18 @@ public sealed partial class SemanticVerifier
             // routine SA just resolved on the node so codegen consumes it directly (EmitIdentifier's
             // ResolvedRoutine fast-path) instead of re-doing name-based lookup at emission time.
             id.ResolvedRoutine = routine;
+            // A call of the value is not written where the value is taken, so no `danger` block can be shown to
+            // hold it: a dangerous routine is never a value (inside `danger` either, the value can leave the block).
+            if (routine.IsDangerous && !_isInCompilerGeneratedBody && !ReferenceEquals(objA: id, objB: _freeGenericCallee))
+            {
+                ReportError(code: SemanticDiagnosticCode.DangerousCallOutsideDangerBlock,
+                    message:
+                    $"You take the dangerous routine '{routine.Name}' as a value, but a call of the value could happen " +
+                    $"anywhere, outside any 'danger' block. Call '{routine.Name}' inside 'danger' where you need it, or " +
+                    $"write a routine that calls it inside 'danger' and take that routine as the value.",
+                    location: id.Location);
+            }
+
             return GetRoutineType(routine: routine);
         }
 
@@ -1239,7 +1255,8 @@ public sealed partial class SemanticVerifier
                 param: param,
                 paramType: param.Type,
                 argValue: argument,
-                argType: argType);
+                argType: argType,
+                isOperator: true);
         }
     }
 
@@ -1288,6 +1305,9 @@ public sealed partial class SemanticVerifier
                     location: binary.Location);
             }
         }
+
+        ValidateDangerousImplicitCall(routine: memberRoutine,
+            written: $"'{binary.Operator.ToStringRepresentation()}'", location: binary.Location);
 
         if (memberRoutine is not { Parameters.Count: > 0 })
         {
@@ -1375,7 +1395,8 @@ public sealed partial class SemanticVerifier
             param: memberRoutine.Parameters[index: 0],
             paramType: paramType,
             argValue: binary.Right,
-            argType: rightType);
+            argType: rightType,
+            isOperator: true);
 
         return ResolveOperatorReturnType(routine: memberRoutine, leftType: leftType);
     }
@@ -2124,9 +2145,10 @@ public sealed partial class SemanticVerifier
                     ? $"value of type '{valueType.Name}' is a '{hint.Value.Wrapper}[…]' wrapper"
                     : $"field '{hint.Value.Path}' of type '{hint.Value.Wrapper}[…]'";
                 ReportError(code: SemanticDiagnosticCode.ImplicitWrapperCopy,
-                    message:
-                    $"Implicit copy in assignment: {fieldNote} requires an explicit copy verb. " +
-                    $"Spell out '{verb}' at the copy site, or reconstruct the record with each field's verb.",
+                    message: verb == Wrappers.ScopedNoEscapeHint
+                        ? TokenCopyMessage(copied: value, type: valueType)
+                        : $"Implicit copy in assignment: {fieldNote} requires an explicit copy verb. " +
+                          $"Spell out '{verb}' at the copy site, or reconstruct the record with each field's verb.",
                     location: location);
             }
         }
@@ -2255,6 +2277,8 @@ public sealed partial class SemanticVerifier
                 _registry.LookupRoutine(fullName: $"{targetType.Name}.{inPlaceMemberRoutine}");
             if (inPlaceRoutine != null)
             {
+                ValidateDangerousImplicitCall(routine: inPlaceRoutine,
+                    written: $"'{compound.Operator.ToStringRepresentation()}='", location: compound.Location);
                 // In-place memberRoutine found — returns None (modifies in-place)
                 return _registry.LookupType(name: "None") ?? ErrorTypeSymbol.Instance;
             }
@@ -2288,6 +2312,8 @@ public sealed partial class SemanticVerifier
             _registry.LookupRoutine(fullName: $"{targetType.Name}.{regularMemberRoutine}");
         if (regularRoutine != null)
         {
+            ValidateDangerousImplicitCall(routine: regularRoutine,
+                written: $"'{compound.Operator.ToStringRepresentation()}='", location: compound.Location);
             TypeSymbol returnType = regularRoutine.ReturnType ?? targetType;
             if (!IsAssignableTo(source: returnType, target: targetType))
             {
@@ -2487,6 +2513,14 @@ public sealed partial class SemanticVerifier
     {
         // A negated or complemented number made of literals (`~(1 << k)` where a U8 goes) takes the type the whole
         // expression goes to, as the number alone would.
+        // A builder-written body (a `try` / `check` recovery variant) re-analyzes a `return -inf` where the value goes
+        // into the variant's carrier: the type the first analysis gave it still holds.
+        if (expectedType == null && _isInCompilerGeneratedBody && unary.ResolvedType is { } annotated &&
+            IsNumericType(type: annotated))
+        {
+            expectedType = annotated;
+        }
+
         TypeSymbol? operandExpected = unary.Operator is UnaryOperator.Minus or UnaryOperator.BitwiseNot &&
                                       expectedType != null && IsNumericType(type: expectedType) &&
                                       IsLiteralArithmetic(expression: unary.Operand)
@@ -2515,6 +2549,7 @@ public sealed partial class SemanticVerifier
                 RoutineInfo? negation = operandType == ErrorTypeSymbol.Instance
                     ? null
                     : _registry.LookupMemberRoutine(type: operandType, memberRoutineName: "neg");
+                ValidateDangerousImplicitCall(routine: negation, written: "'-'", location: unary.Location);
                 // `-x` calls `neg`, and a `neg!` that can fail (`-S64_MIN`) makes the enclosing routine one that
                 // calls something that can fail, as `a + b` does.
                 if (negation is { IsFailable: true } && _currentRoutine != null)
