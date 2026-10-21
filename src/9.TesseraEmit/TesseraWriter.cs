@@ -867,7 +867,7 @@ internal sealed class TesseraWriter
     /// receiver's type), `self`/`Self` and the old `private`/`internal`: a value of such a name is written between
     /// backticks.</summary>
     private static readonly HashSet<string> TesseraKeywords =
-        [.. Tessera.Parser.ReservedValueNames, "Me", "self", "Self", "private", "internal"];
+        [.. Tessera.ReservedNames.Values, "Me", "self", "Self", "private", "internal"];
 
     /// <summary>A value named as the builder's program names it: a Tessera keyword goes between backticks.</summary>
     public static string ValueName(string name) => TesseraKeywords.Contains(item: name) ? $"`{name}`" : name;
