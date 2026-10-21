@@ -194,10 +194,6 @@ public enum GrammarDiagnosticCode
     /// is an <c>if</c> before the loop.</summary>
     LoopElse = 219,
 
-    /// <summary>The <c>agent</c> keyword before a call: concurrent work is the conversion on the routine,
-    /// <c>f.to[Agent](args)</c>.</summary>
-    AgentKeyword = 220,
-
     /// <summary>An annotation the builder does not know (a misspelled one, or one it gives no effect).</summary>
     UnknownAnnotation = 221,
 

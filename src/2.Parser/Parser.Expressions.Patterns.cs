@@ -345,23 +345,6 @@ public partial class Parser
             return ParseRecoveryPrefix();
         }
 
-        // `agent f(x)` was the old spelling of `f.to[Agent](x)`: reported, and read as that Agent so the rest of the
-        // file is checked as usual.
-        if (CheckAndAdvance(type: TokenType.Agent))
-        {
-            Token word = PeekToken(offset: -1);
-            SourceLocation agentLocation = GetLocation(token: word);
-            RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.AgentKeyword,
-                message: "Concurrent work is written on the routine now: 'f.to[Agent](args)' for 'agent f(args)', " +
-                         "'r.m.to[Agent](args)' for 'agent r.m(args)'. A failure is recovered where the Agent is " +
-                         "collected ('try job.retrieve()'). 'migrate --step agent' rewrites the plain forms.",
-                fileName: FileName,
-                line: word.Line,
-                column: word.Column,
-                language: _language));
-            return new AgentExpression(Inner: ParsePostfix(), Location: agentLocation);
-        }
-
         // Handle steal expression (steal expr = ownership transfer, RazorForge only)
         if (CheckAndAdvance(type: TokenType.Steal))
         {

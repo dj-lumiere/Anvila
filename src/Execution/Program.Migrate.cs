@@ -31,10 +31,10 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "agent" or "failable" or "names" or "modules" or "access" or "cpu-events"
+        if (stepAt >= 0 && step is not ("have" or "suffix" or "failable" or "names" or "modules" or "access" or "cpu-events"
                 or "addr" or "files"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, agent, failable, names, modules, access, cpu-events, addr or files");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr or files");
             return 2;
         }
 
@@ -48,12 +48,6 @@ internal partial class Program
         if (step == "failable")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteFailable);
-        }
-
-        // `--step agent`: the `agent` keyword before a call is the conversion on the routine, `f.to[Agent](args)`.
-        if (step == "agent")
-        {
-            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteAgent);
         }
 
         // `--step names`: the math routines take the names the three languages share (`expm1` is `exp_m1`, the natural
@@ -780,27 +774,15 @@ internal partial class Program
                 continue;
             }
 
-            // A call of a routine that was `suspended`/`threaded` built an Agent: `agent` before the call does now.
+            // A call of a routine that was `suspended`/`threaded` built an Agent: the conversion on the routine does now,
+            // `f.to[Agent](args)`.
             bool callsConcurrent = ownConcurrent.Contains(item: token.Text) ||
                                    !ownPlain.Contains(item: token.Text) && concurrentRoutines.Contains(item: token.Text);
-            if (callsConcurrent && next.Type == TokenType.LeftParen &&
-                (i == 0 || tokens[index: i - 1].Type is not (TokenType.Dot or TokenType.Routine or TokenType.Agent)))
+            if (callsConcurrent && next.Type == TokenType.LeftParen && next.Position >= 0 &&
+                (i == 0 || tokens[index: i - 1].Type is not (TokenType.Dot or TokenType.Routine)))
             {
-                // `agent` takes the whole call chain after it, so a chain that goes on (`f(x).retrieve()`) keeps only
-                // the call inside: `(agent f(x)).retrieve()`.
-                int afterCall = SkipBalanced(tokens: tokens, start: i + 1, open: TokenType.LeftParen,
-                    close: TokenType.RightParen);
-                bool chainGoesOn = afterCall < tokens.Count && tokens[index: afterCall].Type == TokenType.Dot &&
-                                   tokens[index: afterCall - 1].Position >= 0;
-                edits.Add(item: new MigrationEdit(Start: token.Position, Length: 0,
-                    Replacement: chainGoesOn ? "(agent " : "agent ", Line: token.Line,
-                    What: $"{token.Text}(…) → agent {token.Text}(…)"));
-                if (chainGoesOn)
-                {
-                    edits.Add(item: new MigrationEdit(Start: tokens[index: afterCall - 1].Position + 1, Length: 0,
-                        Replacement: ")", Line: token.Line, What: "(agent …) before the rest of the chain"));
-                }
-
+                edits.Add(item: new MigrationEdit(Start: next.Position, Length: 0, Replacement: ".to[Agent]",
+                    Line: token.Line, What: $"{token.Text}(…) → {token.Text}.to[Agent](…)"));
                 continue;
             }
 
@@ -1640,99 +1622,6 @@ internal partial class Program
                             $"{m.Groups[groupname: "modifiers"].Value}routine {m.Groups[groupname: "name"].Value}");
         return FailableInline.Replace(input: text,
             evaluator: m => $"`failable {m.Groups[groupname: "modifiers"].Value}routine {m.Groups[groupname: "name"].Value}");
-    }
-
-    private static string RewriteAgent(string file, string source, Language language, int lineOffset)
-    {
-        List<Token> tokens;
-        try
-        {
-            tokens = Lexers.Tokenize(source: source, fileName: file, language: language);
-        }
-        catch (Exception e)
-        {
-            Console.Error.WriteLine(value: $"{file}: cannot read it: {e.Message}");
-            return source;
-        }
-
-        var edits = new List<MigrationEdit>();
-        for (int i = 0; i + 1 < tokens.Count; i++)
-        {
-            Token word = tokens[index: i];
-            if (word.Type != TokenType.Agent || word.Position < 0)
-            {
-                continue;
-            }
-
-            if (i > 0 && tokens[index: i - 1].Type is TokenType.Try or TokenType.Check)
-            {
-                Console.WriteLine(value: $"{file}:{word.Line + lineOffset}: '{tokens[index: i - 1].Text} agent' recovers inside " +
-                                         "the work, which no spelling does now: make the Agent with f.to[Agent](args) and " +
-                                         $"recover where it is collected ({tokens[index: i - 1].Text} job.retrieve()), rewrite it by hand");
-                continue;
-            }
-
-            // The call: the chain after `agent` up to the first `(` that follows a name.
-            int open = -1;
-            for (int j = i + 1; j < tokens.Count; j++)
-            {
-                TokenType type = tokens[index: j].Type;
-                if (type == TokenType.LeftParen && j > i + 1 && tokens[index: j - 1].Type is TokenType.Identifier or TokenType.RightBracket)
-                {
-                    open = j;
-                    break;
-                }
-
-                if (type is TokenType.LeftParen or TokenType.LeftBracket)
-                {
-                    j = SkipBalanced(tokens: tokens, start: j, open: type,
-                        close: type == TokenType.LeftParen ? TokenType.RightParen : TokenType.RightBracket) - 1;
-                    continue;
-                }
-
-                if (type is not (TokenType.Identifier or TokenType.Dot or TokenType.Steal or TokenType.Me))
-                {
-                    break;
-                }
-            }
-
-            if (open < 0 || tokens[index: open].Position < 0)
-            {
-                Console.WriteLine(value: $"{file}:{word.Line + lineOffset}: 'agent' here is before no call, rewrite it by hand");
-                continue;
-            }
-
-            int afterCall = SkipBalanced(tokens: tokens, start: open, open: TokenType.LeftParen, close: TokenType.RightParen);
-            bool wrapped = i > 0 && tokens[index: i - 1].Type == TokenType.LeftParen &&
-                           afterCall < tokens.Count && tokens[index: afterCall].Type == TokenType.RightParen;
-            bool chainGoesOn = !wrapped && afterCall < tokens.Count && tokens[index: afterCall].Type == TokenType.Dot;
-            if (chainGoesOn)
-            {
-                Console.WriteLine(value: $"{file}:{word.Line + lineOffset}: 'agent' defers the whole chain after the call here, " +
-                                         "which f.to[Agent](args) doesn't: rewrite it by hand");
-                continue;
-            }
-
-            Token next = tokens[index: i + 1];
-            edits.Add(item: new MigrationEdit(Start: word.Position, Length: next.Position - word.Position, Replacement: "",
-                Line: word.Line, What: "agent f(…) → f.to[Agent](…)"));
-            edits.Add(item: new MigrationEdit(Start: tokens[index: open].Position, Length: 0, Replacement: ".to[Agent]",
-                Line: word.Line, What: ""));
-            if (wrapped)
-            {
-                Token before = tokens[index: i - 1];
-                Token close = tokens[index: afterCall];
-                edits.Add(item: new MigrationEdit(Start: before.Position, Length: 1, Replacement: "", Line: word.Line, What: ""));
-                edits.Add(item: new MigrationEdit(Start: close.Position, Length: 1, Replacement: "", Line: word.Line, What: ""));
-            }
-        }
-
-        foreach (MigrationEdit edit in edits.Where(predicate: e => e.What.Length > 0))
-        {
-            Console.WriteLine(value: $"{file}:{edit.Line + lineOffset}: {edit.What}");
-        }
-
-        return edits.Count == 0 ? source : ApplyMigrationEdits(source: source, edits: edits);
     }
 
     private static string RewriteHave(string file, string source, Language language, int lineOffset)

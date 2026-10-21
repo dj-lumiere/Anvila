@@ -112,7 +112,8 @@ internal sealed partial class AstPrinter
             IsPatternExpression => PIs,
             UnaryExpression { Operator: UnaryOperator.ForceUnwrap } => PPostfix,
             UnaryExpression or StealExpression or BackIndexExpression or RecoveryExpression
-                or AgentExpression => PUnary,
+                or AgentExpression { Inner: RecoveryExpression } => PUnary,
+            AgentExpression => PPostfix,
             LiteralExpression { Value: string text } when text.StartsWith(value: '-') => PUnary,
             CallExpression { IsInfix: true } => PInfix,
             CallExpression or MemberExpression or IndexExpression or GenericMemberExpression
@@ -581,22 +582,33 @@ internal sealed partial class AstPrinter
         }
     }
 
-    /// <summary>`agent f(x)`, or `try agent f(x)` for an agent over a recovery (the parser's own shape).</summary>
+    /// <summary>`f.to[Agent](x)`, or `try f.to[Agent](x)` for an Agent over a recovery (the parser's own shape: the
+    /// conversion is read as the call it defers).</summary>
     private Doc AgentDoc(AgentExpression agent)
     {
         if (agent.Inner is RecoveryExpression recovery)
         {
             string keyword = recovery.Kind switch
             {
-                RecoveryKind.Try => "try agent ",
-                _ => "check agent "
+                RecoveryKind.Try => "try ",
+                _ => "check "
             };
-            return Doc.Concat(Doc.Text(text: keyword),
-                Expr(expression: recovery.Inner, min: PPostfix, follow: 0, comma: false));
+            return Doc.Concat(Doc.Text(text: keyword), AgentConversionDoc(inner: recovery.Inner, agent: agent));
         }
 
-        return Doc.Concat(Doc.Text(text: "agent "),
-            Expr(expression: agent.Inner, min: PPostfix, follow: 0, comma: false));
+        return AgentConversionDoc(inner: agent.Inner, agent: agent);
+    }
+
+    /// <summary>The deferred call `f(x)` written as the conversion on its routine, `f.to[Agent](x)`.</summary>
+    private Doc AgentConversionDoc(Expression inner, AgentExpression agent)
+    {
+        if (inner is not CallExpression call)
+        {
+            throw Unsupported(node: agent, at: agent.Location);
+        }
+
+        return Doc.Concat(Expr(expression: call.Callee, min: PPostfix, follow: PPostfix, comma: false),
+            Doc.Text(text: ".to[Agent]"), ArgumentList(arguments: call.Arguments));
     }
 
     private Doc RecoveryDoc(RecoveryExpression recovery)
