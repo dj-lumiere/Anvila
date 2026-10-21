@@ -417,6 +417,16 @@ public record BinaryExpression(
     Expression Right,
     SourceLocation Location) : Expression(Location: Location)
 {
+    /// <summary>Where a comparison's operator was written (its offset in the file), or -1 when the parser didn't
+    /// record it.</summary>
+    public int OperatorPosition { get; init; } = -1;
+
+    /// <summary>
+    /// Told about the operand types of every binary expression analysis types, when set. Only <c>migrate --step
+    /// until</c> sets it: it reads which comparisons compare integers, the ones it can turn around.
+    /// </summary>
+    public static Action<BinaryExpression, TypeSymbol, TypeSymbol>? OperandsTyped { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

@@ -384,7 +384,7 @@ public enum TokenType
     /// <summary>One-liner of conditional expression (if predicate then A else B)</summary>
     Then,
 
-    /// <summary>`with`: the values a loop carries from one round to the next (`while c with a: T = init`), and what
+    /// <summary>`with`: the values a loop carries from one round to the next (`until c with a: T = init`), and what
     /// `continue with a: v` passes on.</summary>
     With,
 
@@ -395,11 +395,8 @@ public enum TokenType
     /// <summary>Pattern matching is keyword</summary>
     Is,
 
-    /// <summary>Infinite loop keyword</summary>
+    /// <summary><c>loop</c>: the loop that doesn't end by itself, left with <c>break</c>, <c>return</c> or <c>throw</c>.</summary>
     Loop,
-
-    /// <summary>While loop keyword</summary>
-    While,
 
     /// <summary>Each loop keyword</summary>
     Each,
@@ -451,8 +448,7 @@ public enum TokenType
     /// <summary>Becomes statement keyword - the value of a block arm of a `when` that gives a value, as its last line.</summary>
     Becomes,
 
-    /// <summary>Until statement keyword - a loop that runs while its condition is false: <c>until c</c> is
-    /// <c>while not (c)</c>.</summary>
+    /// <summary><c>until c</c>: a loop that stops when <c>c</c> becomes true, tested before each round.</summary>
     Until,
 
 

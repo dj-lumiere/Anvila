@@ -203,6 +203,10 @@ public enum GrammarDiagnosticCode
     /// <summary>`failable` before something that isn't a routine.</summary>
     FailableNotARoutine = 223,
 
+    /// <summary>A loop written <c>while c</c>: <c>while</c> is not a keyword. A loop is <c>until</c> with the condition
+    /// that ends it, or <c>loop</c>.</summary>
+    WhileLoop = 224,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

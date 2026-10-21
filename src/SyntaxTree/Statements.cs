@@ -453,8 +453,8 @@ public record IfStatement(
 }
 
 /// <summary>
-/// Loop statement that repeatedly executes a body while a condition remains true.
-/// Represents while loops that check the condition before each iteration.
+/// A loop that runs its body while a condition holds, tested before each round. The parser makes it for
+/// <c>until c</c>, with the condition <c>not (c)</c> (<see cref="IsUntil"/>).
 /// </summary>
 /// <param name="Condition">Boolean expression evaluated before each iteration</param>
 /// <param name="Body">Statement to execute repeatedly while condition is true</param>
@@ -485,8 +485,9 @@ public record WhileStatement(
     /// when the loop ends by itself and after a <c>break</c>, never on a <c>return</c> or <c>throw</c>.</summary>
     public Statement? ThenBranch { get; init; }
 
-    /// <summary>True for <c>until c</c>, kept as <c>while not (c)</c>: the condition is the negation of what was
-    /// written, so the source prints back as written.</summary>
+    /// <summary>True for <c>until c</c>, kept as a loop that runs while <c>not (c)</c>: the condition is the negation
+    /// of what was written, so the source prints back as written. False only for a loop written with the old
+    /// <c>while</c>, which the parser reads to report it (RF-G224) and for <c>migrate</c>.</summary>
     public bool IsUntil { get; init; }
 
     /// <summary>True when the loop as written carried values (<c>with …</c>), which lowering takes off before it lowers
@@ -501,9 +502,9 @@ public record WhileStatement(
 }
 
 /// <summary>
-/// Infinite loop statement (the <c>loop</c> keyword). Executes the body unconditionally
-/// until a <c>break</c> or <c>return</c> exits it.
-/// This is the primitive loop form; <c>while</c> desugars into this.
+/// The loop that doesn't end by itself (the <c>loop</c> keyword): it runs its body again and again until a
+/// <c>break</c>, <c>return</c> or <c>throw</c> leaves it. It is also the primitive loop form: <c>until</c> lowers into
+/// it.
 /// </summary>
 /// <param name="Body">Statement to execute on every iteration</param>
 /// <param name="Location">Source location information</param>
@@ -514,7 +515,11 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// Lowered away before analysis, so only the parser and the formatter see it.</summary>
     public Statement? ThenBranch { get; init; }
 
-    /// <summary>The <c>while</c> / <c>until</c> loop with a literal condition this loop was lowered from, so analysis
+    /// <summary>The values a written <c>loop</c> carries (<c>loop with a: T = init, …</c>), or null. Lowered away
+    /// before analysis, like the <c>then</c> block.</summary>
+    public List<CarriedValue>? With { get; init; }
+
+    /// <summary>The <c>until</c> loop with a literal condition this loop was lowered from, so analysis
     /// can say what such a loop means (it never ends by itself, or never runs its body), or null.</summary>
     public WhileStatement? WrittenWhile { get; init; }
 

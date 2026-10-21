@@ -327,7 +327,7 @@ public partial class Parser
             expr = new BinaryExpression(Left: expr,
                 Operator: TokenToBinaryOperator(tokenType: op.Type),
                 Right: right,
-                Location: GetLocation(token: op));
+                Location: GetLocation(token: op)) { OperatorPosition = op.Position };
         }
 
         return expr;
@@ -357,6 +357,7 @@ public partial class Parser
         // Check for chained comparisons
         var operators = new List<BinaryOperator>();
         var operands = new List<Expression> { expr };
+        int firstOperator = -1;
 
         while (CheckAndAdvance(TokenType.Less,
                    TokenType.LessEqual,
@@ -367,6 +368,10 @@ public partial class Parser
         {
             Token op = PeekToken(offset: -1);
             BinaryOperator binOp = TokenToBinaryOperator(tokenType: op.Type);
+            if (firstOperator < 0)
+            {
+                firstOperator = op.Position;
+            }
 
             operators.Add(item: binOp);
             Expression right = ParseIsExpression();
@@ -389,7 +394,7 @@ public partial class Parser
             return new BinaryExpression(Left: operands[index: 0],
                 Operator: operators[index: 0],
                 Right: operands[index: 1],
-                Location: GetLocation());
+                Location: GetLocation()) { OperatorPosition = firstOperator };
         }
 
         return expr;

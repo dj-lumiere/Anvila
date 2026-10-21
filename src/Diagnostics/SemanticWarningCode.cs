@@ -172,8 +172,8 @@ public enum SemanticWarningCode
     /// <summary>A routine has a <c>todo</c>: a place not written yet, which crashes when it runs.</summary>
     TodoLeft = 303,
 
-    /// <summary>`while true` / `until false`: a loop that ends only by `break` or `return`, which `loop` says.</summary>
-    InfiniteLoopAsWhile = 304,
+    /// <summary>`until false`: a loop that ends only at a `break`, `return` or `throw`, which `loop` says.</summary>
+    EndlessUntil = 304,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // PERFORMANCE WARNINGS (RF-W350 - RF-W399)

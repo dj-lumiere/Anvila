@@ -855,6 +855,7 @@ public sealed partial class SemanticVerifier
         (leftType, rightType) = ReinferBinaryLiteralOperands(binary: binary,
             leftType: leftType,
             rightType: rightType);
+        BinaryExpression.OperandsTyped?.Invoke(arg1: binary, arg2: leftType, arg3: rightType);
 
         if (binary.Operator == BinaryOperator.Assign)
         {

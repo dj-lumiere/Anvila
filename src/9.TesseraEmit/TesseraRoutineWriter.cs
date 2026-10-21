@@ -515,9 +515,9 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>
-    /// <c>while c</c> with the body under it. A condition that takes lines of its own to compute is tested inside
-    /// a <c>while true</c>, so it is computed again on every round: <c>if not c</c> / <c>break</c>. The lines after
-    /// a <c>while true</c> that never breaks can't run.
+    /// <c>until not c</c> with the body under it. A condition that takes lines of its own to compute is tested inside
+    /// a <c>loop</c>, so it is computed again on every round: <c>if not c</c> / <c>break</c>. The lines after a
+    /// <c>loop</c> that never breaks can't run.
     /// </summary>
     private void WriteWhile(Expression? condition, Statement body)
     {
@@ -526,15 +526,17 @@ internal sealed class TesseraRoutineWriter
         var frame = new LoopFrame();
         if (test is not null && _current.Lines.Count == before)
         {
-            Emit(line: $"while {test}");
+            Emit(line: System.Text.RegularExpressions.Regex.IsMatch(input: test, pattern: @"^[A-Za-z_][A-Za-z0-9_]*$")
+                ? $"until not {test}"
+                : $"until not ({test})");
             _indent++;
         }
         else
         {
-            // The condition's own lines move under `while true`, where they run on every round.
+            // The condition's own lines move under `loop`, where they run on every round.
             var computed = _current.Lines.GetRange(index: before, count: _current.Lines.Count - before);
             _current.Lines.RemoveRange(index: before, count: computed.Count);
-            Emit(line: "while true");
+            Emit(line: "loop");
             _indent++;
             foreach (string line in computed)
             {

@@ -10,9 +10,9 @@ namespace Builder.Desugaring.Passes;
 /// Lowers all loop constructs to the <see cref="LoopStatement"/> primitive so the code
 /// generator only needs to handle one loop form via <c>EmitLoop</c>.
 ///
-/// <para><b>while</b> -> loop+if-break:</para>
+/// <para><b>until</b> (kept as a loop on its negated condition) -> loop+if-break:</para>
 /// <code>
-/// while cond { body }
+/// until c  (cond = not c) { body }
 ///  ??
 /// loop { if !cond { break }; body }
 /// </code>
@@ -116,6 +116,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             // stores the next values. The `then` block, inside the same block, still sees them.
             WhileStatement { With.Count: > 0 } w => LowerCarried(loop: w with { With = null }, carried: w.With, body: w.Body,
                 rebuild: b => w with { With = null, Body = b, HadWith = true }),
+            LoopStatement { With.Count: > 0 } l => LowerCarried(loop: l with { With = null }, carried: l.With, body: l.Body,
+                rebuild: b => l with { With = null, Body = b }),
             EachStatement { With.Count: > 0 } f => LowerCarried(loop: f with { With = null }, carried: f.With, body: f.Body,
                 rebuild: b => f with { With = null, Body = b }),
             EachStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then),
@@ -264,6 +266,16 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     /// <summary>
     /// Lowers <c>while cond { body }</c> to <c>loop { if !cond { break } body }</c>.
     /// </summary>
+    /// <summary>Whether a loop that runs while <paramref name="condition"/> holds never ends by itself: <c>until
+    /// false</c>, kept as <c>not false</c>.</summary>
+    internal static bool IsEndless(Expression condition)
+    {
+        return condition is LiteralExpression { LiteralType: TokenType.True } or UnaryExpression
+        {
+            Operator: UnaryOperator.Not, Operand: LiteralExpression { LiteralType: TokenType.False }
+        };
+    }
+
     private Statement LowerWhile(WhileStatement whileStmt)
     {
         SourceLocation loc = whileStmt.Location;
@@ -276,9 +288,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             ? whileStmt
             : null;
 
-        // `while true` needs no guard: it ends only at a `break`, which is also what lets the analysis see that a
+        // `until false` needs no guard: it ends only at a `break`, which is also what lets the analysis see that a
         // variable given its value before that `break` has one after the loop.
-        if (whileStmt.Condition is LiteralExpression { LiteralType: TokenType.True })
+        if (IsEndless(condition: whileStmt.Condition))
         {
             return new LoopStatement(Body: loweredBody, Location: loc) { WrittenWhile = literal };
         }

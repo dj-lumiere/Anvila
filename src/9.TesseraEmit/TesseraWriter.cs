@@ -862,7 +862,7 @@ internal sealed class TesseraWriter
     private static readonly HashSet<string> TesseraKeywords =
     [
         "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "local", "todo", "and", "or", "is", "as",
-        "not", "if", "each", "while", "until", "becomes", "break", "pass", "needs", "obeys", "protocol",
+        "not", "if", "each", "until", "loop", "becomes", "break", "pass", "needs", "obeys", "protocol",
         "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
         "define", "secret", "private", "internal", "module", "import", "Me", "self", "Self",
     ];

@@ -210,7 +210,7 @@ internal static class AstComparer
         return null;
     }
 
-    /// <summary>The properties compared on a node: public, readable, not indexed, not a source location.</summary>
+    /// <summary>The properties compared on a node: public, readable, not indexed, not a source location or offset.</summary>
     private static PropertyInfo[] PropertiesOf(Type type)
     {
         return Properties.GetOrAdd(key: type, valueFactory: t => t.GetProperties(bindingAttr: BindingFlags.Public |
@@ -220,7 +220,8 @@ internal static class AstComparer
                                                                          p.GetIndexParameters()
                                                                           .Length == 0 &&
                                                                          p.PropertyType != typeof(SourceLocation) &&
-                                                                         p.Name != "EqualityContract")
+                                                                         p.Name != "EqualityContract" &&
+                                                                         p.Name != nameof(SyntaxTree.BinaryExpression.OperatorPosition))
                                                                     .OrderBy(keySelector: p => p.Name,
                                                                          comparer: StringComparer.Ordinal)
                                                                     .ToArray());

@@ -137,9 +137,8 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a while loop statement.
-    /// Syntax: <c>while condition</c> followed by indented body
-    /// An optional <c>then</c> block runs once the loop is left for the line after it.
+    /// Parses a loop written with the old <c>while condition</c>, after RF-G224 is reported (or while
+    /// <c>migrate --step until</c> reads it). An optional <c>then</c> block runs once the loop is left.
     /// </summary>
     /// <returns>A <see cref="WhileStatement"/> AST node.</returns>
     private WhileStatement ParseWhileStatement()
@@ -151,7 +150,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses an until loop: <c>until c</c> runs its body while <c>c</c> is false, so it is <c>while not (c)</c>,
+    /// Parses an until loop: <c>until c</c> runs its body until <c>c</c> holds, so it is a loop on <c>not (c)</c>,
     /// marked to print back as written.
     /// </summary>
     private WhileStatement ParseUntilStatement()
@@ -287,18 +286,18 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a loop statement (infinite loop).
-    /// Syntax: <c>loop</c> followed by indented body
-    /// Equivalent to <c>while true</c>.
+    /// Parses <c>loop</c>, the loop that doesn't end by itself, with optional carried values (<c>loop with a: T =
+    /// init</c>), its body, and an optional <c>then</c> block.
     /// </summary>
-    /// <returns>A <see cref="WhileStatement"/> AST node with true condition.</returns>
+    /// <returns>A <see cref="LoopStatement"/> AST node.</returns>
     private LoopStatement ParseLoopStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
-        Statement body = ParseBody();
+        List<CarriedValue>? with = ParseCarriedValues();
+        Statement body = ParseCarryingBody(with: with, location: location);
         RejectLoopElse();
-        return new LoopStatement(Body: body, Location: location) { ThenBranch = ParseLoopThen() };
+        return new LoopStatement(Body: body, Location: location) { ThenBranch = ParseLoopThen(), With = with };
     }
 
     /// <summary>

@@ -515,12 +515,24 @@ internal partial class Program
     /// </summary>
     private static Dictionary<(string File, int Position), HashSet<string>> ProbeSuffixTypes(List<SuffixSource> sources)
     {
-        string work = Path.Combine(path1: Path.GetTempPath(), path2: $"migrate-suffix-{Environment.ProcessId}");
+        return ProbeAnalysisTypes(files: sources.Select(selector: s => (s.Path, s.StandardRoot)).ToList(),
+            mode: "--suffix-probe");
+    }
+
+    /// <summary>
+    /// Runs analysis over <paramref name="files"/> in a child process and reads back what it observed, by file and
+    /// offset: the type of each bare number (<c>--suffix-probe</c>), or the operand types of each comparison as
+    /// <c>left|right</c> (<c>--until-probe</c>).
+    /// </summary>
+    private static Dictionary<(string File, int Position), HashSet<string>> ProbeAnalysisTypes(
+        List<(string Path, string? StandardRoot)> files, string mode)
+    {
+        string work = Path.Combine(path1: Path.GetTempPath(), path2: $"migrate-probe-{Environment.ProcessId}");
         Directory.CreateDirectory(path: work);
         try
         {
             string? standard = null;
-            List<string> roots = sources.Select(selector: s => s.StandardRoot).OfType<string>().Distinct().ToList();
+            List<string> roots = files.Select(selector: s => s.StandardRoot).OfType<string>().Distinct().ToList();
             if (roots.Count > 0)
             {
                 // Both libraries sit side by side under the workspace: <workspace>/RazorForge/Standard and
@@ -539,7 +551,7 @@ internal partial class Program
             }
 
             string list = Path.Combine(path1: work, path2: "files.txt");
-            File.WriteAllLines(path: list, contents: sources.Select(selector: s =>
+            File.WriteAllLines(path: list, contents: files.Select(selector: s =>
                 (s.StandardRoot != null ? "stdlib\t" : "program\t") + s.Path +
                 (s.StandardRoot != null ? "\t" + s.StandardRoot : "")));
             string output = Path.Combine(path1: work, path2: "types.txt");
@@ -555,7 +567,7 @@ internal partial class Program
             }
 
             start.ArgumentList.Add(item: "migrate");
-            start.ArgumentList.Add(item: "--suffix-probe");
+            start.ArgumentList.Add(item: mode);
             start.ArgumentList.Add(item: list);
             start.ArgumentList.Add(item: output);
             if (standard != null)
@@ -597,7 +609,7 @@ internal partial class Program
     /// The child side of <see cref="ProbeSuffixTypes"/>: analyzes the files listed in <paramref name="list"/> and writes
     /// one line per bare number analysis typed in them (file, offset, type) to <paramref name="output"/>.
     /// </summary>
-    private static int RunSuffixProbe(string list, string output)
+    private static int RunSuffixProbe(string list, string output, bool comparisons = false)
     {
         var programs = new List<string>();
         var stdlibFiles = new Dictionary<string, string>(comparer: StringComparer.Ordinal);
@@ -616,14 +628,34 @@ internal partial class Program
 
         var wanted = new HashSet<string>(collection: programs.Concat(second: stdlibFiles.Keys), comparer: StringComparer.Ordinal);
         string stdlibPath = StdlibLoader.GetDefaultStdlibPath();
-        var literals = new HashSet<LiteralExpression>(comparer: ReferenceEqualityComparer.Instance);
-        LiteralExpression.TypeAssigned = literal =>
+        // What analysis observed, read at the next flush: a bare number's type is read then (analysis may set it more
+        // than once), a comparison's operand types when it typed them.
+        var observedNow = new List<(SourceLocation At, int Position, Func<string> Type)>();
+        if (comparisons)
         {
-            if (literal.LiteralType is TokenType.UndecidedInteger or TokenType.UndecidedDecimal)
+            // The loops `until` replaces are read as they were written.
+            Builder.Parser.Parser.ReadsWhileLoops = true;
+            BinaryExpression.OperandsTyped = (binary, left, right) =>
             {
-                literals.Add(item: literal);
-            }
-        };
+                if (binary.OperatorPosition >= 0)
+                {
+                    string both = $"{left.Name}|{right.Name}";
+                    observedNow.Add(item: (binary.Location, binary.OperatorPosition, () => both));
+                }
+            };
+        }
+        else
+        {
+            var seen = new HashSet<LiteralExpression>(comparer: ReferenceEqualityComparer.Instance);
+            LiteralExpression.TypeAssigned = literal =>
+            {
+                if (literal.LiteralType is TokenType.UndecidedInteger or TokenType.UndecidedDecimal && seen.Add(item: literal))
+                {
+                    observedNow.Add(item: (literal.Location, literal.Location.Position,
+                        () => literal.ResolvedType?.Name ?? "?"));
+                }
+            };
+        }
 
         // A standard library file is read through the temporary Standard folder: its path there maps back to the
         // source folder it links to.
@@ -652,14 +684,14 @@ internal partial class Program
         void Flush(StreamWriter writer, bool library)
         {
             var reachedNow = new HashSet<string>(comparer: StringComparer.Ordinal);
-            foreach (LiteralExpression literal in literals)
+            foreach ((SourceLocation at, int position, Func<string> type) in observedNow)
             {
-                string file = MapBack(file: literal.Location.FileName);
+                string file = MapBack(file: at.FileName);
                 if (wanted.Contains(item: file) && stdlibFiles.ContainsKey(key: file) == library &&
                     !(library && reported.Contains(item: file)))
                 {
                     reachedNow.Add(item: file);
-                    string line = $"{file}\t{literal.Location.Position}\t{literal.ResolvedType?.Name ?? "?"}";
+                    string line = $"{file}\t{position}\t{type()}";
                     if (written.Add(item: line))
                     {
                         writer.WriteLine(value: line);
@@ -667,7 +699,7 @@ internal partial class Program
                 }
             }
 
-            literals.Clear();
+            observedNow.Clear();
             reported.UnionWith(other: reachedNow);
         }
 
@@ -725,6 +757,8 @@ internal partial class Program
         }
 
         LiteralExpression.TypeAssigned = null;
+        BinaryExpression.OperandsTyped = null;
+        Builder.Parser.Parser.ReadsWhileLoops = false;
         return 0;
     }
 
@@ -747,7 +781,7 @@ internal partial class Program
         BuildResult buildResult = driver.CompileFile(entryFile: Path.GetFullPath(path: resolved.EntryFile));
         if (buildResult.Errors.Count > 0)
         {
-            Console.Error.WriteLine(value: $"{entryFile}: does not parse, so analysis cannot type its numbers " +
+            Console.Error.WriteLine(value: $"{entryFile}: does not parse, so analysis cannot type it " +
                                            $"({buildResult.Errors[index: 0].Message})");
             return;
         }

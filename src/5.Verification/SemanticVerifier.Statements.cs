@@ -999,20 +999,25 @@ public sealed partial class SemanticVerifier
         // any following statement in the same block can never execute — report the first such dead
         // statement. (Conditional divergence inside a nested if/when does NOT terminate this block.)
         bool diverged = false;
+        bool afterLoop = false;
         foreach (Statement stmt in block.Statements)
         {
             if (diverged)
             {
                 ReportNeverRunsError(code: SemanticDiagnosticCode.UnreachableStatement,
-                    message: "Unreachable statement: the previous statement always diverges " +
-                             "(return / throw / break / continue), so this code can never run.",
+                    message: afterLoop
+                        ? "Unreachable statement: the loop before it has no `break`, so only a `return` or " +
+                          "`throw` leaves it, and this code can never run."
+                        : "Unreachable statement: the previous statement always diverges " +
+                          "(return / throw / break / continue), so this code can never run.",
                     location: stmt.Location,
                     endLine: LastLine(statement: block.Statements[^1]));
                 break;
             }
 
             AnalyzeStatement(statement: stmt);
-            diverged = stmt is ReturnStatement or ThrowStatement
+            afterLoop = stmt is LoopStatement loop && ControlFlowExits.NeverEndsByItself(loop: loop);
+            diverged = afterLoop || stmt is ReturnStatement or ThrowStatement
                 or BreakStatement or ContinueStatement;
         }
 

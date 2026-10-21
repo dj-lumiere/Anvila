@@ -220,38 +220,33 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// A loop whose condition is a literal builds as written, with a notice. <c>while true</c> / <c>until false</c>
-    /// ends only by <c>break</c> or <c>return</c>, which <c>loop</c> says. <c>while false</c> / <c>until true</c> never
-    /// runs its body, which an editor shows faded. A named Bool, even a preset, is a condition like any other.
+    /// An <c>until</c> loop whose condition is a literal builds as written, with a notice. <c>until false</c> ends only
+    /// at a <c>break</c>, <c>return</c> or <c>throw</c>, which <c>loop</c> says. <c>until true</c> never runs its body,
+    /// which an editor shows faded. A named Bool, even a preset, is a condition like any other.
     /// </summary>
     internal void NoteLiteralLoopCondition(WhileStatement whileStmt)
     {
-        Expression written = whileStmt.IsUntil && whileStmt.Condition is UnaryExpression
-        {
-            Operator: UnaryOperator.Not
-        } negated
-            ? negated.Operand
-            : whileStmt.Condition;
-        if (written is not LiteralExpression { Value: bool literal })
+        if (whileStmt is not { IsUntil: true, Condition: UnaryExpression { Operator: UnaryOperator.Not } negated } ||
+            negated.Operand is not LiteralExpression { Value: bool literal } written)
         {
             return;
         }
 
-        string header = $"{(whileStmt.IsUntil ? "until" : "while")} {(literal ? "true" : "false")}";
-        if (literal != whileStmt.IsUntil)
+        if (!literal)
         {
-            // `loop` takes no carried values: a loop with `with` keeps its header.
+            // The fix writes `loop` over `until false`, which keeps its carried values and `then` as they are.
             SourceLocation end = written.Location;
-            SuggestedFix? fix = !whileStmt.HadWith && end.Line == whileStmt.Location.Line
+            SuggestedFix? fix = end.Line == whileStmt.Location.Line
                 ? new SuggestedFix(Title: "Write 'loop'",
                     Edits:
                     [
                         new TextEdit(StartLine: whileStmt.Location.Line, StartColumn: whileStmt.Location.Column,
-                            EndLine: end.Line, EndColumn: end.Column + (literal ? 4 : 5), NewText: "loop")
+                            EndLine: end.Line, EndColumn: end.Column + 5, NewText: "loop")
                     ])
                 : null;
-            ReportNotice(code: SemanticWarningCode.InfiniteLoopAsWhile,
-                message: $"`{header}` runs until a `break` or `return`: write `loop` for a loop like that.",
+            ReportNotice(code: SemanticWarningCode.EndlessUntil,
+                message: "`until false` never ends by itself: it runs until a `break`, `return` or `throw`. Write `loop` " +
+                         "for a loop like that.",
                 location: whileStmt.Location,
                 fix: fix);
             return;
@@ -261,7 +256,7 @@ public sealed partial class SemanticVerifier
             ? block.Statements[index: 0]
             : whileStmt.Body;
         ReportNotice(code: SemanticWarningCode.UnreachableLoopBody,
-            message: $"This code never runs: `{header}` doesn't enter the loop.",
+            message: "This code never runs: `until true` stops before the first round.",
             location: body.Location,
             endLine: LastLine(statement: whileStmt.Body),
             neverRuns: true);
@@ -276,19 +271,19 @@ public sealed partial class SemanticVerifier
         if (!IsBoolType(type: conditionType) && conditionType is not ErrorTypeSymbol)
         {
             ReportError(code: SemanticDiagnosticCode.WhileConditionNotBool,
-                message: $"While condition must be boolean, got '{conditionType.Name}'.",
+                message: $"A loop's condition must be a Bool, and this one is '{conditionType.Name}'.",
                 location: whileStmt.Condition.Location);
         }
 
         // Analyze loop body. The loop ends at a `break`, and also when the condition is false, maybe before the first
-        // turn: then what was unassigned before it still is. `while true` ends only at a `break`.
-        bool endsOnlyAtBreak = whileStmt.Condition is LiteralExpression { LiteralType: Builder.Tokenizer.TokenType.True };
+        // turn: then what was unassigned before it still is. `until false` ends only at a `break`.
+        bool endsOnlyAtBreak = Builder.Desugaring.Passes.ControlFlowLoweringPass.IsEndless(condition: whileStmt.Condition);
         var unassignedBefore = endsOnlyAtBreak
             ? []
             : _deadrefVariables.Where(predicate: n =>
                 n.StartsWith(value: UnassignedMark, comparisonType: StringComparison.Ordinal)).ToList();
         _unassignedAtBreak.Push(item: []);
-        _registry.EnterScope(kind: ScopeKind.Loop, name: "while");
+        _registry.EnterScope(kind: ScopeKind.Loop, name: "until");
         AnalyzeStatement(statement: whileStmt.Body);
         _registry.ExitScope();
         HashSet<string> atBreak = _unassignedAtBreak.Pop();

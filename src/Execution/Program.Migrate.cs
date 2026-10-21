@@ -21,9 +21,9 @@ internal partial class Program
     private static int RunMigrateCommand(string[] args)
     {
         // The analysis child of `--step suffix` (see RunSuffixProbe): not for people to run.
-        if (args.Length == 4 && args[1] == "--suffix-probe")
+        if (args.Length == 4 && args[1] is "--suffix-probe" or "--until-probe")
         {
-            return RunSuffixProbe(list: args[2], output: args[3]);
+            return RunSuffixProbe(list: args[2], output: args[3], comparisons: args[1] == "--until-probe");
         }
 
         bool check = args.Contains(value: "--check");
@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("have" or "suffix" or "failable" or "names" or "modules" or "access" or "cpu-events"
-                or "addr" or "files"))
+                or "addr" or "files" or "until"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr or files");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files or until");
             return 2;
         }
 
@@ -93,6 +93,13 @@ internal partial class Program
         if (step == "files")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteFiles);
+        }
+
+        // `--step until`: a loop is `until` with the condition that ends it, or `loop`, with analysis deciding which
+        // comparisons can be turned around.
+        if (step == "until")
+        {
+            return RunUntilStep(paths: paths, check: check);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
@@ -439,7 +446,7 @@ internal partial class Program
     private static readonly HashSet<TokenType> ExpressionEnds =
     [
         TokenType.Newline, TokenType.Indent, TokenType.Dedent, TokenType.Comma, TokenType.Colon, TokenType.FatArrow,
-        TokenType.Arrow, TokenType.Then, TokenType.Else, TokenType.If, TokenType.Elseif, TokenType.While,
+        TokenType.Arrow, TokenType.Then, TokenType.Else, TokenType.If, TokenType.Elseif, TokenType.Until,
         TokenType.Return, TokenType.When, TokenType.Each, TokenType.In, TokenType.Throw, TokenType.Eof,
         TokenType.Assign, TokenType.PlusAssign, TokenType.MinusAssign, TokenType.StarAssign, TokenType.SlashAssign,
         TokenType.PercentAssign, TokenType.AmpersandAssign, TokenType.PipeAssign, TokenType.CaretAssign,

@@ -1147,16 +1147,83 @@ public partial class Parser
 
         return ParseExpressionStatement();
     }
+    /// <summary>
+    /// Set only by <c>migrate --step until</c> while it asks analysis about the loops it rewrites: a loop written with
+    /// <c>while</c> is then read without an error.
+    /// </summary>
+    public static bool ReadsWhileLoops { get; set; }
+
+    /// <summary>Whether the statement starts <c>while c</c>: the name <c>while</c> followed on its line by the start
+    /// of a value, which no statement that uses <c>while</c> as a name does.</summary>
+    private bool AtWhileLoop()
+    {
+        if (CurrentToken is not { Type: TokenType.Identifier, Text: "while" })
+        {
+            return false;
+        }
+
+        Token next = PeekToken(offset: 1);
+        if (next.Line != CurrentToken.Line)
+        {
+            return false;
+        }
+
+        // `while(x)` is a call of a routine named while, `while (x)` a condition.
+        return next.Type is TokenType.Not or TokenType.Minus ||
+               next.Type == TokenType.LeftParen && next.Column > CurrentToken.Column + CurrentToken.Text.Length ||
+               next.Type is not (TokenType.LeftParen or TokenType.LeftBracket or TokenType.Minus) && StartsInfixOperand(token: next);
+    }
+
+    /// <summary>
+    /// <c>while c</c>: a loop is written <c>until</c> with the condition that ends it, or <c>loop</c>, so this is
+    /// RF-G224. The loop is read as written, so the rest of the file is still checked.
+    /// </summary>
+    private Statement ParseWrittenWhile()
+    {
+        Token word = CurrentToken;
+        Token next = PeekToken(offset: 1);
+        if (!ReadsWhileLoops)
+        {
+            Token after = PeekToken(offset: 2);
+            SuggestedFix? fix = null;
+            bool trueAlone = next.Type == TokenType.True && (after.Line != next.Line ||
+                                                             after.Type is TokenType.Newline or TokenType.Indent or TokenType.Eof or TokenType.With);
+            if (trueAlone)
+            {
+                fix = new SuggestedFix(Title: "Write 'loop'",
+                    Edits: [new TextEdit(StartLine: word.Line, StartColumn: word.Column, EndLine: next.Line,
+                        EndColumn: next.Column + next.Text.Length, NewText: "loop")]);
+            }
+            else if (next.Type == TokenType.Not)
+            {
+                fix = new SuggestedFix(Title: "Write 'until'",
+                    Edits: [new TextEdit(StartLine: word.Line, StartColumn: word.Column, EndLine: after.Line,
+                        EndColumn: after.Column, NewText: "until ")]);
+            }
+
+            RecordError(ex: ThrowParseError(code: GrammarDiagnosticCode.WhileLoop,
+                message: "A loop is written `until` with the condition that ends it (`until i >= count`), or `loop` " +
+                         "for a loop that ends only at a `break`, `return` or `throw`: `while` is not a keyword. " +
+                         "`migrate --step until` rewrites these loops.",
+                fix: fix));
+        }
+
+        Advance();
+        return ParseWhileStatement();
+    }
+
     private Statement? ParseKeywordStatement()
     {
+        if (AtWhileLoop())
+        {
+            return ParseWrittenWhile();
+        }
+
         switch (CurrentToken.Type)
         {
             case TokenType.If:
                 Advance();
                 return ParseIfStatement();
-            case TokenType.While:
-                Advance();
-                return ParseWhileStatement();
             case TokenType.Loop:
                 Advance();
                 return ParseLoopStatement();

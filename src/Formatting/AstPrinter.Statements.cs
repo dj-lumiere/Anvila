@@ -132,11 +132,13 @@ internal sealed partial class AstPrinter
                 PrintIf(statement: ifStatement, start: start, depth: depth, prefix: prefix, keyword: "if");
                 break;
             case WhileStatement whileStatement:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(whileStatement is
-                    { IsUntil: true, Condition: UnaryExpression { Operator: UnaryOperator.Not } written }
-                    ? Doc.Concat(prefix, Doc.Text(text: "until "), Expr(expression: written.Operand, context: ExprContext.Statement))
-                    : Doc.Concat(prefix, Doc.Text(text: "while "),
-                        Expr(expression: whileStatement.Condition, context: ExprContext.Statement)), With(carried: whileStatement.With)));
+                if (whileStatement is not { IsUntil: true, Condition: UnaryExpression { Operator: UnaryOperator.Not } written })
+                {
+                    throw Refuse(at: whileStatement.Location, reason: "a loop written with 'while'");
+                }
+
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "until "),
+                    Expr(expression: written.Operand, context: ExprContext.Statement), With(carried: whileStatement.With)));
                 PrintBody(body: whileStatement.Body, depth: depth + 1, at: whileStatement.Location);
                 PrintThenBranch(thenBranch: whileStatement.ThenBranch, depth: depth, at: whileStatement.Location);
                 break;
@@ -146,7 +148,7 @@ internal sealed partial class AstPrinter
                     throw Unsupported(node: loop, at: loop.Location);
                 }
 
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "loop")));
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "loop"), With(carried: loop.With)));
                 PrintBody(body: loop.Body, depth: depth + 1, at: loop.Location);
                 PrintThenBranch(thenBranch: loop.ThenBranch, depth: depth, at: loop.Location);
                 break;

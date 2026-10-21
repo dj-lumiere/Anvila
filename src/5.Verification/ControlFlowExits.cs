@@ -40,20 +40,27 @@ internal static class ControlFlowExits
                                       whenStmt.Clauses.All(predicate: c =>
                                           AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: c.Body)),
             DangerStatement danger => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: danger.Body),
+            UsingStatement usingStmt => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: usingStmt.Body),
             // A `viewing` / `modifying` block runs its body. A `try` block runs its body or its `else`.
             AccessStatement access => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: access.Body) &&
                                       (!access.IsTry || access.ElseBody != null &&
                                           AlwaysTerminates(exhaustiveWhens: exhaustiveWhens,
                                               statement: access.ElseBody)),
-            // An unconditional `loop` has a fall-through edge ONLY through a `break` that targets it.
-            // With no such break, control leaves the loop only via `return`/`throw`/`absent`, so a
-            // routine whose control reaches the loop always terminates through it. This does NOT prove
-            // the loop halts (undecidable, deliberately not attempted) — it observes the absence of a
-            // normal-exit edge, which IS decidable. `while` is excluded: its condition may be false on
-            // entry, so it can fall through without ever running the body.
-            LoopStatement loopStmt => !LoopBodyCanBreakOut(statement: loopStmt.Body),
+            // A `loop` doesn't end by itself: control goes on after it only through a `break` that targets it.
+            // With no such break, control leaves the loop only by `return` or `throw`, so a routine whose
+            // control reaches the loop always leaves through it. This does not prove the loop halts (it can't be
+            // decided, and isn't attempted), it sees that there is no way out to the next line. An `until` lowers
+            // to a loop whose first line breaks out when its condition holds, so it has that way out.
+            LoopStatement loopStmt => NeverEndsByItself(loop: loopStmt),
             _ => false
         };
+    }
+
+    /// <summary>Whether the lines after <paramref name="loop"/> are never reached from it: it has no <c>break</c> of
+    /// its own, so only a <c>return</c> or <c>throw</c> leaves it.</summary>
+    internal static bool NeverEndsByItself(LoopStatement loop)
+    {
+        return !LoopBodyCanBreakOut(statement: loop.Body);
     }
 
     /// <summary>
@@ -76,6 +83,7 @@ internal static class ControlFlowExits
             WhenStatement whenStmt => whenStmt.Clauses.Any(predicate: c =>
                 LoopBodyCanBreakOut(statement: c.Body)),
             DangerStatement danger => LoopBodyCanBreakOut(statement: danger.Body),
+            UsingStatement usingStmt => LoopBodyCanBreakOut(statement: usingStmt.Body),
             AccessStatement access => LoopBodyCanBreakOut(statement: access.Body) ||
                                       access.ElseBody != null && LoopBodyCanBreakOut(statement: access.ElseBody),
             // Nested loops swallow their own breaks — do not descend.
