@@ -1625,7 +1625,7 @@ public sealed partial class SemanticVerifier
             arguments: call.Arguments);
 
         // Field-init recovery: the by-TYPE overload lookup above misses when an argument's type failed
-        // to resolve (e.g. a generic-call arg `hijacked_none[U64]()` left un-lowered by the reduced
+        // to resolve (e.g. a generic-call arg `hijacked_from[U64](addr)` left un-lowered by the reduced
         // stdlib-validation pipeline yields ErrorType, so no by-type creator matches). A memberwise
         // field-init `Type(field: value, ...)` is identified by NAMES, not arg types — every provided
         // name is a field of the type — so recover the synthesized all-fields creator by matching field

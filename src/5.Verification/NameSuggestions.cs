@@ -85,8 +85,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " Membership is 'has' / 'lacks' now, and a map's keys are 'has_key' / 'lacks_key'.";
             case "has" when MemberSuggestionCandidates(type: type).Contains(value: "has_key"):
                 return " A key is tested with 'has_key'.";
-            case "is_none" when type.BareName == RuntimeContract.Addr:
-                return " An address is tested with 'is_hollow()' / 'is_not_hollow()'.";
+            case "is_none" when type.BareName is RuntimeContract.Addr or "Hijacked":
+                return " A pointer is tested with 'is_hollow()' / 'is_not_hollow()'.";
             case "subdir" when MemberSuggestionCandidates(type: type).Contains(value: "go_to"):
                 return " It is called 'go_to' now (migrate --step files rewrites it).";
             case "current_directory" or "temp_directory" or "home_directory" or "set_current_directory"

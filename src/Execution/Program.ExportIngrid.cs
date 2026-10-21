@@ -263,7 +263,7 @@ internal partial class Program
         {
             "Bool" => "false",
             "B16" or "B32" or "B64" or "B128" => "0.0",
-            "Hijacked" when type.GenericArguments is [var pointee] => $"hijacked_none[{TypeText(type: pointee)}]()",
+            "Hijacked" when type.GenericArguments is [var pointee] => $"Hijacked[{TypeText(type: pointee)}].hollow()",
             _ => "0"
         };
     }

@@ -322,7 +322,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         string name = ri.IsCreator && ri.OwnerType is { } ctorOwner
             ? ctorOwner.FullName
             : $"{ownerPrefix}{bareName}";
-        // Spell out the routine's own resolved generic args (e.g. a monomorphized `hijacked_none[U128]`)
+        // Spell out the routine's own resolved generic args (e.g. a monomorphized `hijacked_from[U128]`)
         // so instantiations aren't collapsed to the same bare name. (Owner generics are in ownerPrefix.)
         string typeArgs = !ri.IsCreator && ri.TypeArguments is { Count: > 0 } ta
             ? $"[{string.Join(separator: ", ", values: ta.Select(selector: RoutineInfo.GetTypeIdentity))}]"

@@ -2037,7 +2037,7 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>The statement <c>if me.hijack().is_none() then return</c>: a <c>destruct</c> leaves a hollow entity (one
+    /// <summary>The statement <c>if me.hijack().is_hollow() then return</c>: a <c>destruct</c> leaves a hollow entity (one
     /// whose reference is all zero) alone.</summary>
     private static IfStatement HollowGuard(SourceLocation location)
     {
@@ -2047,12 +2047,12 @@ public sealed partial class SemanticVerifier
                 Location: location),
             Arguments: [],
             Location: location) { IsSynthesizedLowering = true };
-        var isNone = new CallExpression(
-            Callee: new MemberExpression(Object: hijack, MemberName: Declaration.RuntimeContract.RawPointer.IsNone,
+        var isHollow = new CallExpression(
+            Callee: new MemberExpression(Object: hijack, MemberName: Declaration.RuntimeContract.RawPointer.IsHollow,
                 Location: location),
             Arguments: [],
             Location: location) { IsSynthesizedLowering = true };
-        return new IfStatement(Condition: isNone,
+        return new IfStatement(Condition: isHollow,
             ThenStatement: new BlockStatement(Statements: [new ReturnStatement(Value: null, Location: location)],
                 Location: location),
             ElseStatement: null,
@@ -2069,7 +2069,7 @@ public sealed partial class SemanticVerifier
             {
                 Callee: MemberExpression
                 {
-                    MemberName: Declaration.RuntimeContract.RawPointer.IsNone,
+                    MemberName: Declaration.RuntimeContract.RawPointer.IsHollow,
                     Object: CallExpression
                     {
                         Callee: MemberExpression

@@ -49,8 +49,8 @@ public static class RuntimeContract
         /// <summary><c>Hijacked[T].as_entity()</c> — reinterpret the pointee as an owned entity (borrow view).</summary>
         public const string AsEntity = "as_entity";
 
-        /// <summary>Null-pointer predicate on the raw-pointer surface.</summary>
-        public const string IsNone = "is_none";
+        /// <summary><c>Hijacked[T].is_hollow()</c>: whether the pointer holds address zero.</summary>
+        public const string IsHollow = "is_hollow";
 
         /// <summary>Entity deallocation primitive.</summary>
         public const string Invalidate = "invalidate";
@@ -305,7 +305,7 @@ public static class RuntimeContract
     /// carrier FIELDS (<see cref="Carrier"/>) are member variables, not routines — checked separately.</summary>
     public static readonly IReadOnlyList<string> StdlibRoutineContracts =
     [
-        RawPointer.Peek, RawPointer.Poke, RawPointer.AsEntity, RawPointer.IsNone,
+        RawPointer.Peek, RawPointer.Poke, RawPointer.AsEntity, RawPointer.IsHollow,
         RawPointer.Invalidate, RawPointer.Hijack,
         RefCount.RawData,
         Collection.Count, Collection.Add, Collection.AddLast, Collection.Replace,
