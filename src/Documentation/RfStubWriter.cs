@@ -325,7 +325,7 @@ internal sealed class RfStubWriter
 
         if (body.Count == 0)
         {
-            body.Add(item: "    pass");
+            body.Add(item: "    nothing");
         }
 
         text.Append(value: string.Join(separator: "\n", values: body))

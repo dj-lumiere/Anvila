@@ -125,8 +125,8 @@ internal sealed partial class AstPrinter
             case ContinueStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "continue")));
                 break;
-            case PassStatement:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "pass")));
+            case NothingStatement:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "nothing")));
                 break;
             case IfStatement ifStatement:
                 PrintIf(statement: ifStatement, start: start, depth: depth, prefix: prefix, keyword: "if");

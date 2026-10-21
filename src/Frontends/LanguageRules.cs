@@ -75,8 +75,8 @@ public abstract class LanguageRules
     /// and the routine is checked for each type it is used with.</summary>
     public virtual bool TakesUntypedParameters => false;
 
-    /// <summary>The <c>pass</c> placeholder statement and declaration.</summary>
-    public abstract bool HasPassStatement { get; }
+    /// <summary>The <c>nothing</c> line as the body of a type with no member variables, read as a declaration.</summary>
+    public abstract bool HasNothingStatement { get; }
 
     /// <summary>Module-level mutable state (<c>global name: Type = init</c>).</summary>
     public abstract bool HasModuleGlobals { get; }

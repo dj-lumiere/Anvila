@@ -81,12 +81,12 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Location-free structural hash of a constructor body for the divergent-duplicate guard (source
     /// text, not record ToString which embeds SourceLocation — so identical logic in two files hashes
-    /// equal). Null for empty / extern (PassStatement) bodies. Computed on a registry-key collision
+    /// equal). Null for empty / extern (NothingStatement) bodies. Computed on a registry-key collision
     /// (see DeclaredBodyHash).
     /// </summary>
     public static int? ComputeCreatorBodyHash(Statement? body)
     {
-        if (body is null or PassStatement)
+        if (body is null or NothingStatement)
         {
             return null;
         }

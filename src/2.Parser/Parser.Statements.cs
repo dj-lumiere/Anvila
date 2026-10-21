@@ -646,7 +646,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a when-clause body: <c>=> statement</c>, <c>=> pass</c>, or <c>=>\n INDENT block</c>.
+    /// Parses a when-clause body: <c>=> statement</c>, <c>=> nothing</c>, or <c>=>\n INDENT block</c>.
     /// </summary>
     private Statement ParseWhenClauseBody()
     {
@@ -683,9 +683,9 @@ public partial class Parser
                 _inWhenClauseBody = false;
                 body = ParseIndentedBlock();
             }
-            else if (CheckAndAdvance(type: TokenType.Pass))
+            else if (AcceptNothing())
             {
-                body = new PassStatement(Location: GetLocation());
+                body = new NothingStatement(Location: GetLocation());
             }
             else
             {
@@ -1376,16 +1376,14 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a pass statement (empty statement placeholder).
-    /// Syntax: <c>pass</c>
-    /// Used as a placeholder in empty blocks or protocols.
+    /// Parses <c>nothing</c>, the line with no work (a <c>when</c> arm or a body that has nothing to do).
     /// </summary>
-    /// <returns>A <see cref="PassStatement"/> AST node.</returns>
-    private PassStatement ParsePassStatement()
+    /// <returns>A <see cref="NothingStatement"/> AST node.</returns>
+    private NothingStatement ParseNothingStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
         ConsumeStatementTerminator();
-        return new PassStatement(Location: location);
+        return new NothingStatement(Location: location);
     }
 
     /// <summary>
@@ -1592,7 +1590,7 @@ public partial class Parser
             {
                 throw ThrowParseError(
                     message: "You wrote a 'try' block without its 'else' block. Add 'else' after the body with what to " +
-                             "do when a target is taken right now ('pass' to do nothing).");
+                             "do when a target is taken right now (`nothing` when there is no work).");
             }
 
             elseBody = ParseBody();

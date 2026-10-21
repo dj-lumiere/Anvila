@@ -531,9 +531,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             ? LowerStatement(stmt: ifs.ElseStatement)
             : null;
         // No else on the original `if` → the fall-through does nothing, but an empty block needs
-        // an explicit `pass` (RF-S211).
+        // an explicit `nothing` (RF-S211).
         Statement elseBody = elseS ?? new BlockStatement(Statements:
-            [new PassStatement(Location: loc)],
+            [new NothingStatement(Location: loc)],
             Location: loc);
 
         // Guarded form `is T p and g1 and g2 ...`: put the guard test INSIDE the matched arm as a

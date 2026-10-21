@@ -190,7 +190,7 @@ public static class AstWalker
             },
             UsingStatement s => new object[] { s.Resource, s.Body },
             AccessStatement s => AccessStatementChildren(s: s),
-            PassStatement or BreakStatement or ContinueStatement => Enumerable
+            NothingStatement or BreakStatement or ContinueStatement => Enumerable
                .Empty<object>(),
             _ => null
         };
@@ -674,7 +674,7 @@ public static class AstWalker
             },
             ExternalDeclaration d => ExternalDeclarationChildren(d: d),
             ExternalBlockDeclaration d => ExternalBlockDeclarationChildren(d: d),
-            PassDeclaration or FlagsDeclaration or ModuleDeclaration or ImportDeclaration
+            NothingDeclaration or FlagsDeclaration or ModuleDeclaration or ImportDeclaration
                 or DefineDeclaration => Enumerable.Empty<object>(),
             _ => null
         };

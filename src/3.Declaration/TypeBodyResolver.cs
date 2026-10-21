@@ -95,6 +95,21 @@ internal sealed class TypeBodyResolver
         }
     }
 
+    /// <summary>
+    /// A type with no member variables and no body: its body is the line <c>nothing</c> (RF-S211), which the quick fix
+    /// writes under the header.
+    /// </summary>
+    private void ReportEmptyTypeBody(string kind, string name, SourceLocation location)
+    {
+        string indent = new(c: ' ', count: Math.Max(val1: 0, val2: location.Column - 1) + 4);
+        _sa.ReportError(code: SemanticDiagnosticCode.EmptyBlockWithoutNothing,
+            message: $"{kind} '{name}' has no member variables and no body. A type with no member variables writes " +
+                     "`nothing` as its body, on the line under its header.",
+            location: location,
+            fix: new SuggestedFix(Title: "Write 'nothing'",
+                Edits: [TextEdit.Insert(line: location.Line + 1, column: 1, text: indent + "nothing\n")]));
+    }
+
     private void ResolveRecordBody(RecordDeclaration record)
     {
         if (record.IsBundle && record.GenericParameters is not { Count: > 0 })
@@ -105,11 +120,9 @@ internal sealed class TypeBodyResolver
                 location: record.Location);
         }
 
-        if (record.Members.Count == 0 && !record.HasPassBody)
+        if (record.Members.Count == 0 && !record.HasNothingBody)
         {
-            _sa.ReportError(code: SemanticDiagnosticCode.EmptyBlockWithoutPass,
-                message: "Empty record body requires 'pass' keyword.",
-                location: record.Location);
+            ReportEmptyTypeBody(kind: "record", name: record.Name, location: record.Location);
         }
 
         TypeSymbol? previousType = _sa._currentType;
@@ -314,11 +327,9 @@ internal sealed class TypeBodyResolver
 
     private void ResolveEntityBody(EntityDeclaration entity)
     {
-        if (entity.Members.Count == 0 && !entity.HasPassBody)
+        if (entity.Members.Count == 0 && !entity.HasNothingBody)
         {
-            _sa.ReportError(code: SemanticDiagnosticCode.EmptyBlockWithoutPass,
-                message: "Empty entity body requires 'pass' keyword.",
-                location: entity.Location);
+            ReportEmptyTypeBody(kind: "entity", name: entity.Name, location: entity.Location);
         }
 
         TypeSymbol? previousType = _sa._currentType;

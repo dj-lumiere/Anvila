@@ -745,7 +745,7 @@ internal sealed class IteratorInlineLoweringPass
             case DangerStatement d:
                 return d with { Body = (BlockStatement)CloneStatement(stmt: d.Body, ctx: ctx) };
 
-            case PassStatement:
+            case NothingStatement:
             case BreakStatement:
             case ContinueStatement:
                 return stmt;

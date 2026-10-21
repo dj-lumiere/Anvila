@@ -207,6 +207,9 @@ public enum GrammarDiagnosticCode
     /// that ends it, or <c>loop</c>.</summary>
     WhileLoop = 224,
 
+    /// <summary>A line written <c>pass</c>: <c>pass</c> is not a keyword. A line with no work is <c>nothing</c>.</summary>
+    PassLine = 225,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

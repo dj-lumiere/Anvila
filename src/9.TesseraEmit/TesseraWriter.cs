@@ -852,6 +852,12 @@ internal sealed class TesseraWriter
             text.Append(value: $"    {field.Name}: {TypeText(type: field.Type)}\n");
         }
 
+        if (entity.MemberVariables.Count == 0)
+        {
+            // A type with no member variables has the body `nothing`.
+            text.Append(value: "    nothing\n");
+        }
+
         _records.Append(value: text)
                 .Append(value: '\n');
         return name;
@@ -862,7 +868,7 @@ internal sealed class TesseraWriter
     private static readonly HashSet<string> TesseraKeywords =
     [
         "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "local", "todo", "and", "or", "is", "as",
-        "not", "if", "each", "until", "loop", "becomes", "break", "pass", "needs", "obeys", "protocol",
+        "not", "if", "each", "until", "loop", "becomes", "break", "nothing", "needs", "obeys", "protocol",
         "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
         "define", "secret", "private", "internal", "module", "import", "Me", "self", "Self",
     ];
@@ -1084,6 +1090,12 @@ internal sealed class TesseraWriter
         foreach (MemberVariableInfo field in record.MemberVariables)
         {
             text.Append(value: $"    {field.Name}: {TypeText(type: field.Type)}\n");
+        }
+
+        if (record.MemberVariables.Count == 0)
+        {
+            // A type with no member variables has the body `nothing`.
+            text.Append(value: "    nothing\n");
         }
 
         _records.Append(value: text)

@@ -234,7 +234,7 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>Writes <paramref name="body"/> one level further in, as the lines under the line just written, and
-    /// says whether every path through it left. A body with nothing to write says <c>pass</c>.</summary>
+    /// says whether every path through it left. A body with nothing to write says <c>nothing</c>.</summary>
     private bool Nested(Statement body)
     {
         _indent++;
@@ -243,7 +243,7 @@ internal sealed class TesseraRoutineWriter
         WriteStatement(statement: body);
         if (_current.Lines.Count == before)
         {
-            Emit(line: "pass");
+            Emit(line: "nothing");
         }
 
         bool left = _current.Terminated;
@@ -344,8 +344,8 @@ internal sealed class TesseraRoutineWriter
                 WriteCall(call: crash.Report, asStatement: true);
                 Terminate(line: "unreachable");
                 break;
-            case PassStatement:
-                // `pass` holds a place where a statement is required, and does nothing.
+            case NothingStatement:
+                // `nothing` holds a place where a statement is required, and does nothing.
                 break;
             case BreakStatement:
                 CurrentLoop.Breaks = true;
@@ -558,7 +558,7 @@ internal sealed class TesseraRoutineWriter
         WriteStatement(statement: body);
         if (_current.Lines.Count == bodyStart)
         {
-            Emit(line: "pass");
+            Emit(line: "nothing");
         }
 
         _loops.Pop();

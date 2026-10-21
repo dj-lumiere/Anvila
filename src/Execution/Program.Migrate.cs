@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("have" or "suffix" or "failable" or "names" or "modules" or "access" or "cpu-events"
-                or "addr" or "files" or "until" or "verbs"))
+                or "addr" or "files" or "until" or "verbs" or "nothing"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files, until or verbs");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs or nothing");
             return 2;
         }
 
@@ -100,6 +100,12 @@ internal partial class Program
         if (step == "verbs")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteVerbs);
+        }
+
+        // `--step nothing`: a line with no work is `nothing`, not `pass`.
+        if (step == "nothing")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteNothing);
         }
 
         // `--step until`: a loop is `until` with the condition that ends it, or `loop`, with analysis deciding which
@@ -1486,7 +1492,7 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
-            if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.Todo or TokenType.ReservedWord
+            if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.Nothing or TokenType.Todo or TokenType.ReservedWord
                 or TokenType.Viewing or TokenType.Modifying))
             {
                 continue;

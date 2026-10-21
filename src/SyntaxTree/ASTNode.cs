@@ -570,7 +570,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// <summary>Visits a pass statement node (empty placeholder statement)</summary>
     /// <param name="node">The pass statement to visit</param>
     /// <returns>Result of visiting the pass statement</returns>
-    T VisitPassStatement(PassStatement node);
+    T VisitNothingStatement(NothingStatement node);
 
     // Program visitor memberRoutine - handle the root program node
 

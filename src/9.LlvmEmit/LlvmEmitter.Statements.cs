@@ -60,7 +60,7 @@ public partial class LlvmEmitter
                     EmitContinue(sb: sb);
                     return true; // Continue terminates the block
 
-                case PassStatement:
+                case NothingStatement:
                     // No-op, nothing to emit
                     return false;
 

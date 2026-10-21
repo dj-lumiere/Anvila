@@ -261,19 +261,19 @@ internal sealed partial class AstPrinter
                     visibility: record.Visibility, constraints: record.GenericConstraints,
                     obeys: record.Protocols, relates: record.AssociatedTypes,
                     genericParameters: record.GenericParameters);
-                PrintMembers(keyword: record.Location, members: record.Members, hasPass: record.HasPassBody, depth: depth + 1);
+                PrintMembers(keyword: record.Location, members: record.Members, hasNothing: record.HasNothingBody, depth: depth + 1);
                 break;
             case EntityDeclaration entity:
                 PrintTypeHeader(keyword: "entity", declaration: entity, start: start, depth: depth,
                     visibility: entity.Visibility, constraints: entity.GenericConstraints,
                     obeys: entity.Protocols, relates: entity.AssociatedTypes,
                     genericParameters: entity.GenericParameters);
-                PrintMembers(keyword: entity.Location, members: entity.Members, hasPass: entity.HasPassBody, depth: depth + 1);
+                PrintMembers(keyword: entity.Location, members: entity.Members, hasNothing: entity.HasNothingBody, depth: depth + 1);
                 break;
             case CrashableDeclaration crashable:
                 PrintTypeHeader(keyword: "crashable", declaration: crashable, start: start, depth: depth,
                     visibility: crashable.Visibility, constraints: null, obeys: [], relates: null);
-                PrintMembers(keyword: crashable.Location, members: crashable.Members, hasPass: crashable.Members.Count == 0, depth: depth + 1);
+                PrintMembers(keyword: crashable.Location, members: crashable.Members, hasNothing: crashable.Members.Count == 0, depth: depth + 1);
                 break;
             case ChoiceDeclaration choice:
                 PrintChoice(choice: choice, start: start, depth: depth);
@@ -1246,28 +1246,28 @@ internal sealed partial class AstPrinter
     }
 
     /// <summary>The members of a record, entity or crashable body, each in its source order.</summary>
-    private void PrintMembers(SourceLocation keyword, List<SyntaxTree.Declaration> members, bool hasPass, int depth)
+    private void PrintMembers(SourceLocation keyword, List<SyntaxTree.Declaration> members, bool hasNothing, int depth)
     {
         if (_signatureOnly)
         {
             return;
         }
 
-        if (hasPass)
+        if (hasNothing)
         {
-            int passStart = BodyTokenStart(keyword: keyword, type: TokenType.Pass);
-            if (passStart >= 0)
+            int nothingStart = BodyTokenStart(keyword: keyword, type: TokenType.Nothing);
+            if (nothingStart >= 0)
             {
-                EmitPrefix(start: passStart, depth: depth, first: true, policy: BlankPolicy.Preserve);
-                EmitHead(start: passStart, depth: depth, head: Doc.Text(text: "pass"));
+                EmitPrefix(start: nothingStart, depth: depth, first: true, policy: BlankPolicy.Preserve);
+                EmitHead(start: nothingStart, depth: depth, head: Doc.Text(text: "nothing"));
             }
             else
             {
-                WriteLine(indent: depth * IndentWidth, text: "pass");
+                WriteLine(indent: depth * IndentWidth, text: "nothing");
             }
         }
 
-        bool first = !hasPass;
+        bool first = !hasNothing;
         foreach (SyntaxTree.Declaration member in members)
         {
             PrintDeclaration(declaration: member, depth: depth, first: first, policy: BlankPolicy.Preserve);

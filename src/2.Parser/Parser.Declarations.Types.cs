@@ -48,7 +48,7 @@ public partial class Parser
         Consume(type: TokenType.Newline, errorMessage: "Expected newline after entity header");
 
         // Entities allow modifiers on member variables (unlike records).
-        bool hasPass = ParseIndentedTypeMembers(
+        bool hasNothing = ParseIndentedTypeMembers(
             members: members,
             typeName: "entity",
             strictRecord: false);
@@ -60,7 +60,7 @@ public partial class Parser
             Members: members,
             Visibility: visibility,
             Location: location,
-            HasPassBody: hasPass) { AssociatedTypes = associatedTypes };
+            HasNothingBody: hasNothing) { AssociatedTypes = associatedTypes };
     }
 
     /// <summary>
@@ -111,7 +111,7 @@ public partial class Parser
         Consume(type: TokenType.Newline, errorMessage: "Expected newline after record header");
 
         // Records are strict: no modifiers allowed on member variables.
-        bool hasPass = ParseIndentedTypeMembers(
+        bool hasNothing = ParseIndentedTypeMembers(
             members: members,
             typeName: "record",
             strictRecord: true);
@@ -123,7 +123,7 @@ public partial class Parser
             Members: members,
             Visibility: visibility,
             Location: location,
-            HasPassBody: hasPass,
+            HasNothingBody: hasNothing,
             Annotations: annotations) { AssociatedTypes = associatedTypes };
     }
 
@@ -305,7 +305,7 @@ public partial class Parser
 
     /// <summary>
     /// Parses the indented body of a crashable declaration (the opening indent is confirmed but not yet
-    /// consumed) into <paramref name="members"/>. Skips newlines/doc-comments and <c>pass</c>, collects
+    /// consumed) into <paramref name="members"/>. Skips newlines/doc-comments and <c>nothing</c>, collects
     /// declaration members, and consumes the trailing dedent.
     /// </summary>
     private void ParseCrashableBody(List<SyntaxTree.Declaration> members)
@@ -319,7 +319,7 @@ public partial class Parser
                 continue;
             }
 
-            if (CheckAndAdvance(type: TokenType.Pass))
+            if (AcceptNothing())
             {
                 CheckAndAdvance(type: TokenType.Newline);
                 continue;
@@ -448,7 +448,7 @@ public partial class Parser
     /// <summary>
     /// Parses an indented member-declaration body (entity or record) after the header newline is already
     /// consumed. Saves and restores the <see cref="_parsingTypeBody"/> and
-    /// <see cref="_parsingStrictRecordBody"/> flags around the loop. Returns whether a <c>pass</c> token
+    /// <see cref="_parsingStrictRecordBody"/> flags around the loop. Returns whether a <c>nothing</c> token
     /// was encountered (used to mark an intentionally empty body).
     /// <para><paramref name="typeName"/> is used in diagnostic messages (e.g. <c>"entity"</c> or
     /// <c>"record"</c>); <paramref name="typeNamePascal"/> is the PascalCase form used in usage hints
@@ -464,7 +464,7 @@ public partial class Parser
         _parsingTypeBody = true;
         _parsingStrictRecordBody = strictRecord;
 
-        bool hasPass = false;
+        bool hasNothing = false;
 
         if (Check(type: TokenType.Indent))
         {
@@ -472,10 +472,10 @@ public partial class Parser
 
             while (!Check(type: TokenType.Dedent) && !IsAtEnd)
             {
-                hasPass = ParseTypeMemberLoopIteration(members: members,
+                hasNothing = ParseTypeMemberLoopIteration(members: members,
                     typeName: typeName,
                     pascal: pascal,
-                    hasPass: hasPass);
+                    hasNothing: hasNothing);
             }
 
             if (Check(type: TokenType.Dedent))
@@ -491,23 +491,23 @@ public partial class Parser
 
         _parsingTypeBody = wasParsingTypeBody;
         _parsingStrictRecordBody = wasParsingStrictRecordBody;
-        return hasPass;
+        return hasNothing;
     }
 
     /// <summary>
     /// Processes one iteration of the type-member parsing loop: skips blank lines and doc comments,
-    /// handles the <c>pass</c> keyword, and parses a single member declaration. Returns the updated
-    /// <paramref name="hasPass"/> flag.
+    /// handles the <c>nothing</c> keyword, and parses a single member declaration. Returns the updated
+    /// <paramref name="hasNothing"/> flag.
     /// </summary>
     private bool ParseTypeMemberLoopIteration(List<SyntaxTree.Declaration> members,
-        string typeName, string pascal, bool hasPass)
+        string typeName, string pascal, bool hasNothing)
     {
         if (CheckAndAdvance(TokenType.Newline, TokenType.DocComment))
         {
-            return hasPass;
+            return hasNothing;
         }
 
-        if (CheckAndAdvance(type: TokenType.Pass))
+        if (AcceptNothing())
         {
             CheckAndAdvance(type: TokenType.Newline);
             return true;
@@ -534,7 +534,7 @@ public partial class Parser
                 $"Expected declaration inside {typeName} body, got {node.GetType().Name}");
         }
 
-        return hasPass;
+        return hasNothing;
     }
 
     /// <summary>
@@ -710,7 +710,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Processes one item in a protocol body loop. Handles newlines/doc-comments, <c>pass</c>,
+    /// Processes one item in a protocol body loop. Handles newlines/doc-comments, <c>nothing</c>,
     /// annotations, <c>common</c>/<c>dangerous</c> qualifiers, <c>relates</c> slot declarations, and
     /// <c>routine</c> signatures. Mutates <paramref name="memberRoutines"/> and
     /// <paramref name="associatedTypes"/> in place.
@@ -723,8 +723,8 @@ public partial class Parser
             return;
         }
 
-        // 'pass' is valid in a protocol body that defines no memberRoutines (marker protocol)
-        if (CheckAndAdvance(type: TokenType.Pass))
+        // 'nothing' is valid in a protocol body that defines no memberRoutines (marker protocol)
+        if (AcceptNothing())
         {
             CheckAndAdvance(type: TokenType.Newline);
             return;

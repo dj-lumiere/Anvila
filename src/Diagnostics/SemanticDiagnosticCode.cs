@@ -295,8 +295,8 @@ public enum SemanticDiagnosticCode
     /// <summary>Warning: Routine call's return value is unused. Use 'drop' to drop it on purpose.</summary>
     UnusedReturnValue = 210,
 
-    /// <summary>Empty block or type body requires 'pass' keyword.</summary>
-    EmptyBlockWithoutPass = 211,
+    /// <summary>An empty block, or a type with no member variables and no body: either holds the line 'nothing'.</summary>
+    EmptyBlockWithoutNothing = 211,
 
     /// <summary>Destructuring pattern arity doesn't match tuple element count.</summary>
     DestructuringArityMismatch = 220,
@@ -935,8 +935,8 @@ public enum SemanticDiagnosticCode
 
     /// <summary>A record annotated with @llvm("typename") declares member variables. The
     /// annotation IS the LLVM layout; user-declared fields are silently discarded by codegen,
-    /// producing unsound representations. Body must be `pass` (or empty).</summary>
-    LlvmAnnotatedRecordMustHavePassBody = 708,
+    /// producing unsound representations. Body must be `nothing` (or empty).</summary>
+    LlvmAnnotatedRecordMustHaveNothingBody = 708,
 
     /// <summary>A non-crashable type (record, entity, …) declares <c>obeys Crashable</c>. The
     /// Crashable contract — being a throwable error — is conferred ONLY by the <c>crashable</c>

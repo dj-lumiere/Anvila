@@ -252,24 +252,16 @@ public record PlaceSwapStatement(List<Expression> Places, List<int> Sources, Sou
 }
 
 /// <summary>
-/// Pass statement that acts as an empty placeholder in records, protocols, or other bodies.
-/// Used when a body is syntactically required but no operations are needed.
+/// The line <c>nothing</c>: no work, written where a line is required (a <c>when</c> arm with nothing to do, an
+/// empty body).
 /// </summary>
 /// <param name="Location">Source location information</param>
-/// <remarks>
-/// The pass statement serves as a no-op placeholder:
-/// <list type="bullet">
-/// <item>Empty record bodies: record Empty { pass }</item>
-/// <item>Empty protocol bodies: protocol Marker { pass }</item>
-/// <item>Placeholder for future implementation</item>
-/// </list>
-/// </remarks>
-public record PassStatement(SourceLocation Location) : Statement(Location: Location)
+public record NothingStatement(SourceLocation Location) : Statement(Location: Location)
 {
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
-        return visitor.VisitPassStatement(node: this);
+        return visitor.VisitNothingStatement(node: this);
     }
 }
 

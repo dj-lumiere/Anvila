@@ -456,7 +456,7 @@ public partial class Parser
     ///   external     - FFI routine declaration (RazorForge only)
     ///   name: Type  - Member variable declaration (inside type bodies)
     ///   var          - Variable declarations
-    ///   pass         - Empty placeholder (RazorForge only)
+    ///   nothing      - The body of a type with no member variables (RazorForge only)
     ///   routine      - FreeRoutine declaration
     ///   entity       - Heap-allocated reference type
     ///   record       - Stack-allocated value type
@@ -606,7 +606,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Attempts to parse a type-body field, variable, or pass declaration. Returns the parsed node when
+    /// Attempts to parse a type-body field, variable, or `nothing` body line. Returns the parsed node when
     /// matched, or null to signal the caller to continue with routine/type declaration parsing.
     /// </summary>
     private ISyntaxTreeNode? TryParseTypeBodyOrVariableDeclaration(VisibilityModifier visibility,
@@ -680,13 +680,13 @@ public partial class Parser
                 isLateInit: declLateInit);
         }
 
-        // Pass statement/declaration (empty placeholder).
-        if (Rules.HasPassStatement && CheckAndAdvance(type: TokenType.Pass))
+        // `nothing`: a line with no work, or the body of a type with no member variables.
+        if (Rules.HasNothingStatement && AcceptNothing())
         {
             ConsumeStatementTerminator();
             return _parsingTypeBody
-                ? new PassDeclaration(Location: GetLocation())
-                : (ISyntaxTreeNode)new PassStatement(Location: GetLocation());
+                ? new NothingDeclaration(Location: GetLocation())
+                : (ISyntaxTreeNode)new NothingStatement(Location: GetLocation());
         }
 
         return null;
@@ -1053,7 +1053,7 @@ public partial class Parser
     /// SPECIAL STATEMENTS:
     ///   throw        - Throw error (in failable routines)
     ///   absent       - Return none (in failable routines)
-    ///   pass         - Empty placeholder (no-op)
+    ///   nothing      - A line with no work
     ///   using        - Resource management (declaration form)
     ///
     /// MEMORY BLOCKS (RazorForge only):
@@ -1212,11 +1212,56 @@ public partial class Parser
         return ParseWhileStatement();
     }
 
+    /// <summary>Whether the line is the old <c>pass</c>: the name <c>pass</c> alone up to the end of its line.</summary>
+    private bool AtWrittenPass()
+    {
+        if (CurrentToken is not { Type: TokenType.Identifier, Text: "pass" })
+        {
+            return false;
+        }
+
+        Token next = PeekToken(offset: 1);
+        return next.Line != CurrentToken.Line ||
+               next.Type is TokenType.Newline or TokenType.Dedent or TokenType.Eof;
+    }
+
+    /// <summary>
+    /// Takes a <c>nothing</c> line. The old <c>pass</c> is taken too, after RF-G225 with the quick fix
+    /// <c>nothing</c>, so the rest of the file is still checked.
+    /// </summary>
+    private bool AcceptNothing()
+    {
+        if (CheckAndAdvance(type: TokenType.Nothing))
+        {
+            return true;
+        }
+
+        if (!AtWrittenPass())
+        {
+            return false;
+        }
+
+        Token word = CurrentToken;
+        RecordError(ex: ThrowParseError(code: GrammarDiagnosticCode.PassLine,
+            message: "A line with no work is written `nothing`: `pass` is not a keyword. `migrate --step nothing` " +
+                     "rewrites these lines.",
+            fix: new SuggestedFix(Title: "Write 'nothing'",
+                Edits: [new TextEdit(StartLine: word.Line, StartColumn: word.Column, EndLine: word.Line,
+                    EndColumn: word.Column + word.Text.Length, NewText: "nothing")])));
+        Advance();
+        return true;
+    }
+
     private Statement? ParseKeywordStatement()
     {
         if (AtWhileLoop())
         {
             return ParseWrittenWhile();
+        }
+
+        if (AcceptNothing())
+        {
+            return ParseNothingStatement();
         }
 
         switch (CurrentToken.Type)
@@ -1245,9 +1290,6 @@ public partial class Parser
             case TokenType.Continue:
                 Advance();
                 return ParseContinueStatement();
-            case TokenType.Pass:
-                Advance();
-                return ParsePassStatement();
             case TokenType.Throw:
                 Advance();
                 return ParseThrowStatement(isFatal: false);

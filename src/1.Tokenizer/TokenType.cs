@@ -487,8 +487,9 @@ public enum TokenType
     /// <summary>memberRoutine/Type redefinition keyword (define A as B)</summary>
     Define,
 
-    /// <summary>No-operation pass keyword - placeholder for empty blocks</summary>
-    Pass,
+    /// <summary><c>nothing</c>: the line that does no work, in a <c>when</c> arm with nothing to do, an empty body, or
+    /// the body of a type with no member variables.</summary>
+    Nothing,
 
     /// <summary>Danger mode keyword for unsafe operations (danger! indented block)</summary>
     Danger,

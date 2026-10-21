@@ -38,16 +38,15 @@ public abstract record Declaration(SourceLocation Location) : SyntaxTreeNode(Loc
 }
 
 /// <summary>
-/// Empty placeholder declaration used inside type bodies.
-/// Equivalent to Python's 'pass' statement but as a declaration.
+/// The line <c>nothing</c> as the body of a type with no member variables.
 /// </summary>
 /// <param name="Location">Source location information</param>
-public record PassDeclaration(SourceLocation Location) : Declaration(Location: Location)
+public record NothingDeclaration(SourceLocation Location) : Declaration(Location: Location)
 {
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
-        // PassDeclaration is a no-op, just return default
+        // NothingDeclaration holds nothing to visit.
         return default!;
     }
 }
@@ -434,7 +433,7 @@ public record RoutineDeclaration(
 /// <param name="Visibility">Access control modifier</param>
 /// <param name="Location">Source location information</param>
 /// <param name="GenericConstraints">Optional generic constraints.</param>
-/// <param name="HasPassBody">Whether the declaration uses a <c>pass</c> body.</param>
+/// <param name="HasNothingBody">Whether the declaration uses a <c>nothing</c> body.</param>
 /// <remarks>
 /// Entity declarations support:
 /// <list type="bullet">
@@ -453,7 +452,7 @@ public record EntityDeclaration(
     VisibilityModifier Visibility,
     SourceLocation Location,
     List<GenericConstraintDeclaration>? GenericConstraints = null,
-    bool HasPassBody = false) : Declaration(Location: Location)
+    bool HasNothingBody = false) : Declaration(Location: Location)
 {
     /// <summary>Associated-type clauses (<c>relates …</c>) on this entity. Set by the parser.</summary>
     public List<AssociatedTypeDeclaration>? AssociatedTypes { get; set; }
@@ -476,7 +475,7 @@ public record EntityDeclaration(
 /// <param name="Visibility">Access control modifier</param>
 /// <param name="Location">Source location information</param>
 /// <param name="GenericConstraints">Optional generic constraints.</param>
-/// <param name="HasPassBody">Whether the declaration uses a <c>pass</c> body.</param>
+/// <param name="HasNothingBody">Whether the declaration uses a <c>nothing</c> body.</param>
 /// <param name="Annotations">Optional record annotations.</param>
 /// <remarks>
 /// Record declarations provide:
@@ -496,7 +495,7 @@ public record RecordDeclaration(
     VisibilityModifier Visibility,
     SourceLocation Location,
     List<GenericConstraintDeclaration>? GenericConstraints = null,
-    bool HasPassBody = false,
+    bool HasNothingBody = false,
     List<string>? Annotations = null) : Declaration(Location: Location)
 {
     /// <summary>Associated-type clauses (<c>relates …</c>) on this record. Set by the parser.</summary>

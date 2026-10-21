@@ -662,17 +662,17 @@ public sealed partial class SemanticVerifier
         };
 
         // @llvm("typename") IS the layout — fields would be silently discarded by codegen.
-        // Permit `pass` bodies and bodies with only non-field declarations (e.g. comments / nested
+        // Permit `nothing` bodies and bodies with only non-field declarations (e.g. comments / nested
         // routines via inline blocks). Reject any VariableDeclaration in Members.
         if (typeInfo.BackendType != null && record.Members
                                                   .OfType<VariableDeclaration>()
                                                   .Any())
         {
-            ReportError(code: SemanticDiagnosticCode.LlvmAnnotatedRecordMustHavePassBody,
+            ReportError(code: SemanticDiagnosticCode.LlvmAnnotatedRecordMustHaveNothingBody,
                 message:
                 $"Record '{record.Name}' is annotated @llvm(\"{typeInfo.BackendType}\") but " +
                 "declares member variables. The annotation fully dictates the LLVM representation; " +
-                "fields would be silently discarded. Use a `pass` body.",
+                "fields would be silently discarded. Use a `nothing` body.",
                 location: record.Location);
         }
 

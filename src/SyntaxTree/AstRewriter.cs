@@ -55,7 +55,7 @@ public abstract class AstRewriter
             AssignmentStatement s => VisitAssignment(s: s),
             DeclarationStatement s => VisitDeclarationStatement(s: s),
             DestructuringStatement s => VisitDestructuring(s: s),
-            _ => stmt // AbsentStatement / PassStatement / Break / Continue / others: leaf, unchanged.
+            _ => stmt // AbsentStatement / NothingStatement / Break / Continue / others: leaf, unchanged.
         };
     }
 

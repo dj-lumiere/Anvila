@@ -2795,7 +2795,7 @@ internal static class GenericAstRewriter
             VariantReturnStatement vr => RewriteVariantReturn(vr: vr, ctx: ctx),
 
             // Leaf statements
-            BreakStatement or ContinueStatement or PassStatement => stmt,
+            BreakStatement or ContinueStatement or NothingStatement => stmt,
 
             _ => stmt
         };

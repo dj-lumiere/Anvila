@@ -33,8 +33,8 @@ public sealed partial class SemanticVerifier
         switch (node)
         {
             case RoutineDeclaration func:
-                // Skip external/LLVM-only routines — their PassStatement bodies have nothing to analyze
-                if (func.Body is not PassStatement)
+                // Skip external/LLVM-only routines — their NothingStatement bodies have nothing to analyze
+                if (func.Body is not NothingStatement)
                 {
                     AnalyzeFunctionBody(routine: func);
                 }
@@ -138,7 +138,7 @@ public sealed partial class SemanticVerifier
         _currentType = ownerType;
         foreach (SyntaxTree.Declaration member in members)
         {
-            if (member is RoutineDeclaration { Body: not PassStatement } memberRoutine)
+            if (member is RoutineDeclaration { Body: not NothingStatement } memberRoutine)
             {
                 AnalyzeFunctionBody(routine: memberRoutine);
             }
@@ -783,7 +783,7 @@ public sealed partial class SemanticVerifier
                 AnalyzeContinueStatement(continueStmt: continueStmt);
                 break;
 
-            case PassStatement:
+            case NothingStatement:
                 // Pass is a no-op statement with no type analysis needed
                 break;
 
@@ -986,15 +986,15 @@ public sealed partial class SemanticVerifier
     {
         if (block.Statements.Count == 0)
         {
-            // `pass` is a rule about written source. A builder-written body empties a block legitimately (an
+            // `nothing` is a rule about written source. A builder-written body empties a block legitimately (an
             // `expand` over a type with no members, a lowered recovery arm with nothing left to do).
             if (_isInCompilerGeneratedBody)
             {
                 return;
             }
 
-            ReportError(code: SemanticDiagnosticCode.EmptyBlockWithoutPass,
-                message: "Empty block requires 'pass' keyword.",
+            ReportError(code: SemanticDiagnosticCode.EmptyBlockWithoutNothing,
+                message: "This block is empty. A block with no work to do holds the line `nothing`.",
                 location: block.Location);
             return;
         }

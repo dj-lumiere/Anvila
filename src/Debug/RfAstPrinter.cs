@@ -111,7 +111,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             _currentModule = module;
             foreach (ISyntaxTreeNode node in prog.Declarations)
             {
-                if (node is PassDeclaration or ModuleDeclaration or ImportDeclaration ||
+                if (node is NothingDeclaration or ModuleDeclaration or ImportDeclaration ||
                     IsGenericTemplate(d: node) || node is not SyntaxTree.Declaration decl)
                 {
                     continue;
@@ -1290,9 +1290,9 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
 
     /// <inheritdoc/>
-    public string VisitPassStatement(PassStatement node)
+    public string VisitNothingStatement(NothingStatement node)
     {
-        return $"{I}pass";
+        return $"{I}nothing";
     }
 
 
@@ -1811,8 +1811,8 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         _indent++;
         if (members.Count == 0)
         {
-            // An empty type body always gets an explicit `pass`.
-            sb.AppendLine(handler: $"{I}pass");
+            // An empty type body always gets an explicit `nothing`.
+            sb.AppendLine(handler: $"{I}nothing");
         }
         else
         {
@@ -1923,7 +1923,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             values: node.Declarations
                          // `module`/`import` are file/module-separation headers — dropped from the flat dump.
                         .Where(predicate: d =>
-                             d is not PassDeclaration and not ModuleDeclaration
+                             d is not NothingDeclaration and not ModuleDeclaration
                                  and not ImportDeclaration)
                         .Where(predicate: d => !IsGenericTemplate(d: d))
                         .Select(selector: d => d.Accept(visitor: this)));
