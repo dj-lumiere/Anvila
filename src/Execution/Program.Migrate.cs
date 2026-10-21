@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("have" or "suffix" or "failable" or "names" or "modules" or "access" or "cpu-events"
-                or "addr" or "files" or "until"))
+                or "addr" or "files" or "until" or "verbs"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files or until");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files, until or verbs");
             return 2;
         }
 
@@ -93,6 +93,13 @@ internal partial class Program
         if (step == "files")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteFiles);
+        }
+
+        // `--step verbs`: a byte flow is read with `pull` and written with `push`, a channel transmits, and its sending
+        // end is a Transmitter.
+        if (step == "verbs")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteVerbs);
         }
 
         // `--step until`: a loop is `until` with the condition that ends it, or `loop`, with analysis deciding which

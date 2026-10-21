@@ -373,7 +373,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
             // Still an UNBOUND parameter (no substitution available): DEFER — the fold re-runs on the
             // concrete owner post-monomorphization. Must NOT fall through to the global LookupType below,
-            // which a same-named user `record T` would hijack: `T.data_size()` in `Sender[T].send` would
+            // which a same-named user `record T` would hijack: `T.data_size()` in `Transmitter[T].transmit` would
             // fold to the RECORD's size (4) instead of the real element's (8), a too-small channel/buffer
             // allocation → heap overflow ([[generic-parameter identity = SLOT]]).
             return null;
