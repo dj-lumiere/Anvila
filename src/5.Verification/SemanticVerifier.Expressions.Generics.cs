@@ -313,9 +313,40 @@ public sealed partial class SemanticVerifier
                 typeArgs: typeArgs);
         }
 
-        // Look up the memberRoutine on receiver type — LookupMemberRoutine handles generic resolutions
+        // Look up the memberRoutine on receiver type — LookupMemberRoutine handles generic resolutions. A name the
+        // type declares more than once (`FileManager.storage[T](at:)` and `storage[T](at:, start:, count:)`) is
+        // picked by the names of the arguments, the parameters a call names being the routine's.
         RoutineInfo? memberRoutine = _registry.LookupMemberRoutine(type: objectType,
             memberRoutineName: generic.MemberRoutineName);
+        if (memberRoutine == null && objectType is not ErrorTypeSymbol &&
+            _registry.HasSeveralOwnMemberRoutines(type: objectType, memberRoutineName: generic.MemberRoutineName,
+                isFailable: null))
+        {
+            var candidates = new List<RoutineInfo>();
+            _registry.CollectMemberRoutineCandidates(type: objectType, memberRoutineName: generic.MemberRoutineName,
+                candidates: candidates);
+            List<string?> named = generic.Arguments
+                .Select(selector: a => a is NamedArgumentExpression n ? n.Name : null)
+                .ToList();
+            List<RoutineInfo> fitting = candidates
+                .Where(predicate: r => r.Parameters.Count == named.Count &&
+                                       named.Select(selector: (n, i) => n == null || r.Parameters[index: i].Name == n)
+                                            .All(predicate: same => same))
+                .ToList();
+            if (fitting.Count == 1)
+            {
+                memberRoutine = fitting[index: 0];
+            }
+            else
+            {
+                ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
+                    message: $"'{objectType.Name}' has {candidates.Count} routines '{generic.MemberRoutineName}', and " +
+                             $"{(fitting.Count == 0 ? "none takes" : "more than one takes")} these arguments. Name the " +
+                             "arguments the routine you mean takes.",
+                    location: generic.Location);
+                return ErrorTypeSymbol.Instance;
+            }
+        }
         if (memberRoutine is { IsSpecialization: true } && objectType is GenericParameterTypeSymbol)
         {
             ReportSpecializationNotFound(name: generic.MemberRoutineName, owner: objectType,

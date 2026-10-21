@@ -130,6 +130,9 @@ public static class RuntimeContract
         /// <summary>Take the entity out of its only handle, ending the handle (a creator returning a handle).</summary>
         public const string ReleaseInner = "release_inner";
 
+        /// <summary>Whether the handle holds nothing: Suflae's <c>x is None</c> on an optional entity reference.</summary>
+        public const string IsHollow = "is_hollow";
+
         /// <summary>The standard library's mark on an entity that guards itself (a mailbox over a channel): its member
         /// variables are set once when it is made and what they hold does its own locking, so a call on its handle
         /// takes no access lock. A call that waits inside (taking from an empty mailbox) would otherwise hold the
@@ -440,28 +443,24 @@ public static class RuntimeContract
 
     /// <summary>
     /// The routines a <c>viewing</c> / <c>modifying</c> block and a <c>g.view()</c> / <c>g.modify()</c> argument are
-    /// lowered to (AccessLoweringPass). A block with one <c>Guarded</c> target takes its access with
-    /// <see cref="OpenView"/> / <see cref="OpenModify"/> (or tries with <see cref="TryView"/> / <see cref="TryModify"/>);
-    /// a block with several names each target with <see cref="EnlistView"/> / <see cref="EnlistModify"/> (a token or an
-    /// entity with <see cref="EnlistIdentity"/>), then opens them together in address order with
-    /// <see cref="OpenEnlisted"/> / <see cref="TryOpenEnlisted"/>. The token is <see cref="View"/> / <see cref="Modify"/>
-    /// on the handle, and every way out gives the access up with <see cref="CloseView"/> / <see cref="CloseModify"/>.
+    /// lowered to (AccessLoweringPass). A target with an enter / exit pair (a <c>Guarded</c>, a <c>FileStorage</c>, any
+    /// type that declares them) is entered with <see cref="ViewEnter"/> / <see cref="ModifyEnter"/>, which give the
+    /// block's token, and every way out calls <see cref="ViewExit"/> / <see cref="ModifyExit"/>, the targets entered in
+    /// the order written and exited in the opposite order. Tokens and entities of the routine are only checked to be
+    /// different entities: each is named with <see cref="EnlistIdentity"/>, then <see cref="OpenEnlisted"/> checks them.
+    /// <see cref="View"/> / <see cref="Modify"/> are the <c>g.view()</c> / <c>g.modify()</c> an argument writes, and
+    /// the token of an entity target.
     /// </summary>
     public static class AccessBlock
     {
         public const string View = "view";
         public const string Modify = "modify";
-        public const string OpenView = "open_view";
-        public const string OpenModify = "open_modify";
-        public const string TryView = "try_view";
-        public const string TryModify = "try_modify";
-        public const string CloseView = "close_view";
-        public const string CloseModify = "close_modify";
-        public const string EnlistView = "enlist_view";
-        public const string EnlistModify = "enlist_modify";
+        public const string ViewEnter = "view_enter";
+        public const string ModifyEnter = "modify_enter";
+        public const string ViewExit = "view_exit";
+        public const string ModifyExit = "modify_exit";
         public const string EnlistIdentity = "enlist_identity";
         public const string OpenEnlisted = "access_open_enlisted";
-        public const string TryOpenEnlisted = "access_try_open_enlisted";
     }
 
     /// <summary>Controller behind <c>Roamed[T]</c>.</summary>

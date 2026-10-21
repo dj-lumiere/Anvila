@@ -234,8 +234,9 @@ internal sealed class TesseraWriter
         module.Append(value: _globals);
         module.Append(value: _externs);
         module.Append(value: _definitions);
-        // Every record says how it is made and released (a construct taking its fields, a destruct), and the lines
-        // after a routine's head are its entry block: `block entry()` is written only where a block jumps back to it.
+        // A record that holds something to release says how it is made and released (a construct taking its fields, a
+        // destruct), and the lines after a routine's head are its entry block: `block entry()` is written only where a
+        // block jumps back to it.
         return Current(text: Tessera.EntryMigration.Rewrite(text: Tessera.ConstructDestructMigration.Rewrite(text: module.ToString())));
     }
 
@@ -312,8 +313,9 @@ internal sealed class TesseraWriter
         module.Append(value: _externs);
         module.Append(value: definitions);
         module.Append(value: main);
-        // Every record says how it is made and released (a construct taking its fields, a destruct), and the lines
-        // after a routine's head are its entry block: `block entry()` is written only where a block jumps back to it.
+        // A record that holds something to release says how it is made and released (a construct taking its fields, a
+        // destruct), and the lines after a routine's head are its entry block: `block entry()` is written only where a
+        // block jumps back to it.
         return Current(text: Tessera.EntryMigration.Rewrite(text: Tessera.ConstructDestructMigration.Rewrite(text: module.ToString())));
     }
 

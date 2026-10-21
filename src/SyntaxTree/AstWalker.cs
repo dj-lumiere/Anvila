@@ -256,10 +256,6 @@ public static class AstWalker
         }
 
         yield return s.Body;
-        if (s.ElseBody != null)
-        {
-            yield return s.ElseBody;
-        }
     }
 
     // -------- Expressions --------

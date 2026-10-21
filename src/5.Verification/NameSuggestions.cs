@@ -47,6 +47,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "Queue" => "Mailbox",
             "Address" or "CPtr" => "Addr",
             "Exposed" or "Wielded" => "FileStorage",
+            "Consulting" => "Viewing",
+            "Amending" => "Modifying",
             _ => null
         };
         // `Callable` is the builder's own type of routine values, not a registered one.
@@ -85,7 +87,21 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " Membership is 'has' / 'lacks' now, and a map's keys are 'has_key' / 'lacks_key'.";
             case "has" when MemberSuggestionCandidates(type: type).Contains(value: "has_key"):
                 return " A key is tested with 'has_key'.";
-            case "is_none" when type.BareName is RuntimeContract.Addr or "Hijacked":
+            case "consult" or "amend" or "try_consult" or "try_amend" when type.BareName is RuntimeContract.Guarded:
+                string verb = name.EndsWith(value: "consult", comparisonType: StringComparison.Ordinal) ? "viewing" : "modifying";
+                string call = verb == "viewing" ? "view" : "modify";
+                return $" A Guarded is opened with a block now, '{verb} g as v', or for one call with 'g.{call}()' as an " +
+                       "argument (migrate --step access rewrites it).";
+            case "try_view" or "try_modify" or "open_view" or "open_modify" or "close_view" or "close_modify"
+                when type.BareName is RuntimeContract.Guarded:
+                return " A block opens a Guarded: 'viewing g as v' / 'modifying g as m' (which call view_enter() / " +
+                       "modify_enter() and the matching exit), and 'try modifying g as m' gives a Maybe of the token " +
+                       "(migrate --step access rewrites the old forms).";
+            case "codepoint" when type.BareName is "Byte":
+                return " A byte is no character: its value is 'b.value()', a 'U8'.";
+            case "byte_value" when type.BareName is "Char":
+                return " An ASCII character's byte is 'c.to_byte()', and its number is 'c.codepoint()'.";
+            case "is_none" when type.BareName is RuntimeContract.Addr or "Hijacked" or RuntimeContract.Roamed:
                 return " A pointer is tested with 'is_hollow()' / 'is_not_hollow()'.";
             case "subdir" when MemberSuggestionCandidates(type: type).Contains(value: "go_to"):
                 return " It is called 'go_to' now (migrate --step files rewrites it).";
@@ -96,9 +112,14 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                       "give a child process its own with 'run_program(..., working_directory:)'."
                     : $" It is 'Environment.{(name == "current_directory" ? "working_directory" : name)}()' now " +
                       "(IO/Environment).";
-            case "expose" or "wield" or "expose_range" or "wield_range"
-                when MemberSuggestionCandidates(type: type).Contains(value: "open_storage"):
-                return $" A file is opened as storage with '{(name.EndsWith(value: "_range") ? "open_storage_range" : "open_storage")}' now, a FileStorage[T].";
+            case "expose" or "wield" or "expose_range" or "wield_range" or "open_storage" or "open_storage_range"
+                when type.BareName is "FileManager":
+                return " A file's storage is 'FileManager.storage[T](at: f)' (or with 'start:' and 'count:'), mapped by " +
+                       "the block that opens it: 'viewing FileManager.storage[Byte](at: f) as v' reads, 'modifying ... " +
+                       "as m' writes.";
+            case "close" or "is_writable" when type.BareName is "FileStorage":
+                return " A storage is mapped by the 'viewing' / 'modifying' block that opens it, for reading or for " +
+                       "writing, and the block's end unmaps it.";
             case "move" when type.BareName is "FileManager":
                 return " 'move(from:, to:)' is two routines of FileManager now: 'rename(at:, to: name)' changes a " +
                        "name, 'move(at:, into: directory)' puts it into another directory (migrate --step files).";

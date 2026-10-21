@@ -487,11 +487,6 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     _distinct.Remove(item: pair);
                 }
 
-                if (access.ElseBody is { } otherwise)
-                {
-                    CheckStatementShapes(stmt: otherwise, guards: guards, preceding: []);
-                }
-
                 return;
             }
             default:

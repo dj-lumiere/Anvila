@@ -1419,9 +1419,11 @@ public sealed partial class SemanticVerifier
         TypeSymbol leftPeer = ConstGenericValueType(type: leftType) ?? leftType;
         TypeSymbol rightPeer = ConstGenericValueType(type: rightType) ?? rightType;
         // An operand made of literals (`(1 << 112) -% 1` beside a U128) conforms as a whole, the way one literal does.
+        // A byte's shift amount is a count, never a byte (`b << 1`).
         if (LeadingNumber(expression: binary.Right) is { } literalRight &&
             ConformsToPeer(literal: literalRight, peer: leftPeer) &&
-            leftPeer.Name != rightType.Name)
+            leftPeer.Name != rightType.Name &&
+            !(IsShiftOperator(op: binary.Operator) && leftPeer.Name == ByteTypeName))
         {
             rightType = AnalyzeExpression(expression: binary.Right, expectedType: leftPeer);
         }
@@ -1479,6 +1481,12 @@ public sealed partial class SemanticVerifier
     {
         if (literal.LiteralType is TokenType.IntegerLiteral or TokenType.S64Literal or TokenType.UndecidedInteger &&
             IsFixedWidthIntegerType(type: peer))
+        {
+            return true;
+        }
+
+        // A bare number beside a byte is a byte (`b & 0x7F`, `b == 0x41`).
+        if (literal.LiteralType is TokenType.UndecidedInteger && peer.Name == ByteTypeName)
         {
             return true;
         }
@@ -1558,6 +1566,17 @@ public sealed partial class SemanticVerifier
         // A type may define an operator whose result is another type (Suflae's `Integer / Integer` gives a
         // `Decimal`), so it obeys no `Me`-returning operator protocol. The operator binds when the type itself
         // declares the operator routine with the operand parameter `you` taking the other side.
+        // A shift takes its amount as the U32 every integer amount converts to (`to_shift_amount()`): a type with
+        // only `<<` and `>>>` (Byte) declares those two and obeys no `Shiftable`.
+        if (operatorMemberRoutine is "shift_left" or "arith_shift_right" or "logical_shift_right" &&
+            IsIntegerType(type: argType) && _registry.LookupType(name: "U32") is { } u32)
+        {
+            return _registry.LookupMemberRoutineOverload(type: receiverType,
+                    memberRoutineName: operatorMemberRoutine,
+                    argTypes: [u32]) is
+                { OwnerType: { } shiftOwner, Parameters: [_] } && shiftOwner.Name == receiverType.Name;
+        }
+
         return _registry.LookupMemberRoutineOverload(type: receiverType,
                 memberRoutineName: operatorMemberRoutine,
                 argTypes: [argType]) is
@@ -1571,6 +1590,45 @@ public sealed partial class SemanticVerifier
         return required != null && operatorMemberRoutine is "has" or "lacks"
             ? [.. required, "KeyContainer"]
             : required;
+    }
+
+    /// <summary>A byte is eight bits with no sign and no arithmetic: <c>&gt;&gt;</c> (which fills from a sign) points
+    /// to <c>&gt;&gt;&gt;</c>, and an arithmetic operator points to doing it on the byte's value. Returns true when it
+    /// reported one.</summary>
+    private bool ReportByteOperator(TypeSymbol left, BinaryOperator op, SourceLocation location)
+    {
+        if (left.Name != ByteTypeName)
+        {
+            return false;
+        }
+
+        if (op == BinaryOperator.ArithmeticRightShift)
+        {
+            ReportError(code: SemanticDiagnosticCode.BinaryOperatorNotFound,
+                message: "'>>' fills the new bits from the sign bit, and a 'Byte' has no sign. Write 'b >>> n', which " +
+                         "fills them with zeros.",
+                location: location);
+            return true;
+        }
+
+        if (op is BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply or BinaryOperator.TrueDivide
+            or BinaryOperator.FloorDivide or BinaryOperator.Modulo or BinaryOperator.Power or BinaryOperator.AddWrap
+            or BinaryOperator.SubtractWrap or BinaryOperator.MultiplyWrap or BinaryOperator.PowerWrap
+            or BinaryOperator.AddClamp or BinaryOperator.SubtractClamp or BinaryOperator.MultiplyClamp
+            or BinaryOperator.TrueDivClamp or BinaryOperator.PowerClamp or BinaryOperator.AddUnchecked
+            or BinaryOperator.SubtractUnchecked or BinaryOperator.MultiplyUnchecked
+            or BinaryOperator.TrueDivideUnchecked or BinaryOperator.FloorDivideUnchecked
+            or BinaryOperator.ModuloUnchecked or BinaryOperator.PowerUnchecked)
+        {
+            ReportError(code: SemanticDiagnosticCode.BinaryOperatorNotFound,
+                message: $"A 'Byte' is eight bits and has no arithmetic, so '{op.ToStringRepresentation()}' is not " +
+                         "defined for it. Do it on the byte's value and make a byte of the result: " +
+                         $"'Byte(b.value() {op.ToStringRepresentation()} 1)'.",
+                location: location);
+            return true;
+        }
+
+        return false;
     }
 
     private bool TryReportOperatorTypeViolation(BinaryExpression binary, TypeSymbol leftType,
@@ -1613,7 +1671,8 @@ public sealed partial class SemanticVerifier
         // parameters (conformance via `needs` constraints, checked at instantiation) are deferred.
         // Membership operators (`in`/`notin`) reverse to `rhs.contains(lhs)`, so the RIGHT operand is
         // the receiver.
-        if (ReportAddressOperator(left: leftType, right: rightType, op: binary.Operator, location: binary.Location))
+        if (ReportAddressOperator(left: leftType, right: rightType, op: binary.Operator, location: binary.Location) ||
+            ReportByteOperator(left: leftType, op: binary.Operator, location: binary.Location))
         {
             return true;
         }
@@ -2154,6 +2213,11 @@ public sealed partial class SemanticVerifier
                 return ErrorTypeSymbol.Instance;
         }
 
+        if (ReportByteOperator(left: targetType, op: compound.Operator, location: compound.Location))
+        {
+            return ErrorTypeSymbol.Instance;
+        }
+
         string? inPlaceMemberRoutine = compound.Operator.GetInPlaceMemberRoutineName();
         string? regularMemberRoutine = compound.Operator.GetMemberRoutineName();
 
@@ -2453,7 +2517,9 @@ public sealed partial class SemanticVerifier
                 return operandType;
 
             case UnaryOperator.BitwiseNot:
-                if (!IsIntegerType(type: operandType))
+                // A type with its own `bitnot` (Byte) takes `~` as well as an integer does.
+                if (!IsIntegerType(type: operandType) && operandType != ErrorTypeSymbol.Instance &&
+                    _registry.LookupMemberRoutine(type: operandType, memberRoutineName: "bitnot") == null)
                 {
                     ReportError(code: SemanticDiagnosticCode.BitwiseNotRequiresInteger,
                         message: "Bitwise 'not' operator requires an integer operand.",

@@ -39,10 +39,12 @@ internal partial class Program
     /// <summary>The mapped views' routines, by the storage routine that replaces them.</summary>
     private static readonly Dictionary<string, string> MappedViewRoutines = new(comparer: StringComparer.Ordinal)
     {
-        ["expose"] = "open_storage",
-        ["wield"] = "open_storage",
-        ["expose_range"] = "open_storage_range",
-        ["wield_range"] = "open_storage_range"
+        ["expose"] = "storage",
+        ["wield"] = "storage",
+        ["expose_range"] = "storage",
+        ["wield_range"] = "storage",
+        ["open_storage"] = "storage",
+        ["open_storage_range"] = "storage"
     };
 
     /// <summary>
@@ -53,10 +55,10 @@ internal partial class Program
     /// import added), and <c>set_current_directory</c> is gone: each call of it is listed. <c>Directory.subdir</c> is
     /// <c>go_to</c>. <c>FileManager.move(from:, to:)</c> is <c>FileManager.rename(at:, to: name)</c> when only the
     /// name changes and <c>FileManager.move(at:, into: directory)</c> when it keeps its name and goes elsewhere: a
-    /// call whose two paths show which is rewritten, any other is listed. <c>expose</c> / <c>wield</c> (and their
-    /// <c>_range</c> forms) are <c>open_storage</c> / <c>open_storage_range</c>, and <c>Exposed[T]</c> /
-    /// <c>Wielded[T]</c> are <c>FileStorage[T]</c>: those lines are listed too, since a storage's cells are read with
-    /// <c>s[i]</c> and written with <c>s[i] = v</c>. Strings and comments stay as they are.
+    /// call whose two paths show which is rewritten, any other is listed. <c>expose</c> / <c>wield</c> /
+    /// <c>open_storage</c> (and their <c>_range</c> forms) are <c>storage</c>, and <c>Exposed[T]</c> /
+    /// <c>Wielded[T]</c> are <c>FileStorage[T]</c>: those lines are listed too, since a storage is mapped by the block
+    /// that opens it and its cells are reached through the block's token. Strings and comments stay as they are.
     /// </summary>
     private static string RewriteFiles(string file, string source, Language language, int lineOffset)
     {
@@ -94,7 +96,8 @@ internal partial class Program
             }
             else
             {
-                if (name == "move")
+                // `move(at:, into:)` is this release's own form.
+                if (name == "move" && !Regex.IsMatch(input: source[end..], pattern: @"^\(\s*at\s*:"))
                 {
                     Console.WriteLine(value: $"{file}:{line}: 'FileManager.move(from:, to:)' is " +
                                              "'FileManager.rename(at:, to: name)' when only the name changes and " +
@@ -105,10 +108,11 @@ internal partial class Program
                 if (MappedViewRoutines.TryGetValue(key: name, value: out string? storage))
                 {
                     name = storage;
-                    Console.WriteLine(value: $"{file}:{line}: a file opened as storage is a FileStorage[T] now: read " +
-                                             "a cell with 's[i]' and write one with 's[i] = v' (in a viewing / " +
-                                             "modifying block), it isn't 'dangerous' and needs no 'using'. Check " +
-                                             "the lines that use it");
+                    Console.WriteLine(value: $"{file}:{line}: a file's storage is 'FileManager.storage[T](at:)' now " +
+                                             "(with 'start:' and 'count:' for a window), and the viewing / modifying " +
+                                             "block that opens it maps it, for reading or for writing: read a cell " +
+                                             "with 'v[i]' and write one with 'm[i] = x' through its token, and drop " +
+                                             "'close()', which the block's end does. Check the lines that use it");
                 }
 
                 replacement = $"FileManager.{name}";

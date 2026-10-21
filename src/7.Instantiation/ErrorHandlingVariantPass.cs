@@ -635,14 +635,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     kind: kind,
                     rewriter: rewriter,
                     registry: registry,
-                    nextOnly: nextOnly),
-                ElseBody = access.ElseBody != null
-                    ? TransformBodyCore(body: access.ElseBody,
-                        kind: kind,
-                        rewriter: rewriter,
-                        registry: registry,
-                        nextOnly: nextOnly)
-                    : null
+                    nextOnly: nextOnly)
             },
 
             DangerStatement danger => danger with

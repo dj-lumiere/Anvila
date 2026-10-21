@@ -1979,7 +1979,7 @@ public sealed partial class TypeRegistry
                VisibleOverloads(overloads: memberRoutines).Any();
     }
 
-    private bool HasSeveralOwnMemberRoutines(TypeSymbol type, string memberRoutineName, bool? isFailable)
+    internal bool HasSeveralOwnMemberRoutines(TypeSymbol type, string memberRoutineName, bool? isFailable)
     {
         return _routinesByOwner.TryGetValue(key: RealmRegistryKey(type: type),
                    value: out Dictionary<string, List<RoutineInfo>>? ownByName) &&

@@ -210,6 +210,10 @@ public enum GrammarDiagnosticCode
     /// <summary>A line written <c>pass</c>: <c>pass</c> is not a keyword. A line with no work is <c>nothing</c>.</summary>
     PassLine = 225,
 
+    /// <summary>An <c>else</c> after a <c>try viewing</c> / <c>try modifying</c> block: the block has no <c>else</c>.
+    /// Each name is a <c>Maybe</c> of its token, and the body branches with <c>when</c>.</summary>
+    TryAccessElse = 226,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

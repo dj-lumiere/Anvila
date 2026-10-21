@@ -2779,12 +2779,14 @@ internal static class GenericAstRewriter
             AccessStatement access => access with
             {
                 Targets = access.Targets
-                    .Select(selector: t => t with { Target = RewriteExpression(expr: t.Target, ctx: ctx) })
+                    .Select(selector: t => t with
+                    {
+                        Target = RewriteExpression(expr: t.Target, ctx: ctx),
+                        Enter = t.Enter != null ? RewriteExpression(expr: t.Enter, ctx: ctx) : null,
+                        Exit = t.Exit != null ? RewriteExpression(expr: t.Exit, ctx: ctx) : null
+                    })
                     .ToList(),
-                Body = RewriteStatement(stmt: access.Body, ctx: ctx),
-                ElseBody = access.ElseBody != null
-                    ? RewriteStatement(stmt: access.ElseBody, ctx: ctx)
-                    : null
+                Body = RewriteStatement(stmt: access.Body, ctx: ctx)
             },
 
             DestructuringStatement destruct => destruct with

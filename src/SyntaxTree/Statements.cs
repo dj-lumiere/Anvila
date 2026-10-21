@@ -1310,26 +1310,40 @@ public record UsingStatement(
 /// <param name="Name">The name of the token inside the block: the one after <c>as</c>, else the target's own name.</param>
 /// <param name="HasAlias">Whether the target was written with <c>as</c>.</param>
 /// <param name="Location">Source location of the target.</param>
-public sealed record AccessTarget(bool IsWrite, Expression Target, string Name, bool HasAlias, SourceLocation Location);
+public sealed record AccessTarget(bool IsWrite, Expression Target, string Name, bool HasAlias, SourceLocation Location)
+{
+    /// <summary>For a target the block enters (a <c>Guarded</c>, a <c>FileStorage</c>, any type with the pair), the
+    /// analyzed call that enters it, <c>t.view_enter()</c> / <c>t.modify_enter()</c>, or <c>try t.view_enter()</c> in a
+    /// <c>try</c> block. Null for a token or an entity, which the builder only checks to differ from the others.</summary>
+    public Expression? Enter { get; set; }
+
+    /// <summary>The analyzed call that gives the entered target up, <c>t.view_exit()</c> / <c>t.modify_exit()</c>, run
+    /// on every way out of the block (in a <c>try</c> block only when it was entered). Null when <see cref="Enter"/>
+    /// is.</summary>
+    public Expression? Exit { get; set; }
+
+    /// <summary>The variable the target is held in for the block when it is a value made there (a call), so it is
+    /// made once and entered and given up as one: <see cref="Enter"/> and <see cref="Exit"/> call it on this name. Null
+    /// when the target is a name or a member path, which they call directly.</summary>
+    public string? Hidden { get; set; }
+}
 
 /// <summary>
 /// A block that opens access for its body: <c>viewing rates, modifying payer, payee</c>. A verb applies to the targets
-/// after it until another verb comes, a target without <c>as</c> keeps its own name as its token, and the targets are
-/// opened in the order of their addresses (so two agents naming the same targets in different orders can't wait on
-/// each other). Every way out of the body gives the accesses up. With <see cref="IsTry"/>
-/// (<c>try modifying seats as s</c> ... <c>else</c>), the block opens the targets only if every one is free right
-/// now, and otherwise runs <see cref="ElseBody"/> with none of them open.
+/// after it until another verb comes, and a target without <c>as</c> keeps its own name as its token. A target with an
+/// enter / exit pair is entered in the order written (<c>view_enter()</c> / <c>modify_enter()</c>, whose token the name
+/// is) and given up in the opposite order on every way out of the body (<c>view_exit()</c> / <c>modify_exit()</c>), so
+/// <c>modifying a, b</c> is <c>modifying a</c> with <c>modifying b</c> inside. With <see cref="IsTry"/>
+/// (<c>try modifying seats as s</c>) each name is a <c>Maybe</c> of its token, present when the target was entered.
 /// </summary>
 /// <param name="Targets">The targets, in source order.</param>
 /// <param name="Body">The block body, where each target's name is its token.</param>
-/// <param name="IsTry">Whether the block only tries, without waiting.</param>
-/// <param name="ElseBody">What runs when a <c>try</c> block finds a target taken, else null.</param>
+/// <param name="IsTry">Whether the block enters with <c>try</c>, its names <c>Maybe</c>s of the tokens.</param>
 /// <param name="Location">Source location of the block.</param>
 public record AccessStatement(
     List<AccessTarget> Targets,
     Statement Body,
     bool IsTry,
-    Statement? ElseBody,
     SourceLocation Location) : Statement(Location: Location)
 {
     /// <summary>The block's verbs and targets as written (<c>viewing rates, modifying payer, payee</c>), for

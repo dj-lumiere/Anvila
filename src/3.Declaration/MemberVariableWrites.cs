@@ -23,7 +23,7 @@ internal static class MemberVariableWrites
             WhenStatement whenStmt => whenStmt.Clauses.Any(predicate: c => WritesMe(body: c.Body)),
             DangerStatement danger => WritesMe(body: danger.Body),
             UsingStatement usingStmt => WritesMe(body: usingStmt.Body),
-            AccessStatement access => WritesMe(body: access.Body) || WritesMe(body: access.ElseBody),
+            AccessStatement access => WritesMe(body: access.Body),
             _ => false
         };
     }

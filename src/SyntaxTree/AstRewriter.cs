@@ -315,8 +315,8 @@ public abstract class AstRewriter
     }
 
     /// <summary>
-    /// Rewrites an <see cref="AccessStatement"/> by visiting each target's expression, the body, and the <c>else</c>
-    /// body. Returns the original node when nothing changed.
+    /// Rewrites an <see cref="AccessStatement"/> by visiting each target's expression (and its enter and exit calls)
+    /// and the body. Returns the original node when nothing changed.
     /// </summary>
     /// <param name="s">The viewing / modifying block to rewrite.</param>
     /// <returns>The rewritten block, or the original reference if nothing changed.</returns>
@@ -327,19 +327,20 @@ public abstract class AstRewriter
         foreach (AccessTarget target in s.Targets)
         {
             Expression rewritten = VisitExpression(expr: target.Target);
-            changed |= !ReferenceEquals(objA: rewritten, objB: target.Target);
-            targets.Add(item: ReferenceEquals(objA: rewritten, objB: target.Target)
+            Expression? enter = target.Enter != null ? VisitExpression(expr: target.Enter) : null;
+            Expression? exit = target.Exit != null ? VisitExpression(expr: target.Exit) : null;
+            bool same = ReferenceEquals(objA: rewritten, objB: target.Target) &&
+                        ReferenceEquals(objA: enter, objB: target.Enter) && ReferenceEquals(objA: exit, objB: target.Exit);
+            changed |= !same;
+            targets.Add(item: same
                 ? target
-                : target with { Target = rewritten });
+                : target with { Target = rewritten, Enter = enter, Exit = exit });
         }
 
         Statement body = VisitStatement(stmt: s.Body);
-        Statement? elseBody = s.ElseBody != null
-            ? VisitStatement(stmt: s.ElseBody)
-            : null;
-        changed |= !ReferenceEquals(objA: body, objB: s.Body) || !ReferenceEquals(objA: elseBody, objB: s.ElseBody);
+        changed |= !ReferenceEquals(objA: body, objB: s.Body);
         return changed
-            ? s with { Targets = targets, Body = body, ElseBody = elseBody }
+            ? s with { Targets = targets, Body = body }
             : s;
     }
 

@@ -532,14 +532,18 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         foreach (AccessTarget target in node.Targets)
         {
             Visit(e: target.Target);
+            if (target.Enter != null)
+            {
+                Visit(e: target.Enter);
+            }
+
+            if (target.Exit != null)
+            {
+                Visit(e: target.Exit);
+            }
         }
 
         Visit(s: node.Body);
-        if (node.ElseBody != null)
-        {
-            Visit(s: node.ElseBody);
-        }
-
         return false;
     }
     public bool VisitDropStatement(DropStatement node)

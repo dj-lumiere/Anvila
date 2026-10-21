@@ -453,8 +453,8 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.FailableWithoutThrow,
                 message:
-                $"Failable routine '{routine.Name}!' never throws and calls nothing that can fail. " +
-                "Remove '!' or add a failure path.",
+                $"'{routine.Name}' is declared failable, but it never throws and calls nothing that can fail. " +
+                "Remove 'failable' from its declaration, or add the failure path it is missing.",
                 location: routine.Location);
         }
 
@@ -2019,11 +2019,7 @@ public sealed partial class SemanticVerifier
             case UsingStatement u:
                 return u with { Body = GiveBackBoxBeforeReturns(statement: u.Body) };
             case AccessStatement access:
-                return access with
-                {
-                    Body = GiveBackBoxBeforeReturns(statement: access.Body),
-                    ElseBody = access.ElseBody == null ? null : GiveBackBoxBeforeReturns(statement: access.ElseBody)
-                };
+                return access with { Body = GiveBackBoxBeforeReturns(statement: access.Body) };
             case WhenStatement whenStatement:
                 for (int c = 0; c < whenStatement.Clauses.Count; c++)
                 {

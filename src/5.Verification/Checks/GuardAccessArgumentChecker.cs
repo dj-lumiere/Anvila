@@ -110,7 +110,6 @@ internal sealed class GuardAccessArgumentChecker(DiagnosticReporter report)
                 }
 
                 Walk(stmt: access.Body, open: inner);
-                Walk(stmt: access.ElseBody, open: open);
                 return;
             }
             case ExpressionStatement or DeclarationStatement or AssignmentStatement or ReturnStatement

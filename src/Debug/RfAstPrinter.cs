@@ -1535,12 +1535,6 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
         sb.AppendLine(handler: $"{I}{(node.IsTry ? "try " : "")}{string.Join(separator: ", ", values: parts)}");
         sb.Append(value: PrintBodyOf(stmt: node.Body));
-        if (node.ElseBody != null)
-        {
-            sb.AppendLine();
-            sb.AppendLine(handler: $"{I}else");
-            sb.Append(value: PrintBodyOf(stmt: node.ElseBody));
-        }
 
         return sb.ToString()
                  .TrimEnd();

@@ -367,10 +367,6 @@ internal sealed partial class AstPrinter
 
         EmitHead(start: start, depth: depth, head: Doc.Concat(parts: head));
         PrintBody(body: statement.Body, depth: depth + 1, at: statement.Location);
-        if (statement.ElseBody != null)
-        {
-            PrintContinuation(keyword: "else", body: statement.ElseBody, depth: depth, at: statement.Location);
-        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

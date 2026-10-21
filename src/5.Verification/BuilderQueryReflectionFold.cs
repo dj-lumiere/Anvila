@@ -263,12 +263,9 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
     private Statement FoldAccessStmt(Statement stmt, AccessStatement access)
     {
         Statement body = FoldReflectionStmt(stmt: access.Body);
-        Statement? elseBody = access.ElseBody != null
-            ? FoldReflectionStmt(stmt: access.ElseBody)
-            : null;
-        return ReferenceEquals(objA: body, objB: access.Body) && ReferenceEquals(objA: elseBody, objB: access.ElseBody)
+        return ReferenceEquals(objA: body, objB: access.Body)
             ? stmt
-            : access with { Body = body, ElseBody = elseBody };
+            : access with { Body = body };
     }
 
     private Statement FoldDangerStmt(Statement stmt, DangerStatement dg)

@@ -15,6 +15,7 @@ public sealed partial class SemanticVerifier
 {
     private const string AddressTypeName = Declaration.RuntimeContract.Addr;
     private const string IntegerTypeName = "Integer";
+    private const string ByteTypeName = "Byte";
 
     /// <summary>
     /// Analyze literal expression as part of this builder phase.
@@ -81,7 +82,11 @@ public sealed partial class SemanticVerifier
             }
         }
 
-        StoreParsedLiteral(literal: literal, typeName: typeName);
+        // A number that is a byte is made into one by LiteralLoweringPass from its text.
+        if (typeName != ByteTypeName)
+        {
+            StoreParsedLiteral(literal: literal, typeName: typeName);
+        }
 
         TypeSymbol? type = LookupTypeWithImports(name: typeName);
         if (type == null)
@@ -257,6 +262,22 @@ public sealed partial class SemanticVerifier
             return typeName;
         }
 
+        // A bare whole number where a Byte goes is that byte (`b & 0x7F`, `var b: Byte = 0x41`): 0 to 255.
+        if (literal.LiteralType is TokenType.UndecidedInteger && expectedType.Name == ByteTypeName)
+        {
+            if (_registry.LookupType(name: "U8") is { } u8 && LiteralFitsInType(literal: literal, targetType: u8))
+            {
+                return ByteTypeName;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.IntegerLiteralOverflow,
+                message: $"A byte is 0 to 255, and '{literal.Value}' is outside that. Write a number in that range " +
+                         "(0xFF is the largest).",
+                location: literal.Location);
+            earlyExit = true;
+            return typeName;
+        }
+
         // A bare whole number conforms to an arbitrary-precision Integer (`var big: Integer = 10`): any value fits.
         if (literal.LiteralType is TokenType.UndecidedInteger && expectedType.Name == IntegerTypeName)
         {
@@ -326,7 +347,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Suflae: `none` against a `Roamed[E]` slot (an OPTIONAL entity reference `x: E?`) is a null
-        // Roamed handle (roamed_none). Entity references carry their own none via a null pointer, so
+        // Roamed handle (Roamed[E].hollow()). Entity references carry their own none via a null pointer, so
         // no Maybe carrier is needed.
         if (_registry.EntitiesAreShared && expectedType is RecordTypeSymbol
             {

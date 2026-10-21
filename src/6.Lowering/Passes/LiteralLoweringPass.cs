@@ -220,6 +220,10 @@ internal sealed class LiteralLoweringPass : AstRewriter
                     ? s[index: 0] & 0xFF
                     : 0,
                 loc: loc),
+            // A bare number where a byte goes (`b & 0x7F`): analysis checked that it is 0 to 255.
+            string s when literal.LiteralType == TokenType.UndecidedInteger && literal.ResolvedType?.Name == "Byte" &&
+                          SemanticVerifier.TryParseWideMagnitude(cleaned: SemanticVerifier.CleanNumericLiteral(value: s),
+                              value: out BigInteger number) => MakeByteCreator(byteValue: (int)number, loc: loc),
             _ => null
         };
 

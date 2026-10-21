@@ -12,19 +12,18 @@ namespace Builder.Lowering.Passes;
 ///
 /// <para>A block becomes, in a scope of its own:</para>
 /// <code>
-/// var __accN_i = target_i               # each Guarded handle, token, or entity token, evaluated once
-/// __accN_0.open_modify()                # one Guarded: take its access
-/// # or, with several targets:
-/// __accN_0.enlist_view()  __accN_1.enlist_modify()  ...
-/// access_open_enlisted()                # opens them together, the lowest address first
-/// var name_i = __accN_i.modify()        # the tokens the body sees
-/// body                                  # with the closes before every way out of the block
-/// __accN_0.close_modify()               # every access the block took
+/// var __access_heldK = target           # a target made in the head (a call), held for the block
+/// var __accN_i = token_i                # each token or entity target, only checked to differ
+/// __accN_i.enlist_identity() ...        # with two or more of them
+/// access_open_enlisted()
+/// var __accN_tj = target_j.modify_enter()   # each target the block enters, in the order written
+/// body                                  # with the exits before every way out of the block
+/// target_j.modify_exit() ...            # in the opposite order
 /// </code>
-/// <para>A <c>try</c> block tests <c>try_modify()</c> / <c>access_try_open_enlisted()</c> instead, runs the body under
-/// <c>if</c> and its <c>else</c> block otherwise. A <c>return</c> inside computes its value before the accesses are
-/// given up. A statement that passes <c>g.modify()</c> takes the access before it and gives it up after it, and the
-/// argument becomes the token.</para>
+/// <para>In a <c>try</c> block the enter is <c>try target.modify_enter()</c>, a <c>Maybe</c>, and its exit runs only
+/// when it is present. A <c>return</c> inside computes its value before the targets are given up. A statement that
+/// passes <c>g.modify()</c> enters <c>g</c> before it and gives it up after it, and the argument becomes the
+/// token.</para>
 /// </summary>
 internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
 {
@@ -49,61 +48,56 @@ internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
     protected override Statement VisitAccess(AccessStatement s)
     {
         Statement body = VisitStatement(stmt: s.Body);
-        Statement? elseBody = s.ElseBody != null
-            ? VisitStatement(stmt: s.ElseBody)
-            : null;
         SourceLocation loc = s.Location;
         int block = _count++;
         var prologue = new List<Statement>();
         var enlists = new List<Statement>();
-        var bindings = new List<Statement>();
+        var entries = new List<Statement>();
         var closes = new List<Statement>();
         // Each token goes by a name of its own in the lowered body: the name the block gives it may be the name of a
         // variable outside the block (a target without `as` keeps its own name), and the lowered code has one
         // variable per name.
         var renames = new Dictionary<string, (string Name, TypeSymbol Type)>(comparer: StringComparer.Ordinal);
-        Expression? singleOpen = null;
         for (int i = 0; i < s.Targets.Count; i++)
         {
             AccessTarget target = s.Targets[index: i];
-            Expression value = VisitExpression(expr: target.Target);
             string tokenName = $"__acc{block}_t{i}";
-            TypeSymbol type = value.ResolvedType ?? target.Target.ResolvedType ??
-                throw new InvalidOperationException(message: $"An access target at {target.Location} has no type.");
-            string hidden = $"__acc{block}_{i}";
-            if (type.BareName == RuntimeContract.Guarded)
+            if (target.Enter != null)
             {
-                prologue.Add(item: Binding(name: hidden, value: value, type: type, loc: target.Location));
-                IdentifierExpression handle = Ident(name: hidden, type: type, loc: target.Location);
-                TypeSymbol token = TokenType(isWrite: target.IsWrite, inner: Inner(type: type));
-                renames[key: target.Name] = (tokenName, token);
-                bindings.Add(item: Binding(name: tokenName,
-                    value: Call(receiver: handle, name: target.IsWrite
-                        ? RuntimeContract.AccessBlock.Modify
-                        : RuntimeContract.AccessBlock.View, type: token, loc: target.Location),
-                    type: token, loc: target.Location));
-                enlists.Add(item: Statement(expr: Call(receiver: handle, name: target.IsWrite
-                    ? RuntimeContract.AccessBlock.EnlistModify
-                    : RuntimeContract.AccessBlock.EnlistView, type: null, loc: target.Location)));
-                if (!GuardAccess.TakesAccess(type: type))
+                if (target.Hidden != null)
                 {
-                    continue;
+                    Expression made = VisitExpression(expr: target.Target);
+                    TypeSymbol madeType = made.ResolvedType ?? target.Target.ResolvedType ??
+                        throw new InvalidOperationException(message: $"An access target at {target.Location} has no type.");
+                    prologue.Add(item: Binding(name: target.Hidden, value: made, type: madeType, loc: target.Location,
+                        owesTeardown: true));
                 }
 
-                singleOpen = Call(receiver: handle, name: (s.IsTry, target.IsWrite) switch
+                Expression enter = VisitExpression(expr: target.Enter);
+                TypeSymbol tokenType = enter.ResolvedType ?? target.Enter.ResolvedType ??
+                    throw new InvalidOperationException(message: $"The enter at {target.Location} has no type.");
+                renames[key: target.Name] = (tokenName, tokenType);
+                entries.Add(item: Binding(name: tokenName, value: enter, type: tokenType, loc: target.Location));
+                Statement exit = Statement(expr: VisitExpression(expr: target.Exit!));
+                if (s.IsTry)
                 {
-                    (true, true) => RuntimeContract.AccessBlock.TryModify,
-                    (true, false) => RuntimeContract.AccessBlock.TryView,
-                    (false, true) => RuntimeContract.AccessBlock.OpenModify,
-                    _ => RuntimeContract.AccessBlock.OpenView
-                }, type: null, loc: target.Location);
-                closes.Insert(index: 0, item: Statement(expr: Call(receiver: handle, name: target.IsWrite
-                    ? RuntimeContract.AccessBlock.CloseModify
-                    : RuntimeContract.AccessBlock.CloseView, type: null, loc: target.Location)));
+                    exit = new IfStatement(
+                        Condition: Call(receiver: Ident(name: tokenName, type: tokenType, loc: target.Location),
+                            name: "is_present", type: null, loc: target.Location),
+                        ThenStatement: new BlockStatement(Statements: [exit], Location: target.Location),
+                        ElseStatement: null,
+                        Location: target.Location);
+                }
+
+                closes.Insert(index: 0, item: exit);
                 continue;
             }
 
             // A token, or an entity of the routine's own: nothing to take, only checked to differ from the others.
+            Expression value = VisitExpression(expr: target.Target);
+            TypeSymbol type = value.ResolvedType ?? target.Target.ResolvedType ??
+                throw new InvalidOperationException(message: $"An access target at {target.Location} has no type.");
+            string hidden = $"__acc{block}_{i}";
             bool narrow = !target.IsWrite && type.BareName == RuntimeContract.Modifying;
             Expression tokenValue = type is EntityTypeSymbol || narrow
                 ? Call(receiver: value, name: target.IsWrite
@@ -111,58 +105,36 @@ internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
                     : RuntimeContract.AccessBlock.View,
                     type: TokenType(isWrite: target.IsWrite, inner: Inner(type: type)), loc: target.Location)
                 : value;
-            TypeSymbol tokenType = tokenValue.ResolvedType!;
-            prologue.Add(item: Binding(name: hidden, value: tokenValue, type: tokenType, loc: target.Location));
-            IdentifierExpression tokenHandle = Ident(name: hidden, type: tokenType, loc: target.Location);
-            renames[key: target.Name] = (tokenName, tokenType);
-            bindings.Add(item: Binding(name: tokenName, value: tokenHandle, type: tokenType, loc: target.Location));
+            TypeSymbol identityType = tokenValue.ResolvedType!;
+            prologue.Add(item: Binding(name: hidden, value: tokenValue, type: identityType, loc: target.Location));
+            IdentifierExpression tokenHandle = Ident(name: hidden, type: identityType, loc: target.Location);
+            renames[key: target.Name] = (tokenName, identityType);
+            entries.Insert(index: enlists.Count,
+                item: Binding(name: tokenName, value: tokenHandle, type: identityType, loc: target.Location));
             enlists.Add(item: Statement(expr: Call(receiver: tokenHandle, name: RuntimeContract.AccessBlock.EnlistIdentity,
                 type: null, loc: target.Location)));
         }
 
-        // One target opens alone. Several are named first, then opened together in the order of their addresses.
+        // Two or more tokens and entities are checked to be different entities before anything is entered.
         var statements = new List<Statement>(collection: prologue);
-        Expression? open = singleOpen;
-        if (s.Targets.Count > 1)
+        if (enlists.Count > 1)
         {
             statements.AddRange(collection: enlists);
-            open = FreeCall(name: s.IsTry
-                ? RuntimeContract.AccessBlock.TryOpenEnlisted
-                : RuntimeContract.AccessBlock.OpenEnlisted, loc: loc);
+            statements.Add(item: Statement(expr: FreeCall(name: RuntimeContract.AccessBlock.OpenEnlisted, loc: loc)));
         }
 
         body = new Renamer(renames: renames).VisitStatement(stmt: body);
-        Statement? exit = closes.Count switch
+        Statement? exitAll = closes.Count switch
         {
             0 => null,
             1 => closes[index: 0],
             _ => new BlockStatement(Statements: closes, Location: loc)
         };
-        var opened = new List<Statement>(collection: bindings)
-        {
-            exit != null
-                ? Release(stmt: body, exit: exit, loopDepth: 0)
-                : body
-        };
-        opened.AddRange(collection: closes);
-
-        if (!s.IsTry)
-        {
-            if (open != null)
-            {
-                statements.Add(item: Statement(expr: open));
-            }
-
-            statements.AddRange(collection: opened);
-            return new BlockStatement(Statements: statements, Location: loc);
-        }
-
-        statements.Add(item: new IfStatement(
-            Condition: open ?? throw new InvalidOperationException(
-                message: $"A try block at {loc} has nothing to try: the analysis reports that (RF-S611)."),
-            ThenStatement: new BlockStatement(Statements: opened, Location: loc),
-            ElseStatement: elseBody,
-            Location: loc));
+        statements.AddRange(collection: entries);
+        statements.Add(item: exitAll != null
+            ? Release(stmt: body, exit: exitAll, loopDepth: 0)
+            : body);
+        statements.AddRange(collection: closes);
         return new BlockStatement(Statements: statements, Location: loc);
     }
 
@@ -312,10 +284,9 @@ internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
 
         int block = _count++;
         var before = new List<Statement>();
-        var enlists = new List<Statement>();
         var closes = new List<Statement>();
         var replacements = new Dictionary<Expression, Expression>(comparer: ReferenceEqualityComparer.Instance);
-        Expression? singleOpen = null;
+        // Each Guarded is entered in the order written and given up in the opposite order, as nested blocks would.
         for (int i = 0; i < openers.Count; i++)
         {
             CallExpression opener = openers[index: i];
@@ -333,29 +304,17 @@ internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
                 handle = Ident(name: hidden, type: type, loc: receiver.Location);
             }
 
-            enlists.Add(item: Statement(expr: Call(receiver: handle, name: isWrite
-                ? RuntimeContract.AccessBlock.EnlistModify
-                : RuntimeContract.AccessBlock.EnlistView, type: null, loc: opener.Location)));
-            singleOpen = Call(receiver: handle, name: isWrite
-                ? RuntimeContract.AccessBlock.OpenModify
-                : RuntimeContract.AccessBlock.OpenView, type: null, loc: opener.Location);
+            TypeSymbol tokenType = opener.ResolvedType ?? TokenType(isWrite: isWrite, inner: Inner(type: type));
+            string token = $"__acc{block}_t{i}";
+            before.Add(item: Binding(name: token,
+                value: Call(receiver: handle, name: isWrite
+                    ? RuntimeContract.AccessBlock.ModifyEnter
+                    : RuntimeContract.AccessBlock.ViewEnter, type: tokenType, loc: opener.Location),
+                type: tokenType, loc: opener.Location));
             closes.Insert(index: 0, item: Statement(expr: Call(receiver: handle, name: isWrite
-                ? RuntimeContract.AccessBlock.CloseModify
-                : RuntimeContract.AccessBlock.CloseView, type: null, loc: opener.Location)));
-            replacements[key: opener] = Call(receiver: handle, name: isWrite
-                ? RuntimeContract.AccessBlock.Modify
-                : RuntimeContract.AccessBlock.View, type: opener.ResolvedType, loc: opener.Location);
-        }
-
-        if (openers.Count > 1)
-        {
-            before.AddRange(collection: enlists);
-            before.Add(item: Statement(expr: FreeCall(name: RuntimeContract.AccessBlock.OpenEnlisted,
-                loc: stmt.Location)));
-        }
-        else
-        {
-            before.Add(item: Statement(expr: singleOpen!));
+                ? RuntimeContract.AccessBlock.ModifyExit
+                : RuntimeContract.AccessBlock.ViewExit, type: null, loc: opener.Location)));
+            replacements[key: opener] = Ident(name: token, type: tokenType, loc: opener.Location);
         }
 
         Statement rewritten = new Replacer(replacements: replacements).VisitStatement(stmt: stmt);
@@ -468,7 +427,8 @@ internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
         return new ExpressionStatement(Expression: expr, Location: expr.Location);
     }
 
-    private static DeclarationStatement Binding(string name, Expression value, TypeSymbol type, SourceLocation loc)
+    private static DeclarationStatement Binding(string name, Expression value, TypeSymbol type, SourceLocation loc,
+        bool owesTeardown = false)
     {
         string typeName = type switch
         {
@@ -482,7 +442,7 @@ internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
             Type: new TypeExpression(Name: typeName, GenericArguments: [], Location: loc) { ResolvedType = type },
             Initializer: value,
             Visibility: VisibilityModifier.Secret,
-            Location: loc);
+            Location: loc) { OwesTeardown = owesTeardown };
         return new DeclarationStatement(Declaration: declaration, Location: loc);
     }
 }

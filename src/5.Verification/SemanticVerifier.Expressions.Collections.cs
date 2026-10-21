@@ -1169,7 +1169,7 @@ public sealed partial class SemanticVerifier
         InferGenericsFromConstraints(routine: genericRoutine, inferred: typeArgs);
 
         // Third pass: return-type-directed inference. A type parameter that appears ONLY in the return
-        // type (e.g. `roamed_none[T]() -> Roamed[T]`, `default[T]() -> T`) can never bind from the
+        // type (e.g. `default[T]() -> T`) can never bind from the
         // arguments; unify the routine's return type against the call's expected type — the field /
         // parameter / assignment target the result flows into — to fill it. Only used to fill gaps
         // (already-inferred params from the argument pass win).

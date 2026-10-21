@@ -772,8 +772,8 @@ public enum SemanticDiagnosticCode
     /// resolvable type. Annotate it (`(a: S32, b: S32) => …`) or assign the lambda to a typed target.</summary>
     LambdaParameterTypeNotInferable = 638,
 
-    /// <summary><c>try viewing</c> / <c>try modifying</c> names a target that can't be tried without waiting: only a
-    /// <c>Guarded</c> with an <c>Exclusive</c> or <c>MultiRead</c> policy has access that may be taken.</summary>
+    /// <summary><c>try viewing</c> / <c>try modifying</c> names a target the block doesn't enter (an access token, an
+    /// entity of the routine): only a target with <c>view_enter</c> / <c>modify_enter</c> can fail to open.</summary>
     TryAccessOnUntryable = 611,
 
     /// <summary>Using target must have enter/exit for resource management. Access is opened with <c>viewing</c> /
@@ -882,16 +882,23 @@ public enum SemanticDiagnosticCode
     /// <summary>One <c>viewing</c> / <c>modifying</c> block names the same target, or gives the same name, twice.</summary>
     AccessTargetNamedTwice = 650,
 
-    /// <summary>A <c>viewing</c> / <c>modifying</c> target that the block can't open that way: not a <c>Guarded</c>, an
-    /// access token or an entity, a verb its policy doesn't have (<c>modifying</c> a <c>ReadOnly</c>, <c>viewing</c> an
-    /// <c>Exclusive</c>), write access asked of a read token, or a target with no name of its own and no
-    /// <c>as</c>.</summary>
+    /// <summary>A <c>viewing</c> / <c>modifying</c> target that the block can't open that way: not a type with
+    /// <c>view_enter</c> / <c>modify_enter</c>, an access token or an entity (a <c>Retained</c> or a <c>Roamed</c> is
+    /// used directly, a weak handle is held first), a verb its policy doesn't have (<c>modifying</c> a
+    /// <c>ReadOnly</c>, <c>viewing</c> an <c>Exclusive</c>), write access asked of a read token, or a target with no name
+    /// of its own and no <c>as</c>.</summary>
     AccessTargetNotOpenable = 651,
 
     /// <summary><c>view()</c> / <c>modify()</c> on a <c>Guarded</c> with an <c>Exclusive</c> or <c>MultiRead</c> policy
     /// somewhere other than a call argument: the access is held for that call, so it has to be an argument (or
     /// opened with a block).</summary>
     GuardAccessOutsideArgument = 652,
+
+    /// <summary>A <c>view_enter</c> / <c>modify_enter</c> that doesn't give the token its block hands out: a type a
+    /// <c>viewing</c> block enters returns a <c>Viewing[T]</c> from <c>view_enter()</c>, and one a <c>modifying</c>
+    /// block enters a <c>Modifying[T]</c> from <c>modify_enter()</c>, with the matching <c>view_exit()</c> /
+    /// <c>modify_exit()</c>.</summary>
+    AccessEnterWithoutToken = 654,
 
     /// <summary>A binding from outside an <c>if</c>, a <c>when</c> or a loop is taken with <c>steal</c> on some paths
     /// that go on past it and kept on others (or taken inside a loop, so it is gone on the next turn): what a scope
@@ -986,7 +993,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Error handling type (Check) cannot be used as member variable type.</summary>
     ErrorHandlingTypeAsMemberVariable = 755,
 
-    /// <summary>Failable routine (!) never throws and calls nothing that can fail.</summary>
+    /// <summary>A routine declared <c>failable</c> never throws and calls nothing that can fail.</summary>
     FailableWithoutThrow = 756,
 
     /// <summary>@crash_only annotation applied to a non-failable routine.</summary>

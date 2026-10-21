@@ -41,11 +41,8 @@ internal static class ControlFlowExits
                                           AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: c.Body)),
             DangerStatement danger => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: danger.Body),
             UsingStatement usingStmt => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: usingStmt.Body),
-            // A `viewing` / `modifying` block runs its body. A `try` block runs its body or its `else`.
-            AccessStatement access => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: access.Body) &&
-                                      (!access.IsTry || access.ElseBody != null &&
-                                          AlwaysTerminates(exhaustiveWhens: exhaustiveWhens,
-                                              statement: access.ElseBody)),
+            // A `viewing` / `modifying` block runs its body (a `try` block too, with its names Maybes).
+            AccessStatement access => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: access.Body),
             // A `loop` doesn't end by itself: control goes on after it only through a `break` that targets it.
             // With no such break, control leaves the loop only by `return` or `throw`, so a routine whose
             // control reaches the loop always leaves through it. This does not prove the loop halts (it can't be
@@ -84,8 +81,7 @@ internal static class ControlFlowExits
                 LoopBodyCanBreakOut(statement: c.Body)),
             DangerStatement danger => LoopBodyCanBreakOut(statement: danger.Body),
             UsingStatement usingStmt => LoopBodyCanBreakOut(statement: usingStmt.Body),
-            AccessStatement access => LoopBodyCanBreakOut(statement: access.Body) ||
-                                      access.ElseBody != null && LoopBodyCanBreakOut(statement: access.ElseBody),
+            AccessStatement access => LoopBodyCanBreakOut(statement: access.Body),
             // Nested loops swallow their own breaks — do not descend.
             LoopStatement or WhileStatement or EachStatement => false,
             _ => false
@@ -109,9 +105,7 @@ internal static class ControlFlowExits
             IfStatement { ElseStatement: not null } ifStmt =>
                 HasDefiniteExit(statement: ifStmt.ThenStatement) &&
                 HasDefiniteExit(statement: ifStmt.ElseStatement),
-            AccessStatement access => HasDefiniteExit(statement: access.Body) &&
-                                      (!access.IsTry || access.ElseBody != null &&
-                                          HasDefiniteExit(statement: access.ElseBody)),
+            AccessStatement access => HasDefiniteExit(statement: access.Body),
             _ => false
         };
     }

@@ -266,10 +266,6 @@ internal sealed class CallOverloadResolutionPass
                 }
 
                 WalkStatement(stmt: access.Body);
-                if (access.ElseBody != null)
-                {
-                    WalkStatement(stmt: access.ElseBody);
-                }
 
                 break;
             case DangerStatement danger:

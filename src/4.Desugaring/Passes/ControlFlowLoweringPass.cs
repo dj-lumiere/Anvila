@@ -245,11 +245,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     private AccessStatement LowerAccess(AccessStatement a)
     {
         Statement body = LowerStatement(stmt: a.Body);
-        Statement? elseBody = a.ElseBody != null
-            ? LowerStatement(stmt: a.ElseBody)
-            : null;
-        return !ReferenceEquals(objA: body, objB: a.Body) || !ReferenceEquals(objA: elseBody, objB: a.ElseBody)
-            ? a with { Body = body, ElseBody = elseBody }
+        return !ReferenceEquals(objA: body, objB: a.Body)
+            ? a with { Body = body }
             : a;
     }
 

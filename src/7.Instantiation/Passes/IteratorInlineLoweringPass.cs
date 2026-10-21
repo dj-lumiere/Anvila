@@ -143,11 +143,8 @@ internal sealed class IteratorInlineLoweringPass
             case AccessStatement access:
             {
                 Statement b = Rewrite(stmt: access.Body);
-                Statement? e = access.ElseBody != null
-                    ? Rewrite(stmt: access.ElseBody)
-                    : null;
-                return !ReferenceEquals(objA: b, objB: access.Body) || !ReferenceEquals(objA: e, objB: access.ElseBody)
-                    ? access with { Body = b, ElseBody = e }
+                return !ReferenceEquals(objA: b, objB: access.Body)
+                    ? access with { Body = b }
                     : access;
             }
             case DangerStatement d:

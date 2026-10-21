@@ -1297,8 +1297,35 @@ public sealed partial class SemanticVerifier
                   $"parameter as '{arguments}', or convert where the type is known."
                 : typeArguments is [{ } only] && (only.FullName == owner.FullName || only.Name == owner.Name)
                     ? $"The value is already {Article.For(name: owner.Name)} '{owner.Name}'. Use it as it is, without '.to[{arguments}]()'."
-                    : $"There is no conversion from '{owner.Name}' to '{arguments}'.";
+                    : $"There is no conversion from '{owner.Name}' to '{arguments}'." +
+                      ByteCharConversionHint(owner: owner.Name, target: arguments);
         ReportError(code: SemanticDiagnosticCode.SpecializationNotFound, message: message, location: location);
+    }
+
+    /// <summary>What is written instead of a conversion between a byte or a character and a number, which are named
+    /// routines (<c>b.value()</c>, <c>c.codepoint()</c>, <c>Byte(v)</c>, <c>Char.from_codepoint(n:)</c>), with a
+    /// leading space, or an empty string.</summary>
+    private static string ByteCharConversionHint(string owner, string target)
+    {
+        bool number = target.Length > 1 && target[0] is 'U' or 'S' && char.IsAsciiDigit(c: target[1]);
+        bool fromNumber = owner.Length > 1 && owner[0] is 'U' or 'S' && char.IsAsciiDigit(c: owner[1]);
+        return (owner, target) switch
+        {
+            ("Byte", "U8") => " A byte's value is read with 'b.value()', a 'U8'.",
+            ("Byte", _) when number => $" A byte's value is read with 'b.value()', a 'U8': 'b.value().to[{target}]()'.",
+            ("Char", "U32") => " A character's codepoint is read with 'c.codepoint()', a 'U32'.",
+            ("Char", _) when number =>
+                $" A character's codepoint is read with 'c.codepoint()', a 'U32': 'c.codepoint().to[{target}]()'.",
+            ("U8", "Byte") => " Every 'U8' is a byte: make one with 'Byte(v)'.",
+            (_, "Byte") when fromNumber => $" Make a byte from a 'U8': 'Byte(v.to[U8]())'.",
+            ("U32", "Char") => " Not every number is a character: make one with 'Char.from_codepoint(n: v)', which " +
+                               "fails on a surrogate or a value above 0x10FFFF (recover with 'try').",
+            (_, "Char") when fromNumber =>
+                " Not every number is a character: make one from a 'U32' with " +
+                "'Char.from_codepoint(n: v.to[U32]())', which fails on a surrogate or a value above 0x10FFFF " +
+                "(recover with 'try').",
+            _ => ""
+        };
     }
 
     /// <summary>Whether a call in a program (not the library) converts a value to its own type.</summary>
@@ -1501,10 +1528,10 @@ public sealed partial class SemanticVerifier
         string holder = member.Object is IdentifierExpression named ? named.Name : "the handle";
         return (member.MemberName, policy) switch
         {
-            ("view" or "try_view", "Exclusive") =>
+            ("view" or "view_enter", "Exclusive") =>
                 $" A Guarded with the Exclusive policy lets one user in at a time, for reading too: read it inside " +
                 $"'modifying {holder} as m', or share the value under the MultiRead policy to let readers in together.",
-            ("modify" or "try_modify", "ReadOnly") =>
+            ("modify" or "modify_enter", "ReadOnly") =>
                 $" A Guarded with the ReadOnly policy is never changed, so nothing may write to it: read it directly or " +
                 $"with '{holder}.view()', or share the value under the Exclusive or MultiRead policy to change it.",
             _ => ""
@@ -1737,7 +1764,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Analyzes each constructor argument, resolving the expected field type for contextual
-    /// inference (e.g. literal adaptation, <c>roamed_none()</c> binding). Returns the list of
+    /// inference (e.g. literal adaptation). Returns the list of
     /// analyzed argument types to feed into creator overload resolution.
     /// </summary>
     private List<TypeSymbol> AnalyzeConstructorArguments(CallExpression call,

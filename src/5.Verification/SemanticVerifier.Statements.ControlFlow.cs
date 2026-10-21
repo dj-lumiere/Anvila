@@ -1320,11 +1320,13 @@ public sealed partial class SemanticVerifier
     internal const int MaxAccessTargets = 16;
 
     /// <summary>
-    /// Analyzes a <c>viewing</c> / <c>modifying</c> block. Each target is a <c>Guarded</c> (its access taken for the
-    /// block), an access token (only checked to differ from the others), or an entity (whose token the block gives),
-    /// and its name inside the block is a <c>Viewing</c> or <c>Modifying</c> token. A target named twice is RF-S650,
-    /// one that can't be opened with its verb RF-S651, a <c>try</c> on one that can't be tried RF-S611, and a
-    /// <c>Guarded</c> an enclosing block of the routine already opened RF-S630.
+    /// Analyzes a <c>viewing</c> / <c>modifying</c> block. Each target is a type the block enters (a <c>Guarded</c>, a
+    /// <c>FileStorage</c>, any type with <c>view_enter</c> / <c>modify_enter</c> and the matching exit), an access token
+    /// (only checked to differ from the others), or an entity (whose token the block gives), and its name inside the
+    /// block is a <c>Viewing</c> or <c>Modifying</c> token, a <c>Maybe</c> of it in a <c>try</c> block. A target named
+    /// twice is RF-S650, one that can't be opened with its verb RF-S651, an enter that gives no token RF-S654, a
+    /// <c>try</c> on one the block doesn't enter RF-S611, and a <c>Guarded</c> an enclosing block of the routine
+    /// already opened RF-S630.
     /// </summary>
     private void AnalyzeAccessStatement(AccessStatement access)
     {
@@ -1424,7 +1426,7 @@ public sealed partial class SemanticVerifier
         foreach ((AccessTarget target, TypeSymbol token, bool lockBacked, string? _) in opened)
         {
             _registry.DeclareVariable(name: target.Name, type: token, location: target.Location);
-            if (lockBacked && _registry.LookupVariable(name: target.Name) is { } variable)
+            if (lockBacked && !access.IsTry && _registry.LookupVariable(name: target.Name) is { } variable)
             {
                 _lockBackedTokens[key: variable] = target.IsWrite;
                 lockBackedTokens.Add(item: variable);
@@ -1439,20 +1441,14 @@ public sealed partial class SemanticVerifier
 
         _registry.ExitScope();
         _activeAccessHolds.RemoveRange(index: holdsBefore, count: _activeAccessHolds.Count - holdsBefore);
-
-        // The `else` branch runs when a target was taken: nothing is open and no token is in scope.
-        if (access.ElseBody != null)
-        {
-            _registry.EnterScope(kind: ScopeKind.Block, name: "access-else");
-            AnalyzeStatement(statement: access.ElseBody);
-            _registry.ExitScope();
-        }
     }
 
     /// <summary>
-    /// The token type a <c>viewing</c> / <c>modifying</c> target binds inside its block, or null after reporting why the
-    /// target can't be opened that way. <paramref name="lockBacked"/> says whether the block takes the target's access
-    /// (a <c>Guarded</c> with an <c>Exclusive</c> or <c>MultiRead</c> policy).
+    /// The type a <c>viewing</c> / <c>modifying</c> target's name has inside its block (its token, a <c>Maybe</c> of it
+    /// in a <c>try</c> block), or null after reporting why the target can't be opened that way.
+    /// <paramref name="lockBacked"/> says whether the block takes a <c>Guarded</c>'s access (an <c>Exclusive</c> or
+    /// <c>MultiRead</c> policy). A target the block enters gets its analyzed enter and exit calls on
+    /// <see cref="AccessTarget.Enter"/> / <see cref="AccessTarget.Exit"/>.
     /// </summary>
     private TypeSymbol? AccessTargetToken(AccessTarget target, TypeSymbol type, bool isTry, string shown,
         out bool lockBacked)
@@ -1460,10 +1456,12 @@ public sealed partial class SemanticVerifier
         lockBacked = false;
         string verb = target.IsWrite ? "modifying" : "viewing";
         TypeSymbol? inner;
+        string enterName = target.IsWrite
+            ? Declaration.RuntimeContract.AccessBlock.ModifyEnter
+            : Declaration.RuntimeContract.AccessBlock.ViewEnter;
         if (type.BareName == Declaration.RuntimeContract.Guarded)
         {
             string? policy = Wrappers.GuardedPolicy(type: type);
-            inner = type.TypeArguments is [{ } t, ..] ? t : null;
             if (policy == "ReadOnly" && target.IsWrite)
             {
                 ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
@@ -1483,16 +1481,43 @@ public sealed partial class SemanticVerifier
                 return null;
             }
 
-            if (isTry && policy == "ReadOnly")
-            {
-                ReportTryOnUntryable(target: target, shown: shown,
-                    why: "it is a Guarded with the ReadOnly policy, which every reader gets into at once");
-                return null;
-            }
-
             lockBacked = Declaration.GuardAccess.TakesAccess(type: type);
+            return EnteredTargetToken(target: target, type: type, isTry: isTry, shown: shown, enterName: enterName);
         }
-        else if (type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
+
+        if (type.BareName is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Roamed)
+        {
+            ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                message: $"You open '{shown}' with '{verb}', but it is {Article.For(name: type.BareName)} " +
+                         $"{type.BareName}, which has nothing to open: use it directly. Hand it where a Viewing or a " +
+                         "Modifying token goes, and read and write through it.",
+                location: target.Location);
+            return null;
+        }
+
+        if (type.BareName is Declaration.RuntimeContract.Tracked or Declaration.RuntimeContract.Witnessed or "Watched")
+        {
+            string strong = type.BareName switch
+            {
+                Declaration.RuntimeContract.Tracked => "a Retained, which you then use directly",
+                Declaration.RuntimeContract.Witnessed => "a Guarded, which you then open with this block",
+                _ => "a Roamed, which you then use directly"
+            };
+            ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
+                message: $"You open '{shown}' with '{verb}', but it is a {type.BareName}, a weak handle that doesn't keep " +
+                         $"its entity. Take a strong handle with '{shown}.hold()' first ({strong}). 'hold()' fails when " +
+                         "the entity is gone: 'try' gives none then.",
+                location: target.Location);
+            return null;
+        }
+
+        if (_registry.LookupMemberRoutine(type: type, memberRoutineName: enterName) != null ||
+            _registry.LookupMemberRoutine(type: type, memberRoutineName: enterName, isFailable: true) != null)
+        {
+            return EnteredTargetToken(target: target, type: type, isTry: isTry, shown: shown, enterName: enterName);
+        }
+
+        if (type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
         {
             inner = Wrappers.GetWrapperInnerType(wrapperType: type);
             if (target.IsWrite && type.BareName == Declaration.RuntimeContract.Viewing)
@@ -1507,7 +1532,7 @@ public sealed partial class SemanticVerifier
             if (isTry)
             {
                 ReportTryOnUntryable(target: target, shown: shown,
-                    why: "it is an access token, which nothing else holds open");
+                    why: "it is an access token, which the block only names");
                 return null;
             }
         }
@@ -1530,7 +1555,7 @@ public sealed partial class SemanticVerifier
             if (isTry)
             {
                 ReportTryOnUntryable(target: target, shown: shown,
-                    why: "it is an entity of this routine's own, which nothing else holds open");
+                    why: "it is an entity of this routine's own, which the block only names");
                 return null;
             }
         }
@@ -1540,7 +1565,8 @@ public sealed partial class SemanticVerifier
                 ? $"You open '{named}' with '{verb}', but it is {Article.For(name: type.Name)} {type.Name}."
                 : $"You open {Article.For(name: type.Name)} {type.Name} with '{verb}'.";
             ReportError(code: SemanticDiagnosticCode.AccessTargetNotOpenable,
-                message: $"{what} A block opens a Guarded, an access token (Viewing, Modifying) or an entity.",
+                message: $"{what} A block opens a type with '{enterName}()' (a Guarded, a FileStorage), an access " +
+                         "token (Viewing, Modifying) or an entity.",
                 location: target.Location);
             return null;
         }
@@ -1556,13 +1582,95 @@ public sealed partial class SemanticVerifier
         return _registry.GetOrCreateResolution(genericDef: tokenDef, typeArguments: [inner]);
     }
 
-    /// <summary>RF-S611: <c>try viewing</c> / <c>try modifying</c> on a target whose access can't be taken by someone
-    /// else.</summary>
+    /// <summary>
+    /// The name's type for a target the block enters: analyzes <c>t.view_enter()</c> (<c>try t.view_enter()</c> in a
+    /// <c>try</c> block) and <c>t.view_exit()</c> (the <c>modify_</c> pair for <c>modifying</c>) onto the target, on
+    /// the target itself when it is a name or a member path, else on a variable the block holds it in. Reports RF-S654
+    /// when the enter gives no token of the block's kind or the exit is missing.
+    /// </summary>
+    private TypeSymbol? EnteredTargetToken(AccessTarget target, TypeSymbol type, bool isTry, string shown,
+        string enterName)
+    {
+        string exitName = target.IsWrite
+            ? Declaration.RuntimeContract.AccessBlock.ModifyExit
+            : Declaration.RuntimeContract.AccessBlock.ViewExit;
+        string tokenName = target.IsWrite
+            ? Declaration.RuntimeContract.Modifying
+            : Declaration.RuntimeContract.Viewing;
+        if (_registry.LookupMemberRoutine(type: type, memberRoutineName: exitName) == null)
+        {
+            ReportError(code: SemanticDiagnosticCode.AccessEnterWithoutToken,
+                message: $"You open '{shown}', and '{type.Name}' has '{enterName}()' but no '{exitName}()'. A type a " +
+                         $"block enters declares both: '{exitName}()' gives up what '{enterName}()' took, on every way " +
+                         "out of the block.",
+                location: target.Location);
+            return null;
+        }
+
+        Expression receiver = target.Target;
+        if (!IsAccessPath(expr: target.Target))
+        {
+            target.Hidden = $"__access_held{_accessHeldCount++}";
+            _registry.DeclareVariable(name: target.Hidden, type: type, location: target.Location);
+            receiver = new IdentifierExpression(Name: target.Hidden, Location: target.Location);
+        }
+
+        var enter = new CallExpression(
+            Callee: new MemberExpression(Object: receiver, MemberName: enterName, Location: target.Location),
+            Arguments: [],
+            Location: target.Location);
+        Expression entered = isTry
+            ? new RecoveryExpression(Kind: RecoveryKind.Try, Inner: enter, Location: target.Location)
+            : enter;
+        TypeSymbol enteredType = AnalyzeExpression(expression: entered);
+        if (enter.ResolvedType is not { } token || token is ErrorTypeSymbol || enteredType is ErrorTypeSymbol)
+        {
+            return null;
+        }
+
+        if (token.BareName != tokenName)
+        {
+            ReportError(code: SemanticDiagnosticCode.AccessEnterWithoutToken,
+                message: $"You open '{shown}' with '{(target.IsWrite ? "modifying" : "viewing")}', and " +
+                         $"'{type.Name}.{enterName}()' gives {Article.For(name: token.Name)} '{token.Name}'. The name a " +
+                         $"block hands out is its token: '{enterName}()' returns {Article.For(name: tokenName)} " +
+                         $"'{tokenName}[...]'.",
+                location: target.Location);
+            return null;
+        }
+
+        var exit = new CallExpression(
+            Callee: new MemberExpression(Object: receiver, MemberName: exitName, Location: target.Location),
+            Arguments: [],
+            Location: target.Location);
+        AnalyzeExpression(expression: exit);
+        target.Enter = entered;
+        target.Exit = exit;
+        return enteredType;
+    }
+
+    /// <summary>The number of variables blocks hold a made target in, for their names.</summary>
+    private int _accessHeldCount;
+
+    /// <summary>Whether <paramref name="expr"/> is a name or a member path (<c>g</c>, <c>me.table</c>), which a block
+    /// may read again for its exit: anything else (a call) is made once, into a variable.</summary>
+    private static bool IsAccessPath(Expression expr)
+    {
+        return expr switch
+        {
+            IdentifierExpression => true,
+            MemberExpression member => IsAccessPath(expr: member.Object),
+            _ => false
+        };
+    }
+
+    /// <summary>RF-S611: <c>try viewing</c> / <c>try modifying</c> on a target the block doesn't enter, which can't
+    /// fail to open.</summary>
     private void ReportTryOnUntryable(AccessTarget target, string shown, string why)
     {
         ReportError(code: SemanticDiagnosticCode.TryAccessOnUntryable,
-            message: $"You try to open '{shown}' without waiting, but {why}: opening it never waits. Remove 'try' and " +
-                     "the 'else' block.",
+            message: $"You open '{shown}' with 'try', but {why}: opening it never fails. Remove 'try', and use the " +
+                     "name as the token it is.",
             location: target.Location);
     }
 
