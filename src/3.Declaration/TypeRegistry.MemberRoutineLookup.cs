@@ -50,6 +50,14 @@ public sealed partial class TypeRegistry
     public List<(RoutineInfo First, RoutineInfo Second)> DivergentDuplicateRoutines { get; } = [];
 
     /// <summary>
+    /// Routines declared twice in the SAME file with the same signature, failability and constraints (two
+    /// <c>T.lacks(you: T) needs FlagsType T</c> in one file). Registration keeps one of them silently, so the
+    /// other body is never called. Surfaced as a build error by <see cref="Builder.Verification.SemanticVerifier"/>.
+    /// Re-registering the same declaration (same location) is not recorded.
+    /// </summary>
+    public List<(RoutineInfo First, RoutineInfo Second)> RepeatedRoutineDeclarations { get; } = [];
+
+    /// <summary>
     /// Declared bodies of registered routines, kept so the divergent-duplicate guard can hash a body only
     /// when two routines actually collide on a registry key (hashing every body up front would print the
     /// whole stdlib at registration).
@@ -326,6 +334,7 @@ public sealed partial class TypeRegistry
             // `obeys X`-gated protocol-default bodies share a RegistryKey (same signature) yet are
             // DISTINCT overloads that must coexist so within-dispatch can pick the kind-matched
             // one. Only a truly same-signature, same-constraint re-registration replaces in place.
+            NoteRepeatedDeclaration(overloads: list, routine: routine, registryKey: registryKey);
             int existingIdx = list.FindIndex(match: r =>
                 r.RegistryKey == registryKey && SameMeConstraintSet(a: r, b: routine));
             if (existingIdx < 0)
@@ -365,8 +374,55 @@ public sealed partial class TypeRegistry
 
         if (!overloadList.Contains(item: routine))
         {
+            NoteRepeatedDeclaration(overloads: overloadList, routine: routine,
+                registryKey: RealmRoutineKey(routine: routine));
             overloadList.Add(item: routine);
         }
+    }
+
+    /// <summary>
+    /// Records <paramref name="routine"/> in <see cref="RepeatedRoutineDeclarations"/> when
+    /// <paramref name="overloads"/> already holds another declaration of it from the same file: same registry
+    /// key, failability and constraints (every <c>needs</c>, not only the <c>Me</c> gates), both written by hand,
+    /// at a different place.
+    /// </summary>
+    private void NoteRepeatedDeclaration(List<RoutineInfo> overloads, RoutineInfo routine, string registryKey)
+    {
+        if (routine.IsSynthesized || routine.Location is not { } incoming)
+        {
+            return;
+        }
+
+        foreach (RoutineInfo existing in overloads)
+        {
+            if (existing.IsSynthesized || existing.Location is not { } prior ||
+                ReferenceEquals(objA: existing, objB: routine) ||
+                RealmRoutineKey(routine: existing) != registryKey ||
+                existing.IsFailable != routine.IsFailable || existing.Kind != routine.Kind ||
+                !string.Equals(a: prior.FileName, b: incoming.FileName, comparisonType: StringComparison.OrdinalIgnoreCase) ||
+                prior.Line == incoming.Line && prior.Column == incoming.Column ||
+                !SameConstraintSet(a: existing, b: routine))
+            {
+                continue;
+            }
+
+            RepeatedRoutineDeclarations.Add(item: (existing, routine));
+            return;
+        }
+    }
+
+    /// <summary>True when two routines carry the same <c>needs</c> constraints on every parameter.</summary>
+    private static bool SameConstraintSet(RoutineInfo a, RoutineInfo b)
+    {
+        static List<string> Gates(RoutineInfo r)
+        {
+            return (r.GenericConstraints ?? []).Select(selector: c =>
+                                                    $"{c.ParameterName}:{c.ConstraintType}:{string.Join(separator: ",", values: (c.ConstraintTypes ?? []).Select(selector: t => t.Name))}")
+                                               .OrderBy(keySelector: s => s, comparer: StringComparer.Ordinal)
+                                               .ToList();
+        }
+
+        return Gates(r: a).SequenceEqual(second: Gates(r: b));
     }
 
     /// <summary>

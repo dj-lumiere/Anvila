@@ -836,6 +836,39 @@ internal sealed class TesseraWriter
         return (global, preset.Type);
     }
 
+    /// <summary>The module-level cells of the program's <c>global</c>s (a preset made by a construction is one too),
+    /// by name, declared on first use.</summary>
+    private readonly Dictionary<string, (string Global, TypeSymbol Type)> _moduleGlobals = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// The module-level cell of the program's <c>global</c> <paramref name="name"/>: a Tessera <c>global</c> that
+    /// starts zeroed, as the LLVM emitter's does. The initializer is an assignment at the top of <c>start()</c>, and
+    /// the teardown at its exits. Null when no user program declares a global of that name.
+    /// </summary>
+    public (string Global, TypeSymbol Type)? ModuleGlobal(string name)
+    {
+        if (_moduleGlobals.TryGetValue(key: name, value: out (string Global, TypeSymbol Type) known))
+        {
+            return known;
+        }
+
+        foreach ((Program program, string _, string module) in _input.UserPrograms)
+        {
+            if (!program.Declarations.Any(predicate: d => d is VariableDeclaration { IsGlobal: true } g && g.Name == name) ||
+                _input.Registry.LookupVariable(name: name)?.Type is not { } type)
+            {
+                continue;
+            }
+
+            string global = UniqueName(wanted: $"RF_GLOBAL_{(string.IsNullOrEmpty(value: module) ? name : $"{module.Replace(oldChar: '/', newChar: '_')}_{name}")}");
+            _globals.Append(value: $"{Private}global {global}: @{TypeText(type: type)}\n\n");
+            _moduleGlobals[key: name] = (global, type);
+            return (global, type);
+        }
+
+        return null;
+    }
+
     /// <summary>The Tessera record laid out like an entity's heap block (its fields in order, no header), declared
     /// on first use. An entity value is the block's address; a field is read through this record.</summary>
     public string EntityRecord(EntityTypeSymbol entity)

@@ -97,6 +97,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " A block opens a Guarded: 'viewing g as v' / 'modifying g as m' (which call view_enter() / " +
                        "modify_enter() and the matching exit), and 'try modifying g as m' gives a Maybe of the token " +
                        "(migrate --step access rewrites the old forms).";
+            case "all_off" when type is FlagsTypeSymbol:
+                return $" The flags value with no member on is written 'none' now ('var empty: {type.Name} = none').";
             case "codepoint" when type.BareName is "Byte":
                 return " A byte is no character: its value is 'b.value()', a 'U8'.";
             case "byte_value" when type.BareName is "Char":

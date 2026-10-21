@@ -835,8 +835,15 @@ public sealed partial class SemanticVerifier
             TypeSymbol peer = ConstGenericValueType(type: leftType) ?? leftType;
             // Pass leftType as expected for assignments so RHS literals like `none`
             // see the target's carrier-slot type as their contextual expected type.
-            rightType = binary.Operator == BinaryOperator.Assign
-                ? AnalyzeExpression(expression: binary.Right, expectedType: leftType)
+            // `marks == none` compares with the flags value that has no member on: the flags side gives `none` its type.
+            rightType = binary.Operator == BinaryOperator.Assign ||
+                        binary is { Operator: BinaryOperator.Equal or BinaryOperator.NotEqual,
+                            Right: LiteralExpression { LiteralType: TokenType.NoneValue } } &&
+                        (ValueTokenTarget(type: leftType) ?? leftType) is FlagsTypeSymbol
+                ? AnalyzeExpression(expression: binary.Right,
+                    expectedType: binary.Operator == BinaryOperator.Assign
+                        ? leftType
+                        : ValueTokenTarget(type: leftType) ?? leftType)
                 : AnalyzeExpression(expression: binary.Right,
                     expectedType: peerTyped && LeadingNumber(expression: binary.Right) is { } leadingRight &&
                                   LeadingNumber(expression: binary.Left) == null &&

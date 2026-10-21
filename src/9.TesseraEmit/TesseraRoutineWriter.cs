@@ -885,6 +885,12 @@ internal sealed class TesseraRoutineWriter
             return new Local(Place: global, Type: type);
         }
 
+        // A program `global` (and a preset made by a construction, which is one): its module-level cell.
+        if (_module.ModuleGlobal(name: name) is var (cell, cellType))
+        {
+            return new Local(Place: cell, Type: cellType);
+        }
+
         throw Unsupported(what: $"the name '{name}', which is not a local of {_routine.Name}");
     }
 

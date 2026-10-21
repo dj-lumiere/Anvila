@@ -441,7 +441,9 @@ public sealed partial class SemanticVerifier
                 message:
                 $"'{routine.Name}' throws, so it is declared 'failable': write 'failable routine {routine.Name}(...)'. " +
                 $"Callers still call it as '{routine.Name}(...)'.",
-                location: routine.Location);
+                location: routine.Location,
+                fix: new SuggestedFix(Title: "Write 'failable routine'",
+                    Edits: [TextEdit.Insert(line: routine.Location.Line, column: routine.Location.Column, text: "failable ")]));
         }
 
         // Failable routine with no throw — error: a ! routine that can't fail is misleading. An

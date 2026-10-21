@@ -507,9 +507,10 @@ public partial class Parser
     /// Stops without consuming a Dedent that would close this block, so the enclosing
     /// block loop terminates normally.
     /// </summary>
-    protected void SynchronizeWithinBlock()
+    /// <param name="openBlocks">Blocks the failed statement opened and never closed: their dedents are skipped too.</param>
+    protected void SynchronizeWithinBlock(int openBlocks = 0)
     {
-        int depth = 0;
+        int depth = openBlocks;
         while (!IsAtEnd)
         {
             TokenType t = CurrentToken.Type;
@@ -529,6 +530,11 @@ public partial class Parser
 
                 depth--;
                 Advance();
+                if (depth == 0)
+                {
+                    return; // the skipped block is closed: the next token starts a fresh statement at our level
+                }
+
                 continue;
             }
 

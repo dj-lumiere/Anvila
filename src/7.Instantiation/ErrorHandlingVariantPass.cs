@@ -476,6 +476,18 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     private static Statement TransformBodyCore(Statement body, ErrorHandlingVariantKind kind,
         VariantCallRewriter? rewriter, TypeRegistry? registry, bool nextOnly)
     {
+        // An arm of a value `when` that leaves the routine (`else => throw BadWordError(...)`) sits inside an
+        // expression, where the statement walk below never reaches it: its exit becomes this variant's exit too.
+        if (body is DeclarationStatement or ExpressionStatement or AssignmentStatement or ReturnStatement)
+        {
+            body = new WhenArmExitRewriter(transform: arm => TransformBodyCore(body: arm,
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly))
+               .VisitStatement(stmt: body);
+        }
+
         // A lone statement outside a block (e.g. an `if` branch that is a bare `return f().item0`) gets the
         // same nested-failable split as block members. The hoisted temps then need a block to live in.
         if (body is not BlockStatement && TryHoistNestedFailables(stmt: body,
@@ -1216,6 +1228,37 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// An entity-typed temp is referenced through <c>steal</c>, which keeps the original meaning of the
     /// call's result as a temporary that is moved into its use rather than a named local the scope destroys.
     /// </summary>
+    /// <summary>
+    /// Rewrites each arm of a value <c>when</c> whose body is a statement (a <c>throw</c> or <c>return</c> arm) with
+    /// <paramref name="transform"/>, the variant's own body transform. Arms that give a value are left as they are.
+    /// </summary>
+    private sealed class WhenArmExitRewriter(Func<Statement, Statement> transform) : AstRewriter
+    {
+        protected override Expression VisitWhenExpression(WhenExpression e)
+        {
+            var rewritten = (WhenExpression)base.VisitWhenExpression(e: e);
+            bool changed = false;
+            var clauses = new List<WhenClause>(capacity: rewritten.Clauses.Count);
+            foreach (WhenClause clause in rewritten.Clauses)
+            {
+                if (clause.Body is ThrowStatement or ReturnStatement)
+                {
+                    Statement arm = transform(arg: clause.Body);
+                    changed |= !ReferenceEquals(objA: arm, objB: clause.Body);
+                    clauses.Add(item: clause with { Body = arm });
+                }
+                else
+                {
+                    clauses.Add(item: clause);
+                }
+            }
+
+            return changed
+                ? rewritten with { Clauses = clauses }
+                : rewritten;
+        }
+    }
+
     private sealed class NestedFailableHoister(Func<CallExpression, bool> propagates, int hoistUpTo,
         int skipIndex) : AstRewriter
     {

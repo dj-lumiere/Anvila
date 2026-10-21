@@ -1679,6 +1679,7 @@ public partial class Parser
                 continue;
             }
 
+            int levelsBefore = _indentationStack.Count;
             try
             {
                 Statement stmt = ParseStatement();
@@ -1689,8 +1690,17 @@ public partial class Parser
                 // Statement-level recovery: record the error, resynchronize to the next
                 // statement in THIS block, and keep parsing — one bad statement must not
                 // discard the rest of the routine (or cascade through the rest of the file).
+                // A block the failed statement opened inside an expression (the arms of a value `when`) is
+                // still open: its dedent belongs to the failed statement, not to this block.
                 RecordError(ex: ex);
-                SynchronizeWithinBlock();
+                int openBlocks = Math.Max(val1: 0, val2: _indentationStack.Count - levelsBefore);
+                while (_indentationStack.Count > levelsBefore && _indentationStack.Count > 1)
+                {
+                    _indentationStack.Pop();
+                }
+
+                _currentIndentationLevel = _indentationStack.Peek();
+                SynchronizeWithinBlock(openBlocks: openBlocks);
                 hadParseError = true;
             }
         }

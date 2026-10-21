@@ -505,6 +505,15 @@ public partial class Parser
                 Advance();
                 body = ParseIndentedBlock();
             }
+            else if (Check(type: TokenType.Throw))
+            {
+                // `else => throw InvalidValueError(...)`: the arm gives no value, so it leaves the routine instead.
+                // Its line ends where the arm ends (the clause loop takes the newline).
+                SourceLocation throwLocation = GetLocation();
+                Advance();
+                Expression error = ParseExpression();
+                body = new ThrowStatement(Error: error, Location: throwLocation, IsFatal: false);
+            }
             else
             {
                 Expression armExpr = ParseExpression();

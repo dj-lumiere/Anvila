@@ -212,11 +212,16 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     /// The only node this pass rewrites: a synthesized <see cref="VariantReturnStatement"/> becomes an
     /// ordinary <c>return</c> of the concrete carrier. All structural recursion (blocks, if/while/loop/
     /// each/when/danger/using bodies) is supplied by <see cref="AstRewriter"/>. The
-    /// <c>VariantReturnStatement</c> carries no rewritable children of interest here — its
-    /// <c>Value</c> is placed verbatim into the constructed carrier — so this override does not recurse.
+    /// <c>Value</c> is placed into the constructed carrier as it is, except for the arms of a value <c>when</c> in
+    /// it that leave the routine (<c>return when ... else => throw ...</c>): those are variant returns of their own.
     /// </summary>
     protected override Statement VisitVariantReturn(VariantReturnStatement s)
     {
+        if (s.Value is { } value && VisitExpression(expr: value) is var visited && !ReferenceEquals(objA: visited, objB: value))
+        {
+            s = s with { Value = visited };
+        }
+
         return s switch
         {
             { VariantKind: ErrorHandlingVariantKind.TryBool } => LowerTryBoolVariant(vr: s),

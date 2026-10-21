@@ -346,6 +346,22 @@ public sealed partial class SemanticVerifier
             return expectedType;
         }
 
+        // A flags slot: `none` is the flags value with no member on (`marks: CellMarks = none`), lowered to the
+        // zero bitmask. A `Maybe[CellMarks]` slot is a carrier and took the branch above, so the expected type
+        // decides which `none` it is.
+        if (expectedType is FlagsTypeSymbol)
+        {
+            return expectedType;
+        }
+
+        // A flags preset's `none` inlined where the preset is used keeps the preset's flags type
+        // (`show(EMPTY)` gives no flags slot of its own).
+        if (literal.ResolvedType is FlagsTypeSymbol presetFlags &&
+            (expectedType == null || !IsNoneCarrierSlot(type: expectedType)))
+        {
+            return presetFlags;
+        }
+
         // Suflae: `none` against a `Roamed[E]` slot (an OPTIONAL entity reference `x: E?`) is a null
         // Roamed handle (Roamed[E].hollow()). Entity references carry their own none via a null pointer, so
         // no Maybe carrier is needed.
@@ -359,7 +375,7 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.NoneOutsideCarrierSlot,
             message:
-            $"'none' is only valid where the expected type is Maybe[T] or a variant with a None arm; got {expectedType?.Name ?? "no contextual type"}.",
+            $"'none' is only valid where the expected type is Maybe[T], a variant with a None arm or a flags type; got {expectedType?.Name ?? "no contextual type"}.",
             location: literal.Location);
         return ErrorTypeSymbol.Instance;
     }

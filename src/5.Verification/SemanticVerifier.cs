@@ -2672,6 +2672,22 @@ public sealed partial class SemanticVerifier
                 location: loc);
         }
 
+        // The same routine declared twice in one file: one declaration is kept silently, so the other body is
+        // never called (two `T.lacks` in Derivation.rf answered "not all" for "none").
+        foreach ((RoutineInfo first, RoutineInfo second) in _registry.RepeatedRoutineDeclarations)
+        {
+            string parameterTypes =
+                string.Join(separator: ", ", values: second.Parameters.Select(selector: p => p.Type.Name));
+            string what = second.OwnerType != null
+                ? $"'{second.OwnerType.Name}.{second.Name}({parameterTypes})'"
+                : $"'{second.Name}({parameterTypes})'";
+            ReportError(code: SemanticDiagnosticCode.DuplicateRoutineDefinition,
+                message:
+                $"You declare {what} twice in this file, here and at line {first.Location?.Line}, with the same " +
+                "parameters and constraints. Only one of them is called. Keep the one you mean and remove the other.",
+                location: second.Location!);
+        }
+
         // Reject self-containing value records (incl. cross-file mutual recursion) BEFORE conformance
         // analysis, which computes LlvmType/SizeBytes and would otherwise stack-overflow on the cycle.
         // Bail out entirely on a cycle — every downstream phase computes layout and would crash.

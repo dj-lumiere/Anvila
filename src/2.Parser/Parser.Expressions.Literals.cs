@@ -285,9 +285,16 @@ public partial class Parser
             return char.ConvertFromUtf32(utf32: codePoint);
         }
 
+        // A byte's hex escape: `b'\x07'` (the lexer took exactly two hex digits).
+        if (charContent.StartsWith(value: "\\x") && charContent.Length == 4)
+        {
+            return ((char)Convert.ToInt32(value: charContent.Substring(startIndex: 2), fromBase: 16)).ToString();
+        }
+
         return charContent switch
         {
             "\\'" => "'",
+            "\\\"" => "\"",
             @"\\" => "\\",
             "\\n" => "\n",
             "\\t" => "\t",

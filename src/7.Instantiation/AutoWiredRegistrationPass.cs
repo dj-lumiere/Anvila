@@ -778,10 +778,6 @@ internal sealed class AutoWiredRegistrationPass
             name: "all_on",
             returnType: type,
             existingMemberRoutines: existingMemberRoutines);
-        MaybeRegisterWired(owner: type,
-            name: "all_off",
-            returnType: type,
-            existingMemberRoutines: existingMemberRoutines);
         if (CaseListDef(type: type, listDef: listDef) is { } caseListDef)
         {
             // The list is held as the type's own file holds entities: a Suflae choice hands back the handle
