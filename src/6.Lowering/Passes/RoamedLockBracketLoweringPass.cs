@@ -118,8 +118,13 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             }
 
             Statement current = ReadFieldsBeforeCalls(stmt: stmt, into: rewritten);
+            // One bracket per entity: a statement that reads and writes the same member variable (`c.n = c.n + 1`)
+            // names the handle twice, and the lock is reentrant, so a second enter and exit only cost calls.
+            var seenPlaces = new HashSet<string>(comparer: StringComparer.Ordinal);
             List<Expression> handles = FieldAccessHandles(stmt: current)
-                                       .Where(predicate: h => IsHeldPlace(handle: h) && !IsSelfLocking(handle: h))
+                                       .Where(predicate: h => IsHeldPlace(handle: h) && !IsSelfLocking(handle: h) &&
+                                                              (PlaceKey(place: h) is not { Length: > 0 } key ||
+                                                               seenPlaces.Add(item: key)))
                                        .ToList();
             // The IterGuard: a write to a member variable of an entity changes the entity itself (a container's
             // count, capacity or buffer), which an `each` loop over it or a call on one of its elements relies
@@ -326,7 +331,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         {
             if (MovableFieldRead(e: e, keepPlace: keepPlace) is { } handle)
             {
-                return pass.Spill(value: e, handles: [handle], into: into);
+                return pass.Spill(value: e, handles: [handle], into: into, readsHeldValue: true);
             }
 
             return base.VisitMember(e: e);
@@ -521,15 +526,18 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>Computes <paramref name="value"/> into a fresh temp inside the lock bracket of <paramref name="handles"/>,
-    /// appending the bracketed declaration to <paramref name="into"/>, and returns a read of the temp.</summary>
-    private Expression Spill(Expression value, List<Expression> handles, List<Statement> into)
+    /// appending the bracketed declaration to <paramref name="into"/>, and returns a read of the temp. A temp that
+    /// reads a member variable (<paramref name="readsHeldValue"/>) is a view of what the entity keeps, so scope
+    /// teardown, which runs after this pass on recovery variant bodies, leaves it alone.</summary>
+    private Expression Spill(Expression value, List<Expression> handles, List<Statement> into,
+        bool readsHeldValue = false)
     {
         string tmp = $"__lk_{_spillCounter++}";
         var decl = new VariableDeclaration(Name: tmp,
             Type: null,
             Initializer: value,
             Visibility: VisibilityModifier.Secret,
-            Location: value.Location);
+            Location: value.Location) { ReadsHeldValue = readsHeldValue };
         AddBracketed(into: into,
             handles: handles,
             stmt: new DeclarationStatement(Declaration: decl, Location: value.Location));

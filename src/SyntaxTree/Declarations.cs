@@ -159,6 +159,13 @@ public record VariableDeclaration(
     public bool IsLoopTakeSource { get; init; }
 
     /// <summary>
+    /// A local a lowering pass made to read a value another place keeps (a member variable read into a temp before
+    /// the call it is an argument of). The place still holds the value, so the local is a view and is never torn
+    /// down.
+    /// </summary>
+    public bool ReadsHeldValue { get; init; }
+
+    /// <summary>
     /// A local a lowering pass made to hold a value it produced (the hoisted subject of a <c>when</c>) and that
     /// owns that value, so it is torn down when its block ends. Scope teardown clears the mark once it has
     /// looked at the local. A local still marked after the type-aware lowering was made after scope teardown
