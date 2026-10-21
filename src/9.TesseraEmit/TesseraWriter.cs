@@ -849,7 +849,7 @@ internal sealed class TesseraWriter
         text.Append(value: $"{Private}record {name}\n");
         foreach (MemberVariableInfo field in entity.MemberVariables)
         {
-            text.Append(value: $"    {field.Name}: {TypeText(type: field.Type)}\n");
+            text.Append(value: $"    {ValueName(name: field.Name)}: {TypeText(type: field.Type)}\n");
         }
 
         if (entity.MemberVariables.Count == 0)
@@ -863,15 +863,11 @@ internal sealed class TesseraWriter
         return name;
     }
 
-    /// <summary>The words a Tessera statement, target, or expression starts with, plus `Me` (the receiver's type) and
-    /// `self`/`Self` (words Tessera doesn't read as names): a value of such a name is written between backticks.</summary>
+    /// <summary>The names Tessera reads as keywords where a value's name goes (its parser's own list), plus `Me` (the
+    /// receiver's type), `self`/`Self` and the old `private`/`internal`: a value of such a name is written between
+    /// backticks.</summary>
     private static readonly HashSet<string> TesseraKeywords =
-    [
-        "jump", "branch", "when", "return", "unreachable", "continue", "else", "block", "claim", "local", "todo", "and", "or", "is", "as",
-        "not", "if", "each", "until", "loop", "becomes", "break", "nothing", "needs", "obeys", "protocol",
-        "true", "false", "null", "routine", "record", "choice", "variant", "preset", "global", "concept", "conform",
-        "define", "secret", "private", "internal", "module", "import", "Me", "self", "Self",
-    ];
+        [.. Tessera.Parser.ReservedValueNames, "Me", "self", "Self", "private", "internal"];
 
     /// <summary>A value named as the builder's program names it: a Tessera keyword goes between backticks.</summary>
     public static string ValueName(string name) => TesseraKeywords.Contains(item: name) ? $"`{name}`" : name;
@@ -1089,7 +1085,7 @@ internal sealed class TesseraWriter
 
         foreach (MemberVariableInfo field in record.MemberVariables)
         {
-            text.Append(value: $"    {field.Name}: {TypeText(type: field.Type)}\n");
+            text.Append(value: $"    {ValueName(name: field.Name)}: {TypeText(type: field.Type)}\n");
         }
 
         if (record.MemberVariables.Count == 0)

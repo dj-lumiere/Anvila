@@ -925,7 +925,7 @@ internal sealed class TesseraRoutineWriter
             default:
             {
                 var record = (RecordTypeSymbol)projection.Wrapper.ResolvedType!;
-                string field = record.MemberVariables[index: projection.FieldIndex].Name;
+                string field = TesseraWriter.ValueName(name: record.MemberVariables[index: projection.FieldIndex].Name);
                 return new Operand(Text: Temp(type: inner,
                         expression: wrapper.IsPlace
                             ? $"{wrapper.Text}.{field}.peek()"
@@ -981,11 +981,11 @@ internal sealed class TesseraRoutineWriter
 
         if (owner.IsPlace)
         {
-            return new Operand(Text: $"{owner.Text}.{member.MemberName}", Type: fieldType, IsPlace: true);
+            return new Operand(Text: $"{owner.Text}.{TesseraWriter.ValueName(name: member.MemberName)}", Type: fieldType, IsPlace: true);
         }
 
         string record = Receiver(operand: owner);
-        return new Operand(Text: Temp(type: fieldType, expression: $"{record}.{member.MemberName}"),
+        return new Operand(Text: Temp(type: fieldType, expression: $"{record}.{TesseraWriter.ValueName(name: member.MemberName)}"),
             Type: fieldType, IsPlace: false);
     }
 
@@ -1278,7 +1278,7 @@ internal sealed class TesseraRoutineWriter
                 throw Unsupported(what: $"a construction of {record.FullName} not written as field: value pairs");
             }
 
-            fields.Add(item: $"{named.Name}: {Value(operand: Evaluate(expression: named.Value))}");
+            fields.Add(item: $"{TesseraWriter.ValueName(name: named.Name)}: {Value(operand: Evaluate(expression: named.Value))}");
         }
 
         return $"{TypeText(type: record)}({string.Join(separator: ", ", values: fields)})";
@@ -1322,7 +1322,7 @@ internal sealed class TesseraRoutineWriter
                            Evaluate(expression: creator.MemberVariables[index: i].Value) is var operand
                 ? Typed(value: Value(operand: operand), from: operand.Type, to: field.Type)
                 : ZeroValue(type: field.Type);
-            fields.Add(item: $"{field.Name}: {value}");
+            fields.Add(item: $"{TesseraWriter.ValueName(name: field.Name)}: {value}");
         }
 
         string literal = $"{TypeText(type: record)}({string.Join(separator: ", ", values: fields)})";
@@ -1355,7 +1355,7 @@ internal sealed class TesseraRoutineWriter
         for (int i = 0; i < values.Count; i++)
         {
             Emit(line: $"{block}.to[@{_module.EntityRecord(entity: entity)}]()." +
-                       $"{entity.MemberVariables[index: i].Name}.poke({values[index: i]})");
+                       $"{TesseraWriter.ValueName(name: entity.MemberVariables[index: i].Name)}.poke({values[index: i]})");
         }
 
         return new Operand(Text: block, Type: entity, IsPlace: false);
