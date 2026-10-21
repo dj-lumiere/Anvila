@@ -96,6 +96,9 @@ public partial class Parser
         bool before = StartsInfixOperand(token: next) || next.Type is TokenType.Not;
         string? fix = CurrentToken.Text switch
         {
+            "discard" or "drop" when before && _language == TypeModel.Enums.Language.Suflae =>
+                $"'{CurrentToken.Text}' is not a Suflae word: a result you do not need takes no marker, so write the " +
+                "call on its own line.",
             "discard" when before => "'discard' is now 'drop': write 'drop f()' to throw a result away on purpose.",
             "grab" when before => "'grab' is now 'check': 'check f()' gives a Check[T] to take apart with 'when'.",
             "lookup" when before =>

@@ -1631,6 +1631,19 @@ public sealed partial class SemanticVerifier
                 operatorMemberRoutine: operatorMemberRoutine,
                 argType: operatorIsReversed ? leftType : rightType))
         {
+            // `/` gives the exact quotient, which a fixed-width integer type cannot hold (7 / 2 is 3.5), so
+            // the message points at the two divisions that do fit: floor division, or the exact one in Decimal.
+            if (binary.Operator == BinaryOperator.TrueDivide && IsFixedWidthIntegerType(type: operatorReceiverType))
+            {
+                ReportError(code: SemanticDiagnosticCode.BinaryOperatorNotFound,
+                    message:
+                    $"'/' gives the exact quotient, and '{operatorReceiverType.Name}' cannot hold one like 7 / 2 = 3.5. " +
+                    "Write 'a // b' for floor division (and 'a % b' for the remainder), or " +
+                    "'a.to[Decimal]() / b.to[Decimal]()' for the exact quotient.",
+                    location: binary.Location);
+                return true;
+            }
+
             string protoText = requiredProtocols.Count == 1
                 ? $"'{requiredProtocols[index: 0]}'"
                 : string.Join(separator: " or ",
