@@ -113,8 +113,9 @@ public sealed partial class SemanticVerifier
             return; // Modifiable wrappers can access all memberRoutines
         }
 
-        // Read-only wrappers can only access @readonly memberRoutines
-        if (!memberRoutine.IsReadOnly)
+        // Read-only wrappers can only access @readonly memberRoutines. A common routine reads no value through the
+        // wrapper (`Viewing[T].hollow()`).
+        if (!memberRoutine.IsReadOnly && !memberRoutine.IsCommon)
         {
             string wrapperName = wrapperType.BareName;
             if (receiver is IdentifierExpression id &&

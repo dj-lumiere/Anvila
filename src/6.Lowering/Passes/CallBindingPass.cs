@@ -14,7 +14,8 @@ namespace Builder.Lowering.Passes;
 /// derive body) is bound to the receiver's own routine.</item>
 /// <item>A member call on a type name (<c>B64.from(...)</c>) gets the type itself as its receiver, a
 /// <see cref="TypeExpression"/>, rather than an identifier a backend would have to tell apart from a value.</item>
-/// <item><c>hollow[T]()</c> is a fresh zero-filled entity (<see cref="EntityAllocationExpression"/>).</item>
+/// <item><c>T.hollow()</c>, which every type has, is its value with every bit zero (<see cref="ZeroValueExpression"/>), and
+/// for an entity a fresh entity whose member variables are all zero (<see cref="EntityAllocationExpression"/>).</item>
 /// <item>A routine handed to native code (an <c>Addr</c> parameter, or a routine parameter of a foreign routine) is
 /// its native code address (<see cref="NativeRoutineExpression"/>), or for a routine value the checked native
 /// callback (<see cref="NativeCallbackExpression"/>).</item>
@@ -78,12 +79,16 @@ internal sealed class CallBindingPass : AstRewriter
     {
         var call = (CallExpression)base.VisitCall(e: e);
 
-        if (call is { Callee: IdentifierExpression, ResolvedRoutine: { Name: RuntimeContract.Hollow, OwnerType: null } })
+        if (IsBuilderHollow(routine: call.ResolvedRoutine))
         {
-            return call.ResolvedType is EntityTypeSymbol entity
-                ? new EntityAllocationExpression(Location: call.Location) { ResolvedType = entity }
-                : throw new InvalidOperationException(
-                    message: $"hollow[T]() at {call.Location} builds '{call.ResolvedType?.FullName}', not an entity.");
+            return call.ResolvedType switch
+            {
+                EntityTypeSymbol entity => new EntityAllocationExpression(Location: call.Location) { ResolvedType = entity },
+                null or GenericParameterTypeSymbol or ErrorTypeSymbol => throw new InvalidOperationException(
+                    message: $"T.hollow() at {call.Location} reached a backend without a concrete type " +
+                             $"('{call.ResolvedType?.FullName}')."),
+                { } value => new ZeroValueExpression(Location: call.Location) { ResolvedType = value }
+            };
         }
 
         if (call.ResolvedRoutine is { } routine)
@@ -117,6 +122,17 @@ internal sealed class CallBindingPass : AstRewriter
                 ? CallLoweringKind.DirectMemberRoutine
                 : call.LoweringKind
         };
+    }
+
+    /// <summary>Whether <paramref name="routine"/> is the builder-made <c>T.hollow()</c> every type has (System's
+    /// <c>common routine T.hollow()</c>, or an instance of it), not a type's own <c>hollow</c> such as
+    /// <c>Addr.hollow()</c>.</summary>
+    private static bool IsBuilderHollow(RoutineInfo? routine)
+    {
+        RoutineInfo? definition = routine?.GenericDefinition ?? routine;
+        return routine is { Name: RuntimeContract.Hollow } &&
+               definition is { OwnerType: GenericParameterTypeSymbol } &&
+               definition.Annotations.Contains(item: "innate");
     }
 
     /// <inheritdoc/>

@@ -172,7 +172,7 @@ public static class RuntimeContract
     /// <summary>The teardown member routine every entity has: what scope exit and a last strong release run.</summary>
     public const string Destroy = "destruct";
 
-    /// <summary>The entity-footprint allocation primitive <c>hollow[T]()</c> (System, bodyless).</summary>
+    /// <summary>The all-zero value <c>T.hollow()</c> every type has (System, bodyless, builder-made).</summary>
     public const string Hollow = "hollow";
 
     /// <summary>The intrinsic that reads a value's bits as another type (<c>LLVM::reinterpret_bits[From, To]</c>).</summary>

@@ -1052,14 +1052,16 @@ public sealed partial class SemanticVerifier
         // A shared entity's handle stands for the entity: a call on it is a call on the entity, unless the handle
         // itself has the routine for these arguments (`share`, `destruct`, `lock_enter`, ...): `view(first:, room:)`
         // of a `Buffer[T]` is the buffer's, `view()` the handle's. Library code holds such handles where a program's
-        // code still holds the entity at this point, and finds the same routines.
+        // code still holds the entity at this point, and finds the same routines. A common routine has no `me` to stand
+        // for anything: `Roamed[E].hollow()` is the handle's own hollow value, not the entity's.
         if (dispatchType is RecordTypeSymbol
             {
                 GenericDefinition: { } handleDef, TypeArguments: [EntityTypeSymbol]
             } sharedHandle && handleDef.Name == Declaration.RuntimeContract.Roamed &&
             !_registry.GetMemberRoutinesForType(type: handleDef)
                       .Any(predicate: r => r.Name == callLookupName &&
-                                           r.Parameters.Count(predicate: p => p.Name != "me") == call.Arguments.Count))
+                                           r.Parameters.Count(predicate: p => p.Name != "me") == call.Arguments.Count) &&
+            _registry.LookupMemberRoutine(type: dispatchType, memberRoutineName: callLookupName) is not { IsCommon: true })
         {
             dispatchType = sharedHandle.TypeArguments![0];
         }

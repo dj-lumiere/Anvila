@@ -224,6 +224,13 @@ public sealed partial class SemanticVerifier
             routine.Body is BlockStatement destructBody)
         {
             GiveBackBoxBeforeReturns(statement: destructBody);
+            // A hollow entity (`T.hollow()` on a type whose member variable is an entity leaves that variable all zero)
+            // has nothing to tear down, so `destruct` leaves it alone.
+            if (routineInfo.Name == "destruct" &&
+                !(destructBody.Statements.FirstOrDefault() is { } first && IsHollowGuard(statement: first)))
+            {
+                destructBody.Statements.Insert(index: 0, item: HollowGuard(location: destructBody.Location));
+            }
         }
 
         _deadrefVariables.Clear();
@@ -1993,6 +2000,9 @@ public sealed partial class SemanticVerifier
                 return block;
             case ReturnStatement ret:
                 return new BlockStatement(Statements: [BoxGiveBack(location: ret.Location), ret], Location: ret.Location);
+            case IfStatement guard when IsHollowGuard(statement: guard):
+                // A hollow entity has no box to give back.
+                return guard;
             case IfStatement ifs:
                 return ifs with
                 {
@@ -2025,6 +2035,52 @@ public sealed partial class SemanticVerifier
             default:
                 return statement;
         }
+    }
+
+    /// <summary>The statement <c>if me.hijack().is_none() then return</c>: a <c>destruct</c> leaves a hollow entity (one
+    /// whose reference is all zero) alone.</summary>
+    private static IfStatement HollowGuard(SourceLocation location)
+    {
+        var me = new IdentifierExpression(Name: "me", Location: location);
+        var hijack = new CallExpression(
+            Callee: new MemberExpression(Object: me, MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
+                Location: location),
+            Arguments: [],
+            Location: location) { IsSynthesizedLowering = true };
+        var isNone = new CallExpression(
+            Callee: new MemberExpression(Object: hijack, MemberName: Declaration.RuntimeContract.RawPointer.IsNone,
+                Location: location),
+            Arguments: [],
+            Location: location) { IsSynthesizedLowering = true };
+        return new IfStatement(Condition: isNone,
+            ThenStatement: new BlockStatement(Statements: [new ReturnStatement(Value: null, Location: location)],
+                Location: location),
+            ElseStatement: null,
+            Location: location);
+    }
+
+    /// <summary>Whether <paramref name="statement"/> is the guard <see cref="HollowGuard"/> makes.</summary>
+    private static bool IsHollowGuard(Statement statement)
+    {
+        return statement is IfStatement
+        {
+            ElseStatement: null,
+            Condition: CallExpression
+            {
+                Callee: MemberExpression
+                {
+                    MemberName: Declaration.RuntimeContract.RawPointer.IsNone,
+                    Object: CallExpression
+                    {
+                        Callee: MemberExpression
+                        {
+                            MemberName: Declaration.RuntimeContract.RawPointer.Hijack,
+                            Object: IdentifierExpression { Name: "me" }
+                        }
+                    }
+                }
+            }
+        };
     }
 
     /// <summary>The statement <c>me.hijack().invalidate()</c>.</summary>
