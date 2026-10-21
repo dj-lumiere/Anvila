@@ -1334,6 +1334,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 return;
             }
 
+            // A member of an instance that still holds a type parameter (`Hijacked[Array[U64, LIMBS]]`, met in
+            // `knuth_divide[LIMBS]`'s own body) belongs to a template: it is never reached as it stands, only
+            // through the concrete instance a call builds.
+            if (r.OwnerType is { IsGenericDefinition: false } open && ContainsGenericParam(t: open))
+            {
+                return;
+            }
+
             MarkOwner(t: r.OwnerType);
             string key = r.RegistryKey;
 
