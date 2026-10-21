@@ -150,21 +150,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        var bindings = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal);
-        if (receiver != null)
-        {
-            TypeSymbol ownerValue = Declaration.RoamedTransparency.SharedEntityOf(type: receiver);
-            TypeSymbol? ownerDef = (ownerValue as EntityTypeSymbol)?.GenericDefinition ??
-                                   (ownerValue as RecordTypeSymbol)?.GenericDefinition as TypeSymbol;
-            if (ownerDef?.GenericParameters is { } ownerParams && ownerValue.TypeArguments is { } ownerArgs)
-            {
-                for (int i = 0; i < ownerParams.Count && i < ownerArgs.Count; i++)
-                {
-                    bindings[key: ownerParams[index: i]] = ownerArgs[index: i];
-                }
-            }
-        }
-
+        Dictionary<string, TypeSymbol> bindings = ReceiverTypeBindings(receiver: receiver);
         for (int i = 0; i < genParams.Count && i < typeArgs.Count; i++)
         {
             bindings[key: genParams[index: i]] = typeArgs[index: i];
@@ -218,6 +204,113 @@ public sealed partial class SemanticVerifier
                 }
             }
         }
+    }
+
+    /// <summary>The receiver's type arguments by the names of its type's parameters (<c>T</c> to <c>S64</c> for a
+    /// <c>List[S64]</c> receiver). Empty without a receiver or for a receiver that is not generic.</summary>
+    private static Dictionary<string, TypeSymbol> ReceiverTypeBindings(TypeSymbol? receiver)
+    {
+        var bindings = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal);
+        if (receiver == null)
+        {
+            return bindings;
+        }
+
+        TypeSymbol ownerValue = Declaration.RoamedTransparency.SharedEntityOf(type: receiver);
+        TypeSymbol? ownerDef = (ownerValue as EntityTypeSymbol)?.GenericDefinition ??
+                               (ownerValue as RecordTypeSymbol)?.GenericDefinition as TypeSymbol;
+        if (ownerDef?.GenericParameters is { } ownerParams && ownerValue.TypeArguments is { } ownerArgs)
+        {
+            for (int i = 0; i < ownerParams.Count && i < ownerArgs.Count; i++)
+            {
+                bindings[key: ownerParams[index: i]] = ownerArgs[index: i];
+            }
+        }
+
+        return bindings;
+    }
+
+    /// <summary>
+    /// The type a collection literal argument is built for when its parameter is one of the routine's own type
+    /// parameters bound by a protocol: <c>you: Iterable[T]</c> (a hidden <c>__T0 obeys Iterable[T]</c>) on a
+    /// <c>List[U8]</c> receiver gives <c>Iterable[U8]</c>, so <c>l.add_range(you: [3, 4])</c> builds its elements as
+    /// <c>U8</c>, the way a bare number takes the type it goes to. Null when the argument is no collection literal,
+    /// the parameter is not such a type parameter, or the protocol's arguments are not all known here.
+    /// </summary>
+    private TypeSymbol? CollectionLiteralConstraintType(RoutineInfo routine, TypeSymbol paramType,
+        Expression argument, TypeSymbol? receiver, IReadOnlyList<TypeSymbol?>? boundTypeArgs = null)
+    {
+        if (UnwrapNamedArgument(argument: argument) is not (ListLiteralExpression { ArrayLength: null } or
+                SetLiteralExpression or DictLiteralExpression) ||
+            UnwrapCollectionLiteralExpectedType(type: paramType) is not GenericParameterTypeSymbol parameter ||
+            routine.GenericParameters is not { } genParams || !genParams.Contains(item: parameter.Name) ||
+            routine.GenericConstraints is not { } constraints)
+        {
+            return null;
+        }
+
+        Dictionary<string, TypeSymbol> bindings = ReceiverTypeBindings(receiver: receiver);
+        if (boundTypeArgs != null)
+        {
+            for (int i = 0; i < genParams.Count && i < boundTypeArgs.Count; i++)
+            {
+                if (boundTypeArgs[index: i] is { } bound)
+                {
+                    bindings[key: genParams[index: i]] = bound;
+                }
+            }
+        }
+
+        foreach (GenericConstraintDeclaration c in constraints)
+        {
+            if (c.ParameterName != parameter.Name || c.ConstraintType != ConstraintKind.Obeys ||
+                c.ConstraintTypes is not { } protocols)
+            {
+                continue;
+            }
+
+            foreach (TypeExpression protoExpr in protocols)
+            {
+                if (protoExpr.GenericArguments is { Count: > 0 } &&
+                    ConstraintTypeOf(expression: protoExpr, bindings: bindings) is ProtocolTypeSymbol resolved)
+                {
+                    return resolved;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The whole type a constraint names, its type arguments read through <paramref name="bindings"/>
+    /// (<c>Iterable[DictEntry[K, V]]</c>). Null when a part is unknown or still a type parameter.</summary>
+    private TypeSymbol? ConstraintTypeOf(TypeExpression expression, Dictionary<string, TypeSymbol> bindings)
+    {
+        if (expression.GenericArguments is not { Count: > 0 } arguments)
+        {
+            return ConstraintArgument(expression: expression, bindings: bindings) is
+                { } leaf and not (GenericParameterTypeSymbol or ErrorTypeSymbol)
+                ? leaf
+                : null;
+        }
+
+        if (LookupTypeWithImports(name: expression.Name) is not { } definition)
+        {
+            return null;
+        }
+
+        var resolvedArguments = new List<TypeSymbol>(capacity: arguments.Count);
+        foreach (TypeExpression argument in arguments)
+        {
+            if (ConstraintTypeOf(expression: argument, bindings: bindings) is not { } resolvedArgument)
+            {
+                return null;
+            }
+
+            resolvedArguments.Add(item: resolvedArgument);
+        }
+
+        return _registry.GetOrCreateResolution(genericDef: definition, typeArguments: resolvedArguments);
     }
 
     /// <summary>A type's name with its type arguments, each without its module (<c>List[Text]</c>).</summary>

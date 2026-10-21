@@ -608,7 +608,11 @@ public sealed partial class SemanticVerifier
                 callObjectType: callObjectType);
 
             Expression argExpr = binding.Value;
-            TypeSymbol argType = AnalyzeExpression(expression: argExpr, expectedType: paramType);
+            TypeSymbol argType = AnalyzeExpression(expression: argExpr,
+                expectedType: CollectionLiteralConstraintType(routine: routine,
+                    paramType: paramType,
+                    argument: argExpr,
+                    receiver: callObjectType) ?? paramType);
 
             if ((ImplicitTokenArgument(argExpr: argExpr, argType: argType, paramType: paramType) ??
                  ImplicitCStringView(argExpr: argExpr, argType: argType, paramType: paramType)) is { } viewed)

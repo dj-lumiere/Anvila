@@ -177,7 +177,124 @@ public sealed partial class SemanticVerifier
             return _registry.LookupType(name: "Bool") ?? ErrorTypeSymbol.Instance;
         }
 
+        return LiteralConformanceArguments(type: collectionExpectedType, literalProtocol: ListLiteralProtocol)
+                   ?.FirstOrDefault() ??
+               DefaultCollectionArguments(collectionName: "List", expected: collectionExpectedType)
+                  ?.FirstOrDefault();
+    }
+
+    private const string ListLiteralProtocol = "ListLiteral";
+    private const string SetLiteralProtocol = "SetLiteral";
+    private const string DictLiteralProtocol = "DictLiteral";
+
+    /// <summary>
+    /// The type arguments of <paramref name="type"/>'s conformance to a literal protocol (<c>ListLiteral[T]</c>,
+    /// <c>SetLiteral[T]</c>, <c>DictLiteral[K, V]</c>): the element types a literal of that type is built from.
+    /// Null for a protocol, a type that does not obey it, or arguments that are still type parameters.
+    /// </summary>
+    private static List<TypeSymbol>? LiteralConformanceArguments(TypeSymbol? type, string literalProtocol)
+    {
+        if (type is null or ProtocolTypeSymbol or GenericParameterTypeSymbol ||
+            ImplementedProtocolsOf(type: type)
+               .FirstOrDefault(predicate: p => p.BareName == literalProtocol) is not
+                { TypeArguments: { Count: > 0 } arguments } ||
+            arguments.Any(predicate: a => a is GenericParameterTypeSymbol or ErrorTypeSymbol))
+        {
+            return null;
+        }
+
+        return arguments;
+    }
+
+    /// <summary>
+    /// The type arguments with which the collection a literal builds by default (<c>List</c>, <c>Set</c>,
+    /// <c>Dict</c>) obeys the expected protocol <paramref name="expected"/>: <c>[S64]</c> for a list literal where an
+    /// <c>Iterable[S64]</c> is expected, <c>[K, V]</c> for a dict literal where an <c>Iterable[DictEntry[K, V]]</c>
+    /// is expected. The literal's elements then take those types, the way a bare number takes the type it goes to.
+    /// Null when the expected type is no protocol or the collection does not obey it with every argument fixed.
+    /// </summary>
+    private List<TypeSymbol>? DefaultCollectionArguments(string collectionName, TypeSymbol? expected)
+    {
+        if (expected is not ProtocolTypeSymbol { TypeArguments.Count: > 0 } ||
+            _registry.LookupType(name: collectionName) is not { GenericParameters: { Count: > 0 } parameters } def)
+        {
+            return null;
+        }
+
+        var pending = new Stack<TypeSymbol>(collection: ImplementedProtocolsOf(type: def));
+        var seen = new HashSet<string>(comparer: StringComparer.Ordinal);
+        while (pending.Count > 0)
+        {
+            TypeSymbol conformance = pending.Pop();
+            if (!seen.Add(item: conformance.Name))
+            {
+                continue;
+            }
+
+            var bindings = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal);
+            if (UnifyLiteralPattern(pattern: conformance, concrete: expected, bindings: bindings) &&
+                parameters.All(predicate: bindings.ContainsKey))
+            {
+                return parameters.Select(selector: p => bindings[key: p])
+                                 .ToList();
+            }
+
+            if (conformance is ProtocolTypeSymbol proto)
+            {
+                foreach (ProtocolTypeSymbol parent in proto.ParentProtocols)
+                {
+                    pending.Push(item: parent);
+                }
+            }
+        }
+
         return null;
+    }
+
+    /// <summary>Matches a type written with type parameters (<c>Iterable[DictEntry[TKey, TValue]]</c>) against a
+    /// concrete one, recording what each parameter stands for. False on any mismatch.</summary>
+    private static bool UnifyLiteralPattern(TypeSymbol pattern, TypeSymbol concrete,
+        Dictionary<string, TypeSymbol> bindings)
+    {
+        if (pattern is GenericParameterTypeSymbol parameter)
+        {
+            if (concrete is GenericParameterTypeSymbol or ErrorTypeSymbol)
+            {
+                return false;
+            }
+
+            if (bindings.TryGetValue(key: parameter.Name, value: out TypeSymbol? earlier))
+            {
+                return earlier.Name == concrete.Name;
+            }
+
+            bindings[key: parameter.Name] = concrete;
+            return true;
+        }
+
+        IReadOnlyList<TypeSymbol> patternArguments = pattern.TypeArguments ?? [];
+        IReadOnlyList<TypeSymbol> concreteArguments = concrete.TypeArguments ?? [];
+        if (pattern.BareName != concrete.BareName || patternArguments.Count != concreteArguments.Count)
+        {
+            return false;
+        }
+
+        if (patternArguments.Count == 0)
+        {
+            return pattern.Name == concrete.Name;
+        }
+
+        for (int i = 0; i < patternArguments.Count; i++)
+        {
+            if (!UnifyLiteralPattern(pattern: patternArguments[index: i],
+                    concrete: concreteArguments[index: i],
+                    bindings: bindings))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -294,8 +411,9 @@ public sealed partial class SemanticVerifier
     private TypeSymbol ResolveListResultType(TypeSymbol? expectedType, string? expectedBaseName,
         TypeSymbol? collectionExpectedType, TypeSymbol? elementType)
     {
-        if (expectedType != null && expectedBaseName is "List" or "CircularList" or "SortedList"
-                or "BitList" or CollectionNameArray or CollectionNameBitArray)
+        if (expectedType != null && (expectedBaseName is "List" or "CircularList" or "SortedList"
+                or "BitList" or CollectionNameArray or CollectionNameBitArray ||
+            LiteralConformanceArguments(type: collectionExpectedType, literalProtocol: ListLiteralProtocol) != null))
         {
             return LiteralTypeFromExpected(expectedType: expectedType,
                 collectionExpectedType: collectionExpectedType);
@@ -420,6 +538,14 @@ public sealed partial class SemanticVerifier
         {
             expectedElementType = collectionExpectedType.TypeArguments[index: 0];
         }
+        else
+        {
+            expectedElementType =
+                LiteralConformanceArguments(type: collectionExpectedType, literalProtocol: SetLiteralProtocol)
+                   ?.FirstOrDefault() ??
+                DefaultCollectionArguments(collectionName: "Set", expected: collectionExpectedType)
+                   ?.FirstOrDefault();
+        }
 
         TypeSymbol? elementType = ResolveSetElementType(set: set,
             expectedElementType: expectedElementType);
@@ -483,7 +609,9 @@ public sealed partial class SemanticVerifier
     private TypeSymbol ResolveSetResultType(TypeSymbol? expectedType, string? expectedBaseName,
         TypeSymbol? collectionExpectedType, TypeSymbol? elementType)
     {
-        if (expectedType != null && expectedBaseName is "Set" or "SortedSet" or "SecureSet")
+        if (expectedType != null && (expectedBaseName is "Set" or "SortedSet" or "SecureSet" ||
+                                     LiteralConformanceArguments(type: collectionExpectedType,
+                                         literalProtocol: SetLiteralProtocol) != null))
         {
             return LiteralTypeFromExpected(expectedType: expectedType,
                 collectionExpectedType: collectionExpectedType);
@@ -515,11 +643,21 @@ public sealed partial class SemanticVerifier
         string? expectedBaseName = collectionExpectedType != null
             ? GetTypeBaseName(type: collectionExpectedType)
             : null;
+        bool expectedBuildsLiteral = expectedBaseName is "Dict" or "SortedDict" or "PriorityQueue" or "SecureDict" ||
+                                     LiteralConformanceArguments(type: collectionExpectedType,
+                                         literalProtocol: DictLiteralProtocol) != null;
         if (collectionExpectedType is { IsGenericResolution: true, TypeArguments.Count: 2 } &&
             expectedBaseName is "Dict" or "SortedDict" or "PriorityQueue" or "SecureDict")
         {
             expectedKeyType = collectionExpectedType.TypeArguments[index: 0];
             expectedValueType = collectionExpectedType.TypeArguments[index: 1];
+        }
+        else if ((LiteralConformanceArguments(type: collectionExpectedType, literalProtocol: DictLiteralProtocol) ??
+                  DefaultCollectionArguments(collectionName: "Dict", expected: collectionExpectedType)) is
+                 [{ } keyFromExpected, { } valueFromExpected])
+        {
+            expectedKeyType = keyFromExpected;
+            expectedValueType = valueFromExpected;
         }
 
         (TypeSymbol? keyType, TypeSymbol? valueType) = InferDictKeyValueTypes(dict: dict,
@@ -540,8 +678,7 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol dictResult;
-        if (expectedType != null &&
-            expectedBaseName is "Dict" or "SortedDict" or "PriorityQueue" or "SecureDict")
+        if (expectedType != null && expectedBuildsLiteral)
         {
             dictResult = LiteralTypeFromExpected(expectedType: expectedType,
                 collectionExpectedType: collectionExpectedType);
@@ -1098,7 +1235,13 @@ public sealed partial class SemanticVerifier
             // A variadic call packs its trailing args into an Array[T, K] literal (already analyzed
             // against the Array expected type). Re-analyzing it here without that expected type would
             // default it back to List[T] and lose the arity K, so reuse its resolved Array type.
-            TypeSymbol argType = ResolveArgTypeForInference(argExpr: argExpr);
+            TypeSymbol argType = CollectionLiteralConstraintType(routine: genericRoutine,
+                paramType: paramType,
+                argument: argExpr,
+                receiver: null,
+                boundTypeArgs: typeArgs) is { } literalType
+                ? AnalyzeExpression(expression: argExpr, expectedType: literalType)
+                : ResolveArgTypeForInference(argExpr: argExpr);
             if (argType == ErrorTypeSymbol.Instance)
             {
                 continue;
@@ -1362,7 +1505,8 @@ public sealed partial class SemanticVerifier
         int argCount = Math.Min(val1: genericMemberRoutine.Parameters.Count,
             val2: arguments.Count);
         InferMemberTypeArgsFromArguments(genericMemberRoutine: genericMemberRoutine, arguments: arguments,
-            argCount: argCount, inferred: inferred, deferred: false, lambdasRead: lambdasRead);
+            argCount: argCount, inferred: inferred, deferred: false, lambdasRead: lambdasRead,
+            receiverType: receiverType);
 
         // Infer still-unbound generics from `needs` constraints (e.g. U from `S obeys Iterable[U]`).
         InferGenericsFromConstraints(routine: genericMemberRoutine, inferred: inferred);
@@ -1380,7 +1524,8 @@ public sealed partial class SemanticVerifier
         // A type parameter only bare numbers give binds last, from their default types, and the lambdas the first
         // pass left come after the numbers.
         InferMemberTypeArgsFromArguments(genericMemberRoutine: genericMemberRoutine, arguments: arguments,
-            argCount: argCount, inferred: inferred, deferred: true, lambdasRead: lambdasRead);
+            argCount: argCount, inferred: inferred, deferred: true, lambdasRead: lambdasRead,
+            receiverType: receiverType);
         InferGenericsFromConstraints(routine: genericMemberRoutine, inferred: inferred);
 
         for (int i = 0; i < inferred.Length; i++)
@@ -1397,7 +1542,7 @@ public sealed partial class SemanticVerifier
     /// <summary>Binds member-routine type parameters from the arguments of one inference pass (see
     /// <see cref="InferenceArguments"/>).</summary>
     private void InferMemberTypeArgsFromArguments(RoutineInfo genericMemberRoutine, List<Expression> arguments,
-        int argCount, TypeSymbol?[] inferred, bool deferred, HashSet<int> lambdasRead)
+        int argCount, TypeSymbol?[] inferred, bool deferred, HashSet<int> lambdasRead, TypeSymbol? receiverType)
     {
         foreach (int i in InferenceArguments(arguments: arguments, count: argCount, deferred: deferred,
                      parameters: genericMemberRoutine.Parameters,
@@ -1416,7 +1561,13 @@ public sealed partial class SemanticVerifier
             Expression arg = arguments[index: i] is NamedArgumentExpression named
                 ? named.Value
                 : arguments[index: i];
-            TypeSymbol argType = arg.ResolvedType ?? AnalyzeExpression(expression: arg);
+            TypeSymbol argType = CollectionLiteralConstraintType(routine: genericMemberRoutine,
+                paramType: genericMemberRoutine.Parameters[index: i].Type,
+                argument: arg,
+                receiver: receiverType,
+                boundTypeArgs: inferred) is { } literalType
+                ? AnalyzeExpression(expression: arg, expectedType: literalType)
+                : arg.ResolvedType ?? AnalyzeExpression(expression: arg);
             if (argType == ErrorTypeSymbol.Instance)
             {
                 continue;
