@@ -31,14 +31,21 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("have" or "suffix" or "failable" or "names" or "modules" or "access" or "cpu-events"
-                or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal"))
+        if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
+                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes or return-steal");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes or return-steal");
             return 2;
         }
 
         var paths = args.Skip(count: 1).Where(predicate: (a, i) => a is not ("--check" or "--step") && (stepAt < 0 || i + 1 != stepAt + 1)).ToList();
+        // `--step indent`: a block is indented in steps of 4 spaces, so a file indented in steps of 2 gets its leading
+        // spaces doubled. It reads the text only, so it is the step to run first on an old file the lexer rejects.
+        if (step == "indent")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteIndent);
+        }
+
         if (step == "have")
         {
             return RunHaveStep(paths: paths, check: check);
@@ -142,6 +149,20 @@ internal partial class Program
 
         int changedFiles = 0;
         int namesToRename = 0;
+        // A manifest still named for the previous release (`razorforge.toml`, `suflae.toml`) is `config.toml` now: it
+        // is renamed first, so the version it says is read and marked like any other.
+        foreach (string old in OldManifests(files: MigrationSources(paths: paths)))
+        {
+            string renamed = Path.Combine(path1: Path.GetDirectoryName(path: old)!, path2: "config.toml");
+            Console.WriteLine(value: $"{old}: the manifest is named config.toml now" + (check ? "" : ", renamed"));
+            if (!check)
+            {
+                File.Move(sourceFileName: old, destFileName: renamed);
+            }
+
+            changedFiles++;
+        }
+
         HashSet<string> concurrentRoutines = ConcurrentRoutineNames(files: MigrationSources(paths: paths));
         int skippedFiles = 0;
         var migratedManifests = new HashSet<string>(comparer: StringComparer.Ordinal);
@@ -159,19 +180,43 @@ internal partial class Program
                 continue;
             }
 
+            // The indent comes first: the lexer reads only a file indented in steps of 4 spaces.
+            string? reindented = ReindentToSteps(source: source, file: file, lineOffset: 0);
+            if (reindented != null)
+            {
+                Console.WriteLine(value: $"{file}:1: indented in steps of 2 spaces → steps of 4");
+                source = reindented;
+            }
+
+            // A number with a type suffix stops the lexer, and `--step suffix` needs analysis, which reads the other
+            // old spellings no better: the rules here read the file with the suffixes taken off, and their edits are
+            // put back in place around them (the suffixes stay for `--step suffix`).
             List<Token> tokens;
+            string read;
+            List<(int At, int Length)> suffixes;
             try
             {
-                tokens = Lexers.Tokenize(source: source, fileName: file, language: language);
+                (tokens, read, suffixes) = TokenizeAroundSuffixes(source: source, file: file, language: language);
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine(value: $"{file}: cannot read it: {e.Message}");
+                ReportUnreadable(file: file, error: e);
                 continue;
             }
 
+            // A file that was indented in steps of 2, or that a manifest will mark as moved, is the previous
+            // release's code for sure: only then is a name whose meaning changed (`C64`) renamed and not just listed.
+            bool previousRelease = reindented != null || manifest != null;
             List<MigrationEdit> edits = MigrationEdits(tokens: tokens, file: file, language: language,
-                concurrentRoutines: concurrentRoutines, source: source);
+                concurrentRoutines: concurrentRoutines, source: read);
+            edits.AddRange(collection: ReleaseFiveEdits(tokens: tokens, file: file, source: read,
+                previousRelease: previousRelease, listed: ref namesToRename));
+            edits = edits.Select(selector: e => AroundSuffixes(edit: e, suffixes: suffixes)).ToList();
+            if (suffixes.Count > 0)
+            {
+                Console.WriteLine(value: $"{file}: {suffixes.Count} number(s) still name their type with a suffix: " +
+                                         "run migrate --step suffix on it");
+            }
             foreach (Token name in KeywordsUsedAsNames(tokens: tokens))
             {
                 Console.WriteLine(value: $"{file}:{name.Line}: '{name.Text}' is a keyword now: rename it, or write it between backticks (`{name.Text}`)");
@@ -243,13 +288,15 @@ internal partial class Program
                 }
             }
 
-            if (edits.Count == 0)
+            if (edits.Count == 0 && reindented == null)
             {
                 continue;
             }
 
             changedFiles++;
-            foreach (MigrationEdit edit in edits)
+            // An edit made of two parts (an opening and a closing parenthesis) is reported once.
+            var reported = new HashSet<string>(comparer: StringComparer.Ordinal);
+            foreach (MigrationEdit edit in edits.Where(predicate: e => reported.Add(item: $"{e.Line}\n{e.What}")))
             {
                 Console.WriteLine(value: $"{file}:{edit.Line}: {edit.What}");
             }
@@ -286,7 +333,8 @@ internal partial class Program
         ? "suflae-version"
         : "razorforge-version";
 
-    /// <summary>The nearest <c>config.toml</c> in the file's folder or above it, or null.</summary>
+    /// <summary>The nearest <c>config.toml</c> in the file's folder or above it, or null. A folder with a manifest
+    /// still named for the previous release (and no <c>config.toml</c>) gives that one.</summary>
     private static string? ManifestAbove(string file)
     {
         for (DirectoryInfo? dir = new FileInfo(fileName: file).Directory; dir != null; dir = dir.Parent)
@@ -296,9 +344,127 @@ internal partial class Program
             {
                 return candidate;
             }
+
+            if (OldManifestIn(directory: dir.FullName) is { } old)
+            {
+                return old;
+            }
         }
 
         return null;
+    }
+
+    /// <summary>The manifest of the previous release in <paramref name="directory"/> (<c>razorforge.toml</c> or
+    /// <c>suflae.toml</c>, with no <c>config.toml</c> next to it), or null.</summary>
+    private static string? OldManifestIn(string directory)
+    {
+        if (File.Exists(path: Path.Combine(path1: directory, path2: "config.toml")))
+        {
+            return null;
+        }
+
+        return new[] { "razorforge.toml", "suflae.toml" }
+              .Select(selector: name => Path.Combine(path1: directory, path2: name))
+              .FirstOrDefault(predicate: File.Exists);
+    }
+
+    /// <summary>The manifests of the previous release that <paramref name="files"/> are under, each once.</summary>
+    private static List<string> OldManifests(IEnumerable<string> files)
+    {
+        var found = new SortedSet<string>(comparer: StringComparer.Ordinal);
+        foreach (string file in files)
+        {
+            if (ManifestAbove(file: file) is { } manifest &&
+                !manifest.EndsWith(value: "config.toml", comparisonType: StringComparison.Ordinal))
+            {
+                found.Add(item: manifest);
+            }
+        }
+
+        return found.ToList();
+    }
+
+    /// <summary>
+    /// The tokens of <paramref name="source"/> read with every type suffix on a number taken off (<c>5_u8</c> reads
+    /// as <c>5</c>), the text they were read from, and where each suffix was in that text with its length.
+    /// </summary>
+    private static (List<Token> Tokens, string Read, List<(int At, int Length)> Suffixes) TokenizeAroundSuffixes(
+        string source, string file, Language language)
+    {
+        string working = source;
+        var suffixes = new List<(int At, int Length)>();
+        while (true)
+        {
+            try
+            {
+                return (Lexers.Tokenize(source: working, fileName: file, language: language), working, suffixes);
+            }
+            catch (Builder.Diagnostics.GrammarException e) when
+                (e.Code == Builder.Diagnostics.GrammarDiagnosticCode.TypeNamingSuffix)
+            {
+                int at = OffsetOf(text: working, line: e.Line, column: e.Column);
+                int length = at < working.Length && working[index: at] == '_' ? 1 : 0;
+                while (at + length < working.Length && char.IsLetterOrDigit(c: working[index: at + length]))
+                {
+                    length++;
+                }
+
+                if (length == 0)
+                {
+                    throw;
+                }
+
+                suffixes.Add(item: (at, length));
+                working = working.Remove(startIndex: at, count: length);
+            }
+        }
+    }
+
+    /// <summary>
+    /// <paramref name="edit"/>, made on the text read without suffixes, placed in the source that has them: every
+    /// suffix taken off before it moves it on. An insertion right where a suffix was goes after the suffix, so a
+    /// parenthesis closing a number keeps the number whole.
+    /// </summary>
+    private static MigrationEdit AroundSuffixes(MigrationEdit edit, List<(int At, int Length)> suffixes)
+    {
+        if (suffixes.Count == 0)
+        {
+            return edit;
+        }
+
+        // Each suffix's place is counted in the text that was read: the lexer found them front to back, so the ones
+        // taken off after it all sit further on.
+        int start = edit.Start;
+        int end = edit.Start + edit.Length;
+        int startShift = 0;
+        int endShift = 0;
+        foreach ((int at, int length) in suffixes)
+        {
+            if (at < start || at == start && edit.Length == 0)
+            {
+                startShift += length;
+            }
+
+            if (at < end)
+            {
+                endShift += length;
+            }
+        }
+
+        return edit with { Start = start + startShift, Length = Math.Max(val1: 0, val2: end + endShift - (start + startShift)) };
+    }
+
+    /// <summary>Reports a file the lexer could not read, pointing at the step that makes it readable when its indent
+    /// (<c>--step indent</c>) or a number suffix (<c>--step suffix</c>) is the reason.</summary>
+    private static void ReportUnreadable(string file, Exception error)
+    {
+        string hint = (error as Builder.Diagnostics.GrammarException)?.Code switch
+        {
+            Builder.Diagnostics.GrammarDiagnosticCode.InconsistentIndentation => " (run migrate --step indent on it first)",
+            Builder.Diagnostics.GrammarDiagnosticCode.TypeNamingSuffix => " (run migrate --step suffix on it first)",
+            _ => ""
+        };
+        Console.Error.WriteLine(value: $"{file}: cannot read it: {error.Message}{hint}");
     }
 
     /// <summary>The release a manifest says its sources are written for (<c>razorforge-version = "0.5.0"</c> under
@@ -348,8 +514,9 @@ internal partial class Program
             List<Token> tokens;
             try
             {
-                tokens = Lexers.Tokenize(source: File.ReadAllText(path: file), fileName: file,
-                    language: SourceLanguage(path: file));
+                string text = File.ReadAllText(path: file);
+                tokens = Lexers.Tokenize(source: ReindentToSteps(source: text, file: file, lineOffset: 0, report: false) ?? text,
+                    fileName: file, language: SourceLanguage(path: file));
             }
             catch (Exception)
             {
@@ -740,9 +907,10 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
-            // `dangerous routine T.destruct()` is `routine T.destruct()`: the builder calls it.
+            // `dangerous routine T.destruct()` is `routine T.destruct()`: the builder calls it (the old name `destroy`
+            // is renamed below).
             if (token.Type == TokenType.Dangerous && i + 4 < tokens.Count && tokens[index: i + 1].Type == TokenType.Routine &&
-                tokens[index: i + 3].Type == TokenType.Dot && tokens[index: i + 4].Text == "destruct")
+                tokens[index: i + 3].Type == TokenType.Dot && tokens[index: i + 4].Text is "destruct" or "destroy")
             {
                 edits.Add(item: new MigrationEdit(Start: token.Position, Length: tokens[index: i + 1].Position - token.Position,
                     Replacement: "", Line: token.Line, What: "dangerous routine T.destruct → routine T.destruct"));
@@ -1659,15 +1827,19 @@ internal partial class Program
 
     private static string RewriteHave(string file, string source, Language language, int lineOffset)
     {
+        // A number with a type suffix is read without it (see TokenizeAroundSuffixes), and the edits are put back
+        // in place around the suffixes.
         List<Token> tokens;
+        string original = source;
+        List<(int At, int Length)> suffixes;
         try
         {
-            tokens = Lexers.Tokenize(source: source, fileName: file, language: language);
+            (tokens, source, suffixes) = TokenizeAroundSuffixes(source: original, file: file, language: language);
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine(value: $"{file}: cannot read it: {e.Message}");
-            return source;
+            ReportUnreadable(file: file, error: e);
+            return original;
         }
 
         var edits = new List<MigrationEdit>();
@@ -1685,7 +1857,10 @@ internal partial class Program
             Console.WriteLine(value: $"{file}:{edit.Line + lineOffset}: {edit.What}");
         }
 
-        return edits.Count == 0 ? source : ApplyMigrationEdits(source: source, edits: edits);
+        return edits.Count == 0
+            ? original
+            : ApplyMigrationEdits(source: original,
+                edits: edits.Select(selector: e => AroundSuffixes(edit: e, suffixes: suffixes)).ToList());
     }
 
     /// <summary>Where the operand ending at token <paramref name="last"/> begins: a chain of names, members, calls,

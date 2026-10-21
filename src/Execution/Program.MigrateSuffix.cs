@@ -242,7 +242,7 @@ internal partial class Program
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine(value: $"{file}: cannot read it: {e.Message}");
+                ReportUnreadable(file: file, error: e);
                 return null;
             }
         }
@@ -765,7 +765,8 @@ internal partial class Program
     /// <summary>Analyzes one program the way <c>check</c> does, without reporting anything.</summary>
     private static void ProbeProgram(string entryFile)
     {
-        ResolvedEntry resolved = ResolveEntryFile(args: ["check", entryFile], needsOutputArg: false);
+        ResolvedEntry resolved = ResolveEntryFile(args: ["check", entryFile], needsOutputArg: false,
+            acceptOldManifest: true);
         if (resolved.EntryFile == null)
         {
             return;

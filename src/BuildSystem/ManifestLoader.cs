@@ -35,6 +35,44 @@ public static class ManifestLoader
     }
 
     /// <summary>
+    /// Walks up from <paramref name="startDir"/> to the first folder with a manifest and returns the path of the
+    /// previous release's manifest there (<c>razorforge.toml</c> or <c>suflae.toml</c>, which is <c>config.toml</c>
+    /// now), or null when that folder has a <c>config.toml</c> or no folder has either.
+    /// </summary>
+    public static string? FindOldManifest(string startDir)
+    {
+        string? dir = Path.GetFullPath(path: startDir);
+        while (dir != null)
+        {
+            if (File.Exists(path: Path.Combine(path1: dir, path2: ManifestFileName)))
+            {
+                return null;
+            }
+
+            foreach (string old in (string[])["razorforge.toml", "suflae.toml"])
+            {
+                string candidate = Path.Combine(path1: dir, path2: old);
+                if (File.Exists(path: candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            dir = Path.GetDirectoryName(path: dir);
+        }
+
+        return null;
+    }
+
+    /// <summary>The build error for a manifest still named <paramref name="oldManifest"/>, whose fix runs
+    /// <paramref name="toolName"/>.</summary>
+    public static string OldManifestMessage(string oldManifest, string toolName)
+    {
+        return $"error: {oldManifest} is not read: the manifest is named {ManifestFileName} now. Rename the file " +
+               $"({toolName} migrate renames it), or the build would use the default settings.";
+    }
+
+    /// <summary>
     /// Parses a config.toml file and returns a <see cref="ProjectManifest"/>.
     /// Validates that required fields are present and resolves entry modules to files.
     /// When <paramref name="resolveExecutable"/> is false (an explicit entry file on the

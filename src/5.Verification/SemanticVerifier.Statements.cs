@@ -147,6 +147,25 @@ public sealed partial class SemanticVerifier
         _currentType = prevType;
     }
 
+    /// <summary>
+    /// Warns about <c>routine T.create(...) -&gt; T</c>: the previous release's constructor spelling, which declares an
+    /// ordinary member routine named <c>create</c> now, so <c>T(...)</c> never runs it.
+    /// </summary>
+    private void WarnCreateIsNotConstructor(RoutineDeclaration routine, RoutineInfo routineInfo)
+    {
+        if (routineInfo is not { Name: "create", OwnerType: { } owner, ReturnType: { } returned, IsSynthesized: false, IsCommon: false } ||
+            routine.MemberRoutineName != "create" || returned.BareName != owner.BareName)
+        {
+            return;
+        }
+
+        ReportWarning(code: SemanticWarningCode.CreateIsNotConstructor,
+            message: $"'{owner.BareName}.create' is an ordinary member routine named 'create', not a constructor, so " +
+                     $"'{owner.BareName}(...)' never runs it. To make it the constructor, declare it " +
+                     $"'routine {owner.BareName}(...)' (migrate rewrites it), or give it another name.",
+            location: routine.Location);
+    }
+
     private void AnalyzeFunctionBody(RoutineDeclaration routine)
     {
         // Opt-in-capability derive templates (`@overridable/@override routine T.eq/compare()` with a
@@ -215,6 +234,8 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
             return;
         }
+
+        WarnCreateIsNotConstructor(routine: routine, routineInfo: routineInfo);
 
         RoutineInfo? previousRoutine = _currentRoutine;
         _currentRoutine = routineInfo;

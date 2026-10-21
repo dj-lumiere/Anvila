@@ -17,7 +17,54 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     internal string ForIdentifier(string name)
     {
         // A type called on itself (`OsFileManager.read_text(...)`) reads as a name first.
-        return OsServiceRename(name: name) ?? DidYouMean(target: name, candidates: IdentifierSuggestionCandidates());
+        return OsServiceRename(name: name) ?? RetiredRoutine(name: name) ?? RetiredTypeHint(typeName: name) ??
+            RecoveryPrefix(name: name, exists: n => IdentifierSuggestionCandidates().Contains(value: n)) ??
+            DidYouMean(target: name, candidates: IdentifierSuggestionCandidates());
+    }
+
+    /// <summary>The hint for a free routine the previous release had and this one spells differently, or null.</summary>
+    private string? RetiredRoutine(string name)
+    {
+        return name switch
+        {
+            "gather" or "race" => $" '{name}' is a routine of the agent list now: 'agents.{name}()'.",
+            "blank" or "hollow" when registry.Language == TypeModel.Enums.Language.Suflae =>
+                $" '{name}[T]()' is gone: give the value its first contents where you declare it.",
+            "blank" => " 'blank[T]()' is gone: give the value its first contents where you declare it, or use " +
+                       "'T.hollow()' for an all-zero value inside 'danger'.",
+            "hollow" => " An all-zero value is 'T.hollow()' now (a dangerous routine every type has).",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// The hint for a name written the way the previous release spelled a recovery: <c>try_parse(x)</c> is
+    /// <c>try parse(x)</c>, and <c>check_parse(x)</c> / <c>lookup_parse(x)</c> are <c>check parse(x)</c>. Only when
+    /// the name without its prefix is one that <paramref name="exists"/>, or null.
+    /// </summary>
+    private static string? RecoveryPrefix(string name, Func<string, bool> exists, bool member = false)
+    {
+        foreach (string prefix in (string[])["try_", "check_", "lookup_"])
+        {
+            if (!name.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal) || name.Length == prefix.Length)
+            {
+                continue;
+            }
+
+            string bare = name[prefix.Length..];
+            if (!exists(arg: bare))
+            {
+                return null;
+            }
+
+            string keyword = prefix == "try_" ? "try" : "check";
+            string gives = keyword == "try" ? "a Maybe" : "a Check";
+            string call = member ? $"{keyword} x.{bare}(...)" : $"{keyword} {bare}(...)";
+            return $" Recovery is a keyword at the call now: write '{call}', which gives {gives} to " +
+                   "take apart with 'when' (migrate rewrites it).";
+        }
+
+        return null;
     }
 
     /// <summary>The hint for an operating system service written with the <c>Os</c> its name lost in 0.5
@@ -38,9 +85,19 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             return service;
         }
 
+        if (RetiredTypeHint(typeName: typeName) is { } retired)
+        {
+            return retired;
+        }
+
         // A type renamed for 0.5 names its new name.
         string? renamed = typeName switch
         {
+            "Result" => "Check",
+            "Indexable" => "ViewingIndexable",
+            "MutableIndexable" => "ModifyingIndexable",
+            "RetainController" => "RetainManager",
+            "GuardController" => "GuardManager",
             "Character" or "Letter" => "Char",
             "Routine" => "Callable",
             "RoamController" => "RoamManager",
@@ -60,6 +117,12 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 : $" It is called '{renamed}' now.";
         }
 
+        // The quaternions are named by their total bits, like the complex numbers.
+        if (typeName is "Q32" or "Q64")
+        {
+            return $" It is called '{(typeName == "Q32" ? "Q128" : "Q256")}' now (import Math3D).";
+        }
+
         // The binary floating-point types are B16, B32, B64 and B128: F64 names B64, not the S64 or U64 an edit away.
         if (typeName is "F16" or "F32" or "F64" or "F128" &&
             TypeSuggestionCandidates().Contains(value: $"B{typeName[1..]}"))
@@ -70,13 +133,50 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         return DidYouMean(target: typeName, candidates: TypeSuggestionCandidates());
     }
 
+    /// <summary>The hint for a type the previous release had and this one took away, or null.</summary>
+    private string? RetiredTypeHint(string typeName)
+    {
+        return typeName switch
+        {
+            "Lookup" => " 'Lookup[T]' is gone: 'check f(x)' gives a 'Check[T]', and a missing value is its " +
+                        "'AbsentValueError' arm.",
+            "Accessing" or "Controlling" when registry.Language == TypeModel.Enums.Language.Suflae =>
+                $" '{typeName}' is gone: use the value itself.",
+            "Accessing" or "Controlling" => $" '{typeName}' is gone: take the handle itself, or the token a " +
+                                            "'viewing' / 'modifying' block gives ('Viewing[T]' / 'Modifying[T]').",
+            "FrozenController" => " 'FrozenController' is gone, with nothing in its place.",
+            "PQEntry" => " 'PQEntry' is gone: a PriorityQueue gives '(priority, element)' tuples ('peek_entry()', " +
+                         "'ordered()', 'drain()'), taken apart with 'var (p, e) = queue.peek_entry()'.",
+            _ => null
+        };
+    }
+
     /// <summary>The suggestion suffix for a member <paramref name="name"/> that <paramref name="type"/>
     /// does not have.</summary>
     internal string ForMember(TypeSymbol type, string name)
     {
+        if (RecoveryPrefix(name: name, exists: n => MemberSuggestionCandidates(type: type).Contains(value: n),
+                member: true) is { } recovery)
+        {
+            return recovery;
+        }
+
         // A member renamed or removed for 0.5 names what is written now.
         switch (name)
         {
+            case "access" or "control" when registry.Language == TypeModel.Enums.Language.Suflae:
+                return $" '{name}()' is gone: use the value itself.";
+            case "access" or "control":
+                return $" '{name}()' is gone: use the handle itself (a 'Retained' is used directly, and a 'Guarded' is " +
+                       $"opened with '{(name == "access" ? "viewing g as v" : "modifying g as m")}').";
+            case "now" when type.BareName is "Moment":
+                return " The time is read from a clock now: 'Clock.now()' gives a 'Moment'.";
+            case "now_utc" when type.BareName is "LocalMoment":
+                return " The time is read from a clock now: 'Clock.now()' gives the 'Moment' (UTC), " +
+                       "'Clock.monotonic()' a 'Duration' for measuring, 'CpuClock.now()' the CPU time.";
+            case "touch" when type.BareName is "FileManager":
+                return " There is no 'touch': 'FileManager.make_file(at: f)' makes a file ('replacing: true' empties " +
+                       "one that exists).";
             case "entries" when MemberSuggestionCandidates(type: type).Contains(value: "items"):
                 return " It is called 'items' now: a list of (key, value) tuples.";
             case "destroy" when MemberSuggestionCandidates(type: type).Contains(value: "destruct"):

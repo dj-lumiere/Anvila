@@ -141,7 +141,7 @@ internal partial class Program
             return 0;
         }
 
-        ResolvedEntry resolved = ResolveExplicitEntry(explicitEntry: file, outputFile: null);
+        ResolvedEntry resolved = ResolveExplicitEntry(explicitEntry: file, outputFile: null, acceptOldManifest: true);
         if (resolved.EntryFile == null)
         {
             return 0;

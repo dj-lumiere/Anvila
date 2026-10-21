@@ -50,6 +50,7 @@ internal partial class Program
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
 
+        WarnRetiredEnvironmentVariables();
         if (args.Length == 0)
         {
             PrintUsage();
@@ -80,6 +81,27 @@ internal partial class Program
         }
 
         return DispatchCommand(command: command, args: args);
+    }
+
+    /// <summary>The environment variables the previous release read, each with the manifest key that took its place.
+    /// </summary>
+    private static readonly (string Variable, string Key)[] RetiredEnvironmentVariables =
+    [
+        ("RF_DEADLOCK_DETECT", "deadlock-check = true under [debug]")
+    ];
+
+    /// <summary>Writes one warning line for each retired environment variable that is set: it is not read any more,
+    /// and a build would go on as if it were missing.</summary>
+    private static void WarnRetiredEnvironmentVariables()
+    {
+        foreach ((string variable, string key) in RetiredEnvironmentVariables)
+        {
+            if (!string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: variable)))
+            {
+                Console.Error.WriteLine(value: $"warning: the environment variable {variable} is not read any more: " +
+                                               $"set {key} in config.toml.");
+            }
+        }
     }
 
     /// <summary>
@@ -573,7 +595,7 @@ internal partial class Program
     /// mode, dump-ast, sa-timing, show-build-stages) — the CLI deliberately takes no flags.
     /// On error the returned entry's <see cref="ResolvedEntry.EntryFile"/> is null.
     /// </summary>
-    private static ResolvedEntry ResolveEntryFile(string[] args, bool needsOutputArg)
+    private static ResolvedEntry ResolveEntryFile(string[] args, bool needsOutputArg, bool acceptOldManifest = false)
     {
         // args[0] is the command name (build/buildandrun/check)
         if (!ParsePositionalArgs(args: args,
@@ -592,7 +614,8 @@ internal partial class Program
         if (explicitEntry != null && !explicitEntry.EndsWith(value: ".toml",
                 comparisonType: StringComparison.OrdinalIgnoreCase))
         {
-            return ResolveExplicitEntry(explicitEntry: explicitEntry, outputFile: outputFile);
+            return ResolveExplicitEntry(explicitEntry: explicitEntry, outputFile: outputFile,
+                acceptOldManifest: acceptOldManifest);
         }
 
         return ResolveManifestEntry(explicitEntry: explicitEntry, outputFile: outputFile);
@@ -636,8 +659,10 @@ internal partial class Program
     }
 
     /// <summary>Resolves an explicitly-given source-file entry: honors the nearest config.toml (or debug
-    /// defaults when manifest-less); only [target] executable is overridden by the command-line entry.</summary>
-    private static ResolvedEntry ResolveExplicitEntry(string explicitEntry, string? outputFile)
+    /// defaults when manifest-less); only [target] executable is overridden by the command-line entry. A manifest
+    /// still named for the previous release stops it, unless <paramref name="acceptOldManifest"/> (migrate's own
+    /// analysis of such a project) lets it go on with the defaults.</summary>
+    private static ResolvedEntry ResolveExplicitEntry(string explicitEntry, string? outputFile, bool acceptOldManifest)
     {
         if (!File.Exists(path: explicitEntry))
         {
@@ -648,6 +673,12 @@ internal partial class Program
         string entryDir =
             Path.GetDirectoryName(path: Path.GetFullPath(path: explicitEntry)) ?? ".";
         string? nearbyManifest = ManifestLoader.FindManifest(startDir: entryDir);
+        if (!acceptOldManifest && ManifestLoader.FindOldManifest(startDir: entryDir) is { } oldManifest)
+        {
+            Console.WriteLine(value: ManifestLoader.OldManifestMessage(oldManifest: oldManifest, toolName: CliRules.ToolName));
+            return new ResolvedEntry();
+        }
+
         if (nearbyManifest == null)
         {
             // Truly manifest-less — debug defaults. Assume an executable build so
@@ -728,6 +759,12 @@ internal partial class Program
         }
         else
         {
+            if (ManifestLoader.FindOldManifest(startDir: Environment.CurrentDirectory) is { } oldManifest)
+            {
+                Console.WriteLine(value: ManifestLoader.OldManifestMessage(oldManifest: oldManifest, toolName: CliRules.ToolName));
+                return new ResolvedEntry();
+            }
+
             manifestPath = ManifestLoader.FindManifest(startDir: Environment.CurrentDirectory);
         }
 

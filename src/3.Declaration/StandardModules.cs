@@ -77,6 +77,14 @@ internal static class StandardModules
                    "the import out and call them on CpuEventManager (migrate --step cpu-events does both).";
         }
 
+        if (path == "IO/FileSystem")
+        {
+            return $"Module '{module}' is gone: 'FileManager' does every file system task now " +
+                   "('FileManager.make_directory(at: d)', 'delete(at:)', 'copy(from:, to:)', 'rename(at:, to:)', " +
+                   "'move(at:, into:)', 'make_file(at: f)' in place of 'touch'), with 'File(at:)' and 'Directory(at:)' " +
+                   "to say where. Import IO/File in place of it.";
+        }
+
         return MovedModule(module: module) is { } now
             ? $"Module '{module}' is gone: its names are in {now}, which every file sees without an import. Leave " +
               "the import out (migrate --step modules does it)."

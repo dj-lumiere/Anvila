@@ -96,6 +96,10 @@ public enum SemanticWarningCode
     /// <summary>Using a deprecated syntax construct.</summary>
     DeprecatedSyntax = 103,
 
+    /// <summary>A member routine named <c>create</c> that gives back its own type: the previous release's
+    /// constructor spelling, an ordinary member routine now (the constructor is <c>routine T(...)</c>).</summary>
+    CreateIsNotConstructor = 104,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // REDUNDANT CODE WARNINGS (RF-W150 - RF-W199)
     // ═══════════════════════════════════════════════════════════════════════════

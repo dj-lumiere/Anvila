@@ -3930,13 +3930,18 @@ public sealed partial class SemanticVerifier
              member.MemberName == "control") && !call.IsSynthesizedLowering &&
             !IsStdlibFile(filePath: call.Location.FileName))
         {
-            string hint = member.MemberName == "iter"
-                ? "use an 'each' loop or iterable combinators (skip, take, map, etc.) instead."
-                : "pass the value to a routine whose parameter is typed " +
-                  "Accessing[T] / Controlling[T] — the builder coerces it for you.";
+            string hint = member.MemberName switch
+            {
+                "iter" => "Walk it with an 'each' loop, or with the iterator routines (skip, take, map, ...).",
+                _ when _registry.Language == Language.Suflae => "Use the value itself.",
+                "access" => "Use the handle itself: a 'Retained' is used directly, and a 'Guarded' is opened with " +
+                            "'viewing g as v'.",
+                _ => "Use the handle itself: a 'Retained' is used directly, and a 'Guarded' is opened with " +
+                     "'modifying g as m'."
+            };
             ReportError(code: SemanticDiagnosticCode.DirectWiredRoutineCall,
                 message:
-                $"member routine '{member.MemberName}' is internal to the builder — {hint}",
+                $"You call '{member.MemberName}()', which only the builder calls. {hint}",
                 location: call.Location);
             return ErrorTypeSymbol.Instance;
         }

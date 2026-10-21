@@ -113,15 +113,19 @@ internal partial class Program
     private static string RewriteUntil(string file, string source, Language language, int lineOffset,
         Dictionary<(string File, int Position), HashSet<string>>? observed, UntilCounts counts)
     {
+        // A number with a type suffix is read without it (see TokenizeAroundSuffixes), and the edits are put back
+        // in place around the suffixes.
         List<Token> tokens;
+        string original = source;
+        List<(int At, int Length)> suffixes;
         try
         {
-            tokens = Lexers.Tokenize(source: source, fileName: file, language: language);
+            (tokens, source, suffixes) = TokenizeAroundSuffixes(source: original, file: file, language: language);
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine(value: $"{file}: cannot read it: {e.Message}");
-            return source;
+            ReportUnreadable(file: file, error: e);
+            return original;
         }
 
         var edits = new List<MigrationEdit>();
@@ -175,7 +179,10 @@ internal partial class Program
             }
         }
 
-        return edits.Count == 0 ? source : ApplyMigrationEdits(source: source, edits: edits);
+        return edits.Count == 0
+            ? original
+            : ApplyMigrationEdits(source: original,
+                edits: edits.Select(selector: e => AroundSuffixes(edit: e, suffixes: suffixes)).ToList());
     }
 
     /// <summary>Where a loop's condition that starts at <paramref name="from"/> ends: the first token, outside
