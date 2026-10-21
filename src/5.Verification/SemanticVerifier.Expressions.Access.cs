@@ -979,11 +979,12 @@ public sealed partial class SemanticVerifier
         // Check for memory tokens (scope-bound, cannot be captured)
         if (IsMemoryToken(type: varType))
         {
-            string tokenKind = GetMemoryTokenKind(type: varType);
+            string target = varType.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "T";
             ReportError(code: SemanticDiagnosticCode.LambdaCaptureToken,
-                message: $"Cannot capture '{varName}' of type '{tokenKind}' in lambda - " +
-                         $"scope-bound tokens cannot escape their scope. " +
-                         $"Capture a handle that can be shared instead (Retained[T], or Guarded[T] across agents).",
+                message: $"You capture '{varName}' in this lambda, but '{varName}' is a token " +
+                         $"(`{varType.ShortTypeName}`), and the lambda can be called after the place `{target}` is in " +
+                         $"is gone. Pass the token to the lambda as an argument where you call it, or capture a " +
+                         $"handle that keeps the entity (`Retained[{target}]`, or `Guarded[{target}]` across agents).",
                 location: location);
             return;
         }

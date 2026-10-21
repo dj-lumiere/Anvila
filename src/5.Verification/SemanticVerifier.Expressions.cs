@@ -137,6 +137,16 @@ public sealed partial class SemanticVerifier
 
         // Set the resolved type directly (no conversion needed)
         expression.ResolvedType = resultType;
+
+        // A value made here whose type holds a token (`[l.view()]`, `Box(v: l.view())`) is rejected where it is made.
+        // A name, a member variable or an element read reports at its declaration instead.
+        if (expression is not (IdentifierExpression or MemberExpression or IndexExpression or TypeExpression) &&
+            !TakesTokenTypeFromPart(expression: expression))
+        {
+            ValidateNoTokenTypeArgument(type: resultType, what: "this value", location: expression.Location,
+                carrierAllowed: true);
+        }
+
         return resultType;
     }
 

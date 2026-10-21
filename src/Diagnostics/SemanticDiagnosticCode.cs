@@ -726,7 +726,8 @@ public enum SemanticDiagnosticCode
     /// <summary>Cannot return scope-bound token from routine.</summary>
     TokenReturnNotAllowed = 600,
 
-    /// <summary>Cannot store scope-bound token in member variable.</summary>
+    /// <summary>A token stored in a member variable, or written or inferred as a type argument (<c>List[Viewing[T]]</c>,
+    /// a tuple, a variant, a generic type), or a <c>Maybe</c> of a token kept in a name.</summary>
     TokenMemberVariableNotAllowed = 601,
 
     /// <summary>Cannot use scope-bound token as variant payload.</summary>

@@ -437,10 +437,10 @@ public sealed partial class SemanticVerifier
         // Check if the type is a scope-bound wrapper (cannot be stolen)
         if (IsMemoryToken(type: operandType))
         {
-            string tokenKind = GetMemoryTokenKind(type: operandType);
             ReportError(code: SemanticDiagnosticCode.StealScopeBoundToken,
-                message: $"Cannot steal '{tokenKind}' - scope-bound wrappers cannot be stolen. " +
-                         $"Only raw entities can be stolen.",
+                message: $"You steal a token (`{operandType.ShortTypeName}`) here, but a token keeps nothing to hand " +
+                         "over: it only points at the place the entity is in. Steal the entity itself, or pass the " +
+                         "token as it is.",
                 location: steal.Location);
             return true;
         }
@@ -480,26 +480,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static bool IsMemoryToken(TypeSymbol type)
     {
-        return type.Name is Declaration.RuntimeContract.Viewing
-            or Declaration.RuntimeContract.Modifying;
-    }
-
-    /// <summary>
-    /// Gets the kind of scope-bound wrapper for error messages.
-    /// </summary>
-    private static string GetMemoryTokenKind(TypeSymbol type)
-    {
-        if (type.Name.StartsWith(value: Declaration.RuntimeContract.Viewing))
-        {
-            return "Viewing[T]";
-        }
-
-        if (type.Name.StartsWith(value: Declaration.RuntimeContract.Modifying))
-        {
-            return "Modifying[T]";
-        }
-
-        return type.Name;
+        return IsInlineOnlyTokenType(type: type);
     }
 
     /// <summary>

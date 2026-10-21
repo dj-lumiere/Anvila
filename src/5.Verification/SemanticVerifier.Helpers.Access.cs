@@ -89,7 +89,144 @@ public sealed partial class SemanticVerifier
                 message:
                 $"Cannot store {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. A token lives in a routine's locals and is never stored in a field.",
                 location: location);
+            return;
         }
+
+        ValidateNoTokenTypeArgument(type: type, what: $"member variable '{memberVariableName}'", location: location);
+    }
+
+    /// <summary>
+    /// The first token one of <paramref name="type"/>'s type arguments is or holds, at any depth
+    /// (<c>Viewing[Cell]</c> in <c>List[Viewing[Cell]]</c>, in <c>(Viewing[Cell], S64)</c>, in
+    /// <c>Modifying[List[Viewing[Cell]]]</c>), or null. A routine type is skipped: its parameter and result types are
+    /// what a call takes and gives, and a routine value keeps none of them.
+    /// </summary>
+    private static TypeSymbol? TokenInTypeArguments(TypeSymbol type)
+    {
+        if (type is RoutineTypeSymbol)
+        {
+            return null;
+        }
+
+        foreach (TypeSymbol argument in type.TypeArguments ?? [])
+        {
+            if (argument is RoutineTypeSymbol)
+            {
+                continue;
+            }
+
+            if (IsInlineOnlyTokenType(type: argument))
+            {
+                return argument;
+            }
+
+            if (TokenInTypeArguments(type: argument) is { } deeper)
+            {
+                return deeper;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a recovery carrier of a token (<c>Maybe[Viewing[T]]</c>, and the
+    /// <c>Check</c> / <c>Lookup</c> that <c>grab</c> / <c>lookup</c> give on a routine returning a token): what an
+    /// iterator's <c>emit</c> gives under <c>try</c>, unpacked with <c>when</c> where it is made.</summary>
+    private static bool IsTokenCarrier(TypeSymbol type)
+    {
+        return type.BareName is "Maybe" or "Check" or "Lookup" && type.TypeArguments is [{ } carried] &&
+               (IsInlineOnlyTokenType(type: carried) || IsTokenTuple(type: carried));
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a tuple whose elements are tokens or hold none (the
+    /// <c>(U64, Modifying[T])</c> an <c>enumerate</c> step gives), with at least one token: an <c>each</c> loop takes it
+    /// apart, and its tokens last as long as one pass of the loop.</summary>
+    private static bool IsTokenTuple(TypeSymbol type)
+    {
+        return type is TupleTypeSymbol tuple && tuple.ElementTypes.Any(predicate: IsInlineOnlyTokenType) &&
+               tuple.ElementTypes.All(predicate: element => TokenInTypeArguments(type: element) == null);
+    }
+
+    /// <summary>Whether <paramref name="expression"/> takes a type holding a token from one of its parts (the receiver
+    /// or an argument already has it, so its declaration reported it), or is a call the builder wrote (an
+    /// <c>each</c> loop's <c>iter()</c>, a block's enter): only a value the program makes here reports.</summary>
+    private static bool TakesTokenTypeFromPart(Expression expression)
+    {
+        static bool Carries(Expression? part)
+        {
+            Expression? value = part is NamedArgumentExpression named ? named.Value : part;
+            return value?.ResolvedType is { } type && (TokenInTypeArguments(type: type) != null || IsTokenCarrier(type: type));
+        }
+
+        return expression switch
+        {
+            CallExpression { IsSynthesizedLowering: true } => true,
+            CallExpression call => call.Callee is MemberExpression { Object: var receiver } && Carries(part: receiver) ||
+                                   call.Arguments.Any(predicate: Carries),
+            GenericMemberRoutineCallExpression generic => Carries(part: generic.Object) ||
+                                                          generic.Arguments.Any(predicate: Carries),
+            _ => false
+        };
+    }
+
+    /// <summary>The source locations a token-in-a-type-argument error was reported at, so a declaration and the
+    /// expression that gives it its type report once.</summary>
+    private readonly HashSet<(string File, int Line)> _tokenTypeArgumentReported = [];
+
+    /// <summary>
+    /// Rejects a token as a type argument (RF-S601): a token holds the address of the place an entity or value is in,
+    /// and a container, a <c>Maybe</c>, a tuple, a variant or a generic type holding one could keep it after that
+    /// place is gone (the block that held the entity ended, or the entity was torn down). A token lives in a variable
+    /// of its own. <paramref name="carrierAllowed"/> lets a routine's result be <c>Maybe</c> of a token (an
+    /// iterator's <c>emit</c> under <c>try</c>), which the caller unpacks with <c>when</c> where it gets it.
+    /// </summary>
+    private void ValidateNoTokenTypeArgument(TypeSymbol type, string what, SourceLocation location,
+        bool carrierAllowed = false)
+    {
+        if (!_registry.Rules.ChecksAccessTokens || _isInCompilerGeneratedBody)
+        {
+            return;
+        }
+
+        TypeSymbol? token;
+        if (IsTokenCarrier(type: type))
+        {
+            TypeSymbol carried = type.TypeArguments![index: 0];
+            token = IsTokenTuple(type: carried) ? null : TokenInTypeArguments(type: carried);
+            if (token == null && !carrierAllowed)
+            {
+                if (!_tokenTypeArgumentReported.Add(item: (location.FileName, location.Line)))
+                {
+                    return;
+                }
+
+                ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
+                    message:
+                    $"You keep `{type.ShortTypeName}` in {what}, but it carries a token, and a token can't be kept inside " +
+                    $"another value. Unpack it with `when` where you get it (`when try xs.view_at(index: i)` " +
+                    "with `is None =>` and `else as v =>`), and use the token inside that branch.",
+                    location: location);
+                return;
+            }
+        }
+        else
+        {
+            token = TokenInTypeArguments(type: type);
+        }
+
+        if (token == null || !_tokenTypeArgumentReported.Add(item: (location.FileName, location.Line)))
+        {
+            return;
+        }
+
+        string target = token.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "the entity";
+        ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
+            message:
+            $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a token, and a token can't be a type " +
+            $"argument: the token points at the place `{target}` is in, and what holds the token could still use it " +
+            $"after that place is gone. Keep each token in a variable of its own, or keep the `{target}` itself in " +
+            $"the container (`List[{target}]`), or under a manager (`Retained[{target}]`).",
+            location: location);
     }
 
     /// <summary>Whether <paramref name="value"/> names a token a <c>using</c> over a <c>Guarded</c> opener bound (a
@@ -287,7 +424,10 @@ public sealed partial class SemanticVerifier
                 message:
                 $"Cannot use {GetTokenKindDescription(type: type)} as payload for variant case '{caseName}'. A token lives in a routine's locals and is never stored in a variant.",
                 location: location);
+            return;
         }
+
+        ValidateNoTokenTypeArgument(type: type, what: $"variant case '{caseName}'", location: location);
     }
 
     /// <summary>

@@ -361,6 +361,15 @@ public sealed partial class SemanticVerifier
                 isParameter: true, isNullable: param.IsNullable);
             ReportProtocolValueType(type: param.Type, location: paramLoc ?? routine.Location,
                 what: $"parameter '{param.Name}'");
+            ValidateNoTokenTypeArgument(type: param.Type, what: $"parameter '{param.Name}'",
+                location: paramLoc ?? routine.Location);
+        }
+
+        // A routine may give back `Maybe` of a token (an iterator's `emit` under `try`), unpacked where it is called.
+        if (routineInfo.ReturnType is { } returned)
+        {
+            ValidateNoTokenTypeArgument(type: returned, what: $"the result of '{routineInfo.Name}'",
+                location: routine.ReturnType?.Location ?? routine.Location, carrierAllowed: true);
         }
     }
 
@@ -1120,6 +1129,7 @@ public sealed partial class SemanticVerifier
         }
 
         ReportProtocolValueType(type: varType, location: varDecl.Location, what: $"'{varDecl.Name}'");
+        ValidateNoTokenTypeArgument(type: varType, what: $"'{varDecl.Name}'", location: varDecl.Location);
 
         // #16: Plain `var x: T` without an initializer is disallowed.
         // Use `lateinit var x: T` (eager allocation, late initialization).

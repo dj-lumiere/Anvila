@@ -359,6 +359,7 @@ public sealed partial class SemanticVerifier
     {
         // The parser requires a type annotation on every `global`, so global.Type is non-null here.
         TypeSymbol globalType = InFileRealm(resolve: () => ResolveType(typeExpr: global.Type!));
+        ValidateNoTokenTypeArgument(type: globalType, what: $"global '{global.Name}'", location: global.Location);
 
         // A RazorForge global is reached from every thread, so its binding is never assigned again (only its
         // initialization, at the top of start()): an Atomic or a Guarded changes what it holds through its own
