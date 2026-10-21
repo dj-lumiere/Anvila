@@ -969,6 +969,9 @@ public sealed partial class SemanticVerifier
                 ret.Value is IdentifierExpression { Name: "None" } blankId &&
                 blankId.Location == ret.Location;
 
+            // A local handed over inside the returned value ends at this return: it moves without `steal`.
+            HandOverReturnedLocals(ret: ret);
+
             // Pass expected return type for contextual literal inference
             TypeSymbol returnType = AnalyzeExpression(expression: ret.Value,
                 expectedType: _currentRoutine.ReturnType);
@@ -1008,6 +1011,109 @@ public sealed partial class SemanticVerifier
                     location: ret.Location);
             }
         }
+    }
+
+    /// <summary>
+    /// A local of the routine handed over inside a <c>return</c> expression (an argument, a tuple or list item:
+    /// <c>return GameBoard(rows: rows)</c>) ends at that return, so the return is its last use and handing it over
+    /// leaves no second holder. An entity local there moves as if <c>steal</c> were written, and a written
+    /// <c>steal</c> of such a local is a warning whose quick fix removes it.
+    /// </summary>
+    private void HandOverReturnedLocals(ReturnStatement ret)
+    {
+        if (!ChecksOwnershipHere || _isInCompilerGeneratedBody || ret.Value is null)
+        {
+            return;
+        }
+
+        // `return steal xs`: the returned local moves by itself.
+        if (ret.Value is StealExpression { IsImplicitMove: false, Operand: IdentifierExpression returned } direct &&
+            IsReturnEndedLocal(name: returned.Name))
+        {
+            WarnStealInReturn(steal: direct, local: returned);
+        }
+
+        HandOverIn(value: ret.Value);
+    }
+
+    /// <summary>Walks the items of <paramref name="value"/> that hand a value over: call and construction arguments,
+    /// tuple and list items, and those of nested calls.</summary>
+    private void HandOverIn(Expression value)
+    {
+        switch (value)
+        {
+            case CallExpression call:
+                HandOverItems(items: call.Arguments);
+                break;
+            case GenericMemberRoutineCallExpression generic:
+                HandOverItems(items: generic.Arguments);
+                break;
+            case TupleLiteralExpression tuple:
+                HandOverItems(items: tuple.Elements);
+                break;
+            case ListLiteralExpression list:
+                HandOverItems(items: list.Elements);
+                break;
+            case NamedArgumentExpression named:
+                HandOverIn(value: named.Value);
+                break;
+        }
+    }
+
+    private void HandOverItems(List<Expression> items)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            Expression item = items[index: i];
+            Expression inner = item is NamedArgumentExpression named ? named.Value : item;
+            Expression? replaced = inner switch
+            {
+                IdentifierExpression id when IsReturnEndedLocal(name: id.Name) &&
+                                             _registry.LookupVariable(name: id.Name) is { } local &&
+                                             IsRawEntityType(type: local.Type) =>
+                    new StealExpression(Operand: id, Location: id.Location) { IsImplicitMove = true },
+                StealExpression { IsImplicitMove: false, Operand: IdentifierExpression stolen } written
+                    when IsReturnEndedLocal(name: stolen.Name) => WarnStealInReturn(steal: written, local: stolen),
+                _ => null
+            };
+
+            if (replaced is null)
+            {
+                HandOverIn(value: inner);
+                continue;
+            }
+
+            items[index: i] = item is NamedArgumentExpression namedItem
+                ? namedItem with { Value = replaced }
+                : replaced;
+        }
+    }
+
+    /// <summary>Reports RF-W259 on a written <c>steal</c> of a local that ends at the return, with the quick fix that
+    /// removes the word, and returns null so the steal stays as written.</summary>
+    private Expression? WarnStealInReturn(StealExpression steal, IdentifierExpression local)
+    {
+        ReportWarning(code: SemanticWarningCode.StealInReturn,
+            message: $"'{local.Name}' ends at this return, so it is handed over without 'steal'. Write " +
+                     $"'{local.Name}' alone (migrate --step return-steal removes it).",
+            location: steal.Location,
+            fix: new SuggestedFix(Title: "Remove 'steal'",
+                Edits:
+                [
+                    new TextEdit(StartLine: steal.Location.Line, StartColumn: steal.Location.Column,
+                        EndLine: local.Location.Line, EndColumn: local.Location.Column, NewText: "")
+                ]));
+        return null;
+    }
+
+    /// <summary>Whether <paramref name="name"/> is a variable the routine declared itself (not a parameter, a global,
+    /// a preset or <c>me</c>), which every <c>return</c> ends.</summary>
+    private bool IsReturnEndedLocal(string name)
+    {
+        return name != "me" && _registry.LookupVariable(name: name) is
+        {
+            IsParameter: false, IsGlobal: false, IsPreset: false
+        };
     }
 
     private void AnalyzeThrowStatement(ThrowStatement throwStmt)

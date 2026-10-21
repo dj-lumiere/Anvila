@@ -156,6 +156,10 @@ public enum SemanticWarningCode
     /// <summary>Failable routine called in a non-failable context without error handling.</summary>
     UnhandledCrashableCall = 257,
 
+    /// <summary>`steal` on a local inside a `return` expression: the local ends at that return, so it is handed over
+    /// without the word.</summary>
+    StealInReturn = 259,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // STYLE WARNINGS (RF-W300 - RF-W349)
     // ═══════════════════════════════════════════════════════════════════════════

@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("have" or "suffix" or "failable" or "names" or "modules" or "access" or "cpu-events"
-                or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes"))
+                or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing or bytes");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes or return-steal");
             return 2;
         }
 
@@ -113,6 +113,12 @@ internal partial class Program
         if (step == "bytes")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteBytes);
+        }
+
+        // `--step return-steal`: a local handed over inside a `return` expression moves without `steal`.
+        if (step == "return-steal")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteReturnSteal);
         }
 
         // `--step until`: a loop is `until` with the condition that ends it, or `loop`, with analysis deciding which
