@@ -969,11 +969,6 @@ public enum SemanticDiagnosticCode
     /// single-level — a member walk cannot itself contain a member walk.</summary>
     NestedExpandNotAllowed = 635,
 
-    /// <summary>Suflae: a fixed-width / complex / quaternion numeric type (<c>S32</c>, <c>U64</c>,
-    /// <c>B128</c>, <c>D64</c>, <c>C64</c>, <c>Q256</c>, …) was named in user source without
-    /// <c>import Numerics</c>. Suflae's bare numeric vocabulary is <c>Integer</c>/<c>Decimal</c> (plus
-    /// <c>Text</c>/<c>Bytes</c>); the fixed-width zoo is import-gated for approachability.</summary>
-    SuflaeNumericImportRequired = 636,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // ERROR HANDLING ERRORS (RF-S750 - RF-S799)
