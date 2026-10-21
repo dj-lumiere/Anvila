@@ -1803,6 +1803,16 @@ public sealed partial class SemanticVerifier
             memberVariableLookup[key: memberVariable.Name] = memberVariable;
         }
 
+        // Names that are not all member variables were meant for a creator the type's author wrote: say which
+        // creator and which argument does not fit, instead of listing the member variables left out.
+        if (memberVariables.Count > 0 &&
+            memberVariables.Any(predicate: mv => mv.Name.Length > 0 && !memberVariableLookup.ContainsKey(key: mv.Name)) &&
+            ReportWrittenCreatorMiss(type: type, memberVariables: memberVariables, location: location,
+                analyzedTypes: analyzedTypes))
+        {
+            return;
+        }
+
         // Track which member variables have been provided (to detect duplicates and missing member variables)
         var providedMemberVariables = new HashSet<string>();
 
@@ -1888,6 +1898,85 @@ public sealed partial class SemanticVerifier
             typeMemberVariables: typeMemberVariables,
             memberVariables: memberVariables,
             provided: providedMemberVariables);
+    }
+
+    /// <summary>
+    /// A construction whose argument names fit no member variable list, on a type with creators its author wrote:
+    /// reports one error that names the creator taking those names and each argument whose type does not fit its
+    /// parameter, or the creators there are when none takes those names. Returns false when the type has no
+    /// written creator (the construction is then checked member variable by member variable).
+    /// </summary>
+    private bool ReportWrittenCreatorMiss(TypeSymbol type, List<(string Name, Expression Value)> memberVariables,
+        SourceLocation location, IReadOnlyList<TypeSymbol>? analyzedTypes)
+    {
+        List<RoutineInfo> written = _registry.GetMemberRoutinesForType(type: DefinitionOf(type: type))
+                                             .Where(predicate: m => m.IsCreator && !m.IsSynthesized)
+                                             .ToList();
+        if (written.Count == 0)
+        {
+            return false;
+        }
+
+        TypeSymbol ParameterType(ParamInfo p)
+        {
+            return type is { IsGenericResolution: true, TypeArguments: not null }
+                ? SubstituteTypeParameters(type: p.Type, genericType: type)
+                : p.Type;
+        }
+
+        string Signature(RoutineInfo creator)
+        {
+            return $"{type.Name}({string.Join(separator: ", ", values: creator.Parameters.Select(selector: p => $"{p.Name}: {ParameterType(p: p).Name}"))})";
+        }
+
+        var names = memberVariables.Select(selector: mv => mv.Name).ToHashSet(comparer: StringComparer.Ordinal);
+        RoutineInfo? named = written.FirstOrDefault(predicate: m =>
+            m.Parameters.Count >= names.Count && names.All(predicate: n => m.Parameters.Any(predicate: p => p.Name == n)) &&
+            m.Parameters.All(predicate: p => names.Contains(item: p.Name) || p.HasDefaultValue));
+        var argTypes = new List<TypeSymbol>(capacity: memberVariables.Count);
+        for (int i = 0; i < memberVariables.Count; i++)
+        {
+            (string name, Expression value) = memberVariables[index: i];
+            ParamInfo? parameter = named?.Parameters.FirstOrDefault(predicate: p => p.Name == name);
+            argTypes.Add(item: analyzedTypes?[index: i] ??
+                               AnalyzeExpression(expression: value,
+                                   expectedType: parameter != null ? ParameterType(p: parameter) : null));
+        }
+
+        string given = string.Join(separator: ", ",
+            values: memberVariables.Select(selector: (mv, i) => $"{mv.Name}: {argTypes[index: i].Name}"));
+        if (named == null)
+        {
+            ReportError(code: SemanticDiagnosticCode.MemberVariableNotFound,
+                message: $"You build '{type.Name}' with ({given}), and no creator of it takes those names. Its " +
+                         $"creators are {string.Join(separator: ", ", values: written.Select(selector: c => $"'{Signature(creator: c)}'"))}.",
+                location: location);
+            return true;
+        }
+
+        var misfits = new List<string>();
+        for (int i = 0; i < memberVariables.Count; i++)
+        {
+            ParamInfo parameter = named.Parameters.First(predicate: p => p.Name == memberVariables[index: i].Name);
+            TypeSymbol wanted = ParameterType(p: parameter);
+            if (argTypes[index: i] is not ErrorTypeSymbol && !IsAssignableTo(source: argTypes[index: i], target: wanted))
+            {
+                misfits.Add(item: $"'{parameter.Name}' takes {Article.For(name: wanted.Name)} '{wanted.Name}' and you " +
+                                  $"give it {Article.For(name: argTypes[index: i].Name)} '{argTypes[index: i].Name}' " +
+                                  $"(convert it with '.to[{wanted.Name}]()')");
+            }
+        }
+
+        if (misfits.Count == 0)
+        {
+            return false;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
+            message: $"The creator '{Signature(creator: named)}' does not take ({given}): " +
+                     $"{string.Join(separator: ", and ", values: misfits)}.",
+            location: location);
+        return true;
     }
 
     /// <summary>
