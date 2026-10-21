@@ -21,20 +21,19 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            // T / Retained[T] / Tracked[T] / Roamed[T] are declared as `record` in stdlib so they
+            // Retained[T] / Tracked[T] / Roamed[T] are declared as `record` in stdlib so they
             // surface as RecordTypeSymbol. Their single TypeArgument is the
             // wrapped collection type — unwrap so the literal can resolve its base name
             // (PriorityQueue, SortedSet, etc.) from the expected type even when LHS is
-            // `Owned[SortedSet[S64]]` etc. Use base-name extraction since instantiated record
-            // types have Name like "Foo", not bare "Owned". Roamed[T] is the Suflae lowering of an
+            // `Retained[SortedSet[S64]]` etc. Use base-name extraction since instantiated record
+            // types have Name like "Foo", not bare "Retained". Roamed[T] is the Suflae lowering of an
             // annotated collection type (`var l: List[S64]` ⇒ `Roamed[List[S64]]`); it MUST be
             // transparent here too, else a bare literal element loses its S64 context and falls back
             // to the Suflae `Integer` default — producing `List[Integer]` that won't assign to the
             // `Roamed[List[S64]]` slot (RF-S201). Inferring the element type through the wrapper is
             // exactly the builder's job.
             if (current is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } recRT &&
-                GetTypeBaseName(type: recRT) is Declaration.RuntimeContract.Owned
-                    or Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked
+                GetTypeBaseName(type: recRT) is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked
                     or Declaration.RuntimeContract.Roamed)
             {
                 current = recArgs[index: 0];
@@ -48,21 +47,6 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Wraps an entity-typed collection literal in <c>Owned[…]</c> when used in a binding
-    /// position (var declaration, field initializer, assignment target). For rvalue
-    /// positions (function-call args, expression results), the literal stays as the bare
-    /// entity — the caller takes responsibility for its lifetime, and display routines
-    /// (`show`/`alert`) see the inner type so `alert([1,2,3])` prints
-    /// <c>List(count: 3, …)</c> instead of <c>Owned(addr: …, List(…))</c>.
-    ///
-    /// `wrapForBinding` controls the behavior: literal-analysis sites that pass `false`
-    /// (default — rvalue context) get the bare entity; var-decl / field-init sites pass
-    /// `true` so the result is Owned-wrapped and can satisfy the entity-ownership rule
-    /// (S413). Switching between contexts is purely a type-annotation thing — codegen
-    /// emits the same `List.create + add_last` sequence either way; the Owned wrapper is
-    /// `@llvm("ptr")` and shares the entity's pointer.
-    /// </summary>
-    /// <summary>
     /// Picks the collection literal's own type from an expected (annotation) type. A Suflae entity slot
     /// pins the annotation as <c>Roamed[System.List[T]]</c>, but the literal itself must stay the BARE
     /// collection — it builds a fresh <c>create + add_last</c> sequence and the SF binding lowering roams
@@ -70,7 +54,7 @@ public sealed partial class SemanticVerifier
     /// Stamping <c>Roamed</c> onto the literal would make its <c>add</c>/<c>add_last</c> calls target the
     /// Roamed handle, which has no collection memberRoutine → codegen "no resolved member routine" (or, once the temp is
     /// created as <c>Roamed[Set]()</c>, an uninitialized controller → AccessViolation). Other expected
-    /// wrappers (Owned/Retained/Tracked) and exact collection types pass through unchanged.
+    /// wrappers (Retained/Tracked) and exact collection types pass through unchanged.
     /// </summary>
     private static TypeSymbol LiteralTypeFromExpected(TypeSymbol expectedType,
         TypeSymbol? collectionExpectedType)

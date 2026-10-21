@@ -22,7 +22,7 @@ public sealed partial class SemanticVerifier
     {
         // Detect whether any USER program imports BuilderQuery. When absent we skip
         // resolving the list-returning reflection types (FieldInfo/ProtocolInfo/RoutineInfo),
-        // which would otherwise drag in the full BTreeListNode/Owned/Array/ArrayIterator
+        // which would otherwise drag in the full BTreeListNode/Array/ArrayIterator
         // closure for every type via GMP, even when BuilderQuery is never called.
         // The stdlib itself imports BuilderQuery everywhere, so the signal must be a
         // NON-stdlib import (see the override computed in AnalyzeMultiple).

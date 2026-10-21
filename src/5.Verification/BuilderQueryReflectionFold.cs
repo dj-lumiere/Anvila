@@ -664,7 +664,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
                              .ToList();
         var literal =
             new ListLiteralExpression(Elements: elements, ElementType: null, Location: loc);
-        // Analyze as a source `[...]` literal would be — sets ResolvedType (Owned[List[Text]]) AND resolves
+        // Analyze as a source `[...]` literal would be — sets ResolvedType (List[Text]) AND resolves
         // the per-arity from_literal(Array[Text,N]) builder onto ResolvedLiteralBuilder so reachability seeds it.
         analyzeList(arg1: literal, arg2: returnType);
         return literal;

@@ -46,7 +46,7 @@ public partial class LlvmEmitter
                 // collection literals must be lowered to CreatorExpression + add calls before codegen.
                 ListLiteralExpression list => EmitListLiteral(sb: sb, list: list),
                 BitPackExpression pack => EmitBitArrayRuntime(sb: sb,
-                    resolvedType: UnwrapCollectionStorageType(type: pack.ResolvedType!),
+                    resolvedType: pack.ResolvedType!,
                     arguments: pack.Bits),
                 // CarrierPayloadExpression is the RESULT of PatternLoweringPass (Maybe/Result payload
                 // projection) — codegen consumes it, it is not a surface node.

@@ -771,7 +771,7 @@ internal sealed class TypeBodyResolver
                          "Use failable routines (!) instead of storing Check in variants.",
                 location: member.Location);
         }
-        // Post-Owned-retirement: bare entity T IS the bound/lvalue form (record-shaped
+        // A bare entity T IS the bound/lvalue form (record-shaped
         // pointer), so a variant member of type T owns the bound entity directly.
         // Variant copyability derives from all members being Assignable.
 

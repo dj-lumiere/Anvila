@@ -1421,7 +1421,7 @@ public sealed partial class SemanticVerifier
             FinalizeLateVariantBodies();
         }
 
-        // Owned rvalue-temporary teardown for user code, now that Phase 8 has lowered when→if so the
+        // Rvalue-temporary teardown for user code, now that Phase 8 has lowered when→if so the
         // producing calls sit in real statements. ScopeTeardownLoweringPass already ran (pre-lowering,
         // step 4) and will not revisit this program, so the temps' bindings are freed exactly once by
         // the destroy calls this pass emits (codegen emit-on-demand resolves the concrete destroy).

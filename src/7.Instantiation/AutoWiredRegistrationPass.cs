@@ -69,7 +69,7 @@ internal sealed class AutoWiredRegistrationPass
 
         // BuilderQuery helper-type closures (List[FieldInfo], List[ProtocolInfo],
         // List[RoutineInfo]) are only resolved when the user program actually imports BuilderQuery.
-        // Otherwise GMP would drag in the full BTreeListNode/Owned/Array/ArrayIterator closure for
+        // Otherwise GMP would drag in the full BTreeListNode/Array/ArrayIterator closure for
         // every type via the metadata routines registered on each type.
         (TypeSymbol? listFieldInfoType, TypeSymbol? listProtocolInfoType,
                 TypeSymbol? listRoutineInfoType) =

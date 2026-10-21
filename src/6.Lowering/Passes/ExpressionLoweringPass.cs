@@ -1545,8 +1545,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     private (List<Statement> Hoisted, Expression Expr) LowerListLiteral(ListLiteralExpression list)
     {
         TypeSymbol? resolvedType = list.ResolvedType;
-        // Unwrap transparent ownership wrappers (T, Retained[T], Tracked[T]) so that
-        // Owned[List[S64]] uses "List" as baseName, not "Owned".
+        // Unwrap the RC wrappers (Retained[T], Tracked[T]) so that Retained[List[S64]] uses "List" as baseName.
         TypeSymbol? listType = UnwrapOwnershipWrapper(type: resolvedType) ?? resolvedType;
         SourceLocation loc = list.Location;
 
@@ -1604,7 +1603,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 loc: loc));
         }
 
-        // If the original expression was wrapped in Owned/Retained/Tracked, restore that
+        // If the original expression was wrapped in Retained/Tracked, restore that
         // wrapper type on the returned reference so downstream code sees the correct type.
         Expression result =
             resolvedType != null && !ReferenceEquals(objA: resolvedType, objB: listType)
@@ -1662,9 +1661,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return ([], set);
         }
 
-        // Unwrap Owned/Retained/Tracked so the temp var holds the inner collection (Set/SortedSet/
+        // Unwrap Retained/Tracked so the temp var holds the inner collection (Set/SortedSet/
         // SecureSet/...) instead of the wrapper. Without this, MakeCollectionAddCall resolves
-        // `.add` against Owned[…] (which has no add) and codegen throws "no resolved member routine".
+        // `.add` against Retained[…] (which has no add) and codegen throws "no resolved member routine".
         TypeSymbol setType = UnwrapOwnershipWrapper(type: resolvedType) ?? resolvedType;
         string baseName = GetCollectionBaseName(type: setType) ?? "Set";
 
@@ -1723,7 +1722,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return ([], dict);
         }
 
-        // Unwrap Owned/Retained/Tracked — see LowerSetLiteral for the rationale.
+        // Unwrap Retained/Tracked — see LowerSetLiteral for the rationale.
         TypeSymbol dictType = UnwrapOwnershipWrapper(type: resolvedType) ?? resolvedType;
         string baseName = GetCollectionBaseName(type: dictType) ?? "Dict";
 
@@ -2072,15 +2071,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     private static TypeSymbol? UnwrapOwnershipWrapper(TypeSymbol? type)
     {
-        // T / Retained[T] / Tracked[T] are declared as `record T` in stdlib, so
-        // they surface as RecordTypeSymbol. Check by base name + single
-        // TypeArgument and return the inner collection so downstream lowering sees the actual
-        // base (BitList, SortedSet, …) instead of the Owned envelope.
+        // Retained[T] / Tracked[T] are declared as `record` in stdlib, so they surface as RecordTypeSymbol. Check by
+        // base name + single TypeArgument and return the inner collection so downstream lowering sees the actual
+        // base (BitList, SortedSet, …) instead of the wrapper.
         if (type is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } rec &&
-            (rec.GenericDefinition?.Name is Declaration.RuntimeContract.Owned
-                 or Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked ||
-             GetCollectionBaseName(type: rec) is Declaration.RuntimeContract.Owned
-                 or Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked))
+            (rec.GenericDefinition?.Name is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked ||
+             GetCollectionBaseName(type: rec) is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked))
         {
             return recArgs[index: 0];
         }
@@ -3280,7 +3276,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return false;
         }
 
-        // Post-Owned-retirement: Maybe[T entity] uses the same record-shaped carrier
+        // Maybe[T entity] uses the same record-shaped carrier
         // as Maybe[T record] (single `present`+`value` layout), so accept both.
         return true;
     }

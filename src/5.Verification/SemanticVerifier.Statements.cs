@@ -1107,15 +1107,8 @@ public sealed partial class SemanticVerifier
                 _elementTokenSources.Remove(key: varDecl.Name);
             }
 
-            // Collection literals analyze to the bare entity type (List[T] / Set[T] / Dict[K,V]),
-            // which can't be stored bare per the entity-ownership rule (S413). At binding sites,
-            // wrap the inferred type in Owned so the variable holds a destructable handle.
-            // This mirrors the binding-vs-rvalue distinction: `alert([1,2,3])` keeps the bare
-            // entity (and prints List-shaped output), while `var a = [1,2,3]; alert(a)` makes
-            // a Owned (and prints the Owned envelope).
-            // Post-Owned-retirement: bound `T` (entity lvalue) is record-shaped storage with
-            // entity-ownership semantics layered on top. No wrapper synthesis — the slot holds
-            // bare entity T directly.
+            // Collection literals analyze to the bare entity type (List[T] / Set[T] / Dict[K,V]), and the slot
+            // holds that entity directly. No wrapper is made around it.
         }
         else
         {
@@ -1422,7 +1415,7 @@ public sealed partial class SemanticVerifier
                 location: varDecl.Location);
         }
 
-        // After Owned retirement: a bare entity-typed variable is the normal bound form.
+        // A bare entity-typed variable is the normal bound form.
         // Duplicate-handle prohibition is enforced at copy sites (the block above).
 
         // A variant is copied like the values it holds: one holding only values copies (decided 2026-10-14), one that

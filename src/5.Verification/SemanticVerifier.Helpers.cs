@@ -1012,7 +1012,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Rewrites `show(x)` / `alert(x)` arguments in-place when `x` is a copy-restricted
-    /// wrapper (Owned, Retained, Tracked, ...). Each such argument becomes `x.represent()`
+    /// wrapper (Retained, Tracked, ...). Each such argument becomes `x.represent()`
     /// (for show) or `x.diagnose()` (for alert). The display protocols guarantee `@readonly`,
     /// so the memberRoutine call is a borrow — `x` is not consumed. The resulting `Text` matches
     /// the `show(value: Accessing[Text])` / `alert(value: Accessing[Text])` overload
@@ -1021,7 +1021,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <remarks>
     /// Must run BEFORE overload resolution — rewriting after a routine has been bound to
-    /// `show[T=Owned[...]]` leaves the call with a Text arg but mismatched callee, producing
+    /// `show[T=Retained[...]]` leaves the call with a Text arg but mismatched callee, producing
     /// garbled output at runtime (the wrong function is called).
     ///
     /// Narrow scope (phase 1): only `show` and `alert` are eligible. Other `@readonly`
@@ -1053,7 +1053,7 @@ public sealed partial class SemanticVerifier
             }
 
             // Rewrite for args that don't match the bare-Text/Bytes overloads:
-            //   - copy-restricted wrappers (Owned, Retained, Tracked, …) — `Wrappers.IsTriviallyAssignable`
+            //   - copy-restricted wrappers (Retained, Tracked, …) — `Wrappers.IsTriviallyAssignable`
             //     returns false; we need the rewrite to avoid S420.
             //   - raw entities (List[T], Set[T], Dict[K,V]) — `Wrappers.IsTriviallyAssignable` returns
             //     true (fallback), but the generic `alert[T]` / `show[T]` monomorphization
@@ -1215,13 +1215,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Maybe auto-wrap cases.
-        if (IsMaybeAssignable(source: source, target: target))
-        {
-            return true;
-        }
-
-        // Raw entity E → Owned[E]: a freshly produced entity transfers ownership.
-        return IsOwnedEntityAssignable(source: source, target: target);
+        return IsMaybeAssignable(source: source, target: target);
     }
 
     /// <summary>
@@ -1263,13 +1257,6 @@ public sealed partial class SemanticVerifier
     {
         return self is ProtocolSelfTypeSymbol && protocol.Category == TypeCategory.Protocol &&
                _currentRoutine?.OwnerType is { } owner && owner.BareName == protocol.BareName;
-    }
-
-    private static bool IsOwnedEntityAssignable(TypeSymbol source, TypeSymbol target)
-    {
-        return source.Category == TypeCategory.Entity &&
-               IsOwnedOf(type: target, inner: out TypeSymbol? inner) &&
-               (source.Name == inner.Name || source.FullName == inner.FullName);
     }
 
     private static bool IsVariantMemberAssignable(TypeSymbol source, TypeSymbol target)
@@ -1415,42 +1402,15 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Handles the <c>Maybe[T]</c> auto-wrap case of <see cref="IsAssignableTo"/>: an entity/record/
-    /// wrapper source is assignable to <c>Maybe[SameType]</c> (and a raw entity E to <c>Maybe[Owned[E]]</c>).
+    /// wrapper source is assignable to <c>Maybe[SameType]</c>.
     /// The caller has already verified the source category and that <paramref name="maybeTarget"/> is a
     /// single-arg Maybe.
     /// </summary>
     private static bool IsAssignableToMaybeInner(TypeSymbol source, TypeSymbol maybeTarget)
     {
         TypeSymbol typeArg = maybeTarget.TypeArguments![index: 0];
-        if (source.Name == typeArg.Name || source.FullName == typeArg.FullName ||
-            source.FullName == typeArg.Name || source.Name == typeArg.FullName)
-        {
-            return true;
-        }
-
-        // Raw entity E -> Maybe[E]: rvalue entity auto-wraps into Owned, then carrier.
-        if (source.Category == TypeCategory.Entity &&
-            IsOwnedOf(type: typeArg, inner: out TypeSymbol? ownedInnerOfMaybe) &&
-            (source.Name == ownedInnerOfMaybe.Name ||
-             source.FullName == ownedInnerOfMaybe.FullName))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsOwnedOf(TypeSymbol type, out TypeSymbol inner)
-    {
-        if (type.BareName == Declaration.RuntimeContract.Owned &&
-            type.TypeArguments is { Count: 1 } args)
-        {
-            inner = args[index: 0];
-            return true;
-        }
-
-        inner = null!;
-        return false;
+        return source.Name == typeArg.Name || source.FullName == typeArg.FullName ||
+               source.FullName == typeArg.Name || source.Name == typeArg.FullName;
     }
 
     /// <summary>

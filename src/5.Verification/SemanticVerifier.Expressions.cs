@@ -2545,28 +2545,14 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Analyzes the force-unwrap operator (<c>!!</c>): a carrier's payload type (with the
-    /// <c>Maybe[Owned[T]]!!</c> → <c>Modifying[T]</c> special case), else the type's <c>unwrap</c>
+    /// Analyzes the force-unwrap operator (<c>!!</c>): a carrier's payload type, else the type's <c>unwrap</c>
     /// member routine return, else RF-S (unsupported operator).
     /// </summary>
     private TypeSymbol AnalyzeForceUnwrap(UnaryExpression unary, TypeSymbol operandType)
     {
         if (IsCarrierType(type: operandType) && operandType.TypeArguments is { Count: > 0 })
         {
-            TypeSymbol inner = operandType.TypeArguments[index: 0];
-            // `Maybe[T]!!` yields `Modifying[T]` — the unwrap
-            // is an exclusive scope-bound borrow, not a copy. Same LLVM repr (ptr), but
-            // typed as Modifying so the destructor scheduler skips it.
-            if (IsMaybeType(type: operandType) &&
-                IsOwnedOf(type: inner, inner: out TypeSymbol ownedInner))
-            {
-                return _registry.GetOrCreateWrapperType(
-                    wrapperName: Declaration.RuntimeContract.Modifying,
-                    innerType: ownedInner,
-                    isReadOnly: false);
-            }
-
-            return inner;
+            return operandType.TypeArguments[index: 0];
         }
 
         // User type — look up unwrap memberRoutine

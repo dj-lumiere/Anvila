@@ -316,9 +316,7 @@ public static class RuntimeContract
     ];
 
     /// <summary>Additional wrapper / marker-protocol TYPE-name contracts that must each resolve to a
-    /// registered type (checked alongside <see cref="WrapperTypes"/> by <see cref="RuntimeContractCheck"/>).
-    /// <see cref="Owned"/> is intentionally excluded — it is a builder-internal wrapper name with no
-    /// declared stdlib type, so it cannot be resolution-checked.</summary>
+    /// registered type (checked alongside <see cref="WrapperTypes"/> by <see cref="RuntimeContractCheck"/>).</summary>
     public static readonly IReadOnlyList<string> StdlibTypeContracts =
     [
         Atomic
@@ -488,9 +486,6 @@ public static class RuntimeContract
 
     // Related wrapper / marker-protocol type names that appear in the same type-identity checks as
     // the nine borrow wrappers above, but are NOT part of the borrow-wrapper contract sets.
-    /// <summary>Owning value wrapper (builder-internal; not a declared stdlib type).</summary>
-    public const string Owned = "Owned";
-
     /// <summary>Atomic value wrapper.</summary>
     public const string Atomic = "Atomic";
 

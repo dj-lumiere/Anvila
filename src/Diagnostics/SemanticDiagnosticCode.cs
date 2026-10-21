@@ -1164,7 +1164,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Unknown <c>expand</c> source — not allmemvarof/openmemvarof/caseof/branchof.</summary>
     UnknownExpandSource = 953,
 
-    /// <summary>Bare entity type used as type argument to Maybe/Result/Lookup. Wrap in Retained[T], Guarded[T], or use Owned[T?] for unique ownership.</summary>
+    /// <summary>Bare entity type used as type argument to Maybe/Result/Lookup. Wrap in Retained[T] or Guarded[T].</summary>
     BareEntityInCarrierType = 961,
 
     /// <summary>Residual high-level AST node survived backend-entry lowering validation.</summary>

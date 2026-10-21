@@ -2961,7 +2961,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     {
         skippedForStdlibFallback = false;
         // Wrapper forwarder bodies call as_entity()/extract() on the inner type, which requires
-        // T is EntityType (entity layout). For wrapper types (Hijacked, Retained, Owned, etc.)
+        // T is EntityType (entity layout). For wrapper types (Hijacked, Retained, etc.)
         // with a non-entity concrete T, skip the variant body (which may be a forwarder) and
         // fall through to the stdlib AST lookup below — the RF source handles all T without
         // requiring entity layout.
@@ -3546,7 +3546,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
     /// <summary>
     /// Adds the owner's type-argument → generic-parameter substitutions, including propagation of a
-    /// wrapper forwarder's inner-generic-def parameters (e.g. K, V from Owned[BTreeDictNode[K,V]]).
+    /// wrapper forwarder's inner-generic-def parameters (e.g. K, V from Retained[BTreeDictNode[K,V]]).
     /// </summary>
     private void AddOwnerTypeArgSubstitutions(Dictionary<string, TypeSymbol> typeSubs,
         RoutineInfo resolvedRoutine, TypeSymbol ownerType)

@@ -683,14 +683,14 @@ internal sealed class TypeResolver
                 location: typeExpr.Location);
         }
 
-        // Post-Owned-retirement: bare entity T IS the lvalue/bound form, so Maybe[T] /
+        // A bare entity T IS the lvalue/bound form, so Maybe[T] /
         // Check[T] over a bare entity is now a valid carrier shape — the
         // carrier owns the bound entity directly. The previous S953 rejection of this
         // case was removed alongside Maybe's `needs T is RecordType` constraint.
         // The identity/ownership-transfer semantics of `Maybe[Entity].unwrap() -> T`
         // are still an open design question (likely `T` — return-position rvalue).
 
-        // Post-Owned-retirement: bare entity T in collection slots is fine — bound T is
+        // A bare entity T in collection slots is fine — bound T is
         // record-shaped (pointer-sized) so List[T]/Dict[K,T] hold the same layout regardless
         // of whether T is entity or record. Entity-ownership semantics (no duplicate handles)
         // are enforced separately at SA-level assignment/copy sites.

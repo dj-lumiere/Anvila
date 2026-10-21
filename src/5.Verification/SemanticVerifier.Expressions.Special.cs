@@ -382,9 +382,6 @@ public sealed partial class SemanticVerifier
             return operandType;
         }
 
-        // T is explicitly stealable — ownership transfer is its design purpose
-        bool isOwned = WrapperShape.Is(type: operandType, name: Declaration.RuntimeContract.Owned);
-
         // `steal` on a record is a no-op — records are value-typed and have no
         // ownership to transfer. Returning the operand type as-is lets stdlib
         // patterns like `return steal result` keep working when `result` is a
@@ -402,7 +399,7 @@ public sealed partial class SemanticVerifier
             return operandType;
         }
 
-        if (!isOwned && !isRecord && !isParameter && !IsRawEntityType(type: operandType))
+        if (!isRecord && !isParameter && !IsRawEntityType(type: operandType))
         {
             ReportError(code: SemanticDiagnosticCode.StealScopeBoundToken,
                 message:
@@ -421,17 +418,9 @@ public sealed partial class SemanticVerifier
             _stealSites[key: stolenId.Name] = steal;
         }
 
-        // `steal T` unwraps to bare T — T is a binding-only ownership marker,
-        // and steal transfers the bare entity out of that binding. For raw entity operands
-        // (already bare), steal is a no-op on the type.
-        // `steal` always produces an rvalue `T` — it consumes an lvalue binding and yields
-        // an in-flight entity that must be re-bound (or consumed) at the use site.
+        // `steal` produces an rvalue of the operand's type: it consumes a binding and yields an in-flight entity
+        // that must be bound again (or consumed) at the use site.
         steal.IsInFlight = true;
-        if (isOwned && WrapperShape.InnerOf(type: operandType) is { } ownedInner)
-        {
-            steal.ResolvedType = ownedInner;
-            return ownedInner;
-        }
 
         steal.ResolvedType = operandType;
         return operandType;

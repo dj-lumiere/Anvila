@@ -317,7 +317,7 @@ public class EntityTypeSymbol : TypeSymbol
                           .ToList();
 
         // Route through the ambient TypeRegistry so nested generic resolutions
-        // (e.g. Owned[BTreeDictNode[S64, S64]] inside SortedDict[S64, S64]'s root field)
+        // (e.g. Retained[BTreeDictNode[S64, S64]] inside SortedDict[S64, S64]'s root field)
         // get registered and picked up by the monomorphization planner.
         TypeRegistry? registry = TypeRegistry.Ambient;
 

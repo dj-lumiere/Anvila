@@ -166,8 +166,8 @@ public partial class LlvmEmitter
     }
 
     // Recursively descends into a type's TypeArguments and wrapper inner types so that
-    // concrete nested generics (e.g. Owned[BTreeDictNode[S64, S64]] inside a
-    // Maybe[Owned[...]] field of SortedDict[S64, S64]) get their struct types emitted.
+    // concrete nested generics (e.g. Retained[BTreeDictNode[S64, S64]] inside a
+    // Maybe[Retained[...]] field of SortedDict[S64, S64]) get their struct types emitted.
     private void EnsureTypeGenerated(TypeSymbol? type, HashSet<string> visited)
     {
         if (type == null)

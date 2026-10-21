@@ -14,18 +14,6 @@ namespace Builder.LlvmEmit;
 /// </summary>
 public partial class LlvmEmitter
 {
-    private static TypeSymbol UnwrapCollectionStorageType(TypeSymbol type)
-    {
-        TypeSymbol current = type;
-        while (WrapperShape.TryGet(type: current, name: out string wrapper, inner: out TypeSymbol wrapped) &&
-               wrapper == Declaration.RuntimeContract.Owned)
-        {
-            current = wrapped;
-        }
-
-        return current;
-    }
-
     /// <summary>
     /// Emits a fixed-array literal (an <c>Array[T, N]</c>, or a <c>BitArray[N]</c> in its packed bytes) as a
     /// per-element insertvalue chain. Every other collection literal is lowered to its create and add calls
@@ -33,7 +21,7 @@ public partial class LlvmEmitter
     /// </summary>
     private string EmitListLiteral(StringBuilder sb, ListLiteralExpression list)
     {
-        TypeSymbol arrayType = UnwrapCollectionStorageType(type: list.ResolvedType!);
+        TypeSymbol arrayType = list.ResolvedType!;
         string llvmType = GetLlvmType(type: arrayType);
         if (!llvmType.StartsWith(value: '['))
         {

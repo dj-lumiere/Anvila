@@ -537,8 +537,8 @@ internal sealed class WrapperForwardingPass
         // `BTreeSetNode[T].keys_add_last(value: T)` registers a RoutineInfo whose
         // GenericParameters carries `T` (the owner-level param) — propagating that onto the
         // forwarder makes the forwarder look memberRoutine-generic in T, so GMP later mangles it as
-        // `Owned[BTreeSetNode[S64]].keys_add_last[S64]` while codegen call sites use the
-        // un-suffixed `Owned[BTreeSetNode[S64]].keys_add_last`. Strip owner-level params so
+        // `Retained[BTreeSetNode[S64]].keys_add_last[S64]` while codegen call sites use the
+        // un-suffixed `Retained[BTreeSetNode[S64]].keys_add_last`. Strip owner-level params so
         // only true memberRoutine-level generics (e.g. `Hijacked[T].recast_as[U]` -> `[U]`) survive.
         List<string>? filteredParams = innerMemberRoutine.GenericParameters;
         if (filteredParams is { Count: > 0 } && innerOwnerParams is { Count: > 0 })

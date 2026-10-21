@@ -394,9 +394,9 @@ public sealed partial class StdlibLoader
     /// </summary>
     /// <summary>
     /// BuilderQuery per-type routines whose stdlib decls return
-    /// <c>List[Owned[FieldInfo|ProtocolInfo|RoutineInfo]]</c> or <c>Dict[Text, Data]</c>.
+    /// <c>List[FieldInfo|ProtocolInfo|RoutineInfo]</c> or <c>Dict[Text, Data]</c>.
     /// Registering these as universal <c>T.x()</c> routines from BuilderQuery.rf forces GMP to
-    /// monomorphize the heavy carrier closure (BTreeListNode/Owned/Array/ArrayIterator) for every
+    /// monomorphize the heavy carrier closure (BTreeListNode/Array/ArrayIterator) for every
     /// type even when the user program never imports BuilderQuery.
     /// AutoWiredRegistrationPass re-registers these per-type when (and only when) the user actually
     /// imports BuilderQuery, so skipping the stdlib decls here is safe.

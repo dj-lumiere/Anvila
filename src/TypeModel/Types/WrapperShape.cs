@@ -4,7 +4,7 @@ namespace TypeModel.Types;
 
 /// <summary>
 /// Recognizes a wrapper type (Viewing, Modifying, Guarded, Witnessed, Retained,
-/// Tracked, Hijacked, Roamed, and the builder's own Owned): the standard library record's resolution
+/// Tracked, Hijacked, Roamed): the standard library record's resolution
 /// (<c>Hijacked[S64]</c>).
 /// </summary>
 public static class WrapperShape
@@ -12,7 +12,7 @@ public static class WrapperShape
     /// <summary>True when <paramref name="name"/> names a wrapper type.</summary>
     public static bool IsWrapperName(string name)
     {
-        return RuntimeContract.WrapperTypes.Contains(item: name) || name == RuntimeContract.Owned;
+        return RuntimeContract.WrapperTypes.Contains(item: name);
     }
 
     /// <summary>

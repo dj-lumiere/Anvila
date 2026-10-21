@@ -50,15 +50,9 @@ internal sealed class BitArrayLiteralLoweringPass(TypeSymbol byteType) : AstRewr
                new BitPackExpression(Bits: list.Elements, Location: list.Location) { ResolvedType = list.ResolvedType };
     }
 
-    /// <summary>True for a <c>BitArray[N]</c>, possibly held in an ownership wrapper.</summary>
+    /// <summary>True for a <c>BitArray[N]</c>.</summary>
     internal static bool IsBitArray(TypeSymbol? type)
     {
-        while (WrapperShape.TryGet(type: type, name: out string wrapper, inner: out TypeSymbol inner) &&
-               wrapper == RuntimeContract.Owned)
-        {
-            type = inner;
-        }
-
         return type is RecordTypeSymbol record && (record.GenericDefinition ?? record).BareName == BitArray;
     }
 }
