@@ -94,16 +94,16 @@ internal static class TesseraTrace
         ### Notes the running thread's trace as a new failure's, in the entry its number picks, and gives the failure's
         ### number (never 0), which a caught error keeps so a report of it thrown again shows where it began.
         routine rf_failure_note() -> U64
-            previous: U64 = RF_FAILURE_COUNT.atomic_fetch_add_relaxed(1)
+            previous: U64 = RF_FAILURE_COUNT.unbroken_fetch_add_relaxed(1)
             seq: U64 = add[U64](previous, 1)
             entry: @RfFailure = RF_FAILURES.to[@RfFailure]().stride(band[U64](previous, 63))
-            entry.seq.poke_atomic(0)
+            entry.seq.poke_unbroken(0)
             RF_TRACE_DEPTH.peek().poke_into(entry.depth)
             each i in 0 til 32
                 from: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(i)
                 to: @RfTraceFrame = entry.frames.to[@RfTraceFrame]().stride(i)
                 to.poke(from.peek())
-            entry.seq.poke_atomic(seq)
+            entry.seq.poke_unbroken(seq)
             return seq
 
         ### The entry of failure `seq`, or a hollow pointer when the thread doesn't remember it.
@@ -112,7 +112,7 @@ internal static class TesseraTrace
                 return .hollow()
             each i in 0 til 64
                 entry: @RfFailure = RF_FAILURES.to[@RfFailure]().stride(i)
-                if ieq[U64](entry.seq.peek_atomic(), seq)
+                if ieq[U64](entry.seq.peek_unbroken(), seq)
                     return entry
             return .hollow()
 

@@ -140,14 +140,14 @@ internal sealed class TesseraIntrinsics
             "element_pointer" => ElementPointer(),
             // A signed byte count: Tessera's Addr moves only by a ByteSize, a pointer by a signed count.
             "byte_offset" => $"{Argument(index: 0)}.to[@Byte]().offset(bytes: {Argument(index: 1)}).to[Addr]()",
-            "atomic_load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_atomic()",
-            "atomic_store" => Atomic(method: "atomic_store"),
-            "atomic_add" => Atomic(method: "atomic_fetch_add"),
-            "atomic_sub" => Atomic(method: "atomic_fetch_sub"),
-            "atomic_and" => Atomic(method: "atomic_fetch_and"),
-            "atomic_or" => Atomic(method: "atomic_fetch_or"),
-            "atomic_xor" => Atomic(method: "atomic_fetch_xor"),
-            "atomic_exchange" => Atomic(method: "atomic_swap"),
+            "atomic_load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_unbroken()",
+            "atomic_store" => Unbroken(method: "poke_unbroken"),
+            "atomic_add" => Unbroken(method: "unbroken_fetch_add"),
+            "atomic_sub" => Unbroken(method: "unbroken_fetch_sub"),
+            "atomic_and" => Unbroken(method: "unbroken_fetch_and"),
+            "atomic_or" => Unbroken(method: "unbroken_fetch_or"),
+            "atomic_xor" => Unbroken(method: "unbroken_fetch_xor"),
+            "atomic_exchange" => Unbroken(method: "unbroken_swap"),
             "atomic_compare_and_exchange" => CompareExchange(),
             "load_element_ref" =>
                 $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().stride({Index(index: 1)}).peek()",
@@ -233,13 +233,13 @@ internal sealed class TesseraIntrinsics
         string type = Type(index: 1);
         string previous = _spill(arg1: Argument(index: 1), arg2: _arguments[index: 1].Type);
         _emit(obj: $"{previous}_swapped: Bool = {Argument(index: 0)}.to[@{type}]()" +
-                   $".atomic_compare_exchange_raw(expected: {Argument(index: 1)}, new: {Argument(index: 2)}, previous: {previous})");
+                   $".unbroken_compare_exchange_raw(expected: {Argument(index: 1)}, new: {Argument(index: 2)}, previous: {previous})");
         _emit(obj: $"{previous}_held: {type} = {previous}.peek()");
         return $"{_typeText(arg: _resultType)}(item0: {previous}_held, item1: {previous}_swapped)";
     }
 
-    /// <summary>A sequentially consistent atomic operation on the value at the address, of the value's type.</summary>
-    private string Atomic(string method)
+    /// <summary>A sequentially consistent unbroken change of the value at the address, of the value's type.</summary>
+    private string Unbroken(string method)
     {
         return $"{Argument(index: 0)}.to[@{Type(index: 1)}]().{method}({Argument(index: 1)})";
     }
