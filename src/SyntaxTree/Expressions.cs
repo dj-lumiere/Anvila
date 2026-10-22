@@ -987,7 +987,7 @@ public record Parameter(
 {
     /// <summary>
     /// True when the argument is passed by its address, so the routine works on the caller's storage
-    /// (set on a <c>to[Work]</c> conversion's <c>Atomic</c> argument, shared with the work, see
+    /// (set on a <c>to[Work]</c> conversion's <c>Unbroken</c> argument, shared with the work, see
     /// <see cref="Builder.Desugaring.Passes.WorkRecipe"/>).
     /// </summary>
     public bool IsByReference { get; init; }

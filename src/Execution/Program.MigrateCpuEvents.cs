@@ -60,7 +60,7 @@ internal partial class Program
             int line = lineOffset + 1 + text.AsSpan(start: 0, length: call.Index).Count(value: '\n');
             if (PassesContext(text: text, open: text.IndexOf(value: '(', startIndex: call.Index)))
             {
-                string global = language == Language.Suflae ? "a global" : "a global (an Atomic or a Guarded)";
+                string global = language == Language.Suflae ? "a global" : "a global (an Unbroken or a Guarded)";
                 Console.WriteLine(value: $"{file}:{line}: '{call.Groups["name"].Value}' passes a context: the " +
                                          $"handler takes nothing now. Keep the state it changes in {global} and " +
                                          $"write 'CpuEventManager.{call.Groups["name"].Value}(handler)' by hand");

@@ -337,7 +337,7 @@ public sealed partial class SemanticVerifier
     /// <item><c>steal</c>-moved: exclusive transfer, the caller loses access (a moved bare entity leaves exactly
     /// one live handle);</item>
     /// <item>trivially copyable: passed BY VALUE as an independent copy;</item>
-    /// <item>a thread-shareable wrapper (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>), which carries its own
+    /// <item>a thread-shareable wrapper (<c>Unbroken</c>/<c>Guarded</c>/<c>Witnessed</c>), which carries its own
     /// synchronization (an atomic refcount);</item>
     /// <item>a <c>Roamed</c> handle, which is promoted before the Work is built.</item>
     /// </list>
@@ -461,9 +461,9 @@ public sealed partial class SemanticVerifier
             ? "a bare entity would be the same object in the caller and in the running work"
             : $"it holds `{offender!.Value.Wrapper}` at `{offender.Value.Path}`, which only the work that made it may use";
         string fix = isEntity
-            ? "Write `steal` before it to hand it over to the Work, share it with `Guarded`/`Witnessed`/`Atomic`, or " +
+            ? "Write `steal` before it to hand it over to the Work, share it with `Guarded`/`Witnessed`/`Unbroken`, or " +
               "pass a copyable value"
-            : "Share it with `Guarded`/`Witnessed`/`Atomic`, or pass a copyable value";
+            : "Share it with `Guarded`/`Witnessed`/`Unbroken`, or pass a copyable value";
         ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
             message: $"You pass {what} to a Work, but {reason}. {fix}.",
             location: value.Location);

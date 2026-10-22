@@ -78,7 +78,7 @@ public sealed partial class SemanticVerifier
             return $"'{name}' is a preset, so {what}.";
         }
 
-        if (global.Type.BareName is Declaration.RuntimeContract.Atomic or Declaration.RuntimeContract.Guarded)
+        if (global.Type.BareName is Declaration.RuntimeContract.Unbroken or Declaration.RuntimeContract.Guarded)
         {
             return $"'{name}' is a global, which every thread reaches, so the global itself is never assigned again: " +
                    $"{what}. Change what it holds through its own routines ('{name}.store(...)', " +
@@ -86,7 +86,7 @@ public sealed partial class SemanticVerifier
         }
 
         return $"'{name}' is a global, which every thread reaches, so it is only read: {what}. Shared state that " +
-               $"changes goes in a global of a type made for it: an Atomic (counters, flags) or a Guarded, changed " +
+               $"changes goes in a global of a type made for it: an Unbroken (counters, flags) or a Guarded, changed " +
                $"inside 'modifying {name} as v'.";
     }
 

@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
-                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work"))
+                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal or work");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work or type-names");
             return 2;
         }
 
@@ -127,6 +127,13 @@ internal partial class Program
         if (step == "work")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteWork);
+        }
+
+        // `--step type-names`: `Atomic` is `Unbroken` (and `AtomicType` is `UnbrokenType`), and `CircularList` is
+        // `RotatableList`.
+        if (step == "type-names")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteTypeNames);
         }
 
         // `--step return-steal`: a local handed over inside a `return` expression moves without `steal`.
@@ -275,7 +282,7 @@ internal partial class Program
                     }
                 }
 
-                // A List keeps its elements from the first place on, so the ring operations are CircularList's.
+                // A List keeps its elements from the first place on, so the ring operations are RotatableList's.
                 // The receiver's type is not known here (`x.rotate_left(bits:)` on an integer is fine), so only the
                 // list spelling is reported: `rotate_left(n:` and the latest-N history routines.
                 for (int i = 1; i + 2 < tokens.Count; i++)
@@ -287,9 +294,9 @@ internal partial class Program
                                        tokens[index: i + 2].Text == "n";
                     if (ringRoutine && tokens[index: i - 1].Text == ".")
                     {
-                        Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: '{name}' is CircularList's now " +
+                        Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: '{name}' is RotatableList's now " +
                                                  "(a List keeps its elements from the first place on), make that " +
-                                                 "list a CircularList[T] (import Collections) by hand");
+                                                 "list a RotatableList[T] (import Collections) by hand");
                         namesToRename++;
                     }
                 }
@@ -991,6 +998,14 @@ internal partial class Program
             {
                 edits.Add(item: new MigrationEdit(Start: next.Position, Length: 0, Replacement: ".to[Work]",
                     Line: token.Line, What: $"{token.Text}(…) → {token.Text}.to[Work](…)"));
+                continue;
+            }
+
+            // `Atomic` is `Unbroken` and `CircularList` is `RotatableList` (the same renames as `--step type-names`).
+            if (RenamedTypeNames.TryGetValue(key: token.Text, value: out string? newTypeName))
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length,
+                    Replacement: newTypeName, Line: token.Line, What: $"{token.Text} → {newTypeName}"));
                 continue;
             }
 

@@ -1587,8 +1587,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             loc: loc);
         Expression colRef = MakeRef(name: tempName, resolvedType: listType, loc: loc);
 
-        // List, CircularList, BitList append at the end; everything else uses add().
-        string addMemberRoutine = baseName is "List" or "CircularList" or "BitList"
+        // List, RotatableList, BitList append at the end; everything else uses add().
+        string addMemberRoutine = baseName is "List" or "RotatableList" or "BitList"
             ? Declaration.RuntimeContract.Collection.AddLast
             : Declaration.RuntimeContract.Collection.Add;
 

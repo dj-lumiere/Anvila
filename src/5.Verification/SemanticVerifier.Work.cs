@@ -87,8 +87,8 @@ public sealed partial class SemanticVerifier
                 DefaultValue: null,
                 Location: loc)
             {
-                // An Atomic is shared with the work, not copied: every holder works on the caller's one cell.
-                IsByReference = slot.BareName == Declaration.RuntimeContract.Atomic
+                // An Unbroken is shared with the work, not copied: every holder works on the caller's one cell.
+                IsByReference = slot.BareName == Declaration.RuntimeContract.Unbroken
             });
         }
 

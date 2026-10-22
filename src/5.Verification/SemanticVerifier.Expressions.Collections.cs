@@ -151,7 +151,7 @@ public sealed partial class SemanticVerifier
         string? expectedBaseName)
     {
         if (collectionExpectedType is { IsGenericResolution: true, TypeArguments.Count: >= 1 } &&
-            expectedBaseName is "List" or "CircularList" or "SortedList" or CollectionNameArray)
+            expectedBaseName is "List" or "RotatableList" or "SortedList" or CollectionNameArray)
         {
             return collectionExpectedType.TypeArguments[index: 0];
         }
@@ -395,7 +395,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol ResolveListResultType(TypeSymbol? expectedType, string? expectedBaseName,
         TypeSymbol? collectionExpectedType, TypeSymbol? elementType)
     {
-        if (expectedType != null && (expectedBaseName is "List" or "CircularList" or "SortedList"
+        if (expectedType != null && (expectedBaseName is "List" or "RotatableList" or "SortedList"
                 or "BitList" or CollectionNameArray or CollectionNameBitArray ||
             LiteralConformanceArguments(type: collectionExpectedType, literalProtocol: ListLiteralProtocol) != null))
         {

@@ -624,11 +624,11 @@ internal sealed class SignatureResolver
             {
                 DefaultValue = param.DefaultValue,
                 IsVariadicParam = param.IsVariadic,
-                // An Atomic is a cell that is shared, never copied: a routine taking one works on the
+                // An Unbroken is a cell that is shared, never copied: a routine taking one works on the
                 // caller's cell (a copy would be a second, silent cell, and a job's work would count
                 // into it alone).
                 IsByReference = param.IsByReference ||
-                                paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Atomic },
+                                paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Unbroken },
                 // A Suflae `E?` parameter resolves to a bare Roamed[E] handle (the null handle is none), so
                 // the `?` survives only in the written type, as for an entity field (TypeBodyResolver).
                 IsNullable = _sa._registry.EntitiesAreShared && param.Type is { Name: "Maybe" } &&

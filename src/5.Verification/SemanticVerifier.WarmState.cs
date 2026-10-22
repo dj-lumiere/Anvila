@@ -210,7 +210,7 @@ public partial class SemanticVerifier
     {
         // Prime the snapshot with the WHOLE stdlib, not just System: a daemon should hold the entire
         // analyzed stdlib resident in RAM. Without this, a warm compile of a program importing any non-System
-        // module (e.g. Collections.CircularList) finds it absent from _loadedModules and triggers a full
+        // module (e.g. Collections.RotatableList) finds it absent from _loadedModules and triggers a full
         // ScanStdlibFiles — re-parsing EVERY stdlib file, every run (~0.7 s, the Phase 3 cost). Importing
         // every module here makes the capture load+analyze+lower them once, so those imports short-circuit
         // on every warm run. The one-time capture cost grows; per-run latency drops.
@@ -252,7 +252,7 @@ public partial class SemanticVerifier
             VariantBodies = new Dictionary<string, Statement>(dictionary: _variantBodies),
             // Capture an EMPTY instantiation set. The snapshot is analyzed from a throwaway `import EVERY module`
             // program, so its demand collector materializes that program's monomorphizations (Maybe[X].assign,
-            // Atomic[X].destroy, …) — which are NOT what any real warm build reaches. Carrying them pollutes every
+            // Unbroken[X].destroy, …) — which are NOT what any real warm build reaches. Carrying them pollutes every
             // warm build: codegen (a dumb translator) emits the whole InstantiatedGenericBodies set, so a warm
             // build of `show("hi")` would emit hundreds of unrelated derives that the equivalent cold build prunes
             // (the cold/warm define-set divergence). The daemon's value is the cached ANALYZED stdlib (parsed

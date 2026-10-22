@@ -884,7 +884,7 @@ public sealed partial class TypeRegistry
             // restored set; the fresh loader still re-parses it into AllLoadedPrograms, producing a SECOND,
             // stale (un-lowered) copy of the same file. Two copies split the readers: the demand map lowers one
             // (last-write-wins) while FindInStdlib's template index picks the other, un-lowered — a monomorphized
-            // body then reaches codegen with a never-analyzed node (e.g. CircularList.grow's ternary). Drop any
+            // body then reaches codegen with a never-analyzed node (e.g. RotatableList.grow's ternary). Drop any
             // freshly-loaded program whose file the restored set already holds; keep only genuinely-new modules.
             : [.. _restoredStdlibPrograms, .. FreshlyLoadedNotShadowedByRestored()];
 

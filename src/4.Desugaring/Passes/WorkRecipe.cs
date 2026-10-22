@@ -30,8 +30,8 @@ namespace Builder.Desugaring.Passes;
 /// the task, written by that verb. An argument moves into the recipe with an implicit <c>steal</c>, which moves an
 /// entity and leaves any other value as it is.</para>
 ///
-/// <para>An <c>Atomic</c> argument is shared with the work, not copied: its parameter is by-reference, the recipe
-/// holds <c>cell.hijack()</c>, and the run routine passes <c>recipe_take[Hijacked[Atomic[..]]](..).peek()</c>,
+/// <para>An <c>Unbroken</c> argument is shared with the work, not copied: its parameter is by-reference, the recipe
+/// holds <c>cell.hijack()</c>, and the run routine passes <c>recipe_take[Hijacked[Unbroken[..]]](..).peek()</c>,
 /// which the wrapper projection turns into the cell's address.</para>
 /// </summary>
 internal static class WorkRecipe

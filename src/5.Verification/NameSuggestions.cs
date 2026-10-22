@@ -17,7 +17,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     internal string ForIdentifier(string name)
     {
         // A type called on itself (`OsFileManager.read_text(...)`) reads as a name first.
-        return OsServiceRename(name: name) ?? RetiredRoutine(name: name) ?? RetiredTypeHint(typeName: name) ??
+        return OsServiceRename(name: name) ?? TypeNamesStepRename(name: name) ?? RetiredRoutine(name: name) ??
+            RetiredTypeHint(typeName: name) ??
             RecoveryPrefix(name: name, exists: n => IdentifierSuggestionCandidates().Contains(value: n)) ??
             DidYouMean(target: name, candidates: IdentifierSuggestionCandidates());
     }
@@ -77,6 +78,21 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             : null;
     }
 
+    /// <summary>The hint for a type name <c>migrate --step type-names</c> rewrites (<c>Atomic</c> is <c>Unbroken</c>,
+    /// <c>CircularList</c> is <c>RotatableList</c>), whether or not the module of the new name is loaded, or null.</summary>
+    private static string? TypeNamesStepRename(string name)
+    {
+        string? renamed = name switch
+        {
+            "Atomic" => "Unbroken",
+            "AtomicType" => "UnbrokenType",
+            "CircularList" => "RotatableList",
+            "CircularListEmittable" => "RotatableListEmittable",
+            _ => null
+        };
+        return renamed == null ? null : $" It is called '{renamed}' now (migrate --step type-names rewrites it).";
+    }
+
     /// <summary>The suggestion suffix for an unknown type name.</summary>
     internal string ForType(string typeName)
     {
@@ -88,6 +104,11 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         if (RetiredTypeHint(typeName: typeName) is { } retired)
         {
             return retired;
+        }
+
+        if (TypeNamesStepRename(name: typeName) is { } typeNamesStep)
+        {
+            return typeNamesStep;
         }
 
         // A type renamed for 0.5 names its new name.

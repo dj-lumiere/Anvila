@@ -965,7 +965,7 @@ public sealed partial class SemanticVerifier
         // one. A routine WITHOUT such a constraint on its owner is a per-type OVERRIDE on a concrete type
         // (`@override routine Byte.represent()`, `@override dangerous routine SignalCaster.destruct()`) —
         // it must NOT enter the derive-template store, or e.g. SignalCaster's `me.sig` body would be
-        // handed to `Atomic[U8]`. No `LookupType` (which returned null for a not-yet-resolvable bare owner
+        // handed to `Unbroken[U8]`. No `LookupType` (which returned null for a not-yet-resolvable bare owner
         // and mis-registered it as a template) and no `record T` name-trap — pure structure.
         return (decl.GenericConstraints ?? []).Any(predicate: c => c.ParameterName == ownerName);
     }

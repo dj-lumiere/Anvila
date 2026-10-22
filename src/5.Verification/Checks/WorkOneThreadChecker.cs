@@ -91,7 +91,7 @@ internal sealed class WorkOneThreadChecker(DiagnosticReporter report)
                     report(code: SemanticDiagnosticCode.ThreadArgNotShareable,
                         message: $"This Work holds {reason}, which only the thread that made it may use, so it starts " +
                                  $"with 'start_here()' (a fiber on this thread), not '{verb}()'. To run it on another " +
-                                 "thread, hand it what another thread may use: a Guarded, an Atomic, a copied value, " +
+                                 "thread, hand it what another thread may use: a Guarded, an Unbroken, a copied value, " +
                                  "or an entity handed over with 'steal'.",
                         location: call.Location);
                 }

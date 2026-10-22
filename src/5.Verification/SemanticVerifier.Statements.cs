@@ -82,7 +82,7 @@ public sealed partial class SemanticVerifier
                         : _registry.EntitiesAreShared
                             ? $"For module-level mutable state use 'global {varDecl.Name}: <Type> = ...'."
                             : $"A value every routine reads goes in 'global {varDecl.Name}: <Type> = ...', which is " +
-                              "only read. Shared state that changes goes in a global Atomic or Guarded."),
+                              "only read. Shared state that changes goes in a global Unbroken or Guarded."),
                     location: varDecl.Location);
                 break;
         }

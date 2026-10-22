@@ -28,7 +28,7 @@ public sealed class ParamInfo
 
     /// <summary>
     /// True when the argument is passed by its address, so the routine works on the caller's storage
-    /// (a <c>threaded</c> routine's <c>Atomic</c> parameter shared with the worker thread).
+    /// (a <c>threaded</c> routine's <c>Unbroken</c> parameter shared with the worker thread).
     /// </summary>
     public bool IsByReference { get; init; }
 

@@ -871,7 +871,7 @@ public enum SemanticDiagnosticCode
     StealNotAPlace = 648,
 
     /// <summary>A <c>to[Work]</c> conversion's argument is neither trivially copyable (passed by value), stolen, nor a
-    /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias unsynchronized state
+    /// thread-shareable wrapper (Unbroken/Guarded/Witnessed); passing it would silently alias unsynchronized state
     /// across work running in parallel.</summary>
     ThreadArgNotShareable = 632,
 

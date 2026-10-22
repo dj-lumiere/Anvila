@@ -392,7 +392,7 @@ public sealed partial class SemanticVerifier
         }
 
         // A RazorForge global is reached from every thread, so its binding is never assigned again (only its
-        // initialization, at the top of start()): an Atomic or a Guarded changes what it holds through its own
+        // initialization, at the top of start()): an Unbroken or a Guarded changes what it holds through its own
         // routines, any other value is only read.
         _registry.DeclareVariable(name: global.Name, type: globalType, isGlobal: true,
             isReadOnly: !_registry.EntitiesAreShared);
@@ -416,7 +416,7 @@ public sealed partial class SemanticVerifier
 
         // A collection-literal preset is only Presettable as a fixed-size `Array[T, N]` or
         // `BitArray[N]` — those lower to a single constant global. Heap collections (List/Set/Dict/
-        // CircularList/...) would rebuild the whole collection on every use (the fun_bench OOM class), so
+        // RotatableList/...) would rebuild the whole collection on every use (the fun_bench OOM class), so
         // reject them. Non-collection presets (scalars, constructor calls like `C128(...)`) are fine.
         if (preset.Value is ListLiteralExpression && presetType is not ErrorTypeSymbol)
         {

@@ -184,7 +184,7 @@ internal static class Wrappers
     /// True when a type carries its own cross-thread synchronization and may therefore cross an
     /// async spawn boundary (<c>threaded</c> OR <c>suspended</c> under M:N — both are potentially
     /// parallel) by reference, aliasing the spawner's cell safely. These are the atomic /
-    /// shared-ownership wrappers — <c>Atomic[T]</c>, <c>Guarded[T,P]</c>, <c>Witnessed[T,P]</c> (atomic
+    /// shared-ownership wrappers — <c>Unbroken[T]</c>, <c>Guarded[T,P]</c>, <c>Witnessed[T,P]</c> (atomic
     /// refcount). A <c>Viewing</c>/<c>Modifying</c> token is not here by its type: one bound by a <c>using</c>
     /// over a <c>Guarded</c> opener is lock-backed, which the job-argument check judges by where it came from
     /// (<c>SemanticVerifier.IsLockBackedToken</c>). Every
@@ -198,7 +198,7 @@ internal static class Wrappers
 
     /// <summary>
     /// The SINGLE source of truth for the thread-safe classification: true when a wrapper carries its own
-    /// cross-thread synchronization (an atomic refcount — <c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>) and may
+    /// cross-thread synchronization (an atomic refcount — <c>Unbroken</c>/<c>Guarded</c>/<c>Witnessed</c>) and may
     /// therefore cross an async spawn
     /// boundary by reference. Both <see cref="IsThreadShareable"/> and the thread-crossing offender check
     /// (<see cref="IsThreadUnsafeReferenceWrapper"/>) derive from this, so the safe and unsafe sets can never
@@ -207,7 +207,7 @@ internal static class Wrappers
     /// </summary>
     internal static bool IsThreadShareableName(string bareName)
     {
-        return bareName is Declaration.RuntimeContract.Atomic
+        return bareName is Declaration.RuntimeContract.Unbroken
             or Declaration.RuntimeContract.Guarded or Declaration.RuntimeContract.Witnessed;
     }
 
@@ -394,7 +394,7 @@ internal static class Wrappers
     /// The first part of <paramref name="type"/> only one thread may use (a <c>Retained</c>, a <c>Tracked</c>, a
     /// token), looked for everywhere a value of the type can reach it: member variables of records and entities, tuple
     /// elements, variant members and type arguments (<c>List[Retained[Cell]]</c>, <c>Receiver[Retained[Cell]]</c>).
-    /// A thread-shareable manager (<c>Guarded</c>, <c>Atomic</c>, <c>Witnessed</c>) and a <c>Roamed</c> stop the walk:
+    /// A thread-shareable manager (<c>Guarded</c>, <c>Unbroken</c>, <c>Witnessed</c>) and a <c>Roamed</c> stop the walk:
     /// what they hold is reached through their own synchronization. A routine type is not looked into.
     /// </summary>
     internal static (string Wrapper, string Path)? FindOneThreadPart(TypeSymbol type)

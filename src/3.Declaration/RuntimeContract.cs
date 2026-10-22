@@ -248,7 +248,7 @@ public static class RuntimeContract
     /// <summary>Collection-shape routines resolved by literal during lowering / reachability.</summary>
     /// <remarks>Sites: OperatorLoweringPass, ExpressionLoweringPass, RoutineReachabilityPass,
     /// LlvmEmitter.Expressions.Collections. <see cref="AddLast"/> vs <see cref="Add"/> is chosen
-    /// by base-name (<c>List</c>/<c>CircularList</c>/<c>BitList</c> → add_last, else add).</remarks>
+    /// by base-name (<c>List</c>/<c>RotatableList</c>/<c>BitList</c> → add_last, else add).</remarks>
     public static class Collection
     {
         /// <summary>Element count (see also the shipped <c>Sized.count()</c> protocol).</summary>
@@ -257,7 +257,7 @@ public static class RuntimeContract
         /// <summary>Unordered insert (Set/Dict).</summary>
         public const string Add = "add";
 
-        /// <summary>Ordered append (List/CircularList/BitList).</summary>
+        /// <summary>Ordered append (List/RotatableList/BitList).</summary>
         public const string AddLast = "add_last";
 
         /// <summary>Element replacement.</summary>
@@ -338,7 +338,7 @@ public static class RuntimeContract
     /// registered type (checked alongside <see cref="WrapperTypes"/> by <see cref="RuntimeContractCheck"/>).</summary>
     public static readonly IReadOnlyList<string> StdlibTypeContracts =
     [
-        Atomic
+        Unbroken
     ];
 
     // =====================================================================================
@@ -505,8 +505,8 @@ public static class RuntimeContract
 
     // Related wrapper / marker-protocol type names that appear in the same type-identity checks as
     // the nine borrow wrappers above, but are NOT part of the borrow-wrapper contract sets.
-    /// <summary>Atomic value wrapper.</summary>
-    public const string Atomic = "Atomic";
+    /// <summary>Unbroken value wrapper.</summary>
+    public const string Unbroken = "Unbroken";
 
     /// <summary>All wrapper types recognized for layout/dispatch. Mirrors WrapperForwardingPass.WrapperTypes
     /// and LlvmEmitter.WrapperTypeNames.</summary>

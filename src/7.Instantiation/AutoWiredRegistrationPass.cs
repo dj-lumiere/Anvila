@@ -428,7 +428,7 @@ internal sealed class AutoWiredRegistrationPass
         // DECISION (2026-06-14): records do NOT auto-derive eq / hash. `obeys Equatable`
         // / `Hashable` on a record is a PROMISE the author fulfils by HAND-WRITING the
         // memberRoutine — field-delegated synthesis is fragile (breaks when a field type lacks the
-        // memberRoutine, e.g. an Atomic / lock-flag field) and is semantically wrong for opaque /
+        // memberRoutine, e.g. an Unbroken / lock-flag field) and is semantically wrong for opaque /
         // container types whose logical value is not their field tuple. Auto eq / hash is
         // reserved for tuple / choice / flags (simple, unambiguous tag/element compare). The
         // stdlib's equatable/hashable struct records (Complex, Integer, Decimal, C64/64/128)

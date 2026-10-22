@@ -54,21 +54,21 @@ internal sealed class RfStubWriter
     /// </summary>
     private static readonly HashSet<string> UnsharedTypes = new(comparer: StringComparer.Ordinal)
     {
-        "Accessing", "Controlling", "Assignable", "AtomicType", "Splittable", "Addr", "IngridWords",
+        "Accessing", "Controlling", "Assignable", "UnbrokenType", "Splittable", "Addr", "IngridWords",
         "Hijacked", "Viewing", "Modifying", "Retained", "Tracked", "Roamed", "Guarded", "Witnessed", "Watched",
         "ReenterDuringAccessError",
-        "ListEmittable", "CircularListEmittable", "SplitListEmittable",
+        "ListEmittable", "RotatableListEmittable", "SplitListEmittable",
         "SplitArrayEmittable", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
         "DD", "FloatDigits", "FloatParsed", "D32Parts", "D64Parts", "D128Parts", "ComplexTextParts",
         "IntegerLimbView", "IntV",
         // Suflae has its own lists and no structure-of-arrays layouts.
-        "SplitList", "SplitArray", "CircularList"
+        "SplitList", "SplitArray", "RotatableList"
     };
 
     /// <summary>The protocols a Suflae program has no use for, left out of an <c>obeys</c> list.</summary>
     private static readonly HashSet<string> UnsharedProtocols = new(comparer: StringComparer.Ordinal)
     {
-        "Assignable", "AtomicType", "Splittable", "ConstCompatible", "Accessing", "Controlling"
+        "Assignable", "UnbrokenType", "Splittable", "ConstCompatible", "Accessing", "Controlling"
     };
 
     private static readonly Regex Word = new(pattern: @"[A-Za-z_]\w*");
