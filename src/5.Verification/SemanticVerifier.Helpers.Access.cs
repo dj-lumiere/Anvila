@@ -57,8 +57,8 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // A single-thread token can be returned: RazorForge's TokenLifetimeChecker checks that every return takes it from one
-        // and the same parameter (`me` included), so the caller knows which object it points at.
+        // A single-thread token can be returned: RazorForge's TokenLifetimeChecker checks that every return takes it from
+        // `me` or from a token parameter, and gives the caller's token every argument it may come from as a source.
         if (returned != null &&
             type.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying)
         {
