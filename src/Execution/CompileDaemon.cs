@@ -339,9 +339,20 @@ internal partial class Program
                 System.Collections.Generic.List<Builder.Tokenizer.Token> toks =
                     Builder.Tokenizer.Lexers.Tokenize(source: BaseObjectCache.SeedProgramSource,
                         fileName: "base.rf", language: language);
-                Builder.Verification.Results.AnalysisResult baseR = baseSa.Analyze(
-                    program: new Builder.Parser.Parser(tokens: toks, language: language,
-                        fileName: "base.rf").Parse());
+                var baseParser = new Builder.Parser.Parser(tokens: toks, language: language, fileName: "base.rf")
+                {
+                    PrintsErrors = false
+                };
+                SyntaxTree.Program baseProgram = baseParser.Parse();
+                if (baseParser.HasErrors)
+                {
+                    Console.Error.WriteLine(
+                        value:
+                        $"[daemon] resident-JIT base seed did not parse: {baseParser.GetErrors()[index: 0]}");
+                    return null;
+                }
+
+                Builder.Verification.Results.AnalysisResult baseR = baseSa.Analyze(program: baseProgram);
                 if (baseR.Errors.Count > 0)
                 {
                     Console.Error.WriteLine(

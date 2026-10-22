@@ -42,18 +42,18 @@ public sealed class BaseObjectCache
         "    show(f\"sum: {sum}\")\n" +
         "    var names = [\"alpha\", \"beta\"]\n" +
         "    names.add_last(value: \"gamma\")\n" +
-        "    show(f\"names: {names} have beta {names have \"beta\"}\")\n" +
+        "    show(f\"names: {names} has beta {names.has(\"beta\")}\")\n" +
         "    var d = Dict[Text, S64]()\n" +
         "    d[\"one\"] = 1\n" +
         "    d[\"two\"] = 2\n" +
-        "    show(f\"d: {d} d[one] {d[\"one\"]} have two {d have \"two\"}\")\n" +
+        "    show(f\"d: {d} d[one] {d[\"one\"]} has two {d.has_key(\"two\")}\")\n" +
         "    var di = Dict[S64, S64]()\n" +
         "    di[10] = 100\n" +
         "    show(f\"di: {di} size {di.count()}\")\n" +
         "    var s = Set[S64]()\n" +
         "    drop s.add(value: 7)\n" +
         "    drop s.add(value: 8)\n" +
-        "    show(f\"s: {s} size {s.count()} have 7 {s have 7}\")\n" +
+        "    show(f\"s: {s} size {s.count()} has 7 {s.has(7)}\")\n" +
         "    var b = true\n" +
         "    var n: S64 = 42\n" +
         "    var u: U64 = 42\n" +

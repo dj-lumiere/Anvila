@@ -335,50 +335,6 @@ internal static unsafe class OrcJitExecutor
         }
     }
 
-    /// <summary>
-    /// Parse-validates an LLVM-IR string WITHOUT compiling or running it — the lightweight harness for
-    /// hardening base-mode emission (resident-JIT incremental Phase 0a (a')): it catches malformed IR
-    /// (type mismatches, bad address spaces, unresolved template artifacts) that only surface at parse
-    /// time, with no native-runtime side effects. Returns false + a diagnostic on the first parse error.
-    /// </summary>
-    public static bool TryParseIr(string llvmIr, out string? error)
-    {
-        if (!TryInitialize(error: out error))
-        {
-            return false;
-        }
-
-        byte[] ir = Encoding.ASCII.GetBytes(s: llvmIr);
-        byte[] nm = Encoding.ASCII.GetBytes(s: "rf_parsecheck\0");
-        LLVMOpaqueContext* ctx = LLVM.ContextCreate();
-        LLVMOpaqueModule* mod;
-        sbyte* parseErr;
-        fixed (byte* irp = ir)
-        fixed (byte* np = nm)
-        {
-            LLVMOpaqueMemoryBuffer* buf = LLVM.CreateMemoryBufferWithMemoryRangeCopy(
-                InputData: (sbyte*)irp,
-                InputDataLength: (nuint)ir.Length,
-                BufferName: (sbyte*)np);
-            int rc = LLVM.ParseIRInContext(ContextRef: ctx,
-                MemBuf: buf,
-                OutM: &mod,
-                OutMessage: &parseErr);
-            if (rc != 0)
-            {
-                error = parseErr != null
-                    ? new string(value: parseErr)
-                    : "unknown parse error";
-                LLVM.ContextDispose(C: ctx);
-                return false;
-            }
-        }
-
-        LLVM.ContextDispose(C: ctx);
-        error = null;
-        return true;
-    }
-
     private static void CheckErr(LLVMOpaqueError* err, string what)
     {
         if (err != null)
@@ -453,68 +409,12 @@ internal static unsafe class OrcJitExecutor
     }
 
     /// <summary>
-    /// Resident-JIT incremental Phase 0a (step 3): JITs a precompiled non-pruned BASE module plus a small
-    /// per-run DELTA module (whose extern <c>declare</c>s for base symbols resolve to the base's
-    /// definitions), then calls <c>@main</c> (emitted by the delta, not the base). Both modules go into the
-    /// SAME JITDylib — under option 3 the client is disposable (runs once, then the process exits), so no
-    /// cross-dylib link order or per-run <c>ResourceTracker</c> teardown is needed. The base is JIT-linked
-    /// lazily, so only what <c>@main</c> transitively reaches is actually compiled. See
-    /// <c>internal-wiki/RESIDENT-JIT-INCREMENTAL-V0.5.md</c> §2A.5 / Phase 0a. Returns the program exit code.
-    /// </summary>
-    public static int JitAndRunSplit(string baseIr, string deltaIr, string programName,
-        string[] programArgs)
-    {
-        if (!TryInitialize(error: out string? error))
-        {
-            throw new InvalidOperationException(message: $"ORC JIT unavailable: {error}");
-        }
-
-        bool traceJit = Builder.Diagnostics.DiagnosticFlags.JitTrace;
-
-        void JitStage(string s)
-        {
-            if (traceJit)
-            {
-                Console.Error.WriteLine(value: $"[jit-stage] {s}");
-                Console.Error.Flush();
-            }
-        }
-
-        LLVMOrcOpaqueThreadSafeModule* tsmBase = ParseToTsm(llvmIr: baseIr, modName: "rf_base");
-        LLVMOrcOpaqueThreadSafeModule* tsmDelta = ParseToTsm(llvmIr: deltaIr, modName: "rf_delta");
-        JitStage(s: "base + delta IR parsed");
-
-        LLVMOrcOpaqueLLJITBuilder* builder = LLVM.OrcCreateLLJITBuilder();
-        if (OperatingSystem.IsWindows())
-        {
-            OrcContiguousMemoryManager.InstallOn(builder: builder);
-            JitStage(s: "contiguous MM installed on builder");
-        }
-
-        LLVMOrcOpaqueLLJIT* jit;
-        jit = CreateLljit(builder: builder);
-
-        LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
-        AddIngridTessera(jit: jit, dylib: dylib);
-
-        // Base + delta into ONE dylib: delta's extern declares for base symbols resolve to base's defines.
-        CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: tsmBase),
-            what: "AddLLVMIRModule(base)");
-        JitStage(s: "base module added");
-        CheckErr(err: LLVM.OrcLLJITAddLLVMIRModule(J: jit, JD: dylib, TSM: tsmDelta),
-            what: "AddLLVMIRModule(delta)");
-        JitStage(s: "delta module added — resolving main");
-
-        return RunMain(jit: jit, programName: programName, programArgs: programArgs);
-    }
-
-    /// <summary>
     /// Resident-JIT base/delta split, DISK-OBJECT base (Step 2): loads a PRECOMPILED base object file (the
     /// stdlib closure AOT-compiled once by <see cref="BaseObjectCache"/>) into the dylib — NOT JIT-compiled,
     /// just relocated+linked — then JITs ONLY the small per-run <paramref name="deltaIr"/> (user code +
     /// non-resident instantiations), whose extern <c>declare</c>s for base symbols resolve to the object's
-    /// defines. This is the win over <see cref="JitAndRunSplit"/> (which re-JITs the whole base IR each run):
-    /// the ~MB stdlib base is compiled once to a cached <c>.o</c>, and each dev-loop run only JITs the delta.
+    /// defines. The ~MB stdlib base is compiled once to a cached <c>.o</c>, and each dev-loop run only JITs the
+    /// delta.
     /// Single dylib, disposable client (option 3): no cross-dylib link order or ResourceTracker teardown.
     /// Returns the program exit code.
     /// </summary>

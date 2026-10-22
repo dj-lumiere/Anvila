@@ -510,6 +510,14 @@ public sealed partial class SemanticVerifier
         _importedModules.Clear();
         _importedSymbolNames.Clear();
         _importedForeignAliases.Clear();
+        // As AnalyzeMultiple does from its build graph: the program is not in UserPrograms yet when the Phase-3
+        // stub synthesis registers the BuilderQuery per-type routines, so the program's own imports decide. The
+        // snapshot capture imports every module, BuilderQuery among them, and is not a program asking for it.
+        if (!CapturingSnapshot)
+        {
+            _builderQueryUserImportedOverride =
+                DetectUserBuilderQueryImport(files: [(program, _currentFilePath)]);
+        }
 
         bool saTiming = SaTiming;
         var swPhase = Stopwatch.StartNew();
@@ -2389,6 +2397,35 @@ public sealed partial class SemanticVerifier
             SynthesizeAllDerives = SeedAllStdlibRoutines
         };
         new PostprocessingPipeline(ctx: pctx2).RunGlobal();
+
+        // The teardown the other variant bodies got before instantiation (RunPhase8Postprocessing), which ran
+        // before this file was reached. Only the newly-added keys get it: teardown is not idempotent. Without it
+        // the variant and every instance built from it destroy none of their locals, and the warm file cache
+        // hands that body to the next build as an already-lowered one.
+        Dictionary<string, Statement> fresh = _variantBodies
+                                              .Where(predicate: kv => !priorVariantKeys.Contains(item: kv.Key) &&
+                                                                      !_memo.RestoredVariantKeys.Contains(
+                                                                          item: kv.Key))
+                                              .ToDictionary(keySelector: kv => kv.Key,
+                                                   elementSelector: kv => kv.Value,
+                                                   comparer: StringComparer.Ordinal);
+        if (fresh.Count == 0)
+        {
+            return;
+        }
+
+        var teardownCtx = new PostprocessingContext(registry: _registry,
+            variantBodies: fresh,
+            synthesizedBodies: new Dictionary<string, Statement>(),
+            target: _target,
+            buildMode: _buildMode,
+            monomorphizedBodies: _instantiatedGenericBodies);
+        new ScopeTeardownLoweringPass(ctx: teardownCtx).RunOnVariantBodies();
+        new TemporaryTeardownPass(ctx: teardownCtx).RunOnBodies(bodies: teardownCtx.VariantBodies);
+        foreach ((string key, Statement body) in teardownCtx.VariantBodies)
+        {
+            _variantBodies[key: key] = body;
+        }
     }
 
     /// <summary>
