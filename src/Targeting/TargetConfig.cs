@@ -182,7 +182,7 @@ public sealed class TargetConfig
     private static TargetConfig Arm64MacOSConfig()
     {
         return new TargetConfig(triple: "aarch64-apple-darwin",
-            dataLayout: "e-m:o-i64:64-i128:128-n32:64-S128",
+            dataLayout: "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
             pointerBitWidth: 64,
             pageSize: 16384,
             cacheLineSize: 128,
@@ -193,7 +193,7 @@ public sealed class TargetConfig
     private static TargetConfig Arm64LinuxConfig(string os)
     {
         return new TargetConfig(triple: "aarch64-unknown-linux-gnu",
-            dataLayout: "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
+            dataLayout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32",
             pointerBitWidth: 64,
             pageSize: 4096,
             cacheLineSize: 64,

@@ -186,6 +186,7 @@ internal static unsafe class OrcJitExecutor
             }
         }
 
+        LeaveDataLayoutToJit(mod: mod);
         LLVMOrcOpaqueThreadSafeContext* tsCtx = _fromCtx(ctx);
         LLVMOrcOpaqueThreadSafeModule* tsm =
             LLVM.OrcCreateNewThreadSafeModule(M: mod, TSCtx: tsCtx);
@@ -399,8 +400,19 @@ internal static unsafe class OrcJitExecutor
             }
         }
 
+        LeaveDataLayoutToJit(mod: mod);
         LLVMOrcOpaqueThreadSafeContext* tsCtx = _fromCtx(ctx);
         return LLVM.OrcCreateNewThreadSafeModule(M: mod, TSCtx: tsCtx);
+    }
+
+    /// <summary>Clears the data layout the emitter wrote into a parsed module, so the LLJIT gives it its own when the
+    /// module is added. The emitter's layout is a fixed string per target, and the LLVM the JIT runs on may describe
+    /// the same target with a newer one (LLVM 22's aarch64-apple-darwin adds address spaces and <c>Fn32</c>): LLJIT
+    /// refuses a module whose layout differs from its own, and fills in one that has none.</summary>
+    private static void LeaveDataLayoutToJit(LLVMOpaqueModule* mod)
+    {
+        sbyte empty = 0;
+        LLVM.SetDataLayout(M: mod, DataLayoutStr: &empty);
     }
 
     /// <summary>Resolves <c>@main</c> in the JIT and calls it with a C argv; returns its exit code.</summary>
