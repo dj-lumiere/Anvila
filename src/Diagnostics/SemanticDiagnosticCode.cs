@@ -719,6 +719,9 @@ public enum SemanticDiagnosticCode
     /// <summary>Collection literal constructor argument count mismatch (e.g., Array[S64, 4] given 3 args).</summary>
     ArgumentCountMismatch = 557,
 
+    /// <summary>An empty <c>{}</c> (an empty set) written where a dict-shaped collection is expected (write <c>{:}</c>).</summary>
+    EmptySetWhereDictExpected = 558,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // MEMORY TOKEN ERRORS - RAZORFORGE SPECIFIC (RF-S600 - RF-S649)
     // ═══════════════════════════════════════════════════════════════════════════

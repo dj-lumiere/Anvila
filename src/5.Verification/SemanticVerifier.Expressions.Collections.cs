@@ -516,6 +516,19 @@ public sealed partial class SemanticVerifier
         string? expectedBaseName = collectionExpectedType != null
             ? GetTypeBaseName(type: collectionExpectedType)
             : null;
+        // `{}` is the empty set. Where a dict-shaped collection is expected the empty literal is `{:}`.
+        if (set.Elements.Count == 0 && set.ElementType == null &&
+            (expectedBaseName is "Dict" or "SortedDict" or "PriorityQueue" or "SecureDict" ||
+             LiteralConformanceArguments(type: collectionExpectedType, literalProtocol: DictLiteralProtocol) !=
+             null))
+        {
+            ReportError(code: SemanticDiagnosticCode.EmptySetWhereDictExpected,
+                message: $"`{{}}` is an empty set, but a '{expectedType!.Name}' is expected here. " +
+                         "Write `{:}` for an empty dict.",
+                location: set.Location);
+            return ErrorTypeSymbol.Instance;
+        }
+
         TypeSymbol? expectedElementType = null;
         if (collectionExpectedType is { IsGenericResolution: true, TypeArguments.Count: 1 } &&
             expectedBaseName is "Set" or "SortedSet" or "SecureSet")
@@ -581,7 +594,8 @@ public sealed partial class SemanticVerifier
         }
 
         ReportError(code: SemanticDiagnosticCode.EmptySetNoTypeAnnotation,
-            message: "Cannot infer element type from empty set literal without type annotation.",
+            message: "You wrote an empty set `{}` with nothing that says its element type. " +
+                     "State the type where the variable is declared, or write `{:}` for an empty dict.",
             location: set.Location);
         return ErrorTypeSymbol.Instance;
     }

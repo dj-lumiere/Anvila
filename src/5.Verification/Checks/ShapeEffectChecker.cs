@@ -704,7 +704,8 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
         Expression? container = Unwrap(expr: init) switch
         {
             CallExpression { Callee: MemberExpression { Object: var o, MemberName: "modify_at" or "view_at" } } => o,
-            IndexExpression { ResolvedType: EntityTypeSymbol, Object: var o } => o,
+            // Only an element read (`boxes[0]`): a slice (`xs[0 til 2]`) is a new collection, holding nothing of `xs`.
+            IndexExpression { ReadsElementToken: true, Object: var o } => o,
             _ => null
         };
         return container != null && ShapePath(expr: container) is { } path

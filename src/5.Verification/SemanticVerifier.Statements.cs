@@ -1419,7 +1419,8 @@ public sealed partial class SemanticVerifier
     {
         if (!_registry.Rules.ChecksAccessTokens || elementType is not EntityTypeSymbol ||
             initializer is not IndexExpression { Index: not RangeExpression } element ||
-            element.Object.ResolvedType is not { } containerType ||
+            element.Index.ResolvedType is RecordTypeSymbol { GenericDefinition.Name: "Range" } ||
+            ElementContainerType(container: element.Object) is not { } containerType ||
             _registry.LookupMemberRoutine(type: containerType, memberRoutineName: "view_at", isFailable: true) is null ||
             _registry.LookupType(name: Declaration.RuntimeContract.Viewing) is not { } viewingDef ||
             _registry.LookupType(name: Declaration.RuntimeContract.Modifying) is not { } modifyingDef)
@@ -1427,8 +1428,11 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
+        // A write token on the container (`s: Modifying[List[Dict[K, V]]]`) gives write permission whatever the
+        // binding that holds it.
+        bool throughWriteToken = element.Object.ResolvedType is { BareName: Declaration.RuntimeContract.Modifying };
         bool writable = !StartsReadOnly(place: element.Object) &&
-                        RootVariable(place: element.Object) is not { IsModifiable: false } &&
+                        (throughWriteToken || RootVariable(place: element.Object) is not { IsModifiable: false }) &&
                         _registry.LookupMemberRoutine(type: containerType, memberRoutineName: "modify_at",
                             isFailable: true) is not null;
         TypeSymbol tokenType = _registry.GetOrCreateResolution(genericDef: writable ? modifyingDef : viewingDef,
@@ -1436,6 +1440,17 @@ public sealed partial class SemanticVerifier
         element.ReadsElementToken = true;
         element.ResolvedType = tokenType;
         return tokenType;
+    }
+
+    /// <summary>The container an element is read from: the container itself, or the container a
+    /// <c>Viewing</c>/<c>Modifying</c> token on it reaches (<c>s</c> in <c>s[0]</c> with
+    /// <c>s: Modifying[List[Dict[K, V]]]</c>). Null when the container has no type yet.</summary>
+    private static TypeSymbol? ElementContainerType(Expression container)
+    {
+        return container.ResolvedType is { BareName: Declaration.RuntimeContract.Viewing or
+                   Declaration.RuntimeContract.Modifying, TypeArguments: [{ } inner] }
+            ? inner
+            : container.ResolvedType;
     }
 
     /// <summary>The variable a place starts from (<c>team</c> in <c>team.members[0]</c>), or null when it starts

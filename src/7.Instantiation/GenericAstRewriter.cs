@@ -1764,7 +1764,7 @@ internal static class GenericAstRewriter
             // Leaf nodes have no children, but their ResolvedType may still carry a generic
             // parameter (e.g. `none : Maybe[Hijacked[BTreeListNode[T]]]`). Clone so the ResolvedType
             // substitution block below runs (it is gated on a fresh reference).
-            LiteralExpression literal => literal with { },
+            LiteralExpression literal => ConformParameterLiteral(literal: literal, ctx: ctx),
             ZeroValueExpression zero => zero with { },
             EntityAllocationExpression allocation => allocation with { },
             ConstantDataExpression data => data with { },
@@ -1775,6 +1775,39 @@ internal static class GenericAstRewriter
 
             _ => null
         };
+    }
+
+    /// <summary>
+    /// A bare number the template typed as its parameter (<c>var one: T = 1</c>) whose token an earlier lowering of the
+    /// template already gave a number token while the type was still <c>T</c> (the default <c>S64</c> one) takes the
+    /// token of the concrete type here: an <c>Integer</c> literal is then built as the Integer record and a
+    /// <c>Decimal</c> one as a decimal constant, never stored raw as an <c>S64</c>. A literal still undecided keeps its
+    /// token for the passes after this one, which conform it from its type.
+    /// </summary>
+    private static LiteralExpression ConformParameterLiteral(LiteralExpression literal, RewriteContext ctx)
+    {
+        if (literal.ResolvedType is not GenericParameterTypeSymbol ||
+            ctx.ResolveType(original: literal.ResolvedType) is not { } concrete ||
+            concrete is GenericParameterTypeSymbol ||
+            !UndecidedLiteralConformance.HasNumberToken(type: concrete))
+        {
+            return literal with { };
+        }
+
+        TokenType? token = literal.LiteralType switch
+        {
+            TokenType.S8Literal or TokenType.S16Literal or TokenType.S32Literal or TokenType.S64Literal
+                or TokenType.S128Literal or TokenType.S256Literal or TokenType.U8Literal or TokenType.U16Literal
+                or TokenType.U32Literal or TokenType.U64Literal or TokenType.U128Literal or TokenType.U256Literal
+                or TokenType.IntegerLiteral => UndecidedLiteralConformance.ResolveInteger(resolved: concrete),
+            TokenType.B16Literal or TokenType.B32Literal or TokenType.B64Literal or TokenType.B128Literal
+                or TokenType.D32Literal or TokenType.D64Literal or TokenType.D128Literal
+                or TokenType.DecimalLiteral => UndecidedLiteralConformance.ResolveDecimal(resolved: concrete),
+            _ => null
+        };
+        return token is { } conformed
+            ? literal with { LiteralType = conformed }
+            : literal with { };
     }
 
     /// <summary>

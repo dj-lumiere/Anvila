@@ -478,6 +478,19 @@ public sealed partial class SemanticVerifier
                     new GenericParameterTypeSymbol(name: argId.Name),
                 IdentifierExpression argId when LookupTypeWithImports(name: argId.Name) is { } t
                     => t,
+                // A number or `true`/`false` (`BitArray[3].blank()`) is a const-generic argument, the value
+                // itself, as it is in a type written out (`BitArray[3]`), never the type of the literal.
+                LiteralExpression
+                {
+                    LiteralType: TokenType.UndecidedInteger or TokenType.True or TokenType.False
+                } literal => ResolveType(typeExpr: new TypeExpression(Name: literal.LiteralType switch
+                    {
+                        TokenType.True => "true",
+                        TokenType.False => "false",
+                        _ => literal.Value?.ToString() ?? ""
+                    },
+                    GenericArguments: null,
+                    Location: literal.Location)),
                 _ => AnalyzeExpression(expression: argExpr)
             };
             typeArgs.Add(item: argType);
@@ -1459,8 +1472,14 @@ public sealed partial class SemanticVerifier
                      IsNumericGenericParam(type: endType);
         if (!startOk || !endOk)
         {
+            bool charBound = startType is { Name: "Char" } || endType is { Name: "Char" };
             ReportError(code: SemanticDiagnosticCode.RangeBoundsNotNumeric,
-                message: "Range bounds must be numeric types.",
+                message: charBound
+                    ? "A range counts by adding its step to a number, and a 'Char' is a character, not a number: it has " +
+                      "no next one. Count over the code points instead (`'a'.codepoint() to 'e'.codepoint()`) and " +
+                      "make each back into a character with `Char.from_codepoint(n:)`."
+                    : $"A range counts by adding its step to a number, and its bounds here are '{startType?.Name}' and " +
+                      $"'{endType?.Name}'. Give it numbers as bounds.",
                 location: range.Location);
         }
     }

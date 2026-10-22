@@ -1488,7 +1488,13 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return literal with { Value = text, ResolvedType = elemType ?? literal.ResolvedType };
         }
 
-        return new LiteralExpression(Value: 1L, LiteralType: TokenType.S64Literal, Location: loc)
+        // The step takes the token of the element type, so a `Decimal` or float step of 1 is that number, not the raw
+        // bits of an S64 1.
+        return new LiteralExpression(Value: text,
+            LiteralType: UndecidedLiteralConformance.HasNumberToken(type: elemType)
+                ? UndecidedLiteralConformance.ResolveInteger(resolved: elemType)
+                : TokenType.S64Literal,
+            Location: loc)
         {
             ResolvedType = elemType
         };

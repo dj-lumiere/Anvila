@@ -125,6 +125,14 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return null;
         }
 
+        // Through a token on the container (`s[0]` with `s: Modifying[List[Dict[K, V]]]`) the accessor is the
+        // container's own. The token shares the container's pointer, so it is the receiver as it is.
+        if (containerType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+            containerType.TypeArguments is [{ } tokenInner])
+        {
+            containerType = tokenInner;
+        }
+
         string accessor = write
             ? ModifyAtMemberRoutine
             : ViewAtMemberRoutine;
