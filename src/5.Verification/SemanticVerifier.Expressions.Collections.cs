@@ -1475,8 +1475,8 @@ public sealed partial class SemanticVerifier
         var lambdasRead = new HashSet<int>();
 
         // Receiver-based inference for a member declared on a SPECIALIZED generic instantiation
-        // (e.g. `routine List[Agent[V]].gather!()`): unify the memberRoutine's MeType pattern
-        // (List[Agent[V]]) against the actual receiver (List[Agent[S64]]) to bind generic params
+        // (e.g. `routine List[Work[V]].gather!()`): unify the memberRoutine's MeType pattern
+        // (List[Work[V]]) against the actual receiver (List[Work[S64]]) to bind generic params
         // (V) that appear only in the receiver, not in any value parameter.
         if (genericMemberRoutine.MeType is { } mePattern && receiverType != null)
         {

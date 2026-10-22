@@ -53,7 +53,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <summary>
     /// The carrier a call bound to <paramref name="variant"/> gives: of what the call returns HERE. The variant's own
     /// return names its owner's parameter (<c>List[T].getitem</c> gives <c>Check[T]</c>), which in a routine on a
-    /// specialized receiver (<c>List[Agent[T]]</c>) is that routine's <c>T</c> by name only, a different slot, and a
+    /// specialized receiver (<c>List[Work[T]]</c>) is that routine's <c>T</c> by name only, a different slot, and a
     /// call bound to one member of a specialization family (<c>line.to[T]()</c>) returns the <c>T</c> the call
     /// names, not that member's.
     /// </summary>
@@ -1203,7 +1203,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>Whether <paramref name="stmt"/> assigns a member variable (<c>board.score = t</c>), an element of
-    /// a collection (<c>xs[0] = xs[0] + 1</c>, which other agents may share), or a Suflae module global, which
+    /// a collection (<c>xs[0] = xs[0] + 1</c>, which other jobs may share), or a Suflae module global, which
     /// becomes a member variable of the one shared globals entity later (<c>visits = visits + 1</c>).</summary>
     private static bool WritesMemberVariable(Statement stmt)
     {

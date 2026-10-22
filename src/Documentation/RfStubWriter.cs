@@ -28,7 +28,7 @@ internal sealed class RfStubWriter
     private static readonly string[] UnsharedFolders =
         ["BuilderExpansion", "BuilderQuery", "System/CSubSystem", "Simd"];
 
-    /// <summary>Public RazorForge routines that only the builder's own code calls (the size of an Agent recipe
+    /// <summary>Public RazorForge routines that only the builder's own code calls (the size of a Work recipe
     /// slot, used when the builder lays a recipe out).</summary>
     private static readonly HashSet<string> UnsharedRoutines = new(comparer: StringComparer.Ordinal)
     {

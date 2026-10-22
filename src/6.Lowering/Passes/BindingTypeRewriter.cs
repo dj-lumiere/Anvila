@@ -390,7 +390,7 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(e: node.Inner);
         return false;
     }
-    public bool VisitAgentExpression(AgentExpression node)
+    public bool VisitWorkExpression(WorkExpression node)
     {
         Visit(e: node.LoweredCall ?? node.Inner);
         return false;

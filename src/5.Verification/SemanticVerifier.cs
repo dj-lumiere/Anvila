@@ -264,7 +264,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>The tokens a <c>viewing</c> / <c>modifying</c> block bound for a <c>Guarded</c> whose access it took,
     /// live for that block's body, with whether each one writes. Such a token is a plain <c>Viewing[T]</c> /
-    /// <c>Modifying[T]</c>: that the block holds its access is where it came from, so the checks that care (an agent
+    /// <c>Modifying[T]</c>: that the block holds its access is where it came from, so the checks that care (a job
     /// argument, the same write token passed twice) ask here instead of its type. Keyed by the variable itself, so a
     /// shadowing local is not mistaken for it.</summary>
     private readonly Dictionary<VariableInfo, bool> _lockBackedTokens = new(comparer: ReferenceEqualityComparer.Instance);
@@ -741,9 +741,9 @@ public sealed partial class SemanticVerifier
         {
             (_shapeEffects ??= new ShapeEffectChecker(report: ReportError, reportedCalls: _lockTokenDuplicateCalls))
                 .Check(programs: list);
-            new AgentOneThreadChecker(report: ReportError).Check(programs: list);
+            new WorkOneThreadChecker(report: ReportError).Check(programs: list);
             new GuardAccessArgumentChecker(report: ReportError).Check(programs: list);
-            new AgentCollectedChecker(warn: ReportWarning).Check(programs: list);
+            new WorkCollectedChecker(warn: ReportWarning).Check(programs: list);
         }
 
         if (!_userBodyCheckMade)

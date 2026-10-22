@@ -186,7 +186,7 @@ public sealed partial class SemanticVerifier
         bool check = recovery.Kind == RecoveryKind.Check;
         string baseName = $"__recover_{_recoveryCompositionSeq++}";
         // In a generic routine the captured values and the result may name its type parameters (`T` of
-        // `List[Agent[T]].gather_all`): the base is generic over the ones they name, and the call passes them, so each
+        // `List[Work[T]].gather_all`): the base is generic over the ones they name, and the call passes them, so each
         // instance of the enclosing routine reaches its own instance of the base (and of its variant).
         List<string> typeParameters = RecoveryTypeParameters(types: freeParams.Select(selector: p => p.Type)
                                                                               .Append(element: innerType));

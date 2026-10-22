@@ -373,7 +373,7 @@ public sealed partial class SemanticVerifier
 
         ValidateNoTokenTypeArgument(type: globalType, what: $"global '{global.Name}'", location: global.Location);
 
-        // Every agent reaches a global, so a single-thread handle in one (`Retained`, `Tracked`) would have its count
+        // Every job reaches a global, so a single-thread handle in one (`Retained`, `Tracked`) would have its count
         // changed by several threads at once.
         if (_registry.Rules.ChecksOwnership && !IsInlineOnlyTokenType(type: globalType) &&
             TokenInTypeArguments(type: globalType) == null &&
@@ -385,8 +385,8 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
                 message:
                 $"You declare global '{global.Name}' as `{globalType.ShortTypeName}`, {holds}. " +
-                $"Every agent reaches a global, and a `{wrapper}` may be used by one thread only. Use " +
-                "`Guarded[...]` (or `Witnessed` for a weak handle) to share an entity between agents, or keep the " +
+                $"Every running job reaches a global, and a `{wrapper}` may be used by one thread only. Use " +
+                "`Guarded[...]` (or `Witnessed` for a weak handle) to share an entity between jobs, or keep the " +
                 $"`{wrapper}` in a variable of the routine that uses it.",
                 location: global.Location);
         }

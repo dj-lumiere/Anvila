@@ -729,7 +729,7 @@ public record BlockStatement(List<Statement> Statements, SourceLocation Location
 
     /// <summary>True for a block that reads a member variable of an entity and writes it back in more than one
     /// statement (a <c>+=</c> whose arithmetic can fail, split so a recovering variant passes the failure on). The
-    /// access lock of every entity it touches is held across the whole block, so no other agent changes the member
+    /// access lock of every entity it touches is held across the whole block, so no other job changes the member
     /// variable between the read and the write.</summary>
     public bool HoldsAccessLock { get; init; }
 
@@ -1215,7 +1215,7 @@ public record DangerStatement(BlockStatement Body, SourceLocation Location)
     : Statement(Location: Location)
 {
     /// <summary>
-    /// True for a danger block the builder wrote (the routines that build and run an Agent recipe). It is
+    /// True for a danger block the builder wrote (the routines that build and run a Work recipe). It is
     /// allowed in Suflae, where a written danger block is not.
     /// </summary>
     public bool IsBuilderWritten { get; init; }

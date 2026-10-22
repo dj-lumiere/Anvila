@@ -817,7 +817,7 @@ public enum SemanticDiagnosticCode
 
     /// <summary>A <c>viewing</c> / <c>modifying</c> block (or a <c>g.view()</c> / <c>g.modify()</c> argument) opens a
     /// <c>Guarded</c> that an enclosing block of the same routine already opened, for reading or for writing: the
-    /// agent would wait for itself, or see its own block's work half done.</summary>
+    /// job would wait for itself, or see its own block's work half done.</summary>
     GuardedOpenedAgain = 630,
 
     /// <summary>The source of a live access token (or something that owns it) is reassigned or stolen
@@ -840,9 +840,9 @@ public enum SemanticDiagnosticCode
     /// handle that crashes when read or torn down.</summary>
     ArrayElementHasNoZeroValue = 641,
 
-    /// <summary><c>agent</c> is written before something that is not a call chain, or over values whose types are
-    /// still a generic routine's parameters (an Agent's run routine is one concrete routine).</summary>
-    AgentNotSupportedHere = 642,
+    /// <summary><c>to[Work]</c> is written on something that is not a routine, or over values whose types are
+    /// still a generic routine's parameters (a Work's run routine is one concrete routine).</summary>
+    WorkNotSupportedHere = 642,
 
     /// <summary>An access token is used after the object it was taken from was replaced, moved out, or went
     /// out of scope (or, for an element token, after its container could have moved its elements): the token
@@ -870,7 +870,7 @@ public enum SemanticDiagnosticCode
     /// element).</summary>
     StealNotAPlace = 648,
 
-    /// <summary>An <c>agent</c> call's argument is neither trivially copyable (passed by value), stolen, nor a
+    /// <summary>A <c>to[Work]</c> conversion's argument is neither trivially copyable (passed by value), stolen, nor a
     /// thread-shareable wrapper (Atomic/Guarded/Witnessed); passing it would silently alias unsynchronized state
     /// across work running in parallel.</summary>
     ThreadArgNotShareable = 632,

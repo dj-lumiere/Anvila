@@ -318,7 +318,7 @@ public record RoutineDeclaration(
     public bool IsScriptEntry { get; init; }
 
     /// <summary>
-    /// True for a routine a desugaring pass wrote into the program (the routines that build and run an Agent
+    /// True for a routine a desugaring pass wrote into the program (the routines that build and run a Work
     /// recipe): it may name what the program itself may not.
     /// </summary>
     public bool IsBuilderWritten { get; init; }
@@ -332,7 +332,7 @@ public record RoutineDeclaration(
 
     /// <summary>
     /// The name a crash-trace frame shows for a routine the builder wrote, in place of the routine's own name
-    /// (the work of an Agent shows as <c>agent in start()</c>). Null shows the routine's name.
+    /// (a Work shows as <c>work in start()</c>). Null shows the routine's name.
     /// </summary>
     public string? TraceName { get; init; }
 

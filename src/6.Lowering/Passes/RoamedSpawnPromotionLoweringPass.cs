@@ -133,7 +133,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                         AppendPromotesFor(spawn: call, promotes: promotes);
                     }
 
-                    // A lambda that captures a handle can be called from any job it is handed to (an agent's
+                    // A lambda that captures a handle can be called from any job it is handed to (a job's
                     // argument, a channel, a field another job reads), and nothing marks where it crosses: the
                     // capture is the escape, so each captured handle is promoted where the lambda is made.
                     if (n is ClosureValueExpression closure)
@@ -295,7 +295,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
     }
 
     /// <summary>Whether <paramref name="call"/> sends an item on a channel: the item goes to whichever job receives
-    /// it, so a handle in it crosses like an agent's argument.</summary>
+    /// it, so a handle in it crosses like a job's argument.</summary>
     private static bool IsChannelSend(CallExpression call)
     {
         return call.ResolvedRoutine is

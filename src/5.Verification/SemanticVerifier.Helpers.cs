@@ -2394,9 +2394,9 @@ public sealed partial class SemanticVerifier
             return elementType;
         }
 
-        // An instance's protocols are already its own (`List[Agent[T]]` obeys `Iterable[Agent[T]]`); only the
+        // An instance's protocols are already its own (`List[Work[T]]` obeys `Iterable[Work[T]]`); only the
         // definition's (`Iterable[T]`) still name the definition's parameters. Substituting an instance's again
-        // would read the `T` inside `Agent[T]` as the list's slot and give `Agent[Agent[T]]`.
+        // would read the `T` inside `Work[T]` as the list's slot and give `Work[Work[T]]`.
         List<TypeSymbol>? definitionProtocols = genericDef switch
         {
             RecordTypeSymbol r => r.ImplementedProtocols,

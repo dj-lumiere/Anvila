@@ -995,7 +995,7 @@ public sealed partial class SemanticVerifier
                 message: $"You capture '{varName}' in this lambda, but '{varName}' is a token " +
                          $"(`{varType.ShortTypeName}`), and the lambda can be called after the place `{target}` is in " +
                          $"is gone. Pass the token to the lambda as an argument where you call it, or capture a " +
-                         $"handle that keeps the entity (`Retained[{target}]`, or `Guarded[{target}]` across agents).",
+                         $"handle that keeps the entity (`Retained[{target}]`, or `Guarded[{target}]` across jobs).",
                 location: location);
             return;
         }
@@ -1007,7 +1007,7 @@ public sealed partial class SemanticVerifier
                 message:
                 $"Cannot capture raw entity '{varName}' of type '{varType.Name}' in lambda - " +
                 $"raw entities cannot be captured. " +
-                $"Put it under a manager that can share it first (Retained[T], or Guarded[T] across agents) and " +
+                $"Put it under a manager that can share it first (Retained[T], or Guarded[T] across jobs) and " +
                 $"capture that.",
                 location: location);
         }

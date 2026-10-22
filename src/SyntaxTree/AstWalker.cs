@@ -389,7 +389,7 @@ public static class AstWalker
             {
                 e.Operand
             },
-            AgentExpression e => AgentExpressionChildren(e: e),
+            WorkExpression e => WorkExpressionChildren(e: e),
             BackIndexExpression e => new object[]
             {
                 e.Operand
@@ -570,7 +570,7 @@ public static class AstWalker
         }
     }
 
-    private static IEnumerable<object> AgentExpressionChildren(AgentExpression e)
+    private static IEnumerable<object> WorkExpressionChildren(WorkExpression e)
     {
         yield return e.LoweredCall ?? e.Inner;
     }

@@ -186,7 +186,7 @@ internal static class Wrappers
     /// parallel) by reference, aliasing the spawner's cell safely. These are the atomic /
     /// shared-ownership wrappers — <c>Atomic[T]</c>, <c>Guarded[T,P]</c>, <c>Witnessed[T,P]</c> (atomic
     /// refcount). A <c>Viewing</c>/<c>Modifying</c> token is not here by its type: one bound by a <c>using</c>
-    /// over a <c>Guarded</c> opener is lock-backed, which the agent-argument check judges by where it came from
+    /// over a <c>Guarded</c> opener is lock-backed, which the job-argument check judges by where it came from
     /// (<c>SemanticVerifier.IsLockBackedToken</c>). Every
     /// other type must be trivially copyable (passed by value as an independent copy) or
     /// <c>steal</c>-moved so unsynchronized state can never alias across the boundary.
@@ -218,7 +218,7 @@ internal static class Wrappers
     /// single-thread borrow raced across parallel workers). DERIVED from <see cref="IsThreadShareableName"/>
     /// (the single thread-safe source): it is exactly the forwarding wrappers MINUS the thread-shareable ones
     /// MINUS <c>Roamed</c> (which crosses via <c>promote()</c>, handled at the call site in
-    /// <c>ValidateAgentArgument</c>). The raw-ptr <c>Hijacked</c> escape hatch is excluded by
+    /// <c>ValidateWorkArgument</c>). The raw-ptr <c>Hijacked</c> escape hatch is excluded by
     /// <see cref="Declaration.RuntimeContract.ForwardingWrapperTypes"/> (the user owns that unsafety). Resolves to
     /// {Retained, Tracked, Viewing, Modifying}.
     /// </summary>

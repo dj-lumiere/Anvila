@@ -1220,7 +1220,7 @@ public sealed partial class SemanticVerifier
         // A `try`/`check` recovery (`drop check feeder.send(...)`) is likewise a call under the
         // hood — it lowers to the failable call's recovery variant — so discarding its carrier is valid.
         if (dropped.Expression is not (CallExpression or GenericMemberRoutineCallExpression
-            or RecoveryExpression or AgentExpression))
+            or RecoveryExpression or WorkExpression))
         {
             ReportError(code: SemanticDiagnosticCode.InvalidDropTarget,
                 message: "'drop' can only be used with routine calls. " +
@@ -1232,14 +1232,14 @@ public sealed partial class SemanticVerifier
         // The result is intentionally discarded
         TypeSymbol discardedType = AnalyzeExpression(expression: dropped.Expression);
 
-        // `drop agent f()` throws the Agent away before anything starts it: its work never runs. Warn even though
+        // `drop job f()` throws the Work away before anything starts it: its work never runs. Warn even though
         // the value was dropped on purpose.
-        if (IsAgentType(type: discardedType))
+        if (IsWorkType(type: discardedType))
         {
-            ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
-                message: dropped.Expression is AgentExpression
-                    ? AgentNeverStartedMessage()
-                    : "`drop` throws this Agent away before anything starts it, so its work never runs. Call " +
+            ReportWarning(code: SemanticWarningCode.AsyncWorkNeverLaunched,
+                message: dropped.Expression is WorkExpression
+                    ? WorkNeverStartedMessage()
+                    : "`drop` throws this Work away before anything starts it, so its work never runs. Call " +
                       "`.start_now()` on it to start it, and `.retrieve()` later to wait for its value.",
                 location: dropped.Location);
         }
@@ -1658,13 +1658,13 @@ public sealed partial class SemanticVerifier
                 return null;
             }
 
-            // A global is only read (every agent reaches it), and a block on an entity takes no access of its own, so
+            // A global is only read (every job reaches it), and a block on an entity takes no access of its own, so
             // `modifying` it would change it with no lock. A Guarded global has the pair and takes its access above.
             if (target.IsWrite && target.Target is IdentifierExpression { Name: var globalName } &&
                 _registry.LookupVariable(name: globalName) is { IsGlobal: true, IsModifiable: false })
             {
                 ReportError(code: SemanticDiagnosticCode.ModifyingCallOnImmutable,
-                    message: $"You open the global '{shown}' with 'modifying', but a global is only read: every agent " +
+                    message: $"You open the global '{shown}' with 'modifying', but a global is only read: every job " +
                              $"reaches it, and a block on a plain entity takes no access that would keep the others " +
                              $"out. Open it with 'viewing' to read it, or declare it as a Guarded " +
                              $"(`global {shown}: Guarded[{type.ShortTypeName}, Exclusive]`) and change it inside " +

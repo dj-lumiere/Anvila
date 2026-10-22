@@ -73,7 +73,8 @@ internal static class NativeToolchain
     /// </summary>
     internal static bool TryFindNativeBuildDirectory(string exeDir, out string nativeBuildDir)
     {
-        string? current = exeDir;
+        // A directory given with a trailing separator would otherwise spend its first step up on the same folder.
+        string? current = Path.TrimEndingDirectorySeparator(path: exeDir);
         for (int i = 0; i < 6 && current != null; i++)
         {
             string candidate = Path.Combine(path1: current, path2: CheckoutNativeDir, path3: "build");

@@ -6,27 +6,27 @@ using TypeModel.Enums;
 namespace Builder.Desugaring.Passes;
 
 /// <summary>
-/// Builds the two routines behind an <c>agent</c> call (see <c>SemanticVerifier.AnalyzeAgentExpression</c>): one that
-/// turns the call's arguments into an Agent recipe and one that runs that recipe. Given the call's work routine
-/// <c>__agent_N_work(p0: A, p1: B) -> Check[R]</c> (<c>check</c> over the deferred call chain, written over its
+/// Builds the two routines behind a <c>to[Work]</c> conversion (see <c>SemanticVerifier.AnalyzeWorkExpression</c>): one that
+/// turns the call's arguments into a Work recipe and one that runs that recipe. Given the call's work routine
+/// <c>__work_N_work(p0: A, p1: B) -> Check[R]</c> (<c>check</c> over the deferred call chain, written over its
 /// parameters), it builds:
 /// <code>
-/// routine __agent_N_spawn(p0: A, p1: B) -> Agent[R]
+/// routine __work_N_spawn(p0: A, p1: B) -> Work[R]
 ///     danger
 ///         var recipe = recipe_new(slots: 3)
 ///         recipe_put[A](recipe: recipe, slot: 1, value: p0)
 ///         recipe_put[B](recipe: recipe, slot: 2, value: p1)
-///         return agent_recipe[R](entry: __agent_N_run, recipe: recipe)
+///         return work_recipe[R](entry: __work_N_run, recipe: recipe)
 ///
-/// routine __agent_N_run(recipe: Addr)
+/// routine __work_N_run(recipe: Addr)
 ///     danger
 ///         var r = recipe
-///         var outcome = __agent_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...)
-///         agent_finish[R](recipe: r, outcome: outcome.hijack())
+///         var outcome = __work_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...)
+///         work_finish[R](recipe: r, outcome: outcome.hijack())
 ///     return
 /// </code>
-/// <para>The <c>agent</c> call becomes a call of the spawn routine, so the arguments are computed where it is
-/// written and the call itself runs wherever the verb that starts the Agent puts it. Slot 0 of the recipe holds
+/// <para>The <c>to[Work]</c> conversion becomes a call of the spawn routine, so the arguments are computed where it is
+/// written and the call itself runs wherever the verb that starts the Work puts it. Slot 0 of the recipe holds
 /// the task, written by that verb. An argument moves into the recipe with an implicit <c>steal</c>, which moves an
 /// entity and leaves any other value as it is.</para>
 ///
@@ -34,9 +34,9 @@ namespace Builder.Desugaring.Passes;
 /// holds <c>cell.hijack()</c>, and the run routine passes <c>recipe_take[Hijacked[Atomic[..]]](..).peek()</c>,
 /// which the wrapper projection turns into the cell's address.</para>
 /// </summary>
-internal static class AgentRecipe
+internal static class WorkRecipe
 {
-    /// <summary>The spawn routine: boxes each argument into a fresh recipe and returns the Agent built over it.</summary>
+    /// <summary>The spawn routine: boxes each argument into a fresh recipe and returns the Work built over it.</summary>
     internal static RoutineDeclaration BuildSpawn(RoutineDeclaration routine, string spawnName, string runName,
         TypeExpression resultType)
     {
@@ -80,7 +80,7 @@ internal static class AgentRecipe
         }
 
         statements.Add(item: new ReturnStatement(
-            Value: Call(name: "agent_recipe",
+            Value: Call(name: "work_recipe",
                 typeArguments: [resultType],
                 arguments:
                 [
@@ -92,7 +92,7 @@ internal static class AgentRecipe
 
         return new RoutineDeclaration(Name: spawnName,
             Parameters: routine.Parameters.ToList(),
-            ReturnType: new TypeExpression(Name: "Agent", GenericArguments: [resultType], Location: loc),
+            ReturnType: new TypeExpression(Name: "Work", GenericArguments: [resultType], Location: loc),
             Body: new BlockStatement(
                 Statements: [new DangerStatement(Body: new BlockStatement(Statements: statements, Location: loc),
                     Location: loc) { IsBuilderWritten = true }],
@@ -102,7 +102,7 @@ internal static class AgentRecipe
             Location: loc) { IsBuilderWritten = true };
     }
 
-    /// <summary>The run routine <c>(recipe: Addr)</c>, the entry of the fiber or thread that runs the Agent: moves the
+    /// <summary>The run routine <c>(recipe: Addr)</c>, the entry of the fiber or thread that runs the Work: moves the
     /// arguments out of the recipe, calls the work routine and completes the task with its result.</summary>
     internal static RoutineDeclaration BuildRun(RoutineDeclaration routine, string runName, TypeExpression resultType)
     {
@@ -146,8 +146,8 @@ internal static class AgentRecipe
                 Location: loc)
         };
 
-        // The work returns what it came to (`check` over the call chain): a failure stays in the Agent and surfaces
-        // where the Agent is retrieved. The outcome is a local that `agent_finish` moves into the task's box.
+        // The work returns what it came to (`check` over the call chain): a failure stays in the Work and surfaces
+        // where the Work is retrieved. The outcome is a local that `work_finish` moves into the task's box.
         statements.Add(item: new DeclarationStatement(
             Declaration: new VariableDeclaration(Name: "outcome",
                 Type: null,
@@ -156,7 +156,7 @@ internal static class AgentRecipe
                 Location: loc),
             Location: loc));
         statements.Add(item: new ExpressionStatement(
-            Expression: Call(name: "agent_finish",
+            Expression: Call(name: "work_finish",
                 typeArguments: [resultType],
                 arguments:
                 [

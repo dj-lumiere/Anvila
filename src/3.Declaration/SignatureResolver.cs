@@ -250,7 +250,7 @@ internal sealed class SignatureResolver
                 implicitConstraints: implicitConstraints,
                 astParamGenericNames: astParamGenericNames);
 
-        // Specialized-receiver member `me` (e.g. `List[Agent[V]]`), else the SF-user-entity Roamed[E]
+        // Specialized-receiver member `me` (e.g. `List[Work[V]]`), else the SF-user-entity Roamed[E]
         // handle. A specialized `meType` takes precedence over the SF wrap.
         TypeSymbol? meType = ResolveSpecializedReceiverMeType(pending: pending,
             refreshedOwnerType: refreshedOwnerType,
@@ -473,7 +473,7 @@ internal sealed class SignatureResolver
     /// <summary>
     /// Reports <c>ErrorHandlingTypeAsReturnType</c> when a routine written in a program returns a carrier type
     /// (Maybe/Check, builder-generated wrappers for failable routines). A routine the builder writes (the work
-    /// routine of <c>try agent f()</c> returns the carrier) is exempt.
+    /// routine of <c>try job f()</c> returns the carrier) is exempt.
     /// </summary>
     private void ValidateReturnTypeNotCarrier(TypeSymbol? returnType, RoutineDeclaration routine)
     {
@@ -556,7 +556,7 @@ internal sealed class SignatureResolver
         // the payload (same rule as records containing entity fields).
 
         // Validate that a Check[T] is not used as a parameter type. A type the builder already knows (a routine it
-        // writes for an `agent` call takes the call's values as they are) is exempt.
+        // writes for a `to[Work]` conversion takes the call's values as they are) is exempt.
         if (IsCarrierType(type: paramType) && !IsMaybeType(type: paramType) && param.Type?.KnownType == null)
         {
             string carrierName = GetCarrierBaseName(type: paramType)!;
@@ -625,7 +625,7 @@ internal sealed class SignatureResolver
                 DefaultValue = param.DefaultValue,
                 IsVariadicParam = param.IsVariadic,
                 // An Atomic is a cell that is shared, never copied: a routine taking one works on the
-                // caller's cell (a copy would be a second, silent cell, and an agent's work would count
+                // caller's cell (a copy would be a second, silent cell, and a job's work would count
                 // into it alone).
                 IsByReference = param.IsByReference ||
                                 paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Atomic },
@@ -640,7 +640,7 @@ internal sealed class SignatureResolver
     /// <summary>
     /// Resolves the <c>me</c> type for a specialized-receiver member: if the receiver is a generic
     /// instantiation whose top-level type arguments are concrete types (not the owner's own bare
-    /// generic params) — e.g. <c>List[Agent[V]]</c> — resolve it (the routine's generic params, incl.
+    /// generic params) — e.g. <c>List[Work[V]]</c> — resolve it (the routine's generic params, incl.
     /// V, are in scope here) so <c>me</c> is typed as the specialized receiver and member access like
     /// <c>me[i]</c> yields the specialized element instead of the generic def's raw element. OwnerType
     /// stays the generic definition so registration and call-site lookup key on the base type. Returns

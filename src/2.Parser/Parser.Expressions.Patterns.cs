@@ -489,8 +489,8 @@ public partial class Parser
         // No CallExpression requirement: the inner may be any expression (a bare call, a member chain, or
         // a checked-arith composition like `a + b`). An operand with no failable call or operator degenerates
         // to an always-present carrier in SA — harmless, and keeping the surface uniform.
-        // `try agent f()` recovers inside the deferred work: an Agent over the recovery (`Agent[Maybe[T]]`).
-        Expression recovery = callSpine is AgentExpression agent
+        // `try job f()` recovers inside the deferred work: a Work over the recovery (`Work[Maybe[T]]`).
+        Expression recovery = callSpine is WorkExpression agent
             ? agent with
             {
                 Inner = new RecoveryExpression(Kind: recoveryKind,

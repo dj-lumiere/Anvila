@@ -165,7 +165,7 @@ public sealed class DebugOptions
     /// <summary>Path to dump the maysuspend analysis (<c>maysuspend-dump</c>); null = off.</summary>
     public string? MaySuspendDump { get; set; }
 
-    /// <summary>Whether agents waiting on each other for access stop the program with a crash naming them
+    /// <summary>Whether jobs waiting on each other for access stop the program with a crash naming them
     /// (<c>deadlock-check</c>); null for the mode's default: on in a debug build, off in the release modes.</summary>
     public bool? DeadlockCheck { get; set; }
 

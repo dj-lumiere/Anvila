@@ -112,8 +112,8 @@ internal sealed partial class AstPrinter
             IsPatternExpression => PIs,
             UnaryExpression { Operator: UnaryOperator.ForceUnwrap } => PPostfix,
             UnaryExpression or StealExpression or BackIndexExpression or RecoveryExpression
-                or AgentExpression { Inner: RecoveryExpression } => PUnary,
-            AgentExpression => PPostfix,
+                or WorkExpression { Inner: RecoveryExpression } => PUnary,
+            WorkExpression => PPostfix,
             LiteralExpression { Value: string text } when text.StartsWith(value: '-') => PUnary,
             CallExpression { IsInfix: true } => PInfix,
             CallExpression or MemberExpression or IndexExpression or GenericMemberExpression
@@ -192,8 +192,8 @@ internal sealed partial class AstPrinter
                     Expr(expression: back.Operand, min: PUnary, follow: follow, comma: comma));
             case RecoveryExpression recovery:
                 return RecoveryDoc(recovery: recovery);
-            case AgentExpression agent:
-                return AgentDoc(agent: agent);
+            case WorkExpression agent:
+                return WorkDoc(agent: agent);
             case CallExpression call:
                 return CallDoc(call: call);
             case MemberExpression member:
@@ -582,9 +582,9 @@ internal sealed partial class AstPrinter
         }
     }
 
-    /// <summary>`f.to[Agent](x)`, or `try f.to[Agent](x)` for an Agent over a recovery (the parser's own shape: the
+    /// <summary>`f.to[Work](x)`, or `try f.to[Work](x)` for a Work over a recovery (the parser's own shape: the
     /// conversion is read as the call it defers).</summary>
-    private Doc AgentDoc(AgentExpression agent)
+    private Doc WorkDoc(WorkExpression agent)
     {
         if (agent.Inner is RecoveryExpression recovery)
         {
@@ -593,14 +593,14 @@ internal sealed partial class AstPrinter
                 RecoveryKind.Try => "try ",
                 _ => "check "
             };
-            return Doc.Concat(Doc.Text(text: keyword), AgentConversionDoc(inner: recovery.Inner, agent: agent));
+            return Doc.Concat(Doc.Text(text: keyword), WorkConversionDoc(inner: recovery.Inner, agent: agent));
         }
 
-        return AgentConversionDoc(inner: agent.Inner, agent: agent);
+        return WorkConversionDoc(inner: agent.Inner, agent: agent);
     }
 
-    /// <summary>The deferred call `f(x)` written as the conversion on its routine, `f.to[Agent](x)`.</summary>
-    private Doc AgentConversionDoc(Expression inner, AgentExpression agent)
+    /// <summary>The deferred call `f(x)` written as the conversion on its routine, `f.to[Work](x)`.</summary>
+    private Doc WorkConversionDoc(Expression inner, WorkExpression agent)
     {
         if (inner is not CallExpression call)
         {
@@ -608,7 +608,7 @@ internal sealed partial class AstPrinter
         }
 
         return Doc.Concat(Expr(expression: call.Callee, min: PPostfix, follow: PPostfix, comma: false),
-            Doc.Text(text: ".to[Agent]"), ArgumentList(arguments: call.Arguments));
+            Doc.Text(text: ".to[Work]"), ArgumentList(arguments: call.Arguments));
     }
 
     private Doc RecoveryDoc(RecoveryExpression recovery)

@@ -3394,8 +3394,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// </summary>
     private string ResolvedRoutineOwnerAstName(RoutineInfo resolvedRoutine)
     {
-        // Specialized-receiver member (e.g. List[Agent[V]].gather!): the AST decl is indexed
-        // under its receiver PATTERN "List[Agent[V]]", not "List[T]". Format MeType to match.
+        // Specialized-receiver member (e.g. List[Work[V]].gather!): the AST decl is indexed
+        // under its receiver PATTERN "List[Work[V]]", not "List[T]". Format MeType to match.
         if (resolvedRoutine.GenericDefinition?.MeType is { } mePat)
         {
             return FormatReceiverPatternAstName(type: mePat);
@@ -3423,8 +3423,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         return ownerType.Name;
     }
 
-    /// <summary>Formats a specialized-receiver pattern (a memberRoutine's MeType, e.g. List[Agent[V]]) into
-    /// the short AST-name form used by the routine index ("List[Agent[V]]"), stripping module
+    /// <summary>Formats a specialized-receiver pattern (a memberRoutine's MeType, e.g. List[Work[V]]) into
+    /// the short AST-name form used by the routine index ("List[Work[V]]"), stripping module
     /// prefixes so it matches how the declaration's receiver was written in source.</summary>
     private string FormatReceiverPatternAstName(TypeSymbol type)
     {
@@ -3463,8 +3463,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         return baseName;
     }
 
-    /// <summary>Recursively unifies a MeType pattern (List[Agent[V]]) against the concrete owner
-    /// (List[Agent[S64]]), recording memberRoutine-generic bindings (V → S64) into <paramref name="into"/>.</summary>
+    /// <summary>Recursively unifies a MeType pattern (List[Work[V]]) against the concrete owner
+    /// (List[Work[S64]]), recording memberRoutine-generic bindings (V → S64) into <paramref name="into"/>.</summary>
     private static void UnifyMePatternIntoSubs(TypeSymbol pattern, TypeSymbol concrete,
         List<string>? genericParams, Dictionary<string, TypeSymbol> into)
     {

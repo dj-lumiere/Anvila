@@ -330,7 +330,7 @@ public sealed partial class SemanticVerifier
             return operandType;
         }
 
-        // A builder-written move (an argument moved into an Agent recipe) moves an entity and leaves any
+        // A builder-written move (an argument moved into a Work recipe) moves an entity and leaves any
         // other value, wrappers included, as it is.
         if (steal.IsImplicitMove && !IsRawEntityType(type: operandType))
         {
@@ -338,7 +338,7 @@ public sealed partial class SemanticVerifier
             return operandType;
         }
 
-        // A global lives as long as the program and every agent reaches it, so nothing takes it away: `steal G` would
+        // A global lives as long as the program and every job reaches it, so nothing takes it away: `steal G` would
         // leave the global empty for every later read, in this routine and in any other.
         if (steal.Operand is IdentifierExpression { Name: var stolenName } &&
             _registry.LookupVariable(name: stolenName) is { IsGlobal: true })

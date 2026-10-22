@@ -76,7 +76,7 @@ public sealed partial class SemanticVerifier
                 spliceMember: spliceMember),
             SpliceExpression splice => AnalyzeSpliceExpression(splice: splice),
             RecoveryExpression recovery => AnalyzeRecoveryExpression(recovery: recovery, expectedType: expectedType),
-            AgentExpression agent => AnalyzeAgentExpression(agent: agent),
+            WorkExpression agent => AnalyzeWorkExpression(agent: agent),
             IndexExpression index => AnalyzeIndexExpression(index: index),
             ConditionalExpression cond => AnalyzeConditionalExpression(cond: cond,
                 expectedType: expectedType),
@@ -365,7 +365,7 @@ public sealed partial class SemanticVerifier
         switch (id.Name)
         {
             case "me" when _currentType != null:
-                // A routine on a specialized receiver (`List[Agent[T]].gather`) keeps that receiver as `me` in a
+                // A routine on a specialized receiver (`List[Work[T]].gather`) keeps that receiver as `me` in a
                 // builder-written body too (its recovery variants), not its owner's bare definition.
                 result = _currentRoutine?.MeType ?? MeOfProtocolDefinition(owner: _currentType) ?? _currentType;
                 return true;
@@ -497,8 +497,8 @@ public sealed partial class SemanticVerifier
 
     private TypeSymbol? ResolveMeIdentifier()
     {
-        // Specialized-receiver member (e.g. `routine List[Agent[V]].gather!()`): `me` is the
-        // resolved specialized receiver so member access like `me[i]` yields Agent[V], not the
+        // Specialized-receiver member (e.g. `routine List[Work[V]].gather!()`): `me` is the
+        // resolved specialized receiver so member access like `me[i]` yields Work[V], not the
         // generic def's raw element. (OwnerType stays the generic def for registration.)
         if (_currentRoutine!.MeType != null)
         {

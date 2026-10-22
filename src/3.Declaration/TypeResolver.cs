@@ -662,14 +662,14 @@ internal sealed class TypeResolver
             return ErrorTypeSymbol.Instance;
         }
 
-        // Reject None as a type argument except Check[None] and Agent[None] (the Agent of work that returns
+        // Reject None as a type argument except Check[None] and Work[None] (the Work of work that returns
         // nothing).
         string? genericDefCarrierName = GetCarrierBaseName(type: genericDef);
 
         if (ResolveNoneTypeArguments(typeExpr: typeExpr,
                 typeArgs: typeArgs,
                 genericDefCarrierName: genericDefCarrierName,
-                allowsNone: genericDefCarrierName is "Check" || genericDef.BareName == "Agent") is { } noneResult)
+                allowsNone: genericDefCarrierName is "Check" || genericDef.BareName == "Work") is { } noneResult)
         {
             return noneResult;
         }

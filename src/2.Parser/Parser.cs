@@ -868,8 +868,8 @@ public partial class Parser
 
     /// <summary>
     /// Reports a routine declaration written with the concurrency words the language no longer has
-    /// (<c>suspended routine</c>, <c>threaded routine</c>): any routine runs concurrently when its caller writes
-    /// <c>agent</c> before the call.
+    /// (<c>suspended routine</c>, <c>threaded routine</c>): any routine runs concurrently when its caller converts it
+    /// with <c>f.to[Work](...)</c>.
     /// </summary>
     private void RejectRetiredConcurrencyModifier()
     {
@@ -883,8 +883,8 @@ public partial class Parser
         throw new GrammarException(code: GrammarDiagnosticCode.UnexpectedToken,
             message: $"You wrote '{CurrentToken.Text} routine', but a routine declares nothing about where it runs: " +
                      "any routine can run concurrently. Remove " +
-                     $"'{CurrentToken.Text}', and convert the routine to get an Agent you start: " +
-                     "'work.to[Agent](x: 1)'.",
+                     $"'{CurrentToken.Text}', and convert the routine to get a Work you start: " +
+                     "'work.to[Work](x: 1)'.",
             fileName: FileName,
             line: CurrentToken.Line,
             column: CurrentToken.Column,

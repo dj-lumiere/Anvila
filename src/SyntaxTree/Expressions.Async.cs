@@ -3,30 +3,30 @@ namespace SyntaxTree;
 #region Async Expressions
 
 /// <summary>
-/// <c>agent EXPR</c>: computes the arguments of the call chain <paramref name="Inner"/> now and defers the calls
-/// into an <c>Agent[T]</c> that a verb starts (<c>start_now()</c>, <c>start_here()</c>, <c>start_apart()</c>, or
-/// <c>retrieve()</c>, which starts it with <c>start_now()</c>). <c>try agent f()</c> / <c>check agent f()</c> parse
-/// as an agent over the recovery, so the failure is caught inside the work.
+/// <c>f.to[Work](...)</c>: computes the arguments of the call chain <paramref name="Inner"/> now and defers the calls
+/// into a <c>Work[T]</c> that a verb starts (<c>start_now()</c>, <c>start_here()</c>, <c>start_apart()</c>, or
+/// <c>retrieve()</c>, which starts it with <c>start_now()</c>). <c>try job f()</c> / <c>check job f()</c> parse
+/// as a job over the recovery, so the failure is caught inside the work.
 /// </summary>
 /// <param name="Inner">The deferred call chain.</param>
-/// <param name="Location">Source location of the <c>agent</c> keyword.</param>
-public record AgentExpression(Expression Inner, SourceLocation Location) : Expression(Location: Location)
+/// <param name="Location">Source location of the <c>to[Work]</c> conversion.</param>
+public record WorkExpression(Expression Inner, SourceLocation Location) : Expression(Location: Location)
 {
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
-        return visitor.VisitAgentExpression(node: this);
+        return visitor.VisitWorkExpression(node: this);
     }
 
     /// <summary>
-    /// The analyzed lowering: a call of the routine that builds this Agent's recipe from the chain's arguments.
+    /// The analyzed lowering: a call of the routine that builds this Work's recipe from the chain's arguments.
     /// Every pass after analysis sees this call in the node's place. Null until analyzed.
     /// </summary>
     public Expression? LoweredCall { get; set; }
 
     /// <summary>
-    /// Why this Agent may only run on the thread that made it: an argument that only one thread may use (a token,
-    /// a <c>Retained</c>), described for a message. Such an Agent is started with <c>start_here()</c> and stays in
+    /// Why this Work may only run on the thread that made it: an argument that only one thread may use (a token,
+    /// a <c>Retained</c>), described for a message. Such a Work is started with <c>start_here()</c> and stays in
     /// the routine that made it (RF-S632 otherwise). Null when any verb may start it.
     /// </summary>
     public string? OneThreadArgument { get; set; }

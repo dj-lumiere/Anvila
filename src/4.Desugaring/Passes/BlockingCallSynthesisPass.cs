@@ -1,6 +1,6 @@
 using Builder.Declaration;
 using SyntaxTree;
-using static Builder.Desugaring.Passes.AgentRecipe;
+using static Builder.Desugaring.Passes.WorkRecipe;
 
 namespace Builder.Desugaring.Passes;
 
@@ -8,7 +8,7 @@ namespace Builder.Desugaring.Passes;
 /// A foreign routine marked <c>@blocking</c> (<c>@blocking routine C::read_line(...) -> T</c>) may block its thread
 /// for a long time. A coroutine that calls it must not hold its worker meanwhile: the call runs on one of the
 /// runtime's I/O threads while the coroutine parks, and anywhere else it runs right there (Ingrid's
-/// <c>rf_blocking_call</c>). Runs on the user programs with <see cref="AgentRecipe"/>, before
+/// <c>rf_blocking_call</c>). Runs on the user programs with <see cref="WorkRecipe"/>, before
 /// declarations are collected.
 ///
 /// <para>For <c>@blocking routine C::f(a: A) -> R</c> it appends:</para>

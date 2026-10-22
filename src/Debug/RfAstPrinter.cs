@@ -1182,9 +1182,9 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
 
     /// <inheritdoc/>
-    public string VisitAgentExpression(AgentExpression node)
+    public string VisitWorkExpression(WorkExpression node)
     {
-        return node.LoweredCall?.Accept(visitor: this) ?? $"agent {node.Inner.Accept(visitor: this)}";
+        return node.LoweredCall?.Accept(visitor: this) ?? $"{node.Inner.Accept(visitor: this)}.to[Work]";
     }
 
 

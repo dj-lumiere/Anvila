@@ -536,9 +536,9 @@ public record CallExpression(
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
 
-    /// <summary>For the call that builds an Agent (an <c>agent</c> call once analyzed): why the Agent may only run on the
-    /// thread that made it (<see cref="AgentExpression.OneThreadArgument"/>), or null.</summary>
-    public string? AgentOneThreadArgument { get; init; }
+    /// <summary>For the call that builds a Work (a <c>to[Work]</c> conversion once analyzed): why the Work may only run on the
+    /// thread that made it (<see cref="WorkExpression.OneThreadArgument"/>), or null.</summary>
+    public string? WorkOneThreadArgument { get; init; }
 
     /// <summary>True for a call written between its two operands, <c>a dot b</c> (a routine marked <c>@infix</c>).</summary>
     public bool IsInfix { get; init; }
@@ -548,8 +548,8 @@ public record CallExpression(
     public bool ConsumesReceiver { get; init; }
 
     /// <summary>
-    /// True for the call inside a routine that runs a recipe: an <c>agent</c> call's run routine calling its work
-    /// routine (<see cref="Builder.Desugaring.Passes.AgentRecipe"/>), or a <c>@blocking</c> foreign routine's run
+    /// True for the call inside a routine that runs a recipe: a <c>to[Work]</c> conversion's run routine calling its work
+    /// routine (<see cref="Builder.Desugaring.Passes.WorkRecipe"/>), or a <c>@blocking</c> foreign routine's run
     /// routine making the foreign call itself instead of building another recipe.
     /// </summary>
     public bool IsRecipeRunCall { get; init; }
@@ -987,8 +987,8 @@ public record Parameter(
 {
     /// <summary>
     /// True when the argument is passed by its address, so the routine works on the caller's storage
-    /// (set on an <c>agent</c> call's <c>Atomic</c> argument, shared with the work, see
-    /// <see cref="Builder.Desugaring.Passes.AgentRecipe"/>).
+    /// (set on a <c>to[Work]</c> conversion's <c>Atomic</c> argument, shared with the work, see
+    /// <see cref="Builder.Desugaring.Passes.WorkRecipe"/>).
     /// </summary>
     public bool IsByReference { get; init; }
 }
@@ -1061,7 +1061,7 @@ public record TypeExpression(
     }
 
     /// <summary>
-    /// A type the builder already knows, for a routine it writes during analysis (an <c>agent</c> call's work
+    /// A type the builder already knows, for a routine it writes during analysis (a <c>to[Work]</c> conversion's work
     /// routine takes its parameter types from the analyzed arguments). The resolver returns it as it is: such a
     /// type may live in a module the file does not import, or have no spelling in the file's language.
     /// </summary>
@@ -1589,7 +1589,7 @@ public record StealExpression(Expression Operand, SourceLocation Location)
     : Expression(Location: Location)
 {
     /// <summary>
-    /// True for a move the builder wrote (an argument moved into an Agent recipe): it moves an entity and
+    /// True for a move the builder wrote (an argument moved into a Work recipe): it moves an entity and
     /// leaves any other value as it is, where a written <c>steal</c> of a non-entity is an error.
     /// </summary>
     public bool IsImplicitMove { get; init; }

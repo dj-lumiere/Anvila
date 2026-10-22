@@ -398,7 +398,7 @@ public partial class Parser
 
         // A failable free routine writes the bang immediately after the base name, with its
         // type-level generics following it: `race![T](...)`. (Member routines instead carry their
-        // generics on the receiver before the dot, e.g. `Agent[T].retrieve!()`.) Parse those
+        // generics on the receiver before the dot, e.g. `Work[T].retrieve!()`.) Parse those
         // post-bang generics here so they bind exactly like the pre-name form.
         if (isFailable && !hasGenericParams && CheckAndAdvance(type: TokenType.LeftBracket))
         {

@@ -1178,7 +1178,7 @@ public partial class LlvmEmitter
     private const string FailureEntryType = "{ i64, i32, " + TraceRingType + " }";
 
     /// <summary>How many failures the program remembers where they were thrown: the most recent ones, from any thread
-    /// (a failure an Agent threw is reported where it is retrieved, on another thread).</summary>
+    /// (a failure a Work threw is reported where it is retrieved, on another thread).</summary>
     private const int FailureRingSize = 64;
 
     /// <summary>

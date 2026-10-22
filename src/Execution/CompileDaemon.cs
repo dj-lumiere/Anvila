@@ -1199,6 +1199,7 @@ internal partial class Program
                 DaemonResponse? resp = SendRequest(request: req, timeoutMs: 500);
                 if (resp == null)
                 {
+                    Console.Error.WriteLine(value: "[daemon] the daemon did not answer; this run builds in this process.");
                     return false;
                 }
 
@@ -1211,8 +1212,10 @@ internal partial class Program
                 OrcJitExecutor.DaemonIngridObjectPath = resp.IngridObjectPath;
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.Error.WriteLine(
+                    value: $"[daemon] the request to the daemon failed ({ex.Message}); this run builds in this process.");
                 return false;
             }
         }
@@ -1305,9 +1308,10 @@ internal partial class Program
             // way to abort a blocked pipe read). Timeout -> null -> caller falls back to a cold build.
             var readTask = System.Threading.Tasks.Task.Run(
                 function: () => ReadMessage<DaemonResponse>(stream: client));
-            if (!readTask.Wait(millisecondsTimeout: ResponseReadTimeoutMs))
+            int readTimeoutMs = DaemonWaitSeconds(defaultSeconds: ResponseReadTimeoutMs / 1000) * 1000;
+            if (!readTask.Wait(millisecondsTimeout: readTimeoutMs))
             {
-                T(m: $"response read TIMED OUT after {ResponseReadTimeoutMs}ms -> abandoning daemon, cold build");
+                T(m: $"response read TIMED OUT after {readTimeoutMs}ms -> abandoning daemon, cold build");
                 try { client.Dispose(); } catch { /* unblocks the worker's Read */ }
                 return null;
             }
@@ -1574,10 +1578,13 @@ internal partial class Program
             // (3) Wait for warm-up (stdlib snapshot capture ≈ 5 s). Ping is process-free, so this poll
             // does not starve the warming daemon.
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (sw.Elapsed < TimeSpan.FromSeconds(value: 60))
+            int budgetSeconds = DaemonWaitSeconds(defaultSeconds: 60);
+            while (sw.Elapsed < TimeSpan.FromSeconds(value: budgetSeconds))
             {
                 if (proc.HasExited)
                 {
+                    Console.Error.WriteLine(
+                        value: $"[daemon] the daemon (pid {proc.Id}) stopped while warming; this run builds in this process.");
                     return false;
                 }
 
@@ -1590,7 +1597,21 @@ internal partial class Program
                 Thread.Sleep(millisecondsTimeout: 150);
             }
 
+            Console.Error.WriteLine(
+                value: $"[daemon] the daemon (pid {proc.Id}) was not ready after {budgetSeconds} s; this run builds in " +
+                       "this process, and a later run uses the daemon once it is ready.");
             return false;
+        }
+
+        /// <summary>How long a client waits for the daemon, in whole seconds: <paramref name="defaultSeconds"/>, or the
+        /// value of <c>RAZORFORGE_DAEMON_WAIT_SECONDS</c> / <c>SUFLAE_DAEMON_WAIT_SECONDS</c>, which sets both the wait
+        /// for a daemon to warm up and the wait for its answer (a slow or busy machine, where warming the standard
+        /// library or building its base takes longer).</summary>
+        private static int DaemonWaitSeconds(int defaultSeconds)
+        {
+            string? overridden = Environment.GetEnvironmentVariable(
+                variable: $"{DaemonName().Replace(oldValue: "-", newValue: "_").ToUpperInvariant()}_WAIT_SECONDS");
+            return int.TryParse(s: overridden, result: out int seconds) && seconds > 0 ? seconds : defaultSeconds;
         }
 
         // ---- length-prefixed binary framing ----------------------------------------------------------

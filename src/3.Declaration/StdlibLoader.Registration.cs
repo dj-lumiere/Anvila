@@ -712,7 +712,7 @@ public sealed partial class StdlibLoader
     /// Resolves the owner type for a stdlib routine from its rendered receiver. For a member routine
     /// (<c>List[T].add_last</c>, <c>S32.add</c>) this is the receiver type; for a bare constructor
     /// (<c>routine List(...)</c>) it is the constructed type and <paramref name="memberRoutineName"/>
-    /// is cleared to <see cref="RoutineInfo.CreatorName"/>. For a generic-specialized receiver (<c>List[Agent[V]]</c>) the owner
+    /// is cleared to <see cref="RoutineInfo.CreatorName"/>. For a generic-specialized receiver (<c>List[Work[V]]</c>) the owner
     /// stays the generic def and <paramref name="meTypeName"/> carries the receiver text so `me` can be
     /// typed as the specialization. Returns null when the receiver is a bare name matching no type and
     /// no constructor (a plain free routine).
@@ -769,7 +769,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Resolves the owner for a bracketed receiver (<c>List[T]</c>, <c>List[Agent[V]]</c>,
+    /// Resolves the owner for a bracketed receiver (<c>List[T]</c>, <c>List[Work[V]]</c>,
     /// <c>List[Byte]</c>): a generic definition when the bracket args are the base's own params, a
     /// generic specialization (owner = def, receiver text captured in <paramref name="meTypeName"/>)
     /// when the brackets reference a routine generic param, else a concrete resolution.
@@ -813,7 +813,7 @@ public sealed partial class StdlibLoader
             return baseDef;
         }
 
-        // Specialized receiver. Distinguish a GENERIC specialization (List[Agent[V]] —
+        // Specialized receiver. Distinguish a GENERIC specialization (List[Work[V]] —
         // brackets reference a routine generic param) from a fully-CONCRETE one (List[Byte]).
         bool hasGenericParamInReceiver = routine.GenericParameters?.Any(predicate: gp =>
             registry.LookupType(name: gp) is null &&
@@ -824,10 +824,10 @@ public sealed partial class StdlibLoader
                 matchTimeout: TimeSpan.FromSeconds(value: 1))) ?? false;
         if (hasGenericParamInReceiver)
         {
-            // GENERIC specialization (e.g. List[Agent[V]]): register under the generic def
-            // (so call-site lookup on List[Agent[S64]] finds it), and remember the receiver
+            // GENERIC specialization (e.g. List[Work[V]]): register under the generic def
+            // (so call-site lookup on List[Work[S64]] finds it), and remember the receiver
             // text so `me` is typed as the specialized receiver (MeType) below — making
-            // member access like `me[i]` yield Agent[V] instead of List's raw element.
+            // member access like `me[i]` yield Work[V] instead of List's raw element.
             meTypeName = memberRoutineName == RoutineInfo.CreatorName
                 ? null
                 : typeName;
@@ -927,7 +927,7 @@ public sealed partial class StdlibLoader
             ctx: ctx,
             moduleName: moduleName);
 
-        // Resolve the specialized receiver (e.g. List[Agent[V]]) with the generic context now in
+        // Resolve the specialized receiver (e.g. List[Work[V]]) with the generic context now in
         // scope, so `me` is typed as the specialized receiver. OwnerType stays the generic def.
         TypeSymbol? meType = ResolveSpecializedMeType(registry: registry,
             routine: routine,
@@ -1275,7 +1275,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Resolves the specialized receiver (e.g. <c>List[Agent[V]]</c>) into a MeType with the generic
+    /// Resolves the specialized receiver (e.g. <c>List[Work[V]]</c>) into a MeType with the generic
     /// context now in scope, so <c>me</c> is typed as the specialization while OwnerType stays the
     /// generic def. Returns null when there is no specialized receiver text or it fails to resolve.
     /// </summary>
@@ -1308,7 +1308,7 @@ public sealed partial class StdlibLoader
         // `ResolveSimpleType` is realm-blind and yields the ambient-realm receiver; keep `me`
         // in the OWNER's realm so an SF-realm `System.List` method's `me` isn't the RF-realm List
         // (which lacks the SF wrapper's `inner` field → spurious RF-S450).
-        // The receiver's elements are slots like any other (`List[Agent[T]]` in Suflae is a list of Agent
+        // The receiver's elements are slots like any other (`List[Work[T]]` in Suflae is a list of Work
         // handles); `me` itself stays the bare value.
         resolvedRecv = registry.RoamEntityArgumentsIn(filePath: routine.Location.FileName, resolved: resolvedRecv);
         return ownerType != null && resolvedRecv.Realm != ownerType.Realm

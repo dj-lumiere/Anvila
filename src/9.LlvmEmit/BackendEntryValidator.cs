@@ -296,7 +296,7 @@ public sealed class BackendEntryValidator
     {
         string? requiredPass = node switch
         {
-            AgentExpression => "SemanticVerifier.AnalyzeAgentExpression",
+            WorkExpression => "SemanticVerifier.AnalyzeWorkExpression",
             GenericMemberRoutineCallExpression => "GenericCallLoweringPass",
             LambdaExpression => "LambdaLiftingPass",
             InsertedTextExpression => "FStringLoweringPass",

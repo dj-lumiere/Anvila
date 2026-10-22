@@ -210,9 +210,9 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// For a member routine declared on a SPECIALIZED generic instantiation — e.g.
-    /// <c>routine List[Agent[V]].gather!()</c> — the resolved specialized receiver type
-    /// (<c>List[Agent[V]]</c> with <c>V</c> a routine generic parameter). <c>me</c> is typed as this,
-    /// so member access like <c>me[i]</c> yields the specialized element (<c>Agent[V]</c>) instead of
+    /// <c>routine List[Work[V]].gather!()</c> — the resolved specialized receiver type
+    /// (<c>List[Work[V]]</c> with <c>V</c> a routine generic parameter). <c>me</c> is typed as this,
+    /// so member access like <c>me[i]</c> yields the specialized element (<c>Work[V]</c>) instead of
     /// the generic definition's raw element parameter. Null for ordinary members, where <c>me</c> is
     /// <see cref="OwnerType"/>. <see cref="OwnerType"/> stays the generic definition so registration
     /// and call-site lookup key on the base type.
@@ -468,7 +468,7 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// The name a crash-trace frame shows for a routine the builder wrote in place of its own name (the work of
-    /// an Agent shows as <c>agent in start()</c>). Null shows the routine's name.
+    /// a Work shows as <c>work in start()</c>). Null shows the routine's name.
     /// </summary>
     public string? TraceName { get; init; }
 
@@ -493,7 +493,7 @@ public sealed class RoutineInfo
     public FailableVariant FailableVariant { get; init; } = FailableVariant.None;
 
     /// <summary>
-    /// For the routine that builds the Agent recipe of a <c>threaded</c>/<c>suspended</c> routine (a call of
+    /// For the routine that builds the Work recipe of a <c>threaded</c>/<c>suspended</c> routine (a call of
     /// the async routine is analyzed as a call of this one): the async routine it spawns.
     /// </summary>
     public RoutineInfo? AsyncSpawnOf { get; set; }

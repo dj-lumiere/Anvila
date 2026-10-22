@@ -25,7 +25,7 @@ public sealed partial class SemanticVerifier
             AnalyzeDeclaration(node: declaration);
         }
 
-        AnalyzeAgentRoutines(program: program);
+        AnalyzeWorkRoutines(program: program);
     }
 
     private void AnalyzeDeclaration(ISyntaxTreeNode node)
@@ -1619,11 +1619,11 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>The warning for an <c>agent</c> call whose Agent nothing starts.</summary>
-    private static string AgentNeverStartedMessage()
+    /// <summary>The warning for a <c>to[Work]</c> conversion whose Work nothing starts.</summary>
+    private static string WorkNeverStartedMessage()
     {
-        return "This builds an Agent that nothing starts, so its work never runs. Start it at once " +
-               "with `f.to[Agent](...).start_now()`, or keep it in a variable, start it, and `.retrieve()` it later.";
+        return "This builds a Work that nothing starts, so its work never runs. Start it at once " +
+               "with `f.to[Work](...).start_now()`, or keep it in a variable, start it, and `.retrieve()` it later.";
     }
 
     /// <summary>
@@ -1675,11 +1675,11 @@ public sealed partial class SemanticVerifier
         // Note: UnhandledCrashableCall check moved to AnalyzeCallExpression to catch all contexts
         // (return values, assignments, nested expressions — not just expression statements)
 
-        // `agent f()` on its own builds an Agent nothing starts: the call never runs.
-        if (expr.Expression is AgentExpression agent && IsAgentType(type: exprType))
+        // `f.to[Work]()` on its own builds a Work nothing starts: the call never runs.
+        if (expr.Expression is WorkExpression agent && IsWorkType(type: exprType))
         {
-            ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
-                message: AgentNeverStartedMessage(),
+            ReportWarning(code: SemanticWarningCode.AsyncWorkNeverLaunched,
+                message: WorkNeverStartedMessage(),
                 location: agent.Location);
             return;
         }
@@ -1696,13 +1696,13 @@ public sealed partial class SemanticVerifier
                 _ => "routine"
             };
 
-            // An `Agent[T]` result thrown away is never started: nothing runs its work. Point at the verbs
+            // A `Work[T]` result thrown away is never started: nothing runs its work. Point at the verbs
             // that start it.
-            if (IsAgentType(type: exprType))
+            if (IsWorkType(type: exprType))
             {
-                ReportWarning(code: SemanticWarningCode.AsyncAgentNeverLaunched,
+                ReportWarning(code: SemanticWarningCode.AsyncWorkNeverLaunched,
                     message:
-                    $"The Agent '{routineName}()' returns is never started, so its work never runs. Call " +
+                    $"The Work '{routineName}()' returns is never started, so its work never runs. Call " +
                     "`.start_now()` on it to start it, and `.retrieve()` later to wait for its value.",
                     location: call.Location);
             }
@@ -1755,9 +1755,9 @@ public sealed partial class SemanticVerifier
         return false;
     }
 
-    /// <summary>Whether <paramref name="type"/> is an Agent: a language's own Agent entity, held as such or as its
+    /// <summary>Whether <paramref name="type"/> is a Work: a language's own Work entity, held as such or as its
     /// handle.</summary>
-    internal static bool IsAgentType(TypeSymbol type)
+    internal static bool IsWorkType(TypeSymbol type)
     {
         if (type is RecordTypeSymbol
             {
@@ -1769,8 +1769,8 @@ public sealed partial class SemanticVerifier
 
         return type switch
         {
-            RecordTypeSymbol record => (record.GenericDefinition?.Name ?? record.Name) == "Agent",
-            EntityTypeSymbol entity => (entity.GenericDefinition?.Name ?? entity.Name) == "Agent",
+            RecordTypeSymbol record => (record.GenericDefinition?.Name ?? record.Name) == "Work",
+            EntityTypeSymbol entity => (entity.GenericDefinition?.Name ?? entity.Name) == "Work",
             _ => false
         };
     }

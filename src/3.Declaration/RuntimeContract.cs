@@ -98,7 +98,7 @@ public static class RuntimeContract
     }
 
     /// <summary>The channel routines that hand a value to whatever job receives it: a handle sent through them
-    /// reaches another job as surely as an agent's argument does.</summary>
+    /// reaches another job as surely as a job's argument does.</summary>
     /// <remarks>Site: RoamedSpawnPromotionLoweringPass (promotes a <c>Roamed</c> item before the send).</remarks>
     public static class ChannelSend
     {
@@ -670,13 +670,13 @@ public static class RuntimeContract
         /// <summary>Trace: update current source location.</summary>
         public const string TraceUpdateLoc = "_rf_trace_update_loc";
 
-        /// <summary>Agent/task: create.</summary>
+        /// <summary>Work/task: create.</summary>
         public const string TaskCreate = "rf_task_create";
 
-        /// <summary>Agent/task: spawn on a dedicated thread.</summary>
+        /// <summary>Work/task: spawn on a dedicated thread.</summary>
         public const string TaskSpawnThreaded = "rf_task_spawn_threaded";
 
-        /// <summary>Agent/task: complete with a value payload.</summary>
+        /// <summary>Work/task: complete with a value payload.</summary>
         public const string TaskCompleteValue = "rf_task_complete_value";
 
         /// <summary>Coroutine: create.</summary>

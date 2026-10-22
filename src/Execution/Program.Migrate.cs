@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
-                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal"))
+                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes or return-steal");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal or work");
             return 2;
         }
 
@@ -120,6 +120,13 @@ internal partial class Program
         if (step == "bytes")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteBytes);
+        }
+
+        // `--step work`: a piece of handed-off work is a `Work` (`f.to[Work](...)`, `Work[T]`), and a Suflae Work starts
+        // with `start_now()` only.
+        if (step == "work")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteWork);
         }
 
         // `--step return-steal`: a local handed over inside a `return` expression moves without `steal`.
@@ -504,7 +511,7 @@ internal partial class Program
 
     /// <summary>
     /// The names of the routines declared <c>suspended routine</c> or <c>threaded routine</c> in any of
-    /// <paramref name="files"/>: a call of one built an Agent, which <c>agent</c> before the call does now.
+    /// <paramref name="files"/>: a call of one built a concurrent job, which <c>f.to[Work](...)</c> makes now.
     /// </summary>
     private static HashSet<string> ConcurrentRoutineNames(IEnumerable<string> files)
     {
@@ -889,7 +896,7 @@ internal partial class Program
     {
         bool inStandardLibrary = file.Replace(oldChar: '\\', newChar: '/').Contains(value: "/Standard/");
         // A name this file declares decides for itself: a `suspended`/`threaded` routine is called through
-        // `agent`, a plain one is not, whatever another file declares under the same name.
+        // `to[Work]`, a plain one is not, whatever another file declares under the same name.
         var ownConcurrent = new HashSet<string>(comparer: StringComparer.Ordinal);
         var ownPlain = new HashSet<string>(comparer: StringComparer.Ordinal);
         for (int i = 0; i + 1 < tokens.Count; i++)
@@ -975,15 +982,35 @@ internal partial class Program
                 continue;
             }
 
-            // A call of a routine that was `suspended`/`threaded` built an Agent: the conversion on the routine does now,
-            // `f.to[Agent](args)`.
+            // A call of a routine that was `suspended`/`threaded` built a Work: the conversion on the routine does now,
+            // `f.to[Work](args)`.
             bool callsConcurrent = ownConcurrent.Contains(item: token.Text) ||
                                    !ownPlain.Contains(item: token.Text) && concurrentRoutines.Contains(item: token.Text);
             if (callsConcurrent && next.Type == TokenType.LeftParen && next.Position >= 0 &&
                 (i == 0 || tokens[index: i - 1].Type is not (TokenType.Dot or TokenType.Routine)))
             {
-                edits.Add(item: new MigrationEdit(Start: next.Position, Length: 0, Replacement: ".to[Agent]",
-                    Line: token.Line, What: $"{token.Text}(…) → {token.Text}.to[Agent](…)"));
+                edits.Add(item: new MigrationEdit(Start: next.Position, Length: 0, Replacement: ".to[Work]",
+                    Line: token.Line, What: $"{token.Text}(…) → {token.Text}.to[Work](…)"));
+                continue;
+            }
+
+            // A piece of handed-off work is a `Work`: `to[Agent]` is `to[Work]`, `Agent[T]` is `Work[T]`.
+            if (token.Text is "Agent" or "AgentStartError" &&
+                (i == 0 || tokens[index: i - 1].Type != TokenType.Dot))
+            {
+                string renamed = token.Text == "Agent" ? "Work" : "WorkStartError";
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: renamed,
+                    Line: token.Line, What: $"{token.Text} → {renamed}"));
+                continue;
+            }
+
+            // A Suflae Work starts one way: `start_here()` / `start_apart()` is `start_now()`.
+            if (language == Language.Suflae && token.Text is "start_here" or "start_apart" && i > 0 &&
+                tokens[index: i - 1].Type == TokenType.Dot && next.Type == TokenType.LeftParen && i + 2 < tokens.Count &&
+                tokens[index: i + 2].Type == TokenType.RightParen)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "start_now",
+                    Line: token.Line, What: $".{token.Text}() → .start_now()"));
                 continue;
             }
 
@@ -1798,9 +1825,9 @@ internal partial class Program
     }
 
     /// <summary>
-    /// <c>agent f(x)</c> → <c>f.to[Agent](x)</c>, <c>agent r.m(x)</c> → <c>r.m.to[Agent](x)</c>, and <c>(agent f(x)).verb()</c>
-    /// → <c>f.to[Agent](x).verb()</c>. Two forms change meaning and are listed for a hand rewrite instead: recovery in front
-    /// (<c>try agent f()</c>, whose failure is recovered at <c>retrieve()</c> now) and a chain that goes on after the call
+    /// <c>agent f(x)</c> → <c>f.to[Work](x)</c>, <c>agent r.m(x)</c> → <c>r.m.to[Work](x)</c>, and <c>(job f(x)).verb()</c>
+    /// → <c>f.to[Work](x).verb()</c>. Two forms change meaning and are listed for a hand rewrite instead: recovery in front
+    /// (<c>try job f()</c>, whose failure is recovered at <c>retrieve()</c> now) and a chain that goes on after the call
     /// without parentheses (<c>agent f(x).retrieve()</c> deferred the whole chain).
     /// </summary>
     /// <summary>A routine declaration written with `!` after its name, its visibility and its other modifiers.</summary>

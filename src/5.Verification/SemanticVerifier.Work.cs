@@ -9,28 +9,28 @@ using TypeModel.Types;
 namespace Builder.Verification;
 
 /// <summary>
-/// Phase 5: <c>agent EXPR</c>. The call chain is analyzed where it is written, so its arguments are typed against
+/// Phase 5: <c>f.to[Work](...)</c>. The call chain is analyzed where it is written, so its arguments are typed against
 /// the parameters they go to and its calls are resolved as any call. Then three routines are written for it:
 /// <list type="bullet">
-/// <item>the work routine <c>__agent_N_work(p0, p1, …) -&gt; R</c>, the chain over parameters that stand for its
-/// arguments (and for a receiver that is a value, as in <c>agent list.sum()</c>),</item>
-/// <item>the spawn and run routines <see cref="AgentRecipe"/> builds over it.</item>
+/// <item>the work routine <c>__work_N_work(p0, p1, …) -&gt; R</c>, the chain over parameters that stand for its
+/// arguments (and for a receiver that is a value, as in <c>list.sum.to[Work]()</c>),</item>
+/// <item>the spawn and run routines <see cref="WorkRecipe"/> builds over it.</item>
 /// </list>
-/// The <see cref="AgentExpression"/>'s <see cref="AgentExpression.LoweredCall"/> becomes a call of the spawn routine
-/// with the analyzed arguments, so they are computed now, and the calls run wherever the verb that starts the Agent
+/// The <see cref="WorkExpression"/>'s <see cref="WorkExpression.LoweredCall"/> becomes a call of the spawn routine
+/// with the analyzed arguments, so they are computed now, and the calls run wherever the verb that starts the Work
 /// puts them. The three routines are collected and their signatures resolved at once (the call binds to the spawn
-/// routine), and their bodies are analyzed after the file's own bodies (<see cref="AnalyzeAgentRoutines"/>).
+/// routine), and their bodies are analyzed after the file's own bodies (<see cref="AnalyzeWorkRoutines"/>).
 /// </summary>
 public sealed partial class SemanticVerifier
 {
-    /// <summary>Numbers the routines written for <c>agent</c> calls, unique per build.</summary>
+    /// <summary>Numbers the routines written for <c>to[Work]</c> conversions, unique per build.</summary>
     private int _agentSeq;
 
-    /// <summary>The routines written for <c>agent</c> calls whose bodies are not analyzed yet, each with the module
+    /// <summary>The routines written for <c>to[Work]</c> conversions whose bodies are not analyzed yet, each with the module
     /// of the routine its call is written in.</summary>
-    private readonly List<(RoutineDeclaration Routine, string? Module)> _pendingAgentRoutines = [];
+    private readonly List<(RoutineDeclaration Routine, string? Module)> _pendingWorkRoutines = [];
 
-    private TypeSymbol AnalyzeAgentExpression(AgentExpression agent)
+    private TypeSymbol AnalyzeWorkExpression(WorkExpression agent)
     {
         // A clean copy before analysis annotates the chain: it becomes the work routine's body.
         Expression pristine = GenericAstRewriter.DeepCloneExpression(expr: agent.Inner);
@@ -41,12 +41,12 @@ public sealed partial class SemanticVerifier
         }
 
         var hoisted = new List<(string Name, Expression Value)>();
-        Expression? deferred = DeferAgentChain(analyzed: agent.Inner, pristine: pristine, hoisted: hoisted);
+        Expression? deferred = DeferWorkChain(analyzed: agent.Inner, pristine: pristine, hoisted: hoisted);
         if (deferred == null)
         {
-            ReportError(code: SemanticDiagnosticCode.AgentNotSupportedHere,
-                message: "This Agent is made of something that is not a routine. 'to[Agent]' converts a routine with " +
-                         "its arguments, as in 'download.to[Agent](url: u)', into an Agent you start with start_now().",
+            ReportError(code: SemanticDiagnosticCode.WorkNotSupportedHere,
+                message: "This Work is made of something that is not a routine. 'to[Work]' converts a routine with " +
+                         "its arguments, as in 'download.to[Work](url: u)', into a Work you start with start_now().",
                 location: agent.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -65,19 +65,19 @@ public sealed partial class SemanticVerifier
         if (ContainsUnresolvedTypeParameter(type: resultType) ||
             arguments.Any(predicate: a => ContainsUnresolvedTypeParameter(type: a.Type)))
         {
-            ReportError(code: SemanticDiagnosticCode.AgentNotSupportedHere,
-                message: "This 'to[Agent]' works on values whose type is a parameter of this generic routine, and an " +
-                         "Agent runs one concrete routine. Make the Agent in a routine that is not generic, and " +
+            ReportError(code: SemanticDiagnosticCode.WorkNotSupportedHere,
+                message: "This 'to[Work]' works on values whose type is a parameter of this generic routine, and an " +
+                         "Work runs one concrete routine. Make the Work in a routine that is not generic, and " +
                          "pass it the values.",
                 location: agent.Location);
             return ErrorTypeSymbol.Instance;
         }
 
-        agent.OneThreadArgument = ValidateAgentArguments(arguments: arguments);
+        agent.OneThreadArgument = ValidateWorkArguments(arguments: arguments);
 
         // The routines written for this call.
         SourceLocation loc = agent.Location;
-        string baseName = $"__agent_{_agentSeq++}";
+        string baseName = $"__work_{_agentSeq++}";
         var parameters = new List<Parameter>();
         for (int i = 0; i < hoisted.Count; i++)
         {
@@ -92,7 +92,7 @@ public sealed partial class SemanticVerifier
             });
         }
 
-        // The work returns what the chain came to: `check` keeps its failure, which surfaces where the Agent is
+        // The work returns what the chain came to: `check` keeps its failure, which surfaces where the Work is
         // retrieved instead of ending the program where the work runs.
         var work = new RoutineDeclaration(Name: baseName + "_work",
             Parameters: parameters,
@@ -108,17 +108,17 @@ public sealed partial class SemanticVerifier
             Location: loc)
         {
             IsBuilderWritten = true,
-            // A crash in the work reads as the Agent it ran in, not the name the builder gave it: the frame's
-            // position is the agent call.
+            // A crash in the work reads as the Work it ran in, not the name the builder gave it: the frame's
+            // position is the job call.
             TraceName = _currentRoutine != null
-                ? $"agent in {Builder.Collection.TraceFrames.Name(routine: _currentRoutine)}"
-                : "agent"
+                ? $"work in {Builder.Collection.TraceFrames.Name(routine: _currentRoutine)}"
+                : "work"
         };
         string spawnName = baseName + "_spawn";
         TypeExpression agentResult = Known(type: resultType, loc: loc);
-        RoutineDeclaration spawn = AgentRecipe.BuildSpawn(routine: work, spawnName: spawnName,
+        RoutineDeclaration spawn = WorkRecipe.BuildSpawn(routine: work, spawnName: spawnName,
             runName: baseName + "_run", resultType: agentResult);
-        RoutineDeclaration run = AgentRecipe.BuildRun(routine: work, runName: baseName + "_run",
+        RoutineDeclaration run = WorkRecipe.BuildRun(routine: work, runName: baseName + "_run",
             resultType: agentResult);
 
         // Desugar them as every routine is before analysis, then register their signatures now: the call binds
@@ -136,7 +136,7 @@ public sealed partial class SemanticVerifier
 
         _signatureResolver.ResolveAndRegisterPendingRoutines();
         _currentModuleName = previousModule;
-        _pendingAgentRoutines.AddRange(
+        _pendingWorkRoutines.AddRange(
             collection: written.Declarations.OfType<RoutineDeclaration>().Select(selector: r => (r, module)));
 
         RoutineInfo? workInfo = written.Declarations.OfType<RoutineDeclaration>()
@@ -150,7 +150,7 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // Promotes a Roamed argument before the Agent is built (RoamedSpawnPromotionLoweringPass).
+        // Promotes a Roamed argument before the Work is built (RoamedSpawnPromotionLoweringPass).
         spawnInfo.AsyncSpawnOf = workInfo;
 
         List<Expression> callArguments = hoisted
@@ -168,27 +168,27 @@ public sealed partial class SemanticVerifier
             ResolvedType = spawnInfo.ReturnType,
             LoweringKind = ClassifyStandaloneRoutineCall(routine: spawnInfo),
             IsPreAnalyzed = true,
-            AgentOneThreadArgument = agent.OneThreadArgument
+            WorkOneThreadArgument = agent.OneThreadArgument
         };
         return spawnInfo.ReturnType ?? ErrorTypeSymbol.Instance;
     }
 
     /// <summary>
-    /// Analyzes the bodies of the routines written for this program's <c>agent</c> calls, and adds them to the
+    /// Analyzes the bodies of the routines written for this program's <c>to[Work]</c> conversions, and adds them to the
     /// program so every later pass lowers and emits them like the program's own. A work routine may itself make
-    /// <c>agent</c> calls, so this runs until no more are written.
+    /// <c>to[Work]</c> conversions, so this runs until no more are written.
     /// </summary>
-    private void AnalyzeAgentRoutines(Program program)
+    private void AnalyzeWorkRoutines(Program program)
     {
-        if (_pendingAgentRoutines.Count == 0)
+        if (_pendingWorkRoutines.Count == 0)
         {
             return;
         }
 
-        while (_pendingAgentRoutines.Count > 0)
+        while (_pendingWorkRoutines.Count > 0)
         {
-            List<(RoutineDeclaration Routine, string? Module)> batch = [.._pendingAgentRoutines];
-            _pendingAgentRoutines.Clear();
+            List<(RoutineDeclaration Routine, string? Module)> batch = [.._pendingWorkRoutines];
+            _pendingWorkRoutines.Clear();
             program.Declarations.AddRange(collection: batch.Select(selector: b => b.Routine));
             foreach ((RoutineDeclaration routine, string? module) in batch)
             {
@@ -199,17 +199,17 @@ public sealed partial class SemanticVerifier
             }
         }
 
-        SpliceAgentCalls(program: program);
+        SpliceWorkCalls(program: program);
     }
 
     /// <summary>
-    /// Puts each analyzed <c>agent</c> expression's lowering in its place in every routine body of the program, so
-    /// no later pass meets an <see cref="AgentExpression"/>. The statements of each body block are replaced in
+    /// Puts each analyzed <c>to[Work]</c> expression's lowering in its place in every routine body of the program, so
+    /// no later pass meets a <see cref="WorkExpression"/>. The statements of each body block are replaced in
     /// place: the block itself stays the one the registry may have stored.
     /// </summary>
-    private static void SpliceAgentCalls(Program program)
+    private static void SpliceWorkCalls(Program program)
     {
-        var splicer = new AgentCallSplicer();
+        var splicer = new WorkCallSplicer();
         foreach (ISyntaxTreeNode node in program.Declarations)
         {
             IEnumerable<RoutineDeclaration> routines = node switch
@@ -236,9 +236,9 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>Replaces each analyzed agent expression with its lowering (the base <see cref="AstRewriter"/> does),
+    /// <summary>Replaces each analyzed job expression with its lowering (the base <see cref="AstRewriter"/> does),
     /// and leaves a recovery as it is, splicing only inside it: the recovery is spliced later, by its own pass.</summary>
-    private sealed class AgentCallSplicer : AstRewriter
+    private sealed class WorkCallSplicer : AstRewriter
     {
         protected override Expression VisitRecovery(RecoveryExpression e)
         {
@@ -255,19 +255,19 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The deferred copy of an <c>agent</c> call chain, walked beside the analyzed chain: each argument (and a
+    /// The deferred copy of a <c>to[Work]</c> conversion chain, walked beside the analyzed chain: each argument (and a
     /// receiver that is a value) becomes a parameter of the work routine, recorded in <paramref name="hoisted"/>
     /// with its analyzed expression, which is computed now. Literals stay in the chain: they are the same later,
     /// and keep the type their parameter gives them. Null when the chain is not a call.
     /// </summary>
-    private Expression? DeferAgentChain(Expression analyzed, Expression pristine,
+    private Expression? DeferWorkChain(Expression analyzed, Expression pristine,
         List<(string Name, Expression Value)> hoisted)
     {
         switch (analyzed, pristine)
         {
             case (RecoveryExpression analyzedRecovery, RecoveryExpression pristineRecovery):
             {
-                Expression? inner = DeferAgentChain(analyzed: analyzedRecovery.Inner, pristine: pristineRecovery.Inner,
+                Expression? inner = DeferWorkChain(analyzed: analyzedRecovery.Inner, pristine: pristineRecovery.Inner,
                     hoisted: hoisted);
                 return inner == null
                     ? null
@@ -281,7 +281,7 @@ public sealed partial class SemanticVerifier
                 {
                     (MemberExpression analyzedMember, MemberExpression pristineMember) => pristineMember with
                     {
-                        Object = DeferAgentReceiver(analyzed: analyzedMember.Object, pristine: pristineMember.Object,
+                        Object = DeferWorkReceiver(analyzed: analyzedMember.Object, pristine: pristineMember.Object,
                             hoisted: hoisted)
                     },
                     (_, IdentifierExpression or GenericMemberExpression) => pristineCall.Callee,
@@ -292,7 +292,7 @@ public sealed partial class SemanticVerifier
                     : pristineCall with
                     {
                         Callee = callee,
-                        Arguments = DeferAgentArguments(analyzed: analyzedCall.Arguments,
+                        Arguments = DeferWorkArguments(analyzed: analyzedCall.Arguments,
                             pristine: pristineCall.Arguments, hoisted: hoisted)
                     };
             }
@@ -300,9 +300,9 @@ public sealed partial class SemanticVerifier
             case (GenericMemberRoutineCallExpression analyzedGeneric, GenericMemberRoutineCallExpression pristineGeneric):
                 return pristineGeneric with
                 {
-                    Object = DeferAgentReceiver(analyzed: analyzedGeneric.Object, pristine: pristineGeneric.Object,
+                    Object = DeferWorkReceiver(analyzed: analyzedGeneric.Object, pristine: pristineGeneric.Object,
                         hoisted: hoisted),
-                    Arguments = DeferAgentArguments(analyzed: analyzedGeneric.Arguments,
+                    Arguments = DeferWorkArguments(analyzed: analyzedGeneric.Arguments,
                         pristine: pristineGeneric.Arguments, hoisted: hoisted)
                 };
 
@@ -312,14 +312,14 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// A receiver in an <c>agent</c> call chain: a call is deferred with the chain, a name that is not a variable
+    /// A receiver in a <c>to[Work]</c> conversion chain: a call is deferred with the chain, a name that is not a variable
     /// (a type, a module, a routine) stays, and any other value is computed now.
     /// </summary>
-    private Expression DeferAgentReceiver(Expression analyzed, Expression pristine,
+    private Expression DeferWorkReceiver(Expression analyzed, Expression pristine,
         List<(string Name, Expression Value)> hoisted)
     {
         if (analyzed is CallExpression or GenericMemberRoutineCallExpression &&
-            DeferAgentChain(analyzed: analyzed, pristine: pristine, hoisted: hoisted) is { } deferred)
+            DeferWorkChain(analyzed: analyzed, pristine: pristine, hoisted: hoisted) is { } deferred)
         {
             return deferred;
         }
@@ -330,10 +330,10 @@ public sealed partial class SemanticVerifier
             return pristine;
         }
 
-        return HoistAgentValue(analyzed: analyzed, pristine: pristine, hoisted: hoisted);
+        return HoistWorkValue(analyzed: analyzed, pristine: pristine, hoisted: hoisted);
     }
 
-    private List<Expression> DeferAgentArguments(List<Expression> analyzed, List<Expression> pristine,
+    private List<Expression> DeferWorkArguments(List<Expression> analyzed, List<Expression> pristine,
         List<(string Name, Expression Value)> hoisted)
     {
         var deferred = new List<Expression>(capacity: pristine.Count);
@@ -343,18 +343,18 @@ public sealed partial class SemanticVerifier
             {
                 (NamedArgumentExpression analyzedNamed, NamedArgumentExpression pristineNamed) => pristineNamed with
                 {
-                    Value = HoistAgentValue(analyzed: analyzedNamed.Value, pristine: pristineNamed.Value,
+                    Value = HoistWorkValue(analyzed: analyzedNamed.Value, pristine: pristineNamed.Value,
                         hoisted: hoisted)
                 },
-                _ => HoistAgentValue(analyzed: analyzed[index: i], pristine: pristine[index: i], hoisted: hoisted)
+                _ => HoistWorkValue(analyzed: analyzed[index: i], pristine: pristine[index: i], hoisted: hoisted)
             });
         }
 
         return deferred;
     }
 
-    /// <summary>A value of an <c>agent</c> call chain: computed now and passed in, or a literal kept as it is.</summary>
-    private static Expression HoistAgentValue(Expression analyzed, Expression pristine,
+    /// <summary>A value of a <c>to[Work]</c> conversion chain: computed now and passed in, or a literal kept as it is.</summary>
+    private static Expression HoistWorkValue(Expression analyzed, Expression pristine,
         List<(string Name, Expression Value)> hoisted)
     {
         if (pristine is LiteralExpression ||
@@ -363,10 +363,10 @@ public sealed partial class SemanticVerifier
             return pristine;
         }
 
-        string name = $"__agent_arg{hoisted.Count}";
+        string name = $"__work_arg{hoisted.Count}";
         hoisted.Add(item: (name, analyzed));
         var parameter = new IdentifierExpression(Name: name, Location: pristine.Location);
-        // A value moved into the agent (`produce(out: steal tx)`) moves on from the work's parameter as well. So does
+        // A value moved into the job (`produce(out: steal tx)`) moves on from the work's parameter as well. So does
         // any entity: the argument as written was checked where it stands, and the computed value now belongs to the
         // work alone.
         if (pristine is StealExpression steal)

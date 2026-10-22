@@ -331,7 +331,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Checks the arguments an <c>agent</c> call computes now against the rule for crossing into concurrently
+    /// Checks the arguments a <c>to[Work]</c> conversion computes now against the rule for crossing into concurrently
     /// running work. Each argument must be one of:
     /// <list type="bullet">
     /// <item><c>steal</c>-moved: exclusive transfer, the caller loses access (a moved bare entity leaves exactly
@@ -339,7 +339,7 @@ public sealed partial class SemanticVerifier
     /// <item>trivially copyable: passed BY VALUE as an independent copy;</item>
     /// <item>a thread-shareable wrapper (<c>Atomic</c>/<c>Guarded</c>/<c>Witnessed</c>), which carries its own
     /// synchronization (an atomic refcount);</item>
-    /// <item>a <c>Roamed</c> handle, which is promoted before the Agent is built.</item>
+    /// <item>a <c>Roamed</c> handle, which is promoted before the Work is built.</item>
     /// </list>
     /// Anything else (a bare entity passed by copy, a record transitively owning a single-threaded wrapper
     /// such as <c>Retained</c>/<c>Tracked</c>/<c>Viewing</c>/<c>Modifying</c>) would alias unsynchronized state
@@ -347,9 +347,9 @@ public sealed partial class SemanticVerifier
     /// implied.
     /// </summary>
     /// <returns>The first argument that only one thread may use (a token, a <c>Retained</c>), described for a message,
-    /// or null: an Agent holding one is started with <c>start_here()</c> only, which the checks after analysis
-    /// enforce (<see cref="AgentOneThreadChecker"/>).</returns>
-    private string? ValidateAgentArguments(IReadOnlyList<(Expression Value, TypeSymbol Type)> arguments)
+    /// or null: a Work holding one is started with <c>start_here()</c> only, which the checks after analysis
+    /// enforce (<see cref="WorkOneThreadChecker"/>).</returns>
+    private string? ValidateWorkArguments(IReadOnlyList<(Expression Value, TypeSymbol Type)> arguments)
     {
         if (!ChecksOwnershipHere)
         {
@@ -359,13 +359,13 @@ public sealed partial class SemanticVerifier
         string? oneThread = null;
         foreach ((Expression value, TypeSymbol type) in arguments)
         {
-            oneThread ??= ValidateAgentArgument(value: value, type: type);
+            oneThread ??= ValidateWorkArgument(value: value, type: type);
         }
 
         return oneThread;
     }
 
-    /// <summary>The wrappers only one thread may use that an Agent started on its own thread (<c>start_here()</c>) may
+    /// <summary>The wrappers only one thread may use that a Work started on its own thread (<c>start_here()</c>) may
     /// still hold: tokens and the single-thread reference-counted handles.</summary>
     private static readonly HashSet<string> OneThreadWrappers = new(comparer: StringComparer.Ordinal)
     {
@@ -375,40 +375,40 @@ public sealed partial class SemanticVerifier
         Declaration.RuntimeContract.Tracked
     };
 
-    /// <summary>Checks one argument of an <c>agent</c> call (see <see cref="ValidateAgentArguments"/>).</summary>
-    private string? ValidateAgentArgument(Expression value, TypeSymbol type)
+    /// <summary>Checks one argument of a <c>to[Work]</c> conversion (see <see cref="ValidateWorkArguments"/>).</summary>
+    private string? ValidateWorkArgument(Expression value, TypeSymbol type)
     {
         if (type is ErrorTypeSymbol || Wrappers.IsThreadShareable(type: type))
         {
             return null;
         }
 
-        // `g.view()` / `g.modify()` holds the access for the statement that passes it, and the agent runs past it.
+        // `g.view()` / `g.modify()` holds the access for the statement that passes it, and the job runs past it.
         if (Declaration.GuardAccess.LockingReceiver(expression: value, isWrite: out _) != null)
         {
             ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
-                message: "You pass a Guarded's access to an agent, but the access is held only for this statement, and " +
-                         "the agent runs on after it. Hand the agent the Guarded itself, and open it inside the " +
-                         "agent's work.",
+                message: "You pass a Guarded's access to a Work, but the access is held only for this statement, and " +
+                         "the work runs on after it. Hand the Work the Guarded itself, and open it inside the " +
+                         "work.",
                 location: value.Location);
             return null;
         }
 
-        // A token a `viewing` / `modifying` block opened on a Guarded lasts as long as the block, and the agent can run
-        // past it: hand the agent the Guarded, and let it open its own access.
+        // A token a `viewing` / `modifying` block opened on a Guarded lasts as long as the block, and the job can run
+        // past it: hand the job the Guarded, and let it open its own access.
         if (IsLockBackedToken(value: value, writes: out _))
         {
             string token = ((IdentifierExpression)value).Name;
             ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
-                message: $"You pass `{token}` to an agent, but it is the token of a Guarded that this block opened, and " +
-                         "the access ends with the block while the agent can run on. Hand the agent the Guarded itself, " +
-                         "and open it inside the agent's work.",
+                message: $"You pass `{token}` to a Work, but it is the token of a Guarded that this block opened, and " +
+                         "the access ends with the block while the work can run on. Hand the Work the Guarded itself, " +
+                         "and open it inside the work.",
                 location: value.Location);
             return null;
         }
 
-        // A `Roamed` handle crosses the boundary by being PROMOTED, not rejected: passing it into an Agent IS the
-        // escape event, and the builder inserts `promote()` on the argument before the Agent is built (LOCAL ->
+        // A `Roamed` handle crosses the boundary by being PROMOTED, not rejected: passing it into a Work IS the
+        // escape event, and the builder inserts `promote()` on the argument before the Work is built (LOCAL ->
         // ESCAPED: atomic refcount + armed reentrant lock). So the same object is thread-safe by the time the work
         // touches it.
         if (type.BareName == Declaration.RuntimeContract.Roamed)
@@ -448,8 +448,8 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
-        // A token or a single-thread handle is fine on the thread that made the Agent: it is noted, and the verb that
-        // starts the Agent decides.
+        // A token or a single-thread handle is fine on the thread that made the Work: it is noted, and the verb that
+        // starts the Work decides.
         if (!isEntity && offender is { Wrapper: var wrapper, Path: var at } && OneThreadWrappers.Contains(item: wrapper))
         {
             return at == "<value>"
@@ -461,11 +461,11 @@ public sealed partial class SemanticVerifier
             ? "a bare entity would be the same object in the caller and in the running work"
             : $"it holds `{offender!.Value.Wrapper}` at `{offender.Value.Path}`, which only the work that made it may use";
         string fix = isEntity
-            ? "Write `steal` before it to hand it over to the agent, share it with `Guarded`/`Witnessed`/`Atomic`, or " +
+            ? "Write `steal` before it to hand it over to the Work, share it with `Guarded`/`Witnessed`/`Atomic`, or " +
               "pass a copyable value"
             : "Share it with `Guarded`/`Witnessed`/`Atomic`, or pass a copyable value";
         ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
-            message: $"You pass {what} to an agent, but {reason}. {fix}.",
+            message: $"You pass {what} to a Work, but {reason}. {fix}.",
             location: value.Location);
         return null;
     }
@@ -501,7 +501,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Notes a variable bound to a lambda that captured a part only one thread may use, so handing the
-    /// variable to an agent is checked like handing it the lambda.</summary>
+    /// variable to a job is checked like handing it the lambda.</summary>
     private void NoteOneThreadLambdaVariable(string name, Expression? initializer)
     {
         if (initializer is LambdaExpression lambda && OneThreadCapture(value: lambda) is { } captured &&

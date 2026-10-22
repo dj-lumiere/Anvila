@@ -2285,7 +2285,7 @@ public static class LspServer
                             .ToList();
 
         // Methods whose SPECIALIZED receiver doesn't accept this instantiation (e.g.
-        // `List[Agent[V]].gather` on a `List[FaceDraw]`). The builder-generated failable variants
+        // `List[Work[V]].gather` on a `List[FaceDraw]`). The builder-generated failable variants
         // (the try/check/lookup variants of `gather`) carry no MeType, so key the rejection on the BASE name
         // and let a variant inherit its base's (in)applicability.
         var rejected = new HashSet<string>(collection: ownMethods
@@ -4420,7 +4420,7 @@ public static class LspServer
 
     /// <summary>
     /// Whether a resolved member routine actually applies to this receiver. A method declared on a
-    /// SPECIALIZED receiver — e.g. <c>routine List[Agent[V]].gather()</c> — registers under the generic
+    /// SPECIALIZED receiver — e.g. <c>routine List[Work[V]].gather()</c> — registers under the generic
     /// <c>List</c> owner but its <see cref="RoutineInfo.MeType"/> pins the element to a concrete type. It
     /// must NOT be offered for an unrelated instantiation like <c>List[FaceDraw]</c>. A method whose
     /// receiver pattern is the bare generic (element is a generic parameter) applies to any instantiation.
@@ -4437,7 +4437,7 @@ public static class LspServer
         for (int i = 0; i < meArgs.Count; i++)
         {
             // A generic-parameter slot in the receiver pattern (e.g. the `T` of `List[T]`) matches
-            // anything. A CONCRETE pattern element (e.g. `Agent[V]`) requires the receiver's element to
+            // anything. A CONCRETE pattern element (e.g. `Work[V]`) requires the receiver's element to
             // be the same base type.
             if (meArgs[index: i] is not GenericParameterTypeSymbol &&
                 meArgs[index: i].BareName != recvArgs[index: i].BareName)

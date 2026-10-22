@@ -202,7 +202,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// A routine of the program can take access locks of its own (it reads member variables of the entities it is
-    /// given). Holding one lock while waiting for another is how two agents wait for each other forever: one holds
+    /// given). Holding one lock while waiting for another is how two jobs wait for each other forever: one holds
     /// the list and waits for the account, the other holds the account and waits for the list. So a member variable
     /// read in the arguments of a call to such a routine (<c>me.take(account: payer, note: f"to {payee.member}")</c>)
     /// is read first, into a temp inside its own bracket, and the call itself runs holding no lock for it. Standard
@@ -580,7 +580,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     /// <summary>
     /// Whether <paramref name="handle"/> is over a standard-library entity marked <c>@self_locking</c> (a mailbox):
     /// its member variables are set once and lock inside, so calls on it take no access lock. Holding one across a
-    /// call that waits (taking from an empty mailbox) would block the agent that adds.
+    /// call that waits (taking from an empty mailbox) would block the job that adds.
     /// </summary>
     private static bool IsSelfLocking(Expression handle)
     {

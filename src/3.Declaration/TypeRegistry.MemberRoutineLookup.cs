@@ -985,7 +985,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Recursively unifies a specialized-receiver pattern (a memberRoutine's <c>MeType</c>, e.g.
-    /// <c>List[Agent[V]]</c>) against the concrete receiver (<c>List[Agent[S64]]</c>), recording
+    /// <c>List[Work[V]]</c>) against the concrete receiver (<c>List[Work[S64]]</c>), recording
     /// each memberRoutine generic parameter's binding (V → S64) into <paramref name="into"/>. Used so a
     /// member declared on a specialized generic instantiation resolves to a fully concrete memberRoutine.
     /// </summary>
@@ -1221,9 +1221,9 @@ public sealed partial class TypeRegistry
         string bareName = baseName;
         if (baseName.Contains(value: '.'))
         {
-            // An OWNER-qualified base name (`Agent[T].waitfor`, `Point.foo`) is a MEMBER-routine
+            // An OWNER-qualified base name (`Work[T].waitfor`, `Point.foo`) is a MEMBER-routine
             // lookup — it must NOT fall to a same-named FREE routine (that mis-bound the member
-            // `Agent[T].waitfor` call to the free `waitfor(duration:)`). Only a MODULE-qualified name
+            // `Work[T].waitfor` call to the free `waitfor(duration:)`). Only a MODULE-qualified name
             // (`Numerics.atan2`) or a bare name denotes a free routine. Distinguish by the prefix: a
             // generic owner carries `[`, and a non-generic owner resolves as a registered TYPE.
             string prefix = baseName[..baseName.LastIndexOf(value: '.')];
@@ -1918,8 +1918,8 @@ public sealed partial class TypeRegistry
                 : substituted;
         // A definition whose parameters do not follow the owner's (a protocol's default routine re-homed
         // onto an implementer: the protocol's `V` is not the owner's) cannot be substituted this way. A
-        // parameter the owner itself still carries (`ListEmittable[Agent[V]]` inside a routine of
-        // `List[Agent[V]]`) is not that: it is bound when the enclosing routine is made concrete.
+        // parameter the owner itself still carries (`ListEmittable[Work[V]]` inside a routine of
+        // `List[Work[V]]`) is not that: it is bound when the enclosing routine is made concrete.
         if (substituted != null && !recovered.IsGenericDefinition &&
             recovered.OwnerType is not { IsGenericDefinition: true })
         {
@@ -2736,12 +2736,12 @@ public sealed partial class TypeRegistry
                 resolvedOwner.TypeArguments[index: i];
         }
 
-        // Specialized-receiver member (e.g. `routine List[Agent[V]].gather!()`): the memberRoutine's
-        // generic param V is determined by the receiver PATTERN (MeType = List[Agent[V]]), not by a
-        // call-site `[..]`. Unify MeType against the concrete owner (List[Agent[S64]]) to bind V=S64
+        // Specialized-receiver member (e.g. `routine List[Work[V]].gather!()`): the memberRoutine's
+        // generic param V is determined by the receiver PATTERN (MeType = List[Work[V]]), not by a
+        // call-site `[..]`. Unify MeType against the concrete owner (List[Work[S64]]) to bind V=S64
         // and fold it into the owner substitution. This makes the resolved memberRoutine FULLY CONCRETE
         // (V dropped from memberRoutine generics, no `[S64]` mangle suffix), so SA, reachability, GMP and
-        // codegen all key on the same name — `System.List[Agent[S64]].gather`.
+        // codegen all key on the same name — `System.List[Work[S64]].gather`.
         if (memberRoutine.MeType is { } mePattern)
         {
             // The routine's own parameters shadow the owner's of the same name: in `routine List[Box[T]].items()
@@ -2823,7 +2823,7 @@ public sealed partial class TypeRegistry
         {
             Kind = memberRoutine.Kind,
             OwnerType = resolvedOwner,
-            // Carry the specialized-receiver pattern (e.g. List[Agent[V]]) unchanged: V is a memberRoutine
+            // Carry the specialized-receiver pattern (e.g. List[Work[V]]) unchanged: V is a memberRoutine
             // generic param, not an owner param, so owner substitution leaves it intact. Receiver-
             // based memberRoutine-generic inference at the call site needs this pattern to bind V. (The
             // Suflae entity `me`=Roamed[E] handle is substituted downstream in

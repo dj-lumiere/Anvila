@@ -345,10 +345,10 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the recovery expression</returns>
     T VisitRecoveryExpression(RecoveryExpression node);
 
-    /// <summary>Visits an agent expression node (a call chain deferred into an Agent)</summary>
-    /// <param name="node">The agent expression to visit</param>
-    /// <returns>Result of visiting the agent expression</returns>
-    T VisitAgentExpression(AgentExpression node);
+    /// <summary>Visits a job expression node (a call chain deferred into a Work)</summary>
+    /// <param name="node">The job expression to visit</param>
+    /// <returns>Result of visiting the job expression</returns>
+    T VisitWorkExpression(WorkExpression node);
 
     /// <summary>Visits a back index expression node (end-relative indexing like '^1')</summary>
     /// <param name="node">The back index expression to visit</param>

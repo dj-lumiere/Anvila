@@ -44,13 +44,13 @@ public enum SemanticWarningCode
     /// <summary>Routine call's return value is unused. Use 'drop' to drop it on purpose.</summary>
     UnusedRoutineReturnValue = 7,
 
-    /// <summary>An <c>Agent[T]</c> (from an <c>agent</c> call) is thrown away before any verb
+    /// <summary>A <c>Work[T]</c> (from a <c>to[Work]</c> conversion) is thrown away before any verb
     /// (<c>start_now</c>/<c>retrieve</c>/<c>gather</c>/<c>race</c>) starts it, so its work never runs.</summary>
-    AsyncAgentNeverLaunched = 8,
+    AsyncWorkNeverLaunched = 8,
 
-    /// <summary>An <c>Agent[T]</c> bound to a variable is started but nothing takes what it came to (no
+    /// <summary>A <c>Work[T]</c> bound to a variable is started but nothing takes what it came to (no
     /// <c>retrieve</c>, no <c>drop</c>, never handed on): its scope's end cancels it and waits for it.</summary>
-    AgentNeverCollected = 9,
+    WorkNeverCollected = 9,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // UNREACHABLE CODE WARNINGS (RF-W050 - RF-W099)

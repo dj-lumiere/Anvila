@@ -27,7 +27,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     {
         return name switch
         {
-            "gather" or "race" => $" '{name}' is a routine of the agent list now: 'agents.{name}()'.",
+            "gather" or "race" => $" '{name}' is a routine of the Work list now: 'jobs.{name}()'.",
             "blank" or "hollow" when registry.Language == TypeModel.Enums.Language.Suflae =>
                 $" '{name}[T]()' is gone: give the value its first contents where you declare it.",
             "blank" => " 'blank[T]()' is gone: give the value its first contents where you declare it, or use " +
@@ -106,15 +106,22 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "Exposed" or "Wielded" => "FileStorage",
             "Consulting" => "Viewing",
             "Amending" => "Modifying",
+            "Agent" => "Work",
+            "AgentStartError" => "WorkStartError",
             _ => null
         };
         // `Callable` is the builder's own type of routine values, not a registered one.
         if (renamed != null && (renamed == "Callable" || TypeSuggestionCandidates().Contains(value: renamed)))
         {
-            return renamed == "Addr"
-                ? " It is called 'Addr' now (migrate --step addr rewrites it): compare two with '===' and move one by a " +
-                  "'ByteSize' with '+%' / '-%'."
-                : $" It is called '{renamed}' now.";
+            return renamed switch
+            {
+                "Addr" => " It is called 'Addr' now (migrate --step addr rewrites it): compare two with '===' and move " +
+                          "one by a 'ByteSize' with '+%' / '-%'.",
+                "Work" => " A piece of handed-off work is a 'Work' now: 'f.to[Work](x: 1)' makes one, and 'Work[T]' is " +
+                          "its type (migrate --step work rewrites it).",
+                "WorkStartError" => " It is called 'WorkStartError' now (migrate --step work rewrites it).",
+                _ => $" It is called '{renamed}' now."
+            };
         }
 
         // The quaternions are named by their total bits, like the complex numbers.
@@ -169,6 +176,9 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             case "access" or "control":
                 return $" '{name}()' is gone: use the handle itself (a 'Retained' is used directly, and a 'Guarded' is " +
                        $"opened with '{(name == "access" ? "viewing g as v" : "modifying g as m")}').";
+            case "start_here" or "start_apart" when registry.Language == TypeModel.Enums.Language.Suflae &&
+                                                    SemanticVerifier.IsWorkType(type: type):
+                return " A Work starts with 'start_now()' (migrate --step work rewrites it).";
             case "now" when type.BareName is "Moment":
                 return " The time is read from a clock now: 'Clock.now()' gives a 'Moment'.";
             case "now_utc" when type.BareName is "LocalMoment":

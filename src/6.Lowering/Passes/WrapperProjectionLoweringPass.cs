@@ -81,8 +81,8 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
     }
 
     /// <summary>
-    /// In the routine that runs an Agent recipe, a by-reference argument arrives as
-    /// <c>pointer.peek()</c> on the <c>Hijacked</c> the recipe kept (AgentRecipe). The routine
+    /// In the routine that runs a Work recipe, a by-reference argument arrives as
+    /// <c>pointer.peek()</c> on the <c>Hijacked</c> the recipe kept (WorkRecipe). The routine
     /// works on the caller's storage, so the argument becomes the pointee itself: a record-address
     /// projection whose address is the pointer, instead of a loaded copy.
     /// </summary>

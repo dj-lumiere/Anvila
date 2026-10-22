@@ -75,14 +75,16 @@ internal static unsafe class OrcJitExecutor
 
                 // libLLVM: the LLVM-C library from the libLLVM.runtime.<rid> package, the same version as the
                 // LLVMSharp bindings. The runtime resolves it from runtimes/<rid>/native through the deps file,
-                // so the build never depends on an LLVM installed on the machine.
-                const string llvmSrc = "libLLVM";
+                // so the build never depends on an LLVM installed on the machine. The Windows package names the
+                // file LLVM-C.dll (the name LLVMSharp's own resolver loads there), the others libLLVM.
+                string llvmSrc = OperatingSystem.IsWindows() ? "LLVM-C" : "libLLVM";
                 if (!NativeLibrary.TryLoad(libraryName: llvmSrc,
                         assembly: typeof(OrcJitExecutor).Assembly,
                         searchPath: null,
                         handle: out nint llvmHandle))
                 {
-                    error = "libLLVM was not found next to the builder (the libLLVM.runtime package for this platform).";
+                    error = $"{llvmSrc} could not be loaded from next to the builder (the libLLVM.runtime package " +
+                            $"for this platform){LoadFailureDetail(libraryName: llvmSrc)}.";
                     return false;
                 }
                 if (!NativeLibrary.TryGetExport(handle: llvmHandle,
@@ -124,6 +126,23 @@ internal static unsafe class OrcJitExecutor
                 error = ex.Message;
                 return false;
             }
+        }
+    }
+
+    /// <summary>The loader's own reason a library failed to load (on macOS and Linux the dlopen message, which names a
+    /// missing dependency), as ": reason", or empty when there is none to add.</summary>
+    private static string LoadFailureDetail(string libraryName)
+    {
+        try
+        {
+            NativeLibrary.Free(handle: NativeLibrary.Load(libraryName: libraryName,
+                assembly: typeof(OrcJitExecutor).Assembly,
+                searchPath: null));
+            return "";
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException)
+        {
+            return ": " + ex.Message.ReplaceLineEndings(replacementText: " ");
         }
     }
 

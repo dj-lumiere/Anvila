@@ -1307,7 +1307,7 @@ internal static class GenericAstRewriter
     #region Expression Rewriting
     /// <summary>
     /// A <c>try</c>/<c>check</c> over one member call that could not be bound while its receiver was
-    /// still generic (the step of an <c>each</c> loop over <c>List[Agent[V]]</c>, lowered after analysis): with
+    /// still generic (the step of an <c>each</c> loop over <c>List[Work[V]]</c>, lowered after analysis): with
     /// the receiver concrete, bind the call to the recovery variant of that receiver's failable routine. A shared
     /// entity's handle (<c>Roamed[E]</c>, a Suflae iterator) binds to the entity's routine, and the call reaches
     /// the entity through the handle as any call on it does (RoamedProjectionLoweringPass).
@@ -1659,9 +1659,9 @@ internal static class GenericAstRewriter
                 Value = RewriteExpression(expr: del.Value, ctx: ctx)
             },
 
-            AgentExpression agent => agent.LoweredCall is { } loweredAgent
-                ? RewriteExpression(expr: loweredAgent, ctx: ctx)
-                : new AgentExpression(Inner: RewriteExpression(expr: agent.Inner, ctx: ctx),
+            WorkExpression agent => agent.LoweredCall is { } loweredWork
+                ? RewriteExpression(expr: loweredWork, ctx: ctx)
+                : new WorkExpression(Inner: RewriteExpression(expr: agent.Inner, ctx: ctx),
                     Location: agent.Location),
 
             BackIndexExpression bi => bi with

@@ -107,7 +107,7 @@ internal sealed class CrashLoweringPass : AstRewriter
     /// </summary>
     private CallExpression Rethrown(Expression error, SourceLocation location)
     {
-        // A rethrow written in the standard library (an Agent's error rethrown where it is retrieved) is named by
+        // A rethrow written in the standard library (a Work's error rethrown where it is retrieved) is named by
         // where the program called into the library, not by the library's own line: line 0 with the library's
         // directory as the file asks the report for the most recent frame of the live trace outside it.
         bool fromLibrary = _registry.IsStandardLibraryFile(filePath: location.FileName) && _registry.StdlibPath != null;

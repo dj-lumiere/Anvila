@@ -292,7 +292,9 @@ internal static class IngridTessera
     /// <summary>Finds <c>Ingrid/tessera</c> by walking up from the executable (development checkouts only).</summary>
     private static bool TryFindSourceDir(string exeDir, out string sourceDir)
     {
-        string? current = exeDir;
+        // AppContext.BaseDirectory ends in a separator, and GetDirectoryName of "a/b/" is "a/b": without the trim the
+        // first step up stays in the same folder and the walk ends one level short of the workspace root.
+        string? current = Path.TrimEndingDirectorySeparator(path: exeDir);
         for (int i = 0; i < 6 && current != null; i++)
         {
             string candidate = Path.Combine(path1: current, path2: CheckoutSourceDir);

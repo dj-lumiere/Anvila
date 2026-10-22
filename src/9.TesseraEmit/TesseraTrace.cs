@@ -84,7 +84,7 @@ internal static class TesseraTrace
             depth: S32
             frames: Array[RfTraceFrame, 32]
 
-        ### The program's most recent failures, a ring of 64: a failure an agent threw is reported where it is retrieved,
+        ### The program's most recent failures, a ring of 64: a failure a Work threw is reported where it is retrieved,
         ### on another thread.
         global RF_FAILURES: @Array[RfFailure, 64]
 
