@@ -1,3 +1,6 @@
+using Builder.Frontends;
+using Builder.Tokenizer;
+using TypeModel.Enums;
 using Tomlyn;
 using Tomlyn.Model;
 
@@ -656,14 +659,31 @@ public static class ManifestLoader
     /// </summary>
     internal static bool FileDeclaresEntryPoint(string filePath)
     {
+        Language language = Languages.OfFile(fileName: filePath);
+        return AnyLine(filePath: filePath,
+            predicate: line => IsExplicitStartLine(line: line) || IsTopLevelStatementLine(line: line, language: language));
+    }
+
+    /// <summary>
+    /// True if the file writes its own <c>routine start()</c>. Unlike <see cref="FileDeclaresEntryPoint"/>, top-level
+    /// statements do not count: whether a file is a script is the parser's call, and the build reports a script that
+    /// is not an entry file (RF-S443) instead of leaving it out.
+    /// </summary>
+    internal static bool FileDeclaresExplicitStart(string filePath)
+    {
+        return AnyLine(filePath: filePath, predicate: IsExplicitStartLine);
+    }
+
+    private static bool IsExplicitStartLine(string line)
+    {
+        return line.Trim().StartsWith(value: "routine start(", comparisonType: StringComparison.Ordinal);
+    }
+
+    private static bool AnyLine(string filePath, Func<string, bool> predicate)
+    {
         try
         {
-            return File.ReadLines(path: filePath)
-                       .Any(predicate: line =>
-                            line.Trim()
-                                .StartsWith(value: "routine start(",
-                                     comparisonType: StringComparison.Ordinal) ||
-                            IsTopLevelStatementLine(line: line));
+            return File.ReadLines(path: filePath).Any(predicate: predicate);
         }
         catch (IOException)
         {
@@ -672,21 +692,14 @@ public static class ManifestLoader
         }
     }
 
-    /// <summary>Words that begin a top-level declaration rather than a statement.</summary>
-    private static readonly HashSet<string> DeclarationKeywords = new(comparer: StringComparer.Ordinal)
-    {
-        "module", "import", "define", "preset", "global", "lateinit", "var", "routine", "record",
-        "entity", "choice", "variant", "flags", "protocol", "crashable", "dangerous", "suspended",
-        "threaded", "external", "common", "secret", "posted", "needs", "relates"
-    };
-
     /// <summary>
     /// True for an unindented line that starts a statement: not blank, not a comment or annotation, not
-    /// the closing bracket of a multi-line literal or parameter list, and not opened by a declaration
-    /// keyword or a declaration's <c>needs</c>/<c>relates</c> clause. A top-level <c>var</c> counts as a
+    /// the closing bracket of a multi-line literal or parameter list, and not opened by a token the parser
+    /// counts as a declaration starter (<see cref="Builder.Parser.Parser.DeclarationStarters"/>, which also holds
+    /// the modifiers and a declaration's <c>needs</c>/<c>relates</c> clause). A top-level <c>var</c> counts as a
     /// declaration here, since alone it does not make a script.
     /// </summary>
-    private static bool IsTopLevelStatementLine(string line)
+    private static bool IsTopLevelStatementLine(string line, Language language)
     {
         if (line.Length == 0 || char.IsWhiteSpace(c: line[index: 0]) ||
             line[index: 0] is '#' or '@' or ')' or ']' or '}')
@@ -700,7 +713,42 @@ public static class ManifestLoader
             wordEnd++;
         }
 
-        return !DeclarationKeywords.Contains(item: line[..wordEnd]);
+        return !StartsDeclaration(word: line[..wordEnd], language: language);
     }
+
+    /// <summary>Whether <paramref name="word"/> opens a top-level declaration in <paramref name="language"/>: the
+    /// language's own lexer names the word's token, and the parser's set decides. Answers are cached per word.</summary>
+    private static bool StartsDeclaration(string word, Language language)
+    {
+        if (word.Length == 0)
+        {
+            return false;
+        }
+
+        return DeclarationWordCache.GetOrAdd(key: (language, word),
+            valueFactory: key =>
+            {
+                if (Builder.Parser.Parser.RetiredDeclarationWords.Contains(item: key.Word))
+                {
+                    return true;
+                }
+
+                try
+                {
+                    List<Token> tokens = Languages.For(language: key.Language)
+                                                  .Tokenize(source: key.Word, fileName: "<line scan>");
+                    return tokens.Count > 0 &&
+                           Builder.Parser.Parser.DeclarationStarters.Contains(item: tokens[index: 0].Type);
+                }
+                catch (Exception)
+                {
+                    // A word the lexer rejects opens no declaration.
+                    return false;
+                }
+            });
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Language Language, string Word), bool>
+        DeclarationWordCache = new();
 
 }

@@ -270,14 +270,15 @@ public sealed partial class SemanticVerifier
     private void HandleFlagsMemberTypePattern(TypePattern typePat, FlagsTypeSymbol flagsForIs)
     {
         string flagName = typePat.Type.Name;
-        // `is` no longer tests flags — a flags membership arm is `have`/`lack`.
+        // `is` matches a type, never flags: a flags test is a call on the flags value.
         if (flagsForIs.Members.Any(predicate: m => m.Name == flagName) ||
             _registry.CurrentScope.LookupVariable(name: flagName)?.Type is FlagsTypeSymbol vf &&
             vf.Name == flagsForIs.Name)
         {
             ReportError(code: SemanticDiagnosticCode.ArithmeticOnFlagsType,
                 message:
-                $"'is' cannot test flags. Use 'have {flagName}' / 'lack {flagName}' in the when arm.",
+                $"'is' matches a type, and '{flagName}' is a flag. Test flags with a call on the flags value: " +
+                $"'.has({flagName})' or '.lacks({flagName})', written as the arm's condition.",
                 location: typePat.Location);
             return;
         }

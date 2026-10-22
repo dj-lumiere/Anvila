@@ -584,10 +584,12 @@ public partial class Parser
         if (Check(type: TokenType.Identifier) && PeekToken(offset: 1)
                .Type is TokenType.And or TokenType.Or)
         {
-            // `is` no longer tests flags — flags membership is `have`/`lack`.
+            // `is` matches a type, never flags: a flags test is a call on the flags value.
             throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
                 message:
-                $"'is' matches a variant TYPE only. For a flags membership test, use 'have {CurrentToken.Text} …' (or 'lack …').");
+                $"You wrote 'is {CurrentToken.Text} {PeekToken(offset: 1).Text} …' as a when arm, but 'is' matches a type, and " +
+                $"flags are tested with a call on the flags value. Write the arm as a condition: 'perms.has({CurrentToken.Text} and …) =>' " +
+                "(or 'has_any', 'lacks').");
         }
 
         if (Check(type: TokenType.None) || Check(type: TokenType.Identifier) || Check(type: TokenType.LeftParen))

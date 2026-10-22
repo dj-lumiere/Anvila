@@ -85,7 +85,9 @@ internal sealed class NoneReturnNormalizationPass(DesugaringContext _)
     /// In a language whose routines need no closing <c>return</c> (<c>LanguageRules.RoutinesEndWithReturn</c>
     /// false, decided by the routine's own file), a routine that returns nothing and whose body does not already
     /// end in <c>return</c> or <c>throw</c> gets <c>return</c> at its end: the one exit teardown is anchored at.
-    /// A routine that returns a value still returns it on every path itself.
+    /// A routine that returns a value still returns it on every path itself. A body that ends in a <c>loop</c> with no
+    /// <c>break</c> of its own gets none either: only a <c>return</c> or <c>throw</c> leaves that loop, so a closing
+    /// <c>return</c> after it could never run.
     /// </summary>
     private static Statement EndWithReturn(RoutineDeclaration routine, TypeExpression returnType, Statement body)
     {
@@ -94,7 +96,8 @@ internal sealed class NoneReturnNormalizationPass(DesugaringContext _)
             Frontends.Languages.For(language: Frontends.Languages.OfFile(fileName: file)).RoutinesEndWithReturn ||
             returnType is not { Name: "None", GenericArguments: null or [] } ||
             body is not BlockStatement block ||
-            block.Statements is [.., ReturnStatement or ThrowStatement])
+            block.Statements is [.., ReturnStatement or ThrowStatement] ||
+            block.Statements is [.., LoopStatement lastLoop] && Verification.ControlFlowExits.NeverEndsByItself(loop: lastLoop))
         {
             return body;
         }

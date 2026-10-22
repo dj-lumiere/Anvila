@@ -236,8 +236,8 @@ public sealed class BuildDriver
             _errors.Add(item: new SemanticError(
                 Code: SemanticDiagnosticCode.ScriptStatementsOutsideEntryFile,
                 Message:
-                $"This file has top-level statements, but module '{unit.Module}' is imported, not " +
-                "the program's entry file. Only the entry file can run statements at the top level. " +
+                $"You wrote statements at the top level of this file, but it is not the program's entry file: it is " +
+                $"built as part of module '{unit.Module}'. Only the entry file can run statements at the top level. " +
                 "Move these statements into a routine, or into the entry file.",
                 Location: script.Location));
         }
@@ -522,12 +522,13 @@ public sealed class BuildDriver
                 continue;
             }
 
-            // A program has one entry. A sibling with an entry of its own (`routine start()`, or statements at
-            // the top level) is another program that happens to share the module name (`main.sf` next to a
-            // draft `main.next.sf`), not a part of this one: it stays out of the build, so its errors, a parse
-            // error included, are not this build's. Also a line scan, so it answers for a file that does not
-            // parse.
-            if (BuildHasEntryPoint() && ManifestLoader.FileDeclaresEntryPoint(filePath: fullCandidate))
+            // A program has one entry. A sibling that writes a `routine start()` of its own is another program
+            // that happens to share the module name (`main.sf` next to a draft `main.next.sf`), not a part of this
+            // one: it stays out of the build, so its errors, a parse error included, are not this build's. Also a
+            // line scan, so it answers for a file that does not parse. A sibling that only looks like a script is
+            // built: the parser decides whether it is one, and a script that is not an entry file is RF-S443
+            // (ReportScriptsOutsideEntryFiles), never a silent omission.
+            if (BuildHasEntryPoint() && ManifestLoader.FileDeclaresExplicitStart(filePath: fullCandidate))
             {
                 continue;
             }

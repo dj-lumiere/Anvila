@@ -369,9 +369,15 @@ public sealed partial class SemanticVerifier
         // A value moved into the job (`produce(out: steal tx)`) moves on from the work's parameter as well. So does
         // any entity: the argument as written was checked where it stands, and the computed value now belongs to the
         // work alone.
+        // A new node, not a copy of the written one: the chain may be analyzed more than once (an argument of a call
+        // whose overload is being chosen), and a copy would carry the type the earlier analysis stored on it, so the
+        // work routine's analysis would skip the parameter inside it.
         if (pristine is StealExpression steal)
         {
-            return steal with { Operand = parameter };
+            return new StealExpression(Operand: parameter, Location: steal.Location)
+            {
+                IsImplicitMove = steal.IsImplicitMove
+            };
         }
 
         return analyzed.ResolvedType is EntityTypeSymbol

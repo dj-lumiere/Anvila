@@ -1153,8 +1153,8 @@ public sealed partial class SemanticVerifier
     {
         TypeSymbol exprType = AnalyzeExpression(expression: isPat.Expression);
 
-        // `is` matches a variant TYPE only. A choice case is matched with `==`; a flags membership with
-        // `have`/`lack`. Steer either off `is`.
+        // `is` matches a variant TYPE only. A choice case is matched with `==`, flags are tested with `.has(...)` /
+        // `.lacks(...)`. Steer either off `is`.
         switch (exprType)
         {
             case ChoiceTypeSymbol:

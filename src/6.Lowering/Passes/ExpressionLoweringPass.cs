@@ -1274,17 +1274,34 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                     Location: id.Location) { ResolvedType = id.ResolvedType });
         }
 
-        // Fold standalone choice case identifiers (e.g. ME_SMALL) -> int literal
-        (ChoiceTypeSymbol ChoiceType, ChoiceCaseInfo CaseInfo)? choiceCase =
-            ctx.Registry.LookupChoiceCase(caseName: id.Name);
-        if (choiceCase != null)
+        // Fold standalone choice case identifiers (e.g. ME_SMALL) -> int literal. Only a name analysis resolved to
+        // a case is one: a variable, or a parameter of the routine or type in scope (`Array[T, COUNT]`'s `COUNT`), of
+        // the same name keeps its own meaning, so a choice case named like it never takes its place.
+        ChoiceCaseInfo? caseInfo = null;
+        ChoiceTypeSymbol? caseType = null;
+        if (id.ResolvedVariable == null)
+        {
+            if (id.ResolvedType is ChoiceTypeSymbol resolvedChoice)
+            {
+                caseInfo = resolvedChoice.Cases.FirstOrDefault(predicate: c => c.Name == id.Name);
+                caseType = resolvedChoice;
+            }
+            else if (id.ResolvedType == null &&
+                     ctx.Registry.LookupChoiceCase(caseName: id.Name) is { } unresolvedCase)
+            {
+                // A builder-made identifier analysis never saw.
+                (caseType, caseInfo) = unresolvedCase;
+            }
+        }
+
+        if (caseInfo != null)
         {
             return ([],
-                new LiteralExpression(Value: choiceCase.Value.CaseInfo.ComputedValue,
+                new LiteralExpression(Value: caseInfo.ComputedValue,
                     LiteralType: TokenType.S32Literal,
                     Location: id.Location)
                 {
-                    ResolvedType = id.ResolvedType ?? choiceCase.Value.ChoiceType
+                    ResolvedType = id.ResolvedType ?? caseType
                 });
         }
 

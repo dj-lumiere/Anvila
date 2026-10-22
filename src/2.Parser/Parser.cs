@@ -240,6 +240,32 @@ public partial class Parser
     }
 
     /// <summary>
+    /// The tokens that open a top-level declaration (or a declaration's <c>needs</c>/<c>relates</c> line) rather
+    /// than a statement: file-level declarations, the modifiers written before a declaration, and the declaration
+    /// keywords. The build's line scan (<see cref="Builder.ManifestLoader"/>) reads a file's unindented lines with
+    /// this set to tell a script from a module file without parsing it. <see cref="Parse"/> checks every top-level
+    /// declaration it makes against the set, so a declaration keyword added to the parser without it stops the
+    /// build loudly instead of turning files that use it into scripts.
+    /// </summary>
+    public static readonly IReadOnlySet<TokenType> DeclarationStarters = new HashSet<TokenType>
+    {
+        TokenType.Module, TokenType.Import, TokenType.Define, TokenType.Preset, TokenType.Global,
+        TokenType.LateInit, TokenType.Var, TokenType.Routine, TokenType.Record, TokenType.Bundle,
+        TokenType.Entity, TokenType.Choice, TokenType.Variant, TokenType.Flags, TokenType.Protocol,
+        TokenType.Crashable, TokenType.Dangerous, TokenType.Failable, TokenType.Common, TokenType.Secret,
+        TokenType.Posted, TokenType.Needs, TokenType.Relates
+    };
+
+    /// <summary>
+    /// Words the language no longer has that still open a routine declaration (<c>suspended routine</c>): the
+    /// parser reports them, so the build's line scan counts them as declaration starters too.
+    /// </summary>
+    public static readonly IReadOnlySet<string> RetiredDeclarationWords = new HashSet<string>(comparer: StringComparer.Ordinal)
+    {
+        "suspended", "threaded"
+    };
+
+    /// <summary>
     /// Parses the token stream into a complete program AST.
     /// Main entry point for parsing source files.
     /// </summary>
@@ -280,7 +306,9 @@ public partial class Parser
                     continue;
                 }
 
+                Token first = CurrentToken;
                 ISyntaxTreeNode decl = ParseDeclaration();
+                CheckDeclarationStarter(first: first, node: decl);
                 if (pendingDoc.Count > 0 && decl is SyntaxTree.Declaration documented)
                 {
                     documented.Documentation = string.Join(separator: "\n", values: pendingDoc);
@@ -302,6 +330,28 @@ public partial class Parser
         declarations = WrapScriptStatementsIntoStart(nodes: declarations);
 
         return new Program(Declarations: declarations, Location: GetLocation());
+    }
+
+    /// <summary>
+    /// A top-level declaration must open with a token of <see cref="DeclarationStarters"/> (or an annotation),
+    /// because the build tells scripts from module files by that set. A declaration opened by any other token is
+    /// a parser change that forgot the set: it is reported as a builder bug at the declaration. After a parse error
+    /// the recovery may resume inside a declaration (a member variable line of a type body), so only a file parsed
+    /// cleanly so far is checked.
+    /// </summary>
+    private void CheckDeclarationStarter(Token first, ISyntaxTreeNode node)
+    {
+        if (_errors.Count > 0 || node is not SyntaxTree.Declaration ||
+            first.Type is TokenType.At or TokenType.DocComment ||
+            DeclarationStarters.Contains(item: first.Type))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            message: $"Builder bug: {FileName}:{first.Line}:{first.Column}: a top-level declaration opens with " +
+                     $"'{first.Text}' ({first.Type}), which Parser.DeclarationStarters does not list. Add it there, " +
+                     "or the build's line scan reads files that start a line with it as scripts.");
     }
 
     /// <summary>
@@ -874,7 +924,7 @@ public partial class Parser
     private void RejectRetiredConcurrencyModifier()
     {
         if (CurrentToken.Type != TokenType.Identifier ||
-            CurrentToken.Text is not ("suspended" or "threaded") ||
+            !RetiredDeclarationWords.Contains(item: CurrentToken.Text) ||
             PeekToken(offset: 1).Type != TokenType.Routine)
         {
             return;

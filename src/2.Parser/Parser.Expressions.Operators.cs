@@ -520,15 +520,8 @@ public partial class Parser
                 "The 'None' pattern binds no value — remove the binding or destructuring after 'None'.");
         }
 
-        // `is` matches a variant TYPE only — flags membership moved to `have`/`lack`. A flags-chain
-        // shape here (`is READ and WRITE`) is now an error steering to the new operator.
-        if (Check(type: TokenType.And) || Check(type: TokenType.Or))
-        {
-            throw ThrowParseError(code: GrammarDiagnosticCode.InvalidPattern,
-                message:
-                $"'is' matches a variant TYPE only. For a flags membership test, use '{expr switch { IdentifierExpression ie => ie.Name, _ => "flags" }} have {type.Name} …' (or 'lack …').");
-        }
-
+        // An `and` / `or` after the type joins the whole test to the next condition: `x isnot None and c == ':'` is
+        // `(x isnot None) and (c == ':')`, read by the logical level above this one.
         return BuildIsPatternExpression(expr: expr,
             type: type,
             isNegated: isNegated,
