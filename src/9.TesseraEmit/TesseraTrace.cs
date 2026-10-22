@@ -34,10 +34,10 @@ internal static class TesseraTrace
             column: S32
 
         @threadlocal
-        global RF_TRACE_STACK: @Array[RfTraceFrame, 32]
+        global RF_TRACE_STACK: &Array[RfTraceFrame, 32]
 
         @threadlocal
-        global RF_TRACE_DEPTH: @S32
+        global RF_TRACE_DEPTH: &S32
 
         ### Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
@@ -86,10 +86,10 @@ internal static class TesseraTrace
 
         ### The program's most recent failures, a ring of 64: a failure a Work threw is reported where it is retrieved,
         ### on another thread.
-        global RF_FAILURES: @Array[RfFailure, 64]
+        global RF_FAILURES: &Array[RfFailure, 64]
 
         ### The number of the last failure, on every thread.
-        global RF_FAILURE_COUNT: @U64
+        global RF_FAILURE_COUNT: &U64
 
         ### Notes the running thread's trace as a new failure's, in the entry its number picks, and gives the failure's
         ### number (never 0), which a caught error keeps so a report of it thrown again shows where it began.

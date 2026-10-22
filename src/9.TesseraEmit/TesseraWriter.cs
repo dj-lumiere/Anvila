@@ -859,7 +859,7 @@ internal sealed class TesseraWriter
             }
 
             string global = UniqueName(wanted: $"RF_GLOBAL_{(string.IsNullOrEmpty(value: module) ? name : $"{module.Replace(oldChar: '/', newChar: '_')}_{name}")}");
-            _globals.Append(value: $"{Private}global {global}: @{TypeText(type: type)}\n\n");
+            _globals.Append(value: $"{Private}global {global}: &{TypeText(type: type)}\n\n");
             _moduleGlobals[key: name] = (global, type);
             return (global, type);
         }
