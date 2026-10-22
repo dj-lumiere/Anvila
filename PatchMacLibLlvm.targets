@@ -1,0 +1,193 @@
+<Project>
+  <!-- The macOS libLLVM, imported by every project that runs the builder (the executables and the test projects).
+       The libLLVM.runtime.osx-arm64 package ships a Homebrew build of libLLVM.dylib that loads
+       /opt/homebrew/opt/z3/lib/libz3.4.16.dylib and /opt/homebrew/opt/zstd/lib/libzstd.1.dylib. Without those two
+       Homebrew libraries the dylib does not load, and the debug-jit mode cannot start. LLVM calls z3 only from the
+       Z3 constraint solver (the static analyzer's optional SMT backend) and zstd only to compress or decompress
+       zstd-compressed sections, and the in-process JIT reaches neither. This step turns those two load commands
+       into weak loads (LC_LOAD_WEAK_DYLIB) and marks every symbol taken from them as a weak import, as the linker
+       does for a weak library: dyld then loads libLLVM without them and binds those symbols to null.
+       Editing a load command breaks the code signature, so the patched copy is signed again ad hoc (codesign is
+       part of every macOS install). The patched copy replaces the package file in the copy-local items, so both
+       a build (bin/.../runtimes/osx-arm64/native) and a self-contained publish (the release package) carry it.
+       Any other dependency outside the system folders fails the build: a new package version that needs one
+       has to be looked at, not shipped with a dependency a user's Mac may lack. -->
+  <UsingTask TaskName="WeakenMachODependencies" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true"/>
+      <Destination ParameterType="System.String" Required="true"/>
+      <WeakLibraries ParameterType="System.String" Required="true"/>
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.Collections.Generic"/>
+      <Using Namespace="System.IO"/>
+      <Using Namespace="System.Text"/>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        const uint MachMagic64 = 0xFEEDFACF;
+        const uint LoadDylib = 0xC;
+        const uint LoadWeakDylib = 0x80000018;
+        const uint ReexportDylib = 0x8000001F;
+        const uint LazyLoadDylib = 0x20;
+        const uint LoadUpwardDylib = 0x80000023;
+        const uint ChainedFixups = 0x80000034;
+
+        byte[] data = File.ReadAllBytes(Source);
+        Func<int, uint> read = at => (uint)(data[at] | data[at + 1] << 8 | data[at + 2] << 16 | data[at + 3] << 24);
+        Action<int, uint> write = (at, value) =>
+        {
+            for (int b = 0; b < 4; b++)
+            {
+                data[at + b] = (byte)((value >> (8 * b)) & 0xFF);
+            }
+        };
+        if (data.Length < 32 || read(0) != MachMagic64)
+        {
+            Log.LogError("{0} is not a thin 64-bit Mach-O library, so its dependencies cannot be patched.", Source);
+            return false;
+        }
+
+        // The load commands: each library to weaken gets LC_LOAD_WEAK_DYLIB, and its ordinal (the 1-based position
+        // among the dylib load commands, which is how a symbol import names its library) is kept for the imports.
+        string[] weakNames = WeakLibraries.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+        uint commandCount = read(16);
+        int offset = 32;
+        int ordinal = 0;
+        int fixupsOffset = -1;
+        var weakOrdinals = new HashSet<int>();
+        var weakened = new List<string>();
+        var foreign = new List<string>();
+        for (uint i = 0; i < commandCount; i++)
+        {
+            uint cmd = read(offset);
+            int size = (int)read(offset + 4);
+            if (cmd == ChainedFixups)
+            {
+                fixupsOffset = (int)read(offset + 8);
+            }
+            else if (cmd == LoadDylib || cmd == LoadWeakDylib || cmd == ReexportDylib || cmd == LazyLoadDylib ||
+                     cmd == LoadUpwardDylib)
+            {
+                ordinal++;
+                int nameStart = offset + (int)read(offset + 8);
+                int nameEnd = nameStart;
+                while (nameEnd < offset + size && data[nameEnd] != 0)
+                {
+                    nameEnd++;
+                }
+
+                string name = Encoding.UTF8.GetString(data, nameStart, nameEnd - nameStart);
+                string file = Path.GetFileName(name);
+                bool weakName = false;
+                foreach (string weak in weakNames)
+                {
+                    weakName |= file.StartsWith(weak + ".", StringComparison.Ordinal);
+                }
+
+                bool system = name.StartsWith("/usr/lib/", StringComparison.Ordinal) ||
+                              name.StartsWith("/System/", StringComparison.Ordinal);
+                if (weakName && (cmd == LoadDylib || cmd == LoadWeakDylib))
+                {
+                    write(offset, LoadWeakDylib);
+                    weakOrdinals.Add(ordinal);
+                    weakened.Add(name);
+                }
+                else if (!system)
+                {
+                    foreign.Add(name);
+                }
+            }
+
+            offset += size;
+        }
+
+        if (foreign.Count > 0)
+        {
+            Log.LogError("{0} loads {1}, which is not part of macOS. Look at what the new libLLVM package needs it for before weakening it in PatchMacLibLlvm.targets.",
+                Source, string.Join(", ", foreign));
+            return false;
+        }
+
+        // The imports: each symbol taken from a weakened library is marked weak_import in the chained-fixups import
+        // table, the way the linker marks references to a -weak_library, so dyld binds it to null when the library
+        // is missing instead of failing the load. The formats are DYLD_CHAINED_IMPORT (1) and
+        // DYLD_CHAINED_IMPORT_ADDEND (2), a 32-bit entry with an 8-bit ordinal and the weak bit at bit 8, and
+        // DYLD_CHAINED_IMPORT_ADDEND64 (3), a 64-bit entry with a 16-bit ordinal and the weak bit at bit 16.
+        int weakImports = 0;
+        if (weakOrdinals.Count > 0)
+        {
+            if (fixupsOffset < 0)
+            {
+                Log.LogError("{0} has no chained fixups (LC_DYLD_CHAINED_FIXUPS), so its imports cannot be marked weak.", Source);
+                return false;
+            }
+
+            int importsStart = fixupsOffset + (int)read(fixupsOffset + 8);
+            uint importsCount = read(fixupsOffset + 16);
+            uint importsFormat = read(fixupsOffset + 20);
+            int stride = importsFormat == 1 ? 4 : importsFormat == 2 ? 8 : importsFormat == 3 ? 16 : 0;
+            if (stride == 0)
+            {
+                Log.LogError("{0} uses chained-fixups import format {1}, which this step does not know.", Source, importsFormat);
+                return false;
+            }
+
+            for (uint i = 0; i < importsCount; i++)
+            {
+                int at = importsStart + (int)i * stride;
+                uint entry = read(at);
+                int libOrdinal = importsFormat == 3 ? (int)(entry & 0xFFFF) : (int)(entry & 0xFF);
+                if (weakOrdinals.Contains(libOrdinal))
+                {
+                    write(at, entry | (importsFormat == 3 ? 1u << 16 : 1u << 8));
+                    weakImports++;
+                }
+            }
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(Destination));
+        File.WriteAllBytes(Destination, data);
+        Log.LogMessage(MessageImportance.Normal, "Weak loads in {0}: {1} ({2} weak imports)", Destination,
+            weakened.Count == 0 ? "none needed" : string.Join(", ", weakened), weakImports);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Finds the package's libLLVM.dylib among the copy-local items: RuntimeTargetsCopyLocalItems for a build without a
+       runtime identifier, NativeCopyLocalItems for a publish with one. -->
+  <Target Name="_FindMacLibLlvm" Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <ItemGroup>
+      <_MacLibLlvmRuntimeTarget Include="@(RuntimeTargetsCopyLocalItems)"
+                                Condition="'%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'libLLVM.runtime.osx-arm64' and '%(RuntimeTargetsCopyLocalItems.Filename)%(RuntimeTargetsCopyLocalItems.Extension)' == 'libLLVM.dylib'"/>
+      <_MacLibLlvmNative Include="@(NativeCopyLocalItems)"
+                         Condition="'%(NativeCopyLocalItems.NuGetPackageId)' == 'libLLVM.runtime.osx-arm64' and '%(NativeCopyLocalItems.Filename)%(NativeCopyLocalItems.Extension)' == 'libLLVM.dylib'"/>
+      <_MacLibLlvmSource Include="@(_MacLibLlvmRuntimeTarget);@(_MacLibLlvmNative)"/>
+    </ItemGroup>
+    <PropertyGroup>
+      <_MacLibLlvmSourcePath>%(_MacLibLlvmSource.FullPath)</_MacLibLlvmSourcePath>
+      <_MacLibLlvmPatched>$([System.IO.Path]::Combine($(MSBuildProjectDirectory), $(IntermediateOutputPath), 'libLLVM-weak', 'libLLVM.dylib'))</_MacLibLlvmPatched>
+    </PropertyGroup>
+  </Target>
+
+  <!-- Writes the patched copy only when the package file is newer than it. The copy is written and signed under a
+       temporary name and moved into place last, so a failed signing never leaves an unsigned libLLVM behind. -->
+  <Target Name="_WriteMacLibLlvmPatch"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(_MacLibLlvmSourcePath)' != ''"
+          Inputs="$(_MacLibLlvmSourcePath);$(MSBuildThisFileFullPath)" Outputs="$(_MacLibLlvmPatched)">
+    <WeakenMachODependencies Source="$(_MacLibLlvmSourcePath)" Destination="$(_MacLibLlvmPatched).tmp"
+                             WeakLibraries="libz3;libzstd"/>
+    <Exec Command="codesign --force --sign - &quot;$(_MacLibLlvmPatched).tmp&quot;"/>
+    <Move SourceFiles="$(_MacLibLlvmPatched).tmp" DestinationFiles="$(_MacLibLlvmPatched)"/>
+  </Target>
+
+  <!-- Puts the patched copy in place of the package file, keeping the item's metadata (its destination path). -->
+  <Target Name="PatchMacLibLlvm" AfterTargets="ResolvePackageAssets" DependsOnTargets="_FindMacLibLlvm;_WriteMacLibLlvmPatch"
+          Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <ItemGroup Condition="'$(_MacLibLlvmSourcePath)' != ''">
+      <RuntimeTargetsCopyLocalItems Remove="@(_MacLibLlvmRuntimeTarget)"/>
+      <RuntimeTargetsCopyLocalItems Include="@(_MacLibLlvmRuntimeTarget->'$(_MacLibLlvmPatched)')"/>
+      <NativeCopyLocalItems Remove="@(_MacLibLlvmNative)"/>
+      <NativeCopyLocalItems Include="@(_MacLibLlvmNative->'$(_MacLibLlvmPatched)')"/>
+    </ItemGroup>
+  </Target>
+</Project>
