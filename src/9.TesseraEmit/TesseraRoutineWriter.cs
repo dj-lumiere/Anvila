@@ -14,7 +14,7 @@ namespace Builder.TesseraEmit;
 /// <summary>
 /// Writes one routine as Tessera. Every local lives in a stack slot, as in the LLVM emitter's
 /// alloca-per-local output (LLVM promotes the slots to registers): a read is a <c>load</c>, a write a
-/// <c>store</c>. Each slot is local to the whole routine, declared in its head (<c>local x : @T &lt;- .hollow()</c>), so every block
+/// <c>store</c>. Each slot is local to the whole routine, declared in its head (<c>x: &amp;T &lt;- .hollow()</c>), so every block
 /// sees it without taking it as a parameter, and the local's first value is stored where it is declared
 /// (<c>x.store(value)</c>). A parameter's slot starts with the parameter in the head itself. Slot names are
 /// unique in the routine, so a local of an inner scope never meets another of its name. Each value a statement
@@ -199,15 +199,15 @@ internal sealed class TesseraRoutineWriter
     private Local ClaimLocal(string name, TypeSymbol type, string? initial, bool inHead = false)
     {
         var local = new Local(Place: $"{name}_{_slotCount++}", Type: type);
-        string slotType = $"@{TypeText(type: type)}";
+        string slotType = $"&{TypeText(type: type)}";
         // Before entry has done anything, the value can only name a parameter or be a literal: it goes in the head.
         if (initial is not null && (inHead || _current.Lines.Count == 0))
         {
-            _head.Add(item: $"local {local.Place}: {slotType} <- {initial}");
+            _head.Add(item: $"{local.Place}: {slotType} <- {initial}");
             return local;
         }
 
-        _head.Add(item: $"local {local.Place}: {slotType} <- .hollow()");
+        _head.Add(item: $"{local.Place}: {slotType} <- .hollow()");
         if (initial is not null)
         {
             Emit(line: $"{local.Place}.poke({initial})");
@@ -418,7 +418,7 @@ internal sealed class TesseraRoutineWriter
             string bytes = $"t{_temps++}";
             // The bytes go in a list this routine keeps: the crash that reads them ends the program.
             string buffer = $"t{_temps++}";
-            Emit(line: $"local {buffer}: @List[Byte] <- .construct()");
+            Emit(line: $"{buffer}: &List[Byte] <- .construct()");
             Emit(line: $"{bytes}: @[Byte] = {_module.TextBytes()}(text: {text}, into: {buffer})");
             return bytes;
         }
@@ -644,7 +644,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"spill{_temps++}";
-        Emit(line: $"local {slot}: @{TypeText(type: operand.Type)} <- {operand.Text}");
+        Emit(line: $"{slot}: &{TypeText(type: operand.Type)} <- {operand.Text}");
         return slot;
     }
 
@@ -670,7 +670,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         string slot = $"zero{_temps++}";
-        Emit(line: $"local {slot}: @{text} <- .hollow()");
+        Emit(line: $"{slot}: &{text} <- .hollow()");
         Emit(line: $"{slot}.zeroinit(1)");
         return $"{slot}.peek()";
     }
@@ -1381,7 +1381,7 @@ internal sealed class TesseraRoutineWriter
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
         string slot = $"carrier{_temps++}";
-        Emit(line: $"local {slot}: @{TypeText(type: carrier)} <- .hollow()");
+        Emit(line: $"{slot}: &{TypeText(type: carrier)} <- .hollow()");
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
         Emit(line: $"{slot}.{tagField}.poke({tag})");

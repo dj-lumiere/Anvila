@@ -268,8 +268,8 @@ internal sealed class TesseraWriter
         _definitions.Append(value: $$"""
             ### A crash message as UTF-8.
             secret routine {{_textBytes}}(text: {{TypeText(type: TextType)}}, into: @List[Byte]) -> @[Byte]
-                local data: @U32 = text.data
-                local count: U64 = text.count
+                data: @U32 = text.data
+                count: U64 = text.count
 
                 each i in 0 til count
                     code: U32 = data.stride(i).peek()
@@ -716,7 +716,7 @@ internal sealed class TesseraWriter
             .Append(value: "    address: U64 = ptrtoint[Addr, U64](bound)\n")
             .Append(value: "    unbound: Bool = address.eq(0)\n")
             // An Addr is not callable: the code address goes through a slot that is read back as the Callable.
-            .Append(value: "    local slot: @Addr <- fn\n");
+            .Append(value: "    slot: &Addr <- fn\n");
         foreach ((string keyword, string callable, bool withPayload) in new[]
                  {
                      ("if unbound", plain, false),
@@ -790,7 +790,7 @@ internal sealed class TesseraWriter
 
         name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
         _texts[key: key] = name;
-        _globals.Append(value: $"{Private}preset {name}: @{type} <- {initial}\n\n");
+        _globals.Append(value: $"{Private}preset {name}: &{type} <- {initial}\n\n");
         // The value is a pointer to the first element.
         name = $"{name}.to[@{TypeText(type: data.ElementType)}]()";
         _texts[key: key] = name;
@@ -832,7 +832,7 @@ internal sealed class TesseraWriter
             ? TesseraRoutineWriter.ConstantText(literal: literal)
             : throw new NotSupportedException(
                 message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
-        _globals.Append(value: $"{Private}preset {global}: @{type} <- [{string.Join(separator: ", ", values: values)}]\n\n");
+        _globals.Append(value: $"{Private}preset {global}: &{type} <- [{string.Join(separator: ", ", values: values)}]\n\n");
         return (global, preset.Type);
     }
 
