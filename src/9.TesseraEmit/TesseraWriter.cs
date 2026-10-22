@@ -23,10 +23,10 @@ internal sealed class TesseraWriter
 
     /// <summary>
     /// The module in Tessera's current spellings: this writer still writes some of the old ones (`Void`, `#name`
-    /// annotations, `require`), which the builder now reads only through its migration.
+    /// annotations, `require`).
     /// </summary>
     private static string Current(string text) =>
-        Tessera.NoneSpelling.Rewrite(text: Tessera.StructuredMigration.Spellings(text: text));
+        TesseraOldSpellings.NoneSpelling(text: TesseraOldSpellings.Spellings(text: text));
 
     /// <summary>Tessera names of the routines this module defines, keyed by the routine's mangled symbol.</summary>
     private readonly Dictionary<string, string> _routineNames = new(comparer: StringComparer.Ordinal);
@@ -235,9 +235,8 @@ internal sealed class TesseraWriter
         module.Append(value: _externs);
         module.Append(value: _definitions);
         // A record that holds something to release says how it is made and released (a construct taking its fields, a
-        // destruct), and the lines after a routine's head are its entry block: `block entry()` is written only where a
-        // block jumps back to it.
-        return Current(text: Tessera.EntryMigration.Rewrite(text: Tessera.ConstructDestructMigration.Rewrite(text: module.ToString())));
+        // destruct).
+        return Current(text: ConstructDestructRewrite.Rewrite(text: module.ToString()));
     }
 
     /// <summary>Queues a library routine for writing the first time something calls it.</summary>
@@ -314,9 +313,8 @@ internal sealed class TesseraWriter
         module.Append(value: definitions);
         module.Append(value: main);
         // A record that holds something to release says how it is made and released (a construct taking its fields, a
-        // destruct), and the lines after a routine's head are its entry block: `block entry()` is written only where a
-        // block jumps back to it.
-        return Current(text: Tessera.EntryMigration.Rewrite(text: Tessera.ConstructDestructMigration.Rewrite(text: module.ToString())));
+        // destruct).
+        return Current(text: ConstructDestructRewrite.Rewrite(text: module.ToString()));
     }
 
     /// <summary>Registers every body the LLVM emitter registers for crash reachability: the user routines and
