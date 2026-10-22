@@ -418,7 +418,7 @@ internal sealed class TesseraRoutineWriter
             string bytes = $"t{_temps++}";
             // The bytes go in a list this routine keeps: the crash that reads them ends the program.
             string buffer = $"t{_temps++}";
-            Emit(line: $"{buffer}: &List[Byte] <- .construct()");
+            Emit(line: $"{buffer}: &List[Byte] <- .construct(HEAP)");
             Emit(line: $"{bytes}: @[Byte] = {_module.TextBytes()}(text: {text}, into: {buffer})");
             return bytes;
         }
