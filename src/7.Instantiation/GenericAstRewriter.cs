@@ -489,7 +489,14 @@ internal static class GenericAstRewriter
             List<TypeSymbol>? callArgTypes)
         {
 
-            TypeSymbol? resolvedOwner = ResolveTypeForLookup(original: original.OwnerType);
+            // A member written on a receiver pattern (`routine List[Work[T]].launch_together()`) is bound in a template
+            // to its type's definition (`List[T]`), whose `T` is the list's slot, not the pattern's: the receiver is
+            // the pattern made concrete (`List[Work[List[S64]]]`, never `List[List[S64]]`).
+            TypeSymbol? ownerToResolve = original.OwnerType is { IsGenericDefinition: true } &&
+                                         (original.GenericDefinition ?? original).MeType is { } mePattern
+                ? Builder.Declaration.RoamedTransparency.SharedEntityOf(type: mePattern)
+                : original.OwnerType;
+            TypeSymbol? resolvedOwner = ResolveTypeForLookup(original: ownerToResolve);
 
             // A specialization (`routine S64.to[U8]()`) is one of a family sharing its name and parameters: it is
             // found again by its type arguments, and a call bound to its recovery variant takes that one's variant.
