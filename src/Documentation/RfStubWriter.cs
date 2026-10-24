@@ -57,8 +57,8 @@ internal sealed class RfStubWriter
         "Accessing", "Controlling", "Assignable", "UnbrokenType", "Splittable", "Addr", "IngridWords",
         "Hijacked", "Viewing", "Modifying", "Retained", "Tracked", "Roamed", "Guarded", "Witnessed", "Watched",
         "ReenterDuringAccessError",
-        "ListEmittable", "RotatableListEmittable", "SplitListEmittable",
-        "SplitArrayEmittable", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
+        "ListEmitter", "RotatableListEmitter", "SplitListEmitter",
+        "SplitArrayEmitter", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
         "DD", "FloatDigits", "FloatParsed", "D32Parts", "D64Parts", "D128Parts", "ComplexTextParts",
         "IntegerLimbView", "IntV",
         // Suflae has its own lists and no structure-of-arrays layouts.

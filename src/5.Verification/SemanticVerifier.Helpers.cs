@@ -46,7 +46,7 @@ internal enum NumericTypeKind
 public sealed partial class SemanticVerifier
 {
     private const string MaybeTypeName = "Maybe";
-    private const string IterableProtocolName = "Iterable";
+    private const string IterableProtocolName = "Emittable";
 
     #region Carrier Type Helpers
 
@@ -1886,7 +1886,7 @@ public sealed partial class SemanticVerifier
         // Indexing
         "getitem", "setitem",
         // Iteration
-        "iter", "emit",
+        "emitter", "emit",
         // Context management
         "enter", "exit"
     ];
@@ -2199,8 +2199,8 @@ public sealed partial class SemanticVerifier
         if (!IsOrObeysIterable(iterableType: iterableType))
         {
             ReportError(code: SemanticDiagnosticCode.TypeNotIterable,
-                message: $"Type '{iterableType.Name}' is not iterable. Types must follow the " +
-                         $"'Iterable' protocol to be used in for-in loops.",
+                message: $"You walk '{iterableType.Name}' with 'each' here, but it has no 'emitter()'. A type that " +
+                         "obeys 'Emittable' can be walked.",
                 location: location);
             return ErrorTypeSymbol.Instance;
         }
@@ -2215,7 +2215,7 @@ public sealed partial class SemanticVerifier
         // is still empty and the naive `TypeArguments[0]` fallback below would wrongly pick the first
         // type arg (`K`, i.e. `Text` for a Dict) instead of `DictEntry[Text, SerialValue]`.
         RoutineInfo? iterMemberRoutine =
-            _registry.LookupMemberRoutine(type: iterableType, memberRoutineName: "iter");
+            _registry.LookupMemberRoutine(type: iterableType, memberRoutineName: "emitter");
         if (iterMemberRoutine?.ReturnType is { } iteratorType and not ErrorTypeSymbol)
         {
             // An iterator that is a shared entity comes back as its handle: its `emit!` is the entity's own.
@@ -2260,7 +2260,7 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.TypeNotIterable,
             message:
-            $"Cannot determine element type for '{iterableType.Name}'. The iter member routine must return Iterator[T].",
+            $"The builder cannot tell what '{iterableType.Name}' emits: its 'emitter()' must return an 'Emitter[T]'.",
             location: location);
         return ErrorTypeSymbol.Instance;
     }
@@ -2269,7 +2269,7 @@ public sealed partial class SemanticVerifier
     private static TypeSymbol IteratorItemOf(TypeSymbol iterable)
     {
         return new AssociatedProjectionTypeSymbol(
-            baseType: new AssociatedProjectionTypeSymbol(baseType: iterable, slotName: "Iter"),
+            baseType: new AssociatedProjectionTypeSymbol(baseType: iterable, slotName: "Emitter"),
             slotName: "Item");
     }
 
@@ -2327,7 +2327,7 @@ public sealed partial class SemanticVerifier
 
         if (iterableType.IsGenericResolution)
         {
-            return _registry.LookupMemberRoutine(type: iterableType, memberRoutineName: "iter") !=
+            return _registry.LookupMemberRoutine(type: iterableType, memberRoutineName: "emitter") !=
                    null;
         }
 
@@ -2431,13 +2431,13 @@ public sealed partial class SemanticVerifier
     private TypeSymbol? TryGetElementFromIterReturnType(TypeSymbol iterableType)
     {
         RoutineInfo? seqMemberRoutine2 =
-            _registry.LookupRoutine(fullName: $"{iterableType.Name}.iter");
+            _registry.LookupRoutine(fullName: $"{iterableType.Name}.emitter");
 
-        // Generic fallback: Range[S64].iter -> Range.iter via LookupMemberRoutine
+        // Generic fallback: Range[S64].emitter -> Range.emitter via LookupMemberRoutine
         if (seqMemberRoutine2 == null)
         {
             seqMemberRoutine2 =
-                _registry.LookupMemberRoutine(type: iterableType, memberRoutineName: "iter");
+                _registry.LookupMemberRoutine(type: iterableType, memberRoutineName: "emitter");
         }
 
         if (seqMemberRoutine2?.ReturnType?.TypeArguments is not { Count: > 0 })

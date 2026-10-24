@@ -12,7 +12,7 @@ internal partial class Program
         ["Atomic"] = "Unbroken",
         ["AtomicType"] = "UnbrokenType",
         ["CircularList"] = "RotatableList",
-        ["CircularListEmittable"] = "RotatableListEmittable"
+        ["CircularListEmittable"] = "RotatableListEmitter"
     };
 
     /// <summary>An old type name written as a whole word, also as a module path part

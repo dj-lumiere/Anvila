@@ -401,11 +401,11 @@ public static class RuntimeContract
             RawPointer.AsEntity, Access, Control, ShapeUse.ControlToReshape
         };
 
-    /// <summary>An iterator's step (`Emittable.emit!`): what it returns is the iterator's `Item`.</summary>
+    /// <summary>An emitter's step (`Emitter.emit`): what it returns is the emitter's `Item`.</summary>
     public const string Emit = "emit";
 
-    /// <summary>The <c>Iterable[T]</c> routine that gives a fresh iterator; what it returns is the type's <c>Iter</c>.</summary>
-    public const string Iter = "iter";
+    /// <summary>The <c>Emittable[T]</c> routine that gives a fresh emitter; what it returns is the type's <c>Emitter</c>.</summary>
+    public const string Iter = "emitter";
 
     /// <summary>The routine that hands a collection's elements over to a walk, for <c>each x in steal xs</c>.</summary>
     public const string TakeEach = "take_each";

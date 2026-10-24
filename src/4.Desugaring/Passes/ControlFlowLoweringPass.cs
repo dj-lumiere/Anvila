@@ -813,7 +813,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         IdentifierExpression tryNextReceiver, CallExpression emitCall)
     {
         if (eachStmt.Iterable.ResolvedType is { } iterType and not ErrorTypeSymbol &&
-            ctx.Registry.LookupMemberRoutine(type: Declaration.RoamedTransparency.SharedEntityOf(type: iterType), memberRoutineName: "iter") is
+            ctx.Registry.LookupMemberRoutine(type: Declaration.RoamedTransparency.SharedEntityOf(type: iterType), memberRoutineName: "emitter") is
                 { ReturnType: { } rawIteratorType } iterMemberRoutine)
         {
             // A shared entity is walked through its handle by the entity's own `iter`, whose type parameters

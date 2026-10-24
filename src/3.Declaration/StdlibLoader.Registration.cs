@@ -2163,6 +2163,11 @@ public sealed partial class StdlibLoader
             }
 
             var existing = registry.LookupType(name: protocolDecl.Name) as ProtocolTypeSymbol;
+            if (existing != null)
+            {
+                RefreshSlotConstraints(registry: registry, protocolDecl: protocolDecl, existing: existing);
+            }
+
             if (existing == null || existing.MemberRoutines.Count == 0)
             {
                 continue;
@@ -2181,6 +2186,45 @@ public sealed partial class StdlibLoader
             // stdlib registration) copied the pre-refill stale memberRoutines. Refresh them in place so
             // user types obeying the protocol see the corrected arity instead of failing S703.
             registry.RefreshProtocolResolutions(genericDef: existing);
+        }
+    }
+
+    /// <summary>
+    /// Resolves again the constraint of an associated-type slot that named a protocol not registered yet when the
+    /// slot was (<c>relates Emitter obeys Emitter[T]</c> in a file loaded before the one declaring <c>Emitter</c>),
+    /// on the definition and on the instances made from it so far.
+    /// </summary>
+    private static void RefreshSlotConstraints(TypeRegistry registry, ProtocolDeclaration protocolDecl,
+        ProtocolTypeSymbol existing)
+    {
+        if (protocolDecl.AssociatedTypes is not { Count: > 0 } slots)
+        {
+            return;
+        }
+
+        bool changed = false;
+        for (int i = 0; i < existing.AssociatedTypes.Count; i++)
+        {
+            AssociatedTypeSlot slot = existing.AssociatedTypes[index: i];
+            if (slot.Constraint is not (null or ErrorTypeSymbol) ||
+                slots.FirstOrDefault(predicate: s => s.Name == slot.Name)?.Constraint is not { } written)
+            {
+                continue;
+            }
+
+            if (ResolveSimpleType(registry: registry,
+                    typeExpr: written,
+                    genericParams: protocolDecl.GenericParameters,
+                    moduleName: existing.Module) is { } resolved and not ErrorTypeSymbol)
+            {
+                existing.AssociatedTypes[index: i] = new AssociatedTypeSlot(name: slot.Name) { Constraint = resolved };
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            registry.RefreshProtocolSlots(genericDef: existing);
         }
     }
 

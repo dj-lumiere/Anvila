@@ -209,6 +209,21 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     /// </summary>
     protected override Expression VisitCall(CallExpression e)
     {
+        // `(steal xs).emitter()` takes the container and hands its elements over, like `each x in steal xs`: the
+        // emitter it gives holds the elements itself (`take_each`), not a pointer into a container that ends with
+        // the statement. Before analysis only, as a written call.
+        if (e is
+            {
+                ResolvedType: null, IsSynthesizedLowering: false, Arguments.Count: 0,
+                Callee: MemberExpression { Object: StealExpression, MemberName: Declaration.RuntimeContract.Iter } taken
+            })
+        {
+            return VisitCall(e: e with { Callee = taken with { MemberName = Declaration.RuntimeContract.TakeEach } }
+            ) is CallExpression lowered
+                ? lowered with { IsSynthesizedLowering = true }
+                : e;
+        }
+
         Expression rebuilt = base.VisitCall(e: e);
         if (ReferenceEquals(objA: rebuilt, objB: e) || rebuilt is not CallExpression rewritten)
         {

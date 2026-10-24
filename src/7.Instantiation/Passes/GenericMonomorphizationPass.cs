@@ -1866,7 +1866,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         {
             return wiredName is RepresentMemberRoutineName or "diagnose" or "hash" or "serialize"
                 or "duplicate" or "share" or "eq" or "ne" or "compare" or "lt" or "le" or "gt" or "ge"
-                or "has" or "lacks" or "getitem" or "setitem" or "iter";
+                or "has" or "lacks" or "getitem" or "setitem" or "emitter";
         }
 
         // Returns true for wired operator kinds that are reached call-driven (force-seeding them over-approximates).

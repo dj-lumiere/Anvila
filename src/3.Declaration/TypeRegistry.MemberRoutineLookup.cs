@@ -139,7 +139,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     private static void BindIteratorType(RoutineInfo routine)
     {
-        const string iterSlot = "Iter";
+        const string iterSlot = "Emitter";
         // Only a concrete iterator of a concrete type: a generic one is written with `relates` (the library's), and
         // binding a type that still names parameters or projections could make a type that holds itself.
         if (routine is not { Name: RuntimeContract.Iter, IsFailable: false, Parameters.Count: 0, ReturnType: { } iterator } ||

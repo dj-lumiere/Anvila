@@ -317,17 +317,17 @@ public static class WiredRoutineCatalog
             },
             new WiredEntry
             {
-                Name = "iter",
+                Name = "emitter",
                 Kind = WiredKind.Iteration,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["Iterable"]
+                Protocols = ["Emittable"]
             },
             new WiredEntry
             {
                 Name = "emit",
                 Kind = WiredKind.Iteration,
                 Views = Cap | Known | Proto | Seed,
-                Protocols = ["Emittable"],
+                Protocols = ["Emitter"],
                 Failable = true
             },
             new WiredEntry

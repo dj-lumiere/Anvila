@@ -2924,12 +2924,13 @@ public sealed partial class SemanticVerifier
                     return ErrorTypeSymbol.Instance;
                 }
 
-                // The walk an `each x in steal xs` loop asks for: only a collection that can be taken apart has one.
+                // The walk an `each x in steal xs` loop or a `(steal xs).emitter()` asks for: only a collection that
+                // can be taken apart has one.
                 if (call.IsSynthesizedLowering && member.MemberName == Declaration.RuntimeContract.TakeEach)
                 {
                     ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
-                        message: $"'each ... in steal' takes the elements out of a 'List', and '{objectType.Name}' " +
-                                 "can't be taken apart that way. Loop over it without 'steal', or move its elements " +
+                        message: $"Walking with 'steal' takes the elements out of a 'List', and '{objectType.Name}' " +
+                                 "can't be taken apart that way. Walk it without 'steal', or move its elements " +
                                  "into a 'List' first.",
                         location: call.Location);
                     return ErrorTypeSymbol.Instance;
@@ -3015,7 +3016,7 @@ public sealed partial class SemanticVerifier
         ValidateRoutineAccess(routine: memberRoutine,
             accessLocation: call.Location,
             isCompilerSynthesized: call.IsSynthesizedLowering &&
-                                   memberRoutine.Name is not ("iter" or "emit"));
+                                   memberRoutine.Name is not ("emitter" or "emit"));
 
         ValidateMemberCallMutability(call: call,
             member: member,
@@ -3929,13 +3930,11 @@ public sealed partial class SemanticVerifier
     private ErrorTypeSymbol? ValidateDirectWiredMemberCall(CallExpression call,
         MemberExpression member)
     {
-        if ((member.MemberName == "iter" || member.MemberName == "access" ||
-             member.MemberName == "control") && !call.IsSynthesizedLowering &&
+        if ((member.MemberName == "access" || member.MemberName == "control") && !call.IsSynthesizedLowering &&
             !IsStdlibFile(filePath: call.Location.FileName))
         {
             string hint = member.MemberName switch
             {
-                "iter" => "Walk it with an 'each' loop, or with the iterator routines (skip, take, map, ...).",
                 _ when _registry.Language == Language.Suflae => "Use the value itself.",
                 "access" => "Use the handle itself: a 'Retained' is used directly, and a 'Guarded' is opened with " +
                             "'viewing g as v'.",

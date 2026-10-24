@@ -2431,6 +2431,28 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// Gives the cached instances of a generic protocol the associated-type slots of its definition again, after a
+    /// slot constraint that named a protocol not registered yet was resolved.
+    /// </summary>
+    public void RefreshProtocolSlots(ProtocolTypeSymbol genericDef)
+    {
+        if (!genericDef.IsGenericDefinition)
+        {
+            return;
+        }
+
+        foreach (TypeSymbol resolution in _resolutions.Values.ToList())
+        {
+            if (resolution is ProtocolTypeSymbol protoRes &&
+                protoRes.GenericDefinition == genericDef && protoRes.TypeArguments != null)
+            {
+                var fresh = (ProtocolTypeSymbol)genericDef.CreateInstance(typeArguments: protoRes.TypeArguments);
+                protoRes.AssociatedTypes = fresh.AssociatedTypes;
+            }
+        }
+    }
+
+    /// <summary>
     /// A cached protocol instance is stale if any of its memberRoutines is missing or has a different
     /// parameter arity than the (just re-filled) generic definition's matching memberRoutine.
     /// </summary>

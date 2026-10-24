@@ -1269,11 +1269,11 @@ public sealed partial class SemanticVerifier
         {
             CallExpression
             {
-                IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "iter", Object: CallExpression chain }
+                IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "emitter", Object: CallExpression chain }
             } => chain,
             CallExpression
             {
-                IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "iter", Object: IdentifierExpression }
+                IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "emitter", Object: IdentifierExpression }
             } => null,
             CallExpression chain => chain,
             _ => null
@@ -1295,7 +1295,7 @@ public sealed partial class SemanticVerifier
 
         bool readOnly = _registry.Rules.ChecksAccessTokens && varDecl.Initializer switch
         {
-            CallExpression { IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "iter", Object: var source } }
+            CallExpression { IsSynthesizedLowering: true, Callee: MemberExpression { MemberName: "emitter", Object: var source } }
                 => StartsReadOnly(place: source),
             { ResolvedType: { } walked } initializer => Walks(type: walked) && StartsReadOnly(place: initializer),
             _ => false
@@ -1370,7 +1370,7 @@ public sealed partial class SemanticVerifier
     private bool Walks(TypeSymbol type)
     {
         return _registry.LookupMemberRoutine(type: type, memberRoutineName: "emit", isFailable: true) != null ||
-               _registry.LookupMemberRoutine(type: type, memberRoutineName: "iter") != null;
+               _registry.LookupMemberRoutine(type: type, memberRoutineName: "emitter") != null;
     }
 
     /// <summary>

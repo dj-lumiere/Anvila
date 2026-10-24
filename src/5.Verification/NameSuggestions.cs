@@ -87,7 +87,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "Atomic" => "Unbroken",
             "AtomicType" => "UnbrokenType",
             "CircularList" => "RotatableList",
-            "CircularListEmittable" => "RotatableListEmittable",
+            "CircularListEmittable" => "RotatableListEmitter",
             _ => null
         };
         return renamed == null ? null : $" It is called '{renamed}' now (migrate --step type-names rewrites it).";
@@ -145,6 +145,13 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             };
         }
 
+        // Iterators are emitters in 0.5: a type that can be walked is an 'Emittable', what walks it an 'Emitter'.
+        if (EmitterRename(typeName: typeName) is { } emitterName &&
+            (emitterName is "Emittable" or "Emitter" || TypeSuggestionCandidates().Contains(value: emitterName)))
+        {
+            return $" It is called '{emitterName}' now.";
+        }
+
         // The quaternions are named by their total bits, like the complex numbers.
         if (typeName is "Q32" or "Q64")
         {
@@ -159,6 +166,25 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         }
 
         return DidYouMean(target: typeName, candidates: TypeSuggestionCandidates());
+    }
+
+    /// <summary>The 0.5 name of an iterator type: <c>Iterable</c> is <c>Emittable</c>, <c>Iterator</c> is
+    /// <c>Emitter</c>, an adapter <c>WhereIterable</c> is <c>WhereEmittable</c>, and a walk <c>ListEmittable</c> is
+    /// <c>ListEmitter</c>. Null for any other name.</summary>
+    private static string? EmitterRename(string typeName)
+    {
+        return typeName switch
+        {
+            "Iterable" => "Emittable",
+            "Iterator" => "Emitter",
+            _ when typeName.EndsWith(value: "Iterables", comparisonType: StringComparison.Ordinal) =>
+                typeName[..^"Iterables".Length] + "Emittables",
+            _ when typeName.EndsWith(value: "Iterable", comparisonType: StringComparison.Ordinal) =>
+                typeName[..^"Iterable".Length] + "Emittable",
+            _ when typeName.EndsWith(value: "Emittable", comparisonType: StringComparison.Ordinal) &&
+                   typeName != "Emittable" => typeName[..^"Emittable".Length] + "Emitter",
+            _ => null
+        };
     }
 
     /// <summary>The hint for a type the previous release had and this one took away, or null.</summary>
@@ -214,6 +240,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " It is called 'destruct' now (written 'drop x' outside the standard library).";
             case "assign":
                 return " 'assign' is gone: '=' copies a value ('var b = a').";
+            case "iter" when MemberSuggestionCandidates(type: type).Contains(value: RuntimeContract.Iter):
+                return $" It is called '{RuntimeContract.Iter}()' now.";
             case "contains" or "notcontains":
                 return " Membership is 'has' / 'lacks' now, and a map's keys are 'has_key' / 'lacks_key'.";
             case "has" when MemberSuggestionCandidates(type: type).Contains(value: "has_key"):

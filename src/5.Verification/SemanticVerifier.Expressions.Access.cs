@@ -64,7 +64,7 @@ public sealed partial class SemanticVerifier
     private const string EmittableItemSlot = "Item";
 
     /// <summary>The protocol an iterator obeys.</summary>
-    private const string EmittableProtocolName = "Emittable";
+    private const string EmittableProtocolName = "Emitter";
 
     /// <summary>
     /// Analyzes a buildtime splice-selector member access (<c>x.${m.name}</c>). The receiver and
