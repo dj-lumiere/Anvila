@@ -1078,7 +1078,14 @@ public sealed partial class SemanticVerifier
     {
         if (variantReturn.Value != null)
         {
-            AnalyzeExpression(expression: variantReturn.Value);
+            // A value the routine returns goes into the carrier the variant gives back (`Maybe[S64]` for `-> S64`): a
+            // bare number takes the routine's result type, as in the routine it was written in.
+            TypeSymbol? returned = variantReturn.SiteKind == VariantSiteKind.FromReturn &&
+                                   _currentRoutine?.ReturnType is
+                                       { BareName: "Maybe" or "Check" or "Lookup", TypeArguments: [{ } value] }
+                ? value
+                : null;
+            AnalyzeExpression(expression: variantReturn.Value, expectedType: returned);
         }
     }
 

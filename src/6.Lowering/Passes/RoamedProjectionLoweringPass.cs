@@ -135,6 +135,13 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
             return handleCall;
         }
 
+        // The text of a handle: it may hold nothing too, so the call goes to the handle's own display, which says
+        // `none` then.
+        if (HandleDisplayCall(call: call, member: member, receiverType: receiverType) is { } displayCall)
+        {
+            return displayCall;
+        }
+
         RoamedTransparency.Projection? proj = RoamedTransparency.Project(
             receiverType: receiverType,
             memberRoutine: memberRoutine,
@@ -225,6 +232,32 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
                 ResolvedType = argumentType
             }],
             Location: call.Location)
+        {
+            ResolvedRoutine = routine,
+            ResolvedType = call.ResolvedType,
+            LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine)
+        };
+    }
+
+    // `h.represent()` / `h.diagnose()` with `h` a `Roamed[E]` handle: `h.handle_represent()` / `h.handle_diagnose()`, or
+    // null for any other call.
+    private CallExpression? HandleDisplayCall(CallExpression call, MemberExpression member, TypeSymbol receiverType)
+    {
+        if (member.MemberName is not (RuntimeContract.Display.Represent or RuntimeContract.Display.Diagnose) || call.Arguments.Count != 0 ||
+            TypeRegistry.GetRcWrapperBaseName(type: receiverType) != RuntimeContract.Roamed)
+        {
+            return null;
+        }
+
+        string target = member.MemberName == RuntimeContract.Display.Represent
+            ? RuntimeContract.RoamedMemberRoutine.HandleRepresent
+            : RuntimeContract.RoamedMemberRoutine.HandleDiagnose;
+        if (Registry.LookupMemberRoutine(type: receiverType, memberRoutineName: target) is not { } routine)
+        {
+            return null;
+        }
+
+        return new CallExpression(Callee: member with { MemberName = target }, Arguments: [], Location: call.Location)
         {
             ResolvedRoutine = routine,
             ResolvedType = call.ResolvedType,

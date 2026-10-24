@@ -931,7 +931,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                     callRoutine: callRoutine,
                     posArgIdx: posArgIdx,
                     hoisted: hoisted,
-                    earlier: earlier);
+                    earlier: earlier,
+                    constructed: callRoutine == null ? call.ConstructedType : null);
                 earlier.Add(item: wrapped);
             }
 
@@ -980,15 +981,28 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return fields?.FirstOrDefault(predicate: f => f.Name == name)?.Type;
     }
 
+    /// <summary>The type of the member variable at <paramref name="index"/> of the type a creator builds, or null.</summary>
+    private static TypeSymbol? FieldTypeAt(TypeSymbol? constructed, int index)
+    {
+        List<MemberVariableInfo>? fields = constructed switch
+        {
+            EntityTypeSymbol entity => entity.MemberVariables,
+            RecordTypeSymbol record => record.MemberVariables,
+            _ => null
+        };
+        return fields != null && index < fields.Count ? fields[index: index].Type : null;
+    }
+
     // Lowers a single positional argument, wrapping the value for a variant arm or Maybe parameter if needed.
     private Expression LowerPositionalCallArg(Expression arg, RoutineInfo? callRoutine,
-        int posArgIdx, List<Statement> hoisted, List<Expression> earlier)
+        int posArgIdx, List<Statement> hoisted, List<Expression> earlier, TypeSymbol? constructed)
     {
         (List<Statement> h, Expression lowered) = LowerExpr(expr: arg);
         HoistAfter(hoisted: hoisted, setup: h, earlier: earlier);
+        // A member-wise construction written positionally (`Slot(1)`) gives the member variables in order.
         TypeSymbol? paramType = callRoutine != null && posArgIdx < callRoutine.Parameters.Count
             ? callRoutine.Parameters[index: posArgIdx].Type
-            : null;
+            : FieldTypeAt(constructed: constructed, index: posArgIdx);
         return TryWrapVariantArm(targetType: paramType, init: lowered) ??
                TryWrapMaybe(targetType: paramType, value: lowered) ??
                lowered;

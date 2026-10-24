@@ -192,6 +192,13 @@ public static class RuntimeContract
         /// <summary>`!=` between two handles either of which may hold nothing.</summary>
         public const string HandleNe = "handle_ne";
 
+        /// <summary>The text of a handle that may hold nothing (a Suflae `E?`): `none`, or the entity's `represent`. The
+        /// call a display of a handle (`f"{e.next}"`, a member variable in the builder's `represent`) becomes.</summary>
+        public const string HandleRepresent = "handle_represent";
+
+        /// <summary>The debug text of a handle that may hold nothing: `none`, or the entity's `diagnose`.</summary>
+        public const string HandleDiagnose = "handle_diagnose";
+
         /// <summary>Make the entity keep another one alive (an emitter adapter keeping the collection it walks), the
         /// builder's call right after a Suflae program makes an adapter.</summary>
         public const string Keep = "keep";

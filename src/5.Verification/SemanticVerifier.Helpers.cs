@@ -1997,7 +1997,9 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.IncompatibleComparisonTypes,
                 message:
-                $"Cannot compare values of incompatible types '{left.Name}' and '{right.Name}'.",
+                $"You compare {Article.For(name: left.Name)} '{left.Name}' with {Article.For(name: right.Name)} " +
+                $"'{right.Name}', and values of these two types don't compare with each other. Convert one to the " +
+                $"other's type first ('.to[{left.Name}]()' on the right one, or '.to[{right.Name}]()' on the left one).",
                 location: location);
         }
 
