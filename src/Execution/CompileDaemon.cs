@@ -490,19 +490,41 @@ internal partial class Program
 
             while (!_shutdownRequested)
             {
+                NamedPipeServerStream server;
                 try
                 {
-                    using var server = new NamedPipeServerStream(pipeName: pipe,
+                    server = new NamedPipeServerStream(pipeName: pipe,
                         direction: PipeDirection.InOut,
                         maxNumberOfServerInstances: 1,
                         transmissionMode: PipeTransmissionMode.Byte,
                         options: PipeOptions.None);
+                }
+                catch (ArgumentException ex)
+                {
+                    // The pipe's name can never be opened (on Linux and macOS the socket path it makes in the temp
+                    // folder is longer than the system allows), so every later try fails the same way. Stop, and a
+                    // client waiting for this daemon sees it stop and builds in its own process.
+                    Console.Error.WriteLine(value: $"[daemon] the pipe '{pipe}' cannot be opened: {ex.Message}");
+                    return 1;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(value: $"[daemon] request failed: {ex.Message}");
+                    continue;
+                }
+
+                try
+                {
                     server.WaitForConnection();
                     ServeConnection(server: server, daemonStamp: daemonStamp);
                 }
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine(value: $"[daemon] request failed: {ex.Message}");
+                }
+                finally
+                {
+                    server.Dispose();
                 }
             }
 

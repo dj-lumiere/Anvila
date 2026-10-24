@@ -49,6 +49,9 @@ internal static unsafe class OrcJitExecutor
     // transitively reaches AT RUNTIME is ever emitted + JIT-compiled — no caller-side closure walk.
     private static Func<string, string?>? _lazyMaterialize;
     private static LLVMOrcOpaqueLLJIT* _lazyJit;
+    // The JIT's global prefix ('_' on Mach-O, 0 on ELF and x86-64 COFF). ORC asks the generator for MANGLED names,
+    // and the materialize delegate knows a routine by its IR name, so the callback strips it first.
+    private static sbyte _lazyGlobalPrefix;
     private static readonly HashSet<string> _lazyDone = new(comparer: StringComparer.Ordinal);
 
     // LLVM 21 replaced LLVMOrcThreadSafeContextGetContext with this; LLVMSharp 20 doesn't bind it, so we
@@ -535,8 +538,8 @@ internal static unsafe class OrcJitExecutor
     /// Resident-JIT incremental (B) FULLY-LAZY on-demand materialization (M2a). JITs <paramref name="mainIr"/>
     /// (@main + user routines + shared runtime globals; every stdlib callee an extern <c>declare</c>) and
     /// attaches an ORC custom definition generator: when a materialization needs an unresolved RF symbol,
-    /// <paramref name="materialize"/> is called with that symbol's mangled name and returns its
-    /// external-linkage one-routine IR module (or null → defer to the process-search generator for <c>rf_*</c>
+    /// <paramref name="materialize"/> is called with that symbol's IR name (ORC's name without the global prefix)
+    /// and returns its external-linkage one-routine IR module (or null → defer to the process-search generator for <c>rf_*</c>
     /// runtime symbols). Codegen happens strictly on demand as ORC resolves each symbol — only what <c>@main</c>
     /// transitively reaches at run time is emitted, with NO caller-side closure walk (that was M1b's
     /// <c>JitAndRunModules</c>). The materialize output MUST use external linkage
@@ -564,6 +567,7 @@ internal static unsafe class OrcJitExecutor
         LLVMOrcOpaqueLLJIT* jit;
         jit = CreateLljit(builder: builder);
         _lazyJit = jit;
+        _lazyGlobalPrefix = LLVM.OrcLLJITGetGlobalPrefix(J: jit);
         LLVMOrcOpaqueJITDylib* dylib = AddProcessSearchGenerator(jit: jit);
         AddIngridTessera(jit: jit, dylib: dylib);
 
@@ -611,6 +615,18 @@ internal static unsafe class OrcJitExecutor
             if (namePtr == null)
             {
                 continue;
+            }
+
+            // ORC's names carry the object format's global prefix, which the IR names the delegate knows do not.
+            // A name without the prefix is no IR global's, so it is never ours.
+            if (_lazyGlobalPrefix != 0)
+            {
+                if (*namePtr != _lazyGlobalPrefix)
+                {
+                    continue;
+                }
+
+                namePtr++;
             }
 
             string name = new(value: namePtr);
