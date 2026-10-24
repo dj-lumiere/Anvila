@@ -391,9 +391,10 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         for (int i = 0; i < parameters.Count; i++)
         {
             (string pName, TypeSymbol pType, string? pDefault) = parameters[index: i];
-            string t = subs.Type(type: pType);
+            string t = subs.Type(type: Described(type: pType));
             string defaultValue = "none";
-            if (pDefault != null)
+            // A default of a type parameter's type has no one type to keep it in, so the fact leaves it out.
+            if (pDefault != null && !HoldsTypeParameter(type: pType))
             {
                 text.AppendLine(value: $"    var d{index}_{i}: {t} = {pDefault}");
                 defaultValue = $"Unknown(from: d{index}_{i})";
@@ -404,9 +405,31 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         }
 
         bool hasReturns = returns != null && returns.Name != "None" && returns.Name != "Blank";
-        string r = subs.Type(type: hasReturns ? returns! : ctx.Registry.LookupType(name: "Bool")!);
+        string r = subs.Type(type: hasReturns ? Described(type: returns!) : ctx.Registry.LookupType(name: "Bool")!);
         text.AppendLine(value:
             $"    facts.add_last(value: routine_fact[{r}](name: {Quote(text: name)}, full_name: {Quote(text: fullName)}, module_name: {Quote(text: module)}, kind: {Quote(text: kind)}, index: {index}, is_built: {Bool(value: built)}, is_failable: {Bool(value: failable)}, is_generic: {Bool(value: generic)}, has_returns: {Bool(value: hasReturns)}, parameters: steal {list}, annotations: steal {notes}))");
+    }
+
+    /// <summary>The type a fact describes for a parameter or a result: a type that holds a type parameter of the
+    /// routine's own (<c>T</c>, <c>List[T]</c>) has no one type, so the fact describes it as <c>Unknown</c>.</summary>
+    private TypeSymbol Described(TypeSymbol type)
+    {
+        return HoldsTypeParameter(type: type) &&
+               ctx.Registry.LookupType(name: $"{ModuleName}.Unknown") is { } unknown
+            ? unknown
+            : type;
+    }
+
+    private static bool HoldsTypeParameter(TypeSymbol type)
+    {
+        return type switch
+        {
+            GenericParameterTypeSymbol => true,
+            RoutineTypeSymbol routine => routine.ParameterTypes.Any(predicate: HoldsTypeParameter) ||
+                                         routine.ReturnType != null && HoldsTypeParameter(type: routine.ReturnType),
+            TupleTypeSymbol tuple => tuple.ElementTypes.Any(predicate: HoldsTypeParameter),
+            _ => type.TypeArguments is { Count: > 0 } arguments && arguments.Any(predicate: HoldsTypeParameter)
+        };
     }
 
     /// <summary>Lines that add the value of each of the program's own annotations to <paramref name="list"/>.</summary>

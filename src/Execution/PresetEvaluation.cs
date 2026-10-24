@@ -27,6 +27,14 @@ internal static class PresetEvaluation
 
     private static readonly TimeSpan ChildTimeout = TimeSpan.FromMinutes(minutes: 5);
 
+    /// <summary>
+    /// In the evaluator build, its entry file: the one <c>start()</c> that runs there, so the build starts from it
+    /// alone and leaves out what only the other files' <c>start()</c>s reach (a bundle of programs, each with its own,
+    /// would otherwise be built whole a second time). Null in any other build.
+    /// </summary>
+    internal static string? EvaluatorEntry =>
+        Environment.GetEnvironmentVariable(variable: ChildMarker) is { Length: > 1 } entry ? entry : null;
+
     private sealed record Computed(SyntaxTree.Program Program, string File, int Index, PresetDeclaration Preset, int Id);
 
     /// <summary>
@@ -408,7 +416,8 @@ internal static class PresetEvaluation
             RedirectStandardInput = true,
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(path: evaluatorEntry)!,
-            Environment = { [key: ChildMarker] = "1", [key: "RF_NO_DAEMON"] = "1" }
+            // The marker names the evaluator's entry file: only its start() runs there (EvaluatorEntry).
+            Environment = { [key: ChildMarker] = Path.GetFullPath(path: evaluatorEntry), [key: "RF_NO_DAEMON"] = "1" }
         };
         using Process child = Process.Start(startInfo: psi) ??
                               throw new InvalidOperationException(message: "The preset evaluator could not start.");

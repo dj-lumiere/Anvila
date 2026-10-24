@@ -3912,6 +3912,10 @@ public sealed partial class TypeRegistry
         return _routineResolutions.Values;
     }
 
+    /// <summary>How many concrete generic routine resolutions there are: a caller that grouped them sees from a change
+    /// of it that new ones were made.</summary>
+    public int RoutineResolutionCount => _routineResolutions.Count;
+
     /// <summary>
     /// Removes generic-definition routines that were never instantiated for any concrete type.
     /// Called at the end of Phase 6 global desugaring, after all variant and wired bodies have

@@ -456,9 +456,23 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     private void MaterializePerOwnerSynthesizedBodies(
         IReadOnlyDictionary<string, Statement> synthesizedBodies)
     {
-        var concreteInstances = ctx.Registry.AllConcreteGenericInstancesUnfiltered.ToList();
+        // Grouped once by generic definition: each synthesized body looks only at the instances and resolutions of
+        // its own definition (a scan of all of them per body made each round quadratic in a large program).
+        Dictionary<TypeSymbol, List<TypeSymbol>> instancesByDefinition =
+            GroupInstancesByDefinition(instances: ctx.Registry.AllConcreteGenericInstancesUnfiltered);
+        Dictionary<RoutineInfo, List<RoutineInfo>> resolutionsByDefinition =
+            GroupResolutionsByDefinition(resolutions: ctx.Registry.GetAllRoutineResolutions());
+        int groupedResolutions = ctx.Registry.RoutineResolutionCount;
         foreach ((string key, Statement synthBody) in synthesizedBodies)
         {
+            // A body written for one synthesized routine can make new resolutions another one needs: group again then.
+            if (ctx.Registry.RoutineResolutionCount != groupedResolutions)
+            {
+                resolutionsByDefinition =
+                    GroupResolutionsByDefinition(resolutions: ctx.Registry.GetAllRoutineResolutions());
+                groupedResolutions = ctx.Registry.RoutineResolutionCount;
+            }
+
             RoutineInfo? synthInfo = ctx.Registry.LookupRoutine(fullName: key);
             // A derive that is generic in its OWN parameters (`ne` derived from `eq(you: Accessing[Box])`)
             // gets one body per reached resolution (`ne[Box]`).
@@ -467,7 +481,8 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             {
                 MaterializeRoutineGenericSynthBodies(synthInfo: synthInfo,
                     synthBody: synthBody,
-                    routineParams: rParams);
+                    routineParams: rParams,
+                    resolutions: resolutionsByDefinition.GetValueOrDefault(key: synthInfo) ?? []);
                 continue;
             }
 
@@ -487,7 +502,8 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             {
                 MaterializeWrapperForwarderBodies(synthInfo: synthInfo,
                     synthBody: synthBody,
-                    wrapperParamName: wrapperParams[index: 0]);
+                    wrapperParamName: wrapperParams[index: 0],
+                    resolutions: resolutionsByDefinition.GetValueOrDefault(key: synthInfo) ?? []);
                 continue;
             }
 
@@ -505,8 +521,59 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
                 synthBody: synthBody,
                 genericOwner: genericOwner,
                 gParams: gParams,
-                concreteInstances: concreteInstances);
+                concreteInstances: instancesByDefinition.GetValueOrDefault(key: genericOwner) ?? []);
         }
+    }
+
+    /// <summary>The concrete instances of generic types, by the generic definition each instantiates.</summary>
+    private static Dictionary<TypeSymbol, List<TypeSymbol>> GroupInstancesByDefinition(IEnumerable<TypeSymbol> instances)
+    {
+        var groups = new Dictionary<TypeSymbol, List<TypeSymbol>>(comparer: ReferenceEqualityComparer.Instance);
+        foreach (TypeSymbol instance in instances)
+        {
+            TypeSymbol? definition = instance switch
+            {
+                RecordTypeSymbol r => r.GenericDefinition,
+                EntityTypeSymbol e => e.GenericDefinition,
+                _ => null
+            };
+            if (definition == null)
+            {
+                continue;
+            }
+
+            if (!groups.TryGetValue(key: definition, value: out List<TypeSymbol>? list))
+            {
+                groups[key: definition] = list = [];
+            }
+
+            list.Add(item: instance);
+        }
+
+        return groups;
+    }
+
+    /// <summary>The resolutions of generic routines, by the generic definition each resolves.</summary>
+    private static Dictionary<RoutineInfo, List<RoutineInfo>> GroupResolutionsByDefinition(
+        IEnumerable<RoutineInfo> resolutions)
+    {
+        var groups = new Dictionary<RoutineInfo, List<RoutineInfo>>(comparer: ReferenceEqualityComparer.Instance);
+        foreach (RoutineInfo resolution in resolutions)
+        {
+            if (resolution.GenericDefinition is not { } definition)
+            {
+                continue;
+            }
+
+            if (!groups.TryGetValue(key: definition, value: out List<RoutineInfo>? list))
+            {
+                groups[key: definition] = list = [];
+            }
+
+            list.Add(item: resolution);
+        }
+
+        return groups;
     }
 
     /// <summary>
@@ -514,9 +581,9 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     /// resolution of it, substituting those parameters with the resolution's type arguments.
     /// </summary>
     private void MaterializeRoutineGenericSynthBodies(RoutineInfo synthInfo, Statement synthBody,
-        List<string> routineParams)
+        List<string> routineParams, List<RoutineInfo> resolutions)
     {
-        foreach (RoutineInfo resolution in ctx.Registry.GetAllRoutineResolutions().ToList())
+        foreach (RoutineInfo resolution in resolutions)
         {
             // Monomorphization leaves an empty synthesized sentinel for a resolution whose body it cannot
             // find; that is not a body, so it is replaced here.
@@ -697,9 +764,9 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     /// <see cref="MonomorphizedBody"/>.
     /// </summary>
     private void MaterializeWrapperForwarderBodies(RoutineInfo synthInfo, Statement synthBody,
-        string wrapperParamName)
+        string wrapperParamName, List<RoutineInfo> resolutions)
     {
-        foreach (RoutineInfo concreteWf in ctx.Registry.GetAllRoutineResolutions())
+        foreach (RoutineInfo concreteWf in resolutions)
         {
             if (!concreteWf.IsSynthesized ||
                 concreteWf.WrapperForwarderInnerMemberRoutine == null ||
@@ -790,11 +857,15 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
     private List<(string Key, Statement Body)> CollectEntrySeeds()
     {
         var result = new List<(string, Statement)>();
-        foreach ((Program program, _, string module) in ctx.UserPrograms)
+        string? evaluatorEntry = Execution.PresetEvaluation.EvaluatorEntry;
+        foreach ((Program program, string filePath, string module) in ctx.UserPrograms)
         {
+            // The preset evaluator runs its entry file's start() only.
+            bool startRuns = evaluatorEntry == null || string.Equals(a: Path.GetFullPath(path: filePath),
+                b: evaluatorEntry, comparisonType: StringComparison.Ordinal);
             foreach (RoutineDeclaration decl in program.Declarations.OfType<RoutineDeclaration>())
             {
-                bool isEntry = decl.Name == "start" ||
+                bool isEntry = decl.Name == "start" && startRuns ||
                                decl.Annotations.Any(predicate: a => a == "test" || a == "bench");
                 if (!isEntry)
                 {
