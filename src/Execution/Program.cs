@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Builder.Backends;
 using Builder.LlvmEmit;
@@ -2257,6 +2258,9 @@ internal partial class Program
                 return 1;
             }
 
+            // The program holds our streams, so a harness that stops us (a timeout's SIGTERM) stops it too: otherwise
+            // a hung program would keep the reader of our output waiting after we are gone.
+            using PosixSignalRegistration? onStop = StopChildOnSignal(process: process);
             process.WaitForExit();
             return process.ExitCode;
         }
@@ -2264,6 +2268,30 @@ internal partial class Program
         {
             Console.WriteLine(value: $"Failed to execute {exeFile}: {ex.Message}");
             return 1;
+        }
+    }
+
+    /// <summary>Stops <paramref name="process"/> when this process is asked to stop (SIGTERM), or returns null where
+    /// the signal cannot be handled.</summary>
+    private static PosixSignalRegistration? StopChildOnSignal(Process process)
+    {
+        try
+        {
+            return PosixSignalRegistration.Create(signal: PosixSignal.SIGTERM, handler: _ =>
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // It has ended already.
+                }
+            });
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return null;
         }
     }
 }
