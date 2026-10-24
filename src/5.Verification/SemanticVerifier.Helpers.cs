@@ -2037,9 +2037,53 @@ public sealed partial class SemanticVerifier
 
         string kind = owner is EntityTypeSymbol ? "An entity" : "A record";
         return $"You compared two '{owner.Name}' values with '{op.ToStringRepresentation()}', but '{owner.Name}' " +
-               $"has no '==': its member variable '{missing.Name}' is a '{MemberTypeName(type: missing.Type)}', " +
-               $"which has no '=='. {kind} has '==' when every member variable has one. Write 'routine {owner.Name}.eq(you: " +
+               $"has no '==': {LackingMemberText(missing: missing, protocolName: "Equatable", what: "'=='")}. {kind} " +
+               $"has '==' when every member variable has one. Write 'routine {owner.Name}.eq(you: " +
                $"{owner.Name}) -> Bool' to say when two are equal, or compare the member variables you mean.";
+    }
+
+    /// <summary>
+    /// What a member variable without <paramref name="what"/> (<c>'=='</c>, <c>hash</c>) is, down to the member variable
+    /// that really lacks it: <c>its member variable 'b' is a 'B', which has none: 'b.c.f' is a 'Callable[(), None]',
+    /// which has no '=='</c>. A record or entity lacks it through one of its own member variables, so the path follows
+    /// those until a type that lacks it by itself.
+    /// </summary>
+    internal string LackingMemberText(MemberVariableInfo missing, string protocolName, string what)
+    {
+        var path = new List<MemberVariableInfo> { missing };
+        var seen = new HashSet<string>(comparer: StringComparer.Ordinal);
+        TypeSymbol next = Held(type: missing.Type);
+        while (seen.Add(item: next.FullName) &&
+               MemberVariableWithout(type: next, protocolName: protocolName) is (_, { } inner))
+        {
+            path.Add(item: inner);
+            next = Held(type: inner.Type);
+        }
+
+        string first = Shown(field: missing);
+        if (path.Count == 1)
+        {
+            return $"its member variable '{missing.Name}' is {Article.For(name: first)} '{first}', which has no {what}";
+        }
+
+        MemberVariableInfo last = path[^1];
+        string lastType = Shown(field: last);
+        return $"its member variable '{missing.Name}' is {Article.For(name: first)} '{first}', which has none: " +
+               $"'{string.Join(separator: ".", values: path.Select(selector: f => f.Name))}' is " +
+               $"{Article.For(name: lastType)} '{lastType}', which has no {what}";
+
+        // `A?` is written for an optional member variable, and its own member variables are the `A`'s.
+        static TypeSymbol Held(TypeSymbol type)
+        {
+            return type is { BareName: "Maybe", TypeArguments: [{ } inner] } ? inner : type;
+        }
+
+        static string Shown(MemberVariableInfo field)
+        {
+            return field.Type is { BareName: "Maybe", TypeArguments: [{ } inner] }
+                ? MemberTypeName(type: inner) + "?"
+                : MemberTypeName(type: field.Type) + (field.IsNullable ? "?" : "");
+        }
     }
 
     /// <summary>A member variable's type as its declaration writes it, without modules (a routine type as its

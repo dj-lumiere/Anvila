@@ -772,10 +772,11 @@ public sealed partial class SemanticVerifier
             (string what, string routine) = protocolName == "Equatable"
                 ? ("'=='", $"eq(you: {holder.Name}) -> Bool")
                 : ("hash", "hash(k0: U64, k1: U64) -> U64");
-            string fieldType = missing.Type is EntityTypeSymbol entityField && protocolName == "Hashable"
-                ? $"'{entityField.BareName}', an entity without 'obeys Hashable'"
-                : $"'{MemberTypeName(type: missing.Type)}', which has no {what}";
-            return $"'{holder.Name}' has no {what}{where}: its member variable '{missing.Name}' is a {fieldType}. " +
+            string fieldText = missing.Type is EntityTypeSymbol entityField && protocolName == "Hashable"
+                ? $"its member variable '{missing.Name}' is {Article.For(name: entityField.BareName)} " +
+                  $"'{entityField.BareName}', an entity without 'obeys Hashable'"
+                : LackingMemberText(missing: missing, protocolName: protocolName, what: what);
+            return $"'{holder.Name}' has no {what}{where}: {fieldText}. " +
                    $"Write 'routine {holder.Name}.{routine}' to say " +
                    (protocolName == "Equatable" ? "when two are equal." : "what it hashes.");
         }
