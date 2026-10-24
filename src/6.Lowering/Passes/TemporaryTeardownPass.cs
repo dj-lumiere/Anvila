@@ -623,10 +623,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                                      constructedType: call.ConstructedType,
                                      resolved: call.ResolvedRoutine) &&
                                  !IsRawStoreCall(call: call);
-                var newArgs = call.Arguments
-                                  .Select(selector: a =>
-                                       Visit(e: a, objectPos: argsOwned, spills: spills))
-                                  .ToList();
+                List<Expression> newArgs = VisitArguments(arguments: call.Arguments, argsOwned: argsOwned,
+                    spills: spills);
                 Expression result = call with { Callee = newCallee, Arguments = newArgs };
                 return MaybeSpillTop(e: result, objectPos: objectPos, spills: spills);
             }
@@ -745,14 +743,32 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         bool argsOwned = !RuntimeContract.IsMemberwiseConstruction(constructedType: call.ConstructedType,
                              resolved: call.ResolvedRoutine) &&
                          !IsRawStoreCall(call: call);
-        var newArgs = call.Arguments
-                          .Select(selector: a => Visit(e: a, objectPos: argsOwned, spills: spills))
-                          .ToList();
+        List<Expression> newArgs = VisitArguments(arguments: call.Arguments, argsOwned: argsOwned, spills: spills);
         Expression result = call with
         {
             Callee = m with { Object = newRecv }, Arguments = newArgs
         };
         return MaybeSpillTop(e: result, objectPos: objectPos, spills: spills);
+    }
+
+    /// <summary>
+    /// Visits a call's arguments. An entity made for an argument (<c>keys.add(Keyed(name: "Ada"))</c>) is handed over
+    /// to the routine called, which keeps it or tears it down itself, so it is never torn down here, also inside a
+    /// <c>drop</c> statement, whose own rule covers only the entity the statement throws away.
+    /// </summary>
+    private List<Expression> VisitArguments(List<Expression> arguments, bool argsOwned, List<Spill> spills)
+    {
+        bool droppedEntityTop = _droppedEntityTop;
+        _droppedEntityTop = false;
+        try
+        {
+            return arguments.Select(selector: a => Visit(e: a, objectPos: argsOwned, spills: spills))
+                            .ToList();
+        }
+        finally
+        {
+            _droppedEntityTop = droppedEntityTop;
+        }
     }
 
     /// <summary>Spills <paramref name="e"/> when it sits in a discard/borrow position and is a
