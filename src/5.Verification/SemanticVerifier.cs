@@ -293,9 +293,10 @@ public sealed partial class SemanticVerifier
     /// <summary>Monotonic source of fresh controller identities for <see cref="_sharedHandleIdentity"/>.</summary>
     private int _nextSharedHandleIdentity;
 
-    /// <summary>Tracks (TypeName, ProtocolName) pairs added by implicit marker conformance, excluded from validation.</summary>
-    internal readonly HashSet<(string TypeName, string ProtocolName)>
-        _implicitProtocolConformances = [];
+    /// <summary>Tracks (TypeName, ProtocolName) pairs added by implicit marker conformance, excluded from validation.
+    /// Held by the registry, whose conformance answer for an entity's handle leaves them out.</summary>
+    internal HashSet<(string TypeName, string ProtocolName)> _implicitProtocolConformances =>
+        _registry.ImplicitProtocolConformances;
 
     /// <summary>
     /// AST bodies synthesized for derived operators (ne, lt, le, gt, ge, notcontains).

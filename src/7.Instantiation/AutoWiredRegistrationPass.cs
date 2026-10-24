@@ -228,7 +228,8 @@ internal sealed class AutoWiredRegistrationPass
                 break;
 
             case TypeCategory.Entity:
-                HandleEntityCategory(type: type, existingMemberRoutines: existingMemberRoutines);
+                HandleEntityCategory(type: type, u64Type: bundle.U64Type,
+                    existingMemberRoutines: existingMemberRoutines);
                 break;
 
             case TypeCategory.Choice:
@@ -446,9 +447,13 @@ internal sealed class AutoWiredRegistrationPass
 
         // `Hashable` requires ONLY the keyed `hash(k0, k1)` (what Set/Dict use); there is no
         // 0-arg `hash()` on value types (scalars supply only the keyed form), so field-walking
-        // a 0-arg field hash would be undefined. Register just the keyed hash.
+        // a 0-arg field hash would be undefined. Register just the keyed hash. Its body walks every member
+        // variable's keyed hash, so like `eq` it is written only when every member variable obeys `Hashable`
+        // (a generic definition defers that to its instances), else the record's `obeys Hashable` is a build error
+        // (S702).
         if (!type.IsNone && !isWrapper && u64Type != null &&
-            ObeysProtocol(type: type, protocolName: "Hashable"))
+            ObeysProtocol(type: type, protocolName: "Hashable") &&
+            (type.IsGenericDefinition || EveryMemberVariableHashes(type: type, u64Type: u64Type)))
         {
             MaybeRegisterKeyedHash(owner: type,
                 u64Type: u64Type,
@@ -493,8 +498,18 @@ internal sealed class AutoWiredRegistrationPass
     /// <summary>
     /// Registers the auto-derived member routines for a <see cref="TypeCategory.Entity"/> type.
     /// </summary>
-    private void HandleEntityCategory(TypeSymbol type, List<RoutineInfo> existingMemberRoutines)
+    private void HandleEntityCategory(TypeSymbol type, TypeSymbol? u64Type, List<RoutineInfo> existingMemberRoutines)
     {
+        // An entity that declares `obeys Hashable` gets the keyed hash a record gets, under the same rule: every
+        // member variable hashes.
+        if (u64Type != null && ObeysProtocol(type: type, protocolName: "Hashable") &&
+            (type.IsGenericDefinition || EveryMemberVariableHashes(type: type, u64Type: u64Type)))
+        {
+            MaybeRegisterKeyedHash(owner: type,
+                u64Type: u64Type,
+                existingMemberRoutines: existingMemberRoutines);
+        }
+
         // DECISION (2026-06-14): entities do NOT auto-derive eq either. An entity is an
         // identity/reference type whose logical value is rarely its field tuple (e.g. a
         // collection's value is its elements, not its buffer pointer + counts), so
@@ -965,6 +980,30 @@ internal sealed class AutoWiredRegistrationPass
     }
 
     /// <summary>
+    /// Whether every member variable of <paramref name="type"/> has a keyed <c>hash</c> for the type's own hash to
+    /// call: it obeys <c>Hashable</c>, or it is a value whose type writes <c>hash(k0: U64, k1: U64)</c> itself (the
+    /// numbers hash without naming the protocol). The library's field walk for every type (<c>routine T.hash</c>) doesn't
+    /// count, since it is what is being decided. An entity or a handle counts only through <c>Hashable</c>, which an
+    /// entity's declaration asks for.
+    /// </summary>
+    private bool EveryMemberVariableHashes(TypeSymbol type, TypeSymbol u64Type)
+    {
+        IEnumerable<TypeSymbol> members = type switch
+        {
+            RecordTypeSymbol { MemberVariables: { Count: > 0 } fields } => fields.Select(selector: f => f.Type),
+            EntityTypeSymbol { MemberVariables: { Count: > 0 } fields } => fields.Select(selector: f => f.Type),
+            _ => []
+        };
+        return members.All(predicate: member =>
+            _registry.TypeObeysProtocol(type: member, protocolName: "Hashable") ||
+            member is not EntityTypeSymbol && !IsWrapperType(type: member) &&
+            _registry.LookupMemberRoutineOverload(type: member, memberRoutineName: "hash",
+                argTypes: [u64Type, u64Type]) is { IsSynthesized: false, OwnerType: { } owner } written &&
+            owner.FullName == member.FullName &&
+            written.GenericDefinition is not { OwnerType: GenericParameterTypeSymbol });
+    }
+
+    /// <summary>
     /// Registers the keyed `hash(k0: U64, k1: U64) -> U64` overload if not already defined.
     /// Distinct from the unkeyed `hash()` by parameter count, so both can coexist.
     /// </summary>
@@ -1044,6 +1083,15 @@ internal sealed class AutoWiredRegistrationPass
             EntityTypeSymbol e => e.ImplementedProtocols,
             _ => []
         };
+
+        // An entity a program writes in a language that shares entities gets `eq`/`compare`/`hash` only when its
+        // declaration asks for them: the kind marker `EntityType` and the `Equatable` it obeys are left out.
+        if (_registry.HandleTakenAsMe(type: type) != null)
+        {
+            obeyed = obeyed.Where(predicate: p =>
+                                !_registry.ImplicitProtocolConformances.Contains(item: (type.FullName, p.Name)))
+                           .ToList();
+        }
 
         // Every obeyed protocol + its parent chain. The structural-vs-opt-in split is enforced by the
         // CONFERRAL layer, not here: Assignable/Copyable are auto-conferred (so a value record obeys them

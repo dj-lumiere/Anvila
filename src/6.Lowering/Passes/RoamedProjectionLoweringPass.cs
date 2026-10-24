@@ -126,7 +126,7 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
 
     // The inner routine takes bare entities, so an argument holding a handle (`zs` in `ys == zs`, which
     // becomes `ys.eq(you: zs)` only now) is projected the same way as the receiver: to the entity itself
-    // when the parameter is that entity or an `Accessing`/`Controlling` token over it.
+    // when the parameter is that entity or a `Viewing`/`Modifying` token over it.
     private CallExpression ProjectRoamedArguments(CallExpression call, RoutineInfo routine)
     {
         List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
@@ -143,6 +143,14 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
             Expression value = argument is NamedArgumentExpression namedValue
                 ? namedValue.Value
                 : argument;
+            // An operator's token operand (`ada == ada` hands `you` as the address of the place `ada` is in) is made
+            // from the handle there: the entity's own pointer is its token, so the handle is projected to it.
+            if (value is AddressOfExpression { Target: { ResolvedType: { } heldType } held } &&
+                TypeRegistry.GetRcWrapperBaseName(type: heldType) == RuntimeContract.Roamed)
+            {
+                value = held;
+            }
+
             if (BareEntityOf(type: parameter?.Type) is not { } entity || value.ResolvedType is not { } handleType ||
                 TypeRegistry.GetRcWrapperBaseName(type: handleType) != RuntimeContract.Roamed)
             {
@@ -162,10 +170,19 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
             : call;
     }
 
-    // The bare entity a parameter takes. A token parameter is handed its token by the call itself.
+    // The bare entity a parameter takes: its own type, or the entity a `Viewing`/`Modifying` token parameter
+    // reaches (`you: Viewing[Me]` of an entity's `eq`). The call makes the token from the entity it is handed, so a
+    // handle argument is projected to that entity first, else the token would be made from the handle.
     private static EntityTypeSymbol? BareEntityOf(TypeSymbol? type)
     {
-        return type as EntityTypeSymbol;
+        return type switch
+        {
+            EntityTypeSymbol entity => entity,
+            RecordTypeSymbol { TypeArguments: [EntityTypeSymbol tokenEntity] } token
+                when (token.GenericDefinition ?? token).BareName is RuntimeContract.Viewing
+                    or RuntimeContract.Modifying => tokenEntity,
+            _ => null
+        };
     }
 
     // Build `receiver.control()` : the inner entity, via the Controlling marker-protocol deref (Roamed

@@ -75,14 +75,7 @@ internal sealed class ProtocolConformanceAnalyzer
         }
 
         // Determine the marker protocol name for this type category
-        string? markerName = type.Category switch
-        {
-            TypeCategory.Record => "RecordType",
-            TypeCategory.Entity => "EntityType",
-            TypeCategory.Choice => "ChoiceType",
-            TypeCategory.Flags => "FlagsType",
-            _ => null
-        };
+        string? markerName = TypeRegistry.KindMarkerProtocolName(type: type);
 
         if (markerName == null)
         {
