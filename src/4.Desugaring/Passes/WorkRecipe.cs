@@ -21,6 +21,7 @@ namespace Builder.Desugaring.Passes;
 /// routine __work_N_run(recipe: Addr)
 ///     danger
 ///         var r = recipe
+///         work_wait_released(recipe: r)
 ///         var outcome = __work_N_work(p0: recipe_take[A](recipe: r, slot: 1), p1: ...)
 ///         work_finish[R](recipe: r, outcome: outcome.hijack())
 ///     return
@@ -145,6 +146,15 @@ internal static class WorkRecipe
                     Location: loc),
                 Location: loc)
         };
+
+        // A Work of a list started with the list's `start_now()` / `start_here()` / `start_apart()` is let go only
+        // when every Work of the list is ready: wait for that before reading the arguments.
+        statements.Add(item: new ExpressionStatement(
+            Expression: Call(name: "work_wait_released",
+                typeArguments: null,
+                arguments: [Named(name: "recipe", value: Id(name: "r", loc: loc))],
+                loc: loc),
+            Location: loc));
 
         // The work returns what it came to (`check` over the call chain): a failure stays in the Work and surfaces
         // where the Work is retrieved. The outcome is a local that `work_finish` moves into the task's box.
