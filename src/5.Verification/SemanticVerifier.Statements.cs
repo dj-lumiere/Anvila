@@ -101,6 +101,15 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        if (PresetReachesItself(preset: preset))
+        {
+            ReportError(code: SemanticDiagnosticCode.ModuleGlobalCircularInit,
+                message: $"The preset '{preset.Name}' is computed from itself (through its own value or the presets " +
+                         "it names), so it has no value to start from. Give it a value that does not name it.",
+                location: preset.Location);
+            return;
+        }
+
         string? previousModule = _currentModuleName;
         if (_presetModules.TryGetValue(key: preset, value: out string? presetModule) && presetModule != null)
         {
@@ -130,6 +139,51 @@ public sealed partial class SemanticVerifier
         {
             _currentModuleName = previousModule;
         }
+    }
+
+    /// <summary>Whether the value of <paramref name="preset"/> names the preset itself, directly or through the
+    /// values of the presets of its file that it names.</summary>
+    private bool PresetReachesItself(PresetDeclaration preset)
+    {
+        var byName = new Dictionary<string, PresetDeclaration>(comparer: StringComparer.Ordinal);
+        foreach (PresetDeclaration p in _presetModules.Keys)
+        {
+            if (p.Location.FileName == preset.Location.FileName)
+            {
+                byName[key: p.Name] = p;
+            }
+        }
+
+        var seen = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var pending = new Stack<Expression>();
+        pending.Push(item: preset.Value);
+        while (pending.Count > 0)
+        {
+            bool found = false;
+            AstWalker.WalkExpressions(root: pending.Pop(), visit: e =>
+            {
+                if (e is not IdentifierExpression { Name: var name } ||
+                    !byName.TryGetValue(key: name, value: out PresetDeclaration? named))
+                {
+                    return;
+                }
+
+                if (name == preset.Name)
+                {
+                    found = true;
+                }
+                else if (seen.Add(item: name))
+                {
+                    pending.Push(item: named.Value);
+                }
+            });
+            if (found)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void AnalyzeTypeMembers(List<SyntaxTree.Declaration> members, TypeSymbol? ownerType)

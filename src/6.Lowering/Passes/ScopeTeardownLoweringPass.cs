@@ -1229,6 +1229,14 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// </summary>
     private void HandleEntityHandOff(List<Expression> arguments, RoutineInfo? routine, bool rawStore)
     {
+        // A `try` / `check` over an expression calls the recovery of a routine the builder wrote for it
+        // (`__recover_N`), which reads the caller's locals in place and tears none of them down: the caller still
+        // does (`try xs.sort_by(...)` leaves `xs` the caller's).
+        if (routine?.RecoveryOf is { IsSynthesized: true })
+        {
+            return;
+        }
+
         List<ParamInfo> parameters = routine?.Parameters
                                              .Where(predicate: p => p.Name != "me")
                                              .ToList() ?? [];

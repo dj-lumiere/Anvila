@@ -41,10 +41,50 @@ public static class ModuleGlobalOrder
 
         globals = DeduplicateGlobals(collected: collected);
         deps = ComputeGlobalDependencies(orderedFiles: orderedFiles, globals: globals);
-        order = KahnOrder(deps: deps, n: globals.Count);
+
+        // A global whose initializer reads the global itself (`global A: S64 = A + 1`, or through a routine it
+        // calls) would read it before it holds anything.
+        for (int i = 0; i < globals.Count; i++)
+        {
+            if (deps[index: i].Contains(item: i))
+            {
+                report(SemanticDiagnosticCode.ModuleGlobalCircularInit,
+                    $"The global '{globals[index: i].Name}' reads itself in its initializer, so it would read " +
+                    "itself before it holds anything. Give it an initializer that does not read it.",
+                    globals[index: i].Loc);
+                order = [];
+                return false;
+            }
+        }
+
+        // A global is torn down after every global whose destruct reads it, so a destruct never reads a global that
+        // is gone: a global read by another one's destruct is initialized first (globals are torn down in the
+        // opposite order). Two whose destructs read each other are a cycle like two initializers.
+        // The callers read `deps` as what each initializer reads, so the teardown edges go into a copy.
+        List<HashSet<int>> ordering = deps.Select(selector: d => new HashSet<int>(collection: d))
+                                          .ToList();
+        AddDestructDependencies(orderedFiles: orderedFiles, globals: globals, deps: ordering);
+        order = KahnOrder(deps: ordering, n: globals.Count);
         if (order.Count == globals.Count)
         {
             return true;
+        }
+
+        if (KahnOrder(deps: deps, n: globals.Count).Count == globals.Count)
+        {
+            List<int> ordered = order;
+            List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)> declared = globals;
+            List<string> stuck = Enumerable.Range(start: 0, count: globals.Count)
+                                           .Where(predicate: i => !ordered.Contains(value: i))
+                                           .Select(selector: i => $"'{declared[index: i].Name}'")
+                                           .ToList();
+            report(SemanticDiagnosticCode.ModuleGlobalCircularInit,
+                $"The globals {string.Join(separator: ", ", values: stuck)} read each other in their initializers " +
+                "and destructs, so whichever is torn down first leaves the other's destruct reading a global that is " +
+                "gone. Let the destruct of one of them read none of the others.",
+                globals[index: Enumerable.Range(start: 0, count: globals.Count)
+                                         .First(predicate: i => !ordered.Contains(value: i))].Loc);
+            return false;
         }
 
         List<int> placed = order;
@@ -152,9 +192,84 @@ public static class ModuleGlobalOrder
         return deps;
     }
 
+    /// <summary>Adds to each global's dependencies the globals the <c>destruct</c> of its type reads (and the
+    /// destructs of the entity types it holds as member variables, and the free routines they call).</summary>
+    private static void AddDestructDependencies(List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
+        List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)> globals, List<HashSet<int>> deps)
+    {
+        var nameToIdx = new Dictionary<string, int>(comparer: StringComparer.Ordinal);
+        for (int i = 0; i < globals.Count; i++)
+        {
+            nameToIdx[key: globals[index: i].Name] = i;
+        }
+
+        var routineBodies = new Dictionary<string, Statement>(comparer: StringComparer.Ordinal);
+        var memberTypes = new Dictionary<string, List<string>>(comparer: StringComparer.Ordinal);
+        foreach ((SyntaxTree.Program program, string _) in orderedFiles)
+        {
+            foreach (ISyntaxTreeNode node in program.Declarations)
+            {
+                switch (node)
+                {
+                    case RoutineDeclaration { Body: { } body } r:
+                        routineBodies[key: r.Name] = body;
+                        if (r is { OwnerName: { } ownerName, MemberRoutineName: { } memberName })
+                        {
+                            routineBodies[key: $"{ownerName}.{memberName}"] = body;
+                        }
+
+                        break;
+                    case EntityDeclaration e:
+                        memberTypes[key: e.Name] = e.Members.OfType<VariableDeclaration>()
+                                                    .Where(predicate: v => v.Type != null)
+                                                    .Select(selector: v => v.Type!.Name)
+                                                    .ToList();
+                        foreach (RoutineDeclaration m in e.Members.OfType<RoutineDeclaration>())
+                        {
+                            routineBodies.TryAdd(key: $"{e.Name}.{m.Name}", value: m.Body);
+                        }
+
+                        break;
+                }
+            }
+        }
+
+        for (int i = 0; i < globals.Count; i++)
+        {
+            var seenTypes = new HashSet<string>(comparer: StringComparer.Ordinal);
+            var types = new Queue<string>();
+            types.Enqueue(item: globals[index: i].Type.Name);
+            while (types.Count > 0)
+            {
+                string type = types.Dequeue();
+                if (!seenTypes.Add(item: type))
+                {
+                    continue;
+                }
+
+                if (routineBodies.TryGetValue(key: $"{type}.destruct", value: out Statement? destruct))
+                {
+                    foreach (int j in ComputeSingleGlobalDeps(init: destruct, nameToIdx: nameToIdx,
+                                 routineBodies: routineBodies))
+                    {
+                        if (j != i)
+                        {
+                            deps[index: i].Add(item: j);
+                        }
+                    }
+                }
+
+                foreach (string held in memberTypes.GetValueOrDefault(key: type) ?? [])
+                {
+                    types.Enqueue(item: held);
+                }
+            }
+        }
+    }
+
     /// <summary>BFS over AST expressions from the given initializer; collects indices of globals this
     /// global directly or transitively depends on by following free-routine call bodies one level.</summary>
-    private static HashSet<int> ComputeSingleGlobalDeps(Expression init,
+    private static HashSet<int> ComputeSingleGlobalDeps(object init,
         Dictionary<string, int> nameToIdx, Dictionary<string, Statement> routineBodies)
     {
         var d = new HashSet<int>();

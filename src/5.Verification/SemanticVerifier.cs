@@ -745,6 +745,7 @@ public sealed partial class SemanticVerifier
             new WorkOneThreadChecker(report: ReportError).Check(programs: list);
             new GuardAccessArgumentChecker(report: ReportError).Check(programs: list);
             new WorkCollectedChecker(warn: ReportWarning).Check(programs: list);
+            new MemberKindGateChecker(registry: _registry, report: ReportError).Check(programs: list);
         }
 
         if (!_userBodyCheckMade)

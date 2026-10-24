@@ -88,6 +88,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 if (node is CallExpression call)
                 {
                     CheckSameContainerTwice(call: call);
+                    CheckCallbackReshapes(call: call);
                 }
             });
         }
@@ -671,6 +672,75 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// RF-S625 for a lambda handed to a member routine of a container that can add to or remove from that same
+    /// container (<c>r.sort_by(compare: (a, b) given (alias) => grow(xs: alias, ...))</c> with <c>alias</c> a copy of the
+    /// <c>Retained</c> <c>r</c>): the routine is still working on the container's elements when it calls the lambda,
+    /// so a change of its shape there moves or frees the elements under it.
+    /// </summary>
+    private void CheckCallbackReshapes(CallExpression call)
+    {
+        if (call.Callee is not MemberExpression { Object: var receiver } || call.ResolvedRoutine is not { } callee ||
+            callee.Kind is RoutineKind.CommonRoutine or RoutineKind.Creator ||
+            ShapePath(expr: Unwrap(expr: receiver)) is not { } container)
+        {
+            return;
+        }
+
+        Expression held = Unwrap(expr: receiver);
+        foreach (Expression arg in call.Arguments)
+        {
+            if (Unwrap(expr: arg) is not LambdaExpression lambda)
+            {
+                continue;
+            }
+
+            bool reported = false;
+            AstWalker.WalkExpressions(root: lambda.Body, visit: node =>
+            {
+                if (reported || node is not CallExpression inner)
+                {
+                    return;
+                }
+
+                foreach ((Expression operand, string changer, string rest) in ChangedOperands(call: inner))
+                {
+                    if (ShapePath(expr: operand) is not { } changedRoot)
+                    {
+                        continue;
+                    }
+
+                    string changed = changedRoot + rest;
+                    bool same = AccessPaths.IsPrefixOrEqual(prefix: changed, path: container) ||
+                                AccessPaths.IsPrefixOrEqual(prefix: container, path: changed);
+                    TypeSymbol? a = AliasInner(type: operand.ResolvedType);
+                    TypeSymbol? b = AliasInner(type: held.ResolvedType);
+                    bool alias = a != null && b != null && a.FullName == b.FullName;
+                    if (!same && !alias)
+                    {
+                        continue;
+                    }
+
+                    string how = changer.Length == 0
+                        ? $"hands '{ShownPath(path: changed)}' to a routine value, which may add to or remove from it"
+                        : $"can add to or remove from '{ShownPath(path: changed)}' through '{changer}'";
+                    string which = same
+                        ? $"'{ShownPath(path: container)}'"
+                        : $"'{ShownPath(path: container)}' ('{ShownPath(path: changed)}' and '{ShownPath(path: container)}' " +
+                          $"are both tokens or shared handles on a {b!.Name}, so they may be the same one)";
+                    report(code: SemanticDiagnosticCode.ReshapingDuringIteration,
+                        message:
+                        $"You hand '{callee.Name}' a lambda that {how} while '{callee.Name}' is working on the elements " +
+                        $"of {which}. The change could move or free the elements under it. Make the change before or " +
+                        "after the call.",
+                        location: inner.Location);
+                    reported = true;
+                    return;
+                }
+            });
         }
     }
 
