@@ -206,8 +206,13 @@ public sealed partial class SemanticVerifier
             {
                 // A parameter is a slot like any written one: in Suflae an entity local is passed as its
                 // Roamed handle (the local itself is retyped to it later), so the slot takes that type too.
-                freeParams.Add(item: new ParamInfo(name: name,
-                    type: _typeResolver.RoamInferredSlot(inferred: local.Type)));
+                // An Unbroken is passed by its address, as every routine taking one gets it (SignatureResolver):
+                // a copy would be a second cell, and what the recovered call adds would never reach the caller's.
+                TypeSymbol slot = _typeResolver.RoamInferredSlot(inferred: local.Type);
+                freeParams.Add(item: new ParamInfo(name: name, type: slot)
+                {
+                    IsByReference = slot is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Unbroken }
+                });
             }
         }
 
