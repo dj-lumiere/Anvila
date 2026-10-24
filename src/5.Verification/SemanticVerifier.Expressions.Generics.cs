@@ -532,7 +532,10 @@ public sealed partial class SemanticVerifier
         }
 
         // The routine's kinds and protocols are checked against the type arguments written, as for an inferred call.
-        ValidateRoutineGenericConstraints(routine: routine, typeArgs: typeArgs, location: generic.Location);
+        // The builder writes calls of this shape too (a Work's recipe slots take a token as their type argument), so
+        // the token rule is left to the calls a program writes.
+        ValidateRoutineGenericConstraints(routine: routine, typeArgs: typeArgs, location: generic.Location,
+            checksTokens: false);
         routine = _registry.GetOrCreateRoutineResolution(genericDef: routine,
             typeArguments: typeArgs.ToList());
         return true;

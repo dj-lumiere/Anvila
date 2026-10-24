@@ -79,9 +79,13 @@ public sealed partial class SemanticVerifier
     /// they are validated once fully concrete.
     /// </summary>
     internal void ValidateRoutineGenericConstraints(RoutineInfo routine, List<TypeSymbol> typeArgs,
-        SourceLocation location)
+        SourceLocation location, bool checksTokens = true)
     {
-        ValidateNoTokenRoutineTypeArgument(routine: routine, typeArgs: typeArgs, location: location);
+        if (checksTokens)
+        {
+            ValidateNoTokenRoutineTypeArgument(routine: routine, typeArgs: typeArgs, location: location);
+        }
+
         if (routine.GenericConstraints is not { Count: > 0 } constraints ||
             routine.GenericParameters is not { Count: > 0 } genParams)
         {
