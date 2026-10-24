@@ -737,6 +737,9 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             // record with a non-8-byte member (a nested value-record like Text=24, or i32/i128).
             RecordTypeSymbol r => (ulong)r.SizeBytes(pointerSize: 8),
             EntityTypeSymbol => 8, // heap pointer (Crashable, an entity subclass, included)
+            // A routine value is two pointers (the routine and what it is bound to). Counted as 0, a heap cell made
+            // for one (a Work's recipe argument) was a 0-byte block the 16-byte store overran.
+            RoutineTypeSymbol r => (ulong)r.SizeBytes(pointerSize: 8),
             _ => 0
         };
     }
