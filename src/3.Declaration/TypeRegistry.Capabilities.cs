@@ -631,23 +631,50 @@ public sealed partial class TypeRegistry
     {
         // The handle library code holds an entity a program writes as (HandleTakenAsMe) stands for the entity, so it
         // obeys what the entity obeys: an adapter over it (`WhereEmittable[T, Roamed[Steps]]`) needs its source to be
-        // emittable. Only what the entity's declaration asks for counts, as on the entity a program sees: the kind
-        // marker `EntityType` obeys `Equatable`, yet `==` on an entity a program writes needs its own
-        // `obeys Equatable`, and a record holding the entity can't get a written `eq` without it.
+        // emittable, and `==` on two handles compares the entities.
         if (EntityOfHandleTakenAsMe(type: type) is { } handled &&
-            TypeObeysProtocol(type: handled, protocolName: protocolName, declaredOnly: true))
+            TypeObeysOwnProtocol(type: handled, protocolName: protocolName))
         {
             return true;
         }
 
-        // The entity itself answers the same way: the analysis of a program sees it before its uses become handles.
-        return TypeObeysProtocol(type: type, protocolName: protocolName,
-            declaredOnly: HandleTakenAsMe(type: type) != null);
+        return TypeObeysOwnProtocol(type: type, protocolName: protocolName);
+    }
+
+    /// <summary>Whether <paramref name="type"/> writes its own <c>eq</c> (for <c>Equatable</c>) or its own keyed
+    /// <c>hash(k0: U64, k1: U64)</c> (for <c>Hashable</c>), not one the builder writes or the library's field walk
+    /// for every type.</summary>
+    internal bool WritesOwnValueRoutine(TypeSymbol type, string protocolName)
+    {
+        IEnumerable<RoutineInfo> own = GetMemberRoutinesForType(type: type).Where(predicate: r => !r.IsSynthesized);
+        return protocolName switch
+        {
+            "Equatable" => own.Any(predicate: r => r.Name == "eq"),
+            "Hashable" => own.Any(predicate: r =>
+                r.Name == "hash" && r.Parameters.Count(predicate: p => p.Name != "me") == 2),
+            _ => false
+        };
+    }
+
+    /// <summary>Whether a member variable of type <paramref name="type"/> has what <paramref name="protocolName"/>
+    /// asks for, so the record or entity holding it gets the routine walking its member variables: it obeys the
+    /// protocol, or, for <c>Hashable</c>, it is a value (no entity, handle or token) whose type writes its keyed
+    /// hash (the numbers hash without naming the protocol).</summary>
+    internal bool MemberVariableHasValueRoutine(TypeSymbol type, string protocolName)
+    {
+        if (TypeObeysProtocol(type: type, protocolName: protocolName))
+        {
+            return true;
+        }
+
+        return protocolName == "Hashable" && type is RecordTypeSymbol record &&
+               !RuntimeContract.WrapperTypes.Contains(item: record.GenericDefinition?.Name ?? record.Name) &&
+               !IsEntityKind(type: record) && WritesOwnValueRoutine(type: record, protocolName: protocolName);
     }
 
     /// <summary>The (type, protocol) pairs the builder conferred on a type from its kind (the marker protocol
-    /// <c>RecordType</c>/<c>EntityType</c>/... and what the marker obeys) or from its structure (<c>Copyable</c>), not
-    /// from the declaration's <c>obeys</c> line.</summary>
+    /// <c>RecordType</c>/<c>EntityType</c>/... and what the marker obeys) or from its structure (<c>Copyable</c>,
+    /// <c>Equatable</c>), not from the declaration's <c>obeys</c> line.</summary>
     internal HashSet<(string TypeName, string ProtocolName)> ImplicitProtocolConformances { get; } = [];
 
     /// <summary>The marker protocol every type of <paramref name="type"/>'s kind obeys (<c>RecordType</c>,
@@ -664,10 +691,8 @@ public sealed partial class TypeRegistry
         };
     }
 
-    /// <summary><see cref="TypeObeysProtocol(TypeSymbol, string)"/> for one type. With
-    /// <paramref name="declaredOnly"/>, the kind marker the builder conferred counts only as itself (<c>EntityType</c>),
-    /// and the protocols it obeys only when the declaration asks for them.</summary>
-    private bool TypeObeysProtocol(TypeSymbol type, string protocolName, bool declaredOnly)
+    /// <summary><see cref="TypeObeysProtocol(TypeSymbol, string)"/> for one type, a handle not looked through.</summary>
+    private bool TypeObeysOwnProtocol(TypeSymbol type, string protocolName)
     {
         List<TypeSymbol>? implemented = ImplementedProtocolsWithAmbientFold(type: type);
         if (implemented == null)
@@ -686,15 +711,8 @@ public sealed partial class TypeRegistry
         }
 
         // A conditional conformance (`obeys P when T obeys Q`) that does not hold for this instance confers
-        // neither P nor P's parents, so it is left out before the walk. With declaredOnly, of the protocols the
-        // builder conferred only the kind marker is kept, and only when it is the target itself.
-        string? marker = KindMarkerProtocolName(type: type);
-        implemented = implemented.Where(predicate: p =>
-                                      ConditionalConformanceHolds(type: type, protocolName: p.Name) &&
-                                      (!declaredOnly ||
-                                       !ImplicitProtocolConformances.Contains(item: (type.FullName, p.Name)) ||
-                                       p.Name == marker &&
-                                       ReferenceEquals(objA: CanonicalProtocolDef(t: p), objB: targetDef)))
+        // neither P nor P's parents, so it is left out before the walk.
+        implemented = implemented.Where(predicate: p => ConditionalConformanceHolds(type: type, protocolName: p.Name))
                                  .ToList();
 
         var seen = new HashSet<string>(comparer: StringComparer.Ordinal);

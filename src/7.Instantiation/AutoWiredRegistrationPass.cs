@@ -426,24 +426,11 @@ internal sealed class AutoWiredRegistrationPass
         bool isWrapper = type is RecordTypeSymbol &&
                          WrapperForwardingPass.WrapperTypeNames.Contains(
                              item: (type as RecordTypeSymbol)?.GenericDefinition?.Name ?? type.Name);
-        // DECISION (2026-06-14): records do NOT auto-derive eq / hash. `obeys Equatable`
-        // / `Hashable` on a record is a PROMISE the author fulfils by HAND-WRITING the
-        // memberRoutine — field-delegated synthesis is fragile (breaks when a field type lacks the
-        // memberRoutine, e.g. an Unbroken / lock-flag field) and is semantically wrong for opaque /
-        // container types whose logical value is not their field tuple. Auto eq / hash is
-        // reserved for tuple / choice / flags (simple, unambiguous tag/element compare). The
-        // stdlib's equatable/hashable struct records (Complex, Integer, Decimal, C64/64/128)
-        // already hand-write these. store (below) + represent / diagnose stay auto-derived.
-
-        // `assign` (Assignable) / `copy` (Copyable) are now registered by the declaration-driven
-        // everywhere-derive loop (RegisterEverywhereDeriveMembers) — the `needs P everywhere` rule
-        // read straight from the protocol, opt-in via `obeys P`, replacing this per-protocol
-        // hardcode. A type that must be assignable/copyable declares `obeys Assignable`/`Copyable`.
-
-        // `eq` (Equatable) is now registered by the declaration-driven everywhere-derive loop
-        // (RegisterEverywhereDeriveMembers) — the `needs Equatable everywhere` rule read straight
-        // from the protocol, opt-in + all-members-Equatable, replacing this per-protocol hardcode.
-        // `hash` (Hashable) stays below: its keyed `hash(k0, k1)` form is not a field-walk derive.
+        // `eq` (Equatable) is registered by the declaration-driven everywhere-derive loop
+        // (RegisterEverywhereDeriveMembers): the builder confers `Equatable` on every record and entity whose member
+        // variables all have `==` (ProtocolConformanceAnalyzer.ApplyAutoEquatableConformance), and a hand-written
+        // `eq` wins. `hash` (Hashable) is conferred on a record the same way (an entity's only through
+        // `obeys Hashable`) and registered below: its keyed `hash(k0, k1)` form is not the everywhere field-walk derive.
 
         // `Hashable` requires ONLY the keyed `hash(k0, k1)` (what Set/Dict use); there is no
         // 0-arg `hash()` on value types (scalars supply only the keyed form), so field-walking
@@ -510,11 +497,8 @@ internal sealed class AutoWiredRegistrationPass
                 existingMemberRoutines: existingMemberRoutines);
         }
 
-        // DECISION (2026-06-14): entities do NOT auto-derive eq either. An entity is an
-        // identity/reference type whose logical value is rarely its field tuple (e.g. a
-        // collection's value is its elements, not its buffer pointer + counts), so
-        // field-delegated equality is the wrong default. Entities that want equality declare
-        // `eq` explicitly with the right semantics. (No stdlib entity obeys Equatable.)
+        // `eq` on an entity compares its member variables like a record's (the everywhere-derive loop writes it when
+        // they all have `==`). `===` asks whether two names reach the same entity.
 
         // Synthesize create(field1: T1, ...) -> EntityType for field construction.
         // Always synthesize the all-fields overload unless an exact match already exists,
@@ -1084,19 +1068,10 @@ internal sealed class AutoWiredRegistrationPass
             _ => []
         };
 
-        // An entity a program writes in a language that shares entities gets `eq`/`compare`/`hash` only when its
-        // declaration asks for them: the kind marker `EntityType` and the `Equatable` it obeys are left out.
-        if (_registry.HandleTakenAsMe(type: type) != null)
-        {
-            obeyed = obeyed.Where(predicate: p =>
-                                !_registry.ImplicitProtocolConformances.Contains(item: (type.FullName, p.Name)))
-                           .ToList();
-        }
-
         // Every obeyed protocol + its parent chain. The structural-vs-opt-in split is enforced by the
-        // CONFERRAL layer, not here: Assignable/Copyable are auto-conferred (so a value record obeys them
-        // and gets assign/copy), while Equatable/Comparable/Hashable are NOT auto-conferred (so only a type
-        // that explicitly `obeys` them appears here and gets eq/compare/hash). Marker protocols (RecordType/…)
+        // CONFERRAL layer, not here: Copyable and Equatable are auto-conferred (so a value record obeys them
+        // and gets copy/eq), while Comparable/Hashable are NOT auto-conferred (so only a type
+        // that explicitly `obeys` them appears here and gets compare/hash). Marker protocols (RecordType/…)
         // also appear but are filtered below — they carry no `everywhere` self-constraint.
         var explicitClosure =
             new Dictionary<string, ProtocolTypeSymbol>(comparer: StringComparer.Ordinal);
@@ -1230,11 +1205,18 @@ internal sealed class AutoWiredRegistrationPass
             return;
         }
 
-        // Build the stub from the protocol's declared signature, substituting the self type.
+        // Build the stub from the protocol's declared signature, substituting the self type. On a generic definition
+        // `Me` is the definition over its own parameters (`Pair[T]`, not the bare `Pair`), so `you: Viewing[Me]`
+        // becomes `Viewing[Pair[S64]]` when the routine is made concrete for `Pair[S64]`.
+        TypeSymbol self = type is { IsGenericDefinition: true, GenericParameters: { Count: > 0 } ownParams }
+            ? _registry.GetOrCreateResolution(genericDef: type,
+                typeArguments: ownParams.Select(selector: p => (TypeSymbol)new GenericParameterTypeSymbol(name: p))
+                                        .ToList())
+            : type;
         var parameters = new List<ParamInfo>();
         for (int i = 0; i < member.ParameterTypes.Count; i++)
         {
-            TypeSymbol pt = _registry.ReplaceProtocolSelf(type: member.ParameterTypes[index: i], owner: type);
+            TypeSymbol pt = _registry.ReplaceProtocolSelf(type: member.ParameterTypes[index: i], owner: self);
             string pn = i < member.ParameterNames.Count
                 ? member.ParameterNames[index: i]
                 : $"arg{i}";

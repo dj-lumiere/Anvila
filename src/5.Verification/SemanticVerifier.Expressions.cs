@@ -1747,9 +1747,9 @@ public sealed partial class SemanticVerifier
                 : string.Join(separator: " or ",
                     values: requiredProtocols.Select(selector: p => $"'{p}'"));
             ReportError(code: SemanticDiagnosticCode.BinaryOperatorNotFound,
-                message:
-                $"Operator '{binary.Operator.ToStringRepresentation()}' is not defined for " +
-                $"'{operatorReceiverType.Name}': the type must obey {protoText}.",
+                message: MissingEqualityMessage(type: operatorReceiverType, op: binary.Operator) ??
+                         $"Operator '{binary.Operator.ToStringRepresentation()}' is not defined for " +
+                         $"'{operatorReceiverType.Name}': the type must obey {protoText}.",
                 location: binary.Location);
             return true;
         }

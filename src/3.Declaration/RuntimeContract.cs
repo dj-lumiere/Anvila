@@ -515,6 +515,9 @@ public static class RuntimeContract
     /// <summary>Unbroken value wrapper.</summary>
     public const string Unbroken = "Unbroken";
 
+    /// <summary>The optional value <c>T?</c>.</summary>
+    public const string Maybe = "Maybe";
+
     /// <summary>All wrapper types recognized for layout/dispatch. Mirrors WrapperForwardingPass.WrapperTypes
     /// and LlvmEmitter.WrapperTypeNames.</summary>
     public static readonly IReadOnlySet<string> WrapperTypes =

@@ -2015,10 +2015,50 @@ public sealed partial class SemanticVerifier
         if (!SupportsOperator(type: left, op: op))
         {
             ReportError(code: SemanticDiagnosticCode.OrderingNotSupported,
-                message:
-                $"Type '{left.Name}' does not support comparison operator '{op.ToStringRepresentation()}'.",
+                message: MissingEqualityMessage(type: left, op: op) ??
+                         $"Type '{left.Name}' does not support comparison operator '{op.ToStringRepresentation()}'.",
                 location: location);
         }
+    }
+
+    /// <summary>
+    /// The message for <c>==</c> / <c>!=</c> on a record or entity that has no <c>==</c> because a member variable has
+    /// none: it names that member variable and its type. Null for any other operator or type, or when every member
+    /// variable has <c>==</c>.
+    /// </summary>
+    private string? MissingEqualityMessage(TypeSymbol type, BinaryOperator op)
+    {
+        if (op is not (BinaryOperator.Equal or BinaryOperator.NotEqual) ||
+            MemberVariableWithout(type: type, protocolName: "Equatable") is not ({ } owner, { } missing))
+        {
+            return null;
+        }
+
+        string kind = owner is EntityTypeSymbol ? "entity" : "record";
+        return $"You compared two '{owner.Name}' values with '{op.ToStringRepresentation()}', but '{owner.Name}' " +
+               $"has no '==': its member variable '{missing.Name}' is a '{missing.Type.Name}', which has no '=='. " +
+               $"A {kind} has '==' when every member variable has one. Write 'routine {owner.Name}.eq(you: " +
+               $"{owner.Name}) -> Bool' to say when two are equal, or compare the member variables you mean.";
+    }
+
+    /// <summary>The record or entity <paramref name="type"/> stands for (the entity a program's handle holds) and its
+    /// first member variable whose type lacks what <paramref name="protocolName"/> asks for (<c>==</c> for
+    /// <c>Equatable</c>, a hash for <c>Hashable</c>), or null when every one has it.</summary>
+    internal (TypeSymbol Owner, MemberVariableInfo Field)? MemberVariableWithout(TypeSymbol type, string protocolName)
+    {
+        TypeSymbol owner = _registry.EntityOfHandleTakenAsMe(type: type) ?? type;
+        List<MemberVariableInfo> fields = owner switch
+        {
+            VariantTypeSymbol or ChoiceTypeSymbol or FlagsTypeSymbol => [],
+            RecordTypeSymbol record => record.MemberVariables,
+            EntityTypeSymbol entity => entity.MemberVariables,
+            _ => []
+        };
+        MemberVariableInfo? missing = fields.FirstOrDefault(predicate: f =>
+            !_registry.MemberVariableHasValueRoutine(type: f.Type, protocolName: protocolName));
+        return missing == null
+            ? null
+            : (owner, missing);
     }
 
     /// <summary>

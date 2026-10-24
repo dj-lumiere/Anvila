@@ -12,6 +12,10 @@ internal sealed class ProtocolConformanceAnalyzer
 {
     private const string CopyableProtocol = "Copyable";
 
+    private const string EquatableProtocol = "Equatable";
+
+    private const string HashableProtocol = "Hashable";
+
     private readonly SemanticVerifier _sa;
 
     internal ProtocolConformanceAnalyzer(SemanticVerifier sa)
@@ -52,12 +56,14 @@ internal sealed class ProtocolConformanceAnalyzer
         // * Copyable is STRUCTURAL: placed on plain-bits values and cascaded over composition by the two passes
         //   below. Whether `=` copies a value is not a protocol at all: TypeRegistry.IsCopiedByAssignment
         //   decides it from the type's kind (a record owning no entity, not a token).
-        // * Equatable/Comparable/Hashable are SEMANTIC (opt-in): equality/ordering is an assertion, so they
-        //   are NOT auto-conferred — the generic `ApplyEverywhereConformance` is deliberately NOT run, so a
-        //   plain value record does not silently gain `==`/`<`. The everywhere-derive loop registers their
-        //   derives ONLY for a type that explicitly declares `obeys P`.
+        // * Equatable is STRUCTURAL too: `==` compares values, so every record and entity whose member variables all
+        //   have `==` gets it (ApplyAutoEquatableConformance), and a hand-written `eq` wins. Hashable is structural
+        //   for records the same way, opt-in for entities (an entity's value changes under a Set/Dict that keys on it).
+        // * Comparable is opt-in: an order is a choice. The everywhere-derive loop registers its derives ONLY for a
+        //   type that explicitly declares `obeys Comparable`.
         ApplyAutoCopyableConformance();
         ApplyEverywhereConformance();
+        ApplyAutoEquatableConformance();
     }
 
     /// <summary>
@@ -118,9 +124,9 @@ internal sealed class ProtocolConformanceAnalyzer
         }
     }
 
-    /// <summary>The STRUCTURAL everywhere-protocols that are auto-conferred (value/memory semantics). The
-    /// SEMANTIC everywhere-protocols (Equatable/Comparable/Hashable) are opt-in and deliberately excluded —
-    /// a plain value record must not silently gain equality/ordering. Keyed by bare protocol name.</summary>
+    /// <summary>The everywhere-protocols this generic pass confers (value/memory semantics). Equatable
+    /// and Hashable have their own pass (<see cref="ApplyAutoEquatableConformance"/>), and Comparable is opt-in.
+    /// Keyed by bare protocol name.</summary>
     private static readonly HashSet<string> _autoConferredEverywhereProtocols =
         new(comparer: StringComparer.Ordinal) { CopyableProtocol };
 
@@ -141,11 +147,9 @@ internal sealed class ProtocolConformanceAnalyzer
         var everywhereProtocols = new List<ProtocolTypeSymbol>();
         foreach (TypeSymbol type in _sa._registry.GetAllTypes())
         {
-            // Only the STRUCTURAL everywhere-protocol (Copyable) is auto-conferred here. The
-            // SEMANTIC ones (Equatable/Comparable/Hashable) carry the same `needs P everywhere` self-
-            // constraint but are OPT-IN — conferring them structurally would give a plain value record
-            // silent `==`/`<`. Their derives attach only on an explicit `obeys P` (the everywhere-derive
-            // loop reads the declared conformance).
+            // Only Copyable is conferred here. Equatable and Hashable have their own pass, and Comparable carries
+            // the same `needs P everywhere` self-constraint but is OPT-IN: its derive attaches only on an
+            // explicit `obeys Comparable` (the everywhere-derive loop reads the declared conformance).
             if (type is ProtocolTypeSymbol proto &&
                 ProtocolHasEverywhereSelfConstraint(proto: proto) &&
                 _autoConferredEverywhereProtocols.Contains(item: (proto.GenericDefinition ?? proto)
@@ -296,6 +300,202 @@ internal sealed class ProtocolConformanceAnalyzer
         record.ConditionalObeys[key: CopyableProtocol] = conditions;
         var merged = new List<TypeSymbol>(collection: existing) { copyable };
         _sa._implicitProtocolConformances.Add(item: (type.FullName, copyable.Name));
+        UpdateTypeProtocols(type: type, protocols: merged);
+    }
+
+    /// <summary>
+    /// Places <c>Equatable</c> on every record and entity that has <c>==</c>, and <c>Hashable</c> on every record that
+    /// hashes: one that writes its own <c>eq</c> / keyed <c>hash</c>, or one whose member variables all have it (the
+    /// builder then writes the routine walking them in order). An entity hashes only when its declaration says
+    /// <c>obeys Hashable</c>: its member variables can change while a Set or Dict keys on it. A generic definition
+    /// gets the protocol on the condition that each parameter a member variable holds has it too
+    /// (<c>Equatable when T obeys Equatable</c>). Runs to a fixed point, since a member variable's type may be one
+    /// that only gets the protocol here. A type with no member variables, a variant, a handle or token, and a choice
+    /// or flags type (its kind marker gives it both) are left as they are.
+    /// </summary>
+    private void ApplyAutoEquatableConformance()
+    {
+        ApplyAutoValueConformance(protocolName: EquatableProtocol, entities: true);
+        ApplyAutoValueConformance(protocolName: HashableProtocol, entities: false);
+    }
+
+    private void ApplyAutoValueConformance(string protocolName, bool entities)
+    {
+        if (_sa._registry.LookupType(name: protocolName) is not ProtocolTypeSymbol protocol)
+        {
+            return;
+        }
+
+        List<TypeSymbol> candidates = _sa._registry.GetTypesWithMemberRoutines()
+                                         .Where(predicate: t => IsValueProtocolCandidate(type: t) &&
+                                                                (entities || t is not EntityTypeSymbol))
+                                         .Where(predicate: t =>
+                                              !_sa._registry.TypeObeysProtocol(type: t, protocolName: protocolName))
+                                         .ToList();
+
+        // A hand-written `eq` / keyed `hash` gives the protocol whatever the member variables are.
+        foreach (TypeSymbol type in candidates.Where(predicate: t =>
+                                                   _sa._registry.WritesOwnValueRoutine(type: t,
+                                                       protocolName: protocolName))
+                                              .ToList())
+        {
+            ConferValueProtocol(type: type, protocol: protocol, conditions: null);
+            candidates.Remove(item: type);
+        }
+
+        bool changed = true;
+        while (changed && candidates.Count > 0)
+        {
+            changed = false;
+            foreach (TypeSymbol type in candidates.ToList())
+            {
+                List<(string ParamName, string ProtocolName)>? conditions =
+                    ValueProtocolConditions(type: type, protocolName: protocolName);
+                if (conditions == null)
+                {
+                    continue;
+                }
+
+                ConferValueProtocol(type: type, protocol: protocol,
+                    conditions: type.IsGenericDefinition ? conditions : null);
+                candidates.Remove(item: type);
+                changed = true;
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a kind that gets <c>==</c> (and, for a record, a hash) from its
+    /// member variables: a plain record or an entity, not a variant, choice, flags, crashable, tuple, handle or
+    /// token.</summary>
+    internal static bool IsValueProtocolCandidate(TypeSymbol type)
+    {
+        return type switch
+        {
+            VariantTypeSymbol or ChoiceTypeSymbol or FlagsTypeSymbol or CrashableTypeSymbol or TupleTypeSymbol => false,
+            // `Maybe[T]` keeps a value slot that holds nothing meaningful while it is absent, and `Unbroken[T]` is
+            // read only through its atomic routines, so a walk over their member variables would compare or hash
+            // what is not their value.
+            RecordTypeSymbol record => !Wrappers.IsWrapperType(type: record) &&
+                                       (record.GenericDefinition?.Name ?? record.Name) is var name &&
+                                       !RuntimeContract.WrapperTypes.Contains(item: name) &&
+                                       name is not (RuntimeContract.Maybe or RuntimeContract.Unbroken),
+            EntityTypeSymbol => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// The conditions under which every member variable of <paramref name="type"/> has the protocol, or null when
+    /// one has none. A concrete type has no conditions (an empty list). In a generic definition, a member variable of
+    /// a parameter's type, or of a type built from parameters whose definition has the protocol, adds those
+    /// parameters.
+    /// </summary>
+    private List<(string ParamName, string ProtocolName)>? ValueProtocolConditions(TypeSymbol type,
+        string protocolName)
+    {
+        List<MemberVariableInfo> fields = type switch
+        {
+            RecordTypeSymbol r => r.MemberVariables,
+            EntityTypeSymbol e => e.MemberVariables,
+            _ => []
+        };
+        if (fields.Count == 0)
+        {
+            return null;
+        }
+
+        var conditions = new List<(string ParamName, string ProtocolName)>();
+        return fields.All(predicate: field => MemberTypeHas(type: field.Type, protocolName: protocolName,
+            genericDefinition: type.IsGenericDefinition, conditions: conditions))
+            ? conditions
+            : null;
+    }
+
+    /// <summary>
+    /// Whether a member variable of type <paramref name="type"/> has the protocol. A type built from no generic
+    /// parameter is asked directly. In a generic definition, a parameter adds itself to
+    /// <paramref name="conditions"/>, and a type built from parameters (<c>List[T]</c>) needs its definition to
+    /// have the protocol and each type argument to have it in turn.
+    /// </summary>
+    private bool MemberTypeHas(TypeSymbol type, string protocolName, bool genericDefinition,
+        List<(string ParamName, string ProtocolName)> conditions)
+    {
+        var parameters = new List<string>();
+        CollectGenericParameters(type: type, into: parameters);
+        if (parameters.Count == 0)
+        {
+            return type.Category == TypeCategory.ConstGenericValue ||
+                   _sa._registry.MemberVariableHasValueRoutine(type: type, protocolName: protocolName);
+        }
+
+        if (!genericDefinition)
+        {
+            return false;
+        }
+
+        if (type is GenericParameterTypeSymbol parameter)
+        {
+            if (conditions.All(predicate: c => c.ParamName != parameter.Name))
+            {
+                conditions.Add(item: (parameter.Name, protocolName));
+            }
+
+            return true;
+        }
+
+        TypeSymbol definition = type switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } recordDef } => recordDef,
+            EntityTypeSymbol { GenericDefinition: { } entityDef } => entityDef,
+            _ => type
+        };
+        return !RuntimeContract.WrapperTypes.Contains(item: definition.Name) &&
+               _sa._registry.TypeObeysProtocol(type: definition, protocolName: protocolName) &&
+               (type.TypeArguments ?? []).All(predicate: argument => MemberTypeHas(type: argument,
+                   protocolName: protocolName, genericDefinition: true, conditions: conditions));
+    }
+
+    /// <summary>The generic parameters <paramref name="type"/> is built from, in order.</summary>
+    private static void CollectGenericParameters(TypeSymbol type, List<string> into)
+    {
+        if (type is GenericParameterTypeSymbol parameter)
+        {
+            if (!into.Contains(item: parameter.Name))
+            {
+                into.Add(item: parameter.Name);
+            }
+
+            return;
+        }
+
+        foreach (TypeSymbol argument in type.TypeArguments ?? [])
+        {
+            CollectGenericParameters(type: argument, into: into);
+        }
+    }
+
+    /// <summary>Adds <paramref name="protocol"/> to <paramref name="type"/>'s protocols as one the builder conferred,
+    /// under <paramref name="conditions"/> when it is a generic definition.</summary>
+    private void ConferValueProtocol(TypeSymbol type, ProtocolTypeSymbol protocol,
+        List<(string ParamName, string ProtocolName)>? conditions)
+    {
+        if (conditions is { Count: > 0 })
+        {
+            Dictionary<string, List<(string ParamName, string ProtocolName)>> map = type switch
+            {
+                RecordTypeSymbol r => r.ConditionalObeys ??=
+                    new Dictionary<string, List<(string ParamName, string ProtocolName)>>(
+                        comparer: StringComparer.Ordinal),
+                EntityTypeSymbol e => e.ConditionalObeys ??=
+                    new Dictionary<string, List<(string ParamName, string ProtocolName)>>(
+                        comparer: StringComparer.Ordinal),
+                _ => throw new InvalidOperationException(message: $"'{type.Name}' carries no protocols")
+            };
+            map[key: protocol.Name] = conditions;
+        }
+
+        var merged = new List<TypeSymbol>(collection: GetImplementedProtocols(type: type)) { protocol };
+        _sa._implicitProtocolConformances.Add(item: (type.FullName, protocol.Name));
         UpdateTypeProtocols(type: type, protocols: merged);
     }
 

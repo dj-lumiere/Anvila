@@ -517,6 +517,14 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
+        // A record or entity has `==` and a hash from the builder's conferral (answered above: its member variables
+        // all have them, an entity's hash only by `obeys Hashable`) or from its own `eq` / keyed `hash`. The
+        // library's field walk for every type (`routine T.eq`, `routine T.hash`) doesn't count by itself.
+        if (ValueProtocolByOwnRoutine(type: type, protocolName: protocolName) is { } byOwnRoutine)
+        {
+            return byOwnRoutine;
+        }
+
         // STRUCTURAL conformance (the type has all of the protocol's required member routines) is the
         // SA-only fallback the registry cannot compute.
         List<TypeSymbol>? implementedProtocols = type switch
@@ -534,6 +542,27 @@ public sealed partial class SemanticVerifier
         }
 
         return false;
+    }
+
+    /// <summary>For <c>Equatable</c> / <c>Hashable</c> asked of a record or entity (or the handle a program's entity
+    /// is held by) that the builder did not confer it on: whether the type writes its own <c>eq</c> / keyed
+    /// <c>hash</c>. Null for any other protocol or type.</summary>
+    private bool? ValueProtocolByOwnRoutine(TypeSymbol type, string protocolName)
+    {
+        if (protocolName is not ("Equatable" or "Hashable") ||
+            (_registry.EntityOfHandleTakenAsMe(type: type) ?? type) is not { } owner ||
+            !Declaration.ProtocolConformanceAnalyzer.IsValueProtocolCandidate(type: owner))
+        {
+            return null;
+        }
+
+        TypeSymbol definition = owner switch
+        {
+            RecordTypeSymbol { GenericDefinition: { } recordDef } => recordDef,
+            EntityTypeSymbol { GenericDefinition: { } entityDef } => entityDef,
+            _ => owner
+        };
+        return _registry.WritesOwnValueRoutine(type: definition, protocolName: protocolName);
     }
 
     /// <summary>
@@ -728,6 +757,29 @@ public sealed partial class SemanticVerifier
         string where = parameterName.StartsWith(value: "__", comparisonType: StringComparison.Ordinal)
             ? ""
             : $" (required of '{parameterName}')";
+        TypeSymbol owner = _registry.EntityOfHandleTakenAsMe(type: type) ?? type;
+        if (protocolName == "Hashable" && owner is EntityTypeSymbol &&
+            ValueProtocolByOwnRoutine(type: type, protocolName: protocolName) == false)
+        {
+            return $"'{owner.Name}' is an entity without 'obeys Hashable'{where}, so it can't be a Set element or a " +
+                   $"Dict key: its member variables can change while the Set or Dict holds it. Add 'obeys Hashable' " +
+                   $"under 'entity {owner.Name}' to hash it by its member variables, and leave them unchanged while it is a key.";
+        }
+
+        if (protocolName is "Equatable" or "Hashable" &&
+            MemberVariableWithout(type: type, protocolName: protocolName) is ({ } holder, { } missing))
+        {
+            (string what, string routine) = protocolName == "Equatable"
+                ? ("'=='", $"eq(you: {holder.Name}) -> Bool")
+                : ("hash", "hash(k0: U64, k1: U64) -> U64");
+            string fieldType = missing.Type is EntityTypeSymbol entityField && protocolName == "Hashable"
+                ? $"'{entityField.BareName}', an entity without 'obeys Hashable'"
+                : $"'{missing.Type.Name}', which has no {what}";
+            return $"'{holder.Name}' has no {what}{where}: its member variable '{missing.Name}' is a {fieldType}. " +
+                   $"Write 'routine {holder.Name}.{routine}' to say " +
+                   (protocolName == "Equatable" ? "when two are equal." : "what it hashes.");
+        }
+
         return $"'{type.Name}' does not obey '{protocolName}'{where}{ProtocolShortfall(type: type, protocolName: protocolName)}";
     }
 
