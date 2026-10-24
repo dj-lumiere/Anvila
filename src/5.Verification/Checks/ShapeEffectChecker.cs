@@ -45,6 +45,11 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
     private readonly Dictionary<RoutineDeclaration, HashSet<string>> _reshapeEffects =
         new(comparer: ReferenceEqualityComparer.Instance);
 
+    /// <summary>The containers each token variable of the routine being checked is on (<c>var w = xs.view()</c> is on
+    /// <c>xs</c>, a token a routine gives back is on every container handed to it that it may come from). Going through
+    /// the token is going through those containers, so their shape stays still too.</summary>
+    private readonly Dictionary<string, List<string>> _tokenSources = new(comparer: StringComparer.Ordinal);
+
     /// <summary>A container whose shape must stay still: its access path, its type, and why.</summary>
     private sealed record ShapeGuard(string Path, TypeSymbol? Type, bool IsLoop)
     {
@@ -82,6 +87,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
 
         foreach (RoutineDeclaration routine in userPrograms.SelectMany(selector: EnumerateRoutines))
         {
+            _tokenSources.Clear();
             CheckStatementShapes(stmt: routine.Body, guards: [], preceding: []);
             AstWalker.Walk(root: routine.Body, visit: node =>
             {
@@ -431,6 +437,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 {
                     CheckStatementShapes(stmt: s, guards: current, preceding: seen);
                     seen.Add(item: s);
+                    NoteTokenSources(stmt: s);
                     // A token on an element held in a variable keeps the container's shape still to the block's end.
                     if (HeldElementGuard(stmt: s) is { } held)
                     {
@@ -482,6 +489,15 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 CheckOwnExpressions(exprs: access.Targets.Select(selector: t => t.Target).ToList(), guards: guards);
                 // A block that opens several targets checked that they are different entities.
                 List<(string, string)> added = DistinctPairs(access: access).Where(predicate: _distinct.Add).ToList();
+                // `viewing xs as w`: the token is on `xs` for the block.
+                foreach (AccessTarget target in access.Targets)
+                {
+                    if (target.HasAlias && ShapePath(expr: target.Target) is { } on)
+                    {
+                        _tokenSources[key: target.Name] = Through(path: on);
+                    }
+                }
+
                 CheckStatementShapes(stmt: access.Body, guards: guards, preceding: []);
                 foreach ((string, string) pair in added)
                 {
@@ -494,6 +510,75 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 CheckOwnExpressions(exprs: OwnExpressions(stmt: stmt), guards: guards);
                 return;
         }
+    }
+
+    /// <summary>Notes the containers a token variable is on when <paramref name="stmt"/> declares one.</summary>
+    private void NoteTokenSources(Statement stmt)
+    {
+        if (stmt is not DeclarationStatement { Declaration: VariableDeclaration { Name: var name, Initializer: { } init } })
+        {
+            return;
+        }
+
+        List<string> sources = IsToken(type: init.ResolvedType) ? TokenSourcesOf(init: init) : [];
+        if (sources.Count > 0)
+        {
+            _tokenSources[key: name] = sources;
+        }
+        else
+        {
+            _tokenSources.Remove(key: name);
+        }
+    }
+
+    private static bool IsToken(TypeSymbol? type)
+    {
+        return type?.BareName is "Viewing" or "Modifying";
+    }
+
+    /// <summary>The containers a token is on: the one it is taken from (<c>xs.view()</c>), or every container handed to
+    /// the routine that gives it back (its arguments and receiver of the same kind), each seen through the tokens it is
+    /// itself reached by.</summary>
+    private List<string> TokenSourcesOf(Expression init)
+    {
+        var sources = new List<string>();
+        if (ShapePath(expr: init) is { } direct)
+        {
+            sources.AddRange(collection: Through(path: direct));
+            return sources;
+        }
+
+        if (init is not CallExpression call || AliasInner(type: init.ResolvedType) is not { } inner)
+        {
+            return sources;
+        }
+
+        IEnumerable<Expression> operands = call.Arguments.Select(selector: Unwrap);
+        if (call.Callee is MemberExpression { Object: var receiver })
+        {
+            operands = operands.Prepend(element: receiver);
+        }
+
+        foreach (Expression operand in operands)
+        {
+            TypeSymbol? held = AliasInner(type: operand.ResolvedType) ?? operand.ResolvedType;
+            if (held?.FullName == inner.FullName && ShapePath(expr: operand) is { } path)
+            {
+                sources.AddRange(collection: Through(path: path));
+            }
+        }
+
+        return sources;
+    }
+
+    /// <summary>The containers <paramref name="path"/> reaches: itself, or, when it starts at a token variable, the
+    /// containers that token is on.</summary>
+    private List<string> Through(string path)
+    {
+        string root = RootName(path: path);
+        return _tokenSources.TryGetValue(key: root, value: out List<string>? sources)
+            ? sources.Select(selector: s => s + path[root.Length..]).ToList()
+            : [path];
     }
 
     private static List<Expression> OwnExpressions(Statement stmt)
@@ -670,6 +755,18 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     {
                         ReportShapeChange(guard: g, attempt: change, why: same, location: call.Location);
                     }
+                }
+                else if (path != null && callee.Length > 0 && _tokenSources.ContainsKey(key: RootName(path: g.Path)) &&
+                         Through(path: g.Path).FirstOrDefault(predicate: source =>
+                             AccessPaths.IsPrefixOrEqual(prefix: path, path: source)) is { } reached)
+                {
+                    // The guarded name is a token: going through it goes through the container it is on.
+                    string attempt = call.Callee is MemberExpression { Object: var r } && ReferenceEquals(objA: r, objB: operand)
+                        ? $"call '{shown}.{callee}()'"
+                        : $"pass '{shown}' to '{callee}'";
+                    ReportShapeChange(guard: g, attempt: attempt,
+                        why: $"'{g.Shown}' is a token on '{ShownPath(path: reached)}', and '{callee}' can add to or remove from it",
+                        location: call.Location);
                 }
             }
         }
