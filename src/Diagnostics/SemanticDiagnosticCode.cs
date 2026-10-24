@@ -852,8 +852,9 @@ public enum SemanticDiagnosticCode
     /// no longer points at a live object.</summary>
     TokenUsedAfterSourceChanged = 643,
 
-    /// <summary>A lazy iterable that points at the collection it was made from (`xs.where(...)`) is kept in a variable,
-    /// a field, or returned. It is used in the statement that makes it (an `each`, a terminal call, an argument).</summary>
+    /// <summary>An emitter or adapter that points at the container it walks (`xs.emitter()`, `xs.where(...)`) is kept in
+    /// a field or returned. It is a token on the container's elements: a local variable may hold it, nothing that
+    /// outlives the container may.</summary>
     SourceIterableKept = 644,
 
     /// <summary>A generic routine whose type argument appears only in its result (<c>x.to()</c>) is called where
