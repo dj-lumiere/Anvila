@@ -2215,10 +2215,19 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Runs an already-built native executable, forwarding stdin and faithfully draining stdout/stderr
-    /// (UTF-8), and returns its exit code. Factored out of <see cref="BuildAndRun"/> so the daemon client
-    /// can run the exe locally after a warm build performed the compile in the daemon process.
+    /// Runs an already-built native executable on this process's own standard input, output and error, and returns
+    /// its exit code. Factored out of <see cref="BuildAndRun"/> so the daemon client can run the exe locally after a
+    /// warm build performed the compile in the daemon process.
     /// </summary>
+    /// <remarks>
+    /// The program writes straight to the streams it inherits, never through a relay of ours: two relays (one per
+    /// stream) give a reader that merges the streams the program's output and its crash report in whichever order
+    /// the relays happen to run, so a crash report could come out before what the program showed first, although
+    /// the program flushes its output before the report. Writing to the inherited handles keeps the order the
+    /// program wrote in, passes its UTF-8 bytes through untouched (no decoding in between), and leaves what a hung
+    /// or crashed program printed where a harness timeout can read it. Standard input is inherited the same way,
+    /// so nothing of ours waits on it.
+    /// </remarks>
     private static int RunExecutable(string exeFile, bool showBuildStages)
     {
         if (showBuildStages)
@@ -2227,22 +2236,16 @@ internal partial class Program
             Console.WriteLine(value: "=== EXECUTION ===");
         }
 
-        bool stdinIsPiped = Console.IsInputRedirected;
+        // What we wrote so far comes before what the program writes.
+        Console.Out.Flush();
+        Console.Error.Flush();
         var psi = new ProcessStartInfo
         {
             FileName = Path.GetFullPath(path: exeFile),
             UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = stdinIsPiped,
-            // RF programs write UTF-8 (rf_runtime_init sets SetConsoleOutputCP(65001) on
-            // Windows and stdlib paths encode every Text via UTF-8). Without these explicit
-            // encodings, .NET's StreamReader defaults to the parent's Console.OutputEncoding
-            // (system ACP — CP949 / CP1252 / etc. depending on locale) and rewrites every
-            // non-ACP byte as `?`, garbling all non-ASCII output (Korean, emoji, accented
-            // Latin, …). Setting these to UTF-8 makes the readers byte-faithful.
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
+            RedirectStandardOutput = false,
+            RedirectStandardError = false,
+            RedirectStandardInput = false
         };
 
         try
@@ -2254,39 +2257,6 @@ internal partial class Program
                 return 1;
             }
 
-            // Forward our stdin to the child CONCURRENTLY — never synchronously before draining
-            // the child's output. When this process's own stdin is a redirected pipe that never
-            // reaches EOF (the common in-harness / CI case), a synchronous CopyTo blocks forever:
-            // it waits for our stdin to end while the child fills its stdout pipe with nobody
-            // draining it, so both sides wedge (the long-standing "buildandrun stalls in harness"
-            // bug). On a background task the copy can't stall the output drain; it ends when our
-            // stdin closes or the child's stdin pipe does. It's a background thread, so a copy that
-            // never completes (parent stdin held open) does not keep the process alive.
-            if (stdinIsPiped)
-            {
-                _ = Task.Run(action: () =>
-                {
-                    try
-                    {
-                        Console.OpenStandardInput()
-                               .CopyTo(destination: process.StandardInput.BaseStream);
-                        process.StandardInput.Close();
-                    }
-                    catch
-                    {
-                        // Child exited / its stdin pipe closed — nothing left to forward.
-                    }
-                });
-            }
-
-            // Relay stdout and stderr CONCURRENTLY and as they arrive. Reading them sequentially
-            // deadlocks whenever the child fills the OS stderr pipe buffer while we are still blocked
-            // on stdout. Relaying as the output arrives (not once the child exits) keeps an interactive
-            // program's output live, and leaves what a hung or crashed program printed in our output,
-            // where a harness timeout can read it.
-            Task stdoutTask = RelayAsync(source: process.StandardOutput, target: Console.Out);
-            Task stderrTask = RelayAsync(source: process.StandardError, target: Console.Error);
-            Task.WaitAll(stdoutTask, stderrTask);
             process.WaitForExit();
             return process.ExitCode;
         }
@@ -2294,20 +2264,6 @@ internal partial class Program
         {
             Console.WriteLine(value: $"Failed to execute {exeFile}: {ex.Message}");
             return 1;
-        }
-    }
-
-    /// <summary>Copies a child's output stream to <paramref name="target"/> chunk by chunk, flushing each
-    /// chunk, until the child closes the stream.</summary>
-    private static async Task RelayAsync(StreamReader source, TextWriter target)
-    {
-        var buffer = new char[4096];
-        int read;
-        while ((read = await source.ReadAsync(buffer: buffer, index: 0, count: buffer.Length)
-                                   .ConfigureAwait(continueOnCapturedContext: false)) > 0)
-        {
-            target.Write(buffer: buffer, index: 0, count: read);
-            target.Flush();
         }
     }
 }
