@@ -216,8 +216,13 @@ public sealed partial class SemanticVerifier
 
     private void ReportUnshared(string name, SourceLocation location)
     {
+        // A number every job changes has one way in Suflae, so the message names it.
+        string way = name is "Unbroken" or "Atomic"
+            ? " A number every job changes is a 'global' or a member variable of an entity: the builder keeps each " +
+              "change whole, so write 'hits += 1' on it."
+            : "";
         ReportError(code: SemanticDiagnosticCode.UnsharedRazorForgeDeclaration,
-            message: $"Suflae's library has no '{name}'.",
+            message: $"Suflae's library has no '{name}'.{way}",
             location: location);
     }
 }

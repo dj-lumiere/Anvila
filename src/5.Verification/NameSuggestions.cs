@@ -80,8 +80,16 @@ internal sealed class NameSuggestions(TypeRegistry registry)
 
     /// <summary>The hint for a type name <c>migrate --step type-names</c> rewrites (<c>Atomic</c> is <c>Unbroken</c>,
     /// <c>CircularList</c> is <c>RotatableList</c>), whether or not the module of the new name is loaded, or null.</summary>
-    private static string? TypeNamesStepRename(string name)
+    private string? TypeNamesStepRename(string name)
     {
+        // A Suflae program changes shared numbers through a global or an entity's member variable, which the builder
+        // keeps whole for every job: it has no cell type for it.
+        if (registry.Language == TypeModel.Enums.Language.Suflae && name is "Atomic" or "Unbroken")
+        {
+            return " A number every job changes is a 'global' or a member variable of an entity: the builder keeps " +
+                   "each change whole, so write 'hits += 1' on it.";
+        }
+
         string? renamed = name switch
         {
             "Atomic" => "Unbroken",
