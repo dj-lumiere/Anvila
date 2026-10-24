@@ -771,9 +771,13 @@ public partial class Parser
         // An `@rf("...")` binding may sit on any type declaration: it is kept on the node for the standard library
         // loader, which takes the declaration out (see RfBindingCheck).
         // The standard library's `@self_locking` on an entity is kept the same way (the type registration reads it).
+        // `@reflectable` and a program's own annotations (`@Tagged`) are kept the same way for ObjectHacker.
         List<string> bindings = annotations.Where(predicate: a => a.StartsWith(value: "rf(",
                                                      comparisonType: StringComparison.Ordinal) ||
-                                                 a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation)
+                                                 a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation ||
+                                                 a == "reflectable" ||
+                                                 IsProgramAnnotation(name: AnnotationName(annotation: a),
+                                                     language: _language))
                                            .ToList();
         SyntaxTree.Declaration Bound(SyntaxTree.Declaration declaration)
         {
@@ -974,6 +978,13 @@ public partial class Parser
     /// The annotations and modifiers a type declaration other than a record does not take: annotations on an
     /// entity, choice, flags, crashable, variant or protocol; `dangerous` on any type; a visibility on a variant.
     /// </summary>
+    /// <summary>An annotation's name without its arguments (<c>Route</c> for <c>Route(path="/")</c>).</summary>
+    internal static string AnnotationName(string annotation)
+    {
+        int open = annotation.IndexOf(value: '(');
+        return open < 0 ? annotation : annotation[..open];
+    }
+
     private void RejectNoEffectOnTypeDeclaration(List<string> annotations, VisibilityModifier visibility,
         bool isDangerous)
     {
@@ -997,6 +1008,10 @@ public partial class Parser
         List<string> ineffective = annotations.Where(predicate: a => !a.StartsWith(value: "rf(",
                                                       comparisonType: StringComparison.Ordinal) &&
                                                   !(a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation &&
+                                                    CurrentToken.Type == TokenType.Entity) &&
+                                                  !((a == "reflectable" ||
+                                                     IsProgramAnnotation(name: AnnotationName(annotation: a),
+                                                         language: _language)) &&
                                                     CurrentToken.Type == TokenType.Entity))
                                               .ToList();
         RejectNoEffect(when: ineffective.Count > 0 && CurrentToken.Type is not (TokenType.Record or TokenType.Bundle),

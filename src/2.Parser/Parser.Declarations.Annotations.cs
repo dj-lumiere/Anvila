@@ -102,11 +102,80 @@ public partial class Parser
         "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"
     ];
 
+    /// <summary>Whether <paramref name="name"/> names an annotation a Suflae program declares: a record that obeys
+    /// <c>Annotation</c>, named like a type (<c>@Memoize(limit: 100)</c>). The builder's own annotations are lowercase.
+    /// Whether such a record exists is checked once every file is read.</summary>
+    public static bool IsProgramAnnotation(string name, TypeModel.Enums.Language language)
+    {
+        return language == TypeModel.Enums.Language.Suflae && name.Length > 0 && char.IsUpper(c: name[index: 0]);
+    }
+
+    /// <summary>The arguments of a program's annotation as a call writes them (<c>limit: 100, name: "x"</c>), from the
+    /// form an annotation is kept in (<c>Memoize(limit=100, name="x")</c>). Empty when it has none.</summary>
+    public static string ProgramAnnotationArguments(string annotation)
+    {
+        int open = annotation.IndexOf(value: '(');
+        if (open < 0 || !annotation.EndsWith(value: ')'))
+        {
+            return "";
+        }
+
+        string inner = annotation[(open + 1)..^1];
+        var pieces = new List<string>();
+        int depth = 0;
+        bool inText = false;
+        int start = 0;
+        for (int i = 0; i <= inner.Length; i++)
+        {
+            char c = i < inner.Length ? inner[index: i] : ',';
+            if (inText)
+            {
+                if (c == '\\')
+                {
+                    i++;
+                }
+                else if (c == '"')
+                {
+                    inText = false;
+                }
+
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    inText = true;
+                    break;
+                case '(' or '[':
+                    depth++;
+                    break;
+                case ')' or ']':
+                    depth--;
+                    break;
+                case ',' when depth == 0:
+                    string piece = inner[start..i].Trim();
+                    if (piece.Length > 0)
+                    {
+                        // A named argument is kept as `name=value`.
+                        int equals = piece.IndexOf(value: '=');
+                        bool named = equals > 0 && piece[..equals].All(predicate: ch => char.IsLetterOrDigit(c: ch) || ch == '_');
+                        pieces.Add(item: named ? $"{piece[..equals]}: {piece[(equals + 1)..]}" : piece);
+                    }
+
+                    start = i + 1;
+                    break;
+            }
+        }
+
+        return string.Join(separator: ", ", values: pieces);
+    }
+
     /// <summary>Whether <paramref name="name"/> is an annotation the builder knows. An unknown one is reported and left
     /// off the declaration, so nothing reports it a second time.</summary>
     private bool IsKnownAnnotation(string name, Token at)
     {
-        if (KnownAnnotations.Contains(item: name))
+        if (KnownAnnotations.Contains(item: name) || IsProgramAnnotation(name: name, language: _language))
         {
             return true;
         }

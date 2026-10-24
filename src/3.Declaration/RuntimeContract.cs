@@ -130,6 +130,36 @@ public static class RuntimeContract
         public const string SingletonName = "__globals__";
     }
 
+    /// <summary>The routines the builder writes for a Suflae program's own annotations (<c>@Memoize</c> on a routine
+    /// whose annotation record has an <c>around</c>): the routine keeps its name and calls <c>around</c>, its body
+    /// moves to a routine of its own, and a third one runs that body and keeps the result in an <c>Unknown</c>.</summary>
+    /// <remarks>Sites: Suflae's AnnotationSynthesisPass (writes them) and ReflectionTablePass (leaves them out of
+    /// ObjectHacker's routine tables).</remarks>
+    public static class ProgramAnnotation
+    {
+        /// <summary>The protocol an annotation record obeys.</summary>
+        public const string Protocol = "Annotation";
+
+        /// <summary>The routine an annotation runs once when the program starts.</summary>
+        public const string Apply = "apply";
+
+        /// <summary>The routine an annotation runs around every call of the routine it is on.</summary>
+        public const string Around = "around";
+
+        /// <summary>What the routine holding the moved body adds to the routine's name.</summary>
+        public const string BodySuffix = "__around_body";
+
+        /// <summary>What the routine keeping the body's result in an <c>Unknown</c> adds to the routine's name.</summary>
+        public const string UnknownSuffix = "__around_unknown";
+
+        /// <summary>Whether a routine is one the builder wrote for an annotation's <c>around</c>.</summary>
+        public static bool IsWritten(string name)
+        {
+            return name.EndsWith(value: BodySuffix, comparisonType: StringComparison.Ordinal) ||
+                   name.EndsWith(value: UnknownSuffix, comparisonType: StringComparison.Ordinal);
+        }
+    }
+
     /// <summary><c>Roamed[T]</c> memberRoutines that codegen inserts implicitly (no surface AST call),
     /// so RoutineReachabilityPass must anticipate them via the ImplicitCallContract.</summary>
     /// <remarks>Sites: LlvmEmitter (promote at spawn boundary, lock_enter/lock_exit around

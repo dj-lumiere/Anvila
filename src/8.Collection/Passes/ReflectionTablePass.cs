@@ -32,6 +32,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
     private const string ReachedTypes = "reached_types";
     private const string ReachedRoutines = "reached_routines";
     private const string ReachedInvoke = "reached_invoke";
+    private const string ReflectedAnnotations = "reflected_annotations";
 
     /// <summary>The annotation that keeps every routine of a type in the program, so <c>call</c> reaches all of them.</summary>
     public const string ReflectableAnnotation = "reflectable";
@@ -39,7 +40,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
     private static readonly HashSet<string> TableNames =
     [
         ReflectedRoutines, ReflectedInvoke, ReflectedCreators, ReflectedCreate, ReachedTypes, ReachedRoutines,
-        ReachedInvoke
+        ReachedInvoke, ReflectedAnnotations
     ];
 
     /// <summary>The text each table was last written from, by routine key: a table written again from the same
@@ -72,6 +73,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
                 ReachedTypes => ReachedTypesText(subs: subs),
                 ReachedRoutines => ReachedRoutinesText(subs: subs),
                 ReachedInvoke => ReachedInvokeText(subs: subs),
+                ReflectedAnnotations => TypeAnnotationsText(owner: OwnerOf(info: body.Info), subs: subs),
                 _ => null
             };
             if (text == null || _written.TryGetValue(key: key, value: out string? before) && before == text)
@@ -117,19 +119,34 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         return true;
     }
 
-    /// <summary>The routines the walk must start from so a <c>@reflectable</c> type keeps every routine it has.</summary>
+    /// <summary>The routines the walk must start from so a <c>@reflectable</c> type keeps every routine it has, and a
+    /// routine carrying one of the program's own annotations is there for the annotation to find.</summary>
     public static IEnumerable<(string Key, Statement Body)> ReflectableSeeds(InstantiationContext ctx)
     {
         foreach ((Program program, _, _) in ctx.UserPrograms)
         foreach (RoutineDeclaration decl in program.Declarations.OfType<RoutineDeclaration>())
         {
-            if (decl is { ResolvedInfo: { OwnerType: { } owner } info, Body: { } body } &&
-                owner.Annotations?.Contains(item: ReflectableAnnotation) == true &&
-                info.GenericParameters is not { Count: > 0 })
+            if (decl is not { ResolvedInfo: { } info, Body: { } body } ||
+                info.GenericParameters is { Count: > 0 })
+            {
+                continue;
+            }
+
+            if (info.OwnerType?.Annotations?.Contains(item: ReflectableAnnotation) == true ||
+                ProgramAnnotationsOf(annotations: decl.Annotations).Count > 0)
             {
                 yield return (info.RegistryKey, body);
             }
         }
+    }
+
+    /// <summary>The program's own annotations among <paramref name="annotations"/> (<c>Memoize(limit=100)</c>).</summary>
+    private static List<string> ProgramAnnotationsOf(IEnumerable<string>? annotations)
+    {
+        return annotations?.Where(predicate: a =>
+                               Parser.Parser.IsProgramAnnotation(name: Parser.Parser.AnnotationName(annotation: a),
+                                   language: Language.Suflae))
+                          .ToList() ?? [];
     }
 
     private static bool IsTable(RoutineInfo info)
@@ -184,7 +201,8 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         foreach (RoutineDeclaration decl in program.Declarations.OfType<RoutineDeclaration>())
         {
             if (decl.ResolvedInfo is { } info && info.Name != "start" && !info.IsSynthesized &&
-                !decl.Annotations.Contains(item: "test"))
+                !decl.Annotations.Contains(item: "test") &&
+                !Builder.Declaration.RuntimeContract.ProgramAnnotation.IsWritten(name: info.Name))
             {
                 yield return (decl, info);
             }
@@ -363,8 +381,11 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
     /// <summary>One <c>facts.add_last(...)</c> for a routine, with the list of its parameters before it.</summary>
     private void AppendFact(StringBuilder text, Substitutions subs, int index, string name, string fullName,
         string module, string kind, bool built, bool failable, bool generic, TypeSymbol? returns,
-        List<(string Name, TypeSymbol Type, string? Default)> parameters)
+        List<(string Name, TypeSymbol Type, string? Default)> parameters, IEnumerable<string>? annotations = null)
     {
+        string notes = $"n{index}";
+        text.AppendLine(value: $"    var {notes} = new_unknown_list()");
+        AppendAnnotationValues(text: text, subs: subs, list: notes, annotations: annotations);
         string list = $"p{index}";
         text.AppendLine(value: $"    var {list} = new_parameter_facts()");
         for (int i = 0; i < parameters.Count; i++)
@@ -385,7 +406,53 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         bool hasReturns = returns != null && returns.Name != "None" && returns.Name != "Blank";
         string r = subs.Type(type: hasReturns ? returns! : ctx.Registry.LookupType(name: "Bool")!);
         text.AppendLine(value:
-            $"    facts.add_last(value: routine_fact[{r}](name: {Quote(text: name)}, full_name: {Quote(text: fullName)}, module_name: {Quote(text: module)}, kind: {Quote(text: kind)}, index: {index}, is_built: {Bool(value: built)}, is_failable: {Bool(value: failable)}, is_generic: {Bool(value: generic)}, has_returns: {Bool(value: hasReturns)}, parameters: steal {list}))");
+            $"    facts.add_last(value: routine_fact[{r}](name: {Quote(text: name)}, full_name: {Quote(text: fullName)}, module_name: {Quote(text: module)}, kind: {Quote(text: kind)}, index: {index}, is_built: {Bool(value: built)}, is_failable: {Bool(value: failable)}, is_generic: {Bool(value: generic)}, has_returns: {Bool(value: hasReturns)}, parameters: steal {list}, annotations: steal {notes}))");
+    }
+
+    /// <summary>Lines that add the value of each of the program's own annotations to <paramref name="list"/>.</summary>
+    private void AppendAnnotationValues(StringBuilder text, Substitutions subs, string list,
+        IEnumerable<string>? annotations)
+    {
+        foreach (string annotation in ProgramAnnotationsOf(annotations: annotations))
+        {
+            if (AnnotationType(name: Parser.Parser.AnnotationName(annotation: annotation)) is not { } type)
+            {
+                continue;
+            }
+
+            text.AppendLine(value:
+                $"    {list}.add_last(value: Unknown(from: {subs.Creator(type: type)}({Parser.Parser.ProgramAnnotationArguments(annotation: annotation)})))");
+        }
+    }
+
+    /// <summary>The record a program's annotation names, looked for in the program's modules.</summary>
+    private TypeSymbol? AnnotationType(string name)
+    {
+        foreach ((_, _, string module) in ctx.UserPrograms)
+        {
+            if ((string.IsNullOrEmpty(value: module)
+                    ? ctx.Registry.LookupType(name: name)
+                    : ctx.Registry.LookupType(name: $"{module}.{name}")) is RecordTypeSymbol record &&
+                IsUserType(type: record))
+            {
+                return record;
+            }
+        }
+
+        return null;
+    }
+
+    private string? TypeAnnotationsText((TypeSymbol Value, TypeSymbol Declared)? owner, Substitutions subs)
+    {
+        var text = new StringBuilder();
+        text.AppendLine(value: "    var notes = new_unknown_list()");
+        if (owner is { } o && IsUserType(type: o.Declared))
+        {
+            AppendAnnotationValues(text: text, subs: subs, list: "notes", annotations: o.Declared.Annotations);
+        }
+
+        text.AppendLine(value: "    return notes");
+        return text.ToString();
     }
 
     private string? DefaultText(ParamInfo parameter)
@@ -478,7 +545,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
                 AppendFact(text: text, subs: subs, index: i, name: r.Name, fullName: FullNameOf(info: r),
                     module: o.Declared.Module ?? "", kind: KindOf(info: r), built: IsBuilt(info: r),
                     failable: r.IsFailable, generic: IsGeneric(info: r), returns: r.ReturnType,
-                    parameters: DescribeParameters(info: r));
+                    parameters: DescribeParameters(info: r), annotations: r.Annotations);
             }
         }
 
@@ -728,7 +795,8 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
             RoutineInfo r = routines[index: i];
             AppendFact(text: text, subs: subs, index: i, name: r.Name, fullName: FullNameOf(info: r),
                 module: r.Module ?? "", kind: "FREE", built: IsBuilt(info: r), failable: r.IsFailable,
-                generic: IsGeneric(info: r), returns: r.ReturnType, parameters: DescribeParameters(info: r));
+                generic: IsGeneric(info: r), returns: r.ReturnType, parameters: DescribeParameters(info: r),
+                annotations: r.Annotations);
         }
 
         text.AppendLine(value: "    return facts");
