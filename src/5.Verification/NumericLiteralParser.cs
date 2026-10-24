@@ -232,11 +232,23 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Divides <paramref name="coeff"/> by 10^<paramref name="drop"/>, rounding the discarded
-    /// low digits round-half-to-even, or half away from zero when <paramref name="tiesAway"/> is set
-    /// (Decimal's rounding). <paramref name="drop"/> must be &gt;= 0.
+    /// How a magnitude exactly halfway between two rounds: to the even one (IEEE 754), or with its
+    /// magnitude moved up or down. Decimal rounds half up (toward +infinity), so a positive tie
+    /// takes <see cref="MagnitudeUp"/> and a negative one <see cref="MagnitudeDown"/>.
     /// </summary>
-    private static BigInteger RneDivPow10(BigInteger coeff, int drop, bool tiesAway = false)
+    private enum TieRule
+    {
+        ToEven,
+        MagnitudeUp,
+        MagnitudeDown
+    }
+
+    /// <summary>
+    /// Divides <paramref name="coeff"/> by 10^<paramref name="drop"/>, rounding the discarded
+    /// low digits to nearest, a tie as <paramref name="ties"/> says.
+    /// <paramref name="drop"/> must be &gt;= 0.
+    /// </summary>
+    private static BigInteger RneDivPow10(BigInteger coeff, int drop, TieRule ties = TieRule.ToEven)
     {
         if (drop <= 0)
         {
@@ -246,7 +258,13 @@ public static partial class NumericLiteralParser
         var pow = BigInteger.Pow(value: 10, exponent: drop);
         var q = BigInteger.DivRem(dividend: coeff, divisor: pow, remainder: out BigInteger r);
         BigInteger twice = r * 2;
-        if (twice > pow || twice == pow && (tiesAway || !q.IsEven))
+        bool tieUp = ties switch
+        {
+            TieRule.MagnitudeUp => true,
+            TieRule.MagnitudeDown => false,
+            _ => !q.IsEven
+        };
+        if (twice > pow || twice == pow && tieUp)
         {
             q += 1;
         }
@@ -262,10 +280,10 @@ public static partial class NumericLiteralParser
     /// </summary>
     private static (bool Overflow, BigInteger Coeff, int BiasedExp) RoundAndClamp(BigInteger coeff,
         int exp10, int pmax, int bias,
-        int qMin, int qMax, bool tiesAway = false)
+        int qMin, int qMax, TieRule ties = TieRule.ToEven)
     {
         // Round the coefficient down to at most pmax digits.
-        (coeff, exp10) = RoundToPmaxDigits(coeff: coeff, exp10: exp10, pmax: pmax, tiesAway: tiesAway);
+        (coeff, exp10) = RoundToPmaxDigits(coeff: coeff, exp10: exp10, pmax: pmax, ties: ties);
 
         if (coeff.IsZero)
         {
@@ -295,7 +313,7 @@ public static partial class NumericLiteralParser
             int drop = qMin - exp10;
             coeff = drop >= pmax + 2
                 ? BigInteger.Zero
-                : RneDivPow10(coeff: coeff, drop: drop, tiesAway: tiesAway);
+                : RneDivPow10(coeff: coeff, drop: drop, ties: ties);
             exp10 = qMin;
         }
 
@@ -307,13 +325,13 @@ public static partial class NumericLiteralParser
     /// (RNE), adjusting <paramref name="exp10"/> to compensate and renormalizing a rounding carry.
     /// </summary>
     private static (BigInteger Coeff, int Exp10) RoundToPmaxDigits(BigInteger coeff, int exp10,
-        int pmax, bool tiesAway = false)
+        int pmax, TieRule ties = TieRule.ToEven)
     {
         int nd = DecimalDigitCount(v: coeff);
         if (nd > pmax)
         {
             int drop = nd - pmax;
-            coeff = RneDivPow10(coeff: coeff, drop: drop, tiesAway: tiesAway);
+            coeff = RneDivPow10(coeff: coeff, drop: drop, ties: ties);
             exp10 += drop;
             // Rounding up can carry to pmax+1 digits (e.g. 999..9 -> 1000..0); renormalize.
             if (DecimalDigitCount(v: coeff) > pmax)
@@ -653,7 +671,8 @@ public static partial class NumericLiteralParser
     /// Encodes a decimal literal into the finite-only software <c>System.Decimal</c> (decimal128) BID
     /// bit pattern. Decimal shares D128's i128 layout (bit127 = sign, bits126..113 = biased exponent
     /// q + 6176, bits112..0 = coefficient as a plain binary integer &lt; 10^34 &lt; 2^113), but is
-    /// rounded the way Decimal rounds (a value exactly halfway away from zero) and is
+    /// rounded the way Decimal rounds (half up: the n with n - 0.5 &lt;= x &lt; n + 0.5 at the digit
+    /// kept, so a positive tie moves its magnitude up and a negative one down) and is
     /// RazorForge's CANONICAL decimal: fractional trailing zeros are stripped so equal values share
     /// bits, while integers (exp &gt;= 0) are left as-is. Pmax 34, stored exponent q in [-6176, 6111].
     /// Throws on overflow — Decimal is finite-only, so a literal that would round to infinity is a
@@ -671,7 +690,9 @@ public static partial class NumericLiteralParser
             bias: 6176,
             qMin: -6176,
             qMax: 6111,
-            tiesAway: true);
+            ties: p.Sign
+                ? TieRule.MagnitudeDown
+                : TieRule.MagnitudeUp);
 
         if (overflow)
         {
