@@ -257,8 +257,13 @@ internal static class IngridTessera
 
     private static string Compile(string sourceDir, string[] sources)
     {
-        var decls = new List<Tessera.Decl>();
-        foreach (string file in sources)
+        // The folders Tessera programs import (`decimal/` is Ingrid/Decimal) are a library, as in a Tessera build: only
+        // what an export reaches is built. The rest of the folder is RazorForge's and Suflae's, built whole.
+        List<Tessera.StandardLibrary.IngridFile> library = Tessera.StandardLibrary.IngridFiles(directory: sourceDir);
+        var inLibrary = new HashSet<string>(collection: library.Select(selector: f => f.Path),
+            comparer: StringComparer.OrdinalIgnoreCase);
+        var decls = new List<Tessera.Decl>(collection: Tessera.StandardLibrary.LoadIngrid(directory: sourceDir));
+        foreach (string file in sources.Where(predicate: f => !inLibrary.Contains(item: Path.GetFullPath(path: f))))
         {
             string shown = Path.Combine(path1: CheckoutSourceDir,
                 path2: Path.GetRelativePath(relativeTo: sourceDir, path: file));
