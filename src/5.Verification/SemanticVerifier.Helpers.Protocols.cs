@@ -774,7 +774,7 @@ public sealed partial class SemanticVerifier
                 : ("hash", "hash(k0: U64, k1: U64) -> U64");
             string fieldType = missing.Type is EntityTypeSymbol entityField && protocolName == "Hashable"
                 ? $"'{entityField.BareName}', an entity without 'obeys Hashable'"
-                : $"'{missing.Type.Name}', which has no {what}";
+                : $"'{MemberTypeName(type: missing.Type)}', which has no {what}";
             return $"'{holder.Name}' has no {what}{where}: its member variable '{missing.Name}' is a {fieldType}. " +
                    $"Write 'routine {holder.Name}.{routine}' to say " +
                    (protocolName == "Equatable" ? "when two are equal." : "what it hashes.");

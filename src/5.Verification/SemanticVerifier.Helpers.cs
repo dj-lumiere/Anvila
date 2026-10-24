@@ -2034,11 +2034,18 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
-        string kind = owner is EntityTypeSymbol ? "entity" : "record";
+        string kind = owner is EntityTypeSymbol ? "An entity" : "A record";
         return $"You compared two '{owner.Name}' values with '{op.ToStringRepresentation()}', but '{owner.Name}' " +
-               $"has no '==': its member variable '{missing.Name}' is a '{missing.Type.Name}', which has no '=='. " +
-               $"A {kind} has '==' when every member variable has one. Write 'routine {owner.Name}.eq(you: " +
+               $"has no '==': its member variable '{missing.Name}' is a '{MemberTypeName(type: missing.Type)}', " +
+               $"which has no '=='. {kind} has '==' when every member variable has one. Write 'routine {owner.Name}.eq(you: " +
                $"{owner.Name}) -> Bool' to say when two are equal, or compare the member variables you mean.";
+    }
+
+    /// <summary>A member variable's type as its declaration writes it, without modules (a routine type as its
+    /// signature).</summary>
+    internal static string MemberTypeName(TypeSymbol type)
+    {
+        return type.ShortTypeName;
     }
 
     /// <summary>The record or entity <paramref name="type"/> stands for (the entity a program's handle holds) and its

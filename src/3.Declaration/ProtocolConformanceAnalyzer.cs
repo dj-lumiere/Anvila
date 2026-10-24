@@ -333,35 +333,99 @@ internal sealed class ProtocolConformanceAnalyzer
                                               !_sa._registry.TypeObeysProtocol(type: t, protocolName: protocolName))
                                          .ToList();
 
-        // A hand-written `eq` / keyed `hash` gives the protocol whatever the member variables are.
+        // A hand-written `eq` / keyed `hash` gives the protocol whatever the member variables are. On a generic
+        // definition it holds under the routine's own `needs T obeys P` lines (`Maybe[T].eq` needs `T` to have
+        // `==`), so an instance whose argument lacks them doesn't get it.
         foreach (TypeSymbol type in candidates.Where(predicate: t =>
                                                    _sa._registry.WritesOwnValueRoutine(type: t,
                                                        protocolName: protocolName))
                                               .ToList())
         {
-            ConferValueProtocol(type: type, protocol: protocol, conditions: null);
+            ConferValueProtocol(type: type, protocol: protocol,
+                conditions: type.IsGenericDefinition ? OwnRoutineConditions(type: type, protocolName: protocolName) : null);
             candidates.Remove(item: type);
         }
 
+        // The rest get it from their member variables. A type may hold itself (`next: Node?`) or types that hold it
+        // back, so every one is given the protocol first and then the ones whose member variables lack it are taken
+        // back, until none is left to take back: a type holding only itself and types that have the protocol keeps
+        // it. A generic definition's conditions name its parameters, so they are set with the first pass.
+        List<TypeSymbol> walked = candidates.Where(predicate: t => t switch
+                                             {
+                                                 RecordTypeSymbol r => r.MemberVariables.Count > 0,
+                                                 EntityTypeSymbol e => e.MemberVariables.Count > 0,
+                                                 _ => false
+                                             })
+                                            .ToList();
+        foreach (TypeSymbol type in walked)
+        {
+            ConferValueProtocol(type: type, protocol: protocol,
+                conditions: type.IsGenericDefinition
+                    ? ValueProtocolConditions(type: type, protocolName: protocolName)
+                    : null);
+        }
+
         bool changed = true;
-        while (changed && candidates.Count > 0)
+        while (changed)
         {
             changed = false;
-            foreach (TypeSymbol type in candidates.ToList())
+            foreach (TypeSymbol type in walked.ToList()
+                                              .Where(predicate: t =>
+                                                   ValueProtocolConditions(type: t, protocolName: protocolName) == null))
             {
-                List<(string ParamName, string ProtocolName)>? conditions =
-                    ValueProtocolConditions(type: type, protocolName: protocolName);
-                if (conditions == null)
+                WithdrawValueProtocol(type: type, protocolName: protocolName);
+                walked.Remove(item: type);
+                changed = true;
+            }
+        }
+    }
+
+    /// <summary>Takes back a protocol <see cref="ConferValueProtocol"/> gave <paramref name="type"/>.</summary>
+    private void WithdrawValueProtocol(TypeSymbol type, string protocolName)
+    {
+        switch (type)
+        {
+            case RecordTypeSymbol r:
+                r.ConditionalObeys?.Remove(key: protocolName);
+                break;
+            case EntityTypeSymbol e:
+                e.ConditionalObeys?.Remove(key: protocolName);
+                break;
+        }
+
+        List<TypeSymbol> kept = GetImplementedProtocols(type: type).Where(predicate: p => p.Name != protocolName)
+                                                                  .ToList();
+        _sa._implicitProtocolConformances.Remove(item: (type.FullName, protocolName));
+        UpdateTypeProtocols(type: type, protocols: kept);
+    }
+
+    /// <summary>The <c>needs T obeys P</c> lines of <paramref name="type"/>'s own <c>eq</c> / keyed <c>hash</c> that
+    /// name one of the definition's parameters, as conformance conditions.</summary>
+    private List<(string ParamName, string ProtocolName)> OwnRoutineConditions(TypeSymbol type, string protocolName)
+    {
+        string routineName = protocolName == EquatableProtocol ? "eq" : "hash";
+        List<string> parameters = type.GenericParameters ?? [];
+        var conditions = new List<(string ParamName, string ProtocolName)>();
+        foreach (RoutineInfo routine in _sa._registry.GetMemberRoutinesForType(type: type)
+                                       .Where(predicate: r => r.Name == routineName && !r.IsSynthesized))
+        {
+            foreach (SyntaxTree.GenericConstraintDeclaration constraint in routine.GenericConstraints ?? [])
+            {
+                if (constraint is not { ConstraintType: SyntaxTree.ConstraintKind.Obeys, ConstraintTypes: { } protocols } ||
+                    !parameters.Contains(item: constraint.ParameterName))
                 {
                     continue;
                 }
 
-                ConferValueProtocol(type: type, protocol: protocol,
-                    conditions: type.IsGenericDefinition ? conditions : null);
-                candidates.Remove(item: type);
-                changed = true;
+                foreach (string name in protocols.Select(selector: p => p.Name)
+                                                 .Where(predicate: n => !conditions.Contains(item: (constraint.ParameterName, n))))
+                {
+                    conditions.Add(item: (constraint.ParameterName, name));
+                }
             }
         }
+
+        return conditions;
     }
 
     /// <summary>Whether <paramref name="type"/> is a kind that gets <c>==</c> (and, for a record, a hash) from its
@@ -372,13 +436,12 @@ internal sealed class ProtocolConformanceAnalyzer
         return type switch
         {
             VariantTypeSymbol or ChoiceTypeSymbol or FlagsTypeSymbol or CrashableTypeSymbol or TupleTypeSymbol => false,
-            // `Maybe[T]` keeps a value slot that holds nothing meaningful while it is absent, and `Unbroken[T]` is
-            // read only through its atomic routines, so a walk over their member variables would compare or hash
-            // what is not their value.
+            // `Unbroken[T]` is read only through its atomic routines, so a walk over its member variables would
+            // compare or hash what is not its value. (`Maybe[T]` writes its own `eq` and `hash`.)
             RecordTypeSymbol record => !Wrappers.IsWrapperType(type: record) &&
                                        (record.GenericDefinition?.Name ?? record.Name) is var name &&
                                        !RuntimeContract.WrapperTypes.Contains(item: name) &&
-                                       name is not (RuntimeContract.Maybe or RuntimeContract.Unbroken),
+                                       name is not RuntimeContract.Unbroken,
             EntityTypeSymbol => true,
             _ => false
         };

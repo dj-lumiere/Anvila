@@ -155,6 +155,13 @@ public static class RuntimeContract
         /// <summary>Whether the handle holds nothing: Suflae's <c>x is None</c> on an optional entity reference.</summary>
         public const string IsHollow = "is_hollow";
 
+        /// <summary>`==` between two handles either of which may hold nothing (a Suflae `E?`), the call `==` on two
+        /// handles becomes.</summary>
+        public const string HandleEq = "handle_eq";
+
+        /// <summary>`!=` between two handles either of which may hold nothing.</summary>
+        public const string HandleNe = "handle_ne";
+
         /// <summary>Make the entity keep another one alive (an emitter adapter keeping the collection it walks), the
         /// builder's call right after a Suflae program makes an adapter.</summary>
         public const string Keep = "keep";
@@ -514,9 +521,6 @@ public static class RuntimeContract
     // the nine borrow wrappers above, but are NOT part of the borrow-wrapper contract sets.
     /// <summary>Unbroken value wrapper.</summary>
     public const string Unbroken = "Unbroken";
-
-    /// <summary>The optional value <c>T?</c>.</summary>
-    public const string Maybe = "Maybe";
 
     /// <summary>All wrapper types recognized for layout/dispatch. Mirrors WrapperForwardingPass.WrapperTypes
     /// and LlvmEmitter.WrapperTypeNames.</summary>

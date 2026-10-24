@@ -498,8 +498,13 @@ public sealed partial class TypeRegistry
             return false;
         }
 
-        return MemberProjection(type: type)
-           .All(predicate: m => TypeObeysProtocol(type: m, protocolName: protocol));
+        // `==` and the hash ask each member variable the way the conformance the builder gives them does (a
+        // Suflae `List` member is held by its handle, and a number hashes without naming `Hashable`).
+        return protocol is "Equatable" or "Hashable"
+            ? MemberProjection(type: type)
+               .All(predicate: m => MemberVariableHasValueRoutine(type: m, protocolName: protocol))
+            : MemberProjection(type: type)
+               .All(predicate: m => TypeObeysProtocol(type: m, protocolName: protocol));
     }
 
     /// <summary>
@@ -662,6 +667,13 @@ public sealed partial class TypeRegistry
     /// hash (the numbers hash without naming the protocol).</summary>
     internal bool MemberVariableHasValueRoutine(TypeSymbol type, string protocolName)
     {
+        // A member variable holding a library entity through its `Roamed` handle (a Suflae `List` field) compares and
+        // hashes the entity: `==` on the handle goes to the entity's own.
+        if (type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol held] })
+        {
+            return TypeObeysProtocol(type: held, protocolName: protocolName);
+        }
+
         if (TypeObeysProtocol(type: type, protocolName: protocolName))
         {
             return true;

@@ -36,7 +36,25 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
     /// <summary>Lowers Roamed receiver projections across a whole program.</summary>
     public void Run(Program program)
     {
-        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => VisitStatement(stmt: r.Body));
+        BodyDispatch.RunOnProgram(registry: ctx.Registry, program: program, lower: r => VisitBody(name: r.Name, body: r.Body));
+    }
+
+    /// <summary>True while the body of `handle_eq` / `handle_ne` is visited: its own `==` on the two handles reaches
+    /// the entities, it doesn't call itself.</summary>
+    private bool _insideHandleEquality;
+
+    private Statement VisitBody(string name, Statement body)
+    {
+        _insideHandleEquality = name is RuntimeContract.RoamedMemberRoutine.HandleEq
+            or RuntimeContract.RoamedMemberRoutine.HandleNe;
+        try
+        {
+            return VisitStatement(stmt: body);
+        }
+        finally
+        {
+            _insideHandleEquality = false;
+        }
     }
 
     /// <summary>Lowers Roamed receiver projections in routines made concrete from generic ones: a library
@@ -45,7 +63,7 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
     public void RunOnInstantiatedGenericBodies(Dictionary<string, Instantiation.MonomorphizedBody> bodies)
     {
         BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: bodies,
-            lower: (_, entry) => VisitStatement(stmt: entry.Ast.Body));
+            lower: (_, entry) => VisitBody(name: entry.Ast.Name, body: entry.Ast.Body));
     }
 
     /// <summary>Lowers Roamed receiver projections in synthesized variant bodies.</summary>
@@ -79,6 +97,22 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
             return call;
         }
 
+        // Inside `handle_eq` the two entities are compared as `me.control() == you.control()`: the handles are put
+        // back, so the comparison reaches the entities the way `==` on two handles does anywhere else (an entity
+        // whose routines take its handle is handed the handle).
+        if (_insideHandleEquality && member.MemberName == "eq" && call.Arguments.Count == 1 &&
+            ControlledHandle(expression: member.Object) is { } receiverHandle &&
+            ControlledHandle(expression: call.Arguments[index: 0] is NamedArgumentExpression controlledNamed
+                ? controlledNamed.Value
+                : call.Arguments[index: 0]) is { } argumentHandle)
+        {
+            member = member with { Object = receiverHandle };
+            Expression handleArgument = call.Arguments[index: 0] is NamedArgumentExpression named
+                ? named with { Value = argumentHandle, ResolvedType = argumentHandle.ResolvedType }
+                : argumentHandle;
+            call = call with { Callee = member, Arguments = [handleArgument] };
+        }
+
         TypeSymbol? receiverType = member.Object.ResolvedType;
         // A common routine is called on the type (`T.from_serial(value:)` with `T` a handle's type): there is no
         // handle to reach into.
@@ -93,6 +127,13 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
         RoutineInfo? memberRoutine = call.ResolvedRoutine ??
                                      Registry.LookupMemberRoutine(type: receiverType,
                                          memberRoutineName: member.MemberName);
+
+        // `==` / `!=` on two handles: either may hold nothing (a Suflae `E?` member variable, read in the `eq` the
+        // builder writes), so the call goes to the handle's own null-safe comparison instead of reaching into both.
+        if (HandleEqualityCall(call: call, member: member, receiverType: receiverType) is { } handleCall)
+        {
+            return handleCall;
+        }
 
         RoamedTransparency.Projection? proj = RoamedTransparency.Project(
             receiverType: receiverType,
@@ -122,6 +163,73 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
             ? call
             : call with { Callee = member with { Object = innerRecv } };
         return ProjectRoamedArguments(call: projected, routine: roamProj.MemberRoutine);
+    }
+
+    // The handle `h` of `h.control()`, or null.
+    private static Expression? ControlledHandle(Expression expression)
+    {
+        return expression is CallExpression
+        {
+            Callee: MemberExpression { MemberName: RuntimeContract.Control, Object: { ResolvedType: { } handleType } handle }
+        } && TypeRegistry.GetRcWrapperBaseName(type: handleType) == RuntimeContract.Roamed
+            ? handle
+            : null;
+    }
+
+    // `a.eq(you: b)` / `a.ne(you: b)` with `a` and `b` both `Roamed[E]` handles: `a.handle_eq(you: b)` /
+    // `a.handle_ne(you: b)`, or null for any other call.
+    private CallExpression? HandleEqualityCall(CallExpression call, MemberExpression member, TypeSymbol receiverType)
+    {
+        if (_insideHandleEquality || member.MemberName is not ("eq" or "ne") || call.Arguments.Count != 1 ||
+            TypeRegistry.GetRcWrapperBaseName(type: receiverType) != RuntimeContract.Roamed)
+        {
+            return null;
+        }
+
+        Expression argument = call.Arguments[index: 0] is NamedArgumentExpression named
+            ? named.Value
+            : call.Arguments[index: 0];
+        // The operand of an `eq` taking a token is the address of the place holding the handle.
+        if (argument is AddressOfExpression { Target: { ResolvedType: { } heldType } held } &&
+            heldType.FullName == receiverType.FullName)
+        {
+            argument = held;
+        }
+
+        // An argument projected to its entity already (`you.next.control()`) is compared through its handle.
+        if (argument is CallExpression
+            {
+                Callee: MemberExpression { MemberName: RuntimeContract.Control, Object: { ResolvedType: { } projectedType } handle }
+            } && projectedType.FullName == receiverType.FullName)
+        {
+            argument = handle;
+        }
+
+        if (argument.ResolvedType is not { } argumentType || argumentType.FullName != receiverType.FullName)
+        {
+            return null;
+        }
+
+        string target = member.MemberName == "eq"
+            ? RuntimeContract.RoamedMemberRoutine.HandleEq
+            : RuntimeContract.RoamedMemberRoutine.HandleNe;
+        if (Registry.LookupMemberRoutine(type: receiverType, memberRoutineName: target) is not { } routine)
+        {
+            return null;
+        }
+
+        var callee = member with { MemberName = target };
+        return new CallExpression(Callee: callee,
+            Arguments: [new NamedArgumentExpression(Name: "you", Value: argument, Location: argument.Location)
+            {
+                ResolvedType = argumentType
+            }],
+            Location: call.Location)
+        {
+            ResolvedRoutine = routine,
+            ResolvedType = call.ResolvedType,
+            LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: routine)
+        };
     }
 
     // The inner routine takes bare entities, so an argument holding a handle (`zs` in `ys == zs`, which
