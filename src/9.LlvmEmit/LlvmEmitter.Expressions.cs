@@ -195,8 +195,8 @@ public partial class LlvmEmitter
         if (!_localVariables.TryGetValue(key: identifier.Name, value: out TypeSymbol? varType))
         {
             // Suflae module-level `global`: load from its `@global` symbol.
-            if (_moduleGlobals.TryGetValue(key: identifier.Name,
-                    value: out (TypeSymbol Type, string Symbol) gslot))
+            if (TryGetModuleGlobal(name: identifier.Name, variable: identifier.ResolvedVariable,
+                    slot: out (TypeSymbol Type, string Symbol) gslot))
             {
                 string gLlvmType = GetLlvmType(type: gslot.Type);
                 string gTmp = NextTemp();
@@ -501,7 +501,7 @@ public partial class LlvmEmitter
         switch (binary.Left)
         {
             case IdentifierExpression id:
-                EmitVariableAssignment(sb: sb, varName: id.Name, value: value);
+                EmitVariableAssignment(sb: sb, varName: id.Name, value: value, variable: id.ResolvedVariable);
                 break;
             case MemberExpression member:
             {

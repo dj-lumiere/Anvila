@@ -394,14 +394,15 @@ public sealed partial class SemanticVerifier
         // A RazorForge global is reached from every thread, so its binding is never assigned again (only its
         // initialization, at the top of start()): an Unbroken or a Guarded changes what it holds through its own
         // routines, any other value is only read.
-        _registry.DeclareVariable(name: global.Name, type: globalType, isGlobal: true,
-            isReadOnly: !_registry.EntitiesAreShared);
-
+        // Two modules may each have a global of one name: each is registered under its module, and a lookup from
+        // either module finds its own.
         string? module = GetCurrentModuleName();
-        _registry.RegisterGlobal(name: global.Name,
+        VariableInfo registered = _registry.RegisterGlobal(name: global.Name,
             type: globalType,
             module: module,
-            isSecret: global.Visibility == VisibilityModifier.Secret);
+            isSecret: global.Visibility == VisibilityModifier.Secret,
+            isReadOnly: !_registry.EntitiesAreShared);
+        _registry.DeclareGlobalInScope(global: registered);
     }
 
     /// <summary>The module each collected preset was declared in, so its value is analyzed against its own

@@ -147,6 +147,24 @@ public partial class LlvmEmitter
     /// consulted by the identifier read / assignment / lvalue paths as a fallback after local lookup.</summary>
     private readonly Dictionary<string, (TypeSymbol Type, string Symbol)> _moduleGlobals = new();
 
+    /// <summary>The same globals by module and name: two modules may each have a global of one name, and a
+    /// reference that analysis resolved to one of them finds that one's cell.</summary>
+    private readonly Dictionary<(string? Module, string Name), (TypeSymbol Type, string Symbol)>
+        _moduleGlobalsByModule = new();
+
+    /// <summary>The cell of the global <paramref name="name"/> names, preferring the global analysis resolved it to
+    /// (<paramref name="variable"/>) over the last global of that name.</summary>
+    private bool TryGetModuleGlobal(string name, VariableInfo? variable, out (TypeSymbol Type, string Symbol) slot)
+    {
+        if (variable is { IsGlobal: true } &&
+            _moduleGlobalsByModule.TryGetValue(key: (variable.Module, name), value: out slot))
+        {
+            return true;
+        }
+
+        return _moduleGlobals.TryGetValue(key: name, value: out slot);
+    }
+
     /// <summary>Map of source variable names to unique LLVM variable names (handles shadowing).</summary>
     private readonly Dictionary<string, string> _localVarLlvmNames = new();
 
@@ -669,6 +687,7 @@ public partial class LlvmEmitter
     {
         foreach ((Program program, string _, string module) in _userPrograms)
         {
+            string? declaredModule = Builder.Desugaring.ModuleGlobalOrder.ModuleOf(program: program);
             foreach (ISyntaxTreeNode decl in program.Declarations)
             {
                 if (decl is not VariableDeclaration { IsGlobal: true } g)
@@ -676,8 +695,9 @@ public partial class LlvmEmitter
                     continue;
                 }
 
-                TypeSymbol? type = _registry.LookupVariable(name: g.Name)
-                                         ?.Type;
+                TypeSymbol? type = (_registry.LookupGlobal(module: declaredModule, name: g.Name) ??
+                                    _registry.LookupVariable(name: g.Name))
+                                 ?.Type;
                 if (type == null)
                 {
                     continue; // SA registered every global; skip defensively if absent
@@ -692,6 +712,7 @@ public partial class LlvmEmitter
                 EmitLine(sb: _globalDeclarations,
                     line: $"{symbol} = global {llvmType} zeroinitializer");
                 _moduleGlobals[key: g.Name] = (type, symbol);
+                _moduleGlobalsByModule[key: (declaredModule, g.Name)] = (type, symbol);
             }
         }
     }

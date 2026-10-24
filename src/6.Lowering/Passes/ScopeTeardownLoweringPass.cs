@@ -40,7 +40,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// <summary>A live owned binding: its name, type, and resolved <c>destruct</c> routine.
     /// An entity binding always holds a valid owned allocation while live (a lateinit zeroed
     /// placeholder, the declaration initializer, or a later-assigned value).</summary>
-    private readonly record struct Owned(string Name, TypeSymbol Type, RoutineInfo Destroy);
+    // Variable: the global a module-level binding names (two modules may each have a global of one name), null
+    // for a local.
+    private readonly record struct Owned(string Name, TypeSymbol Type, RoutineInfo Destroy,
+        VariableInfo? Variable = null);
 
     public void Run(Program program)
     {
@@ -457,7 +460,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     // destroy would bypass the RC release and the cycle collector.
     private void RegisterGlobalsSingleton(IdentifierExpression target, List<Owned> live)
     {
-        TypeSymbol? t = ctx.Registry.LookupVariable(name: target.Name)?.Type ?? target.ResolvedType;
+        TypeSymbol? t = (target.ResolvedVariable ?? ctx.Registry.LookupVariable(name: target.Name))?.Type ??
+                        target.ResolvedType;
         bool held = !ctx.Registry.EntitiesAreShared ||
                     t is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed };
         if (t == null || !held || !TryResolveDestroy(type: t, destroy: out RoutineInfo? d) || d == null)
@@ -465,7 +469,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             return;
         }
 
-        live.Add(item: new Owned(Name: target.Name, Type: t, Destroy: d));
+        live.Add(item: new Owned(Name: target.Name, Type: t, Destroy: d, Variable: target.ResolvedVariable));
     }
 
     // Records a block-local `var` declaration into `live` (so its scope-exit teardown is emitted),
@@ -802,7 +806,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         var ident =
             new IdentifierExpression(Name: owned.Name, Location: loc)
             {
-                ResolvedType = owned.Type
+                ResolvedType = owned.Type,
+                ResolvedVariable = owned.Variable
             };
         var callee = new MemberExpression(Object: ident, MemberName: "destruct", Location: loc)
         {

@@ -723,7 +723,7 @@ internal sealed class TesseraRoutineWriter
                     bound: Value(operand: Evaluate(expression: closure.Bound)));
             case IdentifierExpression identifier:
             {
-                Local local = Lookup(name: identifier.Name);
+                Local local = Lookup(name: identifier.Name, variable: identifier.ResolvedVariable);
                 return new Operand(Text: local.Place, Type: local.Type, IsPlace: true);
             }
             case MemberExpression member:
@@ -869,7 +869,7 @@ internal sealed class TesseraRoutineWriter
         return null;
     }
 
-    private Local Lookup(string name)
+    private Local Lookup(string name, VariableInfo? variable = null)
     {
         for (int i = _scopes.Count - 1; i >= 0; i--)
         {
@@ -887,7 +887,8 @@ internal sealed class TesseraRoutineWriter
         }
 
         // A program `global` (and a preset made by a construction, which is one): its module-level cell.
-        if (_module.ModuleGlobal(name: name) is var (cell, cellType))
+        if (_module.ModuleGlobal(name: name, module: variable is { IsGlobal: true } ? variable.Module : null) is var
+            (cell, cellType))
         {
             return new Local(Place: cell, Type: cellType);
         }

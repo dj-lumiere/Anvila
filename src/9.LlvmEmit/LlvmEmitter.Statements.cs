@@ -344,7 +344,7 @@ public partial class LlvmEmitter
         switch (assign.Target)
         {
             case IdentifierExpression id:
-                EmitVariableAssignment(sb: sb, varName: id.Name, value: value);
+                EmitVariableAssignment(sb: sb, varName: id.Name, value: value, variable: id.ResolvedVariable);
                 break;
 
             case MemberExpression member:
@@ -511,13 +511,13 @@ public partial class LlvmEmitter
     /// Emits a store to a local variable. Releasing an owning old value is already in the AST
     /// (TemporaryTeardownPass / ScopeTeardownLoweringPass), so this is a plain store.
     /// </summary>
-    private void EmitVariableAssignment(StringBuilder sb, string varName, string value)
+    private void EmitVariableAssignment(StringBuilder sb, string varName, string value, VariableInfo? variable = null)
     {
         if (!_localVariables.TryGetValue(key: varName, value: out TypeSymbol? varType))
         {
-            // Suflae module-level `global`: store to its `@global` symbol.
-            if (_moduleGlobals.TryGetValue(key: varName,
-                    value: out (TypeSymbol Type, string Symbol) gslot))
+            // A module-level `global`: store to its `@global` symbol.
+            if (TryGetModuleGlobal(name: varName, variable: variable,
+                    slot: out (TypeSymbol Type, string Symbol) gslot))
             {
                 EmitLine(sb: sb,
                     line:

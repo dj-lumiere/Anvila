@@ -12,19 +12,21 @@ namespace Builder.Desugaring;
 public static class ModuleGlobalOrder
 {
     /// <summary>
-    /// Collects the globals of <paramref name="orderedFiles"/> (the last declaration of a name wins), strips their
+    /// Collects the globals of <paramref name="orderedFiles"/> (within one module the last declaration of a name wins,
+    /// two modules may each have a global of the same name), strips their
     /// initializers, and orders them. Returns false after reporting RF-S436 when they read each other in a cycle, and
     /// true with an empty list when there are none.
     /// </summary>
     public static bool TryOrder(List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
         Action<SemanticDiagnosticCode, string, SourceLocation> report,
-        out List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)> globals,
+        out List<ModuleGlobal> globals,
         out List<HashSet<int>> deps, out List<int> order)
     {
         var collected =
-            new List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)>();
+            new List<ModuleGlobal>();
         foreach ((SyntaxTree.Program program, string _) in orderedFiles)
         {
+            string? module = ModuleOf(program: program);
             List<ISyntaxTreeNode> decls = program.Declarations;
             for (int i = 0; i < decls.Count; i++)
             {
@@ -33,13 +35,20 @@ public static class ModuleGlobalOrder
                         IsGlobal: true, Initializer: not null, Type: not null
                     } g)
                 {
-                    collected.Add(item: (g.Name, g.Type, g.Initializer, g.Location));
+                    collected.Add(item: new ModuleGlobal(Module: module, Name: g.Name, Type: g.Type,
+                        Init: g.Initializer, Loc: g.Location));
                     decls[index: i] = g with { Initializer = null };
                 }
             }
         }
 
         globals = DeduplicateGlobals(collected: collected);
+        var namesSeen = globals.GroupBy(keySelector: g => g.Name)
+                               .Where(predicate: group => group.Count() > 1)
+                               .Select(selector: group => group.Key)
+                               .ToHashSet(comparer: StringComparer.Ordinal);
+        globals = globals.Select(selector: g => g with { NameIsShared = namesSeen.Contains(item: g.Name) })
+                         .ToList();
         deps = ComputeGlobalDependencies(orderedFiles: orderedFiles, globals: globals);
 
         // A global whose initializer reads the global itself (`global A: S64 = A + 1`, or through a routine it
@@ -73,7 +82,7 @@ public static class ModuleGlobalOrder
         if (KahnOrder(deps: deps, n: globals.Count).Count == globals.Count)
         {
             List<int> ordered = order;
-            List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)> declared = globals;
+            List<ModuleGlobal> declared = globals;
             List<string> stuck = Enumerable.Range(start: 0, count: globals.Count)
                                            .Where(predicate: i => !ordered.Contains(value: i))
                                            .Select(selector: i => $"'{declared[index: i].Name}'")
@@ -91,7 +100,7 @@ public static class ModuleGlobalOrder
         List<int> cyclic = Enumerable.Range(start: 0, count: globals.Count)
                                      .Where(predicate: i => !placed.Contains(value: i))
                                      .ToList();
-        List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)> all = globals;
+        List<ModuleGlobal> all = globals;
         string names = string.Join(separator: ", ", values: cyclic.Select(selector: i => $"'{all[index: i].Name}'"));
         report(SemanticDiagnosticCode.ModuleGlobalCircularInit,
             $"The globals {names} read each other in their initializers, so none of them can be " +
@@ -126,31 +135,122 @@ public static class ModuleGlobalOrder
         return null;
     }
 
-    /// <summary>Deduplicates collected globals by name (last-write-wins) while preserving first-seen order
-    /// for a stable field layout.</summary>
-    private static List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)>
-        DeduplicateGlobals(
-            List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)>
-                collected)
+    /// <summary>Deduplicates collected globals by module and name (the last declaration wins) while preserving
+    /// first-seen order for a stable field layout.</summary>
+    private static List<ModuleGlobal> DeduplicateGlobals(List<ModuleGlobal> collected)
     {
-        var seenOrder = new List<string>();
-        var latest =
-            new Dictionary<string, (TypeExpression Type, Expression Init, SourceLocation Loc)>(
-                comparer: StringComparer.Ordinal);
-        foreach ((string name, TypeExpression type, Expression init, SourceLocation loc) in
-                 collected)
+        var seenOrder = new List<(string?, string)>();
+        var latest = new Dictionary<(string?, string), ModuleGlobal>();
+        foreach (ModuleGlobal global in collected)
         {
-            if (!latest.ContainsKey(key: name))
+            (string?, string) key = (global.Module, global.Name);
+            if (!latest.ContainsKey(key: key))
             {
-                seenOrder.Add(item: name);
+                seenOrder.Add(item: key);
             }
 
-            latest[key: name] = (type, init, loc);
+            latest[key: key] = global;
         }
 
-        return seenOrder.Select(selector: name => (Name: name, latest[key: name].Type,
-                             latest[key: name].Init, latest[key: name].Loc))
+        return seenOrder.Select(selector: key => latest[key: key])
                         .ToList();
+    }
+
+    /// <summary>The module a program declares (its <c>module</c> header, which the build driver adds to a file
+    /// without one), or null.</summary>
+    public static string? ModuleOf(SyntaxTree.Program program)
+    {
+        return program.Declarations.OfType<ModuleDeclaration>()
+                      .FirstOrDefault()
+                     ?.Path;
+    }
+
+    /// <summary>
+    /// The name a global goes by where every global is kept together (Suflae's one holder of all globals): its own
+    /// name when no other module has a global of that name, or the name joined with its module when two modules
+    /// do, so the two stay apart.
+    /// </summary>
+    public static string StorageName(string? module, string name, bool nameIsShared)
+    {
+        if (!nameIsShared || string.IsNullOrEmpty(value: module))
+        {
+            return name;
+        }
+
+        var sb = new System.Text.StringBuilder(value: name).Append(value: "__");
+        foreach (char c in module)
+        {
+            sb.Append(value: char.IsLetterOrDigit(c: c) ? c : '_');
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Which global a name read in <paramref name="module"/> means: that module's own global of the name,
+    /// else the one global of that name another module has (the last one when several do), else none.</summary>
+    private sealed class GlobalIndex
+    {
+        private readonly Dictionary<(string?, string), int> _byModule = new();
+        private readonly Dictionary<string, int> _byName = new(comparer: StringComparer.Ordinal);
+
+        public GlobalIndex(List<ModuleGlobal> globals)
+        {
+            for (int i = 0; i < globals.Count; i++)
+            {
+                _byModule[key: (globals[index: i].Module, globals[index: i].Name)] = i;
+                _byName[key: globals[index: i].Name] = i;
+            }
+        }
+
+        public bool TryFind(string? module, string name, out int index)
+        {
+            return _byModule.TryGetValue(key: (module, name), value: out index) ||
+                   _byName.TryGetValue(key: name, value: out index);
+        }
+    }
+
+    /// <summary>The free routines of the build by name, each with its module, so a call is followed into the
+    /// routine of the caller's own module first.</summary>
+    private sealed class RoutineIndex
+    {
+        private readonly Dictionary<(string?, string), Statement> _byModule = new();
+        private readonly Dictionary<string, (Statement Body, string? Module)> _byName =
+            new(comparer: StringComparer.Ordinal);
+
+        public void Add(string? module, string name, Statement body)
+        {
+            _byModule[key: (module, name)] = body;
+            _byName[key: name] = (body, module);
+        }
+
+        public void TryAdd(string? module, string name, Statement body)
+        {
+            if (!_byModule.ContainsKey(key: (module, name)))
+            {
+                Add(module: module, name: name, body: body);
+            }
+        }
+
+        public bool TryFind(string? module, string name, out Statement body, out string? bodyModule)
+        {
+            if (_byModule.TryGetValue(key: (module, name), value: out Statement? own))
+            {
+                body = own;
+                bodyModule = module;
+                return true;
+            }
+
+            if (_byName.TryGetValue(key: name, value: out (Statement Body, string? Module) other))
+            {
+                body = other.Body;
+                bodyModule = other.Module;
+                return true;
+            }
+
+            body = null!;
+            bodyModule = null;
+            return false;
+        }
     }
 
     /// <summary>Computes, for each global, the set of OTHER globals it (transitively) depends on. A global's
@@ -159,24 +259,21 @@ public static class ModuleGlobalOrder
     /// (Member-routine calls are not followed — a global read hidden behind `x.foo()` is the residual.)</summary>
     private static List<HashSet<int>> ComputeGlobalDependencies(
         List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
-        List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)> globals)
+        List<ModuleGlobal> globals)
     {
         int n = globals.Count;
-        var nameToIdx = new Dictionary<string, int>(comparer: StringComparer.Ordinal);
-        for (int i = 0; i < n; i++)
-        {
-            nameToIdx[key: globals[index: i].Name] = i; // last decl of a dup name wins
-        }
+        var index = new GlobalIndex(globals: globals);
 
-        // Index every free routine's body by bare name so the dependency scan can follow calls.
-        var routineBodies = new Dictionary<string, Statement>(comparer: StringComparer.Ordinal);
+        // Index every free routine's body by name and module so the dependency scan can follow calls.
+        var routineBodies = new RoutineIndex();
         foreach ((SyntaxTree.Program program, string _) in orderedFiles)
         {
+            string? module = ModuleOf(program: program);
             foreach (ISyntaxTreeNode node in program.Declarations)
             {
                 if (node is RoutineDeclaration { Body: { } body } r)
                 {
-                    routineBodies[key: r.Name] = body;
+                    routineBodies.Add(module: module, name: r.Name, body: body);
                 }
             }
         }
@@ -185,7 +282,8 @@ public static class ModuleGlobalOrder
         for (int i = 0; i < n; i++)
         {
             deps.Add(item: ComputeSingleGlobalDeps(init: globals[index: i].Init,
-                nameToIdx: nameToIdx,
+                module: globals[index: i].Module,
+                index: index,
                 routineBodies: routineBodies));
         }
 
@@ -195,38 +293,39 @@ public static class ModuleGlobalOrder
     /// <summary>Adds to each global's dependencies the globals the <c>destruct</c> of its type reads (and the
     /// destructs of the entity types it holds as member variables, and the free routines they call).</summary>
     private static void AddDestructDependencies(List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
-        List<(string Name, TypeExpression Type, Expression Init, SourceLocation Loc)> globals, List<HashSet<int>> deps)
+        List<ModuleGlobal> globals, List<HashSet<int>> deps)
     {
-        var nameToIdx = new Dictionary<string, int>(comparer: StringComparer.Ordinal);
-        for (int i = 0; i < globals.Count; i++)
-        {
-            nameToIdx[key: globals[index: i].Name] = i;
-        }
-
-        var routineBodies = new Dictionary<string, Statement>(comparer: StringComparer.Ordinal);
+        var index = new GlobalIndex(globals: globals);
+        var routineBodies = new RoutineIndex();
         var memberTypes = new Dictionary<string, List<string>>(comparer: StringComparer.Ordinal);
+        var typeModules = new Dictionary<string, string?>(comparer: StringComparer.Ordinal);
         foreach ((SyntaxTree.Program program, string _) in orderedFiles)
         {
+            string? module = ModuleOf(program: program);
             foreach (ISyntaxTreeNode node in program.Declarations)
             {
                 switch (node)
                 {
                     case RoutineDeclaration { Body: { } body } r:
-                        routineBodies[key: r.Name] = body;
+                        routineBodies.Add(module: module, name: r.Name, body: body);
                         if (r is { OwnerName: { } ownerName, MemberRoutineName: { } memberName })
                         {
-                            routineBodies[key: $"{ownerName}.{memberName}"] = body;
+                            routineBodies.Add(module: module, name: $"{ownerName}.{memberName}", body: body);
                         }
 
                         break;
                     case EntityDeclaration e:
+                        typeModules[key: e.Name] = module;
                         memberTypes[key: e.Name] = e.Members.OfType<VariableDeclaration>()
                                                     .Where(predicate: v => v.Type != null)
                                                     .Select(selector: v => v.Type!.Name)
                                                     .ToList();
                         foreach (RoutineDeclaration m in e.Members.OfType<RoutineDeclaration>())
                         {
-                            routineBodies.TryAdd(key: $"{e.Name}.{m.Name}", value: m.Body);
+                            if (m.Body is { } memberBody)
+                            {
+                                routineBodies.TryAdd(module: module, name: $"{e.Name}.{m.Name}", body: memberBody);
+                            }
                         }
 
                         break;
@@ -247,9 +346,11 @@ public static class ModuleGlobalOrder
                     continue;
                 }
 
-                if (routineBodies.TryGetValue(key: $"{type}.destruct", value: out Statement? destruct))
+                string? typeModule = typeModules.GetValueOrDefault(key: type) ?? globals[index: i].Module;
+                if (routineBodies.TryFind(module: typeModule, name: $"{type}.destruct", body: out Statement destruct,
+                        bodyModule: out string? destructModule))
                 {
-                    foreach (int j in ComputeSingleGlobalDeps(init: destruct, nameToIdx: nameToIdx,
+                    foreach (int j in ComputeSingleGlobalDeps(init: destruct, module: destructModule, index: index,
                                  routineBodies: routineBodies))
                     {
                         if (j != i)
@@ -267,34 +368,35 @@ public static class ModuleGlobalOrder
         }
     }
 
-    /// <summary>BFS over AST expressions from the given initializer; collects indices of globals this
-    /// global directly or transitively depends on by following free-routine call bodies one level.</summary>
-    private static HashSet<int> ComputeSingleGlobalDeps(object init,
-        Dictionary<string, int> nameToIdx, Dictionary<string, Statement> routineBodies)
+    /// <summary>BFS over AST expressions from the given initializer (written in <paramref name="module"/>);
+    /// collects indices of globals this global directly or transitively depends on by following free-routine call
+    /// bodies, a name read in a routine meaning that routine's module's global first.</summary>
+    private static HashSet<int> ComputeSingleGlobalDeps(object init, string? module, GlobalIndex index,
+        RoutineIndex routineBodies)
     {
         var d = new HashSet<int>();
-        var visitedRoutines = new HashSet<string>(comparer: StringComparer.Ordinal);
-        var toScan = new Queue<object>();
-        toScan.Enqueue(item: init);
+        var visitedRoutines = new HashSet<(string?, string)>();
+        var toScan = new Queue<(object Root, string? Module)>();
+        toScan.Enqueue(item: (init, module));
         while (toScan.Count > 0)
         {
-            object root = toScan.Dequeue();
+            (object root, string? rootModule) = toScan.Dequeue();
             AstWalker.WalkExpressions(root: root,
                 visit: e =>
                 {
                     if (e is IdentifierExpression id &&
-                        nameToIdx.TryGetValue(key: id.Name, value: out int j))
+                        index.TryFind(module: rootModule, name: id.Name, index: out int j))
                     {
                         d.Add(item: j);
                     }
 
                     // Follow a call into the callee's body once (transitive hidden dependency).
                     if (e is CallExpression { Callee: IdentifierExpression callee } &&
-                        routineBodies.TryGetValue(key: callee.Name,
-                            value: out Statement? calleeBody) &&
-                        visitedRoutines.Add(item: callee.Name))
+                        routineBodies.TryFind(module: rootModule, name: callee.Name, body: out Statement calleeBody,
+                            bodyModule: out string? calleeModule) &&
+                        visitedRoutines.Add(item: (calleeModule, callee.Name)))
                     {
-                        toScan.Enqueue(item: calleeBody);
+                        toScan.Enqueue(item: (calleeBody, calleeModule));
                     }
                 });
         }
@@ -355,4 +457,16 @@ public static class ModuleGlobalOrder
 
         return any;
     }
+}
+
+/// <summary>A module-level <c>global</c> taken off its declaration: the module it is declared in, its name and type,
+/// its initializer and where it is declared.</summary>
+public sealed record ModuleGlobal(string? Module, string Name, TypeExpression Type, Expression Init, SourceLocation Loc)
+{
+    /// <summary>Whether another global of the build has the same name in a different module.</summary>
+    public bool NameIsShared { get; init; }
+
+    /// <summary>The name it goes by where every global is kept together (see
+    /// <see cref="ModuleGlobalOrder.StorageName"/>).</summary>
+    public string StorageName => ModuleGlobalOrder.StorageName(module: Module, name: Name, nameIsShared: NameIsShared);
 }

@@ -836,31 +836,47 @@ internal sealed class TesseraWriter
 
     /// <summary>The module-level cells of the program's <c>global</c>s (a preset made by a construction is one too),
     /// by name, declared on first use.</summary>
-    private readonly Dictionary<string, (string Global, TypeSymbol Type)> _moduleGlobals = new(comparer: StringComparer.Ordinal);
+    private readonly Dictionary<(string? Module, string Name), (string Global, TypeSymbol Type)> _moduleGlobals = new();
 
     /// <summary>
     /// The module-level cell of the program's <c>global</c> <paramref name="name"/>: a Tessera <c>global</c> that
     /// starts zeroed, as the LLVM emitter's does. The initializer is an assignment at the top of <c>start()</c>, and
-    /// the teardown at its exits. Null when no user program declares a global of that name.
+    /// the teardown at its exits. <paramref name="module"/> is the module of the global analysis resolved the name
+    /// to (two modules may each have a global of one name), null for the first program that declares one. Null when
+    /// no user program declares a global of that name.
     /// </summary>
-    public (string Global, TypeSymbol Type)? ModuleGlobal(string name)
+    public (string Global, TypeSymbol Type)? ModuleGlobal(string name, string? module = null)
     {
-        if (_moduleGlobals.TryGetValue(key: name, value: out (string Global, TypeSymbol Type) known))
+        if (_moduleGlobals.TryGetValue(key: (module, name), value: out (string Global, TypeSymbol Type) known))
         {
             return known;
         }
 
-        foreach ((Program program, string _, string module) in _input.UserPrograms)
+        foreach ((Program program, string _, string programModule) in _input.UserPrograms)
         {
-            if (!program.Declarations.Any(predicate: d => d is VariableDeclaration { IsGlobal: true } g && g.Name == name) ||
-                _input.Registry.LookupVariable(name: name)?.Type is not { } type)
+            string? declaredModule = Builder.Desugaring.ModuleGlobalOrder.ModuleOf(program: program);
+            if (module != null && !string.Equals(a: declaredModule, b: module, comparisonType: StringComparison.Ordinal))
             {
                 continue;
             }
 
-            string global = UniqueName(wanted: $"RF_GLOBAL_{(string.IsNullOrEmpty(value: module) ? name : $"{module.Replace(oldChar: '/', newChar: '_')}_{name}")}");
+            if (!program.Declarations.Any(predicate: d => d is VariableDeclaration { IsGlobal: true } g && g.Name == name) ||
+                (_input.Registry.LookupGlobal(module: declaredModule, name: name) ??
+                 _input.Registry.LookupVariable(name: name))?.Type is not { } type)
+            {
+                continue;
+            }
+
+            if (_moduleGlobals.TryGetValue(key: (declaredModule, name), value: out known))
+            {
+                _moduleGlobals[key: (module, name)] = known;
+                return known;
+            }
+
+            string global = UniqueName(wanted: $"RF_GLOBAL_{(string.IsNullOrEmpty(value: programModule) ? name : $"{programModule.Replace(oldChar: '/', newChar: '_')}_{name}")}");
             _globals.Append(value: $"{Private}global {global}: &{TypeText(type: type)}\n\n");
-            _moduleGlobals[key: name] = (global, type);
+            _moduleGlobals[key: (declaredModule, name)] = (global, type);
+            _moduleGlobals[key: (module, name)] = (global, type);
             return (global, type);
         }
 

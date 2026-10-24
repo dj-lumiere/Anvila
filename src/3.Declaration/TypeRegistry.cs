@@ -847,6 +847,14 @@ public sealed partial class TypeRegistry
     /// <summary>Globals indexed by module-qualified name for unambiguous lookup.</summary>
     private readonly Dictionary<string, VariableInfo> _globalsByQualifiedName = new();
 
+    /// <summary>Names that globals of two or more modules share, so a lookup of one asks which module it is made
+    /// from.</summary>
+    private readonly HashSet<string> _sharedGlobalNames = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The module the analysis is in right now, so a global name two modules share means the asking
+    /// module's own global. Set by the semantic verifier.</summary>
+    public Func<string?>? CurrentModule { get; set; }
+
     #endregion
 
     #region Scope Management
@@ -3317,24 +3325,57 @@ public sealed partial class TypeRegistry
     /// <returns>The variable info if found, null otherwise.</returns>
     public VariableInfo? LookupVariable(string name)
     {
-        return _currentScope.LookupVariable(name: name) ?? _presets.GetValueOrDefault(key: name) ??
-            _presetsByQualifiedName.GetValueOrDefault(key: name) ??
-            _globals.GetValueOrDefault(key: name) ??
-            _globalsByQualifiedName.GetValueOrDefault(key: name);
+        if (_currentScope.LookupVariable(name: name) is { } scoped)
+        {
+            return scoped.IsGlobal ? OwnModuleGlobal(name: name) ?? scoped : scoped;
+        }
+
+        return _presets.GetValueOrDefault(key: name) ??
+               _presetsByQualifiedName.GetValueOrDefault(key: name) ??
+               OwnModuleGlobal(name: name) ??
+               _globals.GetValueOrDefault(key: name) ??
+               _globalsByQualifiedName.GetValueOrDefault(key: name);
+    }
+
+    /// <summary>The global <paramref name="name"/> of the module the analysis is in, when globals of several
+    /// modules have that name, or null.</summary>
+    private VariableInfo? OwnModuleGlobal(string name)
+    {
+        if (!_sharedGlobalNames.Contains(item: name) || CurrentModule?.Invoke() is not { Length: > 0 } module)
+        {
+            return null;
+        }
+
+        return LookupGlobal(module: module, name: name);
+    }
+
+    /// <summary>The global <paramref name="name"/> declared in <paramref name="module"/>, or null.</summary>
+    public VariableInfo? LookupGlobal(string? module, string name)
+    {
+        return string.IsNullOrEmpty(value: module)
+            ? _globals.GetValueOrDefault(key: name)
+            : _globalsByQualifiedName.GetValueOrDefault(key: $"{module}.{name}");
     }
 
     /// <summary>
-    /// Registers a Suflae module-level <c>global</c> variable — mutable, session-lifetime, accessible
-    /// across files within the same module. Mirrors <see cref="RegisterPreset"/> but the global is
-    /// modifiable and NOT a preset (so it is not inlined; codegen gives it real <c>@global</c> storage).
+    /// Registers a module-level <c>global</c> variable: session-lifetime, accessible across files within the same
+    /// module. Mirrors <see cref="RegisterPreset"/> but the global is NOT a preset (so it is not inlined, the LLVM
+    /// emitter gives it real <c>@global</c> storage). Two modules may each have a global of one name, a lookup
+    /// from either module finds its own. Returns the registered variable, which the caller also declares in scope.
     /// </summary>
-    public void RegisterGlobal(string name, TypeSymbol type, string? module = null,
-        bool isSecret = false)
+    public VariableInfo RegisterGlobal(string name, TypeSymbol type, string? module = null,
+        bool isSecret = false, bool isReadOnly = false)
     {
         var variable = new VariableInfo(name: name, type: type)
         {
-            IsModifiable = true, IsGlobal = true, IsSecret = isSecret, Module = module
+            IsModifiable = !isReadOnly, IsGlobal = true, IsSecret = isSecret, Module = module
         };
+
+        if (_globals.TryGetValue(key: name, value: out VariableInfo? earlier) &&
+            !string.Equals(a: earlier.Module, b: module, comparisonType: StringComparison.Ordinal))
+        {
+            _sharedGlobalNames.Add(item: name);
+        }
 
         _globals[key: name] = variable;
 
@@ -3343,6 +3384,16 @@ public sealed partial class TypeRegistry
         {
             _globalsByQualifiedName.TryAdd(key: qualifiedName, value: variable);
         }
+
+        return variable;
+    }
+
+    /// <summary>Declares a registered global in the current scope (the same variable a lookup from another file of
+    /// its module finds), or does nothing when a global of that name is already there: a lookup then finds
+    /// the asking module's own through <see cref="LookupVariable"/>.</summary>
+    public void DeclareGlobalInScope(VariableInfo global)
+    {
+        _currentScope.DeclareVariable(variable: global);
     }
 
     /// <summary>

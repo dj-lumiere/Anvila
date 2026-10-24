@@ -1331,8 +1331,8 @@ public partial class LlvmEmitter
         if (!_localVariables.ContainsKey(key: id.Name))
         {
             // Suflae module-level `global`: its storage IS the `@global` symbol, so that is its address.
-            if (_moduleGlobals.TryGetValue(key: id.Name,
-                    value: out (TypeSymbol Type, string Symbol) gslot))
+            if (TryGetModuleGlobal(name: id.Name, variable: id.ResolvedVariable,
+                    slot: out (TypeSymbol Type, string Symbol) gslot))
             {
                 return gslot.Symbol;
             }

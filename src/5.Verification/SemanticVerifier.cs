@@ -380,6 +380,7 @@ public sealed partial class SemanticVerifier
         TargetConfig? target = null, RfBuildMode buildMode = RfBuildMode.Debug)
     {
         _registry = new TypeRegistry(language: language, stdlibPath: stdlibPath);
+        _registry.CurrentModule = GetCurrentModuleName;
         _typeResolver = new TypeResolver(sa: this);
         _typeBodyResolver = new TypeBodyResolver(sa: this, typeResolver: _typeResolver);
         _signatureResolver = new SignatureResolver(sa: this, typeResolver: _typeResolver);
@@ -398,6 +399,7 @@ public sealed partial class SemanticVerifier
         TargetConfig? target = null, RfBuildMode buildMode = RfBuildMode.Debug)
     {
         _registry = new TypeRegistry(language: language, snapshot: snapshot);
+        _registry.CurrentModule = GetCurrentModuleName;
         _typeResolver = new TypeResolver(sa: this);
         _typeBodyResolver = new TypeBodyResolver(sa: this, typeResolver: _typeResolver);
         _signatureResolver = new SignatureResolver(sa: this, typeResolver: _typeResolver);

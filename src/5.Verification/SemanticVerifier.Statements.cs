@@ -1883,7 +1883,12 @@ public sealed partial class SemanticVerifier
 
         ReportAssignWhileMatched(target: assign.Target);
         ForgetNarrowing(target: assign.Target);
-        TypeSymbol targetType = AnalyzeExpression(expression: assign.Target);
+        // A global's initialization at the top of start() names the global of its own file's module, which is not
+        // the entry file's when two modules have a global of that name.
+        TypeSymbol targetType = assign.IsGlobalInit
+            ? InImportStateOf(file: assign.Location.FileName,
+                analyze: () => AnalyzeExpression(expression: assign.Target))
+            : AnalyzeExpression(expression: assign.Target);
         // The name assigned to is not a read of what it holds.
         if (assign.Target is IdentifierExpression assignedName)
         {
@@ -1914,7 +1919,7 @@ public sealed partial class SemanticVerifier
         // Check modifiability (a global's own initialization at the top of start() excepted)
         if (assign.Target is IdentifierExpression id)
         {
-            VariableInfo? varInfo = _registry.LookupVariable(name: id.Name);
+            VariableInfo? varInfo = id.ResolvedVariable ?? _registry.LookupVariable(name: id.Name);
             if (varInfo is { IsModifiable: false } && !assign.IsGlobalInit)
             {
                 ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
