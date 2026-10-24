@@ -479,7 +479,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         stmts.Add(item: MakeDestroyCall(name: target.Name,
             type: t,
             destroy: destroy,
-            loc: owner.Location));
+            loc: owner.Location,
+            variable: target.ResolvedVariable));
         stmts.Add(item: rebuild(
             arg: new IdentifierExpression(Name: newName, Location: owner.Location)
             {
@@ -894,9 +895,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     }
 
     private ExpressionStatement MakeDestroyCall(string name, TypeSymbol type, RoutineInfo destroy,
-        SourceLocation loc)
+        SourceLocation loc, VariableInfo? variable = null)
     {
-        var ident = new IdentifierExpression(Name: name, Location: loc) { ResolvedType = type };
+        // The variable the name was resolved to goes along: a global's name may be one two modules have.
+        var ident = new IdentifierExpression(Name: name, Location: loc) { ResolvedType = type, ResolvedVariable = variable };
         var callee = new MemberExpression(Object: ident, MemberName: "destruct", Location: loc)
         {
             ResolvedType = _blankType

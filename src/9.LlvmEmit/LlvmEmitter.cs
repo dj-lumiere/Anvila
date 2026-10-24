@@ -162,6 +162,13 @@ public partial class LlvmEmitter
             return true;
         }
 
+        // A name a lowering wrote without the variable: the global of the module the routine is in, when it has one.
+        if (_currentEmittingRoutine?.Module is { } routineModule &&
+            _moduleGlobalsByModule.TryGetValue(key: (routineModule, name), value: out slot))
+        {
+            return true;
+        }
+
         return _moduleGlobals.TryGetValue(key: name, value: out slot);
     }
 
