@@ -566,8 +566,8 @@ public sealed partial class SemanticVerifier
             !_registry.OwnerKindGatesAdmit(routine: getItem, owner: lookupType))
         {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-                message: $"A slice of '{lookupType.Name}' would be a copy of its elements, and an element of " +
-                         $"'{lookupType.TypeArguments[index: 0].Name}' is an entity, which is not copied. Walk the " +
+                message: $"A slice of '{lookupType.ShortTypeName}' would be a copy of its elements, and an element of " +
+                         $"'{lookupType.TypeArguments[index: 0].ShortTypeName}' is an entity, which is not copied. Walk the " +
                          "part you need instead: 'xs.skip(a).take(n)'.",
                 location: index.Location);
             // Reported once: the slice keeps its type, so nothing after it is reported again.

@@ -50,7 +50,7 @@ internal sealed class MemberKindGateChecker(TypeRegistry registry, DiagnosticRep
             values: gates.Select(selector: g => $"needs {g.ConstraintType} {g.ParameterName}"));
         report(code: SemanticDiagnosticCode.ValueTypeConstraintViolation,
             message: $"'{definition.Name}' is written only for the instances of its type that '{needs}' admits, and " +
-                     $"'{owner.Name}' is not one of them, so there is no '{definition.Name}' to call on it. Use a " +
+                     $"'{owner.ShortTypeName}' is not one of them, so there is no '{definition.Name}' to call on it. Use a " +
                      "routine that works on these elements in place, or keep values in the collection.",
             location: call.Location);
     }

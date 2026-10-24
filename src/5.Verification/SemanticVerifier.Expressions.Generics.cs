@@ -531,6 +531,8 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        // The routine's kinds and protocols are checked against the type arguments written, as for an inferred call.
+        ValidateRoutineGenericConstraints(routine: routine, typeArgs: typeArgs, location: generic.Location);
         routine = _registry.GetOrCreateRoutineResolution(genericDef: routine,
             typeArguments: typeArgs.ToList());
         return true;

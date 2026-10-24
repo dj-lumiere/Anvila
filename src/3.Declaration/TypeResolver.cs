@@ -899,7 +899,7 @@ internal sealed class TypeResolver
             _sa.ReportError(code: SemanticDiagnosticCode.ValueTypeConstraintViolation,
                 message:
                 $"'{constraint.ParameterName}' needs a record ('needs RecordType {constraint.ParameterName}'), and " +
-                $"'{typeArg.Name}' is not one.",
+                $"'{typeArg.ShortTypeName}' is not one.",
                 location: location);
         }
     }
@@ -926,7 +926,7 @@ internal sealed class TypeResolver
             _sa.ReportError(code: SemanticDiagnosticCode.ReferenceTypeConstraintViolation,
                 message:
                 $"'{constraint.ParameterName}' needs an entity ('needs EntityType {constraint.ParameterName}'), and " +
-                $"'{typeArg.Name}' is not one.",
+                $"'{typeArg.ShortTypeName}' is not one.",
                 location: location);
         }
     }
