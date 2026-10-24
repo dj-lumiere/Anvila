@@ -2394,6 +2394,19 @@ public sealed partial class SemanticVerifier
                 AnalyzeExpression(expression: varDecl.Initializer, expectedType: varType);
             if (!IsAssignableTo(source: initType, target: varType))
             {
+                if (varDecl.ReplacementOf is { } replaced)
+                {
+                    string declared = varDecl.ReplacedRoutineAt is { Line: > 0 } at ? $" (line {at.Line})" : "";
+                    ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
+                        message:
+                        $"You `implant` a `{initType.ShortTypeName}` as the replacement for `{replaced}`, but " +
+                        $"`{replaced}`{declared} needs a `{varType.ShortTypeName}`: the replacement takes the object " +
+                        $"first, then the arguments of `{replaced}`, and gives back what `{replaced}` gives back. Write " +
+                        "the replacement with that signature.",
+                        location: varDecl.Initializer.Location);
+                    return;
+                }
+
                 ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
                     message:
                     $"Cannot assign value of type '{initType.Name}' to variable of type '{varType.Name}'.",

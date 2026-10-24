@@ -158,6 +158,16 @@ public record VariableDeclaration(
     public bool IsLoopTakeSource { get; init; }
 
     /// <summary>
+    /// The member routine (<c>Hero.attack</c>) a builder-written local keeps the replacement of, for ObjectHacker's
+    /// <c>implant</c>. A value of another type is reported as a replacement of the wrong signature, naming the
+    /// routine and both signatures.
+    /// </summary>
+    public string? ReplacementOf { get; init; }
+
+    /// <summary>Where the member routine <see cref="ReplacementOf"/> names is declared.</summary>
+    public SourceLocation? ReplacedRoutineAt { get; init; }
+
+    /// <summary>
     /// A local a lowering pass made to read a value another place keeps (a member variable read into a temp before
     /// the call it is an argument of). The place still holds the value, so the local is a view and is never torn
     /// down.

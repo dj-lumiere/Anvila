@@ -192,8 +192,8 @@ public abstract class TypeSymbol
     /// fully-qualified inner args.
     /// </summary>
     public string ShortTypeName =>
-        this is RoutineTypeSymbol
-            ? Name
+        this is RoutineTypeSymbol routine
+            ? RoutineTypeSymbol.ShortName(parameterTypes: routine.ParameterTypes, returnType: routine.ReturnType)
             : TypeArguments is { Count: > 0 } args
             ? $"{BareName}[{string.Join(separator: ", ",
                 values: args.Select(selector: t => t.ShortTypeName))}]"

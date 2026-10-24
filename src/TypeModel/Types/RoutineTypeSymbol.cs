@@ -71,6 +71,20 @@ public sealed class RoutineTypeSymbol : TypeSymbol
         return $"Callable[{paramList}, {returnName}]";
     }
 
+    /// <summary>The routine type written with each type's short name (<c>Callable[(Hero, S64), S64]</c>), the way a
+    /// message names it.</summary>
+    internal static string ShortName(List<TypeSymbol> parameterTypes, TypeSymbol? returnType)
+    {
+        string paramList = parameterTypes.Count switch
+        {
+            0 => "()",
+            1 => "(" + parameterTypes[index: 0].ShortTypeName + ",)",
+            _ => "(" + string.Join(separator: ", ", values: parameterTypes.Select(selector: p => p.ShortTypeName)) + ")"
+        };
+
+        return $"Callable[{paramList}, {returnType?.ShortTypeName ?? "None"}]";
+    }
+
     /// <summary>
     /// Checks if this function type is compatible with another function type.
     /// FreeRoutine types are compatible if parameter types and return type match.
