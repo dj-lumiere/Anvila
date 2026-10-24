@@ -222,6 +222,19 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             s = s with { Value = visited };
         }
 
+        // `return f()` of a routine that gives nothing still runs the call: the carrier carries no value, so the call
+        // goes first as its own statement (a variant's tail call of a routine that is not failable, which the
+        // variant calls as it is).
+        if (s is { SiteKind: VariantSiteKind.FromReturn, Value: CallExpression { ResolvedType.IsNone: true } noneCall })
+        {
+            return new BlockStatement(Statements:
+                [
+                    new ExpressionStatement(Expression: noneCall, Location: s.Location),
+                    VisitVariantReturn(s: s with { Value = null })
+                ],
+                Location: s.Location);
+        }
+
         return s switch
         {
             { VariantKind: ErrorHandlingVariantKind.TryBool } => LowerTryBoolVariant(vr: s),

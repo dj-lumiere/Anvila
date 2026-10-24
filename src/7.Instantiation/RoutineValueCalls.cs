@@ -151,7 +151,7 @@ internal static class RoutineValueCalls
             } step when MayHoldRoutineValue(type: receiver.ResolvedType ?? emit.OwnerType):
                 return registry.LookupRecoveryVariant(recovered: emit, kind: RecoveryKind.Check) is
                     { ReturnType: { } carrier } check && carrier.TypeArguments is { Count: > 0 }
-                    ? step with { ResolvedRoutine = check, ResolvedType = carrier }
+                    ? step with { ResolvedRoutine = check, ResolvedType = CarrierOfStep(step: step, carrier: carrier, registry: registry) }
                     : null;
             case RecoveryExpression
             {
@@ -168,6 +168,20 @@ internal static class RoutineValueCalls
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// The check carrier of an iteration step: <c>Check</c> of the element the step's own carrier names here. The
+    /// check variant's own return names its owner's parameter (<c>Check[TResult]</c> of a generic adapter), while the
+    /// step was analyzed with the element of the concrete adapter it steps.
+    /// </summary>
+    private static TypeSymbol CarrierOfStep(CallExpression step, TypeSymbol carrier, TypeRegistry registry)
+    {
+        return step.ResolvedType?.TypeArguments is [{ } element] &&
+               element is not GenericParameterTypeSymbol &&
+               registry.LookupType(name: "Check") is { } checkDefinition
+            ? registry.GetOrCreateResolution(genericDef: checkDefinition, typeArguments: [element])
+            : carrier;
     }
 
     /// <summary>

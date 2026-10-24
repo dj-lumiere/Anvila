@@ -61,12 +61,18 @@ internal static class RoutineValueReach
             collection: ownerFields?.Where(predicate: f => f.Type is RoutineTypeSymbol { IsFailable: true })
                                    .Select(selector: f => f.Name) ?? [],
             comparer: StringComparer.Ordinal);
-        var scanner = new Scanner(values: values, fields: fields);
+        // A parameter holding a routine value that may fail in a member variable (`holder.f(x)`).
+        var holders = new HashSet<string>(
+            collection: routine.Parameters.Where(predicate: p => p.Type is not RoutineTypeSymbol &&
+                                                                 RoutineValueCalls.MayHoldRoutineValue(type: p.Type))
+                               .Select(selector: p => p.Name),
+            comparer: StringComparer.Ordinal);
+        var scanner = new Scanner(values: values, fields: fields, holders: holders);
         scanner.VisitStatement(stmt: body);
         return scanner.Found;
     }
 
-    private sealed class Scanner(HashSet<string> values, HashSet<string> fields) : AstRewriter
+    private sealed class Scanner(HashSet<string> values, HashSet<string> fields, HashSet<string> holders) : AstRewriter
     {
         public Reach Found { get; private set; }
 
@@ -119,6 +125,11 @@ internal static class RoutineValueReach
                                                                      },
                 MemberExpression { Object: IdentifierExpression { Name: "me" }, MemberName: var field } =>
                     fields.Contains(item: field),
+                MemberExpression { Object: IdentifierExpression holder } member =>
+                    holders.Contains(item: holder.Name) && member.ResolvedType is null or RoutineTypeSymbol
+                    {
+                        IsFailable: true
+                    },
                 _ => false
             };
         }
