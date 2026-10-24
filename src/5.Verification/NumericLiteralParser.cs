@@ -642,23 +642,23 @@ public static partial class NumericLiteralParser
     }
 
     /// <summary>
-    /// Canonicalizes a finite <c>System.Decimal</c> (decimal128) coefficient/exponent pair — stripping
-    /// FRACTIONAL trailing zeros so equal values share bits (2.50 and 2.5 → 25*10^-1), while leaving
-    /// integers (exp &gt;= 0) as-is (100 stays 100*10^0). Mirrors the runtime <c>decimal_canon</c> so
-    /// a literal and the arithmetic result of the same value are bit-identical. (Kept out of
+    /// Puts a finite <c>System.Decimal</c> (decimal128) coefficient/exponent pair in Decimal's one form, the form
+    /// every Decimal result takes at run time (Ingrid's <c>dec_normalized</c>): every trailing zero of the
+    /// coefficient is stripped while the exponent stays at most qmax 6111 (2.50 → 25×10^-1, 100 → 1×10^2), and a
+    /// zero is +0 at exponent 0. So a literal and the result of the same value are the same bits. (Kept out of
     /// <c>RoundAndClamp</c>, which the IEEE encoders share and must NOT normalize.)
     /// </summary>
-    private static (BigInteger Coeff, int Biased) CanonicalizeDecimalD128(BigInteger coeff,
-        int biased)
+    private static (BigInteger Coeff, int Biased) NormalizeDecimalD128(BigInteger coeff, int biased)
     {
         const int decBias = 6176;
+        const int qMax = 6111;
         if (coeff.IsZero)
         {
-            return (coeff, decBias); // canonical zero: exponent 0
+            return (coeff, decBias);
         }
 
         int exp = biased - decBias;
-        while (exp < 0 && (coeff % 10).IsZero)
+        while (exp < qMax && (coeff % 10).IsZero)
         {
             coeff /= 10;
             exp++;
@@ -673,8 +673,9 @@ public static partial class NumericLiteralParser
     /// q + 6176, bits112..0 = coefficient as a plain binary integer &lt; 10^34 &lt; 2^113), but is
     /// rounded the way Decimal rounds (half up: the n with n - 0.5 &lt;= x &lt; n + 0.5 at the digit
     /// kept, so a positive tie moves its magnitude up and a negative one down) and is
-    /// RazorForge's CANONICAL decimal: fractional trailing zeros are stripped so equal values share
-    /// bits, while integers (exp &gt;= 0) are left as-is. Pmax 34, stored exponent q in [-6176, 6111].
+    /// in Decimal's one form: every trailing zero of the coefficient is stripped and a zero is +0, so equal
+    /// values share bits. A negative literal reaches here as one signed text (the lowering folds <c>-</c>
+    /// into a Decimal literal), so its tie rounds half up too. Pmax 34, stored exponent q in [-6176, 6111].
     /// Throws on overflow — Decimal is finite-only, so a literal that would round to infinity is a
     /// buildtime range error (the caller's catch turns it into a diagnostic); explicit inf/nan
     /// literals are rejected by the analyzer before this is reached.
@@ -701,11 +702,11 @@ public static partial class NumericLiteralParser
                 $"decimal literal '{str}' is out of range for Decimal (overflows to infinity)");
         }
 
-        // Canonicalize (strip fractional trailing zeros so equal values share bits).
-        (coeff, biased) = CanonicalizeDecimalD128(coeff: coeff, biased: biased);
+        // Decimal's one form: no trailing zeros in the coefficient, and a zero is +0 (no -0).
+        (coeff, biased) = NormalizeDecimalD128(coeff: coeff, biased: biased);
 
         UInt128 bits = (UInt128)(uint)biased << 113 | (UInt128)coeff;
-        if (p.Sign)
+        if (p.Sign && !coeff.IsZero)
         {
             bits |= (UInt128)1 << 127;
         }

@@ -807,6 +807,19 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
         TypeSymbol? operandType = operand.ResolvedType;
 
+        // `-` on a Decimal literal is one signed literal: Decimal rounds half up, so a negative tie of 35 or more
+        // digits rounds toward +infinity only when the encoder sees the sign (`-1.0000000000000000000000000000000005`
+        // is -1, not the negation of the positive literal's rounding).
+        if (unary.Operator == UnaryOperator.Minus &&
+            operand is LiteralExpression { Value: string text } literal &&
+            operandType is { Name: "Decimal" })
+        {
+            string signed = text.StartsWith(value: '-')
+                ? text[1..]
+                : "-" + text;
+            return literal with { Value = signed, Location = unary.Location };
+        }
+
         // Flags types have no bitnot memberRoutine body -> codegen handles it via EmitBitwiseNot.
         // Skip memberRoutine-call lowering so the UnaryExpression passes through unchanged.
         if (operandType is FlagsTypeSymbol && memberRoutineName == "bitnot")
