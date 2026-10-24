@@ -4018,9 +4018,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
     /// Wrappers (Retained, Hijacked, ...) are standard library records, so a `needs T is RecordType`
     /// constraint accepts them like any other record.
+    /// <summary>Whether a type takes <c>needs RecordType</c>: a record, or a routine value, which is a value too (a copy
+    /// is the same routine).</summary>
     private static bool IsRecordLike(TypeSymbol type)
     {
-        return type is RecordTypeSymbol;
+        return type is RecordTypeSymbol or RoutineTypeSymbol;
     }
 
     /// <summary>Wraps a pre-built body statement in a minimal shell RoutineDeclaration.</summary>

@@ -892,7 +892,9 @@ internal sealed class TypeResolver
     private void ValidateValueTypeConstraint(TypeSymbol typeArg,
         GenericConstraintDeclaration constraint, SourceLocation location)
     {
-        if (typeArg.Category != TypeCategory.Record || _sa._registry.IsEntityKind(type: typeArg))
+        // A routine value is a value too: a copy is the same routine.
+        if (typeArg.Category is not (TypeCategory.Record or TypeCategory.Routine) ||
+            _sa._registry.IsEntityKind(type: typeArg))
         {
             _sa.ReportError(code: SemanticDiagnosticCode.ValueTypeConstraintViolation,
                 message:

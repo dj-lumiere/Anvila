@@ -3630,7 +3630,8 @@ public sealed partial class TypeRegistry
         {
             ConstraintKind.ChoiceType => type is ChoiceTypeSymbol,
             ConstraintKind.FlagsType => type is FlagsTypeSymbol,
-            ConstraintKind.RecordType => type is RecordTypeSymbol,
+            // A routine value is a value too: a copy is the same routine.
+            ConstraintKind.RecordType => type is RecordTypeSymbol or RoutineTypeSymbol,
             ConstraintKind.EntityType => type is EntityTypeSymbol,
             ConstraintKind.VariantType => type is VariantTypeSymbol,
             ConstraintKind.Obeys or ConstraintKind.AnyType => true,
