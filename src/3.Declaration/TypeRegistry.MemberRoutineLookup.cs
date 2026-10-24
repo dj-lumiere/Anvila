@@ -1044,6 +1044,100 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// Binds a routine's own type parameters that only a constraint names (<c>TElement</c> of
+    /// <c>routine Retained[T].emitter() -> ... needs T obeys Emittable[TElement]</c>) from the conformance of a
+    /// parameter already bound: <c>T</c> bound to <c>List[S64]</c>, which obeys <c>Emittable[S64]</c>, so
+    /// <c>TElement</c> is <c>S64</c>. A protocol the bound type obeys through another (<c>Emittable</c> of an
+    /// emitter) counts. The constraint's arguments are unified against the conformance's as patterns, so a nested
+    /// one (<c>Emittable[Tuple[TKey, TValue]]</c>) binds its parts. Runs to a fixed point, since one binding can
+    /// make another constraint's parameter known.
+    /// </summary>
+    internal void BindFromConformance(List<GenericConstraintDeclaration>? constraints,
+        List<string>? genericParams, Dictionary<string, TypeSymbol> into)
+    {
+        if (constraints is not { Count: > 0 } || genericParams is not { Count: > 0 })
+        {
+            return;
+        }
+
+        bool bound;
+        do
+        {
+            bound = false;
+            foreach (GenericConstraintDeclaration constraint in constraints)
+            {
+                if (constraint.ConstraintType != ConstraintKind.Obeys ||
+                    !into.TryGetValue(key: constraint.ParameterName, value: out TypeSymbol? known) ||
+                    known is GenericParameterTypeSymbol || constraint.ConstraintTypes is not { } protocols)
+                {
+                    continue;
+                }
+
+                foreach (TypeExpression written in protocols)
+                {
+                    if (written.GenericArguments is not { Count: > 0 } writtenArgs ||
+                        CanonicalProtocolDef(t: LookupType(name: written.Name)) is not { } protocolDef ||
+                        ObeyedProtocols(type: RoamedHandleEntity(type: known))
+                           .FirstOrDefault(predicate: p =>
+                                ReferenceEquals(objA: CanonicalProtocolDef(t: p), objB: protocolDef)) is not
+                            { TypeArguments: { } conformanceArgs })
+                    {
+                        continue;
+                    }
+
+                    for (int i = 0; i < writtenArgs.Count && i < conformanceArgs.Count; i++)
+                    {
+                        int before = into.Count;
+                        UnifyWrittenPattern(pattern: writtenArgs[index: i], concrete: conformanceArgs[index: i],
+                            genericParams: genericParams, into: into);
+                        bound |= into.Count > before;
+                    }
+                }
+            }
+        } while (bound);
+    }
+
+    /// <summary>The entity a shared handle stands for (<c>E</c> of <c>Roamed[E]</c>), else the type itself: the handle
+    /// obeys what the entity obeys.</summary>
+    private static TypeSymbol RoamedHandleEntity(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol
+        {
+            GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol entity]
+        }
+            ? entity
+            : type;
+    }
+
+    /// <summary>Unifies a written type pattern of a constraint (<c>TElement</c>, <c>Tuple[TKey, TValue]</c>) against a
+    /// concrete type, recording each of <paramref name="genericParams"/> it binds.</summary>
+    private static void UnifyWrittenPattern(TypeExpression pattern, TypeSymbol concrete, List<string> genericParams,
+        Dictionary<string, TypeSymbol> into)
+    {
+        if (pattern.GenericArguments is not { Count: > 0 } parts)
+        {
+            if (genericParams.Contains(item: pattern.Name) && !into.ContainsKey(key: pattern.Name) &&
+                concrete is not GenericParameterTypeSymbol)
+            {
+                into[key: pattern.Name] = concrete;
+            }
+
+            return;
+        }
+
+        if (concrete.TypeArguments is not { } concreteParts)
+        {
+            return;
+        }
+
+        for (int i = 0; i < parts.Count && i < concreteParts.Count; i++)
+        {
+            UnifyWrittenPattern(pattern: parts[index: i], concrete: concreteParts[index: i],
+                genericParams: genericParams, into: into);
+        }
+    }
+
+    /// <summary>
     /// True when two routines carry the same set of <c>needs Me …</c> gate constraints (compared by
     /// kind + constraint-type names, order-insensitive). Differently-gated same-signature protocol
     /// defaults are DISTINCT overloads and must not dedup each other in the owner memberRoutine list.
@@ -2772,6 +2866,12 @@ public sealed partial class TypeRegistry
                 genericParams: memberRoutine.GenericParameters,
                 into: substitution2);
         }
+
+        // A routine parameter only a constraint names binds from the conformance of the owner's bound arguments
+        // (`routine Retained[T].emitter() -> RetainedEmitter[TElement, T/Emitter, T] needs T obeys
+        // Emittable[TElement]` on `Retained[List[S64]]`: `TElement` is `S64`), so the routine is concrete here too.
+        BindFromConformance(constraints: memberRoutine.GenericConstraints,
+            genericParams: memberRoutine.GenericParameters, into: substitution2);
 
         if (substitution2.Count == 0)
         {

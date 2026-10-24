@@ -100,10 +100,12 @@ internal static class RoamedTransparency
             return null;
         }
 
+        // A protocol's routine made concrete for an entity a program writes takes the entity's handle as `me`, as the
+        // entity's own routines do (TypeRegistry.HandleTakenAsMe), so the handle is passed as it is.
         bool projectToInner = effective.MeType is not RecordTypeSymbol
         {
             GenericDefinition.Name: RuntimeContract.Roamed
-        };
+        } && !(protocolOwned && registry.HandleTakenAsMe(type: inner) != null);
         return new Projection(MemberRoutine: effective,
             ProjectToInner: projectToInner,
             InnerType: inner);

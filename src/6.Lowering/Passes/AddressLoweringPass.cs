@@ -15,6 +15,9 @@ namespace Builder.Lowering.Passes;
 /// <item><c>x.get_address()</c> on a struct record is that address as an <c>Addr</c>: the same
 /// <see cref="AddressOfExpression"/> under a <see cref="BackendCastExpression"/> (pointer to pointer, the same value).</item>
 /// <item><c>x.var_name()</c> is the text of the receiver's name.</item>
+/// <item><c>p.referent()</c> on a <c>Hijacked[R]</c> of a pointer-shaped record <c>R</c> is <c>p</c> itself read as an
+/// <c>R</c>: <c>hijack</c> of such a record is the pointer it holds, not the address of its storage, so the inverse
+/// reads the same bits back rather than loading through them.</item>
 /// </list>
 /// A pointer-shaped record (<c>Addr</c>, <c>Hijacked[T]</c>, an RC wrapper) keeps its own body, which returns
 /// the pointer it holds. Runs at Phase 9 over every body that reaches a backend, after monomorphization.
@@ -64,6 +67,14 @@ internal sealed class AddressLoweringPass(TypeRegistry registry) : AstRewriter
 
             case RuntimeContract.RawPointer.Hijack when receiver is VariantTypeSymbol variant:
                 return AddressOf(storage: member.Object, type: variant, location: call.Location);
+
+            case RuntimeContract.RawPointer.Referent
+                when WrapperShape.TryGet(type: receiver, name: out string pointerName, inner: out TypeSymbol pointee) &&
+                     pointerName == RuntimeContract.Hijacked && pointee is RecordTypeSymbol { BackendType: "ptr" }:
+                return new BackendCastExpression(Value: member.Object, Location: call.Location)
+                {
+                    ResolvedType = pointee
+                };
 
             case "get_address" when receiver is RecordTypeSymbol { BackendType: null } record:
                 return new BackendCastExpression(

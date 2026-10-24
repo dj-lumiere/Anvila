@@ -35,6 +35,11 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     private readonly Dictionary<(string ProtoKey, string ImplKey), RoutineInfo> _synthesized =
         new();
 
+    /// <summary>(resolved call routine key, implementerFullName) -> the body made for a call whose member routine has
+    /// type parameters of its own (<c>select[U]</c>): a call resolved on the protocol (<c>Emittable[S64].select</c>)
+    /// is rebound to it, as a call resolved on the implementer already names it.</summary>
+    private readonly Dictionary<(string CallKey, string ImplKey), RoutineInfo> _synthesizedForCall = new();
+
     /// <summary>
     /// Synthesizes per-implementer protocol-default-impl bodies for every call site reachable from
     /// the current body set, iterating to a local fixed point. Returns <c>true</c> if any new body
@@ -157,6 +162,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
             memberRoutineArgs.Count <= allParams.Count)
         {
             return SynthesizeMemberGenericBody(pr: pr,
+                rr: rr,
                 impl: impl,
                 memberRoutineArgs: memberRoutineArgs,
                 allParams: allParams);
@@ -170,7 +176,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     /// Synthesizes the per-implementer body for a memberRoutine-generic resolution, keyed by the
     /// resolution's own RegistryKey. Returns true if a new body was added.
     /// </summary>
-    private bool SynthesizeMemberGenericBody(RoutineInfo pr, TypeSymbol impl,
+    private bool SynthesizeMemberGenericBody(RoutineInfo pr, RoutineInfo rr, TypeSymbol impl,
         List<TypeSymbol> memberRoutineArgs, List<string> allParams)
     {
         Dictionary<string, TypeSymbol> fullSubs = BuildProtocolGenericSubs(
@@ -193,10 +199,12 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
 
         // Guard on the key we actually store under (mgInfo's), or the fixed-point loop
         // never converges (re-adding every iteration).
-        if (ctx.InstantiatedGenericBodies.ContainsKey(key: mgInfo.RegistryKey))
+        if (ctx.InstantiatedGenericBodies.TryGetValue(key: mgInfo.RegistryKey, value: out MonomorphizedBody? made))
         {
-            return false;
+            return _synthesizedForCall.TryAdd(key: (rr.RegistryKey, impl.FullName), value: made.Info);
         }
+
+        _synthesizedForCall[key: (rr.RegistryKey, impl.FullName)] = mgInfo;
 
         Statement? mgBody = CloneProtocolRoutineBody(protocolRoutine: pr,
             implementer: impl,
@@ -208,9 +216,10 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         }
 
         ctx.LiveRoutineKeys.Add(item: mgInfo.RegistryKey);
+        TypeSymbol mgMe = MeFor(implementer: impl);
         var mgSubs = new Dictionary<string, TypeSymbol>(dictionary: fullSubs)
         {
-            [key: "me"] = impl, [key: "Me"] = impl
+            [key: "me"] = mgMe, [key: "Me"] = mgMe
         };
         ctx.InstantiatedGenericBodies[key: mgInfo.RegistryKey] = new MonomorphizedBody(
             Ast: WrapInShellDecl(name: mgInfo.Name, body: mgBody, info: mgInfo),
@@ -282,9 +291,10 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         // "me" is the receiver value binding; "Me" maps ProtocolSelf (Name "Me") to the
         // implementer so codegen's type substitution resolves `Me`-typed constructions
         // (e.g. `EnumerateIterator[T, Me]`) instead of leaking ProtocolSelf.
+        TypeSymbol me = MeFor(implementer: impl);
         var bodySubs = new Dictionary<string, TypeSymbol>(dictionary: protoSubs)
         {
-            [key: "me"] = impl, [key: "Me"] = impl
+            [key: "me"] = me, [key: "Me"] = me
         };
         ctx.InstantiatedGenericBodies[key: synthesized.RegistryKey] = new MonomorphizedBody(
             Ast: WrapInShellDecl(name: synthesized.Name, body: clonedBody, info: synthesized),
@@ -376,7 +386,14 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
                         return;
                     }
 
-                    bool specialization = (rr!.RecoveryOf ?? rr).IsSpecialization || pr.IsSpecialization;
+                    if (_synthesizedForCall.TryGetValue(key: (rr!.RegistryKey, impl.FullName),
+                            value: out RoutineInfo? madeForCall))
+                    {
+                        rebind(obj: madeForCall);
+                        return;
+                    }
+
+                    bool specialization = (rr.RecoveryOf ?? rr).IsSpecialization || pr.IsSpecialization;
                     if (_synthesized.TryGetValue(key: SynthesisKey(pr: pr, impl: impl,
                                 typeArguments: specialization ? rr.TypeArguments : null),
                             value: out RoutineInfo? newRoutine))
@@ -686,8 +703,9 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         // protoSubs also carries the bound memberRoutine generics and <paramref name="typeArguments"/> the
         // concrete memberRoutine args, so the synthesized routine mangles identically to the call site's
         // resolution symbol (e.g. `List[Text].zip[S64,List[S64]](List[S64])`).
+        TypeSymbol me = MeFor(implementer: implementer);
         var subs =
-            new Dictionary<string, TypeSymbol>(dictionary: protoSubs) { [key: "Me"] = implementer };
+            new Dictionary<string, TypeSymbol>(dictionary: protoSubs) { [key: "Me"] = me };
         var newParams = protocolRoutine.Parameters
                                        .Select(selector: p =>
                                             p.WithSubstitutedType(
@@ -702,6 +720,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         {
             Kind = protocolRoutine.Kind,
             OwnerType = implementer,
+            // An entity a program writes is taken as its handle, as its own routines take it.
+            MeType = ReferenceEquals(objA: me, objB: implementer) ? null : me,
             // A realm's surface routine stays one on each implementer, keyed and named apart from the shared one.
             SurfaceRealm = protocolRoutine.SurfaceRealm,
             Parameters = newParams,
@@ -739,8 +759,9 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         // calls in the body then re-resolve against the implementer's memberRoutines. The protocol's own
         // generic params (e.g. T→Text) are folded in so body types like EnumerateIterator[T] become
         // concrete (EnumerateIterator[Text]) and don't leak the element param into codegen.
+        TypeSymbol me = MeFor(implementer: implementer);
         var typeSubs =
-            new Dictionary<string, TypeSymbol>(dictionary: protoSubs) { [key: "Me"] = implementer };
+            new Dictionary<string, TypeSymbol>(dictionary: protoSubs) { [key: "Me"] = me };
         var stringSubs = typeSubs.ToDictionary(keySelector: kv => kv.Key,
             elementSelector: kv => kv.Value.InstanceArgumentName);
         Statement cloned = GenericAstRewriter.RewriteStatement(stmt: originalBody,
@@ -754,8 +775,18 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         // can only set the synthesized `emit`'s try variant call's ResolvedType when `eachStmt.Iterable`
         // (= `me`) carries one — without that, PatternLoweringPass sees subjectType=null and
         // refuses to fold the `is None / else var v` when-chain, leaking a NonePattern into codegen.
-        AnnotateMeReferences(node: cloned, implementer: implementer);
+        AnnotateMeReferences(node: cloned, implementer: me);
         return cloned;
+    }
+
+    /// <summary>
+    /// What a body made for <paramref name="implementer"/> holds as <c>me</c> and means by <c>Me</c>: the handle of an
+    /// entity a program writes (its own routines take the handle, and the body calls them), else the implementer
+    /// itself. An adapter the body builds over <c>me</c> then holds the handle as its source.
+    /// </summary>
+    private TypeSymbol MeFor(TypeSymbol implementer)
+    {
+        return ctx.Registry.HandleTakenAsMe(type: implementer) ?? implementer;
     }
 
     private static void AnnotateMeReferences(object? node, TypeSymbol implementer)

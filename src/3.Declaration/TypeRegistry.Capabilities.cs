@@ -629,6 +629,15 @@ public sealed partial class TypeRegistry
     /// </summary>
     internal bool TypeObeysProtocol(TypeSymbol type, string protocolName)
     {
+        // The handle library code holds an entity a program writes as (HandleTakenAsMe) stands for the entity, so it
+        // obeys what the entity obeys: an adapter over it (`WhereEmittable[T, Roamed[Steps]]`) needs its source to be
+        // emittable.
+        if (EntityOfHandleTakenAsMe(type: type) is { } handled &&
+            TypeObeysProtocol(type: handled, protocolName: protocolName))
+        {
+            return true;
+        }
+
         List<TypeSymbol>? implemented = ImplementedProtocolsWithAmbientFold(type: type);
         if (implemented == null)
         {

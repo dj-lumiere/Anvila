@@ -57,6 +57,9 @@ public static class RuntimeContract
 
         /// <summary>Raw-pointer escape hatch that yields a <c>Hijacked[T]</c> (intercepted in codegen).</summary>
         public const string Hijack = "hijack";
+
+        /// <summary><c>Hijacked[T].referent()</c>: the value the pointer refers to, the inverse of <c>hijack</c>.</summary>
+        public const string Referent = "referent";
     }
 
     /// <summary>Reference-counting controller surface (<c>RetainManager[T]</c> and the RC wrappers).</summary>
@@ -151,6 +154,10 @@ public static class RuntimeContract
 
         /// <summary>Whether the handle holds nothing: Suflae's <c>x is None</c> on an optional entity reference.</summary>
         public const string IsHollow = "is_hollow";
+
+        /// <summary>Make the entity keep another one alive (an emitter adapter keeping the collection it walks), the
+        /// builder's call right after a Suflae program makes an adapter.</summary>
+        public const string Keep = "keep";
 
         /// <summary>The standard library's mark on an entity that guards itself (a mailbox over a channel): its member
         /// variables are set once when it is made and what they hold does its own locking, so a call on its handle

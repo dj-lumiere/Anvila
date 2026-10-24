@@ -3529,6 +3529,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             }
         }
 
+        // (6) A routine parameter only a constraint names (`TElement` of `needs T obeys Emittable[TElement]`) binds
+        // from the conformance of the parameter the constraint is on, as the member lookup bound it.
+        if (resolvedRoutine.GenericDefinition is { } definition)
+        {
+            ctx.Registry.BindFromConformance(constraints: definition.GenericConstraints,
+                genericParams: definition.GenericParameters, into: typeSubs);
+        }
+
         return typeSubs;
     }
 

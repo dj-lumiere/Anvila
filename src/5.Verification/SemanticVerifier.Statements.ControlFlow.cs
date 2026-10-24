@@ -1007,7 +1007,8 @@ public sealed partial class SemanticVerifier
                           "else owns (an element read into a variable, `var b = boxes[0]`, holds one). Return a copy " +
                           "with '.duplicate()', take the element out of its container (`remove_at`), or return the token " +
                           $"by declaring the routine '-> {returnType.Name}'."
-                        : $"Cannot return value of type '{returnType.Name}' from function expecting '{_currentRoutine.ReturnType.Name}'.",
+                        : $"Cannot return value of type '{WrittenTypeName(type: returnType)}' from function expecting " +
+                          $"'{WrittenTypeName(type: _currentRoutine.ReturnType)}'.",
                     location: ret.Location);
             }
         }

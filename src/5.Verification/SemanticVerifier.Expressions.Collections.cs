@@ -1400,7 +1400,10 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            List<TypeSymbol> conformances = ImplementedProtocolsOf(type: boundType);
+            // The protocols it obeys through others count (an emitter is an emittable), and a shared entity's handle
+            // obeys what the entity obeys.
+            List<TypeSymbol> conformances =
+                Declaration.TypeRegistry.ObeyedProtocols(type: Declaration.RoamedTransparency.SharedEntityOf(type: boundType));
             InferFromConstraintProtocols(gp: gp,
                 inferred: inferred,
                 constraintTypes: constraintTypes,

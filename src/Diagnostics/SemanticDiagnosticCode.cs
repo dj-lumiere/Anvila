@@ -855,7 +855,8 @@ public enum SemanticDiagnosticCode
     /// <summary>An emitter or adapter that points at the container it walks (`xs.emitter()`, `xs.where(...)`) is kept in
     /// a field, or returned when it walks something other than `me` or a token parameter. It is a token on the
     /// container's elements: a local variable may hold it, a routine may return one made from `me` or a token
-    /// parameter, nothing else that outlives the container may.</summary>
+    /// parameter, nothing else that outlives the container may. One taken from a `Retained` handle (`r.emitter()`)
+    /// holds one more reference to the container and is no token.</summary>
     SourceIterableKept = 644,
 
     /// <summary>A generic routine whose type argument appears only in its result (<c>x.to()</c>) is called where

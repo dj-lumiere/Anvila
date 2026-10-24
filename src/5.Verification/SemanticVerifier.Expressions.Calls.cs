@@ -3458,7 +3458,11 @@ public sealed partial class SemanticVerifier
         // is re-homed onto the implementer (owner is the concrete type, not the protocol),
         // so an owner-is-protocol gate would miss it; for non-protocol routines no return
         // type contains Me, so this substitution is a no-op.
-        substitutions[key: "Me"] = dispatchType;
+        // An entity a program writes is reached through its handle (its routines take the handle as `me`), so `Me`
+        // is the handle: an adapter built over it (`WhereEmittable[T, Me]`) holds the handle and can call the
+        // entity's routines.
+        TypeSymbol meBinding = _registry.HandleTakenAsMe(type: dispatchType) ?? dispatchType;
+        substitutions[key: "Me"] = meBinding;
 
         // Protocol memberRoutine resolved through a generic param's `obeys` constraint
         // (e.g. `r.iter()` where `r: __T0 obeys Iterable[S64]`). The resolved memberRoutine
@@ -3481,7 +3485,7 @@ public sealed partial class SemanticVerifier
         }
 
         // `Me` as the base of an associated type (`Emittable.emit!() -> Me/Item`) is the receiver too.
-        return _registry.ReplaceProtocolSelf(type: callReturnType, owner: dispatchType);
+        return _registry.ReplaceProtocolSelf(type: callReturnType, owner: meBinding);
     }
 
     /// <summary>

@@ -214,9 +214,16 @@ public sealed partial class TypeRegistry
 
         var newArgs = new List<TypeSymbol>(capacity: args.Count);
         bool changed = false;
-        foreach (TypeSymbol arg in args)
+        for (int slot = 0; slot < args.Count; slot++)
         {
-            TypeSymbol lowered = RoamEntitySlot(resolved: arg, roamedDef: roamedDef);
+            TypeSymbol arg = args[index: slot];
+            // A parameter the type only points at (`source: Hijacked[TSource]` of an adapter) names the value it
+            // walks, held the way library code holds it: the entity itself, or the handle of an entity a program
+            // writes (HandleTakenAsMe). That is what `xs.where(...)` builds, so a field or a return written
+            // `WhereEmittable[Integer, List[Integer]]` is the same type.
+            TypeSymbol lowered = PointsAtParameter(genericDef: genericDef, slot: slot)
+                ? PointedAtArgument(argument: arg)
+                : RoamEntitySlot(resolved: arg, roamedDef: roamedDef);
             if (!ReferenceEquals(objA: lowered, objB: arg))
             {
                 changed = true;
@@ -228,6 +235,42 @@ public sealed partial class TypeRegistry
         return changed
             ? GetOrCreateResolution(genericDef: genericDef, typeArguments: newArgs)
             : resolved;
+    }
+
+    /// <summary>A pointed-at argument (see <see cref="PointsAtParameter"/>) as library code holds it: an entity a program
+    /// writes as its handle, any other entity as itself, even when it was written in a slot that already made it a
+    /// handle.</summary>
+    private TypeSymbol PointedAtArgument(TypeSymbol argument)
+    {
+        TypeSymbol entity = argument is RecordTypeSymbol
+        {
+            GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol held]
+        }
+            ? held
+            : argument;
+        return HandleTakenAsMe(type: entity) ?? entity;
+    }
+
+    /// <summary>Whether <paramref name="genericDef"/> holds its type parameter at <paramref name="slot"/> only as a
+    /// raw pointer to it (a member variable <c>Hijacked[P]</c>): an adapter's source.</summary>
+    private static bool PointsAtParameter(TypeSymbol genericDef, int slot)
+    {
+        if (genericDef.GenericParameters is not { } parameters || slot >= parameters.Count)
+        {
+            return false;
+        }
+
+        string parameter = parameters[index: slot];
+        List<MemberVariableInfo>? memberVariables = genericDef switch
+        {
+            EntityTypeSymbol e => e.MemberVariables,
+            RecordTypeSymbol r => r.MemberVariables,
+            _ => null
+        };
+        return memberVariables != null && memberVariables.Any(predicate: v =>
+            WrapperShape.TryGet(type: v.Type, name: out string wrapper, inner: out TypeSymbol pointee) &&
+            wrapper == RuntimeContract.Hijacked && pointee is GenericParameterTypeSymbol { Name: var named } &&
+            named == parameter);
     }
 
     private static bool IsRoamedSlot(TypeSymbol type)
@@ -275,6 +318,39 @@ public sealed partial class TypeRegistry
     public bool EntitiesAreSharedIn(string? filePath)
     {
         return CompilationRules.EntitiesAreShared && !IsOtherLanguageFile(filePath: filePath);
+    }
+
+    /// <summary>
+    /// The handle the routines of <paramref name="type"/> take as <c>me</c>: <c>Roamed[E]</c> for an entity a program
+    /// writes in a file whose language shares entities (its routines are resolved with the handle as <c>me</c>, so
+    /// <c>me.field</c> goes through the handle's lock), else null. A library entity's routines take the entity itself.
+    /// A library routine made concrete for such an entity (a protocol default, an adapter over it) holds the entity
+    /// as this handle too, so it can call the entity's routines.
+    /// </summary>
+    public TypeSymbol? HandleTakenAsMe(TypeSymbol? type)
+    {
+        if (type is not EntityTypeSymbol entity)
+        {
+            return null;
+        }
+
+        string? file = entity.Location?.FileName ?? entity.GenericDefinition?.Location?.FileName;
+        return file != null && !IsStandardLibraryFile(filePath: file) && EntitiesAreSharedIn(filePath: file) &&
+               LookupType(name: RuntimeContract.Roamed) is { } roamedDef
+            ? GetOrCreateResolution(genericDef: roamedDef, typeArguments: [entity])
+            : null;
+    }
+
+    /// <summary>The entity a handle of <see cref="HandleTakenAsMe"/> stands for (<c>E</c> of <c>Roamed[E]</c>, E an
+    /// entity a program writes), else null.</summary>
+    public EntityTypeSymbol? EntityOfHandleTakenAsMe(TypeSymbol? type)
+    {
+        return type is RecordTypeSymbol
+               {
+                   GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol entity]
+               } && HandleTakenAsMe(type: entity) != null
+            ? entity
+            : null;
     }
 
     /// <summary>
