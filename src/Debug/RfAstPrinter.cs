@@ -1725,9 +1725,10 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         var sb = new StringBuilder();
         sb.AppendLine(handler: $"{I}flags {QualifyDecl(name: node.Name)}");
         _indent++;
-        foreach (string m in node.Members)
+        for (int i = 0; i < node.Members.Count; i++)
         {
-            sb.AppendLine(handler: $"{I}{m}");
+            string bit = (node.BitNumbers is { } writtenBits ? writtenBits[index: i] : null) is LiteralExpression { Value: var written } ? $": {written}" : "";
+            sb.AppendLine(handler: $"{I}{node.Members[index: i]}{bit}");
         }
 
         _indent--;

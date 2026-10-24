@@ -214,7 +214,7 @@ public partial class Parser
     /// <summary>
     /// Parses a flags declaration (combinable bitflag set).
     /// Grammar: "flags" IDENTIFIER NEWLINE INDENT FlagsMember { FlagsMember } DEDENT
-    /// FlagsMember = UPPER_IDENTIFIER NEWLINE
+    /// FlagsMember = UPPER_IDENTIFIER [ ":" Expression ] NEWLINE (the bit the member is, all members or none)
     /// </summary>
     /// <param name="visibility">Access modifier for this flags type.</param>
     /// <returns>A <see cref="FlagsDeclaration"/> AST node.</returns>
@@ -226,6 +226,7 @@ public partial class Parser
         string name = ConsumeIdentifier(errorMessage: "Expected flags name");
 
         var members = new List<string>();
+        var bitNumbers = new List<Expression?>();
 
         // Parse flags body as indented block
         Consume(type: TokenType.Newline, errorMessage: "Expected newline after flags header");
@@ -250,6 +251,8 @@ public partial class Parser
 
             string memberName = ConsumeIdentifier(errorMessage: "Expected flags member name");
             members.Add(item: memberName);
+            // `MINE: 0`: the bit the member is. The analyzer checks that every member has one or none does.
+            bitNumbers.Add(item: CheckAndAdvance(type: TokenType.Colon) ? ParseExpression() : null);
             CheckAndAdvance(type: TokenType.Newline);
         }
 
@@ -266,7 +269,8 @@ public partial class Parser
         return new FlagsDeclaration(Name: name,
             Members: members,
             Visibility: visibility,
-            Location: location);
+            Location: location,
+            BitNumbers: bitNumbers.Any(predicate: b => b != null) ? bitNumbers : null);
     }
 
     /// <summary>

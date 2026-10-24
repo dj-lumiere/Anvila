@@ -1327,7 +1327,11 @@ internal sealed partial class AstPrinter
         for (int i = 0; i < flags.Members.Count; i++)
         {
             EmitPrefix(start: memberStarts[index: i], depth: depth + 1, first: i == 0, policy: BlankPolicy.Preserve);
-            EmitHead(start: memberStarts[index: i], depth: depth + 1, head: Doc.Text(text: flags.Members[index: i]));
+            Doc head = (flags.BitNumbers is { } writtenBits ? writtenBits[index: i] : null) is { } bit
+                ? Doc.Concat(Doc.Text(text: flags.Members[index: i] + ": "),
+                    Expr(expression: bit, context: ExprContext.Statement))
+                : Doc.Text(text: flags.Members[index: i]);
+            EmitHead(start: memberStarts[index: i], depth: depth + 1, head: head);
         }
 
         EmitBlockTrailing(depth: depth + 1);

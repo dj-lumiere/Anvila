@@ -2003,7 +2003,13 @@ public sealed partial class StdlibLoader
         var members = new List<FlagsMemberInfo>();
         for (int i = 0; i < flags.Members.Count; i++)
         {
-            members.Add(item: new FlagsMemberInfo(Name: flags.Members[index: i], BitPosition: i));
+            // A member written with its bit (`MINE: 0`) is that bit. The body resolver checks the bits.
+            int bit = (flags.BitNumbers is { } writtenBits ? writtenBits[index: i] : null) is LiteralExpression { Value: var written } &&
+                      int.TryParse(s: Convert.ToString(value: written, provider: System.Globalization.CultureInfo.InvariantCulture),
+                          result: out int number)
+                ? number
+                : i;
+            members.Add(item: new FlagsMemberInfo(Name: flags.Members[index: i], BitPosition: bit));
         }
 
         var typeInfo = new FlagsTypeSymbol(name: flags.Name)

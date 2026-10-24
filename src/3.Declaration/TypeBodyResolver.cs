@@ -811,9 +811,12 @@ internal sealed class TypeBodyResolver
         int explicitCount = choice.Cases.Count(predicate: c => c.Value != null);
         if (explicitCount > 0 && explicitCount < choice.Cases.Count)
         {
+            string without = string.Join(separator: ", ",
+                values: choice.Cases.Where(predicate: c => c.Value == null).Select(selector: c => $"'{c.Name}'"));
             _sa.ReportError(code: SemanticDiagnosticCode.ChoiceMixedValues,
-                message: $"Choice '{choice.Name}' mixes explicit and implicit case values. " +
-                         "Either all cases must have explicit values or none should.",
+                message: $"Some cases of the choice '{choice.Name}' are given a value and some aren't ({without} " +
+                         "aren't). Give every case its value, or none, and the cases are then 0, 1, 2, ... in the " +
+                         "order they are written.",
                 location: choice.Location);
         }
 
@@ -962,6 +965,7 @@ internal sealed class TypeBodyResolver
 
         var members = new List<FlagsMemberInfo>();
         var seenNames = new HashSet<string>();
+        List<int>? bits = ResolveFlagsBitNumbers(flags: flags);
 
         for (int i = 0; i < flags.Members.Count; i++)
         {
@@ -976,11 +980,75 @@ internal sealed class TypeBodyResolver
                 continue;
             }
 
-            members.Add(item: new FlagsMemberInfo(Name: memberName, BitPosition: i));
+            members.Add(item: new FlagsMemberInfo(Name: memberName, BitPosition: bits is { } resolvedBits ? resolvedBits[index: i] : i));
         }
 
         _sa._registry.UpdateFlagsMembers(flagsName: _sa._registry.RealmRegistryKey(type: flagsInfo),
             members: members);
+    }
+
+    /// <summary>
+    /// The bit each member of <paramref name="flags"/> is written with (<c>MINE: 0</c>), or null when none is written
+    /// (the members are then bits 0, 1, 2, ... in order). Either every member has a bit or none does, each bit is a
+    /// number from 0 to 63, and no two members share one.
+    /// </summary>
+    private List<int>? ResolveFlagsBitNumbers(FlagsDeclaration flags)
+    {
+        if (flags.BitNumbers is not { } written)
+        {
+            return null;
+        }
+
+        if (written.Any(predicate: b => b == null))
+        {
+            string without = string.Join(separator: ", ",
+                values: flags.Members.Where(predicate: (_, i) => i < written.Count && written[index: i] == null)
+                             .Select(selector: m => $"'{m}'"));
+            _sa.ReportError(code: SemanticDiagnosticCode.ChoiceMixedValues,
+                message: $"Some members of the flags type '{flags.Name}' say which bit they are and some don't " +
+                         $"({without} don't). Give every member its bit, or none, and the members are then bits 0, " +
+                         "1, 2, ... in the order they are written.",
+                location: flags.Location);
+            return null;
+        }
+
+        var bits = new List<int>();
+        var taken = new Dictionary<int, string>();
+        for (int i = 0; i < written.Count; i++)
+        {
+            string member = flags.Members[index: i];
+            Expression value = written[index: i]!;
+            int? bit = value is LiteralExpression { Value: var literal } && long.TryParse(
+                s: Convert.ToString(value: literal, provider: System.Globalization.CultureInfo.InvariantCulture),
+                result: out long number) && number is >= 0 and <= 63
+                ? (int)number
+                : null;
+            if (bit == null)
+            {
+                _sa.ReportError(code: SemanticDiagnosticCode.ChoiceCaseValueOverflow,
+                    message: $"The flags member '{member}' of '{flags.Name}' is given a bit that isn't one of the 64 " +
+                             "bits of a flags value: write a whole number from 0 to 63.",
+                    location: value.Location);
+                bits.Add(item: i);
+                continue;
+            }
+
+            if (taken.TryGetValue(key: bit.Value, value: out string? other))
+            {
+                _sa.ReportError(code: SemanticDiagnosticCode.ChoiceDuplicateValue,
+                    message: $"The flags members '{other}' and '{member}' of '{flags.Name}' are both bit {bit}. " +
+                             "Give each member a bit of its own.",
+                    location: value.Location);
+            }
+            else
+            {
+                taken[key: bit.Value] = member;
+            }
+
+            bits.Add(item: bit.Value);
+        }
+
+        return bits;
     }
 
     /// <summary>

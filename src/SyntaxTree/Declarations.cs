@@ -555,6 +555,8 @@ public record ChoiceDeclaration(
 /// <param name="Members">List of UPPER_IDENTIFIER member names (builder assigns bit positions)</param>
 /// <param name="Visibility">Access control modifier</param>
 /// <param name="Location">Source location information</param>
+/// <param name="BitNumbers">The bit each member is written with (<c>MINE: 0</c>), one entry per member, null for a
+/// member written without one. Null when no member has one.</param>
 /// <remarks>
 /// Flags declarations support:
 /// <list type="bullet">
@@ -569,7 +571,8 @@ public record FlagsDeclaration(
     string Name,
     List<string> Members,
     VisibilityModifier Visibility,
-    SourceLocation Location) : Declaration(Location: Location)
+    SourceLocation Location,
+    List<Expression?>? BitNumbers = null) : Declaration(Location: Location)
 {
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
