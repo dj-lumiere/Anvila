@@ -107,22 +107,30 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         // its synthesized bodies are folded in by the incremental GMP. Mirrors GenericClosurePass's PDIL↔GMP
         // fixpoint, which the push pipeline relies on but which reachability-disabled demand build bypasses.
         var pdil = new ProtocolDefaultImplLoweringPass(ctx: ctx);
-        int guard = 0;
-        while (guard++ < 100)
+        // ObjectHacker's routine tables list what the walk reached, so they are written once it settles, and the
+        // walk goes on through what they call. A table written again can describe more types: repeat until none
+        // changes.
+        var tables = new ReflectionTablePass(ctx: ctx, adapter: adapter);
+        int tableRounds = 0;
+        do
         {
-            rounds++;
-            bool terminate = RunCollectRound(adapter: adapter,
-                entrySeeds: entrySeeds,
-                synthesizedBodies: synthesizedBodies,
-                pdil: pdil,
-                clk: clk,
-                round: rounds,
-                meas: Meas);
-            if (terminate)
+            int guard = 0;
+            while (guard++ < 100)
             {
-                break;
+                rounds++;
+                bool terminate = RunCollectRound(adapter: adapter,
+                    entrySeeds: entrySeeds,
+                    synthesizedBodies: synthesizedBodies,
+                    pdil: pdil,
+                    clk: clk,
+                    round: rounds,
+                    meas: Meas);
+                if (terminate)
+                {
+                    break;
+                }
             }
-        }
+        } while (tableRounds++ < 20 && tables.Rebuild());
 
         // REBUILD the program-body index: under the demand flip, each reached stdlib file is SA'd + desugared
         // ON DEMAND during the fixpoint above, and the lowering passes REASSIGN decl.Body (immutable records →
@@ -803,6 +811,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
             }
         }
 
+        result.AddRange(collection: ReflectionTablePass.ReflectableSeeds(ctx: ctx));
         return result;
     }
 

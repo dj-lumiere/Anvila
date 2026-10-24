@@ -1750,9 +1750,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // monomorphized instance — so a generic throw needs the def's list too.
         private void SeedThrowableCrashPath(RoutineInfo r)
         {
+            // A copy: discovering a crash path can analyze another file, which adds to the routine's thrown types.
             foreach (TypeSymbol thrown in r.ThrowableTypes.Concat(
-                         second: r.GenericDefinition?.ThrowableTypes ??
-                                 Enumerable.Empty<TypeSymbol>()))
+                                               second: r.GenericDefinition?.ThrowableTypes ??
+                                                       Enumerable.Empty<TypeSymbol>())
+                                          .ToList())
             {
                 if (_ctx.Registry.LookupMemberRoutine(type: thrown,
                         memberRoutineName: RuntimeContract.CrashMessage) is not { } tcm)

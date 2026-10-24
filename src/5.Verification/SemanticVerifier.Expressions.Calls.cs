@@ -2586,8 +2586,10 @@ public sealed partial class SemanticVerifier
     private void RebindFreeOverloadByArity(CallExpression call, string callName,
         ref RoutineInfo? routine)
     {
-        // A routine that takes this many arguments (parameter defaults fill the rest) keeps the call.
-        if (routine is not { IsGenericDefinition: false, IsVariadic: false } ||
+        // A routine that takes this many arguments (parameter defaults fill the rest) keeps the call. A generic
+        // routine found first by its name may be the wrong overload as well: a plain routine of the same name with
+        // another arity (`call(target: T, name:, args:)` beside `call(info:, args:)`) is looked for the same way.
+        if (routine is not { IsVariadic: false } ||
             RoutineCanAcceptArgCount(routine: routine, argCount: call.Arguments.Count))
         {
             return;
@@ -4694,9 +4696,16 @@ public sealed partial class SemanticVerifier
                        .All(predicate: a => r.Parameters.Any(predicate: p => p.Name == a.Name));
         }
 
-        if (_registry.FreeRoutinesWithBaseName(baseName: $"{home}.{callName}").Any(predicate: Fits))
+        // The routine found first stays when it takes the call. Otherwise another routine of its module with that
+        // name that does is the one meant (a generic `call(target:, name:, args:)` found before `call(info:, args:)`).
+        if (Fits(r: routine))
         {
             return routine;
+        }
+
+        if (_registry.FreeRoutinesWithBaseName(baseName: $"{home}.{callName}").FirstOrDefault(predicate: Fits) is { } homeFit)
+        {
+            return homeFit;
         }
 
         List<RoutineInfo> fitting = _importedModules

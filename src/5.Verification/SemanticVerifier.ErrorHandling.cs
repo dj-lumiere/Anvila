@@ -1063,10 +1063,15 @@ public sealed partial class SemanticVerifier
                                                   routine.Module == moduleName ||
                                                   routine.BaseName == qualifiedName))
                                             .ToList();
+        // Matching by the parameters' written type names misses a type written another way than its info names it
+        // (`Roamed[SF::System.Dict[Text, Unknown]]`): the info registered for the declaration is its own then.
         return MatchRoutineDeclaration(candidates: standaloneCandidates,
                    decl: decl,
                    moduleName: moduleName) ??
-               ResolveCreatorDeclaration(typeName: bareName, decl: decl);
+               ResolveCreatorDeclaration(typeName: bareName, decl: decl) ??
+               (decl.ResolvedInfo is { SurfaceRealm: null, OwnerType: null } declared
+                   ? _registry.GetRoutineByExactKey(registryKey: declared.RegistryKey)
+                   : null);
     }
 
     /// <summary>

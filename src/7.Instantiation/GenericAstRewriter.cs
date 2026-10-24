@@ -1297,19 +1297,27 @@ internal static class GenericAstRewriter
 
         // A lowering pass that named a template's own parameter (`var _cif_0: T` for a conditional expression)
         // leaves the type unresolved, since a parameter is not a type yet. The parameter's binding is.
+        TypeSymbol? knownType = type.KnownType;
         if (resolvedType == null && type.GenericArguments == null && ctx.TypeSubs != null &&
             ctx.TypeSubs.TryGetValue(key: type.Name, value: out TypeSymbol? bound))
         {
             resolvedType = bound;
+            // A name bound only to a type, with no spelling to put in its place, is that type wherever it is
+            // analyzed again: a body the builder writes as text names each type it needs by a placeholder.
+            if (name == type.Name)
+            {
+                knownType ??= bound;
+            }
         }
 
         if (name == type.Name && args == null && type.GenericArguments == null &&
-            ReferenceEquals(objA: resolvedType, objB: type.ResolvedType))
+            ReferenceEquals(objA: resolvedType, objB: type.ResolvedType) &&
+            ReferenceEquals(objA: knownType, objB: type.KnownType))
         {
             return type; // No change
         }
 
-        return type with { Name = name, GenericArguments = args, ResolvedType = resolvedType };
+        return type with { Name = name, GenericArguments = args, ResolvedType = resolvedType, KnownType = knownType };
     }
 
     /// <summary>
