@@ -1306,6 +1306,14 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        // `Integer` and `Decimal` operators that can fail (`a // b` by zero) are failable calls too: a routine whose
+        // failure is one of them is failable on purpose.
+        if (!isIntegerCheckedOp && memberRoutine is { IsFailable: true } &&
+            leftType.Name is IntegerTypeName or "Decimal" && _currentRoutine != null)
+        {
+            _currentRoutine.HasFailableCalls = true;
+        }
+
         ValidateDangerousImplicitCall(routine: memberRoutine,
             written: $"'{binary.Operator.ToStringRepresentation()}'", location: binary.Location);
 

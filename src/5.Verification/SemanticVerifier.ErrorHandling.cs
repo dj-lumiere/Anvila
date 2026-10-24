@@ -289,11 +289,12 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The bodies of the user's routines that are NOT failable, by registry key. Such a routine can still
-    /// fail beneath its call (a checked operator, a subscript, a bare call of a failable routine), and a
-    /// call of it made under <c>try</c>/<c>check</c> must recover that failure too: it goes
-    /// through a recovery variant built from this body, exactly as a failable routine's does. Stdlib
-    /// routines are not recorded: a stdlib routine that can fail is declared failable.
+    /// The bodies of the user's routines that are NOT failable, and of lifted lambdas, by registry key. A routine
+    /// that is not failable is a wall: a failure inside it crashes there, even under <c>try</c>/<c>check</c>
+    /// above its call. Only the failures of the routine values it was handed as <c>failable Callable[...]</c> pass
+    /// through it, so a call of it under a keyword goes through a recovery variant built from this body that
+    /// passes those on and nothing else (<see cref="RoutineValueReach"/>). A lifted lambda is the routine value
+    /// itself: its own failures (a checked operator, a subscript, a call of a failable routine) are its failures.
     /// </summary>
     private readonly Dictionary<string, Statement> _recoverableUserBodies = new(comparer: StringComparer.Ordinal);
 
@@ -428,12 +429,11 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// <c>TypeRegistry.MayFailBeneath</c>: whether a routine that is not failable can fail beneath its call.
-    /// A library routine can when it calls a routine value or hands one on, or steps an iterator whose type may
-    /// hold one (<see cref="RoutineValueReach"/>). A user routine: before the user bodies are analyzed (a
-    /// <c>try</c> written in a body analyzed before the routine it calls) every user routine counts, and its
-    /// variant then recovers whatever its analyzed body turns out to hold. Afterwards the body is scanned: a
-    /// checked operator, a failable subscript, a call that can fail (at any depth) or a call through a routine
-    /// value makes it count.
+    /// A routine that is not failable is a wall, so a user or library routine can only through a routine value
+    /// that may fail: it calls one it was handed or holds, hands one on, or steps an iterator whose type may hold
+    /// one (<see cref="RoutineValueReach"/>). A lifted lambda is a routine value itself: before the user bodies
+    /// are analyzed it counts, afterwards its body is scanned (a checked operator, a failable subscript, a call
+    /// that can fail or a call through a routine value that may fail).
     /// </summary>
     private bool MayFailBeneathForRecovery(RoutineInfo routine)
     {
@@ -442,6 +442,11 @@ public sealed partial class SemanticVerifier
         {
             return RecoverableLibraryBody(routine: routine) is { } libraryBody &&
                    RoutineValueReach.MayFail(routine: routine, body: libraryBody);
+        }
+
+        if (!routine.IsLambda)
+        {
+            return RoutineValueReach.MayFail(routine: routine, body: body);
         }
 
         if (!_recoverableBodiesAnalyzed)
@@ -484,7 +489,8 @@ public sealed partial class SemanticVerifier
                 _registry.RegisterRoutine(routine: variant.Routine);
             }
 
-            if (DeclarationKey(routine: routine) is { } key && !_recoverableUserBodies.ContainsKey(key: key))
+            // A wall passes on only the failures of the routine values it reaches, a lifted lambda its own too.
+            if (!routine.IsLambda)
             {
                 _libraryVariantBases.Add(item: routine.RegistryKey);
             }

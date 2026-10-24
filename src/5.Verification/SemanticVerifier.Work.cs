@@ -101,7 +101,7 @@ public sealed partial class SemanticVerifier
             Body: new BlockStatement(Statements:
                 [
                     new ReturnStatement(Value: new RecoveryExpression(Kind: RecoveryKind.Check, Inner: deferred,
-                        Location: loc), Location: loc)
+                        Location: loc) { IsSynthesized = true }, Location: loc)
                 ], Location: loc),
             Visibility: VisibilityModifier.Secret,
             Annotations: [],
@@ -272,7 +272,7 @@ public sealed partial class SemanticVerifier
                 return inner == null
                     ? null
                     : new RecoveryExpression(Kind: pristineRecovery.Kind, Inner: inner,
-                        Location: pristineRecovery.Location);
+                        Location: pristineRecovery.Location) { IsSynthesized = pristineRecovery.IsSynthesized };
             }
 
             case (CallExpression analyzedCall, CallExpression pristineCall):

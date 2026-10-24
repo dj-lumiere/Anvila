@@ -9,8 +9,9 @@ namespace Builder.Instantiation;
 /// not be analyzed yet): it calls a routine value it was handed or holds in a field (<c>predicate(item)</c>,
 /// <c>me.transform(item)</c>), hands one on to another routine (<c>me.insertion_sort_by(compare: compare)</c>),
 /// or steps an iterator (<c>each item in me</c>, <c>source.emit()</c>), which may be an adapter calling a lambda.
-/// A library routine that is not failable is recovered beneath <c>try</c>/<c>check</c> only through
-/// the routine values it reaches (see <see cref="RoutineValueCalls"/>).
+/// A routine that is not failable is a wall: it is recovered beneath <c>try</c>/<c>check</c> only through
+/// the routine values that may fail it reaches (parameters and member variables of a <c>failable Callable[...]</c>
+/// type, see <see cref="RoutineValueCalls"/>).
 /// </summary>
 internal static class RoutineValueReach
 {
@@ -47,7 +48,8 @@ internal static class RoutineValueReach
     private static Reach Scan(RoutineInfo routine, Statement body)
     {
         var values = new HashSet<string>(
-            collection: routine.Parameters.Where(predicate: p => p.Type is RoutineTypeSymbol).Select(selector: p => p.Name),
+            collection: routine.Parameters.Where(predicate: p => p.Type is RoutineTypeSymbol { IsFailable: true })
+                               .Select(selector: p => p.Name),
             comparer: StringComparer.Ordinal);
         List<MemberVariableInfo>? ownerFields = routine.OwnerType switch
         {
@@ -56,7 +58,8 @@ internal static class RoutineValueReach
             _ => null
         };
         var fields = new HashSet<string>(
-            collection: ownerFields?.Where(predicate: f => f.Type is RoutineTypeSymbol).Select(selector: f => f.Name) ?? [],
+            collection: ownerFields?.Where(predicate: f => f.Type is RoutineTypeSymbol { IsFailable: true })
+                                   .Select(selector: f => f.Name) ?? [],
             comparer: StringComparer.Ordinal);
         var scanner = new Scanner(values: values, fields: fields);
         scanner.VisitStatement(stmt: body);
@@ -110,7 +113,10 @@ internal static class RoutineValueReach
             return expr switch
             {
                 IdentifierExpression { ResolvedRoutine: null } id => values.Contains(item: id.Name) ||
-                                                                     id.ResolvedType is RoutineTypeSymbol,
+                                                                     id.ResolvedType is RoutineTypeSymbol
+                                                                     {
+                                                                         IsFailable: true
+                                                                     },
                 MemberExpression { Object: IdentifierExpression { Name: "me" }, MemberName: var field } =>
                     fields.Contains(item: field),
                 _ => false

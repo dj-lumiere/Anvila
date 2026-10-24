@@ -1283,27 +1283,24 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a throw (fail) statement for error propagation.
-    /// Syntax: <c>throw errorExpression</c>
-    /// Used with Crashable types for error handling.
+    /// Parses a throw statement: <c>throw errorExpression</c>, the error a crashable-kind value.
+    /// In a routine declared <c>failable</c> the failure goes to the caller (a bare call crashes there,
+    /// <c>try</c>/<c>check</c> recover it). In any other routine, and at the top level of a script, the
+    /// routine is a wall: the throw crashes where it stands with the crashable's message, so it is fatal.
     /// </summary>
     /// <returns>A <see cref="ThrowStatement"/> AST node.</returns>
-    private ThrowStatement ParseThrowStatement(bool isFatal)
+    private ThrowStatement ParseThrowStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
-
-        // throw/pierce both require an error expression (a crashable-kind type). `pierce` (isFatal)
-        // marks a fatal, uncatchable crash — no `!`, no try/check variants; `throw` is a recoverable
-        // failure that propagates.
         Expression error = ParseExpression();
 
         ConsumeStatementTerminator();
 
-        return new ThrowStatement(Error: error, Location: location, IsFatal: isFatal);
+        return new ThrowStatement(Error: error, Location: location, IsFatal: !_routineBeingParsedIsFailable);
     }
 
     /// <summary>
-    /// Parses <c>todo</c>, a place not written yet. It is a <c>pierce NotImplementedError(feature: ...)</c> naming
+    /// Parses <c>todo</c>, a place not written yet. It is a fatal <c>throw NotImplementedError(feature: ...)</c> naming
     /// the routine: running it crashes, it never makes the routine failable, and it ends its path, so a body that
     /// is only <c>todo</c> needs no <c>return</c>.
     /// </summary>

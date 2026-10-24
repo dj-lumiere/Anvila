@@ -462,19 +462,8 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // A routine whose body throws must say so on its declaration: `failable routine f(...)`.
-        // Call sites never write the `!`, so the declaration is the one place a reader learns the
-        // routine can fail. Synthesized routines carry their failability from the routine they derive from.
-        if (routineInfo.HasThrow && !routine.IsFailable && !routineInfo.IsSynthesized)
-        {
-            ReportError(code: SemanticDiagnosticCode.ThrowOutsideFailableFunction,
-                message:
-                $"'{routine.Name}' throws, so it is declared 'failable': write 'failable routine {routine.Name}(...)'. " +
-                $"Callers still call it as '{routine.Name}(...)'.",
-                location: routine.Location,
-                fix: new SuggestedFix(Title: "Write 'failable routine'",
-                    Edits: [TextEdit.Insert(line: routine.Location.Line, column: routine.Location.Column, text: "failable ")]));
-        }
+        // A routine value that may fail goes only to a `failable Callable[...]` (RF-S761).
+        CheckFailableValuesGoWhereMarked(body: routine.Body);
 
         // Failable routine with no throw — error: a ! routine that can't fail is misleading. An
         // implementation of a protocol's failable requirement (`Enterable.enter!`) keeps the `!` the protocol

@@ -95,9 +95,7 @@ internal sealed partial class AstPrinter
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "todo")));
                 break;
             case ThrowStatement thrown:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: thrown.IsFatal
-                        ? "pierce "
-                        : "throw "),
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "throw "),
                     Expr(expression: thrown.Error, context: ExprContext.Statement)));
                 break;
             case DropStatement dropped:

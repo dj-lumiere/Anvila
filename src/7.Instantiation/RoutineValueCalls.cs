@@ -15,11 +15,14 @@ namespace Builder.Instantiation;
 /// value made beneath <c>try</c>/<c>check</c> goes through that entry
 /// (<see cref="CallExpression.RecoversThroughValue"/>), and its carrier is propagated like the carrier of any other
 /// failable call, so a failure inside the lambda is recovered by the keyword above it. A call of the value made
-/// with no keyword above it calls the routine itself and still crashes on failure.
+/// with no keyword above it calls the routine itself and still crashes on failure. Only a value whose type is
+/// written <c>failable Callable[...]</c> may fail: any other routine value is called as it is, a failure inside it
+/// crashing there.
 /// </summary>
 internal static class RoutineValueCalls
 {
-    /// <summary>The routine type <paramref name="call"/> goes through, when it calls a routine value.</summary>
+    /// <summary>The routine type <paramref name="call"/> goes through, when it calls a routine value that may fail
+    /// (one of a <c>failable Callable[...]</c> type).</summary>
     public static RoutineTypeSymbol? ValueType(CallExpression call)
     {
         if (call.ResolvedRoutine != null || call.RecoversThroughValue)
@@ -27,13 +30,14 @@ internal static class RoutineValueCalls
             return null;
         }
 
-        return call.Callee switch
+        RoutineTypeSymbol? type = call.Callee switch
         {
             IdentifierExpression { ResolvedRoutine: null, ResolvedType: RoutineTypeSymbol local } => local,
             MemberExpression member when call.LoweringKind == CallLoweringKind.DynamicCall =>
                 member.ResolvedType as RoutineTypeSymbol ?? FieldType(member: member),
             _ => null
         };
+        return type is { IsFailable: true } ? type : null;
     }
 
     /// <summary>The declared type of the routine-typed field a member expression names.</summary>
@@ -81,9 +85,10 @@ internal static class RoutineValueCalls
     }
 
     /// <summary>
-    /// Whether a value of <paramref name="type"/> may hold a routine value, at any depth of its fields and type
-    /// arguments: an iterator adapter (<c>SelectEmittable</c>, <c>WhereEmittable</c>) holds the lambda it calls.
-    /// A type still written with a parameter may hold one.
+    /// Whether a value of <paramref name="type"/> may hold a routine value that may fail (of a
+    /// <c>failable Callable[...]</c> type), at any depth of its fields and type arguments: an iterator adapter
+    /// (<c>SelectEmittable</c>, <c>WhereEmittable</c>) holds the lambda it calls. A type still written with a
+    /// parameter may hold one.
     /// </summary>
     public static bool MayHoldRoutineValue(TypeSymbol? type)
     {
@@ -99,7 +104,8 @@ internal static class RoutineValueCalls
 
         switch (type)
         {
-            case RoutineTypeSymbol:
+            case RoutineTypeSymbol routine:
+                return routine.IsFailable;
             case GenericParameterTypeSymbol or ProtocolTypeSymbol or ProtocolSelfTypeSymbol
                 or AssociatedProjectionTypeSymbol:
                 return true;

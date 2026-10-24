@@ -1742,6 +1742,9 @@ public sealed partial class SemanticVerifier
             Location: target.Location);
         Expression entered = isTry
             ? new RecoveryExpression(Kind: RecoveryKind.Try, Inner: enter, Location: target.Location)
+            {
+                IsSynthesized = true
+            }
             : enter;
         TypeSymbol enteredType = AnalyzeExpression(expression: entered);
         if (enter.ResolvedType is not { } token || token is ErrorTypeSymbol || enteredType is ErrorTypeSymbol)

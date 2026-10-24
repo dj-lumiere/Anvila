@@ -70,6 +70,38 @@ public sealed partial class SemanticVerifier
         return true;
     }
 
+    /// <summary>
+    /// Reports a <c>try</c>/<c>check</c> written over an expression that reaches no failable call (RF-S760). The
+    /// diagnostic points at the call when the expression is one, and names it.
+    /// </summary>
+    private void ReportNothingToRecover(RecoveryExpression recovery)
+    {
+        string keyword = RecoveryKeyword(kind: recovery.Kind);
+        Expression inner = recovery.Inner;
+        string? routineName = inner switch
+        {
+            CallExpression { ResolvedRoutine: { } routine } => routine.Name,
+            GenericMemberRoutineCallExpression { ResolvedRoutine: { } generic } => generic.Name,
+            _ => null
+        };
+        string what = routineName != null
+            ? $"'{routineName}' is not failable, so nothing under '{keyword}' can fail"
+            : $"nothing under '{keyword}' can fail: the expression calls no failable routine";
+        string fix = routineName != null
+            ? $"Remove '{keyword}', or declare '{routineName}' as 'failable routine {routineName}(...)' if it can fail."
+            : $"Remove '{keyword}', or call a failable routine under it.";
+        ReportError(code: SemanticDiagnosticCode.NothingToRecover,
+            message: $"You wrote '{keyword}', but {what}. A failure inside a routine that is not failable crashes " +
+                     $"there, and '{keyword}' only receives failures that rise through failable routines. {fix}",
+            location: inner.Location,
+            fix: new SuggestedFix(Title: $"Remove '{keyword}'",
+                Edits:
+                [
+                    new TextEdit(StartLine: recovery.Location.Line, StartColumn: recovery.Location.Column,
+                        EndLine: inner.Location.Line, EndColumn: inner.Location.Column, NewText: "")
+                ]));
+    }
+
     /// <summary>The payload type a <c>try</c> (<c>Maybe[T]</c>) or <c>check</c> (<c>Check[T]</c>) carrier holds, or
     /// null when <paramref name="carrier"/> is not that keyword's carrier.</summary>
     private static TypeSymbol? CarrierPayload(TypeSymbol? carrier, RecoveryKind kind)
@@ -83,6 +115,10 @@ public sealed partial class SemanticVerifier
 
     private TypeSymbol AnalyzeRecoveryExpression(RecoveryExpression recovery, TypeSymbol? expectedType = null)
     {
+        // The names the expression itself steals (`check produce(out: steal feeder)`): the composition base takes them
+        // as they were before the steal, and the steal inside the base hands them on.
+        var deadBefore = new HashSet<string>(collection: _deadrefVariables, comparer: StringComparer.Ordinal);
+
         // Analyze the inner expression first so every sub-call carries its ResolvedRoutine and ResolvedType.
         // The decomposition below keys failable-ness off the ResolvedRoutine IsFailable flag. The inner expression
         // expects the carrier's payload: `var n: S64? = try count.to()` converts to `S64`.
@@ -107,6 +143,14 @@ public sealed partial class SemanticVerifier
         Expression inner = AsPlainCall(expr: recovery.Inner);
         var hoister = new RecoveryFailableHoister(seed: 0, registry: _registry);
         Expression residual = hoister.VisitExpression(expr: inner);
+
+        // A keyword over an expression that reaches no failable call has nothing to receive.
+        if (hoister.Hoisted.Count == 0 && !hoister.ReachesFailableValue && !recovery.IsSynthesized &&
+            !ContainsUnresolvedTypeParameter(type: innerType))
+        {
+            ReportNothingToRecover(recovery: recovery);
+            return ErrorTypeSymbol.Instance;
+        }
 
         // SINGLE failable call (the overwhelmingly common case): bind its recovery variant DIRECTLY by
         // reference (TypeRegistry.LookupRecoveryVariant) — the variant is the base routine's, never found by
@@ -248,7 +292,15 @@ public sealed partial class SemanticVerifier
                                      var value = new IdentifierExpression(
                                          Name: p.Name == RecoveryMeAlias ? "me" : p.Name,
                                          Location: recovery.Location);
-                                     AnalyzeExpression(expression: value);
+                                     if (_deadrefVariables.Contains(item: p.Name) && !deadBefore.Contains(item: p.Name) &&
+                                         _registry.LookupVariable(name: p.Name) is { } stolen)
+                                     {
+                                         value.ResolvedType = stolen.Type;
+                                     }
+                                     else
+                                     {
+                                         AnalyzeExpression(expression: value);
+                                     }
                                      return (Expression)new NamedArgumentExpression(Name: p.Name,
                                          Value: value,
                                          Location: recovery.Location) { ResolvedType = value.ResolvedType };
@@ -463,6 +515,10 @@ public sealed partial class SemanticVerifier
         /// <summary>Every identifier name seen while walking the expression.</summary>
         public HashSet<string> ReferencedNames { get; } = new(comparer: StringComparer.Ordinal);
 
+        /// <summary>Whether the expression hands a routine value that may fail to a routine whose recovery variant is
+        /// found only once its body is known: the keyword has a failure to receive.</summary>
+        public bool ReachesFailableValue { get; private set; }
+
         /// <summary>The type of the enclosing routine's <c>me</c> when the expression reads it, else null.</summary>
         public TypeSymbol? MeType { get; private set; }
 
@@ -498,22 +554,23 @@ public sealed partial class SemanticVerifier
         {
             // Rewrite children first (post-order) so any inner failable calls are already hoisted + replaced.
             Expression rewritten = base.VisitCall(e: e);
-            // A sub-call is failable when its resolved routine is failable. IsFailable is only DERIVED from
-            // HasThrow by a later pass, so during Phase-5 an INFERRED-failable callee (a body that
-            // `throw`/`absent`s with no explicit `!`, already analyzed before this call site) carries
-            // HasThrow but not yet IsFailable: CanFailUnderRecovery checks all three, and also takes
-            // a user routine that is not failable but can fail beneath its call (a checked operator or a bare
-            // failable call in its body), which is recovered through its own variant.
-            // A call through a routine value is hoisted too: the lambda may fail, and the variant built from the
-            // hoisted body calls the value's recovering entry (RoutineValueCalls).
-            if (rewritten is CallExpression valueCall && RoutineValueCalls.ValueType(call: valueCall) != null)
+            // A sub-call is failable when its resolved routine is failable. A routine that is not failable is a
+            // wall: its call is hoisted only when it hands on or works on a routine value that may fail, whose
+            // failure it passes on (FailableValues.CallMayFail). A call through such a routine value is hoisted
+            // too, and the variant built from the hoisted body calls the value's recovering entry
+            // (RoutineValueCalls).
+            if (rewritten is not CallExpression call || !FailableValues.CallMayFail(call: call, registry: registry))
             {
-                return HoistFailable(call: valueCall);
+                return rewritten;
             }
 
-            if (rewritten is not CallExpression { ResolvedRoutine: { } rr } call ||
-                !registry.CanFailUnderRecovery(routine: rr))
+            // A routine that is not failable whose library body is not known yet (analysis of the user's code
+            // comes first) passes on the failure of the routine value it is handed: the variant built later finds
+            // it there (a tail call of the composition), so the call stays where it is.
+            if (call.ResolvedRoutine is { IsFailable: false, HasThrow: false } passing &&
+                !registry.CanFailUnderRecovery(routine: passing))
             {
+                ReachesFailableValue = true;
                 return rewritten;
             }
 

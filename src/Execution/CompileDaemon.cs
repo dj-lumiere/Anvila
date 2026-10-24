@@ -310,9 +310,12 @@ internal partial class Program
         /// </summary>
         private static (string ObjPath, IReadOnlyCollection<string> Syms,
             IReadOnlySet<string> InstanceKeys)? EnsureBaseArtifact(
-            Language language, RfBuildMode buildMode, Builder.Backends.IBuilderBackend backend)
+            Language language, RfBuildMode buildMode, Builder.Backends.IBuilderBackend backend,
+            int crashablesRoom = SemanticVerifier.CrashableRoomBytes)
         {
-            string key = language + "\u0001" + (int)buildMode + "\u0001" + backend.Name;
+            // The room of `Crashables` is part of the base's layout (a `Check`, the failure molds): a base is built
+            // for one room size, and a program whose largest crashable needs another gets a base of its own.
+            string key = language + "\u0001" + (int)buildMode + "\u0001" + backend.Name + "\u0001" + crashablesRoom;
             if (BaseArtifactCache.TryGetValue(key: key,
                     value: out (string ObjPath, IReadOnlyCollection<string> Syms,
                         IReadOnlySet<string> InstanceKeys) cached))
@@ -335,7 +338,7 @@ internal partial class Program
                 // pipeline materializes exactly that reached closure into InstantiatedGenericBodies — no
                 // speculative Hijacked[…] explosion — and we feed the FULL set to the base. A program's own
                 // uncommon instances fall to the per-run DELTA (base∪delta coverage stays complete).
-                var baseSa = new SemanticVerifier(language: language);
+                var baseSa = new SemanticVerifier(language: language) { CrashablesRoomFloor = crashablesRoom };
                 System.Collections.Generic.List<Builder.Tokenizer.Token> toks =
                     Builder.Tokenizer.Lexers.Tokenize(source: BaseObjectCache.SeedProgramSource,
                         fileName: "base.rf", language: language);
@@ -390,7 +393,7 @@ internal partial class Program
                 string irHash = Convert.ToHexString(inArray: System.Security.Cryptography.SHA256.HashData(
                     source: System.Text.Encoding.UTF8.GetBytes(s: baseIr)));
                 string? obj = new BaseObjectCache().GetOrBuild(
-                    fingerprint: $"{fp}-{(int)buildMode}-{backend.Name}-{irHash}",
+                    fingerprint: $"{fp}-{(int)buildMode}-{backend.Name}-room{crashablesRoom}-{irHash}",
                     baseIr: baseIr,
                     buildMode: buildMode,
                     wasCached: out bool wasCached);
@@ -417,6 +420,14 @@ internal partial class Program
                 Console.Error.WriteLine(value: $"[daemon] resident-JIT base build failed: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>The bytes of the failure mold a program's IR reserves (its <c>Crashables</c> room), or null.</summary>
+        private static int? MoldSizeOf(string ir)
+        {
+            System.Text.RegularExpressions.Match found = System.Text.RegularExpressions.Regex.Match(input: ir,
+                pattern: @"call void @rf_failure_mold_size\(i64 (\d+)\)");
+            return found.Success ? int.Parse(s: found.Groups[groupnum: 1].Value) : null;
         }
 
         /// <summary>Compiles Ingrid's library to the object the client's JIT loads (see
@@ -763,6 +774,43 @@ internal partial class Program
                             : observation => layer.Observe(observation: observation,
                                 residentSymbols: residentSymbols,
                                 residentInstanceKeys: residentInstanceKeys!)));
+
+                // The delta is laid out for its own room of `Crashables`: a program whose largest crashable needs
+                // a bigger one than the base was built with gets a base built for that size, and is built again
+                // against it (without the resident layers, which share the first base's layout). When that base
+                // cannot be built, the program is built as the full IR.
+                if (exit == 0 && baseObjectPath != null && MoldSizeOf(ir: ir) is { } room &&
+                    room != SemanticVerifier.CrashableRoomBytes)
+                {
+                    (string ObjPath, IReadOnlyCollection<string> Syms, IReadOnlySet<string> InstanceKeys)? sized =
+                        EnsureBaseArtifact(language: CliLanguage, buildMode: (RfBuildMode)req.BuildMode,
+                            backend: backend, crashablesRoom: room);
+                    residentSymbols = sized?.Syms;
+                    residentInstanceKeys = sized?.InstanceKeys;
+                    baseObjectPath = sized?.ObjPath;
+                    layerObjectPaths = [];
+                    layer = null;
+                    exit = BuildToIr(entryFile: req.EntryFile,
+                        ir: out ir,
+                        config: new ResolvedEntry
+                        {
+                            ProjectRoot = req.ProjectRoot,
+                            BuildMode = (RfBuildMode)req.BuildMode,
+                            RequireStartRoutine = req.RequireStart,
+                            LibraryRoots = req.LibraryRoots,
+                            Backend = req.Backend
+                        },
+                        warm: new WarmProviders(WarmProvider: GetWarm,
+                            IrCallback: null,
+                            StdlibIndexProvider: GetStdlibIndex,
+                            ResidentSymbols: residentSymbols,
+                            ResidentInstanceKeys: residentInstanceKeys,
+                            BuildObserver: layer == null || residentSymbols == null
+                                ? null
+                                : observation => layer.Observe(observation: observation,
+                                    residentSymbols: residentSymbols,
+                                    residentInstanceKeys: residentInstanceKeys!)));
+                }
             }
             catch (Exception ex)
             {

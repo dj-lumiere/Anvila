@@ -365,11 +365,39 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         {
             variantSourceBody = FailurePointCalls.Resolve(body: variantSourceBody, registry: registry);
         }
-        return TransformBody(body: variantSourceBody,
-            kind: kind,
-            rewriter: MakeOnDemandVariantRewriter(registry: registry),
-            registry: registry,
-            nextOnlyPropagation: false);
+
+        // A routine that is not failable is a wall: its variant passes on only what fails through the routine
+        // values it reaches, and a bare call of a failable routine in it still crashes there.
+        bool outer = _passesOnValuesOnly;
+        _passesOnValuesOnly = !resolveFailurePoints;
+        try
+        {
+            return TransformBody(body: variantSourceBody,
+                kind: kind,
+                rewriter: MakeOnDemandVariantRewriter(registry: registry),
+                registry: registry,
+                nextOnlyPropagation: false);
+        }
+        finally
+        {
+            _passesOnValuesOnly = outer;
+        }
+    }
+
+    /// <summary>Set while the variant of a routine that is not failable is built (see <see cref="CanPassOn"/>).</summary>
+    [ThreadStatic] private static bool _passesOnValuesOnly;
+
+    /// <summary>
+    /// Whether the variant being built passes on the failure of <paramref name="call"/>: a call that can fail under
+    /// recovery. In the variant of a routine that is not failable (a wall) only a failure that comes from a routine
+    /// value does: a call of another wall (which fails only through the routine values it reaches), or a call of a
+    /// failable routine that hands on a routine value that may fail (<see cref="FailableValues.HandsFailableValue"/>).
+    /// </summary>
+    private static bool CanPassOn(CallExpression call, TypeRegistry registry)
+    {
+        return registry.CanFailUnderRecovery(routine: call.ResolvedRoutine) &&
+               (!_passesOnValuesOnly || call.ResolvedRoutine is { IsFailable: false, HasThrow: false } ||
+                FailableValues.HandsFailableValue(call: call));
     }
 
     /// <summary>Whether <paramref name="body"/> holds a buildtime <c>expand</c>.</summary>
@@ -401,7 +429,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             switch (value)
             {
                 case CallExpression { ResolvedRoutine: { } callee } call
-                    when registry.CanFailUnderRecovery(routine: callee) &&
+                    when CanPassOn(call: call, registry: registry) &&
                          registry.LookupRecoveryVariant(recovered: callee, kind: recovery) is { } variant:
                     rewritten = BindToVariant(call: call, variant: variant, registry: registry);
                     return true;
@@ -509,8 +537,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         return body switch
         {
-            // `pierce` stays a crash even inside a try/check variant — it pierces through the
-            // recovery surface, so it is NOT rewritten into a recoverable return.
+            // A throw that crashes where it stands stays a crash inside a try/check variant too, so it is
+            // NOT rewritten into a recoverable return.
             ThrowStatement { IsFatal: true } => body,
 
             ThrowStatement ts => new VariantReturnStatement(VariantKind: kind,
@@ -558,8 +586,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             // go absent but not throw): bind it to a temp so the statement propagation below picks the
             // callee's best variant and maps its failure onto this carrier.
             ReturnStatement { Value: CallExpression tailCall } ret when registry != null && !nextOnly &&
-                                                                    registry.CanFailUnderRecovery(
-                                                                        routine: tailCall.ResolvedRoutine) =>
+                                                                    CanPassOn(call: tailCall,
+                                                                        registry: registry) =>
                 TransformBodyCore(body: SplitTailCall(ret: ret, call: tailCall),
                     kind: kind,
                     rewriter: rewriter,
@@ -714,7 +742,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// under recovery, or a call through a routine value (whose lambda may fail).</summary>
     private static bool CallCanFail(CallExpression call, TypeRegistry registry)
     {
-        return registry.CanFailUnderRecovery(routine: call.ResolvedRoutine) ||
+        return CanPassOn(call: call, registry: registry) ||
                !_valueCallsStayPlain && RoutineValueCalls.ValueType(call: call) != null;
     }
 
@@ -1138,7 +1166,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         bool Propagates(CallExpression call)
         {
             RoutineInfo? rr = call.ResolvedRoutine;
-            if (!registry!.CanFailUnderRecovery(routine: rr))
+            if (!CanPassOn(call: call, registry: registry!))
             {
                 // A call through a routine value is split out too (its recovering entry is called on its own).
                 return ValueCallsRecover(kind: kind, nextOnly: nextOnly) && CallCanFail(call: call, registry: registry);
@@ -1504,12 +1532,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             case DeclarationStatement
             {
                 Declaration: VariableDeclaration { Initializer: CallExpression ce } vd
-            } when registry.CanFailUnderRecovery(routine: ce.ResolvedRoutine):
+            } when CanPassOn(call: ce, registry: registry):
                 failCall = ce;
                 bindName = vd.Name;
                 break;
             case ExpressionStatement { Expression: CallExpression ce2 }
-                when registry.CanFailUnderRecovery(routine: ce2.ResolvedRoutine):
+                when CanPassOn(call: ce2, registry: registry):
                 failCall = ce2;
                 bindName = null;
                 break;
@@ -1725,12 +1753,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             case DeclarationStatement
             {
                 Declaration: VariableDeclaration { Initializer: CallExpression ce } vd
-            } when registry.CanFailUnderRecovery(routine: ce.ResolvedRoutine):
+            } when CanPassOn(call: ce, registry: registry):
                 failCall = ce;
                 bindName = vd.Name;
                 break;
             case ExpressionStatement { Expression: CallExpression ce2 }
-                when registry.CanFailUnderRecovery(routine: ce2.ResolvedRoutine):
+                when CanPassOn(call: ce2, registry: registry):
                 failCall = ce2;
                 bindName = null;
                 break;

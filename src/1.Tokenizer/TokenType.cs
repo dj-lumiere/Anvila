@@ -434,15 +434,12 @@ public enum TokenType
     /// <summary>Return statement keyword</summary>
     Return,
 
-    /// <summary>Throw statement keyword - recoverable failure (generates try/check/lookup variants)</summary>
+    /// <summary>Throw statement keyword - in a failable routine the failure goes to the caller (try/check/lookup
+    /// variants), in any other routine it crashes where it stands</summary>
     Throw,
 
-    /// <summary>Pierce statement keyword - fatal, uncatchable crash (no variants, no `!`); pierces
-    /// through every handler. The crash counterpart to the recoverable `throw`.</summary>
-    Pierce,
-
     /// <summary>Todo statement keyword - a place not written yet: running it crashes with NotImplementedError naming
-    /// the routine. Like `pierce`, it never makes the routine failable and ends its path.</summary>
+    /// the routine. It never makes the routine failable and ends its path.</summary>
     Todo,
 
     /// <summary>Becomes statement keyword - the value of a block arm of a `when` that gives a value, as its last line.</summary>

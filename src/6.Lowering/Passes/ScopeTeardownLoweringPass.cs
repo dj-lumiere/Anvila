@@ -2,6 +2,7 @@ using Builder.Declaration;
 using SyntaxTree;
 using TypeModel.Symbols;
 using TypeModel.Types;
+using TypeModel.Enums;
 using Builder.Verification;
 
 namespace Builder.Lowering.Passes;
@@ -582,6 +583,37 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             !WillDestroyAny(live: live, from: from, skip: skip))
         {
             return exit;
+        }
+
+        // A throw (`return Check(error: X(...))`): the crashable alone is spilled, and the carrier is built at the
+        // exit, after the teardown. Building the carrier writes the crashable into the flow's failure mold, so a
+        // failure thrown and received inside a `destruct` the teardown runs cannot overwrite it.
+        if (retVal is CreatorExpression
+            {
+                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result },
+                MemberVariables: [(var arm, { ResolvedType: CrashableTypeSymbol } thrown)]
+            } carrier)
+        {
+            string thrownTmp = $"__td_ret_{_spillCounter++}";
+            stmts.Add(item: new DeclarationStatement(Declaration: new VariableDeclaration(Name: thrownTmp,
+                    Type: null,
+                    Initializer: thrown,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: exit.Location),
+                Location: exit.Location));
+            skip = thrownTmp;
+            var thrownRef = new IdentifierExpression(Name: thrownTmp, Location: exit.Location)
+            {
+                ResolvedType = thrown.ResolvedType
+            };
+            CreatorExpression built = carrier with { MemberVariables = [(arm, thrownRef)] };
+            built.ResolvedType = carrier.ResolvedType;
+            return exit switch
+            {
+                ReturnStatement r => r with { Value = built },
+                VariantReturnStatement vr => vr with { Value = built },
+                _ => exit
+            };
         }
 
         string tmp = $"__td_ret_{_spillCounter++}";

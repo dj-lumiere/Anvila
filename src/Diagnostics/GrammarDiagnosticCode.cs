@@ -214,6 +214,10 @@ public enum GrammarDiagnosticCode
     /// Each name is a <c>Maybe</c> of its token, and the body branches with <c>when</c>.</summary>
     TryAccessElse = 226,
 
+    /// <summary>A line written <c>pierce X</c>: <c>pierce</c> is not a keyword. A <c>throw</c> in a routine that is not
+    /// failable crashes where it stands.</summary>
+    PierceStatement = 227,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

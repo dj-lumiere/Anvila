@@ -427,8 +427,9 @@ internal sealed class TesseraRoutineWriter
         string message = Text(parameter: "message");
         SourceLocation at = crash.Location;
         Emit(line: $"@source({TesseraTrace.CString(text: _module.SourceName(file: at.FileName))}, {at.Line}, {at.Column})");
-        // `crash` never returns, so it ends the block.
-        Terminate(line: $"crash(name: {name}, message: {message})");
+        // A throw in a routine that is not failable stops on the spot, so it ends the block. ForeignError carries a
+        // failure another language names while the program runs.
+        Terminate(line: $"throw ForeignError(kind: {name}, description: {message})");
     }
 
     /// <summary>The slot name of a local's cancellation node.</summary>

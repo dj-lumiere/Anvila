@@ -984,9 +984,6 @@ public enum SemanticDiagnosticCode
     // ERROR HANDLING ERRORS (RF-S750 - RF-S799)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Throw statement only allowed in failable functions.</summary>
-    ThrowOutsideFailableFunction = 750,
-
     /// <summary>Error during variant generation.</summary>
     VariantGenerationError = 752,
 
@@ -1008,6 +1005,14 @@ public enum SemanticDiagnosticCode
     /// <summary>A <c>try</c>/<c>check</c> written over a call of a <c>@crash_only</c> routine, which
     /// may only be called bare.</summary>
     CrashOnlyRecovered = 759,
+
+    /// <summary>A <c>try</c>/<c>check</c> written over an expression that reaches no failable call: a failure inside a
+    /// routine that is not failable crashes there, so the keyword has nothing to receive.</summary>
+    NothingToRecover = 760,
+
+    /// <summary>A routine value that may fail (a lambda whose body can fail, a failable routine) handed to a parameter
+    /// or member variable whose routine type is not written <c>failable Callable[...]</c>.</summary>
+    FailableValueToPlainParameter = 761,
 
     /// <summary>Variant member cannot be Check[T], a token, or a duplicate type.</summary>
     VariantCaseContainsInvalidType = 764,

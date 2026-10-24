@@ -557,7 +557,7 @@ internal sealed class TypeResolver
         TypeSymbol? returnType = ResolveType(typeExpr: returnTypeExpr);
         return _sa._registry.GetOrCreateRoutineType(parameterTypes: paramTypes,
             returnType: returnType,
-            isFailable: false);
+            isFailable: typeExpr.IsFailable);
     }
 
     /// <summary>

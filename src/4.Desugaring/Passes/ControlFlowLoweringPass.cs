@@ -849,7 +849,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 
         return new RecoveryExpression(Kind: StepKind(eachStmt: eachStmt),
             Inner: emitCall,
-            Location: emitCall.Location);
+            Location: emitCall.Location) { IsSynthesized = true };
     }
 
     /// <summary>The entity a <c>Viewing</c>/<c>Modifying</c> token is on, else the type itself.</summary>

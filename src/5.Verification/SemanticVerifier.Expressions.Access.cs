@@ -893,10 +893,12 @@ public sealed partial class SemanticVerifier
 
         _registry.ExitScope();
 
-        // Create a proper function type: (ParamTypes) -> ReturnType
+        // Create a proper function type: (ParamTypes) -> ReturnType. A lambda whose body can fail where it stands
+        // (a checked operator, a subscript, a call of a failable routine or of a routine value that may fail) is
+        // a failable routine value: it goes only to a parameter written `failable Callable[...]`.
         return _registry.GetOrCreateRoutineType(parameterTypes: parameterTypes,
             returnType: returnType,
-            isFailable: false);
+            isFailable: Builder.Instantiation.FailurePointCalls.HasFailurePoint(body: lambda.Body, registry: _registry));
     }
 
     /// <summary>

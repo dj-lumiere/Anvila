@@ -105,8 +105,8 @@ public sealed partial class SemanticVerifier
     /// <see cref="RoutineInfo.FailableCallees"/>.
     ///
     /// <para>A routine is failable iff it was DECLARED <c>!</c> OR its body directly <c>throw</c>s /
-    /// <c>absent</c>s. User and stdlib routines that throw must be declared <c>!</c> (RF-S750 /
-    /// RF-S751), so for them this is a no-op; it still gives synthesized bodies their failability.</para>
+    /// <c>absent</c>s. A throw in a user or stdlib routine not declared failable crashes where it stands and
+    /// sets no <c>HasThrow</c>, so for them this is a no-op. It still gives synthesized bodies their failability.</para>
     ///
     /// <para>Failability is NOT propagated through the call graph here: a non-failable routine calling
     /// a failable one is the language's established CRASH-ONLY path (the call fails ⇒ the program

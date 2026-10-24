@@ -207,6 +207,15 @@ internal static class FailurePointCalls
         return scanner.Found;
     }
 
+    /// <summary>Whether an analyzed expression (a lambda's body) can fail where it stands, as
+    /// <see cref="HasFailurePoint(Statement, TypeRegistry)"/> reads a body.</summary>
+    public static bool HasFailurePoint(Expression body, TypeRegistry registry)
+    {
+        var scanner = new Scanner(registry: registry);
+        scanner.VisitExpression(expr: body);
+        return scanner.Found;
+    }
+
     private sealed class Scanner(TypeRegistry registry) : AstRewriter
     {
         public bool Found { get; private set; }

@@ -490,7 +490,6 @@ public partial class Parser
             TokenType.Each => true,
             TokenType.Return => true,
             TokenType.Throw => true,
-            TokenType.Pierce => true,
             TokenType.Todo => true,
             TokenType.Becomes => true,
             TokenType.Until => true,

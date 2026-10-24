@@ -447,8 +447,10 @@ public partial class Parser
         // not the source. Allow them to have no written body at all.
 
         _routineBeingParsed = name;
+        _routineBeingParsedIsFailable = isFailable;
         BlockStatement body = ParseRoutineBody(annotations: annotations, location: location);
         _routineBeingParsed = null;
+        _routineBeingParsedIsFailable = false;
 
         // Name is the BARE member for an extension-syntax member routine (owner lives in the structured
         // OwnerName/RenderedReceiver/ReceiverType fields); free routines and type-body members keep their

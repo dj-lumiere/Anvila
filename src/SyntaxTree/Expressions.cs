@@ -1058,6 +1058,11 @@ public record TypeExpression(
     /// (the same set of types is the same type, whatever its order). Null for any other type.</summary>
     public List<TypeExpression>? UnionMembers { get; init; }
 
+    /// <summary>True for a routine type written <c>failable Callable[(T,), U]</c>: a routine value of it may fail, and
+    /// a call that hands one to such a parameter can fail through it. A routine value that may fail goes only where
+    /// the type says so.</summary>
+    public bool IsFailable { get; init; }
+
     /// <summary>The name of the variant written in place over <paramref name="memberNames"/>: each type once,
     /// <c>None</c> first and the rest in name order, so <c>Text | S64</c> and <c>S64 | Text</c> name one type.</summary>
     public static string UnionName(IEnumerable<string> memberNames)
@@ -1653,6 +1658,10 @@ public record RecoveryExpression(RecoveryKind Kind, Expression Inner, SourceLoca
     /// <c>try</c>/<c>check</c> variant carrying the same arguments). Phase-6 replaces the
     /// node with this. Null until analyzed.
     /// </summary>
+    /// <summary>True for a keyword the builder writes (an <c>each</c> loop's step, a work's <c>check</c>, a
+    /// <c>try viewing</c> opener), which is not reported for having nothing to receive.</summary>
+    public bool IsSynthesized { get; init; }
+
     public Expression? LoweredCall { get; set; }
 }
 

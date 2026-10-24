@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
-                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names"))
+                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work or type-names");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names or pierce");
             return 2;
         }
 
@@ -134,6 +134,13 @@ internal partial class Program
         if (step == "type-names")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteTypeNames);
+        }
+
+        // `--step pierce`: `pierce X` in a routine that is not failable is `throw X`, which crashes there. One in a
+        // failable routine is listed for a rewrite by hand.
+        if (step == "pierce")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewritePierce);
         }
 
         // `--step return-steal`: a local handed over inside a `return` expression moves without `steal`.

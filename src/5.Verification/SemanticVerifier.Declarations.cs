@@ -1354,6 +1354,11 @@ public sealed partial class SemanticVerifier
     /// standard library is built with.</summary>
     internal const int CrashableRoomBytes = 64;
 
+    /// <summary>The fewest bytes this analysis sizes the room of <c>Crashables</c> to (at least
+    /// <see cref="CrashableRoomBytes"/>). The debug-jit resident base is built with the room of the program it serves,
+    /// so a program whose largest crashable is bigger never runs against a base built for another size.</summary>
+    internal int CrashablesRoomFloor { get; init; } = CrashableRoomBytes;
+
     /// <summary>
     /// Sizes the room of <c>Crashables</c> (its <c>data</c>) for the program's largest crashable, never below
     /// <see cref="CrashableRoomBytes"/>. A failure is written into the mold of the flow it is thrown on, a mold of
@@ -1376,7 +1381,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        int largest = CrashableRoomBytes;
+        int largest = Math.Max(val1: CrashableRoomBytes, val2: CrashablesRoomFloor);
         foreach (TypeSymbol type in _registry.GetAllTypes())
         {
             if (type is CrashableTypeSymbol { IsGenericDefinition: false } crashable)

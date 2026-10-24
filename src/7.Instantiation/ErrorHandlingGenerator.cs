@@ -220,8 +220,8 @@ public sealed class ErrorHandlingGenerator
         switch (statement)
         {
             case ThrowStatement { IsFatal: true }:
-                // `pierce` is an uncatchable crash — it does not make the routine recoverably
-                // failable, so it contributes no throw/variant surface.
+                // A throw that crashes where it stands (in a routine not declared failable, or a todo) does
+                // not make the routine failable, so it contributes no throw/variant surface.
                 break;
 
             case ThrowStatement ts:
