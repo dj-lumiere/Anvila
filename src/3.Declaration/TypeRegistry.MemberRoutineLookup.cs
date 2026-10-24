@@ -1422,8 +1422,17 @@ public sealed partial class TypeRegistry
         }
 
         // Any other default takes a concrete receiver only when its own kind gates allow it
-        // (`routine T.modify() needs EntityType T` is not a routine of a record).
-        return list.FirstOrDefault(predicate: candidate =>
+        // (`routine T.modify() needs EntityType T` is not a routine of a record). Among the defaults whose every
+        // `needs` line holds (`obeys` lines too), the most specific is the one: more kind gates, then more `obeys`
+        // lines (`routine T.kept_equal() needs T obeys Equatable` over the one for any type).
+        RoutineInfo? fullyHeld = MostSpecific(variants: list,
+            holds: candidate => (candidate.GenericConstraints ?? [])
+               .All(predicate: line => line.ConstraintType != ConstraintKind.Obeys ||
+                                       ImplementerSatisfiesConstraint(implementer: forType, constraint: line)) &&
+                                DeriveKindGates(constraints: candidate.GenericConstraints)
+                                   .All(predicate: gate =>
+                                        ImplementerSatisfiesConstraint(implementer: forType, constraint: gate)));
+        return fullyHeld ?? list.FirstOrDefault(predicate: candidate =>
             DeriveKindGates(constraints: candidate.GenericConstraints)
                .All(predicate: gate => ImplementerSatisfiesConstraint(implementer: forType, constraint: gate)));
     }
@@ -1556,7 +1565,10 @@ public sealed partial class TypeRegistry
             _deriveTemplates[key: memberRoutine] = list;
         }
 
+        // The kind gates select the template, and `obeys` lines are kept beside them: two templates for the same
+        // kind (one for any type, one `needs T obeys Equatable`) are told apart by them (see GetDeriveTemplate).
         List<GenericConstraintDeclaration> gates = DeriveKindGates(constraints: constraints);
+        gates.AddRange(collection: (constraints ?? []).Where(predicate: c => c.ConstraintType == ConstraintKind.Obeys));
         string gateKey = DeriveGateKey(gates: gates);
         // Dedup by (arity, gate set): several same-name templates coexist — kind-gated overrides
         // (different gates) and, for `hash`, the fast `hash()` vs keyed `hash(k0, k1)` forms
@@ -1643,15 +1655,31 @@ public sealed partial class TypeRegistry
                 continue;
             }
 
-            if (!gates.All(predicate: g =>
+            List<GenericConstraintDeclaration> kindGates = DeriveKindGates(constraints: gates);
+            if (!kindGates.All(predicate: g =>
                     ImplementerSatisfiesConstraint(implementer: forType, constraint: g)))
             {
                 continue;
             }
 
-            if (gates.Count > bestScore)
+            // An `obeys` line decides only between templates of one kind: with no sibling for the same kind it is
+            // not a gate (the field-walk `eq` serves every record), with one it picks the template whose lines
+            // hold, the one asking more winning.
+            List<GenericConstraintDeclaration> obeysLines =
+                gates.Where(predicate: g => g.ConstraintType == ConstraintKind.Obeys).ToList();
+            bool hasSibling = list.Any(predicate: other => other.Item2 == arity && !ReferenceEquals(objA: other.Item4, objB: body) &&
+                                                           DeriveGateKey(gates: DeriveKindGates(constraints: other.Item3)) ==
+                                                           DeriveGateKey(gates: kindGates));
+            if (hasSibling && !obeysLines.All(predicate: g =>
+                    ImplementerSatisfiesConstraint(implementer: forType, constraint: g)))
             {
-                bestScore = gates.Count;
+                continue;
+            }
+
+            int score = kindGates.Count * 100 + (hasSibling ? obeysLines.Count : 0);
+            if (score > bestScore)
+            {
+                bestScore = score;
                 best = (ownerParam, body);
             }
         }
@@ -1791,7 +1819,10 @@ public sealed partial class TypeRegistry
                 continue;
             }
 
-            int score = DeriveKindGates(constraints: v.GenericConstraints).Count;
+            // Kind gates first, then `obeys` lines: among implementations for the same kind, one that asks more of
+            // the type (`needs T obeys Equatable`) is the more specific one, whatever order they were declared in.
+            int obeysLines = (v.GenericConstraints ?? []).Count(predicate: c => c.ConstraintType == ConstraintKind.Obeys);
+            int score = DeriveKindGates(constraints: v.GenericConstraints).Count * 100 + obeysLines;
             if (score > bestScore)
             {
                 best = v;
@@ -1860,7 +1891,9 @@ public sealed partial class TypeRegistry
     private static string DeriveGateKey(List<GenericConstraintDeclaration> gates)
     {
         return string.Join(separator: "&",
-            values: gates.Select(selector: c => c.ConstraintType.ToString())
+            values: gates.Select(selector: c => c.ConstraintType + ":" +
+                                                string.Join(separator: ",",
+                                                    values: (c.ConstraintTypes ?? []).Select(selector: t => t.Name)))
                          .OrderBy(keySelector: s => s, comparer: StringComparer.Ordinal));
     }
 

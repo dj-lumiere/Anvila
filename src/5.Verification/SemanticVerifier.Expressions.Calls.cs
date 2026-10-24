@@ -4420,8 +4420,13 @@ public sealed partial class SemanticVerifier
         // e.g., BitList(32u64) -> BitList.create(capacity: U64) instead of collection literal
         if (call.Arguments.Count > 0)
         {
-            RoutineInfo? creator = _registry.LookupCreatorOverload(type: type, argTypes: argTypes) ??
-                                   ResolveCreatorWithOwnTypeParameters(call: call, type: type);
+            RoutineInfo? creator = _registry.LookupCreatorOverload(type: type, argTypes: argTypes);
+            // A creator with type parameters of its own matches any argument by its parameter type alone: the one
+            // whose `needs` lines hold is picked by its own resolution.
+            if (creator is null or { IsGenericDefinition: true })
+            {
+                creator = ResolveCreatorWithOwnTypeParameters(call: call, type: type) ?? creator;
+            }
 
             if (creator != null && creator.Parameters.Count == argTypes.Count &&
                 !creator.Parameters.Any(predicate: p => p.IsVariadicParam))

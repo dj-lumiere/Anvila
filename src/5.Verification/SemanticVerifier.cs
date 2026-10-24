@@ -3272,6 +3272,12 @@ public sealed partial class SemanticVerifier
         if (body?.Location.FileName is { Length: > 0 } bodyFile)
         {
             _importedModules.UnionWith(other: ImportsOfFile(filePath: bodyFile));
+            // and the names of its own module: a template in ObjectHacker calls ObjectHacker's routines.
+            if (_registry.StdlibPrograms.FirstOrDefault(predicate: s => s.FilePath == bodyFile).Module is
+                { Length: > 0 } bodyModule)
+            {
+                _importedModules.Add(item: bodyModule);
+            }
         }
 
         if (restored)
