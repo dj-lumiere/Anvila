@@ -3305,12 +3305,35 @@ internal static class GenericAstRewriter
     private static BlockStatement RewriteProtocolExpand(ExpandStatement expand, TypeSymbol? source,
         RewriteContext ctx)
     {
-        List<TypeSymbol> protocols = source switch
+        List<TypeSymbol> declared = source switch
         {
             RecordTypeSymbol record => record.ImplementedProtocols.Cast<TypeSymbol>().ToList(),
             EntityTypeSymbol entity => entity.ImplementedProtocols.Cast<TypeSymbol>().ToList(),
             _ => []
         };
+
+        // A type obeys the protocols a protocol it obeys refines too (Comparable's Equatable): each declared one,
+        // then the ones it refines, each protocol once.
+        var protocols = new List<TypeSymbol>();
+        var seen = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var pending = new Queue<TypeSymbol>(collection: declared);
+        while (pending.Count > 0)
+        {
+            TypeSymbol protocol = pending.Dequeue();
+            if (!seen.Add(item: protocol.FullName))
+            {
+                continue;
+            }
+
+            protocols.Add(item: protocol);
+            if (protocol is ProtocolTypeSymbol { ParentProtocols: { } parents })
+            {
+                foreach (ProtocolTypeSymbol parent in parents)
+                {
+                    pending.Enqueue(item: parent);
+                }
+            }
+        }
 
         var outStmts = new List<Statement>();
         string? prevHandle = ctx.ActiveExpandHandle;
