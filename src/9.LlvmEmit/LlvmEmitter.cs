@@ -953,8 +953,14 @@ public partial class LlvmEmitter
         output.Append(value: _crashableDispatchDefinitions);
         if (_usesFailureMold)
         {
-            // Ingrid's: the mold of the flow running here, where a failure is written while it flies.
-            output.AppendLine(value: "declare ptr @rf_failure_mold() nounwind cold");
+            // Ingrid's: the mold of the flow running here, where a failure is written while it flies. It is declared
+            // memory(none): for one flow it always gives the same mold (a coroutine keeps its own, a thread made by C
+            // gets its own at its first call and keeps it), so to the program it is a constant read of where the
+            // flow is. An unmarked call would make LLVM assume it changes the program's globals, and `nocallback`,
+            // which would also say it doesn't, is dropped by llvm-link. Then every path through a failure reloads
+            // the trace depth, and a loop with a check in it keeps the depth in flight on its success path too (a
+            // composite check in Suflae ran 5.5 ns instead of 3.5 ns, a chain of three 12 ns instead of 7.7 ns).
+            output.AppendLine(value: "declare ptr @rf_failure_mold() nounwind cold nofree nosync memory(none)");
             output.AppendLine();
             // A throw: notes the failure and gives its number, with the bit that says the crashable is in the mold,
             // and the mold the crashable goes into.
