@@ -1499,14 +1499,34 @@ public sealed partial class SemanticVerifier
     {
         string parameters = string.Join(separator: ", ",
             values: required.ParameterNames.Select(selector: (n, i) =>
-                $"{n}: {_registry.ReplaceProtocolSelf(type: required.ParameterTypes[index: i], owner: type).Name}"));
+                $"{n}: {WrittenTypeName(type: _registry.ReplaceProtocolSelf(
+                    type: required.ParameterTypes[index: i], owner: type))}"));
         string result = required.ReturnType is { IsNone: false } returned
-            ? $" -> {_registry.ReplaceProtocolSelf(type: returned, owner: type).Name}"
+            ? $" -> {WrittenTypeName(type: _registry.ReplaceProtocolSelf(type: returned, owner: type))}"
             : "";
         string owner = required.IsInstanceMemberRoutine ? "routine" : "common routine";
         string failable = required.IsFailable ? "failable " : "";
         return $"'{type.Name}' obeys '{protocol.Name}', which needs the routine '{required.Name}', and " +
                $"'{type.Name}' has none. Write `{failable}{owner} {type.Name}.{required.Name}({parameters}){result}`.";
+    }
+
+    /// <summary>
+    /// A type's name as the program writes it, each part without its module (<c>List[Team]</c>). Suflae has no
+    /// access tokens and writes an entity as itself, so in a Suflae build a <c>Viewing</c>, <c>Modifying</c> or
+    /// <c>Roamed</c> around a type is shown as the type it holds.
+    /// </summary>
+    private string WrittenTypeName(TypeSymbol type)
+    {
+        if (!_registry.CompilationRules.ChecksAccessTokens &&
+            type.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying or RuntimeContract.Roamed &&
+            type.TypeArguments is [{ } held])
+        {
+            return WrittenTypeName(type: held);
+        }
+
+        return type.TypeArguments is { Count: > 0 } arguments
+            ? $"{type.BareName}[{string.Join(separator: ", ", values: arguments.Select(selector: WrittenTypeName))}]"
+            : type.BareName;
     }
 
     /// <summary>
@@ -1536,7 +1556,8 @@ public sealed partial class SemanticVerifier
 
         string parameters = string.Join(separator: ", ",
             values: requiredCreator.ParameterNames.Select(selector: (n, i) =>
-                $"{n}: {requiredCreator.ParameterTypes[index: i].Name}"));
+                $"{n}: {WrittenTypeName(type: _registry.ReplaceProtocolSelf(
+                    type: requiredCreator.ParameterTypes[index: i], owner: type))}"));
         string failable = requiredCreator.IsFailable ? "failable " : "";
         ReportError(code: SemanticDiagnosticCode.MissingProtocolMemberRoutine,
             message: $"'{type.Name}' obeys '{protocol.Name}', which requires a creator " +

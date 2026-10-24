@@ -139,7 +139,10 @@ public sealed partial class SemanticVerifier
 
             if (expression is TypeExpression { Realm: null } written)
             {
-                if (LookupTypeWithImports(name: written.Name) is { } type && IsUnsharedRazorForgeType(type: type))
+                // A type the builder wrote in (an implicit token's target) carries the type it stands for, which a
+                // lookup by its name could find in the other library.
+                if ((written.KnownType ?? LookupTypeWithImports(name: written.Name)) is { } type &&
+                    IsUnsharedRazorForgeType(type: type))
                 {
                     ReportUnshared(name: type.BareName, location: written.Location);
                 }

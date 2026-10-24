@@ -300,10 +300,22 @@ internal static class RfBindingCheck
     }
 
     /// <summary>Whether a type written in the declaration names the shared type, compared by name without type
-    /// arguments. A missing written type matches anything.</summary>
+    /// arguments. A missing written type matches anything. Suflae has no access tokens, so a shared
+    /// <c>Viewing[T]</c> or <c>Modifying[T]</c> is written as the <c>T</c> it reaches.</summary>
     private static bool SameType(TypeExpression? written, TypeSymbol? shared)
     {
-        return written == null || shared == null || written.Name == shared.BareName || written.Name == shared.Name ||
+        if (written == null || shared == null)
+        {
+            return true;
+        }
+
+        if (shared.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying &&
+            shared.TypeArguments is [{ } reached] && SameType(written: written, shared: reached))
+        {
+            return true;
+        }
+
+        return written.Name == shared.BareName || written.Name == shared.Name ||
                TypeSymbol.StripTypeArgs(name: written.Name) == shared.BareName;
     }
 
