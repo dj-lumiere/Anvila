@@ -3468,33 +3468,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     private static void UnifyMePatternIntoSubs(TypeSymbol pattern, TypeSymbol concrete,
         List<string>? genericParams, Dictionary<string, TypeSymbol> into)
     {
-        if (genericParams is not { Count: > 0 })
-        {
-            return;
-        }
-
-        if (pattern is GenericParameterTypeSymbol gp)
-        {
-            if (genericParams.Contains(item: gp.Name) && !into.ContainsKey(key: gp.Name) &&
-                concrete is not GenericParameterTypeSymbol)
-            {
-                into[key: gp.Name] = concrete;
-            }
-
-            return;
-        }
-
-        if (pattern.TypeArguments is { Count: > 0 } pArgs &&
-            concrete.TypeArguments is { Count: > 0 } cArgs)
-        {
-            for (int i = 0; i < pArgs.Count && i < cArgs.Count; i++)
-            {
-                UnifyMePatternIntoSubs(pattern: pArgs[index: i],
-                    concrete: cArgs[index: i],
-                    genericParams: genericParams,
-                    into: into);
-            }
-        }
+        TypeRegistry.UnifyReceiverGenerics(pattern: pattern, concrete: concrete, genericParams: genericParams,
+            into: into);
     }
 
     private Dictionary<string, TypeSymbol> BuildResolvedRoutineTypeSubstitutions(

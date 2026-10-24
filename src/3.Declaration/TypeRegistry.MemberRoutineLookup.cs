@@ -989,7 +989,7 @@ public sealed partial class TypeRegistry
     /// each memberRoutine generic parameter's binding (V → S64) into <paramref name="into"/>. Used so a
     /// member declared on a specialized generic instantiation resolves to a fully concrete memberRoutine.
     /// </summary>
-    private static void UnifyReceiverGenerics(TypeSymbol pattern, TypeSymbol concrete,
+    internal static void UnifyReceiverGenerics(TypeSymbol pattern, TypeSymbol concrete,
         List<string>? genericParams, Dictionary<string, TypeSymbol> into)
     {
         if (genericParams is not { Count: > 0 })
@@ -1014,6 +1014,23 @@ public sealed partial class TypeRegistry
             concrete is not RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed })
         {
             UnifyReceiverGenerics(pattern: handled, concrete: concrete, genericParams: genericParams, into: into);
+            return;
+        }
+
+        // A member written on a protocol pattern (`routine Emittable[Tuple[TKey, TValue]].to[Dict[TKey, TValue]]()`)
+        // homed on a type that obeys it (`List[Tuple[S64, Text]]`) is unified against the protocol as that type obeys
+        // it (`Emittable[Tuple[S64, Text]]`), not against the type's own arguments.
+        if (pattern is ProtocolTypeSymbol { GenericDefinition: { } patternDef } &&
+            !(concrete is ProtocolTypeSymbol { GenericDefinition: { } concreteDef } && concreteDef == patternDef) &&
+            (concrete switch
+            {
+                EntityTypeSymbol e => e.ImplementedProtocols,
+                RecordTypeSymbol r => r.ImplementedProtocols,
+                _ => []
+            }).FirstOrDefault(predicate: p => p is ProtocolTypeSymbol { GenericDefinition: { } obeyedDef } &&
+                                              obeyedDef == patternDef) is { } obeyed)
+        {
+            UnifyReceiverGenerics(pattern: pattern, concrete: obeyed, genericParams: genericParams, into: into);
             return;
         }
 
@@ -3034,12 +3051,60 @@ public sealed partial class TypeRegistry
                                         .ToList();
                 }
 
+                // A member written on a pattern of the protocol (`Emittable[Tuple[TKey, TValue]].to[Dict[...]]`)
+                // reaches only a type whose conformance has that shape (`Emittable[Tuple[S64, Text]]`).
                 found.AddRange(collection: ofProtocol.Where(predicate: r =>
+                    ReceiverPatternAdmits(pattern: (r.GenericDefinition ?? r).MeType, concrete: protocol) &&
                     found.All(predicate: f => f.RegistryKey != r.RegistryKey && !SameTargets(a: f, b: r))));
             }
         }
 
-        return found;
+        return found.Where(predicate: r => ReceiverPatternAdmits(pattern: (r.GenericDefinition ?? r).MeType,
+                         concrete: owner))
+                    .ToList();
+    }
+
+    /// <summary>Whether a protocol receiver pattern a member is written on (<c>Emittable[Tuple[TKey, TValue]]</c>) has
+    /// the shape of <paramref name="concrete"/> (<c>Emittable[Tuple[S64, Text]]</c>): a generic parameter matches any
+    /// type, anything else the same type or the same generic type with matching arguments. A member with no
+    /// pattern, or one on another kind of receiver, always matches.</summary>
+    private static bool ReceiverPatternAdmits(TypeSymbol? pattern, TypeSymbol concrete)
+    {
+        if (pattern is not ProtocolTypeSymbol)
+        {
+            return true;
+        }
+
+        // A type that obeys the protocol is matched through its conformance (`List[S64]` as `Emittable[S64]`).
+        TypeSymbol patternDef = GenericDefinitionOf(type: pattern) ?? pattern;
+        TypeSymbol? obeyed = concrete is ProtocolTypeSymbol
+            ? concrete
+            : (concrete switch
+            {
+                EntityTypeSymbol e => e.ImplementedProtocols,
+                RecordTypeSymbol r => r.ImplementedProtocols,
+                _ => []
+            }).FirstOrDefault(predicate: p => (GenericDefinitionOf(type: p) ?? p).FullName == patternDef.FullName);
+        return obeyed == null || Admits(p: pattern, c: obeyed);
+
+        static bool Admits(TypeSymbol p, TypeSymbol c)
+        {
+            if (p is GenericParameterTypeSymbol or ProtocolSelfTypeSymbol)
+            {
+                return true;
+            }
+
+            if (p.TypeArguments is not { Count: > 0 } pArgs)
+            {
+                return p.FullName == c.FullName;
+            }
+
+            bool sameShape = p is TupleTypeSymbol pt
+                ? c is TupleTypeSymbol ct && ct.Arity == pt.Arity
+                : (GenericDefinitionOf(type: p) ?? p).FullName == (GenericDefinitionOf(type: c) ?? c).FullName;
+            return sameShape && c.TypeArguments is { } cArgs && cArgs.Count == pArgs.Count &&
+                   pArgs.Zip(second: cArgs).All(predicate: pair => Admits(p: pair.First, c: pair.Second));
+        }
     }
 
     /// <summary>Whether two specializations go to the same types (the same name in the same language).</summary>

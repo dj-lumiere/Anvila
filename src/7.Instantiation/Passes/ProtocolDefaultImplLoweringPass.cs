@@ -517,6 +517,15 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
                 }
             }
 
+            // A member written on a pattern of the protocol (`routine Emittable[Tuple[TKey, TValue]].to[...]`) binds
+            // its own parameters from the conformance too (TKey, TValue from `Emittable[Tuple[S64, Text]]`).
+            RoutineInfo written = protocolRoutine.GenericDefinition ?? protocolRoutine;
+            if (written.MeType is { } pattern)
+            {
+                Builder.Declaration.TypeRegistry.UnifyReceiverGenerics(pattern: pattern, concrete: p,
+                    genericParams: written.GenericParameters, into: subs);
+            }
+
             break;
         }
 
