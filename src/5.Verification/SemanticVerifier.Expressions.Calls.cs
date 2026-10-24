@@ -449,6 +449,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeDynamicCallExpression(CallExpression call)
     {
         TypeSymbol calleeType = AnalyzeExpression(expression: call.Callee);
+        ValidateDangerousCallableCall(callee: call.Callee);
 
         // A routine value's parameter types are where its arguments go, so a bare number conforms to them
         // (`double_it(21)` with `double_it: (S32) -> S32`).

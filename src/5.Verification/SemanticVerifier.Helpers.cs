@@ -613,6 +613,7 @@ public sealed partial class SemanticVerifier
                     paramType: paramType,
                     argument: argExpr,
                     receiver: callObjectType) ?? paramType);
+            TakeDangerousCallableArgument(routine: routine, paramType: paramType, argument: argExpr);
 
             if ((ImplicitTokenArgument(argExpr: argExpr, argType: argType, paramType: paramType) ??
                  ImplicitCStringView(argExpr: argExpr, argType: argType, paramType: paramType)) is { } viewed)

@@ -220,16 +220,11 @@ public sealed partial class SemanticVerifier
             // routine SA just resolved on the node so codegen consumes it directly (EmitIdentifier's
             // ResolvedRoutine fast-path) instead of re-doing name-based lookup at emission time.
             id.ResolvedRoutine = routine;
-            // A call of the value is not written where the value is taken, so no `danger` block can be shown to
-            // hold it: a dangerous routine is never a value (inside `danger` either, the value can leave the block).
-            if (routine.IsDangerous && !_isInCompilerGeneratedBody && !ReferenceEquals(objA: id, objB: _freeGenericCallee))
+            // A routine value from a dangerous routine is a dangerous callable: the statement around it decides
+            // whether the place it goes may hold one.
+            if (routine.IsDangerous && !ReferenceEquals(objA: id, objB: _freeGenericCallee))
             {
-                ReportError(code: SemanticDiagnosticCode.DangerousCallOutsideDangerBlock,
-                    message:
-                    $"You take the dangerous routine '{routine.Name}' as a value, but a call of the value could happen " +
-                    $"anywhere, outside any 'danger' block. Call '{routine.Name}' inside 'danger' where you need it, or " +
-                    $"write a routine that calls it inside 'danger' and take that routine as the value.",
-                    location: id.Location);
+                NoteDangerousRoutineValue(id: id, routine: routine);
             }
 
             return GetRoutineType(routine: routine);
@@ -541,6 +536,7 @@ public sealed partial class SemanticVerifier
         // Record the exact binding for the language server (scope-precise references / rename /
         // go-to-definition). Reference identity distinguishes shadowed same-name bindings.
         id.ResolvedVariable = varInfo;
+        NoteDangerousCallableRead(id: id, variable: varInfo);
 
         // A scalar `secret preset` is inlined only inside the file that declares it (PresetInliningPass).
         // Used from another file it would stay a bare identifier and reach the LLVM emitter, so say so here.

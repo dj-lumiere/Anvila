@@ -37,6 +37,11 @@ public sealed class VariableInfo
     /// not reuse the name of.</summary>
     public bool IsParameter { get; init; }
 
+    /// <summary>Whether the variable holds a routine value from a dangerous routine: a local given one, or a
+    /// <c>Callable</c> parameter of a dangerous routine. Calling it is dangerous, and it goes only where a dangerous
+    /// routine's value may (see SemanticVerifier.DangerousCallables).</summary>
+    public bool IsDangerousCallable { get; set; }
+
     /// <summary>The module this variable belongs to.</summary>
     public string? Module { get; init; }
 

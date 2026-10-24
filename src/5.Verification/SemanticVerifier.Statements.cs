@@ -440,6 +440,8 @@ public sealed partial class SemanticVerifier
                 location: paramLoc ?? routine.Location);
         }
 
+        MarkDangerousCallableParameters(routineInfo: routineInfo);
+
         // A routine may give back `Maybe` of a token (an iterator's `emit` under `try`), unpacked where it is called.
         if (routineInfo.ReturnType is { } returned)
         {
@@ -740,6 +742,7 @@ public sealed partial class SemanticVerifier
             if (_expressionDepth == 0)
             {
                 ReportSpecialFloats();
+                ReportEscapedDangerousCallables();
             }
         }
     }
@@ -1284,6 +1287,10 @@ public sealed partial class SemanticVerifier
             isNullable: varIsNullable,
             location: varDecl.Location,
             isReadOnly: varDecl.IsPreset);
+        if (varDecl.Initializer != null)
+        {
+            TakeDangerousCallableIntoLocal(name: varDecl.Name, value: varDecl.Initializer);
+        }
 
         if (!declared)
         {
@@ -1870,12 +1877,22 @@ public sealed partial class SemanticVerifier
         ReportAssignWhileMatched(target: assign.Target);
         ForgetNarrowing(target: assign.Target);
         TypeSymbol targetType = AnalyzeExpression(expression: assign.Target);
+        // The name assigned to is not a read of what it holds.
+        if (assign.Target is IdentifierExpression assignedName)
+        {
+            _pendingDangerousCallables.Remove(key: assignedName);
+        }
+
         // A global's initializer stands at the top of start() but was written in the global's own file: its names
         // resolve there (that file's imports and module), not in the entry file.
         TypeSymbol valueType = assign.IsGlobalInit
             ? InImportStateOf(file: assign.Location.FileName,
                 analyze: () => AnalyzeExpression(expression: assign.Value, expectedType: targetType))
             : AnalyzeExpression(expression: assign.Value, expectedType: targetType);
+        if (assign.Target is IdentifierExpression localTarget)
+        {
+            TakeDangerousCallableIntoLocal(name: localTarget.Name, value: assign.Value);
+        }
 
         // Check if target is assignable (variable, member variable, or index)
         if (!IsAssignableTarget(target: assign.Target))
