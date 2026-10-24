@@ -1079,6 +1079,14 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 _worklist.Enqueue(item: (k, b));
             }
 
+            // Every program can crash where the walk sees no throw: a read of a binding `steal` emptied crashes, and
+            // by the time of the walk an entity's `steal` is already the hand-over calls it lowers to. The crash
+            // report is always there.
+            if (_ctx.LiveRoutineKeys.Count > 0)
+            {
+                Discover(r: CrashReportRoutine(registry: _ctx.Registry));
+            }
+
             RunFixpoint();
             return _totalBuilt;
         }

@@ -394,6 +394,8 @@ public static class AstWalker
             {
                 e.Operand
             },
+            // A read of a binding that `steal` may have emptied carries the crash it makes then: a call like any other.
+            IdentifierExpression { StealGuardCrash: { } guard } => new object[] { guard },
             LiteralExpression or IdentifierExpression => Enumerable.Empty<object>(),
             _ => null
         };

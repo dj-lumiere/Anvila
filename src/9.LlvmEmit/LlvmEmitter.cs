@@ -1167,6 +1167,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "  ret ptr @_rf_trace_stack");
         output.AppendLine(value: "}");
         output.AppendLine();
+        AppendTraceExchange(output: output);
         AppendFailureRing(output: output);
 
         // Exported entry points for the modules that do not own the stack (see AppendShadowStackForwarders).
@@ -1188,6 +1189,7 @@ public partial class LlvmEmitter
         ("_rf_trace_update_loc", "void", "i32 %ln, i32 %col", "i32 %ln, i32 %col"),
         ("_rf_trace_get_depth", "i32", "", ""),
         ("_rf_trace_get_frames", "ptr", "", ""),
+        ("_rf_trace_exchange", "void", "ptr %area", "ptr %area"),
         ("_rf_failure_note", "i64", "", ""),
         ("_rf_failure_get_frames", "ptr", "i64 %seq", "i64 %seq"),
         ("_rf_failure_get_depth", "i32", "i64 %seq", "i64 %seq")
@@ -1195,6 +1197,57 @@ public partial class LlvmEmitter
 
     /// <summary>The trace ring: 32 frames of (routine name, file, line, column).</summary>
     private const string TraceRingType = "[32 x { ptr, ptr, i32, i32 }]";
+
+    /// <summary>A trace kept aside (the runtime's <c>TraceArea</c>, one in each coroutine): the depth, then the ring.</summary>
+    private const string TraceAreaType = "{ i32, " + TraceRingType + " }";
+
+    /// <summary>
+    /// <c>_rf_trace_exchange(area)</c> swaps the thread's trace with a <c>TraceArea</c>: the runtime calls it on the way
+    /// into a coroutine and on the way back (rf_set_trace_exchange), so the thread's trace is always the running
+    /// coroutine's, on whichever thread it goes on after a park. Only the live frames are moved (a coroutine's trace is
+    /// a few frames deep), each at its ring position, through a copy on the stack.
+    /// </summary>
+    private void AppendTraceExchange(StringBuilder output)
+    {
+        const string frame = "{ ptr, ptr, i32, i32 }";
+        output.AppendLine(value: $"define private void @_rf_trace_copy_live(ptr %dst, ptr %src, i32 %depth) alwaysinline {CpuAttributes} {{");
+        output.AppendLine(value: EntryLabel);
+        output.AppendLine(value: "  %big = icmp sgt i32 %depth, 32");
+        output.AppendLine(value: "  %capped = select i1 %big, i32 32, i32 %depth");
+        output.AppendLine(value: "  %any = icmp sgt i32 %capped, 0");
+        output.AppendLine(value: "  br i1 %any, label %copy, label %done");
+        output.AppendLine(value: "copy:");
+        output.AppendLine(value: "  %k = phi i32 [ 0, %entry ], [ %k1, %copy ]");
+        output.AppendLine(value: "  %top = sub i32 %depth, 1");
+        output.AppendLine(value: "  %at = sub i32 %top, %k");
+        output.AppendLine(value: "  %idx32 = and i32 %at, 31");
+        output.AppendLine(value: "  %idx = zext i32 %idx32 to i64");
+        output.AppendLine(handler: $"  %from = getelementptr inbounds {TraceRingType}, ptr %src, i64 0, i64 %idx");
+        output.AppendLine(handler: $"  %to = getelementptr inbounds {TraceRingType}, ptr %dst, i64 0, i64 %idx");
+        output.AppendLine(handler: $"  %frame = load {frame}, ptr %from");
+        output.AppendLine(handler: $"  store {frame} %frame, ptr %to");
+        output.AppendLine(value: "  %k1 = add i32 %k, 1");
+        output.AppendLine(value: "  %more = icmp slt i32 %k1, %capped");
+        output.AppendLine(value: "  br i1 %more, label %copy, label %done");
+        output.AppendLine(value: "done:");
+        output.AppendLine(value: RetVoidInstruction);
+        output.AppendLine(value: "}");
+        output.AppendLine();
+        output.AppendLine(value: $"define private void @_rf_trace_exchange(ptr %area) {CpuAttributes} {{");
+        output.AppendLine(value: EntryLabel);
+        output.AppendLine(handler: $"  %held = alloca {TraceRingType}");
+        output.AppendLine(value: "  %td = load i32, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  %ad = load i32, ptr %area");
+        output.AppendLine(handler: $"  %ring = getelementptr inbounds {TraceAreaType}, ptr %area, i32 0, i32 1");
+        output.AppendLine(value: "  call void @_rf_trace_copy_live(ptr %held, ptr @_rf_trace_stack, i32 %td)");
+        output.AppendLine(value: "  call void @_rf_trace_copy_live(ptr @_rf_trace_stack, ptr %ring, i32 %ad)");
+        output.AppendLine(value: "  call void @_rf_trace_copy_live(ptr %ring, ptr %held, i32 %td)");
+        output.AppendLine(value: "  store i32 %ad, ptr @_rf_trace_depth");
+        output.AppendLine(value: "  store i32 %td, ptr %area");
+        output.AppendLine(value: RetVoidInstruction);
+        output.AppendLine(value: "}");
+        output.AppendLine();
+    }
 
     /// <summary>One failure the thread remembers: its number, the depth of the trace when it was thrown, and the trace's
     /// 32 frames (System's <c>Crashables.thrown_trace_frames</c> / <c>thrown_trace_depth</c> read it).</summary>
@@ -1328,6 +1381,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "declare void @rf_access_configure(i32, i32, i32, ptr)");
         output.AppendLine(value: "declare void @ingrid_access_place(ptr)");
         output.AppendLine(value: "declare void @rf_set_crash_report(ptr)");
+        output.AppendLine(value: "declare void @rf_set_trace_exchange(ptr)");
         output.AppendLine(value: "declare void @tessera_runtime_crash_report(ptr, ptr, ptr)");
         output.AppendLine(value: "declare void @tessera_set_library_folder(ptr)");
         // The arguments the program was started with, kept by the runtime for Environment.arguments().
@@ -1352,6 +1406,8 @@ public partial class LlvmEmitter
         // is a crash the runtime raises (a deadlock, a failed allocation).
         output.AppendLine(handler: $"  call void @rf_set_stack_overflow_report(ptr @{overflowReport})");
         output.AppendLine(value: "  call void @rf_set_crash_report(ptr @tessera_runtime_crash_report)");
+        // Each coroutine keeps its own crash trace: the runtime swaps it in and out as the coroutine runs.
+        output.AppendLine(value: "  call void @rf_set_trace_exchange(ptr @_rf_trace_exchange_shared)");
         output.AppendLine(value: "  call void @tessera_set_library_folder(ptr @.crash.library)");
         // The AccessManager's checks ([debug] deadlock-check, on in debug, and access-order), the language its
         // reports speak, and where the program's code is when it takes an access (the crash trace's top frame).
