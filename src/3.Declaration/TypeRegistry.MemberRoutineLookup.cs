@@ -1194,6 +1194,141 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// The creator of the plain type <paramref name="type"/> that has type parameters of its own
+    /// (<c>Unknown(from: T)</c>), bound for concrete <paramref name="argTypes"/>: each parameter type is matched
+    /// against its argument's type, and the first creator whose <c>needs</c> lines hold is the one. A creator
+    /// written for exactly these types wins over them. Null when none fits.
+    /// </summary>
+    public RoutineInfo? ResolveCreatorWithOwnTypeParameters(TypeSymbol type, IReadOnlyList<TypeSymbol> argTypes)
+    {
+        if (type.IsGenericDefinition || type.TypeArguments is { Count: > 0 })
+        {
+            return null;
+        }
+
+        var candidates = new List<RoutineInfo>();
+        CollectCreatorCandidates(type: type, candidates: candidates);
+
+        // A creator written for exactly these argument types (`Unknown(from: Unknown)`) comes before any with
+        // type parameters.
+        if (candidates.FirstOrDefault(predicate: c =>
+                c.GenericParameters is not { Count: > 0 } && c.Parameters.Count == argTypes.Count &&
+                c.Parameters.Select(selector: p => p.Type.FullName)
+                 .SequenceEqual(second: argTypes.Select(selector: a => a.FullName))) is { } exact)
+        {
+            return exact;
+        }
+
+        foreach (RoutineInfo candidate in candidates)
+        {
+            if (candidate.GenericParameters is not { Count: > 0 } parameters ||
+                candidate.Parameters.Count != argTypes.Count)
+            {
+                continue;
+            }
+
+            var bound = new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal);
+            bool fits = true;
+            for (int i = 0; i < argTypes.Count && fits; i++)
+            {
+                fits = BindTypeParameters(pattern: candidate.Parameters[index: i].Type,
+                    actual: argTypes[index: i],
+                    bound: bound);
+            }
+
+            if (!fits || parameters.Any(predicate: p => !bound.ContainsKey(key: p)))
+            {
+                continue;
+            }
+
+            List<TypeSymbol> arguments = parameters.Select(selector: p => bound[key: p])
+                                                   .ToList();
+            if (RoutineConstraintsHold(routine: candidate, typeArguments: arguments))
+            {
+                return GetOrCreateRoutineResolution(genericDef: candidate, typeArguments: arguments);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Matches a parameter type that may name type parameters against a concrete argument type, recording
+    /// what each type parameter stands for. False when the two cannot be the same type.</summary>
+    private static bool BindTypeParameters(TypeSymbol pattern, TypeSymbol actual,
+        Dictionary<string, TypeSymbol> bound)
+    {
+        if (pattern is GenericParameterTypeSymbol parameter)
+        {
+            if (bound.TryGetValue(key: parameter.Name, value: out TypeSymbol? earlier))
+            {
+                return earlier.FullName == actual.FullName;
+            }
+
+            bound[key: parameter.Name] = actual;
+            return true;
+        }
+
+        if (pattern.TypeArguments is not { Count: > 0 } patternArguments)
+        {
+            return pattern.FullName == actual.FullName;
+        }
+
+        static TypeSymbol? DefinitionOf(TypeSymbol type)
+        {
+            return type switch
+            {
+                RecordTypeSymbol record => record.GenericDefinition,
+                EntityTypeSymbol entity => entity.GenericDefinition,
+                ProtocolTypeSymbol protocol => protocol.GenericDefinition,
+                _ => null
+            };
+        }
+
+        TypeSymbol? patternDefinition = DefinitionOf(type: pattern);
+        if (patternDefinition == null || DefinitionOf(type: actual)?.FullName != patternDefinition.FullName ||
+            actual.TypeArguments is not { } actualArguments || actualArguments.Count != patternArguments.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < patternArguments.Count; i++)
+        {
+            if (!BindTypeParameters(pattern: patternArguments[index: i], actual: actualArguments[index: i],
+                    bound: bound))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Whether every <c>needs</c> line of <paramref name="routine"/> holds for its own type parameters
+    /// bound to <paramref name="typeArguments"/>, in order. A type argument that is itself a type parameter of a
+    /// body not yet made concrete holds every line: the instance made for it checks again.</summary>
+    public bool RoutineConstraintsHold(RoutineInfo routine, IReadOnlyList<TypeSymbol> typeArguments)
+    {
+        if (routine.GenericConstraints is not { Count: > 0 } constraints ||
+            routine.GenericParameters is not { Count: > 0 } parameters)
+        {
+            return true;
+        }
+
+        foreach (GenericConstraintDeclaration constraint in constraints)
+        {
+            int slot = parameters.IndexOf(item: constraint.ParameterName);
+            if (slot >= 0 && slot < typeArguments.Count &&
+                typeArguments[index: slot] is not GenericParameterTypeSymbol &&
+                !ImplementerSatisfiesConstraint(implementer: typeArguments[index: slot], constraint: constraint))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// True when a concrete implementer type satisfies a single <c>needs Me …</c> constraint used to
     /// gate a protocol-default body (the kind constraints <c>is variant/choice/flags/record/entity</c>
     /// plus <c>obeys P</c>).
@@ -1891,10 +2026,10 @@ public sealed partial class TypeRegistry
     public Func<RoutineInfo, bool>? EnsureRecoveryVariants { get; set; }
 
     /// <summary>
-    /// Verifier-installed hook: whether a routine that is not failable can still fail beneath a call of it
-    /// (a user routine whose body divides by zero, overflows, indexes out of range or calls a failable
-    /// routine bare). Under <c>try</c>/<c>check</c> such a call goes through the routine's own
-    /// recovery variant, so its failure is recovered instead of crashing.
+    /// Verifier-installed hook: whether a routine that is not failable can still fail beneath a call of it. Such a
+    /// routine is a wall, so only through a routine value that may fail (a <c>failable Callable[...]</c> it was
+    /// handed or holds, a lifted lambda's own body). Under <c>try</c>/<c>check</c> such a call goes through the
+    /// routine's own recovery variant, which passes that failure on instead of crashing.
     /// </summary>
     public Func<RoutineInfo, bool>? MayFailBeneath { get; set; }
 

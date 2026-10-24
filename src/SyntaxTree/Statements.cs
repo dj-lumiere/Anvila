@@ -183,7 +183,8 @@ public record ReturnStatement(Expression? Value, SourceLocation Location)
 /// </summary>
 /// <param name="Error">Expression that evaluates to a Crashable error type</param>
 /// <param name="Location">Source location information</param>
-/// <param name="IsFatal">When true this is a <c>pierce</c> (fatal, uncatchable); when false a recoverable <c>throw</c>.</param>
+/// <param name="IsFatal">When true the throw crashes where it stands (a <c>throw</c> in a routine not declared
+/// <c>failable</c>, or a <c>todo</c>); when false it is the failure of a failable routine, which goes to the caller.</param>
 /// <remarks>
 /// The throw statement is used for expected throwures that should be handled:
 /// <code>
@@ -198,10 +199,10 @@ public record ThrowStatement(Expression Error, SourceLocation Location, bool IsF
     : Statement(Location: Location)
 {
     /// <summary>
-    /// When true this is a `pierce` (fatal, uncatchable crash): it does NOT make the routine failable,
-    /// is NOT rewritten into a recoverable return in try/check/lookup variants, and pierces through
-    /// every handler to abort. When false this is a recoverable `throw`. Codegen is identical (both
-    /// lower to a crash_report call) — the difference is purely in the error-handling/variant machinery.
+    /// When true the throw crashes where it stands (a throw in a routine not declared failable, or a todo): it
+    /// does NOT make the routine failable and is NOT rewritten into a recoverable return in try/check/lookup
+    /// variants, so a keyword above the call does not receive it. When false this is the failure of a failable
+    /// routine. Codegen of the crash is identical, the difference is in the error-handling/variant machinery.
     /// </summary>
     public bool IsFatal { get; init; } = IsFatal;
 
@@ -624,7 +625,11 @@ public enum ExpandSourceKind
     /// <summary><c>caseof(T)</c> — the cases of a choice (S32 discriminants) or the members of a flags
     /// (U64 bit values), declaration order. The handle exposes <c>c.name</c>, <c>c.id</c> (ordinal) and
     /// <c>c.value</c> (the case's numeric constant, spliced via <c>${c.value}</c>).</summary>
-    Cases
+    Cases,
+
+    /// <summary><c>protocolof(T)</c> — the protocols a type obeys, in the order its declaration and the builder
+    /// give them. The handle exposes <c>nameof(p)</c> (the protocol's name) and <c>orderof(p)</c>.</summary>
+    Protocols
 }
 
 /// <summary>
@@ -675,7 +680,7 @@ public static class ExpandSources
     public static readonly IReadOnlySet<string> Names =
         new HashSet<string>(comparer: StringComparer.Ordinal)
         {
-            "openmemvarof", "allmemvarof", "caseof", "branchof"
+            "openmemvarof", "allmemvarof", "caseof", "branchof", "protocolof"
         };
 
     /// <summary>True if <paramref name="name"/> is a recognized reflection-source intrinsic.</summary>
@@ -693,6 +698,7 @@ public static class ExpandSources
             "allmemvarof" => ExpandSourceKind.AllMemberVariables,
             "caseof" => ExpandSourceKind.Cases,
             "branchof" => ExpandSourceKind.Arms,
+            "protocolof" => ExpandSourceKind.Protocols,
             _ => ExpandSourceKind.AllMemberVariables
         };
     }

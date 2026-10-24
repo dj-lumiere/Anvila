@@ -1,5 +1,6 @@
 using Builder.Declaration;
 using SyntaxTree;
+using TypeModel.Enums;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
@@ -65,6 +66,17 @@ internal sealed class WrapperProjectionLoweringPass(TypeRegistry registry) : Ast
             return rewritten is CallExpression { IsRecipeRunCall: true } direct
                 ? ProjectByReferenceArguments(call: direct)
                 : rewritten;
+        }
+
+        // A call through a routine-typed member variable (`h.make()` with `h` a `Modifying[Holder]`) reads that
+        // member variable, so it is projected like any other read.
+        if (e.LoweringKind == CallLoweringKind.DynamicCall)
+        {
+            Expression field = VisitMember(e: callee);
+            List<Expression> dynamicArgs = RewriteList(items: e.Arguments, rewrite: VisitExpression);
+            return ReferenceEquals(objA: field, objB: callee) && ReferenceEquals(objA: dynamicArgs, objB: e.Arguments)
+                ? e
+                : e with { Callee = field, Arguments = dynamicArgs };
         }
 
         // The callee is a routine, not a field: only its receiver is rewritten.

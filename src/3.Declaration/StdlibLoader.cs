@@ -1209,9 +1209,16 @@ public sealed partial class StdlibLoader
             typeExpr: returnTypeExpr,
             genericParams: genericParams,
             moduleName: moduleName);
+        // A return type not resolved yet (a type declared further down the file) leaves the whole routine type
+        // unresolved, as a parameter type does, so it is resolved again later instead of becoming `None`.
+        if (returnType == null)
+        {
+            return null;
+        }
+
         return registry.GetOrCreateRoutineType(parameterTypes: paramTypes,
             returnType: returnType,
-            isFailable: false);
+            isFailable: typeExpr.IsFailable);
     }
 
     /// <summary>

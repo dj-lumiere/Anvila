@@ -2895,7 +2895,12 @@ public sealed partial class SemanticVerifier
     {
         if (objectType is EntityTypeSymbol or RecordTypeSymbol)
         {
-            List<MemberVariableInfo> receiverFields = objectType switch
+            // Through an access token (`each h in holders` hands out `Modifying[Holder]`) the member variables are
+            // the held value's, as a member variable read through the token sees them.
+            TypeSymbol fieldOwner = IsAccessToken(type: objectType) && WrapperShape.InnerOf(type: objectType) is { } held
+                ? held
+                : objectType;
+            List<MemberVariableInfo> receiverFields = fieldOwner switch
             {
                 EntityTypeSymbol e => e.MemberVariables,
                 RecordTypeSymbol r => r.MemberVariables,
@@ -4324,6 +4329,40 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// A creator with type parameters of its own on a type that has none (<c>Unknown(from: T)</c>, written for
+    /// any value): its type arguments come from the call's arguments, and the first such creator whose
+    /// <c>needs</c> lines hold for them is the one called.
+    /// </summary>
+    private RoutineInfo? ResolveCreatorWithOwnTypeParameters(CallExpression call, TypeSymbol type)
+    {
+        if (type.IsGenericDefinition || type.TypeArguments is { Count: > 0 })
+        {
+            return null;
+        }
+
+        var candidates = new List<RoutineInfo>();
+        _registry.CollectCreatorCandidates(type: type, candidates: candidates);
+        foreach (RoutineInfo candidate in candidates)
+        {
+            if (!candidate.IsGenericDefinition || candidate.Parameters.Count != call.Arguments.Count)
+            {
+                continue;
+            }
+
+            List<TypeSymbol>? inferred = InferGenericTypeArguments(genericRoutine: candidate,
+                arguments: call.Arguments);
+            if (inferred == null || !_registry.RoutineConstraintsHold(routine: candidate, typeArguments: inferred))
+            {
+                continue;
+            }
+
+            return _registry.GetOrCreateRoutineResolution(genericDef: candidate, typeArguments: inferred);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// A creator is chosen by the types of its arguments, so a named argument may still name a parameter the
     /// chosen creator does not have (`Set(from: xs)` reaching `Set(key: SecureHashKey)`). Reports each such
     /// name (RF-S505).
@@ -4381,7 +4420,8 @@ public sealed partial class SemanticVerifier
         // e.g., BitList(32u64) -> BitList.create(capacity: U64) instead of collection literal
         if (call.Arguments.Count > 0)
         {
-            RoutineInfo? creator = _registry.LookupCreatorOverload(type: type, argTypes: argTypes);
+            RoutineInfo? creator = _registry.LookupCreatorOverload(type: type, argTypes: argTypes) ??
+                                   ResolveCreatorWithOwnTypeParameters(call: call, type: type);
 
             if (creator != null && creator.Parameters.Count == argTypes.Count &&
                 !creator.Parameters.Any(predicate: p => p.IsVariadicParam))

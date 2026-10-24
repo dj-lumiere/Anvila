@@ -323,7 +323,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.UnknownExpandSource,
                 message:
-                $"'{expandStmt.SourceName}' is not a valid expand source — use 'allmemvarof', 'openmemvarof', 'caseof', or 'branchof'.",
+                $"'{expandStmt.SourceName}' is not a valid expand source — use 'allmemvarof', 'openmemvarof', 'caseof', 'branchof', or 'protocolof'.",
                 location: expandStmt.Location);
         }
 
@@ -618,8 +618,8 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// A <c>when</c> on a <c>Check</c>/<c>Lookup</c> that does not handle the caught error passes it on: it gets the
-    /// arm <c>is Crashables e => throw e</c> (propagating, in a failable routine) or <c>is Crashables e => pierce e</c>
-    /// (crashing loudly, anywhere else). An arm for one crashable (<c>is NopeError e</c>) handles only that one.
+    /// arm <c>is Crashables e => throw e</c> (propagating, in a failable routine) or <c>is Crashables e => throw e</c>
+    /// that crashes where it stands (anywhere else). An arm for one crashable (<c>is NopeError e</c>) handles only that one.
     /// </summary>
     private void AddImplicitErrorArm(WhenStatement whenStmt, TypeSymbol matchedType)
     {
@@ -1127,9 +1127,8 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // A recoverable `throw` requires the routine to be declared `!`; the check runs once the body is
-        // analyzed (ValidateRoutineBodyPostAnalysis, RF-S750). `pierce` (IsFatal) stays a fatal
-        // uncatchable crash that never marks the routine failable.
+        // A `throw` in a failable routine is its failure. In a routine not declared failable the parser made it
+        // fatal (IsFatal): it crashes where it stands and never marks the routine failable.
         TypeSymbol errorType = AnalyzeExpression(expression: throwStmt.Error);
 
         // Only `crashable`-kind types are throwable errors. The `crashable` keyword implicitly
@@ -1159,7 +1158,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Mark routine as having throw statements (drives the declaration check and variant
-        // generation). A `pierce` never marks failable — it is a crash, not a recoverable failure.
+        // generation). A fatal throw never marks failable: it is a crash, not a failure the caller receives.
         if (!throwStmt.IsFatal)
         {
             _currentRoutine.HasThrow = true;

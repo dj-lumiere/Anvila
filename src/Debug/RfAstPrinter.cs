@@ -1451,6 +1451,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             ExpandSourceKind.AllMemberVariables => "allmemvarof",
             ExpandSourceKind.Arms => "branchof",
             ExpandSourceKind.Cases => "caseof",
+            ExpandSourceKind.Protocols => "protocolof",
             _ => node.SourceKind.ToString()
         };
         var sb = new StringBuilder();

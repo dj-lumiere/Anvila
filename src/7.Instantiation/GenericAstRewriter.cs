@@ -999,9 +999,16 @@ internal static class GenericAstRewriter
             // capacity:)` would resolve to the 0-arg `BitList()` — whose OWN body is that very construction —
             // and self-recurse to a StackOverflow. Leave it unresolved so RebindPlainCall keeps the call's
             // SA-stamped construction (ConstructedType). A genuine creator overload was already returned above.
-            if (Registry.LookupType(name: callName) is { IsGenericDefinition: false })
+            if (Registry.LookupType(name: callName) is { IsGenericDefinition: false } constructed)
             {
-                return null;
+                // A creator with type parameters of its own (`Unknown(from: T)`) was bound for the template's
+                // argument types: bind it again for the concrete ones.
+                // A construction the template could not bind (its argument came from an `expand` member) binds
+                // here when the type has such a creator.
+                return call.ResolvedRoutine == null && callArgTypes.Count == call.Arguments.Count &&
+                       !callArgTypes.Any(predicate: HasGenericParam)
+                    ? Registry.ResolveCreatorWithOwnTypeParameters(type: constructed, argTypes: callArgTypes)
+                    : RebindCreatorWithOwnTypeParameters(call: call, callArgTypes: callArgTypes);
             }
 
             routine = Registry.LookupRoutine(fullName: callName, isFailable: isFailable) ??
@@ -1069,6 +1076,55 @@ internal static class GenericAstRewriter
 
             return Registry.GetOrCreateRoutineResolution(genericDef: target,
                 typeArguments: explicitArgs);
+        }
+
+        /// <summary>
+        /// A routine named as a value whose routine is a generic template (a lambda lifted out of a generic
+        /// routine, which takes the routine's type parameters) names this instance's routine instead, built from
+        /// the substitution, so the instance's value calls code that exists. The template itself is never emitted.
+        /// </summary>
+        public IdentifierExpression RebindRoutineValueOn(IdentifierExpression identifier)
+        {
+            if (identifier.ResolvedRoutine is not { IsGenericDefinition: true } template || TypeSubs == null ||
+                Registry == null)
+            {
+                return identifier with { };
+            }
+
+            var arguments = new List<TypeSymbol>(capacity: template.GenericParameters!.Count);
+            foreach (string parameter in template.GenericParameters)
+            {
+                if (!TypeSubs.TryGetValue(key: parameter, value: out TypeSymbol? argument) ||
+                    HasGenericParam(t: argument))
+                {
+                    return identifier with { };
+                }
+
+                arguments.Add(item: argument);
+            }
+
+            return identifier with
+            {
+                ResolvedRoutine = Registry.GetOrCreateRoutineResolution(genericDef: template,
+                    typeArguments: arguments)
+            };
+        }
+
+        /// <summary>
+        /// A creator with type parameters of its own on a plain type (<c>Unknown(from: T)</c>) was bound for the
+        /// template's argument types: bound again for the concrete ones, or null when the call is not one.
+        /// </summary>
+        public RoutineInfo? RebindCreatorWithOwnTypeParameters(CallExpression call, List<TypeSymbol> callArgTypes)
+        {
+            if (Registry == null ||
+                call.ResolvedRoutine is not { Name: RoutineInfo.CreatorName, OwnerType: { } owner } creator ||
+                !(creator.IsGenericDefinition || creator.GenericDefinition is { IsGenericDefinition: true }) ||
+                callArgTypes.Count != call.Arguments.Count || callArgTypes.Any(predicate: HasGenericParam))
+            {
+                return null;
+            }
+
+            return Registry.ResolveCreatorWithOwnTypeParameters(type: owner, argTypes: callArgTypes);
         }
 
         private static bool HasGenericParam(TypeSymbol t)
@@ -1766,7 +1822,7 @@ internal static class GenericAstRewriter
                     recovery: recovery with { Inner = RewriteExpression(expr: recovery.Inner, ctx: ctx) },
                     ctx: ctx),
 
-            IdentifierExpression identifier => identifier with { },
+            IdentifierExpression identifier => ctx.RebindRoutineValueOn(identifier: identifier),
 
             // Leaf nodes have no children, but their ResolvedType may still carry a generic
             // parameter (e.g. `none : Maybe[Hijacked[BTreeListNode[T]]]`). Clone so the ResolvedType
@@ -2083,9 +2139,10 @@ internal static class GenericAstRewriter
                                .Where(predicate: t => t != null)
                                .Cast<TypeSymbol>()
                                .ToList();
-        RoutineInfo? rewrittenRoutine = ctx.ResolveRoutine(original: call.ResolvedRoutine,
-            expressionType: routineResultType,
-            callArgTypes: callArgTypes);
+        RoutineInfo? rewrittenRoutine = ctx.RebindCreatorWithOwnTypeParameters(call: call, callArgTypes: callArgTypes) ??
+                                        ctx.ResolveRoutine(original: call.ResolvedRoutine,
+                                            expressionType: routineResultType,
+                                            callArgTypes: callArgTypes);
         if (rewrittenRoutine == null || CallRoutineNeedsRebinding(routine: rewrittenRoutine))
         {
             rewrittenRoutine = ctx.ResolveCallRoutine(call: call, callArgTypes: callArgTypes) ??
@@ -2913,6 +2970,12 @@ internal static class GenericAstRewriter
             return RewriteCaseExpand(expand: expand, source: source, ctx: ctx);
         }
 
+        // protocolof(T): one copy of the body per protocol the type obeys, nameof(p) its name.
+        if (expand.SourceKind == ExpandSourceKind.Protocols)
+        {
+            return RewriteProtocolExpand(expand: expand, source: source, ctx: ctx);
+        }
+
         // branchof(T) as a statement: one copy of the body per payload-carrying arm, with nameof(m) the arm
         // name and typeof(m) its payload type, exactly as the `when`-arm expansion binds them. (A variant is a
         // RecordTypeSymbol, so without this it fell into the member walk below and unrolled zero times.)
@@ -3229,6 +3292,48 @@ internal static class GenericAstRewriter
     /// variant <paramref name="source"/>, in declaration order, skipping the payload-less <c>None</c> arm (the
     /// same arms and the same <c>nameof</c>/<c>typeof</c> binding as <see cref="RewriteWhenArmExpansion"/>).
     /// </summary>
+    /// <summary>Unrolls <c>expand p in protocolof(T)</c>: one copy of the body per protocol the type obeys, with
+    /// <c>nameof(p)</c> the protocol's name and <c>orderof(p)</c> its position.</summary>
+    private static BlockStatement RewriteProtocolExpand(ExpandStatement expand, TypeSymbol? source,
+        RewriteContext ctx)
+    {
+        List<TypeSymbol> protocols = source switch
+        {
+            RecordTypeSymbol record => record.ImplementedProtocols.Cast<TypeSymbol>().ToList(),
+            EntityTypeSymbol entity => entity.ImplementedProtocols.Cast<TypeSymbol>().ToList(),
+            _ => []
+        };
+
+        var outStmts = new List<Statement>();
+        string? prevHandle = ctx.ActiveExpandHandle;
+        string? prevName = ctx.ActiveMemberName;
+        long prevIndex = ctx.ActiveMemberIndex;
+        TypeSymbol? prevType = ctx.ActiveMemberType;
+
+        ctx.ActiveExpandHandle = expand.HandleName;
+        for (int i = 0; i < protocols.Count; i++)
+        {
+            ctx.ActiveMemberName = protocols[index: i].Name;
+            ctx.ActiveMemberIndex = i;
+            ctx.ActiveMemberType = protocols[index: i];
+            Statement clone = RewriteStatement(stmt: expand.Body, ctx: ctx);
+            if (clone is BlockStatement block)
+            {
+                outStmts.AddRange(collection: block.Statements);
+            }
+            else
+            {
+                outStmts.Add(item: clone);
+            }
+        }
+
+        ctx.ActiveExpandHandle = prevHandle;
+        ctx.ActiveMemberName = prevName;
+        ctx.ActiveMemberIndex = prevIndex;
+        ctx.ActiveMemberType = prevType;
+        return new BlockStatement(Statements: outStmts, Location: expand.Location);
+    }
+
     private static BlockStatement RewriteBranchExpand(ExpandStatement expand, TypeSymbol? source,
         RewriteContext ctx)
     {

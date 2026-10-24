@@ -1003,6 +1003,20 @@ internal sealed class CallOverloadResolutionPass
                 }
             }
 
+            // A creator with type parameters of its own (`Unknown(from: T)`), reached from a body whose argument
+            // came from an `expand` member, binds once the argument types are known.
+            if (call.ResolvedRoutine == null && allArgTypesKnown &&
+                (call.ConstructedType ?? _registry.LookupType(name: name)) is
+                { IsGenericDefinition: false } ownGenericOwner &&
+                _registry.ResolveCreatorWithOwnTypeParameters(type: ownGenericOwner, argTypes: argTypes) is
+                    { } ownGenericCreator)
+            {
+                call.ConstructedType ??= ownGenericOwner;
+                call.ResolvedType ??= ownGenericOwner;
+                call.LoweringKind = CallLoweringKind.TypeConstructor;
+                call.ResolvedRoutine = ownGenericCreator;
+            }
+
             return;
         }
 

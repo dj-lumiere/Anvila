@@ -841,7 +841,11 @@ public partial class LlvmEmitter
             string recovery = routine.Recovery is { } recoveryKind
                 ? $", {RoutineInfo.RecoveryKeyword(kind: recoveryKind)}"
                 : "";
-            string lambdaName = Bang(name: $"[lambda{recovery}]{fileName}:{line}:{col}");
+            // A lambda lifted out of a generic routine has one instance per instance of that routine.
+            string instance = routine.TypeArguments is { Count: > 0 } lambdaArguments
+                ? "[" + string.Join(separator: ", ", values: lambdaArguments.Select(selector: a => a.FullName)) + "]"
+                : "";
+            string lambdaName = Bang(name: $"[lambda{recovery}]{fileName}:{line}:{col}{instance}");
             return Q(name: $"{lambdaName}({paramTypes})");
         }
 
@@ -865,11 +869,13 @@ public partial class LlvmEmitter
             // former `!`/`$`/decoration.
             string fullName = AttrPrefix(r: routine) + SanitizeLlvmName(name: routine.BaseName);
 
-            // Generic instance: append type arguments (e.g., IO.show -> IO.show#S64)
+            // Generic instance: append type arguments (e.g., IO.show -> IO.show(System.S64)), with their modules,
+            // so two types of one name in two modules (`Pa.Point`, `Pb.Point`) never share an instance's symbol
+            // when no parameter names the type.
             if (routine.TypeArguments is { Count: > 0 })
             {
                 string typeArgSuffix = string.Join(separator: ",",
-                    values: routine.TypeArguments.Select(selector: t => t.Name));
+                    values: routine.TypeArguments.Select(selector: t => t.FullName));
                 // Disambiguate variadic overloads (e.g., show...#Text vs show#Text)
                 string variadicMarker = routine.IsVariadic
                     ? "..."
