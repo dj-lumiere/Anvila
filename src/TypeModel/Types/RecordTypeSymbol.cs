@@ -595,6 +595,15 @@ public class RecordTypeSymbol : TypeSymbol
             baseType = sharedEntity;
         }
 
+        // So does a token on an entity (`Modifying[ListEmitter[S64]]`, the emitter a walk of an emitter takes).
+        if (baseType is RecordTypeSymbol
+            {
+                GenericDefinition.Name: "Viewing" or "Modifying", TypeArguments: [EntityTypeSymbol tokenEntity]
+            })
+        {
+            baseType = tokenEntity;
+        }
+
         (Dictionary<string, TypeSymbol>? own, TypeSymbol? def, List<TypeSymbol>? args) = baseType switch
         {
             EntityTypeSymbol e => (e.AssociatedTypeBindings, (TypeSymbol?)e.GenericDefinition,
@@ -618,7 +627,7 @@ public class RecordTypeSymbol : TypeSymbol
         if (defBindings is null ||
             !defBindings.TryGetValue(key: slot, value: out TypeSymbol? defBound))
         {
-            return null;
+            return EmitterOfEmitter(type: baseType, slot: slot);
         }
 
         if (def!.GenericParameters is { } defParams && args is { } typeArgs &&
@@ -634,6 +643,35 @@ public class RecordTypeSymbol : TypeSymbol
         }
 
         return defBound;
+    }
+
+    /// <summary>
+    /// The <c>Emitter</c> of a type that binds none, an emitter walked as an emittable (<c>ListEmitter[S64]</c> obeys
+    /// <c>Emittable[S64]</c> through <c>Emitter[S64]</c>): what its <c>emitter()</c> gives, as for a type that obeys
+    /// <c>Emittable</c> directly (<c>Modifying[ListEmitter[S64]]</c> from <c>Emitter[T].emitter()</c>). Null for any
+    /// other slot, or when there is no such routine.
+    /// </summary>
+    private static TypeSymbol? EmitterOfEmitter(TypeSymbol type, string slot)
+    {
+        const string emitterSlot = "Emitter";
+        if (slot != emitterSlot || type.IsGenericDefinition || TypeRegistry.Ambient is not { } registry ||
+            !TypeRegistry.ObeyedProtocols(type: type)
+                         .Any(predicate: p => p.BareName == emitterSlot) ||
+            registry.LookupMemberRoutine(type: type, memberRoutineName: RuntimeContract.Iter) is not
+                { ReturnType: { } returned } ||
+            Mentions(type: returned, what: t => t is AssociatedProjectionTypeSymbol))
+        {
+            return null;
+        }
+
+        TypeSymbol emitter = SubstituteType(type: returned,
+            substitution: new Dictionary<string, TypeSymbol> { [key: ProtocolSelfTypeSymbol.Instance.Name] = type });
+        return emitter is AssociatedProjectionTypeSymbol or ProtocolSelfTypeSymbol or ErrorTypeSymbol ? null : emitter;
+    }
+
+    private static bool Mentions(TypeSymbol type, Func<TypeSymbol, bool> what)
+    {
+        return what(arg: type) || (type.TypeArguments ?? []).Any(predicate: t => Mentions(type: t, what: what));
     }
 
     internal static TypeSymbol SubstituteType(TypeSymbol type,

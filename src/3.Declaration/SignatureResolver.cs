@@ -152,7 +152,8 @@ internal sealed class SignatureResolver
         List<TypeSymbol>? specialization = RoutineSpecialization.Apply(routine: routine,
             receiverLeaves: receiverLeaves,
             resolve: name => _sa.LookupTypeWithImports(name: name),
-            resolveExpression: typeExpr => _typeResolver.ResolveType(typeExpr: typeExpr));
+            resolveExpression: (typeExpr, inScope) => ResolveBracketEntry(typeExpr: typeExpr, inScope: inScope,
+                owner: refreshedOwnerType, module: pending.Module));
         var filteredGenericParams = routine.GenericParameters
                                           ?.Where(predicate: p =>
                                                 !receiverLeaves.Contains(item: p) ||
@@ -340,6 +341,31 @@ internal sealed class SignatureResolver
         MutationCategory DeclaredModification,
         List<string> AllGenericParams,
         List<GenericConstraintDeclaration> AllConstraints);
+
+    /// <summary>
+    /// Resolves a specialization's bracket entry (<c>Array[T, N]</c> of <c>to[Array[T, N]]</c>) with the names in
+    /// <paramref name="inScope"/> (the receiver's and those the routine declares) taken as generic parameters, even
+    /// where a type of that name exists: a parameter is its slot, not its name.
+    /// </summary>
+    private TypeSymbol ResolveBracketEntry(TypeExpression typeExpr, IReadOnlyCollection<string> inScope,
+        TypeSymbol? owner, string? module)
+    {
+        RoutineInfo? previous = _sa._currentRoutine;
+        _sa._currentRoutine = new RoutineInfo(name: "")
+        {
+            OwnerType = owner,
+            GenericParameters = inScope.Count > 0 ? inScope.ToList() : null,
+            Module = module
+        };
+        try
+        {
+            return _typeResolver.ResolveType(typeExpr: typeExpr);
+        }
+        finally
+        {
+            _sa._currentRoutine = previous;
+        }
+    }
 
     /// <summary>
     /// Constructs the final <see cref="RoutineInfo"/> from the resolved signature components.

@@ -33,7 +33,9 @@ public sealed partial class StdlibLoader
         var parentProtocols = new List<ProtocolTypeSymbol>();
         foreach (TypeExpression parentExpr in protocol.ParentProtocols)
         {
-            TypeSymbol? parentType = ResolveSimpleType(registry: registry, typeExpr: parentExpr);
+            // A parent of a generic protocol names its parameters (`protocol Emitter[T] obeys Emittable[T]`).
+            TypeSymbol? parentType = ResolveSimpleType(registry: registry, typeExpr: parentExpr,
+                genericParams: protocol.GenericParameters);
             if (parentType is ProtocolTypeSymbol parentProto)
             {
                 parentProtocols.Add(item: parentProto);
@@ -905,9 +907,9 @@ public sealed partial class StdlibLoader
             receiverLeaves: receiverLeaves,
             resolve: name => registry.LookupType(name: $"{moduleName}.{name}") ?? registry.LookupType(name: name),
             // A bracket entry with type arguments (`to[SF::System.List[T]]`) resolves as the written type, the
-            // receiver's own parameters (`T`) in scope.
-            resolveExpression: typeExpr => ResolveSimpleType(registry: registry, typeExpr: typeExpr,
-                genericParams: receiverLeaves.ToList(), moduleName: moduleName));
+            // receiver's own parameters (`T`) and those the routine declares (`N` of `needs U64 N`) in scope.
+            resolveExpression: (typeExpr, inScope) => ResolveSimpleType(registry: registry, typeExpr: typeExpr,
+                genericParams: inScope.ToList(), moduleName: moduleName));
 
         List<string>? ctx = BuildRoutineGenericContext(registry: registry,
             routine: routine,

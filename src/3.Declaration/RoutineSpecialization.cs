@@ -18,13 +18,25 @@ internal static class RoutineSpecialization
     /// <see cref="RoutineDeclaration.GenericParameters"/> to <see cref="RoutineDeclaration.SpecializedTypeArguments"/>,
     /// so asking again (a second realm registering the same declaration) gives the same answer.
     /// </summary>
+    /// <remarks>
+    /// A bracket entry may also use parameters the routine declares with <c>needs</c>
+    /// (<c>routine Emittable[T].to[Array[T, N]]() needs U64 N</c>): those are the routine's own generic parameters,
+    /// never entries, and they stay in <see cref="RoutineDeclaration.GenericParameters"/>. A call binds them by
+    /// matching its bracket against the entry (<c>to[Array[S64, 3]]</c> sets <c>N</c> to 3).
+    /// <paramref name="resolveExpression"/> gets the names in scope for the entry: the receiver's leaves and those
+    /// declared parameters.
+    /// </remarks>
     public static List<TypeSymbol>? Apply(RoutineDeclaration routine, HashSet<string> receiverLeaves,
-        Func<string, TypeSymbol?> resolve, Func<TypeExpression, TypeSymbol?>? resolveExpression = null)
+        Func<string, TypeSymbol?> resolve,
+        Func<TypeExpression, IReadOnlyCollection<string>, TypeSymbol?>? resolveExpression = null)
     {
+        HashSet<string> declared = DeclaredParameters(routine: routine, receiverLeaves: receiverLeaves);
+        var inScope = new HashSet<string>(collection: receiverLeaves);
+        inScope.UnionWith(other: declared);
         if (routine.SpecializedTypeArguments is { Count: > 0 } done)
         {
             return done.Select(selector: t => t.KnownType ?? ResolveEntry(name: t.Name, resolve: resolve,
-                           resolveExpression: resolveExpression, location: routine.Location))
+                           resolveExpression: resolveExpression, inScope: inScope, location: routine.Location))
                        .OfType<TypeSymbol>()
                        .ToList();
         }
@@ -41,9 +53,10 @@ internal static class RoutineSpecialization
         bool plainReceiver = routine.OwnerName is { } ownerName && receiverLeaves.All(predicate: leaf => leaf == ownerName) &&
                              resolve(arg: ownerName) is { IsGenericDefinition: false } and not GenericParameterTypeSymbol;
         List<string> own = routine.GenericParameters?
-                                  .Where(predicate: name => plainReceiver ||
-                                                            !receiverLeaves.Contains(item: name) &&
-                                                            name != routine.OwnerName)
+                                  .Where(predicate: name => !declared.Contains(item: name) &&
+                                                            (plainReceiver ||
+                                                             !receiverLeaves.Contains(item: name) &&
+                                                             name != routine.OwnerName))
                                   .ToList() ?? [];
         if (own.Count == 0)
         {
@@ -57,7 +70,7 @@ internal static class RoutineSpecialization
         foreach (string name in own)
         {
             if (routine.Parameters.Any(predicate: p => Mentions(type: p.Type, name: name)) ||
-                ResolveEntry(name: name, resolve: resolve, resolveExpression: resolveExpression,
+                ResolveEntry(name: name, resolve: resolve, resolveExpression: resolveExpression, inScope: inScope,
                     location: routine.Location) is not { } type || type is GenericParameterTypeSymbol)
             {
                 return null;
@@ -85,7 +98,8 @@ internal static class RoutineSpecialization
     /// over the parsed expression. Null when the entry is not a type.
     /// </summary>
     private static TypeSymbol? ResolveEntry(string name, Func<string, TypeSymbol?> resolve,
-        Func<TypeExpression, TypeSymbol?>? resolveExpression, SourceLocation location)
+        Func<TypeExpression, IReadOnlyCollection<string>, TypeSymbol?>? resolveExpression,
+        IReadOnlyCollection<string> inScope, SourceLocation location)
     {
         if (!name.Contains(value: '[') && !name.Contains(value: "::"))
         {
@@ -99,8 +113,23 @@ internal static class RoutineSpecialization
             return null;
         }
 
-        TypeSymbol? resolved = resolveExpression(arg: parsed);
+        TypeSymbol? resolved = resolveExpression(arg1: parsed, arg2: inScope);
         return resolved is ErrorTypeSymbol ? null : resolved;
+    }
+
+    /// <summary>
+    /// The names <paramref name="routine"/> declares as its own generic parameters with a classifier constraint
+    /// (<c>needs U64 N</c>, <c>needs RecordType U</c>), apart from the receiver's leaves. Constraints that only
+    /// constrain a name declared elsewhere (<c>obeys</c>, <c>in [...]</c>, <c>everywhere</c>) declare nothing.
+    /// </summary>
+    private static HashSet<string> DeclaredParameters(RoutineDeclaration routine, HashSet<string> receiverLeaves)
+    {
+        return (routine.GenericConstraints ?? [])
+              .Where(predicate: c => c.ConstraintType is not (ConstraintKind.Obeys or ConstraintKind.TypeEquality
+                                         or ConstraintKind.Everywhere) &&
+                                     !receiverLeaves.Contains(item: c.ParameterName))
+              .Select(selector: c => c.ParameterName)
+              .ToHashSet();
     }
 
     private static bool Mentions(TypeExpression? type, string name)

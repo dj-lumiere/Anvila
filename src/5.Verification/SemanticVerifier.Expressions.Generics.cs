@@ -103,7 +103,9 @@ public sealed partial class SemanticVerifier
             }
 
             int slot = i;
-            List<TypeSymbol> targets = family.Where(predicate: r => r.TypeArguments?.Count == typeArgs.Count)
+            // A member whose bracket has parameters of its own (`to[Array[T, N]]`) cannot fill them from the receiver.
+            List<TypeSymbol> targets = family.Where(predicate: r => r.TypeArguments?.Count == typeArgs.Count &&
+                                                                    r.GenericParameters is not { Count: > 0 })
                                              .Select(selector: r => FamilyTarget(routine: r, index: slot))
                                              .Where(predicate: t => t.BareName == open.BareName &&
                                                                     !t.IsGenericDefinition &&
@@ -254,6 +256,13 @@ public sealed partial class SemanticVerifier
                 typeArgs.Select(selector: (t, i) => SameTypeInRealm(a: FamilyTarget(routine: r, index: i),
                              b: Unroamed(type: t)))
                         .All(predicate: same => same));
+
+            // A member whose bracket uses parameters of its own (`to[Array[T, N]]`) is chosen by matching its
+            // bracket against the call's, which binds them (`N` is 3 for `to[Array[S64, 3]]`).
+            List<TypeSymbol> unroamedArgs = typeArgs.Select(selector: Unroamed).ToList();
+            chosen ??= family.Select(selector: r => _registry.BindSpecializationBracket(member: r,
+                                 typeArguments: unroamedArgs))
+                             .FirstOrDefault(predicate: r => r != null);
 
             // The library converts a value to its own type where generic code needs one (a `Text` item of a tuple
             // read from text), a program never does: it uses the value as it is.

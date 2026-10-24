@@ -229,7 +229,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     /// </summary>
     private bool SynthesizeStandardBody(RoutineInfo pr, TypeSymbol impl, List<TypeSymbol>? typeArguments = null)
     {
-        (string RegistryKey, string FullName) key = (pr.RegistryKey, impl.FullName);
+        (string ProtoKey, string ImplKey) key = SynthesisKey(pr: pr, impl: impl, typeArguments: typeArguments);
         if (_synthesized.ContainsKey(key: key))
         {
             return false;
@@ -240,6 +240,19 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         // synthesized body and signature don't leak the protocol element param.
         Dictionary<string, TypeSymbol> protoSubs =
             BuildProtocolGenericSubs(protocolRoutine: pr, implementer: impl);
+
+        // A specialization whose bracket has parameters of its own (`to[Array[T, N]]` called as
+        // `to[Array[S64, 3]]`) binds them from the call's bracket.
+        RoutineInfo written = pr.GenericDefinition ?? pr;
+        if (typeArguments != null && written is { TypeArguments: { } pattern, GenericParameters: { Count: > 0 } own } &&
+            pattern.Count == typeArguments.Count)
+        {
+            for (int i = 0; i < pattern.Count; i++)
+            {
+                Builder.Declaration.TypeRegistry.UnifyReceiverGenerics(pattern: pattern[index: i],
+                    concrete: typeArguments[index: i], genericParams: own, into: protoSubs);
+            }
+        }
 
         RoutineInfo synthesized = SynthesizePerImplementer(protocolRoutine: pr,
             implementer: impl,
@@ -363,7 +376,9 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
                         return;
                     }
 
-                    if (_synthesized.TryGetValue(key: (pr.RegistryKey, impl.FullName),
+                    bool specialization = (rr!.RecoveryOf ?? rr).IsSpecialization || pr.IsSpecialization;
+                    if (_synthesized.TryGetValue(key: SynthesisKey(pr: pr, impl: impl,
+                                typeArguments: specialization ? rr.TypeArguments : null),
                             value: out RoutineInfo? newRoutine))
                     {
                         rebind(obj: newRoutine);
@@ -373,6 +388,17 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     }
 
     // -------- Helpers --------
+
+    /// <summary>The key a body synthesized for <paramref name="pr"/> on <paramref name="impl"/> is kept under: a
+    /// specialization's bracket is part of it, since one written with parameters of its own (<c>to[Array[T, N]]</c>)
+    /// gives a body for each bracket it is called with.</summary>
+    private static (string ProtoKey, string ImplKey) SynthesisKey(RoutineInfo pr, TypeSymbol impl,
+        List<TypeSymbol>? typeArguments)
+    {
+        return typeArguments is { Count: > 0 }
+            ? (pr.RegistryKey, $"{impl.FullName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.FullName))}]")
+            : (pr.RegistryKey, impl.FullName);
+    }
 
     /// <summary>
     /// Extracts the resolved routine, receiver type, and a rebind callback from a call-shaped
@@ -488,17 +514,9 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
             return subs;
         }
 
-        List<TypeSymbol>? protocols = implementer switch
-        {
-            EntityTypeSymbol e => e.ImplementedProtocols,
-            RecordTypeSymbol r => r.ImplementedProtocols,
-            _ => null
-        };
-        if (protocols == null)
-        {
-            return subs;
-        }
-
+        // A protocol the implementer obeys through another (`Emittable[S64]` of a `ListEmitter[S64]`, which obeys
+        // `Emitter[S64]`) binds the same way.
+        List<TypeSymbol> protocols = Builder.Declaration.TypeRegistry.ObeyedProtocols(type: implementer);
         foreach (TypeSymbol p in protocols)
         {
             // Check the conformance to the same protocol by generic-definition identity (no name

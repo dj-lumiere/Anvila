@@ -1572,20 +1572,38 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Validates that a type implements all member routines required by a protocol.
     /// </summary>
-    private void ValidateProtocolMemberRoutines(TypeSymbol type, ProtocolTypeSymbol protocol)
+    private void ValidateProtocolMemberRoutines(TypeSymbol type, ProtocolTypeSymbol protocol,
+        List<ProtocolTypeSymbol>? through = null)
     {
         foreach (ProtocolMemberRoutineInfo requiredMemberRoutine in protocol.MemberRoutines)
         {
+            // A protocol that obeys this one may write the routine for every type that obeys it
+            // (`routine Emitter[T].emitter()` is `Emittable[T]`'s `emitter` for every emitter).
+            if (through?.Any(predicate: child => WritesRoutine(protocol: child, name: requiredMemberRoutine.Name)) ==
+                true)
+            {
+                continue;
+            }
+
             ValidateRequiredProtocolMemberRoutine(type: type,
                 protocol: protocol,
                 requiredMemberRoutine: requiredMemberRoutine);
         }
 
         // Also check parent protocols
+        List<ProtocolTypeSymbol> chain = [.. through ?? [], protocol];
         foreach (ProtocolTypeSymbol parentProtocol in protocol.ParentProtocols)
         {
-            ValidateProtocolMemberRoutines(type: type, protocol: parentProtocol);
+            ValidateProtocolMemberRoutines(type: type, protocol: parentProtocol, through: chain);
         }
+    }
+
+    /// <summary>Whether a routine named <paramref name="name"/> is written on <paramref name="protocol"/> itself (on its
+    /// definition), with a body, for every type that obeys it.</summary>
+    private bool WritesRoutine(ProtocolTypeSymbol protocol, string name)
+    {
+        return _registry.GetMemberRoutinesForOwner(ownerType: protocol.GenericDefinition ?? protocol)
+                        .Any(predicate: r => r.Name == name && !r.IsSynthesized);
     }
 
     /// <summary>

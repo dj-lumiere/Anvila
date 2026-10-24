@@ -15,8 +15,30 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
     /// <summary>memberRoutine signatures defined by this protocol.</summary>
     public List<ProtocolMemberRoutineInfo> MemberRoutines { get; set; } = [];
 
-    /// <summary>Parent protocols that this protocol extends.</summary>
-    public List<ProtocolTypeSymbol> ParentProtocols { get; init; } = [];
+    /// <summary>Parent protocols that this protocol extends. An instance makes its own from its definition's when
+    /// first asked: a parent can name this protocol back (<c>Emitter[T] obeys Emittable[T]</c>, whose slot is
+    /// <c>Emitter obeys Emitter[T]</c>), so making them with the instance would never end.</summary>
+    public List<ProtocolTypeSymbol> ParentProtocols
+    {
+        get
+        {
+            if (_parentsFactory is { } factory)
+            {
+                _parentsFactory = null;
+                _parentProtocols = factory();
+            }
+
+            return _parentProtocols;
+        }
+        set
+        {
+            _parentsFactory = null;
+            _parentProtocols = value;
+        }
+    }
+
+    private List<ProtocolTypeSymbol> _parentProtocols = [];
+    private Func<List<ProtocolTypeSymbol>>? _parentsFactory;
 
     /// <summary>
     /// Associated-type slots declared by this protocol via <c>relates Name obeys Constraint</c>.
@@ -94,11 +116,14 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
                                                            })
                                                       .ToList();
 
-        var substitutedParentProtocols = ParentProtocols.Select(selector: p =>
-                                                             (ProtocolTypeSymbol)RecordTypeSymbol
-                                                                .SubstituteType(type: p,
-                                                                     substitution: substitution))
-                                                        .ToList();
+        // The definition's parents as they are when first asked (they are filled in after every protocol is
+        // registered).
+        List<ProtocolTypeSymbol> SubstitutedParentProtocols()
+        {
+            return ParentProtocols.Select(selector: p => (ProtocolTypeSymbol)RecordTypeSymbol.SubstituteType(type: p,
+                               substitution: substitution))
+                          .ToList();
+        }
 
         // Substitute the protocol's own generic params into each slot's constraint
         // (e.g. Iterable[T]'s `Iter obeys Iterator[T]` becomes `Iter obeys Iterator[Text]`).
@@ -116,7 +141,7 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
         return new ProtocolTypeSymbol(name: resolvedName)
         {
             MemberRoutines = substitutedMemberRoutines,
-            ParentProtocols = substitutedParentProtocols,
+            _parentsFactory = SubstitutedParentProtocols,
             AssociatedTypes = substitutedAssociated,
             TypeArguments = typeArguments,
             GenericDefinition = this,

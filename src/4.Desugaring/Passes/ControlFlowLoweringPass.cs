@@ -829,7 +829,10 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             iterCallExpr.ResolvedType = iteratorType;
             // Carry the concrete emitter type onto the receiver so reachability/codegen see it.
             tryNextReceiver.ResolvedType = iteratorType;
-            if (ctx.Registry.LookupMemberRoutine(type: Declaration.RoamedTransparency.SharedEntityOf(type: iteratorType),
+            // Walking an emitter goes through a write token on it (`Emitter[T].emitter() -> Modifying[Me]`): the
+            // step is the emitter's own `emit`.
+            if (ctx.Registry.LookupMemberRoutine(
+                    type: TokenHeldEntity(type: Declaration.RoamedTransparency.SharedEntityOf(type: iteratorType)),
                     memberRoutineName: EmitRoutineName,
                     isFailable: true) is { } emit &&
                 ctx.Registry.LookupRecoveryVariant(recovered: emit, kind: StepKind(eachStmt: eachStmt)) is { } step)
@@ -847,6 +850,18 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         return new RecoveryExpression(Kind: StepKind(eachStmt: eachStmt),
             Inner: emitCall,
             Location: emitCall.Location);
+    }
+
+    /// <summary>The entity a <c>Viewing</c>/<c>Modifying</c> token is on, else the type itself.</summary>
+    private static TypeSymbol TokenHeldEntity(TypeSymbol type)
+    {
+        return type is RecordTypeSymbol
+        {
+            GenericDefinition.Name: Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying,
+            TypeArguments: [EntityTypeSymbol held]
+        }
+            ? held
+            : type;
     }
 
     /// <summary>

@@ -3516,6 +3516,19 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 memberRoutineTypeArgs: memberRoutineTypeArgs);
         }
 
+        // (5) A specialization whose bracket has parameters of its own (`to[Array[T, N]]` bound as
+        // `to[Array[S64, 3]]`): each takes what stands in its place in the bracket.
+        if (resolvedRoutine.IsSpecialization &&
+            resolvedRoutine.GenericDefinition is { TypeArguments: { } written, GenericParameters: { Count: > 0 } own } &&
+            resolvedRoutine.TypeArguments is { } actual && actual.Count == written.Count)
+        {
+            for (int i = 0; i < written.Count; i++)
+            {
+                UnifyMePatternIntoSubs(pattern: written[index: i], concrete: actual[index: i], genericParams: own,
+                    into: typeSubs);
+            }
+        }
+
         return typeSubs;
     }
 

@@ -1022,13 +1022,9 @@ public sealed partial class TypeRegistry
         // it (`Emittable[Tuple[S64, Text]]`), not against the type's own arguments.
         if (pattern is ProtocolTypeSymbol { GenericDefinition: { } patternDef } &&
             !(concrete is ProtocolTypeSymbol { GenericDefinition: { } concreteDef } && concreteDef == patternDef) &&
-            (concrete switch
-            {
-                EntityTypeSymbol e => e.ImplementedProtocols,
-                RecordTypeSymbol r => r.ImplementedProtocols,
-                _ => []
-            }).FirstOrDefault(predicate: p => p is ProtocolTypeSymbol { GenericDefinition: { } obeyedDef } &&
-                                              obeyedDef == patternDef) is { } obeyed)
+            ObeyedProtocols(type: concrete)
+               .FirstOrDefault(predicate: p => p is ProtocolTypeSymbol { GenericDefinition: { } obeyedDef } &&
+                                               obeyedDef == patternDef) is { } obeyed)
         {
             UnifyReceiverGenerics(pattern: pattern, concrete: obeyed, genericParams: genericParams, into: into);
             return;
@@ -1703,13 +1699,10 @@ public sealed partial class TypeRegistry
         // LookupMemberRoutineViaConstraints below. The plain LookupMemberRoutine path has no routine
         // context to discover Obeys constraints, so it cannot resolve them here.
 
-        // Check implemented protocols for default implementations
-        List<TypeSymbol>? protocols = type switch
-        {
-            RecordTypeSymbol r => r.ImplementedProtocols,
-            EntityTypeSymbol e => e.ImplementedProtocols,
-            _ => null
-        };
+        // Check implemented protocols (and those they obey) for default implementations
+        List<TypeSymbol>? protocols = type is RecordTypeSymbol or EntityTypeSymbol
+            ? ObeyedProtocols(type: type)
+            : null;
         if (protocols != null)
         {
             return LookupMemberRoutineViaImplementedProtocols(type: type,
@@ -1926,9 +1919,14 @@ public sealed partial class TypeRegistry
                                    !ReferenceEquals(objA: owner, objB: definitionVariant.OwnerType)
             ? SubstituteMemberRoutineForOwner(memberRoutine: definitionVariant, resolvedOwner: owner)
             : definitionVariant;
-        substituted = recovered.TypeArguments is { Count: > 0 } typeArguments &&
-                      substituted is { IsGenericDefinition: true } open &&
-                      open.GenericParameters!.Count == typeArguments.Count
+        // A specialization's bracket is not its arguments: one with parameters of its own (`to[Array[T, N]]`) binds
+        // them by matching the bracket (`to[Array[S64, 3]]` sets `N` to 3).
+        substituted = recovered.IsSpecialization && substituted is { IsGenericDefinition: true } &&
+                      recovered.TypeArguments is { Count: > 0 } bracket
+            ? BindSpecializationBracket(member: substituted, typeArguments: bracket)
+            : recovered.TypeArguments is { Count: > 0 } typeArguments &&
+              substituted is { IsGenericDefinition: true } open &&
+              open.GenericParameters!.Count == typeArguments.Count
             ? GetOrCreateRoutineResolution(genericDef: open, typeArguments: typeArguments)
             : ReferenceEquals(objA: substituted, objB: definitionVariant)
                 ? null
@@ -3029,13 +3027,7 @@ public sealed partial class TypeRegistry
         // member the type writes for the same target wins.
         if (owner is not GenericParameterTypeSymbol)
         {
-            List<TypeSymbol> protocols = owner switch
-            {
-                RecordTypeSymbol r => r.ImplementedProtocols,
-                EntityTypeSymbol e => e.ImplementedProtocols,
-                ProtocolTypeSymbol p => [.. p.ParentProtocols],
-                _ => []
-            };
+            List<TypeSymbol> protocols = ObeyedProtocols(type: owner);
             foreach (TypeSymbol protocol in protocols)
             {
                 List<RoutineInfo> ofProtocol = LookupSpecializedMemberRoutines(owner: protocol, name: name);
@@ -3079,12 +3071,8 @@ public sealed partial class TypeRegistry
         TypeSymbol patternDef = GenericDefinitionOf(type: pattern) ?? pattern;
         TypeSymbol? obeyed = concrete is ProtocolTypeSymbol
             ? concrete
-            : (concrete switch
-            {
-                EntityTypeSymbol e => e.ImplementedProtocols,
-                RecordTypeSymbol r => r.ImplementedProtocols,
-                _ => []
-            }).FirstOrDefault(predicate: p => (GenericDefinitionOf(type: p) ?? p).FullName == patternDef.FullName);
+            : ObeyedProtocols(type: concrete)
+               .FirstOrDefault(predicate: p => (GenericDefinitionOf(type: p) ?? p).FullName == patternDef.FullName);
         return obeyed == null || Admits(p: pattern, c: obeyed);
 
         static bool Admits(TypeSymbol p, TypeSymbol c)
@@ -3105,6 +3093,77 @@ public sealed partial class TypeRegistry
             return sameShape && c.TypeArguments is { } cArgs && cArgs.Count == pArgs.Count &&
                    pArgs.Zip(second: cArgs).All(predicate: pair => Admits(p: pair.First, c: pair.Second));
         }
+    }
+
+    /// <summary>
+    /// The protocols <paramref name="type"/> obeys: those it declares and, at any depth, those they obey
+    /// (<c>ListEmitter[S64]</c> obeys <c>Emitter[S64]</c> and so <c>Emittable[S64]</c>), each with the arguments it has
+    /// there. A protocol counts once.
+    /// </summary>
+    internal static List<TypeSymbol> ObeyedProtocols(TypeSymbol type)
+    {
+        List<TypeSymbol> declared = type switch
+        {
+            RecordTypeSymbol r => r.ImplementedProtocols,
+            EntityTypeSymbol e => e.ImplementedProtocols,
+            ProtocolTypeSymbol p => [.. InheritedProtocols(protocol: p)],
+            _ => []
+        };
+        var result = new List<TypeSymbol>(collection: declared);
+        foreach (TypeSymbol protocol in declared)
+        {
+            if (protocol is ProtocolTypeSymbol obeyed)
+            {
+                AddInherited(protocol: obeyed, into: result);
+            }
+        }
+
+        return result;
+
+        static void AddInherited(ProtocolTypeSymbol protocol, List<TypeSymbol> into)
+        {
+            foreach (ProtocolTypeSymbol parent in InheritedProtocols(protocol: protocol))
+            {
+                if (into.Any(predicate: p => p.FullName == parent.FullName))
+                {
+                    continue;
+                }
+
+                into.Add(item: parent);
+                AddInherited(protocol: parent, into: into);
+            }
+        }
+    }
+
+    /// <summary>The protocols <paramref name="protocol"/> itself obeys, with its own arguments in place
+    /// (<c>Emitter[S64]</c> obeys <c>Emittable[S64]</c>). Read from its definition, which has them once every
+    /// protocol is registered.</summary>
+    private static IEnumerable<ProtocolTypeSymbol> InheritedProtocols(ProtocolTypeSymbol protocol)
+    {
+        // The registered definition: its parents are filled in after the protocol is first registered, so an
+        // instance made before that points at a definition without them.
+        ProtocolTypeSymbol written = protocol.GenericDefinition ?? protocol;
+        ProtocolTypeSymbol definition = Ambient?.LookupType(name: written.FullName) is ProtocolTypeSymbol
+            {
+                ParentProtocols.Count: > 0
+            } latest && latest.Name == written.Name
+            ? latest
+            : written;
+        if (definition.GenericParameters is not { Count: > 0 } parameters || protocol.TypeArguments is not { } args ||
+            ReferenceEquals(objA: written, objB: protocol))
+        {
+            return definition.ParentProtocols;
+        }
+
+        var substitution = new Dictionary<string, TypeSymbol>();
+        for (int i = 0; i < parameters.Count && i < args.Count; i++)
+        {
+            substitution[key: parameters[index: i]] = args[index: i];
+        }
+
+        return definition.ParentProtocols.Select(selector: parent =>
+                                              RoutineInfo.SubstituteType(type: parent, substitution: substitution))
+                         .OfType<ProtocolTypeSymbol>();
     }
 
     /// <summary>Whether two specializations go to the same types (the same name in the same language).</summary>
@@ -3146,10 +3205,94 @@ public sealed partial class TypeRegistry
     public RoutineInfo? LookupSpecializedMemberRoutine(TypeSymbol owner, string name,
         IReadOnlyList<TypeSymbol> typeArguments)
     {
-        return LookupSpecializedMemberRoutines(owner: owner, name: name)
-           .FirstOrDefault(predicate: r => r.TypeArguments is { } args && args.Count == typeArguments.Count &&
-                                           args.Zip(second: typeArguments)
-                                               .All(predicate: pair => pair.First.FullName == pair.Second.FullName));
+        List<RoutineInfo> family = LookupSpecializedMemberRoutines(owner: owner, name: name);
+        return family.FirstOrDefault(predicate: r => r.TypeArguments is { } args && args.Count == typeArguments.Count &&
+                                                     args.Zip(second: typeArguments)
+                                                         .All(predicate: pair =>
+                                                              pair.First.FullName == pair.Second.FullName)) ??
+               family.Select(selector: r => BindSpecializationBracket(member: r, typeArguments: typeArguments))
+                     .FirstOrDefault(predicate: r => r != null);
+    }
+
+    /// <summary>
+    /// A member of a family whose bracket uses parameters of its own (<c>routine Emittable[T].to[Array[T, N]]()</c>
+    /// with <c>needs U64 N</c>, bound to a receiver as <c>to[Array[S64, N]]</c>) bound to the bracket of a call
+    /// (<c>to[Array[S64, 3]]</c>): each own parameter takes what stands in its place (<c>N</c> is 3), and the result
+    /// is the specialization for exactly those arguments. The parameters are matched by where they stand in the
+    /// entry, never by name. Null when the member has no such parameters or the call's bracket does not have the
+    /// entry's shape.
+    /// </summary>
+    public RoutineInfo? BindSpecializationBracket(RoutineInfo member, IReadOnlyList<TypeSymbol> typeArguments)
+    {
+        if (member is not { IsSpecialization: true, TypeArguments: { } written, GenericParameters: { Count: > 0 } own } ||
+            written.Count != typeArguments.Count ||
+            typeArguments.Any(predicate: t => t is GenericParameterTypeSymbol or ErrorTypeSymbol))
+        {
+            return null;
+        }
+
+        var subs = new Dictionary<string, TypeSymbol>();
+        for (int i = 0; i < written.Count; i++)
+        {
+            UnifyReceiverGenerics(pattern: written[index: i], concrete: typeArguments[index: i], genericParams: own,
+                into: subs);
+        }
+
+        if (subs.Count == 0)
+        {
+            return null;
+        }
+
+        List<TypeSymbol> bound = written.Select(selector: t => RoutineInfo.SubstituteType(type: t, substitution: subs))
+                                        .ToList();
+        if (!bound.Zip(second: typeArguments)
+                  .All(predicate: pair => Builder.Verification.SemanticVerifier.SameTypeInRealm(a: pair.First,
+                       b: pair.Second)))
+        {
+            return null;
+        }
+
+        List<string> remaining = own.Where(predicate: p => !subs.ContainsKey(key: p))
+                                    .ToList();
+        var resolved = new RoutineInfo(name: member.Name)
+        {
+            Kind = member.Kind,
+            OwnerType = member.OwnerType,
+            MeType = member.MeType,
+            Parameters = member.Parameters
+                               .Select(selector: p => RoutineInfo.SubstituteParameterType(param: p, substitution: subs))
+                               .ToList(),
+            ReturnType = member.ReturnType == null
+                ? null
+                : RoutineInfo.SubstituteType(type: member.ReturnType, substitution: subs),
+            IsFailable = member.IsFailable,
+            DeclaredMutation = member.DeclaredMutation,
+            MutationCategory = member.MutationCategory,
+            GenericParameters = remaining.Count > 0 ? remaining : null,
+            GenericConstraints = member.GenericConstraints?.Where(predicate: c => !subs.ContainsKey(key: c.ParameterName))
+                                       .ToList() is { Count: > 0 } kept
+                ? kept
+                : null,
+            Visibility = member.Visibility,
+            Location = member.Location,
+            Documentation = member.Documentation,
+            Module = member.Module,
+            ModulePath = member.ModulePath,
+            Annotations = member.Annotations,
+            CallingConvention = member.CallingConvention,
+            IsVariadic = member.IsVariadic,
+            IsDangerous = member.IsDangerous,
+            IsSynthesized = member.IsSynthesized,
+            TypeArguments = bound,
+            GenericDefinition = member.GenericDefinition ?? member,
+            WrapperForwarderInnerMemberRoutine = member.WrapperForwarderInnerMemberRoutine,
+            WrapperForwarderInnerGenericDef = member.WrapperForwarderInnerGenericDef,
+            FailableVariant = member.FailableVariant,
+            RecoveryOf = member.RecoveryOf,
+            SurfaceRealm = member.SurfaceRealm,
+            Recovery = member.Recovery
+        };
+        return CacheResolvedOwnerMemberRoutine(resolvedMemberRoutine: resolved);
     }
 
     /// <summary>

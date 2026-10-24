@@ -1545,6 +1545,8 @@ public sealed partial class TypeRegistry
             Realm = protocol.Realm,
             MemberRoutines = protocol.MemberRoutines,
             ParentProtocols = parentProtocols,
+            // A protocol that obeys another keeps its own associated-type slots (`Emitter[T]`'s `Item`).
+            AssociatedTypes = protocol.AssociatedTypes,
             GenericParameters = protocol.GenericParameters,
             GenericConstraints = protocol.GenericConstraints,
             TypeArguments = protocol.TypeArguments,
