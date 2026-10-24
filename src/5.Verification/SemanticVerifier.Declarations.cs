@@ -1267,8 +1267,9 @@ public sealed partial class SemanticVerifier
         {
             ValidateTypeProtocolImplementation(type: type);
             ValidateCrashMessage(type: type);
-            ValidateCrashableSize(type: type);
         }
+
+        SizeCrashablesRoom();
     }
 
     /// <summary>
@@ -1348,31 +1349,50 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>The bytes a caught error holds its crashable in (<c>Crashables.data</c>): every crashable fits.</summary>
+    /// <summary>The fewest bytes a caught error holds its crashable in (<c>Crashables.data</c>): the room the
+    /// standard library's own crashables need, so a program whose crashables all fit keeps the layout the
+    /// standard library is built with.</summary>
     internal const int CrashableRoomBytes = 64;
 
     /// <summary>
-    /// A crashable carries a few values (RF-S711): a caught error holds it in a room of
-    /// <see cref="CrashableRoomBytes"/> bytes, so a <c>Check</c> never takes memory of its own.
+    /// Sizes the room of <c>Crashables</c> (its <c>data</c>) for the program's largest crashable, never below
+    /// <see cref="CrashableRoomBytes"/>. A failure is written into the mold of the flow it is thrown on, a mold of
+    /// this many bytes, and a <c>check</c> copies it from there into the room of the <c>Check</c> it gives, so every
+    /// crashable fits both, whatever its size.
     /// </summary>
-    private void ValidateCrashableSize(TypeSymbol type)
+    private void SizeCrashablesRoom()
     {
-        if (type is not CrashableTypeSymbol crashable || crashable.Location is not { FileName.Length: > 0 })
+        if (_registry.LookupType(name: Builder.Declaration.RuntimeContract.Crashables) is not RecordTypeSymbol crashables)
         {
             return;
         }
 
-        int size = crashable.SizeBytes(pointerSize: 8);
-        if (size <= CrashableRoomBytes)
+        int index = crashables.MemberVariables.FindIndex(match: mv => mv.Name == "data");
+        if (index < 0 || crashables.MemberVariables[index: index].Type is not RecordTypeSymbol
+            {
+                GenericDefinition: { } arrayDef, TypeArguments: [var word, ConstGenericValueTypeSymbol]
+            })
         {
             return;
         }
 
-        ReportError(code: SemanticDiagnosticCode.CrashableTooLarge,
-            message:
-            $"The crashable '{crashable.Name}' takes {size} bytes, and a failure carries at most {CrashableRoomBytes}: " +
-            "keep a few values in it (numbers, a Text), and leave the rest to where the failure is reported.",
-            location: crashable.Location);
+        int largest = CrashableRoomBytes;
+        foreach (TypeSymbol type in _registry.GetAllTypes())
+        {
+            if (type is CrashableTypeSymbol { IsGenericDefinition: false } crashable)
+            {
+                largest = Math.Max(val1: largest, val2: crashable.SizeBytes(pointerSize: 8));
+            }
+        }
+
+        long words = (largest + 7) / 8;
+        TypeSymbol room = _registry.GetOrCreateResolution(genericDef: arrayDef,
+            typeArguments: [word, new ConstGenericValueTypeSymbol(literalText: words.ToString(), value: words, explicitTypeName: null)]);
+        if (!ReferenceEquals(objA: room, objB: crashables.MemberVariables[index: index].Type))
+        {
+            crashables.MemberVariables[index: index] =
+                crashables.MemberVariables[index: index].WithSubstitutedType(newType: room);
+        }
     }
 
     /// <summary>

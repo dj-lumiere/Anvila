@@ -36,7 +36,7 @@ public partial class LlvmEmitter
                 MemberExpression memberAccess => EmitMemberVariableAccess(sb: sb,
                     expr: memberAccess),
                 CreatorExpression constructor => EmitConstructorCall(sb: sb, expr: constructor),
-                CallExpression call => EmitCall(sb: sb, call: call),
+                CallExpression call => EmitCallKeepingFailure(sb: sb, call: call),
                 // Only the fundamental operator arms survive to codegen (Assign / Is / IdentityEqual /
                 // Steal / flags-bitnot); every wired/comparison/membership/logical op is lowered upstream.
                 BinaryExpression binary => EmitBinaryOp(sb: sb, binary: binary),
@@ -600,6 +600,29 @@ public partial class LlvmEmitter
     /// <item>Record / primitive types: payload slot holds the value inline — <c>load &lt;type&gt;</c>.</item>
     /// </list>
     /// </summary>
+    /// <summary>
+    /// A call, with the failure it gives kept: a call of a <c>check</c> variant (or anything that returns a
+    /// <c>Check</c>/<c>Lookup</c>) copies its failure out of the flow's mold into the carrier, except one the builder
+    /// writes to pass the failure straight on (<see cref="CallExpression.IsFailurePassOn"/>).
+    /// </summary>
+    private string EmitCallKeepingFailure(StringBuilder sb, CallExpression call)
+    {
+        string value = EmitCall(sb: sb, call: call);
+        if (value.Length == 0 || !KeepsFailure(call: call))
+        {
+            return value;
+        }
+
+        return EmitKeepFailure(sb: sb, value: value, carrier: call.ResolvedType!);
+    }
+
+    /// <summary>Whether a call gives a <c>Check</c>/<c>Lookup</c> whose failure is copied out of the flow's mold where it
+    /// lands: any call that returns one, except one the builder writes to pass the failure straight on.</summary>
+    private static bool KeepsFailure(CallExpression call)
+    {
+        return !call.IsFailurePassOn && call.ResolvedType is VariantTypeSymbol carrier && IsRecoveryCarrier(carrier: carrier);
+    }
+
     private string EmitCarrierPayloadExpression(StringBuilder sb, CarrierPayloadExpression payload)
     {
         return EmitCarrierPayloadCore(sb: sb, payload: payload);
@@ -649,7 +672,8 @@ public partial class LlvmEmitter
 
         if (concreteType is CrashableTypeSymbol crashable && IsRecoveryCarrier(carrier: carrierType))
         {
-            // The error slot holds a Crashables, and the crashable sits in its room.
+            // The error slot holds a Crashables, and the crashable sits in its room: a failure a pattern reads was
+            // received by a check, which kept it (EmitKeepFailure).
             string crashableType = EnsureRecordTypeDeclared(record: crashable);
             string roomPtr = NextTemp();
             EmitLine(sb: sb,
@@ -708,9 +732,20 @@ public partial class LlvmEmitter
                 message: $"'{dispatch.MemberName}' is not a member a caught error is dispatched to.");
         }
 
-        string roomPtr = NextTemp();
-        EmitLine(sb: sb,
-            line: $"  {roomPtr} = getelementptr {crashablesLlvmType}, ptr {spillAddr}, i32 0, i32 {CrashablesRoomField}");
+        // A failure is read where a check kept it, in its room. Only teardown also meets one still flying (a carrier
+        // the builder passes a failure on through and then drops), whose crashable is in the flow's mold.
+        string roomPtr;
+        if (dispatch.MemberName == Declaration.RuntimeContract.Destroy)
+        {
+            roomPtr = EmitCaughtCrashableAddress(sb: sb, at: spillAddr);
+        }
+        else
+        {
+            roomPtr = NextTemp();
+            EmitLine(sb: sb,
+                line: $"  {roomPtr} = getelementptr {crashablesLlvmType}, ptr {spillAddr}, i32 0, i32 {CrashablesRoomField}");
+        }
+
         (string function, string returns) = EnsureCrashableDispatch(member: dispatch.MemberName);
         if (returns == "void")
         {

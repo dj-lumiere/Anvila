@@ -951,6 +951,23 @@ public partial class LlvmEmitter
 
         // The dispatch on caught errors, one function per member a caught error is asked for.
         output.Append(value: _crashableDispatchDefinitions);
+        if (_usesFailureMold)
+        {
+            // Ingrid's: the mold of the flow running here, where a failure is written while it flies.
+            output.AppendLine(value: "declare ptr @rf_failure_mold() nounwind cold");
+            output.AppendLine();
+            // A throw: notes the failure and gives its number, with the bit that says the crashable is in the mold,
+            // and the mold the crashable goes into.
+            output.AppendLine(value: $"define private {{ i64, ptr }} @_rf_failure_throw() noinline cold {CpuAttributes} {{");
+            output.AppendLine(value: EntryLabel);
+            output.AppendLine(value: "  %seq = call i64 @_rf_failure_note()");
+            output.AppendLine(value: $"  %flagged = or i64 %seq, {FailureInMold}");
+            output.AppendLine(value: "  %mold = call ptr @rf_failure_mold()");
+            output.AppendLine(value: "  %number = insertvalue { i64, ptr } poison, i64 %flagged, 0");
+            output.AppendLine(value: "  %both = insertvalue { i64, ptr } %number, ptr %mold, 1");
+            output.AppendLine(value: "  ret { i64, ptr } %both");
+            output.AppendLine(value: "}");
+        }
 
         AppendRecoverEntryTable(output: output);
 
@@ -1296,6 +1313,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "declare i32 @rf_exit_code()");
         output.AppendLine(value: "declare void @rf_heap_limit_init()");
         output.AppendLine(value: "declare i32 @rf_heap_limit_status(i32)");
+        output.AppendLine(value: "declare void @rf_failure_mold_size(i64)");
         // RazorForge reports a stack overflow, Suflae (no "stack" in its vocabulary) running out of memory.
         string overflowReport = _registry.Language == Language.Suflae
             ? "tessera_deep_calls_report"
@@ -1320,6 +1338,8 @@ public partial class LlvmEmitter
         // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RF_MEMORY_LIMIT).
         output.AppendLine(value: "  call void @rf_heap_limit_init()");
         output.AppendLine(value: "  call void @rf_runtime_init()");
+        // Every flow's failure mold holds the program's largest crashable: the main thread's is reserved here.
+        output.AppendLine(handler: $"  call void @rf_failure_mold_size(i64 {(CrashablesRoomBytes() + 7) / 8 * 8})");
         output.AppendLine(value: "  call void @tessera_set_arguments(i32 %argc, ptr %argv)");
         output.AppendLine(handler: $"  call void @__rf_set_trace_mode(i32 {traceMode})");
         // A stack overflow is reported by Ingrid's crash report, linked into the program with the crash trace, and so

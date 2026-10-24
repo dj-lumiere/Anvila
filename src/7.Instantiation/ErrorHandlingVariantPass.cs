@@ -43,7 +43,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         CallExpression bound = call with
         {
             ResolvedRoutine = variant, ResolvedType = CarrierHere(call: call, variant: variant, registry: registry),
-            IsFailable = false
+            IsFailable = false, IsFailurePassOn = true
         };
         return bound.Callee is MemberExpression member
             ? bound with { Callee = member with { IsFailable = false } }
@@ -89,7 +89,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                           .ToList();
         return new CallExpression(Callee: member, Arguments: args, Location: creator.Location)
         {
-            ResolvedRoutine = variant, ResolvedType = variant.ReturnType, IsPreAnalyzed = true
+            ResolvedRoutine = variant, ResolvedType = variant.ReturnType, IsPreAnalyzed = true, IsFailurePassOn = true
         };
     }
 

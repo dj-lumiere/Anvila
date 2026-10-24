@@ -211,7 +211,19 @@ public partial class LlvmEmitter
             return;
         }
 
-        string value = EmitExpression(sb: sb, expr: varDecl.Initializer);
+        // A call whose failure is kept goes into its slot first and is kept there: only a failing call touches the
+        // slot again, and the value path carries no second copy of the carrier.
+        bool keepsHere = varDecl.Initializer is CallExpression keptCall && KeepsFailure(call: keptCall);
+        string value = keepsHere
+            ? EmitCall(sb: sb, call: (CallExpression)varDecl.Initializer)
+            : EmitExpression(sb: sb, expr: varDecl.Initializer);
+        if (keepsHere)
+        {
+            EmitLine(sb: sb, line: $"  store {llvmType} {value}, ptr {varPtr}");
+            EmitKeepFailureAt(sb: sb, slot: varPtr, carrier: varType);
+            NullStampStolenLocal(sb: sb, expr: varDecl.Initializer);
+            return;
+        }
 
         // None initializer: the expression ran for its side effects but produces no value — `void`
         // carries nothing. Store the unit `{}` into the {} alloca.

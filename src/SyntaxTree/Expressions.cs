@@ -555,6 +555,14 @@ public record CallExpression(
     public bool IsRecipeRunCall { get; init; }
 
     /// <summary>
+    /// True for a call of a recovery variant the builder writes to pass a failure on (the propagation of a failable
+    /// call inside another one's variant): its failure stays in the mold of the flow it was thrown on, where the
+    /// routine's own carrier takes it up. Any other call of a <c>check</c> variant copies the failure out of the mold
+    /// into the <c>Check</c> it gives, so the <c>Check</c> keeps its error past the next failure.
+    /// </summary>
+    public bool IsFailurePassOn { get; init; }
+
+    /// <summary>
     /// True for a call through a routine VALUE made beneath a recovery keyword: it calls the value's recovering
     /// entry instead of its routine and yields that entry's carrier (<see cref="Expression.ResolvedType"/>,
     /// <c>Lookup[T]</c> or <c>Check[None]</c>). A value with no recovering entry (its routine cannot fail beneath

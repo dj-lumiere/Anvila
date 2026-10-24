@@ -144,6 +144,12 @@ public partial class LlvmEmitter
             else
             {
                 EmitLine(sb: sb, line: $"  store {GetLlvmType(type: payloadType)} {value}, ptr {payloadPtr}");
+                // A caught error a check variant passes on: back into the mold, where the caller's check takes it.
+                if (payloadType.Name == Declaration.RuntimeContract.Crashables && IsRecoveryCarrier(carrier: type) &&
+                    _currentEmittingRoutine is { IsRecoveryVariant: true })
+                {
+                    EmitPutFailureInMold(sb: sb, at: payloadPtr);
+                }
             }
         }
 
@@ -161,7 +167,8 @@ public partial class LlvmEmitter
         return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result };
     }
 
-    /// <summary>The LLVM type of System's <c>Crashables</c>: <c>{ type id, failure number, [8 x i64] room }</c>.</summary>
+    /// <summary>The LLVM type of System's <c>Crashables</c>: <c>{ type id, failure number, [N x i64] room }</c>, the room
+    /// sized for the program's largest crashable.</summary>
     private string CrashablesLlvmType()
     {
         return EnsureRecordTypeDeclared(record: _registry.LookupType(name: Declaration.RuntimeContract.Crashables) as
@@ -174,9 +181,12 @@ public partial class LlvmEmitter
     private const int CrashablesRoomField = 2;
 
     /// <summary>
-    /// Writes a caught crashable into the <c>Crashables</c> at <paramref name="at"/>: its type id, the number of the
-    /// failure (the thread notes where it was thrown in its ring of recent failures), and the crashable itself in the
-    /// room every crashable fits in (RF-S711). Nothing is allocated, and nothing about it is looked up at run time.
+    /// A failure thrown into the <c>Crashables</c> at <paramref name="at"/>: its type id and the number of the failure
+    /// (the thread notes where it was thrown in its ring of recent failures) go in the header, and the crashable itself
+    /// goes into the mold of the flow it is thrown on (<see cref="EmitFailureMold"/>), its member variables copied at
+    /// this moment. The number carries <see cref="FailureInMold"/>: the room is empty while the failure flies, and the
+    /// first <c>check</c> that receives it copies it out (<see cref="EmitKeepFailure"/>). Nothing is allocated, and
+    /// nothing about it is looked up at run time.
     /// </summary>
     private void EmitCrashablesInto(StringBuilder sb, CrashableTypeSymbol crashable, string value, string at)
     {
@@ -186,14 +196,194 @@ public partial class LlvmEmitter
         string idPtr = NextTemp();
         EmitLine(sb: sb, line: $"  {idPtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 0");
         EmitLine(sb: sb, line: $"  store i64 {typeId}, ptr {idPtr}");
-        string seq = NextTemp();
-        EmitLine(sb: sb, line: $"  {seq} = call i64 @_rf_failure_note()");
         string seqPtr = NextTemp();
         EmitLine(sb: sb, line: $"  {seqPtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 1");
-        EmitLine(sb: sb, line: $"  store i64 {seq}, ptr {seqPtr}");
+        // One call notes the failure and gives its number (with the bit that says the crashable is in the mold) and
+        // the mold. It takes no address of the carrier, so the carrier stays in registers and a failable routine that
+        // throws is as cheap to inline where it is called as before.
+        _usesFailureMold = true;
+        string thrown = NextTemp();
+        EmitLine(sb: sb, line: $"  {thrown} = call {{ i64, ptr }} @_rf_failure_throw()");
+        string flagged = NextTemp();
+        EmitLine(sb: sb, line: $"  {flagged} = extractvalue {{ i64, ptr }} {thrown}, 0");
+        EmitLine(sb: sb, line: $"  store i64 {flagged}, ptr {seqPtr}");
+        string mold = NextTemp();
+        EmitLine(sb: sb, line: $"  {mold} = extractvalue {{ i64, ptr }} {thrown}, 1");
+        EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {mold}, align 8");
+    }
+
+    /// <summary>The bit of a <c>Crashables</c>' failure number that says its crashable is still in the mold of the flow
+    /// it was thrown on (bit 63, which no failure number reaches), and the mask that clears it.</summary>
+    private const string FailureInMold = "-9223372036854775808";
+
+    private const string FailureNumberMask = "9223372036854775807";
+
+    /// <summary>Whether this module calls the runtime's <c>rf_failure_mold</c> (declared at the end).</summary>
+    private bool _usesFailureMold;
+
+    /// <summary>The mold of the flow running here (the running coroutine's, or the thread's): where a failure is written
+    /// while it flies. Ingrid reserves one per flow when the flow starts, of the size the program's entry gives it.</summary>
+    private string EmitFailureMold(StringBuilder sb)
+    {
+        _usesFailureMold = true;
+        string mold = NextTemp();
+        EmitLine(sb: sb, line: $"  {mold} = call ptr @rf_failure_mold()");
+        return mold;
+    }
+
+    /// <summary>The LLVM type of the room of a <c>Crashables</c>, which a mold has the size of: <c>[N x i64]</c>.</summary>
+    private string CrashablesRoomLlvmType()
+    {
+        long words = (CrashablesRoomBytes() + 7) / 8;
+        return $"[{words} x i64]";
+    }
+
+    /// <summary>The bytes of the room of a <c>Crashables</c> (its <c>data</c>), sized for the program's largest
+    /// crashable.</summary>
+    private int CrashablesRoomBytes()
+    {
+        var crashables = (RecordTypeSymbol)(_registry.LookupType(name: Declaration.RuntimeContract.Crashables) ??
+                                            throw new InvalidOperationException(
+                                                message: "System.Crashables is not registered."));
+        return crashables.MemberVariables.First(predicate: mv => mv.Name == "data").Type.SizeBytes(pointerSize: 8);
+    }
+
+    /// <summary>
+    /// The address of the crashable the <c>Crashables</c> at <paramref name="at"/> holds: the flow's mold while the
+    /// failure flies, its own room once a <c>check</c> kept it.
+    /// </summary>
+    private string EmitCaughtCrashableAddress(StringBuilder sb, string at)
+    {
+        string crashables = CrashablesLlvmType();
+        string failurePtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {failurePtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 1");
+        string failure = NextTemp();
+        EmitLine(sb: sb, line: $"  {failure} = load i64, ptr {failurePtr}");
+        string inMold = NextTemp();
+        EmitLine(sb: sb, line: $"  {inMold} = icmp slt i64 {failure}, 0");
         string roomPtr = NextTemp();
         EmitLine(sb: sb, line: $"  {roomPtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 {CrashablesRoomField}");
-        EmitLine(sb: sb, line: $"  store {typeName} {value}, ptr {roomPtr}, align 8");
+        // A received failure is kept already, so the mold is asked for only on the rare way of one still flying.
+        string startLabel = NextLabel(prefix: "caught.start");
+        string moldLabel = NextLabel(prefix: "caught.mold");
+        string doneLabel = NextLabel(prefix: "caught.done");
+        EmitLine(sb: sb, line: $"  br label %{startLabel}");
+        EmitLine(sb: sb, line: $"{startLabel}:");
+        EmitLine(sb: sb, line: $"  br i1 {inMold}, label %{moldLabel}, label %{doneLabel}");
+        EmitLine(sb: sb, line: $"{moldLabel}:");
+        string mold = EmitFailureMold(sb: sb);
+        EmitLine(sb: sb, line: $"  br label %{doneLabel}");
+        EmitLine(sb: sb, line: $"{doneLabel}:");
+        string address = NextTemp();
+        EmitLine(sb: sb, line: $"  {address} = phi ptr [ {roomPtr}, %{startLabel} ], [ {mold}, %{moldLabel} ]");
+        return address;
+    }
+
+    /// <summary>
+    /// The carrier <paramref name="value"/> a call gave, with its failure kept: when it holds one that is still in the
+    /// mold of this flow, the crashable is copied into the carrier's own room, so the <c>Check</c> keeps its error
+    /// past the next failure (which writes the same mold). A carrier that holds a value, or a failure already kept,
+    /// is left as it is. Only a failing call pays for the copy.
+    /// </summary>
+    private string EmitKeepFailure(StringBuilder sb, string value, TypeSymbol carrier)
+    {
+        string llvm = GetCarrierLlvmType(type: carrier);
+        string slot = NextTemp();
+        EmitEntryAlloca(llvmName: slot, llvmType: llvm);
+        EmitLine(sb: sb, line: $"  store {llvm} {value}, ptr {slot}");
+        EmitKeepFailureAt(sb: sb, slot: slot, carrier: carrier);
+        string result = NextTemp();
+        EmitLine(sb: sb, line: $"  {result} = load {llvm}, ptr {slot}");
+        return result;
+    }
+
+    /// <summary>
+    /// Keeps the failure of the carrier in <paramref name="slot"/> (see <see cref="EmitKeepFailure"/>), in place: the
+    /// tag is read, and only a carrier that holds a failure still in the mold is written.
+    /// </summary>
+    private void EmitKeepFailureAt(StringBuilder sb, string slot, TypeSymbol carrier)
+    {
+        string llvm = GetCarrierLlvmType(type: carrier);
+        string crashables = CrashablesLlvmType();
+        TypeSymbol crashablesType = _registry.LookupType(name: Declaration.RuntimeContract.Crashables)!;
+        long crashablesId = unchecked((long)TypeIdHelper.ComputeTypeId(fullName: crashablesType.FullName));
+        string failedLabel = NextLabel(prefix: "keep.failed");
+        string copyLabel = NextLabel(prefix: "keep.copy");
+        string doneLabel = NextLabel(prefix: "keep.done");
+        string tagPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {tagPtr} = getelementptr {llvm}, ptr {slot}, i32 0, i32 0");
+        string tag = NextTemp();
+        EmitLine(sb: sb, line: $"  {tag} = load i64, ptr {tagPtr}");
+        string failed = NextTemp();
+        EmitLine(sb: sb, line: $"  {failed} = icmp eq i64 {tag}, {crashablesId}");
+        EmitLine(sb: sb, line: $"  br i1 {failed}, label %{failedLabel}, label %{doneLabel}");
+        EmitLine(sb: sb, line: $"{failedLabel}:");
+        string payload = NextTemp();
+        EmitLine(sb: sb, line: $"  {payload} = getelementptr {llvm}, ptr {slot}, i32 0, i32 1");
+        string failurePtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {failurePtr} = getelementptr {crashables}, ptr {payload}, i32 0, i32 1");
+        string failure = NextTemp();
+        EmitLine(sb: sb, line: $"  {failure} = load i64, ptr {failurePtr}");
+        string inMold = NextTemp();
+        EmitLine(sb: sb, line: $"  {inMold} = icmp slt i64 {failure}, 0");
+        EmitLine(sb: sb, line: $"  br i1 {inMold}, label %{copyLabel}, label %{doneLabel}");
+        EmitLine(sb: sb, line: $"{copyLabel}:");
+        string mold = EmitFailureMold(sb: sb);
+        string roomPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {roomPtr} = getelementptr {crashables}, ptr {payload}, i32 0, i32 {CrashablesRoomField}");
+        EmitCopyWords(sb: sb, from: mold, to: roomPtr);
+
+        string kept = NextTemp();
+        EmitLine(sb: sb, line: $"  {kept} = and i64 {failure}, {FailureNumberMask}");
+        EmitLine(sb: sb, line: $"  store i64 {kept}, ptr {failurePtr}");
+        EmitLine(sb: sb, line: $"  br label %{doneLabel}");
+        EmitLine(sb: sb, line: $"{doneLabel}:");
+    }
+
+    /// <summary>Copies a room's worth of words from <paramref name="from"/> to <paramref name="to"/>, one <c>i64</c> at a
+    /// time, so the optimizer keeps a carrier that receives them in registers word by word.</summary>
+    private void EmitCopyWords(StringBuilder sb, string from, string to)
+    {
+        long words = (CrashablesRoomBytes() + 7) / 8;
+        for (long i = 0; i < words; i++)
+        {
+            string src = NextTemp();
+            EmitLine(sb: sb, line: $"  {src} = getelementptr i64, ptr {from}, i64 {i}");
+            string word = NextTemp();
+            EmitLine(sb: sb, line: $"  {word} = load i64, ptr {src}, align 8");
+            string dst = NextTemp();
+            EmitLine(sb: sb, line: $"  {dst} = getelementptr i64, ptr {to}, i64 {i}");
+            EmitLine(sb: sb, line: $"  store i64 {word}, ptr {dst}, align 8");
+        }
+    }
+
+    /// <summary>
+    /// A kept failure passed on again (a caught error thrown again from a <c>check</c> variant, or a Work's error
+    /// rethrown where it is retrieved): its crashable goes back into the mold of the flow running here, where the
+    /// caller's <c>check</c> takes it from, as a new throw's would be. One still in the mold stays there.
+    /// </summary>
+    private void EmitPutFailureInMold(StringBuilder sb, string at)
+    {
+        string crashables = CrashablesLlvmType();
+        string failurePtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {failurePtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 1");
+        string failure = NextTemp();
+        EmitLine(sb: sb, line: $"  {failure} = load i64, ptr {failurePtr}");
+        string inMold = NextTemp();
+        EmitLine(sb: sb, line: $"  {inMold} = icmp slt i64 {failure}, 0");
+        string putLabel = NextLabel(prefix: "remold.put");
+        string doneLabel = NextLabel(prefix: "remold.done");
+        EmitLine(sb: sb, line: $"  br i1 {inMold}, label %{doneLabel}, label %{putLabel}");
+        EmitLine(sb: sb, line: $"{putLabel}:");
+        string roomPtr = NextTemp();
+        EmitLine(sb: sb, line: $"  {roomPtr} = getelementptr {crashables}, ptr {at}, i32 0, i32 {CrashablesRoomField}");
+        string mold = EmitFailureMold(sb: sb);
+        EmitCopyWords(sb: sb, from: roomPtr, to: mold);
+        string flagged = NextTemp();
+        EmitLine(sb: sb, line: $"  {flagged} = or i64 {failure}, {FailureInMold}");
+        EmitLine(sb: sb, line: $"  store i64 {flagged}, ptr {failurePtr}");
+        EmitLine(sb: sb, line: $"  br label %{doneLabel}");
+        EmitLine(sb: sb, line: $"{doneLabel}:");
     }
 
     private readonly Dictionary<string, (string Name, string Returns)> _crashableDispatches =

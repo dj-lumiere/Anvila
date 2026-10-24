@@ -6,8 +6,9 @@ namespace TypeModel.Types;
 /// <summary>
 /// Type information for crashable types: the errors a <c>throw</c> raises. A crashable is a value, a record with
 /// no identity, so nothing about ownership or sharing applies to it. When a recovery carrier (<c>Check</c>,
-/// <c>Lookup</c>) catches one, the value goes into the carrier's <c>Crashables</c>, which holds it in a fixed room
-/// every crashable fits in (RF-S711), with its type id in front. Automatically conforms to the Crashable protocol.
+/// <c>Lookup</c>) catches one, the value is copied from the failure mold of the flow it was thrown on into the
+/// carrier's <c>Crashables</c>, which holds it in a room the program's largest crashable fits in, with its type id in
+/// front. Automatically conforms to the Crashable protocol.
 /// Must provide crash_message() -> Text; crash_title() is synthesized from the type name.
 /// </summary>
 public sealed class CrashableTypeSymbol : RecordTypeSymbol
