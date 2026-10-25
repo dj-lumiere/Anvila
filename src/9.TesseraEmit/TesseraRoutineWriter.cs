@@ -295,8 +295,16 @@ internal sealed class TesseraRoutineWriter
                 WriteDeclaration(declaration: v);
                 break;
             // The teardown of a local `steal` may have emptied and `=` filled again runs only when its slot holds a
-            // value, and this writer does not empty a slot at `steal`: it leaves that teardown out, so a value
-            // handed over is never torn down a second time (the refilled value is not torn down here).
+            // value: a value handed over left the slot empty, and a refilled one is torn down here.
+            case ExpressionStatement
+            {
+                Expression: CallExpression
+                {
+                    SkipsEmptyReceiver: true, Callee: MemberExpression { Object: IdentifierExpression held }
+                } guarded
+            } effect:
+                WriteWhenSlotHolds(call: guarded, held: held, location: effect.Location);
+                break;
             case ExpressionStatement { Expression: CallExpression { SkipsEmptyReceiver: true } }:
                 break;
             case ExpressionStatement e:
@@ -505,6 +513,24 @@ internal sealed class TesseraRoutineWriter
 
     /// <summary><c>if c</c> with its body under it, then <c>else</c> and its body. The lines after the if can't run
     /// when both bodies leave.</summary>
+    /// <summary>
+    /// Writes a teardown the builder marked <see cref="CallExpression.SkipsEmptyReceiver"/>: it runs only when the
+    /// local's slot holds a value, since a slot <c>steal</c> emptied holds the hollow address. A local whose slot does
+    /// not hold an address is left without it, as a value handed over is never torn down a second time.
+    /// </summary>
+    private void WriteWhenSlotHolds(CallExpression call, IdentifierExpression held, SourceLocation location)
+    {
+        Local local = Lookup(name: held.Name, variable: held.ResolvedVariable);
+        if (TypeText(type: local.Type) is not ("Addr" or ['@', ..]))
+        {
+            return;
+        }
+
+        string value = Temp(type: local.Type, expression: $"{local.Place}.peek()");
+        Emit(line: $"if not {value}.is_hollow()");
+        Nested(body: new ExpressionStatement(Expression: call with { SkipsEmptyReceiver = false }, Location: location));
+    }
+
     private void WriteIf(IfStatement statement)
     {
         string condition = Value(operand: Evaluate(expression: statement.Condition));
@@ -726,6 +752,15 @@ internal sealed class TesseraRoutineWriter
                     routine: closure.Function.ResolvedRoutine ??
                              throw Unsupported(what: "a closure value without its lifted routine"),
                     bound: Value(operand: Evaluate(expression: closure.Bound)));
+            case IdentifierExpression { NullStampAfterMove: true } moved:
+            {
+                // A value handed over (`steal a`, an entity passed on): it is read, and the slot is emptied, so the
+                // local's teardown at the end of its scope finds nothing to tear down unless `=` fills it again.
+                Local local = Lookup(name: moved.Name, variable: moved.ResolvedVariable);
+                string value = Temp(type: local.Type, expression: $"{local.Place}.peek()");
+                Emit(line: $"{local.Place}.poke({ZeroValue(type: local.Type)})");
+                return new Operand(Text: value, Type: local.Type, IsPlace: false);
+            }
             case IdentifierExpression identifier:
             {
                 Local local = Lookup(name: identifier.Name, variable: identifier.ResolvedVariable);
