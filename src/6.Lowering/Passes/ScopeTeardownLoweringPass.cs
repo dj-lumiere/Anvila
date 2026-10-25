@@ -42,8 +42,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// placeholder, the declaration initializer, or a later-assigned value).</summary>
     // Variable: the global a module-level binding names (two modules may each have a global of one name), null
     // for a local.
+    // MayBeEmpty: a binding `steal` may have emptied and a later `=` filled again, torn down only when its slot holds
+    // a value (see CollectRefillable).
     private readonly record struct Owned(string Name, TypeSymbol Type, RoutineInfo Destroy,
-        VariableInfo? Variable = null);
+        VariableInfo? Variable = null, bool MayBeEmpty = false);
 
     public void Run(Program program)
     {
@@ -178,6 +180,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
 
         MarkMovedPatternSubjects(stmt: r.Body);
+        CollectRefillable(r: r);
+        _movedNames.ExceptWith(other: _refillable);
 
         // THREE-RULES param model (Rule 2): passing into a routine param is either 먹튀 (`steal`, move
         // ownership in — a bare ENTITY the caller relinquished) OR handing over a borrow. A RECORD param
@@ -224,7 +228,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
             if (TryResolveDestroy(type: pt, destroy: out RoutineInfo? d) && d != null)
             {
-                paramLive.Add(item: new Owned(Name: p.Name, Type: pt, Destroy: d));
+                paramLive.Add(item: new Owned(Name: p.Name, Type: pt, Destroy: d,
+                    MayBeEmpty: _refillable.Contains(item: p.Name)));
             }
         }
 
@@ -301,7 +306,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                        TryResolveDestroy(type: endedType, destroy: out RoutineInfo? endedDestroy) &&
                        endedDestroy != null
                     ? MakeDestroyStmt(owned: new Owned(Name: ended.Name, Type: endedType, Destroy: endedDestroy),
-                        loc: dropped.Location)
+                        loc: dropped.Location, endsBinding: true)
                     : new BlockStatement(Statements: [], Location: dropped.Location);
 
             case BreakStatement or ContinueStatement:
@@ -505,7 +510,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             !IsViewBinding(v: v) && TryResolveDestroy(type: t, destroy: out RoutineInfo? d) &&
             d != null)
         {
-            live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: d));
+            live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: d,
+                MayBeEmpty: _refillable.Contains(item: v.Name)));
         }
     }
 
@@ -801,7 +807,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         return false;
     }
 
-    private ExpressionStatement MakeDestroyStmt(Owned owned, SourceLocation loc)
+    /// <summary>Builds <c>owned.destruct()</c>. <paramref name="endsBinding"/> (for <c>drop x</c>) empties the slot
+    /// after the call, so a later read crashes and a later <c>=</c> finds nothing to tear down.</summary>
+    private ExpressionStatement MakeDestroyStmt(Owned owned, SourceLocation loc, bool endsBinding = false)
     {
         var ident =
             new IdentifierExpression(Name: owned.Name, Location: loc)
@@ -823,7 +831,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             // calling it outside a `danger` block. Under the demand pipeline this destroy is injected
             // (Phase 7) BEFORE the stdlib body is SA'd on reach, so the dangerous-call check would see it
             // and false-fire — the eager pipeline never did because stdlib SA ran before teardown.
-            IsSynthesizedLowering = true
+            IsSynthesizedLowering = true,
+            SkipsEmptyReceiver = owned.MayBeEmpty,
+            ConsumesReceiver = endsBinding
         };
         return new ExpressionStatement(Expression: call, Location: loc);
     }
@@ -1078,6 +1088,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             if (_movedNames.Contains(item: bound))
             {
                 _movedNames.UnionWith(other: sources);
+                _movedWithoutEmptying.UnionWith(other: sources);
             }
         }
     }
@@ -1097,7 +1108,51 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     private void CollectMovedNames(Statement stmt)
     {
+        _movedWithoutEmptying.Clear();
         AstWalker.Walk(root: stmt, visit: CollectMovedNamesFromNode);
+    }
+
+    /// <summary>The names a move reaches whose slot is not emptied by it (a handle made from the entity, an
+    /// explicit <c>destruct</c>, the value a pattern name read): the emitter empties a slot only where the value is
+    /// handed over as an argument, a field, a variable's value or by <c>drop</c>.</summary>
+    private readonly HashSet<string> _movedWithoutEmptying = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The entity locals and parameters of the routine being lowered that <c>steal</c> (or <c>drop</c>)
+    /// may empty and a later <c>=</c> fills again (<see cref="CollectRefillable"/>).</summary>
+    private readonly HashSet<string> _refillable = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// Finds the entity bindings <c>steal</c> hands over somewhere and <c>=</c> gives a new value somewhere
+    /// (<c>keep(i: steal a)</c>, then <c>a = Item(n: 2)</c>, maybe on one path only). Such a binding is not left out
+    /// of teardown like other moved names: it stays tracked, and its teardown at a scope exit or before a new value
+    /// runs only when the slot holds a value. The emitter empties the slot where <c>steal</c> hands the value over
+    /// (<see cref="StealGuardLoweringPass"/>), so the value that left is not torn down again and the new one is torn
+    /// down once. Shared entities (Suflae) are handles and move nothing. A body analyzed after this pass (a library
+    /// body lowered ahead of its analysis) has no record of its steals yet and keeps the plain rule.
+    /// </summary>
+    private void CollectRefillable(RoutineDeclaration r)
+    {
+        _refillable.Clear();
+        if (_late || r.EverStolenVariableNames is not { Count: > 0 } everStolen ||
+            ctx.Registry.EntitiesAreSharedIn(filePath: r.Location.FileName))
+        {
+            return;
+        }
+
+        AstWalker.Walk(root: r.Body, visit: node =>
+        {
+            IdentifierExpression? target = node switch
+            {
+                AssignmentStatement { Target: IdentifierExpression t } => t,
+                BinaryExpression { Operator: BinaryOperator.Assign, Left: IdentifierExpression t } => t,
+                _ => null
+            };
+            if (target is { ResolvedType: EntityTypeSymbol } && everStolen.Contains(item: target.Name) &&
+                !_movedWithoutEmptying.Contains(item: target.Name))
+            {
+                _refillable.Add(item: target.Name);
+            }
+        });
     }
 
     private void CollectMovedNamesFromNode(object node)
@@ -1147,6 +1202,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 } rcCtorCall when rcCtorCall.ResolvedType is { } rcRes &&
                                   TypeRegistry.GetRcWrapperBaseName(type: rcRes) is not null:
                 _movedNames.Add(item: recv.Name);
+                _movedWithoutEmptying.Add(item: recv.Name);
                 break;
             // `target = source` / `me.field = source` moves `source` into the target.
             case AssignmentStatement assign
@@ -1196,6 +1252,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 }
             }:
                 _movedNames.Add(item: dv.Name);
+                _movedWithoutEmptying.Add(item: dv.Name);
                 break;
             // Constructing a VARIANT boxes (takes ownership of) its single payload — the source
             // binding is moved into the variant, not dropped at scope exit. Without this, a heap

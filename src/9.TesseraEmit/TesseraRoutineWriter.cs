@@ -294,6 +294,11 @@ internal sealed class TesseraRoutineWriter
             case DeclarationStatement { Declaration: VariableDeclaration v }:
                 WriteDeclaration(declaration: v);
                 break;
+            // The teardown of a local `steal` may have emptied and `=` filled again runs only when its slot holds a
+            // value, and this writer does not empty a slot at `steal`: it leaves that teardown out, so a value
+            // handed over is never torn down a second time (the refilled value is not torn down here).
+            case ExpressionStatement { Expression: CallExpression { SkipsEmptyReceiver: true } }:
+                break;
             case ExpressionStatement e:
                 WriteEffect(expression: e.Expression);
                 break;

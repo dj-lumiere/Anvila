@@ -68,6 +68,13 @@ internal static class StealGuardLoweringPass
                     case BinaryExpression { Operator: BinaryOperator.Assign, Left: MemberExpression } assign:
                         MarkConsumed(operand: assign.Right, everStolen: everStolen);
                         break;
+                    // `b = steal a` into a local: `a`'s slot is emptied as for any other hand-over.
+                    case BinaryExpression { Operator: BinaryOperator.Assign, Left: IdentifierExpression } assign:
+                        MarkConsumed(operand: assign.Right, everStolen: everStolen);
+                        break;
+                    case AssignmentStatement { Target: IdentifierExpression } assign:
+                        MarkConsumed(operand: assign.Value, everStolen: everStolen);
+                        break;
                     case VariableDeclaration { Initializer: { } init }:
                         MarkConsumed(operand: init, everStolen: everStolen);
                         break;

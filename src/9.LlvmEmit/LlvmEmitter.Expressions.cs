@@ -502,6 +502,7 @@ public partial class LlvmEmitter
         {
             case IdentifierExpression id:
                 EmitVariableAssignment(sb: sb, varName: id.Name, value: value, variable: id.ResolvedVariable);
+                NullStampStolenLocalUnlessSame(sb: sb, expr: binary.Right, target: id);
                 break;
             case MemberExpression member:
             {

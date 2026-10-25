@@ -29,6 +29,16 @@ public partial class LlvmEmitter
                 case BlockStatement block:
                     return EmitBlock(sb: sb, block: block);
 
+                case ExpressionStatement
+                {
+                    Expression: CallExpression
+                    {
+                        SkipsEmptyReceiver: true, Callee: MemberExpression { Object: IdentifierExpression held }
+                    } guarded
+                } when _localVariables.ContainsKey(key: held.Name):
+                    EmitCallWhenSlotHolds(sb: sb, call: guarded, local: held);
+                    return false;
+
                 case ExpressionStatement exprStmt:
                     EmitExpression(sb: sb, expr: exprStmt.Expression);
                     return false;
@@ -345,6 +355,7 @@ public partial class LlvmEmitter
         {
             case IdentifierExpression id:
                 EmitVariableAssignment(sb: sb, varName: id.Name, value: value, variable: id.ResolvedVariable);
+                NullStampStolenLocalUnlessSame(sb: sb, expr: assign.Value, target: id);
                 break;
 
             case MemberExpression member:
@@ -374,9 +385,46 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
+    /// Emits a teardown call marked <see cref="CallExpression.SkipsEmptyReceiver"/>: the call runs only when the
+    /// local's slot holds a value, since a slot <c>steal</c> emptied holds null.
+    /// </summary>
+    private void EmitCallWhenSlotHolds(StringBuilder sb, CallExpression call, IdentifierExpression local)
+    {
+        string llvmName = _localVarLlvmNames.TryGetValue(key: local.Name, value: out string? unique)
+            ? unique
+            : local.Name;
+        string held = NextTemp();
+        EmitLine(sb: sb, line: $"  {held} = load ptr, ptr %{llvmName}.addr");
+        string isEmpty = NextTemp();
+        EmitLine(sb: sb, line: $"  {isEmpty} = icmp eq ptr {held}, null");
+        string runLabel = NextLabel(prefix: "held.run");
+        string doneLabel = NextLabel(prefix: "held.done");
+        EmitLine(sb: sb, line: $"  br i1 {isEmpty}, label %{doneLabel}, label %{runLabel}");
+        EmitLine(sb: sb, line: $"{runLabel}:");
+        EmitExpression(sb: sb, expr: call);
+        EmitLine(sb: sb, line: $"  br label %{doneLabel}");
+        EmitLine(sb: sb, line: $"{doneLabel}:");
+    }
+
+    /// <summary>
     /// After a consuming use marked by StealGuardLoweringPass, stores null into the moved-out local's
     /// slot so a later use of the binding hits the use-after-steal null guard instead of a stale pointer.
     /// </summary>
+    /// <summary>The null-stamp after <c>b = steal a</c> into a local, left out when the value is the target's
+    /// own (<c>a = a</c>), whose slot holds the value just stored.</summary>
+    private void NullStampStolenLocalUnlessSame(StringBuilder sb, Expression expr, IdentifierExpression target)
+    {
+        Expression unwrapped = expr is StealExpression steal
+            ? steal.Operand
+            : expr;
+        if (unwrapped is IdentifierExpression source && source.Name == target.Name)
+        {
+            return;
+        }
+
+        NullStampStolenLocal(sb: sb, expr: expr);
+    }
+
     private void NullStampStolenLocal(StringBuilder sb, Expression expr)
     {
         Expression unwrapped = expr is NamedArgumentExpression named

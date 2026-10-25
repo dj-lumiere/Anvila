@@ -547,6 +547,12 @@ public record CallExpression(
     /// receiver's slot is cleared after the call, like a moved-out argument's.</summary>
     public bool ConsumesReceiver { get; init; }
 
+    /// <summary>True for a teardown call the builder writes for a local that <c>steal</c> may have emptied and a
+    /// later <c>=</c> may have filled again (<c>steal a</c>, then <c>a = Item(n: 2)</c> on some paths): the receiver
+    /// is a local whose slot holds null once its value was handed over, and the call is made only when the slot
+    /// holds a value.</summary>
+    public bool SkipsEmptyReceiver { get; set; }
+
     /// <summary>
     /// True for the call inside a routine that runs a recipe: a <c>to[Work]</c> conversion's run routine calling its work
     /// routine (<see cref="Builder.Desugaring.Passes.WorkRecipe"/>), or a <c>@blocking</c> foreign routine's run
