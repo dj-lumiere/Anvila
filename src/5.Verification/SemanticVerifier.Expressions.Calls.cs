@@ -2558,8 +2558,8 @@ public sealed partial class SemanticVerifier
         ref RoutineInfo? routine)
     {
         RoutineInfo? generic = _registry.LookupGenericOverload(name: callName,
-            preferredArity: call.Arguments.Count);
-        if (generic == null)
+            preferredArity: call.Arguments.Count, visible: IsFreeRoutineVisible);
+        if (generic == null || !RoutineCanAcceptArgCount(routine: generic, argCount: call.Arguments.Count))
         {
             return;
         }
@@ -2701,7 +2701,7 @@ public sealed partial class SemanticVerifier
         ref RoutineInfo? routine)
     {
         RoutineInfo? generic = _registry.LookupGenericOverload(name: callName,
-            preferredArity: call.Arguments.Count);
+            preferredArity: call.Arguments.Count, visible: IsFreeRoutineVisible);
         if (generic == null || !IsFreeRoutineVisible(routine: generic))
         {
             return;
@@ -2821,9 +2821,9 @@ public sealed partial class SemanticVerifier
         {
             RoutineInfo? arityGeneric =
                 _registry.LookupGenericOverload(name: callName,
-                    preferredArity: call.Arguments.Count) ??
+                    preferredArity: call.Arguments.Count, visible: IsFreeRoutineVisible) ??
                 _registry.LookupGenericOverload(name: routine.BaseName,
-                    preferredArity: call.Arguments.Count);
+                    preferredArity: call.Arguments.Count, visible: IsFreeRoutineVisible);
             if (arityGeneric is { IsVariadic: false } &&
                 arityGeneric.Parameters.Count == call.Arguments.Count)
             {
@@ -4122,7 +4122,7 @@ public sealed partial class SemanticVerifier
         // `watch[T, P](Guarded[T, P])` vs `watch[T](Roamed[T])`).
         // If the first pick does not unify, try the sibling overloads of matching arity.
         RoutineInfo? genericImport = _registry.LookupGenericOverload(name: callName,
-            preferredArity: call.Arguments.Count);
+            preferredArity: call.Arguments.Count, visible: IsFreeRoutineVisible);
         if (genericImport == null)
         {
             return;
@@ -4320,9 +4320,9 @@ public sealed partial class SemanticVerifier
         {
             RoutineInfo? arityGeneric =
                 _registry.LookupGenericOverload(name: callName,
-                    preferredArity: call.Arguments.Count) ??
+                    preferredArity: call.Arguments.Count, visible: IsFreeRoutineVisible) ??
                 _registry.LookupGenericOverload(name: routine.BaseName,
-                    preferredArity: call.Arguments.Count);
+                    preferredArity: call.Arguments.Count, visible: IsFreeRoutineVisible);
             if (arityGeneric is { IsVariadic: false } &&
                 arityGeneric.Parameters.Count == call.Arguments.Count)
             {

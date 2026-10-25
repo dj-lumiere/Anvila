@@ -462,8 +462,8 @@ public sealed partial class SemanticVerifier
             routine = plain;
         }
 
-        if (routine == null && _registry.LookupGenericOverload(name: name, preferredArity: preferredArity) is { } generic &&
-            (!bare || IsFreeRoutineVisible(routine: generic)))
+        if (routine == null && _registry.LookupGenericOverload(name: name, preferredArity: preferredArity,
+                visible: bare ? IsFreeRoutineVisible : null) is { } generic)
         {
             routine = generic;
         }

@@ -806,12 +806,19 @@ public sealed partial class TypeRegistry
     /// only reachable via a realm-qualified call site.</param>
     /// <param name="module">When set, only a generic routine declared in this module.</param>
     public RoutineInfo? LookupGenericOverload(string name, int preferredArity = -1,
-        bool includeForeign = false, string? module = null)
+        bool includeForeign = false, string? module = null, Func<RoutineInfo, bool>? visible = null)
     {
         List<RoutineInfo> candidates = GenericFreeFunctions(name: name);
         if (module != null)
         {
             candidates = candidates.Where(predicate: c => c.Module == module).ToList();
+        }
+
+        // A generic routine of the same bare name in a module the calling file cannot see is another routine, not
+        // an overload of the one the call names: it is left out before an overload is chosen.
+        if (visible != null)
+        {
+            candidates = candidates.Where(predicate: visible).ToList();
         }
 
         // A foreign (C/LLVM) generic routine is only reachable via its realm qualifier — an unqualified
