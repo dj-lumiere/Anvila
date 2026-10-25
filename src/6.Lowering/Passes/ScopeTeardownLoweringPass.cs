@@ -108,6 +108,237 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// first run already made (a reassignment, a dropped binding, a field overwrite) are not made again.</summary>
     private bool _late;
 
+    /// <summary>True during <see cref="RunOnGenericEntityParameters"/>: only the parameters given to it are tracked,
+    /// no local is registered and no local's mark is cleared (the late run that follows still needs them).</summary>
+    private bool _parametersOnly;
+
+    /// <summary>
+    /// The run over monomorphized bodies for the parameters written as a bare generic type (<c>x: T</c>) that the
+    /// instance makes an entity. The definition's teardown could not tell whether <c>T</c> owns anything, so such
+    /// an entity was never torn down. The routine was handed the entity, so it tears it down at every exit (a
+    /// <c>throw</c> included) the body reaches before it keeps the entity: hands it over (<c>steal</c>, an argument
+    /// to a parameter that takes an entity or a <c>T</c>, any use inside a <c>danger</c> block), stores it (a member
+    /// variable, a variable, a constructed value), drops it or returns it. Only a read of its members, a call of one
+    /// of its routines that is not dangerous and gives back no entity or handle, or an argument to a parameter that
+    /// does not take it (a token, a value) leaves it with the routine. From the first statement that keeps it on (a
+    /// loop that keeps it counts from the loop's start), no exit tears it down. Shared entities (Suflae) are handles
+    /// and are left alone.
+    /// </summary>
+    public void RunOnGenericEntityParameters(Dictionary<string, Instantiation.MonomorphizedBody> bodies)
+    {
+        _late = true;
+        _parametersOnly = true;
+        try
+        {
+            foreach (string key in bodies.Keys.ToList())
+            {
+                Instantiation.MonomorphizedBody entry = bodies[key: key];
+                RoutineDeclaration r = entry.Ast;
+                if (ctx.Registry.EntitiesAreSharedIn(filePath: r.Location.FileName) ||
+                    r.Body is not BlockStatement)
+                {
+                    continue;
+                }
+
+                List<Owned> held = GenericEntityParameters(r: r, info: entry.Info);
+                if (held.Count == 0)
+                {
+                    continue;
+                }
+
+                _meType = r.ResolvedInfo?.OwnerType ?? entry.Info.OwnerType;
+                _keptParameters.Clear();
+                Statement newBody = LowerStatement(stmt: r.Body, live: held, loopBoundary: 0);
+                if (!ReferenceEquals(objA: newBody, objB: r.Body))
+                {
+                    bodies[key: key] = entry with { Ast = r with { Body = newBody } };
+                }
+            }
+        }
+        finally
+        {
+            _late = false;
+            _parametersOnly = false;
+            _keepingUses.Clear();
+            _keptParameters.Clear();
+        }
+    }
+
+    /// <summary>For each parameter <see cref="RunOnGenericEntityParameters"/> tracks, the uses of its name that keep
+    /// the entity.</summary>
+    private readonly Dictionary<string, HashSet<IdentifierExpression>> _keepingUses =
+        new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The tracked parameters a statement already lowered keeps: no later exit tears them down.</summary>
+    private readonly HashSet<string> _keptParameters = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>Before lowering <paramref name="stmt"/> in <see cref="RunOnGenericEntityParameters"/>: a tracked
+    /// parameter the statement keeps somewhere is not torn down by it or after it.</summary>
+    private void NoteKeptParameters(Statement stmt)
+    {
+        foreach ((string name, HashSet<IdentifierExpression> keeping) in _keepingUses)
+        {
+            if (keeping.Count == 0 || _keptParameters.Contains(item: name))
+            {
+                continue;
+            }
+
+            bool keeps = false;
+            AstWalker.Walk(root: stmt, visit: node => keeps |= node is IdentifierExpression id && keeping.Contains(item: id));
+            if (keeps)
+            {
+                _keptParameters.Add(item: name);
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="owned"/> is a tracked parameter a statement already kept.</summary>
+    private bool IsKeptParameter(Owned owned)
+    {
+        return _parametersOnly && _keptParameters.Contains(item: owned.Name);
+    }
+
+    /// <summary>The parameters of a monomorphized routine that its definition wrote as a bare generic type and
+    /// that are an entity here (see <see cref="RunOnGenericEntityParameters"/>), with the uses that keep each.</summary>
+    private List<Owned> GenericEntityParameters(RoutineDeclaration r, RoutineInfo info)
+    {
+        RoutineInfo? definition = info.GenericDefinition ?? info.RecoveryOf?.GenericDefinition ?? info.RecoveryOf;
+        var held = new List<Owned>();
+        _keepingUses.Clear();
+        if (definition == null || info.RecoveryOf is { IsSynthesized: true })
+        {
+            return held;
+        }
+
+        // A monomorphized declaration may carry no parameter list: the routine's own parameters have the concrete
+        // types.
+        foreach (ParamInfo p in info.Parameters)
+        {
+            if (p.Name == "me" || p.Type is not EntityTypeSymbol entity ||
+                definition.Parameters.FirstOrDefault(predicate: d => d.Name == p.Name)?.Type is not
+                    GenericParameterTypeSymbol ||
+                !TryResolveDestroy(type: entity, destroy: out RoutineInfo? destroy) || destroy == null)
+            {
+                continue;
+            }
+
+            _keepingUses[key: p.Name] = KeepingUses(body: r.Body, name: p.Name);
+            held.Add(item: new Owned(Name: p.Name, Type: entity, Destroy: destroy));
+        }
+
+        return held;
+    }
+
+    /// <summary>The uses of <paramref name="name"/> in <paramref name="body"/> that may keep its value: every use
+    /// but a read of its members, a call of one of its routines that is not dangerous and gives back no entity or
+    /// handle, or an argument to a parameter that takes neither an entity nor a generic type. Inside a
+    /// <c>danger</c> block every use counts (<c>from.hijack()</c> keeps it in raw memory).</summary>
+    private static HashSet<IdentifierExpression> KeepingUses(Statement body, string name)
+    {
+        var leftAlone = new HashSet<IdentifierExpression>(comparer: ReferenceEqualityComparer.Instance);
+        var inDanger = new HashSet<IdentifierExpression>(comparer: ReferenceEqualityComparer.Instance);
+        var uses = new HashSet<IdentifierExpression>(comparer: ReferenceEqualityComparer.Instance);
+        // The walk visits a call before its callee, so each callee is known when the walk reaches it.
+        var callees = new HashSet<object>(comparer: ReferenceEqualityComparer.Instance);
+        AstWalker.Walk(root: body, visit: node =>
+        {
+            if (node is CallExpression { Callee: { } called })
+            {
+                callees.Add(item: called);
+            }
+
+            switch (node)
+            {
+                case DangerStatement danger:
+                    AstWalker.Walk(root: danger.Body, visit: inner =>
+                    {
+                        if (inner is IdentifierExpression id && id.Name == name)
+                        {
+                            inDanger.Add(item: id);
+                        }
+                    });
+                    break;
+                case IdentifierExpression id when id.Name == name:
+                    uses.Add(item: id);
+                    break;
+                case CallExpression
+                    {
+                        Callee: MemberExpression { Object: IdentifierExpression receiver }
+                    } memberCall when receiver.Name == name:
+                    if (memberCall is { ResolvedRoutine.IsDangerous: false, ConsumesReceiver: false } &&
+                        !MayHoldEntity(type: memberCall.ResolvedType))
+                    {
+                        leftAlone.Add(item: receiver);
+                    }
+
+                    MarkLentArguments(arguments: memberCall.Arguments, routine: memberCall.ResolvedRoutine,
+                        name: name, leftAlone: leftAlone);
+                    break;
+                case MemberExpression { Object: IdentifierExpression member } when member.Name == name &&
+                    !callees.Contains(item: node):
+                    leftAlone.Add(item: member);
+                    break;
+                case CallExpression call:
+                    MarkLentArguments(arguments: call.Arguments, routine: call.ResolvedRoutine, name: name,
+                        leftAlone: leftAlone);
+                    break;
+                case GenericMemberRoutineCallExpression gcall:
+                    MarkLentArguments(arguments: gcall.Arguments, routine: gcall.ResolvedRoutine, name: name,
+                        leftAlone: leftAlone);
+                    break;
+            }
+        });
+        uses.RemoveWhere(match: u => leftAlone.Contains(item: u) && !inDanger.Contains(item: u));
+        return uses;
+    }
+
+    /// <summary>Whether a call's result may hold the entity its receiver is: an entity, a handle or a raw
+    /// pointer.</summary>
+    private static bool MayHoldEntity(TypeSymbol? type)
+    {
+        return type is null or EntityTypeSymbol or GenericParameterTypeSymbol || WrapperShape.Is(type: type) ||
+               TypeRegistry.GetRcWrapperBaseName(type: type) is not null;
+    }
+
+    /// <summary>Adds to <paramref name="leftAlone"/> each argument naming <paramref name="name"/> that goes to a
+    /// parameter which does not take the value over: one whose type is neither an entity nor a generic type.</summary>
+    private static void MarkLentArguments(List<Expression> arguments, RoutineInfo? routine, string name,
+        HashSet<IdentifierExpression> leftAlone)
+    {
+        if (routine == null)
+        {
+            return;
+        }
+
+        List<ParamInfo> parameters = routine.Parameters.Where(predicate: p => p.Name != "me").ToList();
+        for (int i = 0; i < arguments.Count; i++)
+        {
+            if (arguments[index: i] is not (IdentifierExpression or NamedArgumentExpression
+                {
+                    Value: IdentifierExpression
+                }))
+            {
+                continue;
+            }
+
+            var id = (IdentifierExpression)Unwrap(e: arguments[index: i]);
+            if (id.Name != name)
+            {
+                continue;
+            }
+
+            ParamInfo? parameter = arguments[index: i] is NamedArgumentExpression named
+                ? parameters.FirstOrDefault(predicate: p => p.Name == named.Name)
+                : i < parameters.Count
+                    ? parameters[index: i]
+                    : null;
+            if (parameter is { Type: not (EntityTypeSymbol or GenericParameterTypeSymbol) })
+            {
+                leftAlone.Add(item: id);
+            }
+        }
+    }
+
     public void RunOnVariantBodies()
     {
         foreach (string key in ctx.VariantBodies.Keys.ToList())
@@ -424,11 +655,20 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             {
                 // Once looked at here, a local a lowering marked as owing its teardown has it (or does not
                 // need it), so a later run leaves it alone.
-                stmts.Add(item: v.OwesTeardown
+                stmts.Add(item: v.OwesTeardown && !_parametersOnly
                     ? declaration with { Declaration = v with { OwesTeardown = false } }
                     : s);
-                RegisterBlockDeclaration(v: v, live: live);
+                if (!_parametersOnly)
+                {
+                    RegisterBlockDeclaration(v: v, live: live);
+                }
+
                 continue;
+            }
+
+            if (_parametersOnly)
+            {
+                NoteKeptParameters(stmt: s);
             }
 
             stmts.Add(item: LowerStatement(stmt: s, live: live, loopBoundary: loopBoundary));
@@ -450,7 +690,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             for (int i = live.Count - 1; i >= blockStart; i--)
             {
-                stmts.Add(item: MakeDestroyStmt(owned: live[index: i], loc: block.Location));
+                if (!IsKeptParameter(owned: live[index: i]))
+                {
+                    stmts.Add(item: MakeDestroyStmt(owned: live[index: i], loc: block.Location));
+                }
             }
         }
 
@@ -550,7 +793,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         for (int i = live.Count - 1; i >= from; i--)
         {
             if (skip != null && live[index: i].Name == skip ||
-                movedOut != null && movedOut.Contains(item: live[index: i].Name))
+                movedOut != null && movedOut.Contains(item: live[index: i].Name) ||
+                IsKeptParameter(owned: live[index: i]))
             {
                 continue;
             }
@@ -682,9 +926,15 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// <paramref name="rebuild"/> reconstructs the assignment statement (whichever AST form it
     /// has) around the spilled RHS.
     /// </summary>
-    private BlockStatement LowerEntityReassign(Statement original, Expression rhs,
+    private Statement LowerEntityReassign(Statement original, Expression rhs,
         Func<Expression, Statement> rebuild, Owned owned)
     {
+        // A tracked generic parameter an earlier statement kept no longer holds a value of the routine's own.
+        if (IsKeptParameter(owned: owned))
+        {
+            return original;
+        }
+
         var stmts = new List<Statement>();
         Expression finalRhs = rhs;
 

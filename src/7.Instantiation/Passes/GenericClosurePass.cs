@@ -304,6 +304,9 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // RHS is already an independent value.
         // A `when` subject the pattern lowering above hoisted into a local came after the definition's scope
         // teardown, so the late teardown run gives it its destroys.
+        // A parameter written `x: T` that this instance makes an entity is the routine's to tear down unless it
+        // keeps it: the definition's teardown could not see that.
+        new ScopeTeardownLoweringPass(ctx: postCtx).RunOnGenericEntityParameters(bodies: freshBodies);
         new ScopeTeardownLoweringPass(ctx: postCtx).RunLateOnInstantiatedGenericBodies(bodies: freshBodies);
         new TemporaryTeardownPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
     }
