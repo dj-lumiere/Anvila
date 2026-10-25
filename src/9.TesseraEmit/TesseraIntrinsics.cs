@@ -142,12 +142,12 @@ internal sealed class TesseraIntrinsics
             "byte_offset" => $"{Argument(index: 0)}.to[@Byte]().offset(bytes: {Argument(index: 1)}).to[Addr]()",
             "atomic_load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_unbroken()",
             "atomic_store" => Unbroken(method: "poke_unbroken"),
-            "atomic_add" => Unbroken(method: "unbroken_fetch_add"),
-            "atomic_sub" => Unbroken(method: "unbroken_fetch_sub"),
-            "atomic_and" => Unbroken(method: "unbroken_fetch_and"),
-            "atomic_or" => Unbroken(method: "unbroken_fetch_or"),
-            "atomic_xor" => Unbroken(method: "unbroken_fetch_xor"),
-            "atomic_exchange" => Unbroken(method: "unbroken_swap"),
+            "atomic_add" => Unbroken(method: "fetch_add_unbroken"),
+            "atomic_sub" => Unbroken(method: "fetch_sub_unbroken"),
+            "atomic_and" => Unbroken(method: "fetch_and_unbroken"),
+            "atomic_or" => Unbroken(method: "fetch_or_unbroken"),
+            "atomic_xor" => Unbroken(method: "fetch_xor_unbroken"),
+            "atomic_exchange" => Unbroken(method: "swap_unbroken"),
             "atomic_compare_and_exchange" => CompareExchange(),
             "load_element_ref" =>
                 $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().stride({Index(index: 1)}).peek()",
@@ -233,7 +233,7 @@ internal sealed class TesseraIntrinsics
         string type = Type(index: 1);
         string previous = _spill(arg1: Argument(index: 1), arg2: _arguments[index: 1].Type);
         _emit(obj: $"{previous}_swapped: Bool = {Argument(index: 0)}.to[@{type}]()" +
-                   $".unbroken_compare_exchange_raw(expected: {Argument(index: 1)}, new: {Argument(index: 2)}, previous: {previous})");
+                   $".compare_exchange_unbroken_raw(expected: {Argument(index: 1)}, new: {Argument(index: 2)}, previous: {previous})");
         _emit(obj: $"{previous}_held: {type} = {previous}.peek()");
         return $"{_typeText(arg: _resultType)}(item0: {previous}_held, item1: {previous}_swapped)";
     }
