@@ -508,9 +508,11 @@ internal sealed class SignatureResolver
         {
             string carrierName = GetCarrierBaseName(type: returnType)!;
             _sa.ReportError(code: SemanticDiagnosticCode.ErrorHandlingTypeAsReturnType,
-                message: $"Routine cannot return '{carrierName}[T]'. " +
-                         "These types are builder-generated for failable routines. " +
-                         "Use a failable routine (!) with 'throw' instead.",
+                message: $"'{routine.Name}' returns '{carrierName}[T]', which only 'try' and 'check' make at a call. " +
+                         "Return the value itself and declare the routine failable ('failable routine " +
+                         $"{routine.Name}(...)'), with 'throw' or 'absent' where it fails: a caller then writes " +
+                         $"'{(carrierName == "Check" ? "check" : "try")} {routine.Name}(...)' to get the " +
+                         $"'{carrierName}'.",
                 location: routine.ReturnType?.Location ?? routine.Location);
         }
     }

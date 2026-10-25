@@ -154,9 +154,10 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
             } => (
                 registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [inner]),
                 true, true),
-            // Already a Roamed[E] (e.g. an annotation that spelled the wrapper directly) — non-null slot.
+            // Already a Roamed[E]: the type resolver collapses a written `E?` (`Maybe[E]`) into the handle
+            // itself, so the written type says whether the slot may be empty. Any other spelling is non-null.
             RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed } => (
-                annotated, false, true),
+                annotated, typeExpr is { Name: "Maybe" }, true),
             _ => (annotated, false, false)
         };
     }

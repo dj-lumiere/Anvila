@@ -614,6 +614,10 @@ public sealed partial class SemanticVerifier
                     argument: argExpr,
                     receiver: callObjectType) ?? paramType);
             TakeDangerousCallableArgument(routine: routine, paramType: paramType, argument: argExpr);
+            if (paramType is RoutineTypeSymbol)
+            {
+                NoteCallableArgument(callee: routine, parameter: param.Name, argument: argExpr);
+            }
 
             if ((ImplicitTokenArgument(argExpr: argExpr, argType: argType, paramType: paramType) ??
                  ImplicitCStringView(argExpr: argExpr, argType: argType, paramType: paramType)) is { } viewed)
@@ -667,7 +671,7 @@ public sealed partial class SemanticVerifier
                 {
                     ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                         message:
-                        $"Argument '{param.Name}' of '{routine.Name}': cannot convert '{argType.Name}' to '{paramType.Name}'.",
+                        $"Argument '{param.Name}' of '{routine.Name}': cannot convert '{argType.ShortTypeName}' to '{paramType.ShortTypeName}'.",
                         location: argExpr.Location);
                 }
             }

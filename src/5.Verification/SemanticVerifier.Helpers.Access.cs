@@ -429,9 +429,20 @@ public sealed partial class SemanticVerifier
             : $"this {type.ShortTypeName} argument";
         if (type is RoutineTypeSymbol)
         {
-            return OneThreadCapture(value: value) is { } captured
-                ? $"{what}, a lambda that captured {captured}"
-                : null;
+            if (OneThreadCapture(value: value) is { } captured)
+            {
+                return $"{what}, a lambda that captured {captured}";
+            }
+
+            // A routine value this routine was handed: its captures show only where it is made, so the parameter is
+            // noted, and the calls that hand it a lambda are checked after analysis (CheckWorkBoundCallables).
+            if (value is IdentifierExpression handed && _currentRoutine is { } current &&
+                _registry.LookupVariable(name: handed.Name) is { IsParameter: true })
+            {
+                _workBoundCallables.Add(item: (current, handed.Name));
+            }
+
+            return null;
         }
 
         bool isEntity = type is EntityTypeSymbol;
@@ -498,6 +509,80 @@ public sealed partial class SemanticVerifier
             default:
                 return null;
         }
+    }
+
+    /// <summary>The routine-value parameters a routine hands to a <c>to[Work]</c> conversion, directly or through
+    /// another routine's such parameter (see <see cref="CheckWorkBoundCallables"/>).</summary>
+    private readonly HashSet<(RoutineInfo Routine, string Parameter)> _workBoundCallables = [];
+
+    /// <summary>A routine-value parameter handed on as the argument of another routine's routine-value parameter.</summary>
+    private readonly List<(RoutineInfo Caller, string Parameter, RoutineInfo Callee, string CalleeParameter)>
+        _forwardedCallables = [];
+
+    /// <summary>A lambda that captured a part only one thread may use, handed to a routine-value parameter.</summary>
+    private readonly List<(RoutineInfo Callee, string Parameter, string Captured, SourceLocation Location)>
+        _oneThreadCallableArguments = [];
+
+    /// <summary>Notes what <see cref="CheckWorkBoundCallables"/> needs about a routine value handed to the
+    /// parameter <paramref name="parameter"/> of <paramref name="callee"/>.</summary>
+    private void NoteCallableArgument(RoutineInfo callee, string parameter, Expression argument)
+    {
+        if (!ChecksOwnershipHere)
+        {
+            return;
+        }
+
+        if (OneThreadCapture(value: argument) is { } captured)
+        {
+            _oneThreadCallableArguments.Add(item: (callee, parameter, captured, argument.Location));
+        }
+        else if (argument is IdentifierExpression handed && _currentRoutine is { } current &&
+                 _registry.LookupVariable(name: handed.Name) is { IsParameter: true })
+        {
+            _forwardedCallables.Add(item: (current, handed.Name, callee, parameter));
+        }
+    }
+
+    /// <summary>
+    /// A lambda that captured a token or a single-thread handle (a <c>Retained</c>) can't be handed to a routine that
+    /// hands that routine value to a Work: the work may run on another thread, and every call of the lambda counts the
+    /// captured handle there without atomics (RF-S632). The routine values a routine hands to Work, directly or through
+    /// another routine, are known once every body is analyzed.
+    /// </summary>
+    private void CheckWorkBoundCallables()
+    {
+        bool grew = true;
+        while (grew)
+        {
+            grew = false;
+            foreach ((RoutineInfo caller, string parameter, RoutineInfo callee, string calleeParameter) in
+                     _forwardedCallables)
+            {
+                if (_workBoundCallables.Contains(item: (callee, calleeParameter)) &&
+                    _workBoundCallables.Add(item: (caller, parameter)))
+                {
+                    grew = true;
+                }
+            }
+        }
+
+        foreach ((RoutineInfo callee, string parameter, string captured, SourceLocation location) in
+                 _oneThreadCallableArguments)
+        {
+            if (_workBoundCallables.Contains(item: (callee, parameter)))
+            {
+                ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
+                    message: $"You hand '{callee.Name}' a lambda that captured {captured}, and '{callee.Name}' hands " +
+                             $"its '{parameter}' to a Work, which may run it on another thread. Only the thread that " +
+                             "made the lambda may use what it captured: capture a Guarded, an Unbroken or a copied " +
+                             "value instead, or call the lambda on this thread.",
+                    location: location);
+            }
+        }
+
+        _workBoundCallables.Clear();
+        _forwardedCallables.Clear();
+        _oneThreadCallableArguments.Clear();
     }
 
     /// <summary>Notes a variable bound to a lambda that captured a part only one thread may use, so handing the

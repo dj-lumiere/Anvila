@@ -745,6 +745,7 @@ public sealed partial class SemanticVerifier
             (_shapeEffects ??= new ShapeEffectChecker(report: ReportError, reportedCalls: _lockTokenDuplicateCalls))
                 .Check(programs: list);
             new WorkOneThreadChecker(report: ReportError).Check(programs: list);
+            CheckWorkBoundCallables();
             new GuardAccessArgumentChecker(report: ReportError).Check(programs: list);
             new WorkCollectedChecker(warn: ReportWarning).Check(programs: list);
             new MemberKindGateChecker(registry: _registry, report: ReportError).Check(programs: list);
