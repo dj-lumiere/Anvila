@@ -59,7 +59,7 @@ internal sealed class RfStubWriter
         "ReenterDuringAccessError",
         "ListEmitter", "RotatableListEmitter", "SplitListEmitter",
         "SplitArrayEmitter", "BTreeDictNode", "BTreeListNode", "BTreeSetNode", "WordQuoRem", "KStep", "UDR256",
-        "DD", "FloatDigits", "FloatParsed", "ComplexTextParts",
+        "DD", "FloatDigits", "FloatParsed",
         "IntegerLimbView", "IntV",
         // Suflae has its own lists and no structure-of-arrays layouts.
         "SplitList", "SplitArray", "RotatableList"
