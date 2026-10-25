@@ -6,8 +6,12 @@ namespace Builder.Execution;
 internal partial class Program
 {
     /// <summary>The old <c>pierce</c> statement: <c>pierce</c> at the start of a line, or after a <c>when</c> arm's
-    /// <c>=&gt;</c>, followed by the error.</summary>
-    private static readonly Regex PierceStatement = new(pattern: @"(?m)(?<=^[ \t]*|=>[ \t]*)pierce(?=[ \t]+\S)",
+    /// <c>=&gt;</c>, followed by the error's name. <c>pierce</c> is an ordinary name now, so a line that uses it as
+    /// one (<c>pierce = 3</c>, <c>pierce.run()</c>, <c>pierce and ready</c>) is left alone: only a name right after
+    /// it, which no expression allows, is the old statement.</summary>
+    private static readonly Regex PierceStatement = new(
+        pattern: @"(?m)(?<=^[ \t]*|=>[ \t]*)\bpierce(?=[ \t]+(?!(?:and|or|not|is|isnot|in|to|til|by|as|if|then|else|" +
+                 @"has|lacks|follows|obeys)\b)[A-Za-z_])",
         options: RegexOptions.Compiled);
 
     /// <summary>A routine header line: its indentation, and <c>failable</c> when the routine is declared so.</summary>

@@ -1321,51 +1321,11 @@ public partial class Parser
         return true;
     }
 
-    /// <summary>Whether the line is the old <c>pierce X</c>: the name <c>pierce</c> followed on its line by the
-    /// error.</summary>
-    private bool AtWrittenPierce()
-    {
-        if (CurrentToken is not { Type: TokenType.Identifier, Text: "pierce" })
-        {
-            return false;
-        }
-
-        Token next = PeekToken(offset: 1);
-        return next.Line == CurrentToken.Line && next.Type == TokenType.Identifier;
-    }
-
-    /// <summary>Takes the old <c>pierce X</c> as a <c>throw X</c> after RF-G227, so the rest of the file is still
-    /// checked. The quick fix writes <c>throw</c> only in a routine that is not failable, where it means the
-    /// same.</summary>
-    private ThrowStatement ParseWrittenPierce()
-    {
-        Token word = CurrentToken;
-        SuggestedFix? fix = _routineBeingParsedIsFailable
-            ? null
-            : new SuggestedFix(Title: "Write 'throw'",
-                Edits: [new TextEdit(StartLine: word.Line, StartColumn: word.Column, EndLine: word.Line,
-                    EndColumn: word.Column + word.Text.Length, NewText: "throw")]);
-        RecordError(ex: ThrowParseError(code: GrammarDiagnosticCode.PierceStatement,
-            message: _routineBeingParsedIsFailable
-                ? "`pierce` is not a keyword. You are in a failable routine, where a `throw` goes to the caller: to " +
-                  "crash here, throw from a routine that is not failable, where a `throw` crashes where it stands."
-                : "`pierce` is not a keyword: a `throw` in a routine that is not failable crashes where it stands, " +
-                  "so write `throw`. `migrate --step pierce` rewrites these lines.",
-            fix: fix));
-        Advance();
-        return ParseThrowStatement();
-    }
-
     private Statement? ParseKeywordStatement()
     {
         if (AtWhileLoop())
         {
             return ParseWrittenWhile();
-        }
-
-        if (AtWrittenPierce())
-        {
-            return ParseWrittenPierce();
         }
 
         if (AcceptNothing())
