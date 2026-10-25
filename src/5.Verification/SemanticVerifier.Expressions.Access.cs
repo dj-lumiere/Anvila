@@ -700,8 +700,8 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                 message:
-                $"You index '{lookupType.Name}' with {Article.For(name: indexType.Name)} '{indexType.Name}', but its 'getitem' takes a " +
-                $"'{indexExpectedType.Name}'. Convert the index to '{indexExpectedType.Name}'.",
+                $"You index '{lookupType.ShortTypeName}' with {Article.For(name: indexType.ShortTypeName)} '{indexType.ShortTypeName}', but its 'getitem' takes a " +
+                $"'{indexExpectedType.ShortTypeName}'. Convert the index to '{indexExpectedType.ShortTypeName}'.",
                 location: index.Index.Location);
         }
 
@@ -1687,7 +1687,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                     message:
-                    $"Argument '{argName}' of '{type.Name}': cannot convert '{argType.Name}' to '{expected.Name}'.",
+                    $"Argument '{argName}' of '{type.ShortTypeName}': cannot convert '{argType.ShortTypeName}' to '{expected.ShortTypeName}'.",
                     location: val.Location);
             }
         }

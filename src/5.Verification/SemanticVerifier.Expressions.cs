@@ -1200,7 +1200,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                     message: $"The fallback after '??' gives no value, but it stands in for a value of type " +
-                             $"'{valueType.Name}'. Give a value of that type, or end the program with `stop()` or " +
+                             $"'{valueType.ShortTypeName}'. Give a value of that type, or end the program with `stop()` or " +
                              "`breach()`.",
                     location: binary.Right.Location);
             }
@@ -1220,8 +1220,8 @@ public sealed partial class SemanticVerifier
         if (!IsAssignableTo(source: rightType, target: valueType))
         {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-                message: $"The fallback after '??' has type '{rightType.Name}', but it stands in for a value of " +
-                         $"type '{valueType.Name}'. Give a value of that type.",
+                message: $"The fallback after '??' has type '{rightType.ShortTypeName}', but it stands in for a value of " +
+                         $"type '{valueType.ShortTypeName}'. Give a value of that type.",
                 location: binary.Right.Location);
         }
     }
@@ -1389,7 +1389,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                 message:
-                $"Operator '{binary.Operator.ToStringRepresentation()}': cannot convert '{rightType.Name}' to '{paramType.Name}'.",
+                $"Operator '{binary.Operator.ToStringRepresentation()}': cannot convert '{rightType.ShortTypeName}' to '{paramType.ShortTypeName}'.",
                 location: binary.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -2401,7 +2401,7 @@ public sealed partial class SemanticVerifier
         }
 
         ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-            message: $"Operator '{opSymbol}': cannot convert '{valueType.Name}' to '{targetType.Name}'.",
+            message: $"Operator '{opSymbol}': cannot convert '{valueType.ShortTypeName}' to '{targetType.ShortTypeName}'.",
             location: compound.Location);
         return true;
     }
