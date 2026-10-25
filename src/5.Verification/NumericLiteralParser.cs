@@ -103,16 +103,17 @@ public static partial class NumericLiteralParser
 
     #region Managed BID encoders (software decimal, replacing the decNumber/DPD FFI)
 
-    // D128B uses a SINGLE-form BID layout: bit127 = sign, bits126..113 = biased exponent
+    // D128 uses a SINGLE-form BID layout: bit127 = sign, bits126..113 = biased exponent
     // (q + 6176, 14 bits), bits112..0 = the coefficient as a PLAIN binary integer. This works
     // because Pmax=34 and 10^34 < 2^113, so the whole coefficient always fits the trailing field
-    // with no combination "Form 2" — matching System.D128B.decode(). Specials use the combination
+    // with no combination "Form 2", as Ingrid's decimal engine reads it (dec_from128 in
+    // Ingrid/tessera/decimal/dec_core.te). Specials use the combination
     // prefix (top5 = 0x1E Inf, 0x1F NaN), which the finite biased range (<= 12287) never reaches.
     // Overflow rounds to ±Inf, underflow flushes toward ±0; rounding is round-half-to-even (RNE).
     //
-    // NOTE: D64B (Pmax16, 10^16 > 2^53) and D32B (Pmax7, 10^7 > 2^23) need the full TWO-form IEEE
-    // BID (large coefficients spill into the combination field). Their encoders are deferred until
-    // their engine decode() is read so the field split can be matched bit-exactly — see Phase C.
+    // D64 (Pmax16, 10^16 > 2^53) and D32 (Pmax7, 10^7 > 2^23) need the full TWO-form IEEE BID (large
+    // coefficients spill into the combination field), encoded below as the engine's Dec.to64 and
+    // Dec.to32 write it.
 
     /// <summary>Decoded decimal-literal fields: value = (-1)^sign * coeff * 10^exp10.</summary>
     private readonly record struct DecimalLiteralParts(bool Sign, BigInteger Coeff, int Exp10);
@@ -418,7 +419,7 @@ public static partial class NumericLiteralParser
 
     /// <summary>
     /// Encodes a decimal literal into a software decimal64 (System.D64) two-form BID bit pattern.
-    /// Matches System.D64B.decode()/d64b_of_parts: Form 1 (coeff &lt; 2^53) packs the coefficient in
+    /// Matches Ingrid's Dec.to64 / dec_from64: Form 1 (coeff &lt; 2^53) packs the coefficient in
     /// bits 52:0 with the biased exponent in bits 62:53; Form 2 (larger coeff) sets bits 62:61=11,
     /// the exponent in bits 60:51, and the low 51 coefficient bits (the implicit 2^53 is restored on
     /// decode). bias 398, Pmax 16. inf/NaN use the combination prefix at bits 62:58.
@@ -456,7 +457,7 @@ public static partial class NumericLiteralParser
 
     /// <summary>
     /// Encodes a decimal literal into a software decimal32 (System.D32) two-form BID bit pattern.
-    /// Matches System.D32B.decode()/d32b_of_parts: Form 1 (coeff &lt; 2^23) packs the coefficient in
+    /// Matches Ingrid's Dec.to32 / dec_from32: Form 1 (coeff &lt; 2^23) packs the coefficient in
     /// bits 22:0 with the biased exponent in bits 30:23; Form 2 sets bits 30:29=11, the exponent in
     /// bits 28:21, and the low 21 coefficient bits (implicit 2^23 restored on decode). bias 101,
     /// Pmax 7. inf/NaN use the combination prefix at bits 30:26.
