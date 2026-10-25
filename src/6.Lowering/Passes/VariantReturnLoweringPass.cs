@@ -63,7 +63,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
         return new ReturnStatement(Value: new CreatorExpression(TypeName: carrier.Name,
                 TypeArguments: null,
                 MemberVariables: [(arm, payload!)],
-                Location: loc) { ResolvedType = carrier },
+                Location: loc) { ResolvedType = carrier, ConstructedType = carrier },
             Location: loc);
     }
 
@@ -173,7 +173,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             Value: new CreatorExpression(TypeName: maybe.Name,
                 TypeArguments: null,
                 MemberVariables: members,
-                Location: vr.Location) { ResolvedType = maybe },
+                Location: vr.Location) { ResolvedType = maybe, ConstructedType = maybe },
             Location: vr.Location);
     }
 
