@@ -96,6 +96,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "AtomicType" => "UnbrokenType",
             "CircularList" => "RotatableList",
             "CircularListEmittable" => "RotatableListEmitter",
+            "MemoryAllocationError" => "OutOfMemoryError",
             _ => null
         };
         return renamed == null ? null : $" It is called '{renamed}' now (migrate --step type-names rewrites it).";

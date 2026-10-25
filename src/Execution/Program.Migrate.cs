@@ -129,8 +129,8 @@ internal partial class Program
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteWork);
         }
 
-        // `--step type-names`: `Atomic` is `Unbroken` (and `AtomicType` is `UnbrokenType`), and `CircularList` is
-        // `RotatableList`.
+        // `--step type-names`: `Atomic` is `Unbroken` (and `AtomicType` is `UnbrokenType`), `CircularList` is
+        // `RotatableList`, and `MemoryAllocationError` is `OutOfMemoryError`.
         if (step == "type-names")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteTypeNames);
@@ -1008,7 +1008,7 @@ internal partial class Program
                 continue;
             }
 
-            // `Atomic` is `Unbroken` and `CircularList` is `RotatableList` (the same renames as `--step type-names`).
+            // A renamed type takes its new name (`Atomic` is `Unbroken`, the same renames as `--step type-names`).
             if (RenamedTypeNames.TryGetValue(key: token.Text, value: out string? newTypeName))
             {
                 edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length,
