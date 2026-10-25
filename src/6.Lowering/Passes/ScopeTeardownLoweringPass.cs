@@ -126,6 +126,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// </summary>
     public void RunOnGenericEntityParameters(Dictionary<string, Instantiation.MonomorphizedBody> bodies)
     {
+        // A build whose language shares entities holds every entity as a handle, the library's instances included.
+        if (ctx.Registry.CompilationRules.EntitiesAreShared)
+        {
+            return;
+        }
+
         _late = true;
         _parametersOnly = true;
         try
@@ -222,7 +228,16 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 continue;
             }
 
-            _keepingUses[key: p.Name] = KeepingUses(body: r.Body, name: p.Name);
+            HashSet<IdentifierExpression> keeping = KeepingUses(body: r.Body, name: p.Name);
+            // A library routine that never keeps the parameter reads it in place (`nested_repr` showing a
+            // container's element): the library hands it elements the container still holds.
+            if (keeping.Count == 0 &&
+                ctx.Registry.IsStandardLibraryFile(filePath: r.Location.FileName ?? ""))
+            {
+                continue;
+            }
+
+            _keepingUses[key: p.Name] = keeping;
             held.Add(item: new Owned(Name: p.Name, Type: entity, Destroy: destroy));
         }
 
@@ -1384,6 +1399,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     {
         _refillable.Clear();
         if (_late || r.EverStolenVariableNames is not { Count: > 0 } everStolen ||
+            ctx.Registry.CompilationRules.EntitiesAreShared ||
             ctx.Registry.EntitiesAreSharedIn(filePath: r.Location.FileName))
         {
             return;
