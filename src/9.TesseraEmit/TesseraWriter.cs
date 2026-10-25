@@ -227,7 +227,7 @@ internal sealed class TesseraWriter
         module.Append(value: library.Header);
         if (_textBytes != null)
         {
-            module.Append(value: "import Standard/Collections\nimport Standard/Hosted\n\n");
+            module.Append(value: "import Collections\nimport Hosted\n\n");
         }
 
         module.Append(value: _records);
@@ -1203,7 +1203,7 @@ internal sealed class TesseraWriter
                // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
                $"    c_rf_access_configure({AccessCheckArguments()}, .hollow())\n" +
                $"    {RoutineName(routine: start)}()\n" +
-               "    Standard/Hosted/set_exit_code(c_rf_exit_code())\n" +
+               "    Hosted/set_exit_code(c_rf_exit_code())\n" +
                "    return\n";
     }
 }
