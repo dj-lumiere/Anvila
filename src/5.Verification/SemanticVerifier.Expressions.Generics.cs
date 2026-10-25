@@ -1018,6 +1018,7 @@ public sealed partial class SemanticVerifier
         {
             CheckCreatorArgumentNames(arguments: generic.Arguments, creator: creator, type: resolvedType);
             generic.ResolvedRoutine = creator;
+            TrackFailableConstructorCall(creator: creator, typeName: resolvedType.Name, location: generic.Location);
             ValidateExclusiveTokenUniqueness(arguments: generic.Arguments,
                 location: generic.Location);
             // Prefer the concrete resolvedType over the creator's return type when that type is still

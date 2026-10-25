@@ -453,6 +453,30 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static Expression AsPlainCall(Expression expr)
     {
+        // A construction by named arguments bound to a written creator (`List[S64](capacity: n)`) is the call of
+        // that creator, as ConstructionLoweringPass makes it later.
+        if (expr is CreatorExpression { ResolvedCreatorRoutine: { } bound } written)
+        {
+            return new CallExpression(
+                Callee: new IdentifierExpression(Name: written.TypeName, Location: written.Location)
+                {
+                    ResolvedRoutine = bound
+                },
+                Arguments: written.MemberVariables
+                                  .Select(selector: mv => (Expression)new NamedArgumentExpression(Name: mv.Name,
+                                       Value: mv.Value,
+                                       Location: mv.Value.Location) { ResolvedType = mv.Value.ResolvedType })
+                                  .ToList(),
+                Location: written.Location)
+            {
+                ResolvedRoutine = bound,
+                ResolvedType = written.ResolvedType,
+                ConstructedType = written.ConstructedType,
+                LoweringKind = written.LoweringKind,
+                TypeArguments = written.TypeArguments
+            };
+        }
+
         // A construction with explicit type arguments (`List[S64](from: v)`) is the same creator call a
         // construction without them is (`Integer(text: t)`): the type it builds, called with its arguments.
         if (expr is GenericMemberRoutineCallExpression
@@ -580,6 +604,16 @@ public sealed partial class SemanticVerifier
             }
 
             return HoistFailable(call: call);
+        }
+
+        /// <summary>A construction bound to a failable creator is a failable call, hoisted as one.</summary>
+        protected override Expression VisitCreator(CreatorExpression e)
+        {
+            Expression rewritten = base.VisitCreator(e: e);
+            return rewritten is CreatorExpression { ResolvedCreatorRoutine: { } bound } creator &&
+                   (bound.IsFailable || bound.HasThrow) && AsPlainCall(expr: creator) is CallExpression call
+                ? HoistFailable(call: call)
+                : rewritten;
         }
 
         /// <summary>

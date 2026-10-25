@@ -1,6 +1,7 @@
 using Builder.Desugaring;
 using Builder.Lowering.Passes;
 using Builder.Declaration;
+using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -59,7 +60,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// </summary>
     private static TypeSymbol? CarrierHere(CallExpression call, RoutineInfo variant, TypeRegistry registry)
     {
-        if (variant.ReturnType is { TypeArguments: [_] } carrierType &&
+        if (variant.ReturnType is { TypeArguments: [var held] } carrierType &&
             call.ResolvedType is { IsNone: false } payload and not ErrorTypeSymbol &&
             carrierType switch
             {
@@ -68,6 +69,15 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 _ => null
             } is { } carrierDef)
         {
+            // A Suflae entity a routine gives back is its shared handle (`Roamed[E]`), while a construction is typed
+            // as the entity itself: the variant's carrier holds the handle, and so does the value here.
+            if (!ReferenceEquals(objA: held, objB: payload) &&
+                Builder.Verification.SemanticVerifier.Unroamed(type: held) is { } unroamed &&
+                !ReferenceEquals(objA: unroamed, objB: held) && unroamed.FullName == payload.FullName)
+            {
+                payload = held;
+            }
+
             return registry.GetOrCreateResolution(genericDef: carrierDef, typeArguments: [payload]);
         }
 
@@ -1924,15 +1934,22 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         // the arm binds the payload as read, and `var x = <payload>` is an ordinary initialization the copy pass
         // gives a share (as the try propagation's `var x = __rf_prop.value`). Binding `x` straight to the payload
         // left a value the carrier freed under a returned or consumed `x`.
-        string? payloadName = bindName != null
-            ? $"__rc_ok_{Interlocked.Increment(location: ref _propTemp)}"
-            : null;
         // The payload moves out: the binding takes it with `steal` and the carrier forgets it (its tag cleared, as
         // the error arm does), so only the binding tears it down. That is right for a value and for an entity alike,
-        // and a `T` that may be either needs no choice. A token holds nothing to move.
+        // and a `T` that may be either needs no choice. A token holds nothing to move. A call that gives back
+        // `None` has no payload to bind: its name is bound to `none` itself.
         TypeSymbol? payloadType = subjType?.TypeArguments is [{ } held] ? held : null;
-        bool movesOut = payloadType != null && !IsAccessToken(type: payloadType);
-        Expression payloadRef = new IdentifierExpression(Name: payloadName ?? "", Location: loc) { ResolvedType = payloadType };
+        bool nonePayload = payloadType is { IsNone: true };
+        string? payloadName = bindName != null && !nonePayload
+            ? $"__rc_ok_{Interlocked.Increment(location: ref _propTemp)}"
+            : null;
+        bool movesOut = payloadType != null && !nonePayload && !IsAccessToken(type: payloadType);
+        Expression payloadRef = nonePayload
+            ? new LiteralExpression(Value: null!, LiteralType: TokenType.NoneValue, Location: loc)
+            {
+                ResolvedType = payloadType
+            }
+            : new IdentifierExpression(Name: payloadName ?? "", Location: loc) { ResolvedType = payloadType };
         List<Statement> body = bindName == null
             ? remainder
             :
