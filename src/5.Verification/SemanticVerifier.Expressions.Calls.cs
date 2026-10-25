@@ -3200,7 +3200,12 @@ public sealed partial class SemanticVerifier
                 receiver: member.Object, location: call.Location, isCall: true);
         }
 
+        // The wrapper's own routines (a Guarded's `destruct`, `share`) act on the handle, not on the value inside,
+        // so a same-named routine of the inner type is no reason to stop them.
+        bool isWrapperOwnRoutine = memberRoutine.WrapperForwarderInnerMemberRoutine == null &&
+                                   memberRoutine.OwnerType is { } owner && owner.BareName == dispatchType.BareName;
         if (_registry.CompilationRules.ChecksReadonly && !_isInCompilerGeneratedBody && !call.IsSynthesizedLowering &&
+            !isWrapperOwnRoutine &&
             Wrappers.IsReadOnlyWrapper(type: dispatchType) && !memberRoutine.IsReadOnly &&
             Wrappers.GetWrapperInnerType(wrapperType: dispatchType) is { } inner &&
             _registry.LookupMemberRoutine(type: inner, memberRoutineName: memberRoutine.Name,
