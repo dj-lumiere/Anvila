@@ -26,7 +26,7 @@ internal partial class Program
             [key: "log1p"] = "ln_1p", [key: "log2p1"] = "log2_1p", [key: "log10p1"] = "log10_1p",
             [key: "sinpi"] = "sin_pi", [key: "cospi"] = "cos_pi", [key: "tanpi"] = "tan_pi",
             [key: "asinpi"] = "asin_pi", [key: "acospi"] = "acos_pi", [key: "atanpi"] = "atan_pi",
-            [key: "atan2pi"] = "atan2_pi", [key: "rsqrt"] = "recip_sqrt", [key: "sincos"] = "sin_cos",
+            [key: "atan2pi"] = "atan2_pi", [key: "sincos"] = "sin_cos",
             [key: "lgamma"] = "ln_gamma", [key: "tgamma"] = "gamma",
             [key: "fma"] = "mul_add", [key: "fmod"] = "mod_trunc", [key: "remainder"] = "rem",
             [key: "fmax"] = "max", [key: "fmin"] = "min", [key: "frac"] = "fract",
