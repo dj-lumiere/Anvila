@@ -26,12 +26,24 @@ internal static class TraceFrames
     /// <c>@inline</c> (an implementation detail that adds no navigable frame) or <c>@untraced</c> (a frame that is
     /// noise in a trace, like System's crash_report), that can crash. A recovery variant's frame is what the trace a
     /// caught error keeps shows of the routines between its throw and the catcher.
+    /// A standard library routine pushes none: the trace shows the program's routines, and the program's frame says
+    /// where it called into the library (its line and column point at the call). `[debug] trace-stdlib = true`
+    /// keeps the library's frames too, for work on the library itself.
     /// </summary>
-    public static bool Pushes(RoutineInfo routine, CrashReachability? reachability)
+    public static bool Pushes(RoutineInfo routine, CrashReachability? reachability, TypeRegistry registry)
     {
         return (!routine.IsSynthesized || routine.IsRecoveryVariant || routine.TraceName != null) &&
                !routine.Annotations.Contains(value: "inline") &&
-               !routine.Annotations.Contains(value: "untraced") && reachability?.CanCrash(routine: routine) != false;
+               !routine.Annotations.Contains(value: "untraced") && reachability?.CanCrash(routine: routine) != false &&
+               (Diagnostics.DiagnosticFlags.TraceStdlib || !IsLibrary(routine: routine, registry: registry));
+    }
+
+    /// <summary>Whether <paramref name="routine"/> (or the generic routine it was made from) is declared in the
+    /// standard library.</summary>
+    private static bool IsLibrary(RoutineInfo routine, TypeRegistry registry)
+    {
+        RoutineInfo definition = routine.GenericDefinition ?? routine;
+        return registry.IsStandardLibraryFile(filePath: definition.Location?.FileName);
     }
 
     /// <summary>The name a frame shows: the routine with its failability and parameter types. A recovery variant
@@ -92,7 +104,9 @@ internal static class TraceFrames
 }
 
 /// <summary>
-/// Where entities are shared (Suflae), which standard library routines push a frame: the ones a program can name. A
+/// With <c>[debug] trace-stdlib = true</c> (the only build where library routines push frames, see
+/// <see cref="TraceFrames.Pushes"/>), where entities are shared (Suflae), which standard library routines push a
+/// frame: the ones a program can name. A
 /// routine of Suflae's library is one when neither it nor its type is <c>secret</c>, and a routine of RazorForge's
 /// library when an open <c>@rf</c> declaration binds it and its type. The library's own helpers push none, so a crash
 /// trace shows the program's routines and the library routines it called, never what those called inside the library.

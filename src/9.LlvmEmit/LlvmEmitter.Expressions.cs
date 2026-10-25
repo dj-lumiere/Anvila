@@ -284,7 +284,7 @@ public partial class LlvmEmitter
             return;
         }
 
-        EmitLine(sb: sb, line: $"  call void @_rf_trace_update_loc(i32 {line}, i32 {col})");
+        EmitLine(sb: sb, line: $"  call void @_rf_trace_update_loc(i64 {TraceSlotValue}, i32 {line}, i32 {col})");
     }
 
     /// <summary>

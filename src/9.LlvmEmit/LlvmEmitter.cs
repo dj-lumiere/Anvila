@@ -1114,10 +1114,12 @@ public partial class LlvmEmitter
         output.AppendLine(value: "@_rf_trace_depth = thread_local global i32 0");
 
         output.AppendLine();
-        // push helper — branchless: mask index to [0,31] with AND
+        // push helper — branchless: mask index to [0,31] with AND. It gives the frame's ring slot, which the
+        // routine keeps for its location updates: a frame stays at its slot for its whole life (a coroutine's trace
+        // moves to another thread at the same ring positions, see _rf_trace_exchange), so an update is two stores.
         output.AppendLine(
             value:
-            $"define private void @_rf_trace_push(ptr %r, ptr %f, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
+            $"define private i64 @_rf_trace_push(ptr %r, ptr %f, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
         output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
         output.AppendLine(value: "  %idx32 = and i32 %d, 31");
@@ -1143,7 +1145,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "  store i32 %col, ptr %p3");
         output.AppendLine(value: "  %nd = add i32 %d, 1");
         output.AppendLine(value: "  store i32 %nd, ptr @_rf_trace_depth");
-        output.AppendLine(value: RetVoidInstruction);
+        output.AppendLine(value: "  ret i64 %idx");
         output.AppendLine(value: "}");
         output.AppendLine();
         // pop helper — branchless: depth is always > 0 when pop is called (paired with push)
@@ -1155,31 +1157,22 @@ public partial class LlvmEmitter
         output.AppendLine(value: RetVoidInstruction);
         output.AppendLine(value: "}");
         output.AppendLine();
-        // update-loc helper — overwrites the line/col of the current (topmost) frame. Emitted before
-        // each call so the trace reflects the call's source line. Skip when depth == 0 (no frame yet).
+        // update-loc helper — overwrites the line/col of the routine's own frame, at the slot its push gave.
+        // Emitted before each call so the trace reflects the call's source line.
         output.AppendLine(
-            value: $"define private void @_rf_trace_update_loc(i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
+            value: $"define private void @_rf_trace_update_loc(i64 %slot, i32 %ln, i32 %col) alwaysinline {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
-        output.AppendLine(value: "  %d = load i32, ptr @_rf_trace_depth");
-        output.AppendLine(value: "  %has = icmp ugt i32 %d, 0");
-        output.AppendLine(value: "  br i1 %has, label %do_update, label %skip");
-        output.AppendLine(value: "do_update:");
-        output.AppendLine(value: "  %top = sub i32 %d, 1");
-        output.AppendLine(value: "  %top32 = and i32 %top, 31");
-        output.AppendLine(value: "  %top64 = zext i32 %top32 to i64");
         output.AppendLine(
             value:
-            "  %slot = getelementptr inbounds [32 x { ptr, ptr, i32, i32 }], ptr @_rf_trace_stack, i64 0, i64 %top64");
+            "  %frame = getelementptr inbounds [32 x { ptr, ptr, i32, i32 }], ptr @_rf_trace_stack, i64 0, i64 %slot");
         output.AppendLine(
             value:
-            "  %p2 = getelementptr inbounds { ptr, ptr, i32, i32 }, ptr %slot, i32 0, i32 2");
+            "  %p2 = getelementptr inbounds { ptr, ptr, i32, i32 }, ptr %frame, i32 0, i32 2");
         output.AppendLine(value: "  store i32 %ln, ptr %p2");
         output.AppendLine(
             value:
-            "  %p3 = getelementptr inbounds { ptr, ptr, i32, i32 }, ptr %slot, i32 0, i32 3");
+            "  %p3 = getelementptr inbounds { ptr, ptr, i32, i32 }, ptr %frame, i32 0, i32 3");
         output.AppendLine(value: "  store i32 %col, ptr %p3");
-        output.AppendLine(value: "  br label %skip");
-        output.AppendLine(value: "skip:");
         output.AppendLine(value: RetVoidInstruction);
         output.AppendLine(value: "}");
         output.AppendLine();
@@ -1212,9 +1205,9 @@ public partial class LlvmEmitter
     /// <summary>The shadow-stack helpers as (name, LLVM return type, parameter list, forwarded argument list).</summary>
     private static readonly (string Name, string Returns, string Parameters, string Arguments)[] ShadowStackHelpers =
     [
-        ("_rf_trace_push", "void", "ptr %r, ptr %f, i32 %ln, i32 %col", "ptr %r, ptr %f, i32 %ln, i32 %col"),
+        ("_rf_trace_push", "i64", "ptr %r, ptr %f, i32 %ln, i32 %col", "ptr %r, ptr %f, i32 %ln, i32 %col"),
         ("_rf_trace_pop", "void", "", ""),
-        ("_rf_trace_update_loc", "void", "i32 %ln, i32 %col", "i32 %ln, i32 %col"),
+        ("_rf_trace_update_loc", "void", "i64 %slot, i32 %ln, i32 %col", "i64 %slot, i32 %ln, i32 %col"),
         ("_rf_trace_get_depth", "i32", "", ""),
         ("_rf_trace_get_frames", "ptr", "", ""),
         ("_rf_trace_exchange", "void", "ptr %area", "ptr %area"),

@@ -45,6 +45,10 @@ public static class DiagnosticFlags
     /// <summary><c>[debug] access-order</c>: whether accesses taken in opposite orders stop the program.</summary>
     public static bool AccessOrder { get; set; }
 
+    /// <summary><c>[debug] trace-stdlib</c>: whether the standard library's routines keep frames on the crash trace
+    /// too, for work on the library itself.</summary>
+    public static bool TraceStdlib { get; set; }
+
     /// <summary>Clears every flag. Call at the start of each build (esp. each daemon request) so a prior
     /// request's flags never leak into the next.</summary>
     public static void Reset()
@@ -58,5 +62,6 @@ public static class DiagnosticFlags
         MaySuspendDump = null;
         DeadlockCheck = null;
         AccessOrder = false;
+        TraceStdlib = false;
     }
 }

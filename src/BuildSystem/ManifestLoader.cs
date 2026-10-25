@@ -243,6 +243,11 @@ public static class ManifestLoader
         {
             d.AccessOrder = ao is true;
         }
+
+        if (debugTable.TryGetValue(key: "trace-stdlib", value: out object? ts))
+        {
+            d.TraceStdlib = ts is true;
+        }
     }
 
     /// <summary>Resolves each external library dependency directory relative to the manifest,

@@ -898,6 +898,7 @@ internal partial class Program
         DiagnosticFlags.MaySuspendDump = manifest.Debug.MaySuspendDump;
         DiagnosticFlags.DeadlockCheck = manifest.Debug.DeadlockCheck;
         DiagnosticFlags.AccessOrder = manifest.Debug.AccessOrder;
+        DiagnosticFlags.TraceStdlib = manifest.Debug.TraceStdlib;
     }
 
     /// <summary>

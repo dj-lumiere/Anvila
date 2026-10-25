@@ -687,13 +687,18 @@ public partial class LlvmEmitter
     /// tracing one costs a push/pop plus a location update per call inside its loops, which made -O0
     /// limb kernels an order of magnitude slower than the straight-line code they replaced.
     /// </summary>
+    /// <summary>The LLVM value holding a traced routine's ring slot, from its <c>@_rf_trace_push</c>, for its
+    /// location updates.</summary>
+    private const string TraceSlotValue = "%trace.slot";
+
     private void EmitTracePush(StringBuilder sb, RoutineInfo routine)
     {
         _traceHidesPosition = false;
         // Where entities are shared, a library routine the program can't name (the library's own helper) pushes no
         // frame: the trace shows the library routine the program called, and where in the program it was called.
         _traceCurrentRoutine = ShouldEmitTrace &&
-                               Builder.Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability) &&
+                               Builder.Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability,
+                                   registry: _registry) &&
                                !(_registry.EntitiesAreShared &&
                                  (_libraryFrames ??= new Builder.Collection.LibraryFrames(registry: _registry))
                                 .Hides(routine: routine));
@@ -722,7 +727,7 @@ public partial class LlvmEmitter
         string fileCStr = EmitCStringConstant(value: fileName);
         EmitLine(sb: sb,
             line:
-            $"  call void @_rf_trace_push(ptr {routineCStr}, ptr {fileCStr}, i32 {line}, i32 {col})");
+            $"  {TraceSlotValue} = call i64 @_rf_trace_push(ptr {routineCStr}, ptr {fileCStr}, i32 {line}, i32 {col})");
     }
 
     /// <summary>

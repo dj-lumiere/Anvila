@@ -111,7 +111,8 @@ internal sealed class TesseraWriter
     /// builder wrote), not <c>@inline</c> or <c>@untraced</c>, that can crash.</summary>
     public bool TracesRoutine(RoutineInfo routine)
     {
-        return Traces && Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability);
+        return Traces && Collection.TraceFrames.Pushes(routine: routine, reachability: _crashReachability,
+            registry: _input.Registry);
     }
 
     /// <summary>The Tessera names of the routines the module defines.</summary>

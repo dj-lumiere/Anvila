@@ -172,6 +172,11 @@ public sealed class DebugOptions
     /// <summary>Whether two accesses taken in opposite orders stop the program before they can wait on each other
     /// (<c>access-order</c>). Off unless the manifest turns it on: it costs time on every access.</summary>
     public bool AccessOrder { get; set; }
+
+    /// <summary>Whether the standard library's routines keep frames on the crash trace too (<c>trace-stdlib</c>),
+    /// for work on the library itself. Off unless the manifest turns it on: a program's trace shows its own routines,
+    /// and where it called into the library.</summary>
+    public bool TraceStdlib { get; set; }
 }
 
 /// <summary>How a foreign C library is linked.</summary>
