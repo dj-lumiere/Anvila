@@ -94,7 +94,7 @@ internal static class TesseraTrace
         ### Notes the running thread's trace as a new failure's, in the entry its number picks, and gives the failure's
         ### number (never 0), which a caught error keeps so a report of it thrown again shows where it began.
         routine rf_failure_note() -> U64
-            previous: U64 = RF_FAILURE_COUNT.fetch_add_unbroken_relaxed(1)
+            previous: U64 = RF_FAILURE_COUNT.fetch_add_unbroken[RELAXED](1)
             seq: U64 = add[U64](previous, 1)
             entry: @RfFailure = RF_FAILURES.to[@RfFailure]().stride(band[U64](previous, 63))
             entry.seq.poke_unbroken(0)
