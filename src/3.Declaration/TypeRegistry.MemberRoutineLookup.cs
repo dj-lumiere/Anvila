@@ -2134,6 +2134,26 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// The instance of <paramref name="protocol"/> that <paramref name="owner"/> obeys, when a protocol's default
+    /// routine is made concrete for an implementer: the protocol's parameters are bound by that conformance, not by
+    /// the implementer's own parameters of the same name (`SelectEmittable[T, TResult, Me]` obeys
+    /// `Emittable[TResult]`, so the protocol's `T` is the implementer's `TResult`). Null when
+    /// <paramref name="protocol"/> is not a protocol or the owner is one itself.
+    /// </summary>
+    private TypeSymbol? ObeyedProtocolInstance(TypeSymbol owner, TypeSymbol? protocol)
+    {
+        if (protocol is not ProtocolTypeSymbol proto || owner is ProtocolTypeSymbol ||
+            owner is not (RecordTypeSymbol or EntityTypeSymbol))
+        {
+            return null;
+        }
+
+        TypeSymbol definition = proto.GenericDefinition ?? proto;
+        return ObeyedProtocols(type: owner)?.FirstOrDefault(predicate: p =>
+            p is ProtocolTypeSymbol obeyed && ReferenceEquals(objA: obeyed.GenericDefinition ?? obeyed, objB: definition));
+    }
+
+    /// <summary>
     /// The recovery variant of <paramref name="recovered"/> for <paramref name="kind"/> when it has already
     /// been generated (substituted for a concrete owner or instance as in <see cref="LookupRecoveryVariant"/>),
     /// without generating it.
@@ -2179,7 +2199,8 @@ public sealed partial class TypeRegistry
         // arguments (`T`), the same two steps the call itself took.
         RoutineInfo? substituted = recovered.OwnerType is { } owner &&
                                    !ReferenceEquals(objA: owner, objB: definitionVariant.OwnerType)
-            ? SubstituteMemberRoutineForOwner(memberRoutine: definitionVariant, resolvedOwner: owner)
+            ? SubstituteMemberRoutineForOwner(memberRoutine: definitionVariant, resolvedOwner: owner,
+                bindingOwner: ObeyedProtocolInstance(owner: owner, protocol: definitionVariant.OwnerType))
             : definitionVariant;
         // A specialization's bracket is not its arguments: one with parameters of its own (`to[Array[T, N]]`) binds
         // them by matching the bracket (`to[Array[S64, 3]]` sets `N` to 3).
@@ -2972,8 +2993,11 @@ public sealed partial class TypeRegistry
     /// Substitutes the owner type's generic type parameters into a memberRoutine's signature.
     /// For example, List[S32].add(item: T) -> List[S32].add(item: S32).
     /// </summary>
+    /// <param name="bindingOwner">The type whose type arguments bind the routine's owner parameters, when that is not
+    /// <paramref name="resolvedOwner"/>: the protocol instance an implementer obeys, for a protocol's default routine
+    /// made concrete on that implementer.</param>
     internal RoutineInfo? SubstituteMemberRoutineForOwner(RoutineInfo memberRoutine,
-        TypeSymbol resolvedOwner)
+        TypeSymbol resolvedOwner, TypeSymbol? bindingOwner = null)
     {
         if (memberRoutine.OwnerType is GenericParameterTypeSymbol universalOwner)
         {
@@ -2983,7 +3007,8 @@ public sealed partial class TypeRegistry
         }
 
         // Build substitution map from the resolved owner's generic definition
-        TypeSymbol? genericDef = resolvedOwner switch
+        TypeSymbol binding = bindingOwner ?? resolvedOwner;
+        TypeSymbol? genericDef = binding switch
         {
             RecordTypeSymbol r => r.GenericDefinition,
             EntityTypeSymbol e => e.GenericDefinition,
@@ -2991,7 +3016,7 @@ public sealed partial class TypeRegistry
             _ => null
         };
 
-        if (genericDef?.GenericParameters == null || resolvedOwner.TypeArguments == null)
+        if (genericDef?.GenericParameters == null || binding.TypeArguments == null)
         {
             return memberRoutine;
         }
@@ -3006,11 +3031,11 @@ public sealed partial class TypeRegistry
 
         var substitution2 = new Dictionary<string, TypeSymbol>();
         for (int i = 0;
-             i < genericDef.GenericParameters.Count && i < resolvedOwner.TypeArguments.Count;
+             i < genericDef.GenericParameters.Count && i < binding.TypeArguments.Count;
              i++)
         {
             substitution2[key: genericDef.GenericParameters[index: i]] =
-                resolvedOwner.TypeArguments[index: i];
+                binding.TypeArguments[index: i];
         }
 
         // Specialized-receiver member (e.g. `routine List[Work[V]].gather!()`): the memberRoutine's
