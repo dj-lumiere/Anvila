@@ -1478,7 +1478,7 @@ public partial class LlvmEmitter
     /// </summary>
     private static readonly HashSet<string> ReturnAttributeWords =
     [
-        "private", "internal", "external", "linkonce", "linkonce_odr", "weak", "weak_odr",
+        "private", "internal", "external", "linkonce", "linkonce_odr", "weak", "weak_odr", "hidden",
         "noalias", "zeroext", "signext", "inreg", "noundef", "nonnull"
     ];
 

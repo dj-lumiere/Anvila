@@ -489,7 +489,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         {
             try
             {
-                source = File.ReadAllText(path: file);
+                source = LexedText(source: File.ReadAllText(path: file));
             }
             catch (IOException)
             {
@@ -546,6 +546,20 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
 
         string text = source[location.Position..i].Trim();
         return text.Length > 0 ? text : null;
+    }
+
+    /// <summary>A file's text as the lexers see it: without a leading byte order mark and with every line ending
+    /// a single <c>\n</c>. Token positions count in this text, so a file checked out with <c>\r\n</c> line endings
+    /// reads at the same offsets as one with <c>\n</c>.</summary>
+    private static string LexedText(string source)
+    {
+        if (source.Length > 0 && source[index: 0] == '\uFEFF')
+        {
+            source = source[1..];
+        }
+
+        return source.Replace(oldValue: "\r\n", newValue: "\n")
+                     .Replace(oldChar: '\r', newChar: '\n');
     }
 
     private List<(string Name, TypeSymbol Type, string? Default)> DescribeParameters(RoutineInfo info)
