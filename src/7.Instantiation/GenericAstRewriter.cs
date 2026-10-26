@@ -3263,11 +3263,28 @@ internal static class GenericAstRewriter
             ? ctx.ResolveTypeExpressionPublic(typeExpr: typePattern.Type)
             : ctx.ResolveType(original: typePattern.Type.ResolvedType) ??
               typePattern.Type.ResolvedType;
-        return target == null
-            ? null
-            : string.Equals(a: concrete.FullName,
-                b: target.FullName,
-                comparisonType: StringComparison.Ordinal);
+        if (target == null)
+        {
+            return null;
+        }
+
+        // A kind (`is VariantType`) matches every type of that kind: the protocol its kind confers.
+        if (target is ProtocolTypeSymbol kind && ctx.Registry is { } registry)
+        {
+            string? kindName = concrete switch
+            {
+                VariantTypeSymbol => "VariantType",
+                ChoiceTypeSymbol => "ChoiceType",
+                FlagsTypeSymbol => "FlagsType",
+                CrashableTypeSymbol => "Crashable",
+                _ => TypeRegistry.KindMarkerProtocolName(type: concrete)
+            };
+            return kindName == kind.Name || registry.TypeObeysProtocol(type: concrete, protocolName: kind.Name);
+        }
+
+        return string.Equals(a: concrete.FullName,
+            b: target.FullName,
+            comparisonType: StringComparison.Ordinal);
     }
 
     /// <summary>
