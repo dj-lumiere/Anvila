@@ -84,7 +84,7 @@ public abstract class LanguageRules
     /// <summary>A file may open with a <c>#@target(...)</c> directive that limits it to some targets.</summary>
     public abstract bool HasTargetDirectives { get; }
 
-    /// <summary>An unsuffixed integer literal with no type from context is an <c>Integer</c> and an
+    /// <summary>An unsuffixed integer literal with no type from context is an <c>Int</c> and an
     /// unsuffixed decimal one a <c>Decimal</c> (arbitrary precision), rather than <c>S64</c> / <c>B64</c>.</summary>
     public abstract bool DefaultsToArbitraryPrecision { get; }
 

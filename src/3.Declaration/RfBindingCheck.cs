@@ -336,7 +336,7 @@ internal static class RfBindingCheck
             named = registry.GetMemberRoutinesForType(type: owner)
                             .Where(predicate: r => r.Name == name)
                             .ToList();
-            // A routine another module writes on the type (`Integer.from_digit_bytes` in IO/BytesIO), or one on an
+            // A routine another module writes on the type (`Int.from_digit_bytes` in IO/BytesIO), or one on an
             // instance of a generic type (`Iterable[Text].join`), is not among the type's own: look for it by owner.
             if (named.Count == 0)
             {
@@ -367,7 +367,7 @@ internal static class RfBindingCheck
             what = target;
         }
 
-        // An owner of another module than the binding's (`Integer`, in Numerics, seen from IO/BytesIO) is not found by
+        // An owner of another module than the binding's (`Int`, in Numerics, seen from IO/BytesIO) is not found by
         // name from here: the routine is, by its owner's name.
         if (named.Count == 0 && dot > 0)
         {

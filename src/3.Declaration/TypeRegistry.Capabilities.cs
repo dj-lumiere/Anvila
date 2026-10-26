@@ -327,7 +327,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Returns true iff <paramref name="type"/> can auto-derive <c>Assignable</c> by FIELD-WALK: every field /
-    /// element is itself Assignable — it obeys <c>Assignable</c> (a managed leaf <c>Text</c>/<c>Integer</c>, or
+    /// element is itself Assignable — it obeys <c>Assignable</c> (a managed leaf <c>Text</c>/<c>Int</c>, or
     /// an RC wrapper) or cascades. Unlike <see cref="CanAutoDeriveAssignable"/> (no-ptr → a bitwise copy that
     /// is also <c>Copyable</c>), this PERMITS managed (ptr) fields — the synthesized <c>store</c> field-walks
     /// them, calling each field's <c>store</c>. Blocked by an <c>entity</c> or access-token field (no store).

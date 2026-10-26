@@ -12,7 +12,7 @@ public partial class Parser
     {
         result = null;
 
-        // Integer literals (S32/S64/S128 and Integer for arbitrary precision)
+        // Integer literals (S32/S64/S128 and Int for arbitrary precision)
         if (CheckAndAdvance(TokenType.UndecidedInteger,
                 TokenType.UndecidedDecimal,
                 TokenType.IntegerLiteral,

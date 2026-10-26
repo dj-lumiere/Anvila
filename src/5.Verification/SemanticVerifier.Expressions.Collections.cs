@@ -29,7 +29,7 @@ public sealed partial class SemanticVerifier
             // types have Name like "Foo", not bare "Retained". Roamed[T] is the Suflae lowering of an
             // annotated collection type (`var l: List[S64]` ⇒ `Roamed[List[S64]]`); it MUST be
             // transparent here too, else a bare literal element loses its S64 context and falls back
-            // to the Suflae `Integer` default — producing `List[Integer]` that won't assign to the
+            // to the Suflae `Int` default — producing `List[Int]` that won't assign to the
             // `Roamed[List[S64]]` slot (RF-S201). Inferring the element type through the wrapper is
             // exactly the builder's job.
             if (current is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } recRT &&

@@ -510,7 +510,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             case LiteralPattern lit:
             {
                 // Literal lowering has already run, so a literal this arm makes for a type that has no scalar form
-                // (an `Integer`, a `Char`) is lowered here.
+                // (an `Int`, a `Char`) is lowered here.
                 _literals ??= new LiteralLoweringPass(ctx: ctx);
                 Expression value = _literals.VisitExpression(expr: new LiteralExpression(Value: lit.Value,
                     LiteralType: lit.LiteralType,

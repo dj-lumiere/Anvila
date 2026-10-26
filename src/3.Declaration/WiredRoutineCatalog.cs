@@ -176,7 +176,7 @@ public static class WiredRoutineCatalog
                 Views = Known
             },
             // The collection literal constructor (`[1, 2]` -> List[T].from_literal(...)). Declarable in stdlib
-            // (Known). Not seeded: every call to one is a resolved call the demand walk follows, and an Integer
+            // (Known). Not seeded: every call to one is a resolved call the demand walk follows, and an Int
             // literal is static data, never a from_literal call.
             new WiredEntry { Name = "from_literal", Kind = WiredKind.Creator, Views = Known },
             new WiredEntry { Name = "enter", Kind = WiredKind.Context, Views = Known },

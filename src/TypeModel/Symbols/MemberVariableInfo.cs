@@ -35,7 +35,7 @@ public sealed class MemberVariableInfo
     /// <summary>Whether this member variable has a default value.</summary>
     public bool HasDefaultValue { get; init; }
 
-    /// <summary>The default value as written in the type body (<c>age: Integer = 30</c>), unanalyzed. A
+    /// <summary>The default value as written in the type body (<c>age: Int = 30</c>), unanalyzed. A
     /// construction that leaves the member variable out gets an analyzed copy of it.</summary>
     public Expression? DefaultValue { get; init; }
 

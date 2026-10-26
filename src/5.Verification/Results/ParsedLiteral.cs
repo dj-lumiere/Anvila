@@ -5,7 +5,7 @@ namespace Builder.Verification.Results;
 
 /// <summary>
 /// Represents a parsed numeric literal value ready for code generation.
-/// Used for types that require native library parsing (b128, d32, d64, d128, Integer, Decimal).
+/// Used for types that require native library parsing (b128, d32, d64, d128, Int, Decimal).
 /// </summary>
 public abstract record ParsedLiteral(SourceLocation Location);
 
@@ -62,7 +62,7 @@ public sealed record ParsedD128(SourceLocation Location, ulong Lo, ulong Hi)
 }
 
 /// <summary>
-/// Parsed arbitrary-precision Integer value.
+/// Parsed arbitrary-precision Int value.
 /// </summary>
 public sealed record ParsedInteger(SourceLocation Location, byte[] Limbs, int Sign, long Exponent)
     : ParsedLiteral(Location: Location)
@@ -75,7 +75,7 @@ public sealed record ParsedInteger(SourceLocation Location, byte[] Limbs, int Si
     /// <inheritdoc/>
     public override string ToString()
     {
-        return $"Integer({(IsNegative ? "-" : "")}{Limbs.Length} limbs)";
+        return $"Int({(IsNegative ? "-" : "")}{Limbs.Length} limbs)";
     }
 }
 

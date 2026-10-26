@@ -478,7 +478,7 @@ public sealed partial class SemanticVerifier
         }
 
         // A construction with explicit type arguments (`List[S64](from: v)`) is the same creator call a
-        // construction without them is (`Integer(text: t)`): the type it builds, called with its arguments.
+        // construction without them is (`Int(text: t)`): the type it builds, called with its arguments.
         if (expr is GenericMemberRoutineCallExpression
             {
                 ResolvedRoutine: { } creator, ConstructedType: { } constructed,

@@ -513,7 +513,7 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// The realm whose programs alone see this routine, or null for every program. A Suflae library file that
-    /// writes a member routine on a type both languages share (<c>routine Text.count() -> Integer</c>) gives
+    /// writes a member routine on a type both languages share (<c>routine Text.count() -> Int</c>) gives
     /// Suflae its own surface for the type: Suflae code calls it in place of the RazorForge routine of the same
     /// name, and RazorForge code never sees it.
     /// </summary>

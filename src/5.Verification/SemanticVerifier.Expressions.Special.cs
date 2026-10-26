@@ -533,7 +533,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeBackIndexExpression(BackIndexExpression back, TypeSymbol? expectedType)
     {
         // `^n` is pure sugar for the forward position `count - n`; it carries no runtime type of its
-        // own. The offset is a position of the type the subscript takes (`U64`, or `Integer` for a Suflae
+        // own. The offset is a position of the type the subscript takes (`U64`, or `Int` for a Suflae
         // collection), and so is the expression (its lowered value). OperatorLoweringPass rewrites the
         // enclosing subscript/slice to the free routine `back_resolve(count:, offset:)`; the
         // `BackIndexExpression` node is the only signal it needs.

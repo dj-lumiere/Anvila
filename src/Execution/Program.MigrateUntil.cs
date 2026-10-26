@@ -9,7 +9,7 @@ internal partial class Program
     /// <c>a &gt;= b</c>), which a float comparison can't (a NaN makes both false).</summary>
     private static readonly HashSet<string> UntilIntegerTypes =
     [
-        "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256", "Integer", "Byte", "Char"
+        "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256", "Int", "Integer", "Byte", "Char"
     ];
 
     /// <summary>What <c>migrate --step until</c> did, counted over every file.</summary>

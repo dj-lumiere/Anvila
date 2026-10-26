@@ -1862,11 +1862,11 @@ public sealed partial class SemanticVerifier
     {
         // Field-init constructor `T(field: value)` — the arg's expected type is the target
         // field's type, so a bare integer literal adapts to it (S64/…) instead of stalling
-        // at the Suflae `Integer` default (RF escapes this only because its default IS S64).
+        // at the Suflae `Int` default (RF escapes this only because its default IS S64).
         // BOTH entity and record targets do inline field-init construction, so both need
         // this — gating on EntityTypeSymbol alone left RECORD constructors (`Point(x: 1)`)
-        // with a null expected type → `1` stayed Integer → codegen `Integer`-into-`i64` /
-        // pruned `Integer.from_literal`. Inferring the field type is the builder's job.
+        // with a null expected type → `1` stayed Int → codegen `Int`-into-`i64` /
+        // pruned `Int.from_literal`. Inferring the field type is the builder's job.
         // A creator the type's author wrote decides first: `List[S64](count: 2, fill_value: n)` gives `2` the type
         // of the creator's `count` parameter, not of a member variable that happens to share the name.
         TypeSymbol? argExpected = WrittenCreatorParameterType(arg: arg, posIdx: posIdx, argCount: argCount,
@@ -1878,8 +1878,8 @@ public sealed partial class SemanticVerifier
 
         // A USER constructor's PARAMETER names may differ from the field names
         // (`routine Pt(v: S64) -> Pt` with a field `x`), so the field-by-name lookup
-        // above finds nothing → the bare literal would stall at Suflae's `Integer`
-        // default (→ a pruned `Integer.from_literal`). Fall back to the matching
+        // above finds nothing → the bare literal would stall at Suflae's `Int`
+        // default (→ a pruned `Int.from_literal`). Fall back to the matching
         // `create` param's type so `Pt(v: 3)` coerces `3` to the param's type.
         if (argExpected == null && arg is NamedArgumentExpression ctorArg)
         {
@@ -2032,7 +2032,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Whether every argument that goes to a parameter whose type names no type parameter fits that parameter:
-    /// <c>List(xs)</c> is not <c>List(capacity: ...)</c>, since a list is no <c>Integer</c>. A parameter that names a
+    /// <c>List(xs)</c> is not <c>List(capacity: ...)</c>, since a list is no <c>Int</c>. A parameter that names a
     /// type parameter is matched by inference, a number literal adapts to its parameter, and an argument whose type
     /// did not resolve is left to the error already reported for it.
     /// </summary>
@@ -2126,7 +2126,7 @@ public sealed partial class SemanticVerifier
             }
 
             // The recovery is for an argument whose type did not resolve. An argument that did resolve, to
-            // a type its member variable cannot hold (an `Integer` for a `Real`), is a real mismatch: the
+            // a type its member variable cannot hold (an `Int` for a `Real`), is a real mismatch: the
             // by-type lookup was right to find no creator, and the construction is reported as such.
             TypeSymbol fieldType = fields.First(predicate: f => f.Name == named.Name).Type;
             if (callableType is { IsGenericResolution: true, TypeArguments: not null })
@@ -2762,7 +2762,7 @@ public sealed partial class SemanticVerifier
     private void InferFreeRoutineArguments(CallExpression call, TypeSymbol? expectedType,
         ref RoutineInfo? routine)
     {
-        // Parameters left to their defaults (`joined(1, 2, 3)` against `joined(nums...: Integer,
+        // Parameters left to their defaults (`joined(1, 2, 3)` against `joined(nums...: Int,
         // separator: Text = ", ")`) take no part in inference, so a call may give fewer arguments.
         if (routine is not { IsGenericDefinition: true } ||
             call.TypeArguments is { Count: > 0 } ||
@@ -4539,7 +4539,7 @@ public sealed partial class SemanticVerifier
             if (fields.FirstOrDefault(predicate: f => f.Name == named.Name) is { } field)
             {
                 // No creator took the arguments, so this is the memberwise construction: each value must be one
-                // its member variable can hold (an `Integer` is not a `Real`).
+                // its member variable can hold (an `Int` is not a `Real`).
                 TypeSymbol fieldType = type is { IsGenericResolution: true, TypeArguments: not null }
                     ? SubstituteTypeParameters(type: field.Type, genericType: type)
                     : field.Type;
@@ -4592,9 +4592,9 @@ public sealed partial class SemanticVerifier
         TypeSymbol? variantArgContext = type is VariantTypeSymbol ? type : null;
         // Both entity AND record targets do inline field-init construction here — gating on
         // EntityTypeSymbol alone left a RECORD constructor's arg with a null expected type, so
-        // a bare `1` reset to the Suflae `Integer` default (this is the SECOND, final ctor
+        // a bare `1` reset to the Suflae `Int` default (this is the SECOND, final ctor
         // block: it re-analyzes and would clobber the first block's conformance → the record
-        // literal ended up Integer → codegen `Integer`-into-`i64` / pruned from_literal).
+        // literal ended up Int → codegen `Int`-into-`i64` / pruned from_literal).
         List<MemberVariableInfo>? ctorMemberVariables = type switch
         {
             EntityTypeSymbol entityCtorType => entityCtorType.MemberVariables,

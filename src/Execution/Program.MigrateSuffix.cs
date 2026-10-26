@@ -253,7 +253,7 @@ internal partial class Program
     {
         return suffix switch
         {
-            "n" => "Integer",
+            "n" => "Int",
             "dn" => "Decimal",
             "addr" => "Addr",
             _ => suffix.ToUpperInvariant()
@@ -387,7 +387,7 @@ internal partial class Program
     }
 
     /// <summary>The type a bare number takes with nothing around it: <c>S64</c> and <c>B64</c> in RazorForge,
-    /// <c>Integer</c> and <c>Decimal</c> in Suflae, and <c>B64</c> for a hex float in both.</summary>
+    /// <c>Int</c> and <c>Decimal</c> in Suflae, and <c>B64</c> for a hex float in both.</summary>
     private static string BareNumberType(SuffixSource source, SuffixedNumber number)
     {
         if (number.Decimal && !number.BaseTen)
@@ -398,7 +398,7 @@ internal partial class Program
         bool suflae = source.Language == Language.Suflae;
         return number.Decimal
             ? suflae ? "Decimal" : "B64"
-            : suflae ? "Integer" : "S64";
+            : suflae ? "Int" : "S64";
     }
 
     /// <summary>The offset in the file as written of <paramref name="candidateOffset"/> in the file with every

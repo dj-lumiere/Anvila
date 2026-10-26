@@ -1919,8 +1919,8 @@ public sealed partial class SemanticVerifier
 
         // Repair declarations that reference a LAZILY-loaded imported module's type. A `module System` file
         // (eagerly registered) whose signature/field names a type from an on-demand module — e.g.
-        // FloatConvert's `round_and_pack(num_in: Integer, …)` or a record field `mantissa: Integer`, where
-        // `Integer` lives in the lazily-loaded `Numerics` module — had that param/field collapse to
+        // FloatConvert's `round_and_pack(num_in: Int, …)` or a record field `mantissa: Int`, where
+        // `Int` lives in the lazily-loaded `Numerics` module — had that param/field collapse to
         // `<error>`/get dropped at eager System registration (the removed cross-module short-name scan). Now
         // that this file is being analyzed on demand (its imported modules loaded), re-resolve its member
         // variables + routine signatures with the file's imports installed, so the bare cross-module names
@@ -1950,8 +1950,8 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// SNAPSHOT-CAPTURE ONLY: fold every stdlib file's cross-module-lazy SIGNATURE REPAIR into the registry
-    /// ONCE, so the captured snapshot carries repaired signatures (e.g. <c>pow10_int -&gt; Numerics.Integer</c>,
-    /// a record field <c>mantissa: Integer</c>). Without this the repair runs per-file on-demand in EVERY warm
+    /// ONCE, so the captured snapshot carries repaired signatures (e.g. <c>pow10_int -&gt; Numerics.Int</c>,
+    /// a record field <c>mantissa: Int</c>). Without this the repair runs per-file on-demand in EVERY warm
     /// build (<see cref="StdlibLoader.ReResolveProgramForLazyImports"/> re-keys a routine PER BUILD, a mutation
     /// not shared across builds), which forced the warm <see cref="CompiledStdlibState.AnalyzedFileCache"/> to
     /// EXCLUDE any file whose analysis repaired a signature (else a cache-reuse build resolves the stale
@@ -2117,7 +2117,7 @@ public sealed partial class SemanticVerifier
         // A cold build repairs every stdlib file's cross-module-lazy signatures once, before the first file
         // is body-analyzed (the warm snapshot already folded this in at capture). The per-file repair below
         // only fixes the file being analyzed, so a file analyzed first would bind its calls into a not-yet-
-        // analyzed file (B128Text's `format_shortest(m: Integer, ...)` from FloatConvert) against the
+        // analyzed file (B128Text's `format_shortest(m: Int, ...)` from FloatConvert) against the
         // unrepaired, error-typed signature, which then reaches the LLVM emitter.
         if (_warmState == null && !_coldLazySignaturesRepaired)
         {

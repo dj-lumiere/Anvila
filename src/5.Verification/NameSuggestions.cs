@@ -79,7 +79,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
     }
 
     /// <summary>The hint for a type name <c>migrate --step type-names</c> rewrites (<c>Atomic</c> is <c>Unbroken</c>,
-    /// <c>CircularList</c> is <c>RotatableList</c>), whether or not the module of the new name is loaded, or null.</summary>
+    /// <c>CircularList</c> is <c>RotatableList</c>, <c>Integer</c> is <c>Int</c>), whether or not the module of the new name is loaded, or null.</summary>
     private string? TypeNamesStepRename(string name)
     {
         // A Suflae program changes shared numbers through a global or an entity's member variable, which the builder
@@ -97,6 +97,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "CircularList" => "RotatableList",
             "CircularListEmittable" => "RotatableListEmitter",
             "MemoryAllocationError" => "OutOfMemoryError",
+            "Integer" => "Int",
             _ => null
         };
         return renamed == null ? null : $" It is called '{renamed}' now (migrate --step type-names rewrites it).";

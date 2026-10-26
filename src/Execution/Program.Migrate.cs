@@ -130,7 +130,7 @@ internal partial class Program
         }
 
         // `--step type-names`: `Atomic` is `Unbroken` (and `AtomicType` is `UnbrokenType`), `CircularList` is
-        // `RotatableList`, and `MemoryAllocationError` is `OutOfMemoryError`.
+        // `RotatableList`, `MemoryAllocationError` is `OutOfMemoryError`, and `Integer` is `Int`.
         if (step == "type-names")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteTypeNames);
@@ -1064,7 +1064,7 @@ internal partial class Program
             }
 
             // A number conversion or a text parse is `x.to[T]()`: `S64(from: n)`, `S64(n)`, `S64(from_text: t)`,
-            // `Integer(text: t)` and `n.S64()` all become it.
+            // `Int(text: t)` and `n.S64()` all become it.
             if (NumericConversionTargets.Contains(item: token.Text) &&
                 ConversionEdits(tokens: tokens, index: i) is { Count: > 0 } conversion)
             {
@@ -1526,7 +1526,7 @@ internal partial class Program
     private static readonly HashSet<string> NumericConversionTargets =
     [
         "S8", "S16", "S32", "S64", "S128", "S256", "U8", "U16", "U32", "U64", "U128", "U256",
-        "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Integer", "C64", "C128", "C256",
+        "B16", "B32", "B64", "B128", "BF16", "D32", "D64", "D128", "Decimal", "Int", "Integer", "C64", "C128", "C256",
         "CStr", "CLong", "CULong", "CWChar", "Q128", "Q256", "Moment", "Bool", "Address", "Addr", "List", "Set"
     ];
 

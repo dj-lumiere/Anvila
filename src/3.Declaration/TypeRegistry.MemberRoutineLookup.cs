@@ -1016,7 +1016,7 @@ public sealed partial class TypeRegistry
         }
 
         // A Suflae entity's `me` is its shared handle (`Roamed[List[T]]` for `routine List[T].second()`), while the
-        // owner it is called on is the entity itself (`List[Integer]`): the handle's entity is the pattern.
+        // owner it is called on is the entity itself (`List[Int]`): the handle's entity is the pattern.
         if (pattern is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [var handled] } &&
             concrete is not RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed })
         {
@@ -2571,7 +2571,7 @@ public sealed partial class TypeRegistry
         }
 
         // A full-arity match wins; only when none exists may trailing defaulted parameters be left out
-        // (`Integer(text: t)` against `create(text: Text, radix: S32 = 10)`).
+        // (`Int(text: t)` against `create(text: Text, radix: S32 = 10)`).
         return MatchMemberOverloadByArgTypes(candidates: candidates,
                    receiverType: type,
                    argTypes: argTypes,

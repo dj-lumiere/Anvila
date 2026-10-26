@@ -60,7 +60,7 @@ internal partial class Program
         options: RegexOptions.Compiled);
 
     /// <summary>An old name in a comment: written as code there (<c>`expm1`</c>, <c>.cmp(</c>) or as a word that is
-    /// only ever the routine. The natural <c>log</c>, the Integer-only <c>shl</c> / <c>shr</c> and the float names
+    /// only ever the routine. The natural <c>log</c>, the Int-only <c>shl</c> / <c>shr</c> and the float names
     /// that are also English words or C names (<c>remainder</c>, <c>frac</c>, <c>fma</c>, ...) are renamed in a
     /// comment only between backticks or after a dot, since the plain words have other meanings.</summary>
     private static readonly Regex RenamedCommentWord = new(

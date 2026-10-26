@@ -7,7 +7,7 @@ namespace Builder.Execution;
 internal partial class Program
 {
     /// <summary>An import of a module that is gone: <c>Core</c> and what was under it (<c>Core/Memory</c>,
-    /// <c>Core.Text</c>, <c>Core.[Text]</c>) is <c>System</c>, and <c>Numerics</c> (<c>Numerics.Integer</c>) is
+    /// <c>Core.Text</c>, <c>Core.[Text]</c>) is <c>System</c>, and <c>Numerics</c> (<c>Numerics.Int</c>) is
     /// <c>System/Numerics</c>. Every file sees both without an import.</summary>
     private static readonly Regex GoneModuleImport = new(
         pattern: @"^[ \t]*import[ \t]+(?:Core|Numerics)(?:[./][^\r\n#]*)?[ \t]*(?:#[^\r\n]*)?\r?$",

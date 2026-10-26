@@ -539,7 +539,7 @@ internal sealed class AutoWiredRegistrationPass
     }
 
     /// <summary>Whether the realm of <paramref name="type"/> writes its own derive called <paramref name="name"/>
-    /// (Suflae's choices and flags hand their cases back in Suflae's own list, counted with `Integer`).</summary>
+    /// (Suflae's choices and flags hand their cases back in Suflae's own list, counted with `Int`).</summary>
     private bool HasOwnRealmDerive(TypeSymbol type, string name)
     {
         string realm = _registry.DeriveRealmOf(type: type);
@@ -556,12 +556,12 @@ internal sealed class AutoWiredRegistrationPass
             : listDef;
     }
 
-    /// <summary>The type a choice or flags counts its cases with: <c>Integer</c> when its realm writes its own
+    /// <summary>The type a choice or flags counts its cases with: <c>Int</c> when its realm writes its own
     /// <c>count</c>.</summary>
     private TypeSymbol? CaseCountType(TypeSymbol type, TypeSymbol? u64Type)
     {
         return HasOwnRealmDerive(type: type, name: "count")
-            ? _registry.LookupType(name: "System.Integer") ?? u64Type
+            ? _registry.LookupType(name: "System.Int") ?? u64Type
             : u64Type;
     }
 

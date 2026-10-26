@@ -117,8 +117,8 @@ public sealed partial class StdlibLoader
     {
         // The deferred member-variable re-resolution must find THIS program's types by their
         // module-qualified name. A bare `LookupType(name)` depended on the cross-module short-name scan
-        // (e.g. `Integer` → `Numerics.Integer`), and with that scan gone the bare lookup misses, `existing`
-        // is null, and the type's member variables never resolve — leaving fields like `Integer.tab`
+        // (e.g. `Int` → `Numerics.Int`), and with that scan gone the bare lookup misses, `existing`
+        // is null, and the type's member variables never resolve — leaving fields like `Int.tab`
         // untyped, so a read of one reaches codegen with a `<error>` receiver.
         string? programModule = program.Declarations
                                        .OfType<ModuleDeclaration>()
@@ -968,7 +968,7 @@ public sealed partial class StdlibLoader
             Kind = routineKind,
             OwnerType = ownerType,
             // A member routine a non-shared realm's library writes on a type it does not own is that realm's
-            // surface: `Text.count() -> Integer` in a Suflae file is what Suflae programs call. So is a free
+            // surface: `Text.count() -> Int` in a Suflae file is what Suflae programs call. So is a free
             // routine of a name the shared library already declares in the module (`ask_lines`). A free routine
             // only the realm has (`position_of`) is an ordinary one.
             // So is a derive template (`@overridable routine T.all_cases()`) a non-shared realm writes for its own
@@ -2285,7 +2285,7 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// On-demand repair for a stdlib file whose declarations reference a type from a LAZILY-loaded module
-    /// (a <c>module System</c> file importing <c>Numerics.Integer</c>): at eager System registration that module
+    /// (a <c>module System</c> file importing <c>Numerics.Int</c>): at eager System registration that module
     /// was not loaded, so the file's routine signatures and record/entity fields collapsed to
     /// <c>&lt;error&gt;</c>/were dropped. Called when the file is analyzed on demand (the imported module now
     /// loaded), with the file's imports installed on <see cref="TypeRegistry.ActiveRegistrationImports"/> so

@@ -941,7 +941,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The error for two chosen number types side by side: they mix only with their own type, and the fix converts both
-    /// to the smallest type that holds every value of each (`a.to[S64]() + b.to[S64]()`), or to `Integer` when no fixed
+    /// to the smallest type that holds every value of each (`a.to[S64]() + b.to[S64]()`), or to `Int` when no fixed
     /// width does.
     /// </summary>
     private string MixedNumbersMessage(TypeSymbol left, TypeSymbol right, string leftText, string rightText, string op)
@@ -980,7 +980,7 @@ public sealed partial class SemanticVerifier
         (char Kind, int Bits) signed = x.Kind == 'S' ? x : y;
         (char Kind, int Bits) unsigned = x.Kind == 'U' ? x : y;
         int need = signed.Bits > unsigned.Bits ? signed.Bits : unsigned.Bits * 2;
-        return need <= 256 ? $"S{need}" : "Integer";
+        return need <= 256 ? $"S{need}" : "Int";
     }
 
     /// <summary>The quick fix for two chosen number types side by side when both sides are names: each converted to
@@ -1015,7 +1015,7 @@ public sealed partial class SemanticVerifier
     private bool TryReportFixedWidthMismatch(BinaryExpression binary, TypeSymbol leftType,
         TypeSymbol rightType)
     {
-        // An `Integer` mixed with a fixed-width number is the same mismatch: only `Integer` and `Decimal` mix. A
+        // An `Int` mixed with a fixed-width number is the same mismatch: only `Int` and `Decimal` mix. A
         // bare number on either side takes the other side's type, so it is no mix.
         bool integerWithFixed = binary.Left is not LiteralExpression && binary.Right is not LiteralExpression &&
                                 (leftType.Name == IntegerTypeName && IsFixedWidthNumericType(type: rightType) ||
@@ -1302,7 +1302,7 @@ public sealed partial class SemanticVerifier
             }
         }
 
-        // `Integer` and `Decimal` operators that can fail (`a // b` by zero) are failable calls too: a routine whose
+        // `Int` and `Decimal` operators that can fail (`a // b` by zero) are failable calls too: a routine whose
         // failure is one of them is failable on purpose.
         if (!isIntegerCheckedOp && memberRoutine is { IsFailable: true } &&
             leftType.Name is IntegerTypeName or "Decimal" && _currentRoutine != null)
@@ -1408,7 +1408,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The operator routine a bare number literal on the right picks when its own type matches none: the one
     /// overload whose operand is a number type the literal fits (`1h // 4` in Suflae, where `4` starts as
-    /// <c>Integer</c>, picks <c>floordiv(divisor: S64)</c> over <c>floordiv(you: Duration)</c>). Null when no
+    /// <c>Int</c>, picks <c>floordiv(divisor: S64)</c> over <c>floordiv(you: Duration)</c>). Null when no
     /// overload or more than one takes it.
     /// </summary>
     private RoutineInfo? OperatorOverloadForLiteral(BinaryExpression binary, TypeSymbol leftType,
@@ -1575,7 +1575,7 @@ public sealed partial class SemanticVerifier
     /// container's element type. Membership (<c>x in coll</c>/<c>x notin coll</c>) reverses to
     /// <c>coll.contains(x)</c> (element is LEFT); container-first (<c>coll have 20</c>/<c>coll lack 20</c>)
     /// keeps the container LEFT and the element RIGHT. Without this a Suflae <c>20 in list_of_s64</c> keeps
-    /// <c>20</c> at the <c>Integer</c> default so the element type never matches and <c>contains</c> is
+    /// <c>20</c> at the <c>Int</c> default so the element type never matches and <c>contains</c> is
     /// silently always false. Unwrap SF's Roamed/RC wrappers to reach the collection, then take its first
     /// type argument (List/Set/Array element, Dict key).
     /// </summary>
@@ -1605,7 +1605,7 @@ public sealed partial class SemanticVerifier
     private bool DeclaresOperatorRoutine(TypeSymbol receiverType, string operatorMemberRoutine,
         TypeSymbol argType)
     {
-        // A type may define an operator whose result is another type (Suflae's `Integer / Integer` gives a
+        // A type may define an operator whose result is another type (Suflae's `Int / Int` gives a
         // `Decimal`), so it obeys no `Me`-returning operator protocol. The operator binds when the type itself
         // declares the operator routine with the operand parameter `you` taking the other side.
         // A shift takes its amount as the U32 every integer amount converts to (`to_shift_amount()`): a type with
@@ -2195,9 +2195,9 @@ public sealed partial class SemanticVerifier
         //
         // For a same-typed compound op (`+= -= *= /= //= %= **= &= |= ^= ??=`) the RHS
         // must conform to the TARGET type, so a bare literal like `1` in `i += 1` types
-        // as the target (e.g. `U64`) rather than the language default — `Integer` in
+        // as the target (e.g. `U64`) rather than the language default — `Int` in
         // Suflae, `S64` in RazorForge. Without this hint an SF `U64 += 1` leaves the `1`
-        // an `Integer`, which mis-lowers (Integer.from_literal against a fixed-width
+        // an `Int`, which mis-lowers (Int.from_literal against a fixed-width
         // target) into a runaway/garbage result. Shift amounts (`<<= >>= >>>=`) are
         // U32, not the target type, so they keep their own inference.
         bool isShift = compound.Operator is BinaryOperator.ArithmeticLeftShift
@@ -2344,7 +2344,7 @@ public sealed partial class SemanticVerifier
     /// Checks the right-hand side of a compound assignment against the operator it dispatches to, with the
     /// same rules as the binary form: <c>t += v</c> must be rejected exactly when <c>t = t + v</c> is. Two
     /// fixed-width types of different width are RF-S767, and a value no in-place or regular overload
-    /// accepts (a Suflae <c>Integer += S64</c>) is a conversion error. Without this check the operator is
+    /// accepts (a Suflae <c>Int += S64</c>) is a conversion error. Without this check the operator is
     /// resolved by name alone and the emitter passes the wrong value representation to it. Returns true
     /// when a violation was reported.
     /// </summary>

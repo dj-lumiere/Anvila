@@ -9,7 +9,7 @@ internal static class ZeroFillCheck
 {
     /// <summary>
     /// RF-S641. <c>Array[T, N]()</c> fills every slot with zero bits. That is a valid value for numbers,
-    /// raw pointers, and shared buffers whose null controller means empty (Text, Bytes, Integer, ...), but
+    /// raw pointers, and shared buffers whose null controller means empty (Text, Bytes, Int, ...), but
     /// not for an entity or a reference-counted handle: a zero slot there is a null handle that crashes
     /// when it is read or torn down at scope exit. Such arrays must be built from their elements. A language
     /// whose zero bits are an empty place for every type skips the check.

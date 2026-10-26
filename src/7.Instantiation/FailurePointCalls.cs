@@ -121,7 +121,7 @@ internal static class FailurePointCalls
 
     /// <summary>
     /// An index of another integer type than the <c>index</c> parameter takes, as <c>i.to_index()</c> (a <c>U64</c>,
-    /// failing with <c>NegativeIndexError</c> below 0) or <c>i.to_integer_count()</c> (an <c>Integer</c>), the same
+    /// failing with <c>NegativeIndexError</c> below 0) or <c>i.to_integer_count()</c> (an <c>Int</c>), the same
     /// conversion OperatorLoweringPass gives a subscript outside a recovery. Null when no conversion is needed.
     /// </summary>
     private static CallExpression? CountedIndex(Expression index, RoutineInfo getItem, TypeRegistry registry)
@@ -135,7 +135,7 @@ internal static class FailurePointCalls
         string? conversion = taken.Name switch
         {
             "U64" => "to_index",
-            "Integer" => "to_integer_count",
+            "Int" => "to_integer_count",
             _ => null
         };
         if (conversion == null ||

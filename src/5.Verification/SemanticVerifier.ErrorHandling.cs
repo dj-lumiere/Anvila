@@ -1032,7 +1032,7 @@ public sealed partial class SemanticVerifier
             return _registry.GetRoutineByExactKey(registryKey: own.RegistryKey) ?? own;
         }
 
-        // A creator (`routine Integer!(text: Text)`) has no member name to look up by: the info registered for
+        // A creator (`routine Int!(text: Text)`) has no member name to look up by: the info registered for
         // the declaration is its own.
         if (decl.ResolvedInfo is { IsCreator: true } creator)
         {
@@ -1096,7 +1096,7 @@ public sealed partial class SemanticVerifier
 
         // Resolve the decl's parameter types to match the creator overload. This runs at PRE-REGISTRATION
         // (Phase 3), where a param type may not yet resolve in scope (a forward-declared / not-yet-imported
-        // type like `Integer` in a numeric conversion `routine S64!(from: Integer)`); ResolveType would
+        // type like `Int` in a numeric conversion `routine S64!(from: Int)`); ResolveType would
         // otherwise EMIT an RF-S100 as a side effect. Suppress those — an unresolvable param simply means
         // this creator can't be matched here, so it is skipped (no deferred base), not a user-facing error.
         int errorsBefore = _errors.Count;

@@ -14,7 +14,7 @@ namespace Builder.Verification;
 public sealed partial class SemanticVerifier
 {
     private const string AddressTypeName = Declaration.RuntimeContract.Addr;
-    private const string IntegerTypeName = "Integer";
+    private const string IntegerTypeName = "Int";
     private const string ByteTypeName = "Byte";
 
     /// <summary>
@@ -278,7 +278,7 @@ public sealed partial class SemanticVerifier
             return typeName;
         }
 
-        // A bare whole number conforms to an arbitrary-precision Integer (`var big: Integer = 10`): any value fits.
+        // A bare whole number conforms to an arbitrary-precision Int (`var big: Int = 10`): any value fits.
         if (literal.LiteralType is TokenType.UndecidedInteger && expectedType.Name == IntegerTypeName)
         {
             return IntegerTypeName;
@@ -382,7 +382,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Maps a literal's token type to its resolved type name (PascalCase), or null for an unknown
-    /// literal type. Unsuffixed integer/decimal literals default to S64/B64 (RF) or Integer/Decimal
+    /// literal type. Unsuffixed integer/decimal literals default to S64/B64 (RF) or Int/Decimal
     /// (Suflae) per the literal's own source-file language.
     /// </summary>
     private string? MapLiteralTypeName(LiteralExpression literal)
@@ -416,13 +416,13 @@ public sealed partial class SemanticVerifier
             TokenType.D64Literal => "D64",
             TokenType.D128Literal => "D128",
 
-            // Unsuffixed literals: type inference resolves these; fallback is S64/B64 (RF) or Integer/Decimal
+            // Unsuffixed literals: type inference resolves these; fallback is S64/B64 (RF) or Int/Decimal
             // (Suflae). CRITICAL: the Suflae default applies ONLY to Suflae SOURCE. The RF stdlib is shared
             // by SF ("SF's System IS RF's System") and its bodies get (re-)analyzed under an SF compile (generic
             // monomorphization / variant-body collection) OUTSIDE the AnalyzeStdlibBodies RF-mode override —
             // there `_registry.Language` is Suflae. A stdlib `int_eq[U256](b: 0)` must keep RF's S64 default
-            // (coerces to the U256/i256 compare); the SF Integer default is a HEAP RECORD that can't coerce
-            // into a scalar op → `store %Record.Numerics.Integer` / `icmp i256, %Record` type errors. Key on
+            // (coerces to the U256/i256 compare); the SF Int default is a HEAP RECORD that can't coerce
+            // into a scalar op → `store %Record.Numerics.Int` / `icmp i256, %Record` type errors. Key on
             // the LITERAL's own file (its Location), NOT `_currentFilePath` (stale = the user entry under
             // cross-module body analysis).
             TokenType.UndecidedInteger => DefaultsToArbitraryPrecision(literal: literal)
@@ -435,7 +435,7 @@ public sealed partial class SemanticVerifier
                 ? "Decimal"
                 : "B64",
 
-            // Explicit arbitrary-precision suffix (n): always Integer or Decimal
+            // Explicit arbitrary-precision suffix (n): always Int or Decimal
             TokenType.IntegerLiteral => IntegerTypeName,
             TokenType.DecimalLiteral => "Decimal",
 
@@ -481,11 +481,11 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The unsuffixed-literal default (Integer/Decimal vs S64/B64) follows the literal's SOURCE-FILE
+    /// The unsuffixed-literal default (Int/Decimal vs S64/B64) follows the literal's SOURCE-FILE
     /// LANGUAGE, not the compile's language and not stdlib-ness: a <c>.sf</c> file uses Suflae defaults,
     /// a <c>.rf</c> file uses RF defaults. This is correct for every mix — RF/SF user code, the shared RF
     /// stdlib (<c>.rf</c>) borrowed by an SF compile (must keep S64/B64 so `int_eq[U256](b: 0)` stays a
-    /// coercible scalar, not a heap Integer record), AND a future dedicated Suflae stdlib (<c>.sf</c>),
+    /// coercible scalar, not a heap Int record), AND a future dedicated Suflae stdlib (<c>.sf</c>),
     /// which SHOULD get Suflae defaults. (Keying on <c>_registry.Language</c> wrongly gave RF stdlib bodies
     /// the SF default when re-analyzed under an SF compile; keying on stdlib-directory membership would
     /// wrongly force RF defaults onto a future <c>.sf</c> stdlib.) Uses the literal's OWN file (its
@@ -807,7 +807,7 @@ public sealed partial class SemanticVerifier
                 TokenType.D64Literal => ParseD64Literal(literal: literal, rawValue: rawValue),
                 TokenType.D128Literal => ParseD128Literal(literal: literal, rawValue: rawValue),
 
-                // Explicit arbitrary-precision suffix (n): always parse as Integer/Decimal
+                // Explicit arbitrary-precision suffix (n): always parse as Int/Decimal
                 TokenType.IntegerLiteral => ParseIntegerLiteral(literal: literal,
                     rawValue: rawValue),
                 TokenType.DecimalLiteral => ParseDecimalLiteral(literal: literal,
@@ -1291,7 +1291,7 @@ public sealed partial class SemanticVerifier
             _ => throw new InvalidOperationException(
                 message: $"UndecidedInteger resolved to unexpected type '{resolvedTypeName}' ??" +
                          $"type inference must produce a concrete numeric type before reaching here; " +
-                         $"'Integer' fallback is only valid when inference failed (handled by the caller)")
+                         $"'Int' fallback is only valid when inference failed (handled by the caller)")
         };
     }
 

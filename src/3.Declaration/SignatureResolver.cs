@@ -556,7 +556,7 @@ internal sealed class SignatureResolver
             {
                 _sa.ReportError(code: SemanticDiagnosticCode.RoutineParameterWithoutType,
                     message: $"You wrote the parameter '{param.Name}' without a type. Every parameter of a " +
-                             $"routine states its type, for example `{param.Name}: Integer`.",
+                             $"routine states its type, for example `{param.Name}: Int`.",
                     location: param.Location);
             }
 

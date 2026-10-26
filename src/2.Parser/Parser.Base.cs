@@ -812,7 +812,7 @@ public partial class Parser
     /// Parse numeric literal value
     /// </summary>
     /// <remarks>
-    /// Types without direct C# equivalents (b128, d32, d64, d128, Integer, Decimal) are stored
+    /// Types without direct C# equivalents (b128, d32, d64, d128, Int, Decimal) are stored
     /// as raw strings in the AST. The semantic analyzer handles parsing these using native libraries.
     /// </remarks>
     protected static object ParseNumericLiteral(Token token)
@@ -847,7 +847,7 @@ public partial class Parser
             // Deferred types - store raw string for the semantic analyzer's exact managed encoders
             // b128: IEEE binary128 (EncodeB128)
             // d32/d64/d128: IEEE decimal floating-point (BID encoders)
-            // Integer: arbitrary precision (BigInteger)
+            // Int: arbitrary precision (BigInteger)
             // Decimal: arbitrary precision (EncodeDecimalCanonical)
             TokenType.B128Literal => CleanNumericSuffix(text: text, suffix: "b128"),
             TokenType.D32Literal => CleanNumericSuffix(text: text, suffix: "d32"),

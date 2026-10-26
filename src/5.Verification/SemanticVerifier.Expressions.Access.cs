@@ -16,7 +16,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The type whose <c>getitem</c>/<c>setitem</c> an index on <paramref name="type"/> uses: the inner value of a
     /// transparent protocol, and the entity behind a Suflae entity handle (<c>h.kids[0]</c> with <c>kids</c> a
-    /// <c>Roamed[List[Integer]]</c> field indexes the list, as a member call on the handle calls the list's routine).
+    /// <c>Roamed[List[Int]]</c> field indexes the list, as a member call on the handle calls the list's routine).
     /// </summary>
     private TypeSymbol IndexLookupType(TypeSymbol type)
     {
@@ -382,7 +382,7 @@ public sealed partial class SemanticVerifier
 
         // The index param is often a token (`Dict.getitem!(key: Viewing[K])`) the call makes from a bare `K`.
         // Unwrap it to the key type so a bare integer key literal (`d[1]`) conforms to e.g. S64 instead of
-        // stalling at the Suflae `Integer` default.
+        // stalling at the Suflae `Int` default.
         if (paramType.TypeArguments is { Count: >= 1 } referArgs &&
             GetTypeBaseName(type: paramType) is Declaration.RuntimeContract.Viewing
                 or Declaration.RuntimeContract.Modifying)
@@ -421,15 +421,15 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The types a collection index may have, most preferred first: <c>U64</c>, and before it <c>Integer</c> when
+    /// The types a collection index may have, most preferred first: <c>U64</c>, and before it <c>Int</c> when
     /// the build's language counts with arbitrary-precision integers (Suflae's own collections take an
-    /// <c>Integer</c> index; one from RazorForge still takes a <c>U64</c>).
+    /// <c>Int</c> index; one from RazorForge still takes a <c>U64</c>).
     /// </summary>
     private List<TypeSymbol> IndexTypes()
     {
         var types = new List<TypeSymbol>();
         if (_registry.CompilationRules.DefaultsToArbitraryPrecision &&
-            _registry.LookupType(name: "System.Integer") is { } integer)
+            _registry.LookupType(name: "System.Int") is { } integer)
         {
             types.Add(item: integer);
         }
@@ -647,7 +647,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Whether an index of <paramref name="indexType"/> may stand where the accessor takes <paramref name="taken"/>:
     /// an index may be any integer with a count of its own, which OperatorLoweringPass turns into the <c>U64</c>
-    /// (<c>to_index</c>) or <c>Integer</c> (<c>to_integer_count</c>) the accessor's <c>index</c> parameter takes. A map's
+    /// (<c>to_index</c>) or <c>Int</c> (<c>to_integer_count</c>) the accessor's <c>index</c> parameter takes. A map's
     /// key is no index and keeps its own type.
     /// </summary>
     private bool IsCountedIndex(RoutineInfo? getItem, TypeSymbol indexType, TypeSymbol taken)
@@ -661,7 +661,7 @@ public sealed partial class SemanticVerifier
         return taken.Name switch
         {
             "U64" => HasCountConversion(type: indexType, memberRoutineName: "to_index"),
-            "Integer" => HasCountConversion(type: indexType, memberRoutineName: "to_integer_count"),
+            "Int" => HasCountConversion(type: indexType, memberRoutineName: "to_integer_count"),
             _ => false
         };
     }
@@ -852,7 +852,7 @@ public sealed partial class SemanticVerifier
                 // No annotation AND no typed context to infer from: the parameter has no type, and there is no
                 // routine lookup while the program runs to stand in for one (it would silently become the error
                 // type and stop the LLVM emitter). Both languages report it.
-                string number = _registry.EntitiesAreShared ? "Integer" : "S32";
+                string number = _registry.EntitiesAreShared ? "Int" : "S32";
                 ReportError(code: SemanticDiagnosticCode.LambdaParameterTypeNotInferable,
                     message:
                     $"Cannot infer the type of lambda parameter '{param.Name}' — there is no type " +
@@ -1680,7 +1680,7 @@ public sealed partial class SemanticVerifier
             TypeSymbol argType = AnalyzeExpression(expression: val, expectedType: expected);
 
             // The creator was bound by its parameter NAMES, so the argument types are checked here: a value
-            // the parameter cannot take (an `Integer` for a `B64`) must not reach the emitter as one.
+            // the parameter cannot take (an `Int` for a `B64`) must not reach the emitter as one.
             if (expected != null && argType.Category != TypeCategory.Error &&
                 expected.Category != TypeCategory.Error && !MentionsGenericParameter(type: expected) &&
                 !IsAssignableTo(source: argType, target: expected))
@@ -2014,7 +2014,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Gives a field-by-field construction a value for each member variable it leaves out that was written
-    /// with a default (<c>age: Integer = 30</c>), analyzed against the member variable's type, and puts the
+    /// with a default (<c>age: Int = 30</c>), analyzed against the member variable's type, and puts the
     /// values in declaration order, which is how the construction is built.
     /// </summary>
     private void FillMemberVariableDefaults(TypeSymbol type, List<MemberVariableInfo> typeMemberVariables,

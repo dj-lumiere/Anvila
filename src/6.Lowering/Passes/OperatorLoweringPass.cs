@@ -1240,7 +1240,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
     /// <summary>
     /// An ordering of two different types that only a <c>compare</c> taking the other type answers
-    /// (<c>Integer.compare(you: Decimal)</c>): <c>a &lt; b</c> becomes <c>S32(from: a.compare(you: b)) &lt; 0</c>, the sign read as
+    /// (<c>Int.compare(you: Decimal)</c>): <c>a &lt; b</c> becomes <c>S32(from: a.compare(you: b)) &lt; 0</c>, the sign read as
     /// its number (-1, 0, 1). The derived <c>lt</c>/<c>le</c>/<c>gt</c>/<c>ge</c> take only their own type, so resolving the
     /// operator by name would pick that one and read the other operand as the wrong type. Null when the operator is
     /// not an ordering, the types are the same, or the receiver has an ordering routine for the other type itself.
@@ -1388,8 +1388,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// <summary>
     /// A shift amount may be any integer: one of another type than the routine's parameter becomes the U32 the shift
     /// routine takes through its own <c>to_shift_amount()</c>, which crashes on a negative amount and gives
-    /// <c>U32_MAX</c> for one too large (still past every width). Where the shift takes an <c>Integer</c> amount
-    /// (Suflae), a fixed-width one becomes that <c>Integer</c>. Returns the (possibly converted) argument, and
+    /// <c>U32_MAX</c> for one too large (still past every width). Where the shift takes an <c>Int</c> amount
+    /// (Suflae), a fixed-width one becomes that <c>Int</c>. Returns the (possibly converted) argument, and
     /// points <paramref name="resolvedMemberRoutine"/> at the routine taking the U32.
     /// </summary>
     private Expression ConvertShiftAmount(BinaryExpression bin, TypeSymbol? receiverType,
@@ -1408,8 +1408,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             return argument;
         }
 
-        // A Suflae shift takes an `Integer` amount, which handles the count itself.
-        if (amountType.Name == "Integer")
+        // A Suflae shift takes an `Int` amount, which handles the count itself.
+        if (amountType.Name == "Int")
         {
             return CountCall(value: argument, memberRoutineName: "to_integer_count") ?? argument;
         }
@@ -1429,7 +1429,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     }
 
     /// <summary>The types a subscript's index may be taken as when no accessor takes its own type: an index may be any
-    /// integer, and a <c>U64</c> (RazorForge) or an <c>Integer</c> (Suflae) parameter takes it through
+    /// integer, and a <c>U64</c> (RazorForge) or an <c>Int</c> (Suflae) parameter takes it through
     /// <see cref="IndexOperand"/>.</summary>
     private IEnumerable<TypeSymbol> IndexTypesFor(TypeSymbol indexType)
     {
@@ -1438,7 +1438,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             yield break;
         }
 
-        foreach (string name in (string[])["U64", "Integer"])
+        foreach (string name in (string[])["U64", "Int"])
         {
             if (ctx.Registry.LookupType(name: name) is { } taken && taken.FullName != indexType.FullName)
             {
@@ -1450,7 +1450,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// <summary>
     /// The index of a subscript as the accessor's <c>index</c> parameter takes it: an integer of another type goes
     /// through its own <c>to_index()</c> (a <c>U64</c>, crashing below 0) or <c>to_integer_count()</c> (an
-    /// <c>Integer</c>). Any other argument, and a parameter not named <c>index</c> (a map's key), stays as it is.
+    /// <c>Int</c>). Any other argument, and a parameter not named <c>index</c> (a map's key), stays as it is.
     /// </summary>
     private Expression IndexOperand(Expression index, RoutineInfo? routine)
     {
@@ -1464,7 +1464,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         string? conversion = taken.Name switch
         {
             "U64" => "to_index",
-            "Integer" => "to_integer_count",
+            "Int" => "to_integer_count",
             _ => null
         };
         return conversion != null && CountCall(value: index, memberRoutineName: conversion) is { } converted
@@ -1473,10 +1473,10 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     }
 
     /// <summary>Whether <paramref name="type"/> is an integer that can stand for a count: a fixed-width integer
-    /// or <c>Integer</c>.</summary>
+    /// or <c>Int</c>.</summary>
     private static bool IsIntegerAmount(TypeSymbol type)
     {
-        return TryGetFixedWidthIntegerInfo(type: type, signed: out _, width: out _) || type.Name == "Integer";
+        return TryGetFixedWidthIntegerInfo(type: type, signed: out _, width: out _) || type.Name == "Int";
     }
 
     /// <summary>The call <c>value.memberRoutineName()</c> (<c>to_shift_amount</c>, <c>to_index</c>) that turns an
@@ -1798,8 +1798,8 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // is registered (signature/return-type resolved) but not yet marked failable — an `isFailable:true`
         // filter would spuriously reject it and the unresolved call would trip RF-S959 at codegen. The name
         // is a unique builtin (no failable/non-failable overload pair), so failability is not a disambiguator.
-        // A Suflae collection counts with `Integer`: its position is resolved by the `back_resolve` taking
-        // `Integer`, picked by the count's type.
+        // A Suflae collection counts with `Int`: its position is resolved by the `back_resolve` taking
+        // `Int`, picked by the count's type.
         TypeSymbol? countType = countRoutine?.ReturnType;
         RoutineInfo? resolveRoutine = countType != null
             ? ctx.Registry.LookupRoutineOverload(
@@ -1811,10 +1811,10 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                            ctx.Registry.LookupRoutine(fullName: Declaration.RuntimeContract.BackResolve);
 
         // The offset must be a scalar U64. An untyped/signed integer-literal operand (e.g. ^1) is retagged
-        // to U64Literal so codegen never treats it as an arbitrary-precision Integer (the Text-backed big-int type).
+        // to U64Literal so codegen never treats it as an arbitrary-precision Int (the Text-backed big-int type).
         // Any other operand (a U64 variable or arbitrary expression) already carries its type and passes through,
-        // and so does an `Integer` position.
-        Expression offset = countType?.Name != "Integer" && backIndex.Operand is LiteralExpression
+        // and so does an `Int` position.
+        Expression offset = countType?.Name != "Int" && backIndex.Operand is LiteralExpression
         {
             LiteralType: TokenType.UndecidedInteger or TokenType.IntegerLiteral
             or TokenType.S64Literal or TokenType.U64Literal

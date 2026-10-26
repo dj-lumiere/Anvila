@@ -377,7 +377,7 @@ public sealed partial class SemanticVerifier
         }
 
         // A routine of the other realm's same-named type (Suflae's own `System.List` next to RazorForge's), or a
-        // realm's surface routine on a shared type (Suflae's `Array.count() -> Integer`), shares its name with
+        // realm's surface routine on a shared type (Suflae's `Array.count() -> Int`), shares its name with
         // the ambient one, and the name lookups below find the ambient one. The info pinned at registration is
         // its own.
         // A specialization (`routine S64.to[U8]()`) shares its name and parameters with its siblings: only the info

@@ -207,7 +207,7 @@ public sealed partial class StdlibLoader
         List<(Program Program, string FilePath, string Module)> corePrograms)
     {
         // Each file's imports are in scope while its signatures resolve: Suflae's own `System` types name
-        // `Integer` from the imported `Numerics`, loaded by now.
+        // `Int` from the imported `Numerics`, loaded by now.
         IReadOnlyCollection<string>? savedImports = registry.ActiveRegistrationImports;
         string savedRealm = registry.ResolutionRealm;
         // Pass 1c: Re-resolve member variables now that all types are registered.
@@ -1071,8 +1071,8 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Import-scoped fallback: a bare cross-module type name (e.g. <c>Integer</c> in a <c>module System</c>
-    /// file that <c>import Numerics.Integer</c>) no longer resolves via a global short-name scan (removed),
+    /// Import-scoped fallback: a bare cross-module type name (e.g. <c>Int</c> in a <c>module System</c>
+    /// file that <c>import Numerics.Int</c>) no longer resolves via a global short-name scan (removed),
     /// and its module loads on-demand — so it is unresolved at eager System registration. When re-resolved on
     /// demand (the imported module now loaded) with the file's imports installed, try each imported namespace
     /// as a prefix. Mirrors the body-analysis TypeResolver, scoped to genuine imports only. Returns null when

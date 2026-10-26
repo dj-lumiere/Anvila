@@ -28,7 +28,7 @@ internal enum NumericTypeKind
     /// <summary>Decimal floating point (d32, d64, d128).</summary>
     DecimalFloat,
 
-    /// <summary>Arbitrary precision integer (Suflae Integer).</summary>
+    /// <summary>Arbitrary precision integer (Suflae Int).</summary>
     ArbitraryInteger,
 
     /// <summary>Arbitrary precision decimal (Suflae Decimal).</summary>
@@ -1520,7 +1520,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Returns true if the type implements the <c>Integral</c> protocol (i.e., is a fixed-width or
-    /// arbitrary-precision integer type such as s32, u64, uaddr, or Suflae's Integer).
+    /// arbitrary-precision integer type such as s32, u64, uaddr, or Suflae's Int).
     /// </summary>
     private bool IsIntegerType(TypeSymbol type)
     {
@@ -1629,7 +1629,7 @@ public sealed partial class SemanticVerifier
         // to nothing (e.g. `record Cat` with no `eq` resolving `==` to `Equatable.eq`). Only a
         // concrete implementation counts as support here; generic-parameter receivers get their
         // constraint-based support from the dedicated branch below.
-        // A type with several routines of the name (`Decimal.eq(you: Decimal)` and `Decimal.eq(you: Integer)`)
+        // A type with several routines of the name (`Decimal.eq(you: Decimal)` and `Decimal.eq(you: Int)`)
         // supports the operator when one of them takes its own type.
         RoutineInfo? resolved =
             _registry.LookupMemberRoutine(type: type, memberRoutineName: memberRoutineName) ??
@@ -1993,7 +1993,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Check that types are compatible (same type or error type). A type that writes its comparison against the
-        // other type itself (Suflae's `Integer.compare(you: Decimal)`) compares with it.
+        // other type itself (Suflae's `Int.compare(you: Decimal)`) compares with it.
         string? comparison = op is BinaryOperator.Equal or BinaryOperator.NotEqual ? "eq" : "compare";
         if (!IsAssignableTo(source: left, target: right) &&
             !IsAssignableTo(source: right, target: left) &&

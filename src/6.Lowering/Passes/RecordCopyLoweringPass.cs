@@ -751,7 +751,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     // A `when` used as an EXPRESSION (e.g. `acc +% when x.compare(you: v) is ... => ...`).
     // The subject and the arm bodies hold copy positions (call arguments, RHS values) that
     // must be lowered — without this, an argument like `v` inside the subject call never
-    // gets its retaining `store`, yet the callee (e.g. `Integer.compare`) still `destruct`s the
+    // gets its retaining `store`, yet the callee (e.g. `Int.compare`) still `destruct`s the
     // by-value parameter, double-freeing the reused source on the next iteration.
     private WhenExpression StripStealFromWhen(WhenExpression whenExpr)
     {

@@ -113,7 +113,7 @@ public record AssociatedTypeDeclaration(
 /// <remarks>
 /// Variable declarations support various patterns:
 /// <list type="bullet">
-/// <item>Type inference: var x = 42 (infers s64 for RazorForge/Integer for Suflae)</item>
+/// <item>Type inference: var x = 42 (infers s64 for RazorForge/Int for Suflae)</item>
 /// <item>Explicit typing: var x: s64 = 42</item>
 /// <item>Uninitialized (requires type): var x: s32</item>
 /// <item>Published: published var x = 42 (public read, private write)</item>

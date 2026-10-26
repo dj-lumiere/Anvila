@@ -891,7 +891,7 @@ public sealed partial class SemanticVerifier
 
         // Named arguments see the type they will land in as their expected type, so a literal adapts: the
         // parameters of a written creator called by exactly these names (`List[Text](count: 2, fill_value:
-        // "ab")` takes an `Integer` count even though the list's `count` field is a `U64`), else the fields
+        // "ab")` takes an `Int` count even though the list's `count` field is a `U64`), else the fields
         // of a field-init.
         Dictionary<string, TypeSymbol>? fieldTypeByName =
             BuildCreatorParameterTypeMap(generic: generic, resolvedType: resolvedType) ??

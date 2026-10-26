@@ -136,7 +136,7 @@ internal sealed class ProtocolConformanceAnalyzer
     /// of whose members obey P (<see cref="TypeRegistry.EverywhereObeys"/>). This is NOT a per-protocol
     /// bespoke pass — it reads the rule from the stdlib protocol declaration, so Copyable (and later
     /// Equatable/…) opt in by writing <c>needs P everywhere</c> rather than growing new C# passes. The BASE
-    /// case is the leaf types' own explicit/auto conformance (scalars bitwise, Text/Integer declare Copyable,
+    /// case is the leaf types' own explicit/auto conformance (scalars bitwise, Text/Int declare Copyable,
     /// <c>@llvm</c> aggregates cascade to their element via EverywhereObeys); this gate is the INDUCTIVE step
     /// over composition. Runs LAST so the leaf conformances are already in place for the member
     /// walk to see. A type already declaring P is skipped (idempotent).

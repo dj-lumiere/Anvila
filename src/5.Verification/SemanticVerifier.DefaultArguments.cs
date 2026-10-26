@@ -39,7 +39,7 @@ public sealed partial class SemanticVerifier
     /// Writes the defaults of the parameters of <paramref name="routine"/> that <paramref name="arguments"/>
     /// leaves out into the list, as <see cref="AppendDefaultArguments(Expression)"/> does for a bound call. A
     /// memberwise construction is not bound to its synthesized creator, so it calls this directly to get the
-    /// defaults of the member variables it leaves out (<c>User(name: "Ada")</c> with <c>age: Integer = 30</c>).
+    /// defaults of the member variables it leaves out (<c>User(name: "Ada")</c> with <c>age: Int = 30</c>).
     /// </summary>
     private void AppendDefaultArguments(Expression call, RoutineInfo routine, List<Expression> arguments)
     {

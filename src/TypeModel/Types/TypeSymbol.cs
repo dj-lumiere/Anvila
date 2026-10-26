@@ -106,7 +106,7 @@ public abstract class TypeSymbol
     /// <summary>
     /// This type as a generic instance's name writes it among its type arguments: its <see cref="FullName"/>,
     /// marked with its realm when that is not the shared one. Suflae's own <c>System.List</c> and RazorForge's
-    /// share a full name, and an instance over one (<c>Roamed[SF::System.List[Integer]]</c>) is a different type
+    /// share a full name, and an instance over one (<c>Roamed[SF::System.List[Int]]</c>) is a different type
     /// from the same instance over the other, so its name, and every key and symbol made from it, differ.
     /// </summary>
     public string InstanceArgumentName => Realm == Realms.Shared

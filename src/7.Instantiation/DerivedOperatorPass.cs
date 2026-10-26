@@ -77,7 +77,7 @@ internal sealed class DerivedOperatorPass
         IEnumerable<RoutineInfo> memberRoutines = _registry.GetMemberRoutinesForType(type: type);
         var memberRoutineList = memberRoutines.ToList();
 
-        // Every eq overload gets its own ne: `Integer.eq(you: Integer)` and `Integer.eq(you: Decimal)` are two
+        // Every eq overload gets its own ne: `Int.eq(you: Int)` and `Int.eq(you: Decimal)` are two
         // routines, and a ne made from only one of them would take the other's argument type.
         foreach (RoutineInfo eqMemberRoutine in memberRoutineList.Where(predicate: m => m.Name == "eq").ToList())
         {

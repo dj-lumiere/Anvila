@@ -220,7 +220,7 @@ public sealed partial class TypeRegistry
             // A parameter the type only points at (`source: Hijacked[TSource]` of an adapter) names the value it
             // walks, held the way library code holds it: the entity itself, or the handle of an entity a program
             // writes (HandleTakenAsMe). That is what `xs.where(...)` builds, so a field or a return written
-            // `WhereEmittable[Integer, List[Integer]]` is the same type.
+            // `WhereEmittable[Int, List[Int]]` is the same type.
             TypeSymbol lowered = PointsAtParameter(genericDef: genericDef, slot: slot)
                 ? PointedAtArgument(argument: arg)
                 : RoamEntitySlot(resolved: arg, roamedDef: roamedDef);
@@ -422,8 +422,8 @@ public sealed partial class TypeRegistry
     /// (re-)registered — consulted by the stdlib registration's bare-type resolver as an import-scoped
     /// fallback. The unscoped cross-module short-name scan was removed (a bare <c>Name</c> no longer binds
     /// ANY module's <c>*.Name</c>), which broke a <c>module System</c> file that references an on-demand
-    /// module's type in a SIGNATURE or FIELD (e.g. <c>FloatConvert</c>'s <c>round_and_pack(num_in: Integer)</c>
-    /// / a record field <c>mantissa: Integer</c> where <c>Integer</c> lives in the lazily-loaded
+    /// module's type in a SIGNATURE or FIELD (e.g. <c>FloatConvert</c>'s <c>round_and_pack(num_in: Int)</c>
+    /// / a record field <c>mantissa: Int</c> where <c>Int</c> lives in the lazily-loaded
     /// <c>Numerics</c> module): the type is unloaded at eager System-registration time, so its param/field
     /// collapses to <c>&lt;error&gt;</c>. Set (to the file's imports) around the on-demand signature/member
     /// re-resolution, when the imported module IS loaded; null otherwise. Mirrors the body-analysis
@@ -710,9 +710,9 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// The routines of one name the code being analyzed sees. A program of a realm that writes its own surface
     /// routines sees each in place of the shared overload called the same way (the same parameter names:
-    /// Suflae's `getitem(index: Integer)` stands in for `getitem(index: U64)`), and the shared overloads it does
+    /// Suflae's `getitem(index: Int)` stands in for `getitem(index: U64)`), and the shared overloads it does
     /// not replace. The standard library, the realm's own files included, works with the shared routines only:
-    /// inside, a collection counts with `U64` even where its Suflae surface counts with `Integer`. A surface
+    /// inside, a collection counts with `U64` even where its Suflae surface counts with `Int`. A surface
     /// routine that stands in for no shared one (Suflae's `Array.erase`) is the realm's own addition, so the
     /// realm's library files see it too.
     /// </summary>
@@ -749,8 +749,8 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Whether the realm's <paramref name="surface"/> routine stands in for the <paramref name="shared"/> one: it is
     /// called the same way (the same parameter names), and either takes the same types or the shared one is not the
-    /// type's own operation on itself. Suflae's <c>getitem(index: Integer)</c> stands in for <c>getitem(index: U64)</c>,
-    /// but its <c>Decimal.mul(you: Integer)</c> is an addition next to <c>Decimal.mul(you: Decimal)</c>, not a
+    /// type's own operation on itself. Suflae's <c>getitem(index: Int)</c> stands in for <c>getitem(index: U64)</c>,
+    /// but its <c>Decimal.mul(you: Int)</c> is an addition next to <c>Decimal.mul(you: Decimal)</c>, not a
     /// replacement of it.
     /// </summary>
     private static bool StandsIn(RoutineInfo surface, RoutineInfo shared)

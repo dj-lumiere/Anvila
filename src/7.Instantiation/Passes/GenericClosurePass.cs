@@ -237,7 +237,7 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         new VariantReturnLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
             bodies: freshBodies);
         // A body cloned before the per-file lowering ran (a protocol-extension routine of the program, copied
-        // for each type obeying the protocol) still has its domain literals: a Suflae `2` is an `Integer` to
+        // for each type obeying the protocol) still has its domain literals: a Suflae `2` is an `Int` to
         // construct, not a scalar.
         new LiteralLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
         // Such a body also still holds entities the way its source was analyzed. In a file whose language

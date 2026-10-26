@@ -1427,7 +1427,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// Builds the step expression for a range: the explicit step if present, otherwise a default
-    /// of 1 (the static Integer record for an Integer range, <c>T.from_literal("1")</c> for another record
+    /// of 1 (the static Int record for an Int range, <c>T.from_literal("1")</c> for another record
     /// element type, else a raw S64 literal).
     /// Appends any hoisted statements from lowering an explicit step to <paramref name="hoisted"/>.
     /// </summary>
@@ -1461,12 +1461,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         SourceLocation loc)
     {
         // LiteralLoweringPass has ALREADY run, so a raw literal stamped
-        // with a record element type (Suflae's arbitrary-precision `Integer`/`Decimal`)
-        // would reach codegen as an invalid `%Record.Integer 1` constant. An Integer step is the
-        // static Integer record LiteralLoweringPass builds for the start/end literals. Another
+        // with a record element type (Suflae's arbitrary-precision `Int`/`Decimal`)
+        // would reach codegen as an invalid `%Record.Int 1` constant. An Int step is the
+        // static Int record LiteralLoweringPass builds for the start/end literals. Another
         // element type with a `from_literal` constructor builds `T.from_literal(text: "1")`.
         // Scalar element types (RF's S64) have no `from_literal` and keep the raw literal.
-        if (elemType is { Name: "Integer" } && long.TryParse(s: text.Replace(oldValue: "_", newValue: ""),
+        if (elemType is { Name: "Int" } && long.TryParse(s: text.Replace(oldValue: "_", newValue: ""),
                 result: out long integerStep))
         {
             return LiteralLoweringPass.IntegerCreator(registry: ctx.Registry, value: integerStep, loc: loc);
@@ -2187,7 +2187,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         {
             (List<Statement> h, Expression low) = LowerExpr(expr: el);
             HoistAfter(hoisted: hoisted, setup: h, earlier: lowered);
-            // An element of a variant collection (`List[Integer | Text]`) is held as the variant.
+            // An element of a variant collection (`List[Int | Text]`) is held as the variant.
             lowered.Add(item: TryWrapVariantArm(targetType: elementType, init: low) ?? low);
         }
 

@@ -104,7 +104,7 @@ public enum SemanticDiagnosticCode
     SpecialFloatNeedsType = 19,
 
     /// <summary>
-    /// <c>inf</c> or <c>nan</c> goes where a type without an infinity or a NaN goes (<c>Decimal</c>, <c>Integer</c>, an
+    /// <c>inf</c> or <c>nan</c> goes where a type without an infinity or a NaN goes (<c>Decimal</c>, <c>Int</c>, an
     /// integer type): only the binary floats and the fixed decimal floats have those values.
     /// </summary>
     SpecialFloatNotInType = 20,

@@ -34,7 +34,7 @@ internal static class UndecidedLiteralConformance
     internal static bool HasNumberToken(TypeSymbol? type)
     {
         return type?.Name is "S8" or "S16" or "S32" or "S64" or "S128" or "S256" or "U8" or "U16" or "U32" or "U64"
-            or "U128" or "U256" or RuntimeContract.Addr or "Integer" || IsFloatOrDecimal(typeName: type?.Name);
+            or "U128" or "U256" or RuntimeContract.Addr or "Int" || IsFloatOrDecimal(typeName: type?.Name);
     }
 
     /// <summary>Whether <paramref name="typeName"/> is a binary float or a decimal type, which a bare whole number
@@ -67,7 +67,7 @@ internal static class UndecidedLiteralConformance
             "U128" => TokenType.U128Literal,
             "U256" => TokenType.U256Literal,
             RuntimeContract.Addr => TokenType.AddressLiteral,
-            "Integer" => TokenType.IntegerLiteral,
+            "Int" => TokenType.IntegerLiteral,
             _ => TokenType
                .S64Literal // This should be language specific: Suflae should use IntegerLiteral
         };
