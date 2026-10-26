@@ -214,6 +214,10 @@ public enum GrammarDiagnosticCode
     /// Each name is a <c>Maybe</c> of its token, and the body branches with <c>when</c>.</summary>
     TryAccessElse = 226,
 
+    /// <summary>A routine marked both <c>@inline</c> and <c>@noinline</c>: it is inlined at every call or at none,
+    /// so only one of them can stand.</summary>
+    InlineAndNoinline = 227,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

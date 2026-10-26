@@ -14,12 +14,15 @@ public partial class Parser
         var annotations = new List<string>();
 
         // Handle @annotation and @[...] compound annotations
+        bool reportedInlineConflict = false;
         while (Check(type: TokenType.At))
         {
             if (!CheckAndAdvance(type: TokenType.At))
             {
                 break; // No more annotations
             }
+
+            Token annotationAt = CurrentToken;
 
             // Check for compound annotation syntax: @[attr1, attr2, ...]
             if (CheckAndAdvance(type: TokenType.LeftBracket))
@@ -29,6 +32,20 @@ public partial class Parser
             else
             {
                 ParseRegularAnnotation(annotations: annotations);
+            }
+
+            if (!reportedInlineConflict && annotations.Contains(item: "inline") &&
+                annotations.Contains(item: "noinline"))
+            {
+                // Recorded, not thrown: the routine still parses, so the conflict reports once.
+                reportedInlineConflict = true;
+                RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.InlineAndNoinline,
+                    message: "You marked this routine both '@inline' and '@noinline'. It is inlined at every " +
+                             "call or at none: keep the one you mean and remove the other.",
+                    fileName: FileName,
+                    line: annotationAt.Line,
+                    column: annotationAt.Column,
+                    language: _language));
             }
 
             // Skip newlines between annotations (allows multiple @attr on separate lines)
@@ -96,7 +113,7 @@ public partial class Parser
     /// (`@readonyl`) is not quietly ignored.</summary>
     private static readonly HashSet<string> KnownAnnotations =
     [
-        "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "no_optimize",
+        "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "noinline", "no_optimize",
         "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking",
         RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rf",
         "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"

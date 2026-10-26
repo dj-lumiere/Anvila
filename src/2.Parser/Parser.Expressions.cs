@@ -203,6 +203,11 @@ public partial class Parser
             return ParseSetOrDictLiteral(location: location);
         }
 
+        if (Check(type: TokenType.If))
+        {
+            throw ThrowNestedConditionalError();
+        }
+
         if (Check(type: TokenType.None))
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,

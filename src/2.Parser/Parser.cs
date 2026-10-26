@@ -114,14 +114,6 @@ public partial class Parser
     #region Guarded Parser State
 
     /// <summary>
-    /// Prevents nested inline conditionals (if-then-else expressions).
-    /// When true, 'if' at expression level is not parsed as inline conditional.
-    /// This improves readability by forbidding constructs like:
-    /// <c>if a then (if b then c else d) else e</c>
-    /// </summary>
-    private bool _parsingInlineConditional;
-
-    /// <summary>
     /// Indicates whether we're currently parsing inside a type body (record, entity).
     /// When true, allows member variable declarations without var keywords.
     /// </summary>

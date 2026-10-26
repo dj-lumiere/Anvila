@@ -443,6 +443,12 @@ public partial class LlvmEmitter
         {
             funcAttrs += " noinline optnone";
         }
+        // `@noinline` keeps the routine out of its callers (a cold path out of a hot loop) and leaves its own
+        // body optimized: `noinline` alone, no `optnone`.
+        else if (info.Annotations.Contains(value: "noinline"))
+        {
+            funcAttrs += " noinline";
+        }
 
         return
             $"define {linkagePrefix}{returnPrefix}{headerReturnType} @{funcName}({parameters}){funcAttrs} {CpuAttributes} {{";

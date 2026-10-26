@@ -1274,7 +1274,7 @@ public partial class Parser
         if (!Check(type: TokenType.Newline) && !Check(type: TokenType.Dedent) &&
             !Check(type: TokenType.RightBrace) && !IsAtEnd)
         {
-            value = ParseExpression();
+            value = ParseValue();
         }
 
         ConsumeStatementTerminator();
@@ -1759,7 +1759,7 @@ public partial class Parser
         Consume(type: TokenType.Assign, errorMessage: "Expected '=' in destructuring");
 
         // Parse the initializer expression
-        Expression initializer = ParseExpression();
+        Expression initializer = ParseValue();
 
         ConsumeStatementTerminator();
 

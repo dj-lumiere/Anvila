@@ -32,7 +32,7 @@ public partial class Parser
         Expression? initializer = null;
         if (CheckAndAdvance(type: TokenType.Assign))
         {
-            initializer = ParseExpression();
+            initializer = ParseValue();
         }
 
         ConsumeStatementTerminator();
@@ -65,7 +65,7 @@ public partial class Parser
         TypeExpression type = ParseType();
         Consume(type: TokenType.Assign,
             errorMessage: "Expected '=' after global type (a global must be initialized)");
-        Expression initializer = ParseExpression();
+        Expression initializer = ParseValue();
         ConsumeStatementTerminator();
 
         return new VariableDeclaration(Name: name,

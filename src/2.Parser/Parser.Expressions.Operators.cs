@@ -11,12 +11,13 @@ public partial class Parser
 {
     private Expression ParseAssignment()
     {
-        Expression expr = ParseInlineConditional();
+        Expression expr = ParseNoneCoalesce();
         Expression value;
         // Check for simple assignment
         if (CheckAndAdvance(type: TokenType.Assign))
         {
-            value = ParseAssignment();
+            // The whole value of a plain assignment is one of the places a conditional value may stand.
+            value = ParseValue();
             return new BinaryExpression(Left: expr,
                 Operator: BinaryOperator.Assign,
                 Right: value,
@@ -97,58 +98,66 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses inline conditional expressions.
-    /// Syntax: <c>if condition then thenExpr else elseExpr</c>
-    /// Note: This is expression-level only; block-level if uses ParseIfStatement.
-    /// Nested inline conditionals are forbidden for readability.
+    /// Parses the whole value of a <c>var</c> / <c>global</c> declaration, a plain assignment or a <c>return</c>:
+    /// the only places a conditional value <c>if c then a else b</c> may stand. Everywhere else an expression is
+    /// parsed by <see cref="ParseExpression"/>, which never reaches a conditional, so an <c>if</c> there lands on
+    /// <see cref="ThrowNestedConditionalError"/>.
     /// </summary>
-    /// <returns>The parsed expression, possibly a conditional.</returns>
-    private Expression ParseInlineConditional()
+    private Expression ParseValue()
     {
-        // Check for inline if-then-else expression
-        // Skip if already inside an inline conditional (prevents nesting for readability)
-        if (_parsingInlineConditional || !CheckAndAdvance(type: TokenType.If))
-        {
-            return ParseNoneCoalesce();
-        }
+        return Check(type: TokenType.If)
+            ? ParseConditionalValue()
+            : ParseExpression();
+    }
 
+    /// <summary>
+    /// Parses <c>if condition then a else b</c> with the <c>if</c> not yet consumed. The condition and both
+    /// branches are ordinary expressions, so another conditional inside any of them is a parse error.
+    /// </summary>
+    private Expression ParseConditionalValue()
+    {
+        Advance(); // consume 'if'
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
-        // Set flag to prevent nested inline conditionals
-        _parsingInlineConditional = true;
+        Expression condition = ParseExpression();
 
-        try
+        if (Check(type: TokenType.Newline) || Check(type: TokenType.Indent))
         {
-            Expression condition = ParseNoneCoalesce();
-
-            if (Check(type: TokenType.Newline) || Check(type: TokenType.Indent))
-            {
-                throw ThrowParseError(code: GrammarDiagnosticCode.UnexpectedToken,
-                    message: "An 'if' that gives a value is written on one line: 'if condition then a else b'. " +
-                             "It takes no indented block. For a choice of several values, or one that needs " +
-                             "statements, use 'when'.");
-            }
-
-            Consume(type: TokenType.Then,
-                errorMessage: "Expected 'then' after condition in inline if");
-            Expression
-                thenExpr =
-                    ParseExpression(); // Full expression, but flag prevents nested inline if
-
-            Consume(type: TokenType.Else, errorMessage: "Expected 'else' in inline if expression");
-            Expression
-                elseExpr =
-                    ParseExpression(); // Full expression, but flag prevents nested inline if
-
-            return new ConditionalExpression(Condition: condition,
-                TrueExpression: thenExpr,
-                FalseExpression: elseExpr,
-                Location: location);
+            throw ThrowParseError(code: GrammarDiagnosticCode.UnexpectedToken,
+                message: "An 'if' that gives a value is written on one line: 'if condition then a else b'. " +
+                         "It takes no indented block. For a choice of several values, or one that needs " +
+                         "statements, use 'when'.");
         }
-        finally
-        {
-            _parsingInlineConditional = false;
-        }
+
+        Consume(type: TokenType.Then, errorMessage: "Expected 'then' after condition in inline if");
+        Expression thenExpr = ParseExpression();
+
+        Consume(type: TokenType.Else, errorMessage: "Expected 'else' in inline if expression");
+        Expression elseExpr = ParseExpression();
+
+        return new ConditionalExpression(Condition: condition,
+            TrueExpression: thenExpr,
+            FalseExpression: elseExpr,
+            Location: location);
+    }
+
+    /// <summary>
+    /// The parse error for an <c>if</c> where an ordinary expression is expected: inside parentheses, an
+    /// argument, an operand, a subscript, an f-text slot, a branch of another conditional, or after
+    /// <c>try</c>/<c>check</c>.
+    /// </summary>
+    private GrammarException ThrowNestedConditionalError(bool afterRecovery = false)
+    {
+        string where = afterRecovery
+            ? $"You put '{PeekToken(offset: -1).Text}' in front of a conditional value 'if c then a else b'. " +
+              "Then the condition and both branches are all places a failure could come from, and the reader " +
+              "can't tell which one it catches. Put it on the call that can fail, inside a branch or a named value. "
+            : "You wrote a conditional value 'if c then a else b' inside another expression. ";
+        return ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,
+            message: where +
+                     "A conditional value stands only as the whole value of 'var x =', 'x =' or 'return'. " +
+                     "Give it a name first ('var y = if c then a else b') and use the name, or choose the " +
+                     "value with 'when'.");
     }
 
     /// <summary>

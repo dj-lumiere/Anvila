@@ -1108,7 +1108,7 @@ public partial class Parser
         Consume(type: TokenType.Colon, errorMessage: "Expected ':' after preset name");
         TypeExpression type = ParseType();
         Consume(type: TokenType.Assign, errorMessage: "Expected '=' after preset type");
-        Expression value = ParseExpression();
+        Expression value = ParseValue();
 
         ConsumeStatementTerminator();
 

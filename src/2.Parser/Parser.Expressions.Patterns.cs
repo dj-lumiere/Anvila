@@ -457,6 +457,11 @@ public partial class Parser
     private Expression ParseRecoveryPrefix()
     {
         Token recoveryKw = PeekToken(offset: -1);
+        if (Check(type: TokenType.If))
+        {
+            throw ThrowNestedConditionalError(afterRecovery: true);
+        }
+
         RecoveryKind recoveryKind = recoveryKw.Type switch
         {
             TokenType.Check => RecoveryKind.Check,
