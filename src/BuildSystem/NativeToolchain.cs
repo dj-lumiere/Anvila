@@ -1059,6 +1059,12 @@ internal static class NativeToolchain
             clangProcess.WaitForExit();
             stdoutThread.Join();
             stderrThread.Join();
+            // The trace table's assembly is a step of the build, not a byproduct to keep (it is as large as the IR).
+            if (optFile.EndsWith(value: ".s", comparisonType: StringComparison.Ordinal) &&
+                Environment.GetEnvironmentVariable(variable: "RF_TRACE_KEEP") != "1")
+            {
+                File.Delete(path: optFile);
+            }
 
             if (clangProcess.ExitCode != 0)
             {
