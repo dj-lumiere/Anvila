@@ -948,8 +948,28 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        // Skip special identifiers
-        if (id.Name is "me" or "none")
+        // `me` of a record is a value the lambda keeps a copy of, and a shared entity's `me` (Suflae) one more
+        // handle. An entity's `me` is reached for the call only, as a token is.
+        if (id.Name == "me")
+        {
+            if (!_registry.EntitiesAreShared && id.ResolvedType is { } meType &&
+                (IsRawEntityType(type: meType) || IsMemoryToken(type: meType)))
+            {
+                string entity = (meType.TypeArguments is [{ } inner] && IsMemoryToken(type: meType)
+                    ? inner
+                    : meType).Name;
+                ReportError(code: SemanticDiagnosticCode.LambdaCaptureToken,
+                    message: $"You capture 'me' in this lambda, but 'me' is the '{entity}' this routine was called " +
+                             "on, reached for this call only, and the lambda can be called after the call ends. Copy " +
+                             $"what the lambda needs out of 'me' first (`var n = me.n`, then capture 'n'), or capture " +
+                             $"a handle that keeps the entity (`Retained[{entity}]`).",
+                    location: id.Location);
+            }
+
+            return;
+        }
+
+        if (id.Name == "none")
         {
             return;
         }

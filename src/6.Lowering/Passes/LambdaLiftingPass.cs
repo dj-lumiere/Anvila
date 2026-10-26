@@ -39,11 +39,13 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             switch (program.Declarations[index: i])
             {
                 case RoutineDeclaration routine:
+                    // A member routine written at the top level (`routine Box.maker()`) has a `me` too.
+                    bool hasMe = routine.ResolvedInfo?.OwnerType != null;
                     program.Declarations[index: i] = RewriteRoutine(routine: routine,
-                        scope: BuildRoutineScope(routine: routine, includeMe: false),
+                        scope: BuildRoutineScope(routine: routine, includeMe: hasMe),
                         inheritedGenericParameters: routine.GenericParameters,
                         inheritedGenericConstraints: routine.GenericConstraints,
-                        includeMe: false);
+                        includeMe: hasMe);
                     break;
 
                 case EntityDeclaration entity:
@@ -882,11 +884,6 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                                                       resolved: captureTypes[key: n])))
                                              .ToList();
 
-        if (includeMe && ContainsIdentifier(expression: lambda.Body, name: "me"))
-        {
-            throw new InvalidOperationException(
-                message: "Lambda captures 'me' and requires closure lowering before codegen.");
-        }
 
         if (lambda.ResolvedType is not RoutineTypeSymbol routineType)
         {
@@ -926,7 +923,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             liftedParamInfos.Add(item: closure.BoundParamInfo());
             for (int i = 0; i < closureCaptures.Count; i++)
             {
-                liftedStatements.Add(item: closure.CaptureLocal(name: closureCaptures[index: i].Name,
+                liftedStatements.Add(item: closure.CaptureLocal(name: CapturedLocalName(name: closureCaptures[index: i].Name),
                     type: closureCaptures[index: i].Type,
                     slot: i));
             }
@@ -940,6 +937,13 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         if (handleCaptures.Count > 0)
         {
             loweredBody = new HandleCaptureRetyper(handles: handleCaptures).VisitExpression(expr: loweredBody);
+        }
+
+        // `me` captured by a lambda written in a member routine is a value of the payload like any other name, kept
+        // in the lifted routine under a name of its own: the lifted routine has no `me`.
+        if (closureCaptures.Any(predicate: c => c.Name == MeName))
+        {
+            loweredBody = new MeCaptureRenamer().VisitExpression(expr: loweredBody);
         }
 
         liftedStatements.Add(item: new ReturnStatement(Value: loweredBody, Location: lambda.Location));
@@ -2220,6 +2224,26 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
     }
 
     /// <summary>Retypes the references to captured names that are held as shared handles in the lifted body.</summary>
+    private const string MeName = "me";
+
+    /// <summary>The local a lifted lambda keeps a captured <c>me</c> in.</summary>
+    private const string CapturedMeName = "__captured_me";
+
+    /// <summary>The name a captured value has in the lifted routine: its own, or <see cref="CapturedMeName"/> for
+    /// <c>me</c>.</summary>
+    private static string CapturedLocalName(string name) => name == MeName ? CapturedMeName : name;
+
+    /// <summary>Reads a captured <c>me</c> through <see cref="CapturedMeName"/> in a lifted lambda's body.</summary>
+    private sealed class MeCaptureRenamer : AstRewriter
+    {
+        public override Expression VisitExpression(Expression expr)
+        {
+            return expr is IdentifierExpression { Name: MeName } e
+                ? e with { Name = CapturedMeName }
+                : base.VisitExpression(expr: expr);
+        }
+    }
+
     private sealed class HandleCaptureRetyper(Dictionary<string, TypeSymbol> handles) : AstRewriter
     {
         public override Expression VisitExpression(Expression expr)
