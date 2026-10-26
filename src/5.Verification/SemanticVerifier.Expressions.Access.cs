@@ -884,6 +884,17 @@ public sealed partial class SemanticVerifier
             _dangerBlockDepth = dangerDepthAroundLambda;
         }
 
+        // RF-S413, as for `return`: a lambda that gives back a member variable or a container element of an entity
+        // (`t => t.members` over teams) hands its caller an entity the holder still keeps.
+        if (ChecksHolderOf(type: returnType) &&
+            ReadsKeptEntity(value: lambda.Body, includeVariables: false) &&
+            MayHoldEntity(type: returnType))
+        {
+            ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
+                message: KeptEntityMessage(action: "This lambda gives back", value: lambda.Body, type: returnType),
+                location: lambda.Body.Location);
+        }
+
         // Validate captured variables (RazorForge only)
         // Lambda bodies can reference variables from enclosing scope - these are captures
         ValidateLambdaCaptures(lambda: lambda,

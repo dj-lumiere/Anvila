@@ -971,7 +971,8 @@ public sealed partial class SemanticVerifier
             ? $"Take it out with a removing routine (e.g. 'remove_at'){copy}, or work on it where it sits " +
               "(a call or field write on the element reaches it in place)."
             : $"Hand it over with 'steal'{copy}, or put it under a manager to share it.";
-        return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {holder} still holds, which would share one entity " +
+        string written = WrittenTypeName(type: type);
+        return $"{action} {Article.For(name: written)} '{written}' that {holder} still holds, which would share one entity " +
                $"between two places with no manager. {fix}";
     }
 
