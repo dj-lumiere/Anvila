@@ -1281,9 +1281,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// <summary>
     /// The late run's registration: a local a lowering marked as owing its teardown, holding a fresh value it
     /// owns (a call or construction, not a token or a view of a value kept elsewhere) of a type whose destroy
-    /// releases something counted: a managed leaf like <c>Text</c>, an RC wrapper, or a record carrying one. An
-    /// entity, a plain value record, or a scalar is left alone, as <see cref="TemporaryTeardownPass"/> does
-    /// for the temporaries it spills.
+    /// releases something counted: a managed leaf like <c>Text</c>, an RC wrapper, or a record carrying one, or a value
+    /// that holds an entity. An entity, a plain value record, or a scalar is left alone, as
+    /// <see cref="TemporaryTeardownPass"/> does for the temporaries it spills.
     /// </summary>
     private void RegisterLateDeclaration(VariableDeclaration v, List<Owned> live)
     {
@@ -1302,8 +1302,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             return;
         }
 
+        // A value that holds an entity (`when try make_part()` holds a `Maybe[Part]`) ends the entity when it ends.
         TypeRegistry.Lifecycle lc = ctx.Registry.GetLifecycle(type: rec);
-        if (lc.Store != null || rec.HasRCMemberVariables || TypeRegistry.GetRcWrapperBaseName(type: rec) is not null)
+        if (lc.Store != null || rec.HasRCMemberVariables || TypeRegistry.GetRcWrapperBaseName(type: rec) is not null ||
+            ctx.Registry.IsEntityKind(type: rec))
         {
             live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: d));
         }
@@ -1444,9 +1446,10 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 break;
             // `var (a, b) = pair()` spelled out (`var t = pair()`, `var a = t.item0`): an entity read out of a value
             // that holds entities (a tuple of entities) is the binding's now, so the value is not torn down again
-            // on top of its parts.
+            // on top of its parts. A name a pattern binds (`else as p` reading `subject.value`) only reads it.
             case VariableDeclaration
                 {
+                    IsPatternBinding: false,
                     Initializer: MemberExpression
                     {
                         Object: IdentifierExpression { ResolvedType: RecordTypeSymbol holder } source,

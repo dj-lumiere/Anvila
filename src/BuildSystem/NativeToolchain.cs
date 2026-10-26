@@ -141,6 +141,10 @@ internal static class NativeToolchain
 
         try
         {
+            // Every build in a checkout and every `dotnet build` (Ingrid/native/build.sh) works in this one build
+            // tree. Two at once (the RazorForge and Suflae test suites side by side) could configure it while the
+            // other builds in it, so each holds the tree's lock while it builds and copies.
+            using FileStream held = LockNativeBuildTree(nativeBuildDir: nativeBuildDir);
             // Resolve cmake to an absolute path (rather than letting Process.Start search PATH at
             // launch) so the tool directory is fixed and a cmake planted earlier on PATH can't be
             // picked up. A missing tool throws and is reported by the catch below.
@@ -208,6 +212,29 @@ internal static class NativeToolchain
             Console.WriteLine(
                 value: "Make sure CMake is installed and the native runtime has been configured.");
             return 1;
+        }
+    }
+
+    /// <summary>The file the native runtime's build tree is locked with, shared with Ingrid/native/build.sh
+    /// (<c>flock</c> on the same file).</summary>
+    internal const string NativeBuildLockFileName = ".build.lock";
+
+    /// <summary>Takes the lock on the native runtime's build tree, waiting while another build holds it.</summary>
+    private static FileStream LockNativeBuildTree(string nativeBuildDir)
+    {
+        string path = Path.Combine(path1: nativeBuildDir, path2: NativeBuildLockFileName);
+        var waited = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return new FileStream(path: path, mode: FileMode.OpenOrCreate, access: FileAccess.ReadWrite,
+                    share: FileShare.None);
+            }
+            catch (IOException) when (waited.Elapsed < TimeSpan.FromMinutes(minutes: 10))
+            {
+                Thread.Sleep(millisecondsTimeout: 100);
+            }
         }
     }
 
