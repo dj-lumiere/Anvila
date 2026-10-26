@@ -1074,7 +1074,7 @@ internal sealed class TesseraRoutineWriter
             double value = digits switch
             {
                 "inf" => double.PositiveInfinity,
-                "nan" => double.NaN,
+                "nan" => BitConverter.Int64BitsToDouble(value: 0x7FF8000000000000),
                 _ => double.Parse(s: digits, style: NumberStyles.Float, provider: CultureInfo.InvariantCulture)
             };
             bits = type switch

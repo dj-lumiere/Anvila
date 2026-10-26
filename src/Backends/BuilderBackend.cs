@@ -50,6 +50,11 @@ public sealed record BackendInput
     /// <summary>Whether to print the backend's phase timings.</summary>
     public bool Timing { get; init; }
 
+    /// <summary>Whether a traced build reads its crash trace from the stack (Tessera's <c>TraceTable</c>): no shadow
+    /// stack is kept, and the native toolchain writes the table. Set for an executable built ahead of time on a
+    /// target the table supports, never for the JIT.</summary>
+    public bool TraceFromStack { get; init; }
+
     /// <summary>Where a backend that writes source of its own (Tessera) keeps a copy of it, or null
     /// (<c>[debug] dump-tessera</c>).</summary>
     public string? SourceDumpPath { get; init; }

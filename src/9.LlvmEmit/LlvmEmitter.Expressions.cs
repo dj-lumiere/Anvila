@@ -285,7 +285,11 @@ public partial class LlvmEmitter
             return;
         }
 
-        EmitLine(sb: sb, line: $"  call void @_rf_trace_update_loc(i64 {TraceSlotValue}, i32 {line}, i32 {col})");
+        // Read from the stack, the place goes on the calls from here on as their debug location (ApplyDebugInfo), as
+        // the update gives the frame its place, and the program stores nothing.
+        EmitLine(sb: sb, line: _traceFromStack
+            ? $"  ; !traceloc {line} {col}"
+            : $"  call void @_rf_trace_update_loc(i64 {TraceSlotValue}, i32 {line}, i32 {col})");
     }
 
     /// <summary>

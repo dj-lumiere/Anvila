@@ -51,7 +51,8 @@ public sealed class LlvmBackend : IBuilderBackend
                 InstantiatedGenericBodies = input.InstantiatedGenericBodies,
                 LiveRoutineKeys = input.LiveRoutineKeys,
                 MaySuspendRoutineKeys = input.MaySuspendRoutineKeys,
-                ResidentSymbols = input.ResidentSymbols
+                ResidentSymbols = input.ResidentSymbols,
+                TraceFromStack = input.TraceFromStack
             }) { Timing = input.Timing, EntryModule = input.EntryModule };
         string ir = emitter.Generate();
         return new BackendOutput(LlvmIr: ir, DefinedRoutineSymbols: emitter.GetEmittedRoutineSymbols());

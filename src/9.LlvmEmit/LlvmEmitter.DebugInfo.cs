@@ -73,6 +73,7 @@ public partial class LlvmEmitter
     /// <summary>Records a DISubprogram descriptor for an RF routine define. No-op unless debug mode.</summary>
     private void RecordDebugSubprogram(string funcName, SourceLocation? location)
     {
+        _currentRoutineSymbol = StripQuotes(sym: funcName);
         if (!ShouldEmitDebugInfo || location is null)
         {
             return;
@@ -112,15 +113,65 @@ public partial class LlvmEmitter
 
         var outSb = new StringBuilder(capacity: ir.Length + 8192);
         int curSub = -1, curLine = 0, curCol = 1;
+        bool inTraced = false;
+        (int Line, int Col)? tracePlace = null;
 
         foreach (string line in ir.Split(separator: '\n'))
         {
-            ProcessDebugInfoLine(line: line,
+            string current = line;
+            if (_traceFromStack)
+            {
+                if (line.StartsWith(value: "define ", comparisonType: StringComparison.Ordinal))
+                {
+                    inTraced = ExtractDefineSymbol(line: line) is { } sym && _tracedRoutines.ContainsKey(key: sym);
+                    tracePlace = null;
+                }
+                else if (TryParseTracePlace(line: line, place: out (int Line, int Col) place))
+                {
+                    // The frame's place for the calls from here on (EmitTraceLocUpdate), as a shadow stack keeps it.
+                    tracePlace = place;
+                    continue;
+                }
+                else if (IsRoutineCallLine(line: line))
+                {
+                    // No call merges with another: once LLVM inlines a routine into a traced one, its calls are a
+                    // traced routine's too, and a merged call would lose one of the two places. A call of a traced
+                    // routine carries its frame's place as its debug location.
+                    current = line + " nomerge";
+                    if (inTraced && curSub >= 0 && tracePlace is { } at)
+                    {
+                        current += $", !dbg !{registry.GetLoc(scope: curSub, line: at.Line, col: at.Col)}";
+                    }
+                }
+            }
+
+            ProcessDebugInfoLine(line: current,
                 registry: registry,
                 outSb: outSb,
                 curSub: ref curSub,
                 curLine: ref curLine,
                 curCol: ref curCol);
+        }
+
+        if (_traceFromStack)
+        {
+            // The traced routines, for the table the native toolchain writes (Tessera's TraceTable).
+            var entries = new List<int>();
+            foreach ((string sym, (string Name, string File, bool HidesPosition) frame) in _tracedRoutines)
+            {
+                if (!registry.HasSub(funcName: sym))
+                {
+                    continue;
+                }
+
+                int entry = registry.AllocId();
+                registry.Meta.Append(value: $"!{entry} = " +
+                    Tessera.TraceTable.Entry(subprogram: registry.GetSub(funcName: sym), name: frame.Name,
+                        file: frame.File, hidesPosition: frame.HidesPosition) + "\n");
+                entries.Add(item: entry);
+            }
+
+            outSb.Append(value: $"\n{Tessera.TraceTable.NamedMetadata} = !{{{string.Join(separator: ", ", values: entries.Select(selector: e => $"!{e}"))}}}\n");
         }
 
         int flagsId = registry.AllocId();
@@ -295,6 +346,56 @@ public partial class LlvmEmitter
         // notably excludes "switch " (multi-line) and switch case rows ("i64 …")
     }
 
+    /// <summary>Parses a <c>  ; !traceloc L C</c> marker: the place a traced routine's frame has from here on.</summary>
+    private static bool TryParseTracePlace(string line, out (int Line, int Col) place)
+    {
+        place = default;
+        ReadOnlySpan<char> t = line.AsSpan()
+                                   .TrimStart();
+        if (!t.StartsWith(value: "; !traceloc "))
+        {
+            return false;
+        }
+
+        string[] parts = t["; !traceloc ".Length..]
+                        .ToString()
+                        .Split(separator: ' ', options: StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || !int.TryParse(s: parts[0], result: out int l) ||
+            !int.TryParse(s: parts[1], result: out int c))
+        {
+            return false;
+        }
+
+        place = (l, c);
+        return true;
+    }
+
+    /// <summary>Whether an IR line calls a routine (not an LLVM intrinsic or inline assembly) and ends with its
+    /// arguments, so a call attribute can follow.</summary>
+    private static bool IsRoutineCallLine(string line)
+    {
+        string t = line.TrimStart();
+        int call = t.StartsWith(value: "call ", comparisonType: StringComparison.Ordinal) ||
+                   t.StartsWith(value: "tail call ", comparisonType: StringComparison.Ordinal)
+            ? 0
+            : t.IndexOf(value: " = call ", comparisonType: StringComparison.Ordinal) is var at and >= 0
+                ? at
+                : t.IndexOf(value: " = tail call ", comparisonType: StringComparison.Ordinal);
+        if (call < 0 || !t.EndsWith(value: ')') || t.Contains(value: "!dbg"))
+        {
+            return false;
+        }
+
+        int callee = t.IndexOf(value: '@', startIndex: call);
+        int asm = t.IndexOf(value: " asm ", startIndex: call, comparisonType: StringComparison.Ordinal);
+        if (asm >= 0 && (callee < 0 || asm < callee))
+        {
+            return false;
+        }
+
+        return callee < 0 || !t.AsSpan(start: callee).StartsWith(value: "@llvm.");
+    }
+
     private static readonly string[] InstructionOpcodes =
     [
         "store ", "call ", "tail call ", "musttail ", "br ", "ret", "unreachable",
@@ -431,6 +532,11 @@ public partial class LlvmEmitter
         internal int AllocId()
         {
             return _nextId++;
+        }
+
+        internal bool HasSub(string funcName)
+        {
+            return _subIds.ContainsKey(key: funcName);
         }
 
         internal bool TryGetSubprogram(string funcName, out DebugSubprogram sp)

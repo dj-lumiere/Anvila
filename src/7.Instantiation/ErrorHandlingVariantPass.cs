@@ -991,6 +991,24 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         {
             Statement s = stmts[index: i];
 
+            // `var (a, b) = f()` is spelled out here as it is later (`var t = f()`, `var a = t.item0`, ...), so a
+            // failable `f()` is passed on like any other declaration's.
+            if (s is DestructuringStatement destruct)
+            {
+                BlockStatement spelled = Desugaring.Passes.ControlFlowLoweringPass.LowerDestructuring(
+                    destruct: destruct,
+                    tmpName: $"__rf_destructured_{Interlocked.Increment(location: ref _hoistTemp)}");
+                var spliced = new List<Statement>(collection: spelled.Statements);
+                spliced.AddRange(collection: stmts.Skip(count: i + 1));
+                result.AddRange(collection: TransformBlockStatements(stmts: spliced,
+                    start: 0,
+                    kind: kind,
+                    rewriter: rewriter,
+                    registry: registry,
+                    nextOnly: nextOnly));
+                return result;
+            }
+
             // A failable call NESTED inside the statement (`return f().item0`, `g(f())`) is invisible to the
             // statement-shaped propagation below. Split it into its own `var` first (A-normal form), then
             // process the hoisted declarations and the residual statement like any others.
@@ -1651,7 +1669,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             // treat it as the move it is. Trying to assign it would reach codegen unresolved.
             // A token payload (an iterator's `Modifying[T]`) is an address with nothing to own: it is read as it is.
             // Looking `assign` up on it would reach the value's own `assign` through the token.
-            bool payloadAssignable = valueType != null && !IsAccessToken(type: valueType) && registry.LookupMemberRoutine(
+            // A value that holds an entity (a tuple of entities) is not copied by `=` either, though the record
+            // `share` template is found for it: it moves out like an entity.
+            bool payloadAssignable = valueType != null && !IsAccessToken(type: valueType) &&
+                                     !registry.IsEntityKind(type: valueType) && registry.LookupMemberRoutine(
                 type: valueType,
                 memberRoutineName: RuntimeContract.Duplication.Share,
                 isFailable: false) != null;

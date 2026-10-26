@@ -156,6 +156,10 @@ public partial class Parser
     /// </summary>
     private bool _inWhenConditionContext;
 
+    /// <summary>Expressions the source wrapped in parentheses (by reference). The parentheses end a comparison chain,
+    /// so <c>(a &lt; b) != c</c> compares the truth of <c>a &lt; b</c> with <c>c</c>.</summary>
+    private readonly HashSet<Expression> _parenthesized = new(comparer: ReferenceEqualityComparer.Instance);
+
     /// <summary>
     /// The reserved parameter name a single-hole <c>_</c> lambda desugars to. <c>xs.map(_ * 2)</c> parses the
     /// <c>_</c> as a reference to this name and wraps the whole argument in

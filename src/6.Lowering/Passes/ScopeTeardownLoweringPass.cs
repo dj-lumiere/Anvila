@@ -1442,6 +1442,20 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             case StealExpression { Operand: IdentifierExpression id }:
                 _movedNames.Add(item: id.Name);
                 break;
+            // `var (a, b) = pair()` spelled out (`var t = pair()`, `var a = t.item0`): an entity read out of a value
+            // that holds entities (a tuple of entities) is the binding's now, so the value is not torn down again
+            // on top of its parts.
+            case VariableDeclaration
+                {
+                    Initializer: MemberExpression
+                    {
+                        Object: IdentifierExpression { ResolvedType: RecordTypeSymbol holder } source,
+                        ResolvedType: EntityTypeSymbol
+                    }
+                } when holder is not VariantTypeSymbol && ctx.Registry.IsEntityKind(type: holder):
+                _movedNames.Add(item: source.Name);
+                _movedWithoutEmptying.Add(item: source.Name);
+                break;
             // `x.release_inner()` takes the entity out of the handle `x` and ends the handle (an argument handed
             // to a parameter that takes the entity over): `x` has moved out and is not torn down again.
             case CallExpression
@@ -1547,6 +1561,15 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 EntityTypeSymbol ent:
                 HandleEntityConstructionMove(entityCreator: entityCreator, ent: ent);
                 break;
+            // A value that holds an entity (a tuple of entities, a bundle) takes each bare entity it is built from:
+            // the entity lives in the value now, as it does when handed to a parameter of entity type. A recovery
+            // variant hoists an entity into a temp before a failable step (`(Ent(n: n), Ent(n: n + 1))`), and the
+            // temp, read into the tuple, is not torn down again.
+            case CreatorExpression valueCreator
+                when (valueCreator.ConstructedType ?? valueCreator.ResolvedType) is RecordTypeSymbol holder and
+                    not VariantTypeSymbol:
+                HandleEntityFieldMove(creator: valueCreator, holder: holder);
+                break;
         }
     }
 
@@ -1625,6 +1648,19 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 {
                     _movedNames.Add(item: a.Name);
                 }
+            }
+        }
+    }
+
+    /// <summary>Marks each bare-entity binding a value creator puts into a member variable of entity type.</summary>
+    private void HandleEntityFieldMove(CreatorExpression creator, RecordTypeSymbol holder)
+    {
+        foreach ((string memberName, Expression val) in creator.MemberVariables)
+        {
+            if (Unwrap(e: val) is IdentifierExpression { ResolvedType: EntityTypeSymbol } a &&
+                holder.MemberVariables.FirstOrDefault(predicate: m => m.Name == memberName)?.Type is EntityTypeSymbol)
+            {
+                _movedNames.Add(item: a.Name);
             }
         }
     }

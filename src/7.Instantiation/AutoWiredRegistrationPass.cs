@@ -1153,7 +1153,14 @@ internal sealed class AutoWiredRegistrationPass
         // `member.compare/eq/…`). A concrete type that declares `obeys P` but fails this is a conformance
         // error surfaced elsewhere; we don't fabricate an ill-typed body. A generic DEF defers to
         // instantiation (everywhereObeys is forced true for a def above).
-        if (!everywhereObeys)
+        // A record that `=` copies has its copy as its `duplicate` (the derive returns `me.share()`, it walks no
+        // member for `duplicate`), so a member that is not Copyable itself (a `Guarded` handle, which `=` shares)
+        // doesn't keep the record from obeying Copyable. A value that holds an entity or a variant arm is
+        // duplicated member by member and keeps the gate.
+        bool duplicateIsTheCopy = member.Name == RuntimeContract.Duplication.Duplicate &&
+                                  type is RecordTypeSymbol and not VariantTypeSymbol &&
+                                  _registry.IsCopiedByAssignment(type: type);
+        if (!everywhereObeys && !duplicateIsTheCopy)
         {
             return true;
         }

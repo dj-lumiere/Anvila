@@ -1,4 +1,5 @@
 using Builder.Diagnostics;
+using Builder.Tokenizer;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -167,6 +168,54 @@ public sealed partial class SemanticVerifier
     /// <summary>The type a member of a family goes to at <paramref name="index"/>: what it gives back when its bracket
     /// names that (the bracket of a routine a library writes can name a type of the same name in another language's
     /// library), else the bracket entry.</summary>
+    /// <summary>Whether <paramref name="receiver"/>'s family <paramref name="name"/> has a member for exactly
+    /// <paramref name="typeArgs"/>.</summary>
+    private bool FamilyHasSpecialization(TypeSymbol receiver, string name, List<TypeSymbol> typeArgs)
+    {
+        List<TypeSymbol> unroamed = typeArgs.Select(selector: Unroamed).ToList();
+        return FamilyOfReceiver(receiver: receiver, name: name).Any(predicate: r =>
+            r.TypeArguments is { } args && args.Count == typeArgs.Count &&
+            unroamed.Select(selector: (t, i) => SameTypeInRealm(a: FamilyTarget(routine: r, index: i), b: t))
+                    .All(predicate: same => same) ||
+            _registry.BindSpecializationBracket(member: r, typeArguments: unroamed) != null);
+    }
+
+    /// <summary>The number types a bare literal may take, in the order one is chosen for a conversion: the
+    /// usual default first.</summary>
+    private static readonly string[] _integerLiteralSources =
+        ["S64", "Int", "U64", "S32", "U32", "S16", "U16", "S8", "U8", "S128", "U128", "S256", "U256"];
+
+    private static readonly string[] _decimalLiteralSources =
+        ["B64", "Decimal", "B32", "B16", "B128", "D64", "D32", "D128"];
+
+    /// <summary>
+    /// The number type a bare literal receiver takes so that the specialization <paramref name="name"/>
+    /// [<paramref name="typeArgs"/>] exists on it (a conversion written only from <c>S64</c>), or null when its default
+    /// type is the one or none fits.
+    /// </summary>
+    private TypeSymbol? LiteralSourceFor(LiteralExpression literal, string name, List<TypeSymbol> typeArgs)
+    {
+        string[] sources = literal.LiteralType switch
+        {
+            TokenType.UndecidedInteger => _integerLiteralSources,
+            TokenType.UndecidedDecimal => _decimalLiteralSources,
+            _ => []
+        };
+        foreach (string sourceName in sources)
+        {
+            if (_registry.LookupType(name: sourceName) is { } source &&
+                (literal.LiteralType != TokenType.UndecidedInteger || !IsFixedWidthIntegerType(type: source) ||
+                 LiteralFitsInType(literal: literal, targetType: source)) &&
+                !typeArgs.Any(predicate: t => t.FullName == source.FullName) &&
+                FamilyHasSpecialization(receiver: source, name: name, typeArgs: typeArgs))
+            {
+                return source;
+            }
+        }
+
+        return null;
+    }
+
     internal static TypeSymbol FamilyTarget(RoutineInfo routine, int index)
     {
         TypeSymbol written = routine.TypeArguments![index: index];
@@ -244,6 +293,15 @@ public sealed partial class SemanticVerifier
                                                     .All(predicate: same => same)))
         {
             objectType = held;
+        }
+
+        // A bare number takes its type from where it goes, and a conversion is where it goes: `5.to[Wid]()` with only
+        // `S64.to[Wid]()` written reads the 5 as an `S64`.
+        if (typeArgs.Count > 0 && generic.Object is LiteralExpression bare &&
+            !FamilyHasSpecialization(receiver: objectType, name: generic.MemberRoutineName, typeArgs: typeArgs) &&
+            LiteralSourceFor(literal: bare, name: generic.MemberRoutineName, typeArgs: typeArgs) is { } source)
+        {
+            objectType = AnalyzeExpression(expression: bare, expectedType: source);
         }
 
         if (typeArgs.Count > 0 && objectType is not ErrorTypeSymbol &&

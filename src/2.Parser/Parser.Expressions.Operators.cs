@@ -343,13 +343,14 @@ public partial class Parser
     }
 
     /// <summary>Whether <paramref name="expr"/> is a comparison written without parentheses.</summary>
-    private static bool IsComparison(Expression expr) => expr is ChainedComparisonExpression ||
+    private bool IsComparison(Expression expr) => !_parenthesized.Contains(item: expr) &&
+        (expr is ChainedComparisonExpression ||
         expr is BinaryExpression
         {
             Operator: BinaryOperator.Less or BinaryOperator.LessEqual or BinaryOperator.Greater or BinaryOperator.GreaterEqual
                 or BinaryOperator.Equal or BinaryOperator.NotEqual or BinaryOperator.ThreeWayComparator
                 or BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual
-        };
+        });
 
     /// <summary>
     /// Parses comparison expressions with support for chaining.

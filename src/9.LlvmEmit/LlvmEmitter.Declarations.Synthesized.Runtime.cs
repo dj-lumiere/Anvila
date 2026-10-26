@@ -56,6 +56,14 @@ public partial class LlvmEmitter
         string defineHeader =
             $"define {linkagePrefix}{headerReturnType} @{funcName}({parameters}){synthAttrs} {CpuAttributes} {{";
         _generatedRoutineDefHeaders[key: funcName] = defineHeader;
+        // A crash trace read from the stack names a frame by its routine's subprogram: a routine the builder wrote
+        // that keeps a frame (a recovery variant, a Work's body) gets one as the program's routines do.
+        if (_traceFromStack)
+        {
+            RecordDebugSubprogram(funcName: funcName, location: routine.Location);
+            _currentDbgLoc = null;
+        }
+
         EmitLine(sb: _functionDefinitions, line: defineHeader);
         EmitLine(sb: _functionDefinitions, line: "entry:");
         var bodyBuilder = new StringBuilder();

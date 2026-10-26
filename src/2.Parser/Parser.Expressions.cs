@@ -313,6 +313,7 @@ public partial class Parser
 
             // Just a parenthesized expression
             Consume(type: TokenType.RightParen, errorMessage: "Expected ')' after expression");
+            _parenthesized.Add(item: firstExpr);
             return firstExpr;
         }
         finally

@@ -729,6 +729,19 @@ public partial class LlvmEmitter
                 _traceHidesPosition = true;
             }
         }
+        if (_traceFromStack)
+        {
+            // Read from the stack: the routine is listed for the table, and keeps nothing while it runs.
+            if (_currentRoutineSymbol != null)
+            {
+                _tracedRoutines[key: _currentRoutineSymbol] = (routineName, fileName, _traceHidesPosition);
+            }
+
+            // The frame's place until the first call's: the routine's own, as a pushed frame starts.
+            EmitLine(sb: sb, line: $"  ; !traceloc {line} {col}");
+            return;
+        }
+
         string routineCStr = EmitCStringConstant(value: routineName);
         string fileCStr = EmitCStringConstant(value: fileName);
         EmitLine(sb: sb,

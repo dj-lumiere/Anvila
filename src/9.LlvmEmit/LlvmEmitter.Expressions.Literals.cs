@@ -419,8 +419,9 @@ public partial class LlvmEmitter
             return $"u0x{hi:X16}0000000000000000";
         }
 
+        // The positive quiet NaN: C#'s double.NaN has the sign bit set.
         double d = name == "nan"
-            ? double.NaN
+            ? BitConverter.Int64BitsToDouble(value: 0x7FF8000000000000)
             : double.PositiveInfinity;
         return EmitDoubleAsLlvmHex(d: d, literalType: literalType);
     }

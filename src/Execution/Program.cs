@@ -1691,6 +1691,12 @@ internal partial class Program
             // Resident-JIT base/delta: when the daemon supplies the base's defined-symbol set, this
             // emission is the DELTA — it skips defining resident symbols and extern-declares them instead.
             ResidentSymbols = p3.ResidentSymbols,
+            // An executable built ahead of time reads its crash trace from the stack where Tessera's table supports
+            // the target. The JIT and its resident base keep the shadow stack (RF_TRACE_SHADOW=1 keeps it too).
+            TraceFromStack = irCallback == null && (p3.ResidentSymbols?.Count ?? 0) == 0 &&
+                             Builder.Collection.TraceFrames.Enabled(mode: buildMode) &&
+                             Tessera.TraceTable.Supports(arch: target.TargetArch, os: target.TargetOS) &&
+                             Environment.GetEnvironmentVariable(variable: "RF_TRACE_SHADOW") != "1",
             Timing = saTiming,
             SourceDumpPath = DiagnosticFlags.DumpTessera
                 ? Path.ChangeExtension(path: entryFile, extension: ".te")

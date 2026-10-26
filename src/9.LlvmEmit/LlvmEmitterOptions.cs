@@ -40,4 +40,8 @@ public sealed class LlvmEmitterOptions
     /// and EXTERN the shared runtime trace globals (the main module owns/defines them). Independent of
     /// <see cref="ResidentSymbols"/>/base-mode, which conflate linkage with the runtime-globals owner.</summary>
     public bool ForExternalJitModule { get; init; }
+
+    /// <summary>Whether a traced build reads its crash trace from the stack instead of keeping a shadow stack
+    /// (<see cref="Builder.Backends.BackendInput.TraceFromStack"/>).</summary>
+    public bool TraceFromStack { get; init; }
 }

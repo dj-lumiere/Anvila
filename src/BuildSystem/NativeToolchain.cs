@@ -933,12 +933,76 @@ internal static class NativeToolchain
         return rc;
     }
 
+    /// <summary>
+    /// For IR that names its traced routines (<c>!tessera.trace</c>): writes the IR with each traced call's chain, then
+    /// its assembly with the return addresses marked and the table (Tessera's <see cref="Tessera.TraceTable"/>), and
+    /// gives the assembly's path, which is linked in place of the IR. Other IR is linked as it is. Null when clang fails.
+    /// </summary>
+    private static string? WriteTraceTableAssembly(string optFile, string clangOptLevel)
+    {
+        string ir = File.ReadAllText(path: optFile);
+        if (!Tessera.TraceTable.Wanted(ir: ir))
+        {
+            return optFile;
+        }
+
+        TargetConfig target = TargetConfig.ForCurrentHost();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        bool timing = Environment.GetEnvironmentVariable(variable: "RF_TRACE_TIMING") == "1";
+        Tessera.TraceTable.Annotation annotation = Tessera.TraceTable.Annotate(ir: ir);
+        if (timing)
+        {
+            Console.Error.WriteLine(value: $"[trace] annotate {clock.ElapsedMilliseconds} ms");
+        }
+        string annotated = Path.ChangeExtension(path: optFile, extension: ".trace.ll");
+        string asm = Path.ChangeExtension(path: optFile, extension: ".s");
+        File.WriteAllText(path: annotated, contents: annotation.Ir);
+        string args =
+            $"-S -fno-verbose-asm {clangOptLevel} -Xclang -disable-llvm-passes -Wno-override-module{TargetCodegenFlags()} -o \"{asm}\" \"{annotated}\"";
+        clock.Restart();
+        int rc = RunToolCapture(toolPath: ClangTool.Value, args: args, stderr: out string err);
+        if (timing)
+        {
+            Console.Error.WriteLine(value: $"[trace] assembly {clock.ElapsedMilliseconds} ms");
+        }
+
+        if (rc != 0)
+        {
+            Console.WriteLine(value: $"Writing the assembly failed (clang exited with code {rc})");
+            Console.WriteLine(value: err);
+            return null;
+        }
+
+        clock.Restart();
+        File.WriteAllText(path: asm,
+            contents: Tessera.TraceTable.Patch(asm: File.ReadAllText(path: asm), arch: target.TargetArch,
+                annotation: annotation));
+        if (timing)
+        {
+            Console.Error.WriteLine(value: $"[trace] patch {clock.ElapsedMilliseconds} ms");
+        }
+        if (Environment.GetEnvironmentVariable(variable: "RF_TRACE_KEEP") != "1")
+        {
+            File.Delete(path: annotated);
+        }
+
+        return asm;
+    }
+
     internal static int LinkExecutable(string optFile, string exeFile, string runtimeLibDir,
         RfBuildMode buildMode, IReadOnlyList<string>? cLibraries = null,
         IReadOnlyList<string>? libraryPaths = null)
     {
         // Compile .ll -> .exe using clang (clang uses -Ox flag style, not opt's -passes= form)
         string clangOptLevel = $"-{OptLevelString(buildMode: buildMode)}";
+        // A build that reads its crash trace from the stack: the optimized IR gets its chains, the assembly marks the
+        // calls' return addresses, and that assembly is linked (Tessera's TraceTable).
+        if (WriteTraceTableAssembly(optFile: optFile, clangOptLevel: clangOptLevel) is not { } linkInput)
+        {
+            return 1;
+        }
+
+        optFile = linkInput;
         // Preserve frame pointers in debug/release for accurate platform stack unwinding.
         // release-time/release-space omit frame pointers for maximum performance.
         string framePointerFlag = buildMode is RfBuildMode.Debug or RfBuildMode.Release

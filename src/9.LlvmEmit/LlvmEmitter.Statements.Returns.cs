@@ -59,7 +59,7 @@ public partial class LlvmEmitter
 
         string llvmType = GetLlvmType(type: retType);
 
-        if (_traceCurrentRoutine)
+        if (_traceCurrentRoutine && !_traceFromStack)
         {
             EmitLine(sb: sb, line: TracePop);
         }
@@ -99,7 +99,7 @@ public partial class LlvmEmitter
 
     private void EmitNullValueReturn(StringBuilder sb)
     {
-        if (_traceCurrentRoutine)
+        if (_traceCurrentRoutine && !_traceFromStack)
         {
             EmitLine(sb: sb, line: TracePop);
         }
@@ -124,7 +124,7 @@ public partial class LlvmEmitter
 
     private void EmitNoneExpressionReturn(StringBuilder sb)
     {
-        if (_traceCurrentRoutine)
+        if (_traceCurrentRoutine && !_traceFromStack)
         {
             EmitLine(sb: sb, line: TracePop);
         }

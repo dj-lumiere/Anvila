@@ -1441,7 +1441,7 @@ public sealed partial class SemanticVerifier
 
         if (rawValue == "nan")
         {
-            return new ParsedFloat(Location: literal.Location, TypeName: "B16", Value: double.NaN);
+            return new ParsedFloat(Location: literal.Location, TypeName: "B16", Value: BitConverter.Int64BitsToDouble(value: 0x7FF8000000000000));
         }
 
         string numericPart = ExtractNumericPart(rawValue: rawValue, suffix: "b16");
@@ -1482,7 +1482,7 @@ public sealed partial class SemanticVerifier
 
         if (rawValue == "nan")
         {
-            return new ParsedFloat(Location: literal.Location, TypeName: "B32", Value: double.NaN);
+            return new ParsedFloat(Location: literal.Location, TypeName: "B32", Value: BitConverter.Int64BitsToDouble(value: 0x7FF8000000000000));
         }
 
         string numericPart = ExtractNumericPart(rawValue: rawValue, suffix: "b32");
@@ -1521,7 +1521,7 @@ public sealed partial class SemanticVerifier
 
         if (rawValue == "nan")
         {
-            return new ParsedFloat(Location: literal.Location, TypeName: "B64", Value: double.NaN);
+            return new ParsedFloat(Location: literal.Location, TypeName: "B64", Value: BitConverter.Int64BitsToDouble(value: 0x7FF8000000000000));
         }
 
         string numericPart = ExtractNumericPart(rawValue: rawValue, suffix: "b64");

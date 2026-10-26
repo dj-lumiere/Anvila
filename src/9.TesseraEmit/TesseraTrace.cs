@@ -78,6 +78,17 @@ internal static class TesseraTrace
             frames: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]()
             return frames
 
+        ### The trace's innermost frame, under the name the LLVM emitter exports it by: Ingrid's place of an access reads
+        ### it. 1 when there is one, 0 for an empty trace.
+        @export("_rf_trace_get_innermost_shared")
+        routine rf_trace_get_innermost(out: @RfTraceFrame) -> S32
+            depth: S32 = RF_TRACE_DEPTH.peek()
+            if depth.le(0)
+                return 0
+            index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
+            out.poke(RF_TRACE_STACK.to[@RfTraceFrame]().stride(index).peek())
+            return 1
+
         ### One failure a thread remembers: its number, the depth of the trace when it was thrown, and the trace.
         record RfFailure
             seq: U64

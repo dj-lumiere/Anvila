@@ -583,9 +583,15 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     /// </summary>
     private BlockStatement LowerDestructuring(DestructuringStatement destruct)
     {
+        return LowerDestructuring(destruct: destruct, tmpName: $"_ld_tmp_{_iterCount++}");
+    }
+
+    /// <summary>The lowering of <see cref="LowerDestructuring(DestructuringStatement)"/> with the temporary named
+    /// <paramref name="tmpName"/>: a recovery variant spells a destructuring out the same way, so the failable call
+    /// in its initializer becomes a statement of its own the variant passes the failure on from.</summary>
+    internal static BlockStatement LowerDestructuring(DestructuringStatement destruct, string tmpName)
+    {
         SourceLocation loc = destruct.Location;
-        int n = _iterCount++;
-        string tmpName = $"_ld_tmp_{n}";
         // A stdlib body is analyzed BEFORE this lowering, so its initializer is already typed: carry the
         // tuple's element types onto the accesses built here, or they reach the emitter untyped. User
         // code is lowered before analysis (no type yet) and gets typed by the analyzer instead.
