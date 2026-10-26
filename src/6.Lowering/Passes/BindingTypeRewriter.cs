@@ -314,6 +314,11 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         return false;
     }
 
+    public bool VisitSharedConstantListExpression(SharedConstantListExpression node)
+    {
+        return false;
+    }
+
     public bool VisitTaggedCreatorExpression(TaggedCreatorExpression node)
     {
         Visit(e: node.Tag);

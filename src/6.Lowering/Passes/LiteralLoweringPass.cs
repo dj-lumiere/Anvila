@@ -29,11 +29,9 @@ internal sealed class LiteralLoweringPass : AstRewriter
 {
     private readonly Dictionary<string, Statement>? _variantBodies;
 
-    // Integer literal lowering: `123n` (or a bare literal typed `Integer`) -> the Integer record over limbs the
-    // builder computed, laid down as read-only module data.
+    // Int literal lowering: a literal typed `Int` -> the Int record, over limbs the builder computed and laid down as
+    // module data when the value is outside the S64 range.
     private readonly RecordTypeSymbol? _integerType;
-    private readonly TypeSymbol? _boolType;
-    private readonly TypeSymbol? _u64Type;
 
     // Imaginary literal lowering: `4.0i` -> a pure-imaginary complex constructor of the resolved
     // complex type — C64(2×B32), C128(2×B64, the default) or C256(2×B128).
@@ -63,13 +61,11 @@ internal sealed class LiteralLoweringPass : AstRewriter
     {
         _variantBodies = ctx.VariantBodies;
         _registry = ctx.Registry;
-        // An `n` literal has no scalar form (a raw one reaches the emitter as `store %Record.Integer 42n`), so
-        // it becomes the Integer record itself. Integer lives in `module Numerics` — qualify (a bare lookup
-        // depended on the cross-module short-name scan, and when it missed the literal reached the emitter raw).
-        _integerType = (ctx.Registry.LookupType(name: "System.Integer") ??
-                        ctx.Registry.LookupType(name: "Integer")) as RecordTypeSymbol;
-        _boolType = ctx.Registry.LookupType(name: "Bool");
-        _u64Type = ctx.Registry.LookupType(name: "U64");
+        // An Int literal has no scalar form, so it becomes the Int record itself. Int lives in `module Numerics`:
+        // qualify (a bare lookup depended on the cross-module short-name scan, and when it missed the literal
+        // reached the emitter raw).
+        _integerType = (ctx.Registry.LookupType(name: "System.Int") ??
+                        ctx.Registry.LookupType(name: "Int")) as RecordTypeSymbol;
 
         // Imaginary `i` literals have no scalar form for the complex record types; lower them to
         // pure-imaginary complex constructors of the resolved complex type.
@@ -136,14 +132,14 @@ internal sealed class LiteralLoweringPass : AstRewriter
             {
                 // Complex literals FIRST: an imaginary `4i`, or a bare int/float literal SA promoted to
                 // a complex type (the `3` in `3 + 4i`). Must precede the arbitrary-precision case so an
-                // SF bare `3` promoted to complex builds `C(3, 0)` instead of an `Integer`.
+                // SF bare `3` promoted to complex builds `C(3, 0)` instead of an `Int`.
                 CreatorExpression? complex = TryLowerComplexLiteral(literal: literal);
                 if (complex != null)
                 {
                     return complex;
                 }
 
-                // An Integer literal -> the Integer record over build-time limbs.
+                // An Int literal -> the Int record.
                 Expression? integer = TryLowerIntegerLiteral(literal: literal);
                 if (integer != null)
                 {
@@ -176,13 +172,13 @@ internal sealed class LiteralLoweringPass : AstRewriter
         // OperatorLoweringPass (runs after this pass) rewrites the enclosing subscript/slice to
         // `back_resolve(count: coll.count(), offset: n)`. Retag an untyped/signed integer-literal
         // offset to U64 (the `^n` position is U64) BEFORE lowering, so it stays a scalar i64 and
-        // is not lowered to an arbitrary-precision Integer (which is heap/Text-backed). A position the
-        // analysis typed `Integer` (a Suflae collection's) stays one.
+        // is not lowered to an arbitrary-precision Int (which is heap/Text-backed). A position the
+        // analysis typed `Int` (a Suflae collection's) stays one.
         Expression operand = e.Operand is LiteralExpression
         {
             LiteralType: TokenType.UndecidedInteger or TokenType.IntegerLiteral
             or TokenType.S64Literal
-        } lit && e.ResolvedType?.Name != "Integer"
+        } lit && e.ResolvedType?.Name != "Int"
             ? lit with { LiteralType = TokenType.U64Literal }
             : e.Operand;
         Expression o = VisitExpression(expr: operand);
@@ -230,11 +226,10 @@ internal sealed class LiteralLoweringPass : AstRewriter
     }
 
     /// <summary>
-    /// Lowers an Integer literal to the Integer record it stands for, or returns null if
-    /// <paramref name="literal"/> is not one. A magnitude below 2^64 is the value itself. The builder computes a
-    /// bigger one's limbs, and they become read-only module data (<see cref="ConstantDataExpression"/>) under a null
-    /// controller, which is how an Integer says its limbs are static: it never counts them and never frees them,
-    /// like a Text literal.
+    /// Lowers an <c>Int</c> literal to the <c>Int</c> record it stands for, or returns null if
+    /// <paramref name="literal"/> is not one. A value in the <c>S64</c> range is the value itself. The builder computes
+    /// the limbs of a value outside it, and they become a <see cref="SharedConstantListExpression"/>: a
+    /// <c>Guarded[List[U64], ReadOnly]</c> laid down once as module data, shared once more by each use.
     /// Decimal literals are not here: Decimal is an i128 BID whose literals are build-time constants already.
     /// </summary>
     private CreatorExpression? TryLowerIntegerLiteral(LiteralExpression literal)
@@ -244,84 +239,75 @@ internal sealed class LiteralLoweringPass : AstRewriter
             return null;
         }
 
-        // Suflae: an UNSUFFIXED integer literal that SA resolved to `Integer` (the SF default, RF defaults to
-        // S64) is still `UndecidedInteger` at this pass, since ExpressionLoweringPass only rewrites the token to
-        // IntegerLiteral later. So match the resolved type too.
+        // Suflae: an integer literal that SA resolved to `Int` (the SF default, RF defaults to S64) is still
+        // `UndecidedInteger` at this pass, since ExpressionLoweringPass only rewrites the token to IntegerLiteral
+        // later. So match the resolved type too.
         bool integer = literal.LiteralType == TokenType.IntegerLiteral ||
                        literal.LiteralType == TokenType.UndecidedInteger &&
-                       literal.ResolvedType?.Name == "Integer";
+                       literal.ResolvedType?.Name == "Int";
         if (!integer)
         {
             return null;
         }
 
-        string digits = SemanticVerifier.CleanNumericLiteral(value: raw.EndsWith(value: 'n') ||
-                                                                    raw.EndsWith(value: 'N')
-            ? raw[..^1]
-            : raw);
+        string digits = SemanticVerifier.CleanNumericLiteral(value: raw);
         if (!SemanticVerifier.TryParseWideMagnitude(cleaned: digits, value: out BigInteger value))
         {
             throw new InvalidOperationException(
-                message: $"The Integer literal '{raw}' at {literal.Location} passed analysis but does not parse.");
+                message: $"The Int literal '{raw}' at {literal.Location} passed analysis but does not parse.");
         }
 
-        return IntegerCreator(integer: _integerType, boolType: _boolType, u64Type: _u64Type, value: value,
-            loc: literal.Location);
+        return IntegerCreator(registry: _registry, integer: _integerType, value: value, loc: literal.Location);
     }
 
     /// <summary>
-    /// The Integer record a build-time <paramref name="value"/> stands for: the magnitude itself in <c>small</c> below
-    /// 2^64, else its limbs as read-only module data (<c>data: #constant_data[...], count: n</c>) with no owner. Every
-    /// Integer the builder writes as a constant (a literal, a range's default step) is built here.
+    /// The <c>Int</c> record a build-time <paramref name="value"/> stands for: its <c>S64</c> bits in <c>meta</c> with a
+    /// hollow <c>owner</c> in the <c>S64</c> range, else its limbs as a <see cref="SharedConstantListExpression"/> in
+    /// <c>owner</c> and its sign in <c>meta</c>. Every <c>Int</c> the builder writes as a constant (a literal, a range's
+    /// default step) is built here.
     /// </summary>
     internal static CreatorExpression IntegerCreator(TypeRegistry registry, BigInteger value, SourceLocation loc)
     {
-        RecordTypeSymbol integer = (registry.LookupType(name: "System.Integer") ??
-                                    registry.LookupType(name: "Integer")) as RecordTypeSymbol ??
-                                   throw new InvalidOperationException(message: "Integer is not registered.");
-        return IntegerCreator(integer: integer,
-            boolType: registry.LookupType(name: "Bool"),
-            u64Type: registry.LookupType(name: "U64"),
-            value: value,
-            loc: loc);
+        RecordTypeSymbol integer = (registry.LookupType(name: "System.Int") ??
+                                    registry.LookupType(name: "Int")) as RecordTypeSymbol ??
+                                   throw new InvalidOperationException(message: "Int is not registered.");
+        return IntegerCreator(registry: registry, integer: integer, value: value, loc: loc);
     }
 
-    private static CreatorExpression IntegerCreator(RecordTypeSymbol integer, TypeSymbol? boolType,
-        TypeSymbol? u64Type, BigInteger value, SourceLocation loc)
+    private static CreatorExpression IntegerCreator(TypeRegistry registry, RecordTypeSymbol integer, BigInteger value,
+        SourceLocation loc)
     {
-        if (u64Type == null)
-        {
-            throw new InvalidOperationException(message: "U64 is not registered.");
-        }
-
-        List<long> limbs = Limbs(magnitude: BigInteger.Abs(value: value));
-        TypeSymbol FieldType(string name) => integer.MemberVariables.First(predicate: f => f.Name == name).Type;
-
-        // A magnitude below 2^64 is the value itself (`small`), a bigger one its limbs as read-only module data with
-        // no owner, so the Integer never counts or frees them, like a Text literal.
-        bool big = limbs.Count > 1;
-        bool negative = value.Sign < 0;
+        TypeSymbol u64Type = registry.LookupType(name: "U64") ??
+                             throw new InvalidOperationException(message: "U64 is not registered.");
+        TypeSymbol ownerType = integer.MemberVariables.First(predicate: f => f.Name == "owner").Type;
         Expression U64(ulong v) =>
             new LiteralExpression(Value: v, LiteralType: TokenType.U64Literal, Location: loc) { ResolvedType = u64Type };
-        Expression data = big
-            ? new ConstantDataExpression(Elements: limbs, ElementType: u64Type, Location: loc)
-            {
-                ResolvedType = FieldType(name: "data")
-            }
-            : new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "data") };
+
+        // A value in the S64 range is its two's-complement bits with no list.
+        if (value >= long.MinValue && value <= long.MaxValue)
+        {
+            return new CreatorExpression(TypeName: integer.Name,
+                TypeArguments: null,
+                MemberVariables:
+                [
+                    ("owner", new ZeroValueExpression(Location: loc) { ResolvedType = ownerType }),
+                    ("meta", U64(v: unchecked((ulong)(long)value)))
+                ],
+                Location: loc) { ResolvedType = integer };
+        }
+
+        // A value outside it is its magnitude's limbs in a list laid down as module data, and its sign.
+        var limbs = Limbs(magnitude: BigInteger.Abs(value: value));
+        SharedListLayout layout = SharedListLayout.Resolve(registry: registry, handle: ownerType);
         return new CreatorExpression(TypeName: integer.Name,
             TypeArguments: null,
             MemberVariables:
             [
-                ("owner", new ZeroValueExpression(Location: loc) { ResolvedType = FieldType(name: "owner") }),
-                ("small", U64(v: big || limbs.Count == 0 ? 0UL : (ulong)limbs[index: 0])),
-                ("data", data),
-                ("count", U64(v: big ? (ulong)limbs.Count : 0UL)),
-                ("neg", new LiteralExpression(Value: negative,
-                    LiteralType: negative
-                        ? TokenType.True
-                        : TokenType.False,
-                    Location: loc) { ResolvedType = boolType })
+                ("owner", new SharedConstantListExpression(Elements: limbs, Layout: layout, Location: loc)
+                {
+                    ResolvedType = ownerType
+                }),
+                ("meta", U64(v: value.Sign < 0 ? 1UL : 0UL))
             ],
             Location: loc) { ResolvedType = integer };
     }

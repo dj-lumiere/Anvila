@@ -61,6 +61,7 @@ public partial class LlvmEmitter
                 AddressOfExpression address => EmitLvalueAddress(sb: sb, expr: address.Target),
                 TaggedCreatorExpression tagged => EmitTaggedCreator(sb: sb, tagged: tagged),
                 ConstantDataExpression data => EmitConstantData(data: data),
+                SharedConstantListExpression list => EmitSharedConstantList(sb: sb, list: list),
                 ZeroValueExpression { ResolvedType: { } zeroType } => GetZeroValue(type: zeroType),
                 NativeRoutineExpression { Routine: IdentifierExpression { ResolvedRoutine: { } nativeRoutine } } =>
                     EmitNativeRoutineAddress(routine: nativeRoutine),

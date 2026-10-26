@@ -1345,6 +1345,31 @@ public record ConstantDataExpression(IReadOnlyList<long> Elements, TypeSymbol El
 }
 
 /// <summary>
+/// A <c>Guarded[List[T], ReadOnly]</c> whose manager, list and elements the builder lays down once as module data,
+/// produced by lowering (never parsed): <c>LiteralLoweringPass</c> writes the limbs of an <c>Int</c> literal outside
+/// the <c>S64</c> range as this. The manager and the list are writable data whose share count starts at 1, the share
+/// of the module data itself, which nothing gives back, so the count never reaches 0 and the data is never freed.
+/// Each evaluation shares the handle once more (one atomic increment), and the value it gives gives that share back
+/// when it ends, so the count goes up and down in pairs. Its resolved type is the handle, and
+/// <paramref name="Layout"/> says what each member variable of the manager and the list starts as, read from their
+/// declarations.
+/// </summary>
+/// <param name="Elements">The element values, in order, each as the integer value of the element type.</param>
+/// <param name="Layout">The manager and list types and what their member variables start as.</param>
+/// <param name="Location">Source location of the literal it comes from.</param>
+public record SharedConstantListExpression(
+    IReadOnlyList<long> Elements,
+    Builder.Declaration.SharedListLayout Layout,
+    SourceLocation Location) : Expression(Location: Location)
+{
+    /// <inheritdoc/>
+    public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
+    {
+        return visitor.VisitSharedConstantListExpression(node: this);
+    }
+}
+
+/// <summary>
 /// A fresh heap block for an entity with every field zero, produced by lowering (never parsed):
 /// <c>CreateMeLoweringPass</c> starts an entity <c>create</c> that works on <c>me</c> with
 /// <c>var me = #allocate(E)</c>. Its resolved type is the entity.

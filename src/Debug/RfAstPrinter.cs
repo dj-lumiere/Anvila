@@ -484,7 +484,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             TokenType.U128Literal => $"U128({Int10(value: value, suffix: "u128")})",
             TokenType.U256Literal => $"U256({Int10(value: value, suffix: "u256")})",
             TokenType.AddressLiteral => $"Address({Int10(value: value, suffix: "addr")})",
-            TokenType.IntegerLiteral => $"Integer({Int10(value: value, suffix: "")})",
+            TokenType.IntegerLiteral => $"Int({Int10(value: value, suffix: "")})",
             // Floating point: strip the suffix + separators; the mantissa is already decimal.
             TokenType.B16Literal => $"B16({Real(value: value, suffix: "b16")})",
             TokenType.B32Literal => $"B32({Real(value: value, suffix: "b32")})",
@@ -496,7 +496,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             TokenType.DecimalLiteral => $"Decimal({Real(value: value, suffix: "")})",
             TokenType.ImaginaryLiteral => $"Imaginary({Real(value: value, suffix: "i")})",
             // Context-inferred bare literals with no resolved type available at this call site.
-            TokenType.UndecidedInteger => $"Integer({Int10(value: value, suffix: "")})",
+            TokenType.UndecidedInteger => $"Int({Int10(value: value, suffix: "")})",
             TokenType.UndecidedDecimal => $"Decimal({Real(value: value, suffix: "")})",
             _ => value?.ToString() ?? "null"
         };
@@ -640,12 +640,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     public string VisitLiteralExpression(LiteralExpression node)
     {
         // A context-inferred bare literal (0xD800, 42, 3.14) keeps its Undecided token type. Wrap it in
-        // its RESOLVED type when SA determined one (e.g. a U32 preset), else fall back to Integer/Decimal.
+        // its RESOLVED type when SA determined one (e.g. a U32 preset), else fall back to Int/Decimal.
         if (node.LiteralType is TokenType.UndecidedInteger or TokenType.UndecidedDecimal)
         {
             bool isInt = node.LiteralType == TokenType.UndecidedInteger;
             string defaultTypeName = isInt
-                ? "Integer"
+                ? "Int"
                 : "Decimal";
             string typeName = node.ResolvedType?.Name ?? defaultTypeName;
             string v = isInt
@@ -897,6 +897,12 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     public string VisitConstantDataExpression(ConstantDataExpression node)
     {
         return $"#constant_data[{string.Join(separator: ", ", values: node.Elements)}]";
+    }
+
+    /// <inheritdoc/>
+    public string VisitSharedConstantListExpression(SharedConstantListExpression node)
+    {
+        return $"#shared_constant_list[{string.Join(separator: ", ", values: node.Elements)}]";
     }
 
     /// <inheritdoc/>

@@ -269,6 +269,11 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the constant data</returns>
     T VisitConstantDataExpression(ConstantDataExpression node);
 
+    /// <summary>Visits a shared constant list (a <c>Guarded[List[T], ReadOnly]</c> laid down as module data)</summary>
+    /// <param name="node">The shared constant list to visit</param>
+    /// <returns>Result of visiting the shared constant list</returns>
+    T VisitSharedConstantListExpression(SharedConstantListExpression node);
+
     /// <summary>Visits an entity allocation node (a fresh zero-filled entity)</summary>
     /// <param name="node">The allocation to visit</param>
     /// <returns>Result of visiting the allocation</returns>

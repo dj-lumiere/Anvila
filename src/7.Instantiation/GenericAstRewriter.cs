@@ -1839,6 +1839,7 @@ internal static class GenericAstRewriter
             ZeroValueExpression zero => zero with { },
             EntityAllocationExpression allocation => allocation with { },
             ConstantDataExpression data => data with { },
+            SharedConstantListExpression list => list with { },
             BitPackExpression pack => pack with
             {
                 Bits = pack.Bits.Select(selector: b => RewriteExpression(expr: b, ctx: ctx)).ToList()
@@ -1851,7 +1852,7 @@ internal static class GenericAstRewriter
     /// <summary>
     /// A bare number the template typed as its parameter (<c>var one: T = 1</c>) whose token an earlier lowering of the
     /// template already gave a number token while the type was still <c>T</c> (the default <c>S64</c> one) takes the
-    /// token of the concrete type here: an <c>Integer</c> literal is then built as the Integer record and a
+    /// token of the concrete type here: an <c>Int</c> literal is then built as the Int record and a
     /// <c>Decimal</c> one as a decimal constant, never stored raw as an <c>S64</c>. A literal still undecided keeps its
     /// token for the passes after this one, which conform it from its type.
     /// </summary>

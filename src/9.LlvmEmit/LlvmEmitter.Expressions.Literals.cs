@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Builder.Declaration;
 using Builder.Tokenizer;
 using Builder.Verification;
 using SyntaxTree;
@@ -584,5 +585,66 @@ public partial class LlvmEmitter
         _stringConstants[key: key] = name;
         EmitLine(sb: _globalDeclarations, line: $"{name} = private unnamed_addr constant {key}");
         return name;
+    }
+
+    /// <summary>
+    /// Emits a <see cref="SharedConstantListExpression"/>: the elements as a private constant array, the list and the
+    /// manager as private writable globals laid out by the node's <see cref="SharedListLayout"/> with the share count
+    /// at 1, all laid down once per distinct content. Each evaluation adds one share with an atomic increment of the
+    /// count, and the manager's address is the value.
+    /// </summary>
+    private string EmitSharedConstantList(StringBuilder sb, SharedConstantListExpression list)
+    {
+        SharedListLayout layout = list.Layout;
+        TypeSymbol elementType = layout.List.TypeArguments![index: 0];
+        string elementLlvm = GetLlvmType(type: elementType);
+        string managerType = GetEntityTypeName(entity: layout.Manager);
+        string listType = GetEntityTypeName(entity: layout.List);
+        string elements = string.Join(separator: ", ", values: list.Elements.Select(selector: e => $"{elementLlvm} {e}"));
+        string key = $"shared list {managerType} {listType} [{list.Elements.Count} x {elementLlvm}] [{elements}]";
+        if (!_stringConstants.TryGetValue(key: key, value: out string? manager))
+        {
+            int id = _stringCounter++;
+            string data = $"@.shared.{id}.data";
+            string listName = $"@.shared.{id}.list";
+            manager = $"@.shared.{id}.manager";
+            EmitLine(sb: _globalDeclarations,
+                line: $"{data} = private unnamed_addr constant [{list.Elements.Count} x {elementLlvm}] [{elements}]");
+
+            string Fields(EntityTypeSymbol entity, IReadOnlyList<SharedListSlot> slots)
+            {
+                var values = new List<string>();
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    TypeSymbol fieldType = entity.MemberVariables[index: i].Type;
+                    string value = slots[index: i] switch
+                    {
+                        SharedListSlot.ShareCount => "1",
+                        SharedListSlot.Zero => GetZeroValue(type: fieldType),
+                        SharedListSlot.ListAddress => listName,
+                        SharedListSlot.ElementsAddress => data,
+                        SharedListSlot.ElementCount => list.Elements.Count.ToString(),
+                        _ => throw new InvalidOperationException(message: $"Unknown slot {slots[index: i]}.")
+                    };
+                    values.Add(item: $"{GetLlvmType(type: fieldType)} {value}");
+                }
+
+                return string.Join(separator: ", ", values: values);
+            }
+
+            EmitLine(sb: _globalDeclarations,
+                line: $"{listName} = private global {listType} {{ {Fields(entity: layout.List, slots: layout.ListSlots)} }}");
+            EmitLine(sb: _globalDeclarations,
+                line: $"{manager} = private global {managerType} " +
+                      $"{{ {Fields(entity: layout.Manager, slots: layout.ManagerSlots)} }}");
+            _stringConstants[key: key] = manager;
+        }
+
+        string countPtr = NextTemp();
+        EmitLine(sb: sb,
+            line: $"  {countPtr} = getelementptr {managerType}, ptr {manager}, i32 0, i32 {layout.ShareCountIndex}");
+        string previous = NextTemp();
+        EmitLine(sb: sb, line: $"  {previous} = atomicrmw add ptr {countPtr}, i64 1 seq_cst");
+        return manager;
     }
 }

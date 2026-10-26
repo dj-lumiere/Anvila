@@ -733,6 +733,13 @@ internal sealed class TesseraRoutineWriter
                     IsPlace: false);
             case ConstantDataExpression data:
                 return new Operand(Text: _module.ConstantData(data: data), Type: data.ResolvedType, IsPlace: false);
+            case SharedConstantListExpression:
+                // The LLVM emitter lays the list down as writable module data whose pointer fields hold the
+                // addresses of the list and of its elements. A Tessera global starts a pointer only as the address
+                // of a global or preset of that pointee type, and the elements are an Array preset, not a U64.
+                throw new NotSupportedException(
+                    message: "The Tessera backend does not lay down an Int literal outside the S64 range yet: its " +
+                             "limbs need a static list whose data field holds the address of the limbs' Array preset.");
             case LiteralExpression { Value: string text, LiteralType: TokenType.B16Literal or TokenType.B32Literal or
                 TokenType.B64Literal } literal:
                 return new Operand(Text: Temp(type: literal.ResolvedType, expression: FloatLiteral(text: text,
