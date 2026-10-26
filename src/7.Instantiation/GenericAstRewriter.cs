@@ -274,7 +274,7 @@ internal static class GenericAstRewriter
         /// variant of such a routine (instantiated with the implementer as its owner but no <c>Me</c> binding),
         /// the type of its receiver.
         /// </summary>
-        private TypeSymbol? ImplementerOfMe()
+        internal TypeSymbol? ImplementerOfMe()
         {
             if (TypeSubs!.TryGetValue(key: "Me", value: out TypeSymbol? implementer))
             {
@@ -293,8 +293,9 @@ internal static class GenericAstRewriter
             // In a protocol's own routine `me` is typed as the protocol, so `me.iter()` is `Iterable/Iter`: the
             // implementer this body is instantiated for (Me) is the type whose binding it means.
             // A recovery variant of such a routine is instantiated with the implementer as its owner but no `Me`
-            // binding, so the receiver's type names the implementer then.
-            if (newBase is ProtocolTypeSymbol && ImplementerOfMe() is { } implementer)
+            // binding, so the receiver's type names the implementer then, for `Me` (`Me/Emitter`) as for the
+            // protocol.
+            if (newBase is ProtocolTypeSymbol or ProtocolSelfTypeSymbol && ImplementerOfMe() is { } implementer)
             {
                 newBase = implementer;
             }
@@ -1329,8 +1330,19 @@ internal static class GenericAstRewriter
     private static TypeExpression? RewriteProjection(TypeExpression type, RewriteContext ctx)
     {
         string[] segments = type.Name.Split(separator: '/');
-        if (segments.Length < 2 || ctx.TypeSubs is null ||
-            !ctx.TypeSubs.TryGetValue(key: segments[0], value: out TypeSymbol? current))
+        if (segments.Length < 2 || ctx.TypeSubs is null)
+        {
+            return null;
+        }
+
+        // `Me/Emitter` in a recovery variant of a protocol's own routine: the variant is instantiated with the
+        // implementer as its owner and no `Me` binding, so `Me` is the implementer.
+        TypeSymbol? current = ctx.TypeSubs.TryGetValue(key: segments[0], value: out TypeSymbol? bound0)
+            ? bound0
+            : segments[0] == "Me"
+                ? ctx.ImplementerOfMe()
+                : null;
+        if (current == null)
         {
             return null;
         }
