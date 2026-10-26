@@ -41,7 +41,9 @@ namespace Builder.Desugaring.Passes;
 ///
 /// <para>Range-based loops (<c>for x in 0 to n</c>) are also covered: the
 /// <c>RangeExpression</c> iterable is converted to <c>Range[T](...)</c> by
-/// <see cref="Builder.Lowering.Passes.ExpressionLoweringPass"/> (which runs after this pass).</para>
+/// <see cref="Builder.Lowering.Passes.ExpressionLoweringPass"/> (which runs after this pass). Such a loop is marked
+/// (<see cref="LoopStatement.RangeWalk"/>), and analysis replaces the walk with <see cref="RangeCounterLoop"/> when
+/// the range's element type is an integer.</para>
 /// </summary>
 internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 {
@@ -678,7 +680,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Location: value.Location);
     }
 
-    private BlockStatement LowerEach(EachStatement eachStmt, string walkRoutine = Declaration.RuntimeContract.Iter)
+    private BlockStatement LowerEach(EachStatement eachStmt, string walkRoutine = Declaration.RuntimeContract.Iter,
+        RangeExpression? rangeLiteral = null)
     {
         // A loop over a value nothing holds (`each w in make()`, `each w in text.words()`) walks a temporary
         // the iterator only borrows: name it in a block around the loop, so it lives until the loop is done
@@ -707,7 +710,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 {
                     Iterable = new IdentifierExpression(Name: sourceName, Location: eachStmt.Iterable.Location)
                 },
-                walkRoutine: takes ? Declaration.RuntimeContract.TakeEach : Declaration.RuntimeContract.Iter);
+                walkRoutine: takes ? Declaration.RuntimeContract.TakeEach : Declaration.RuntimeContract.Iter,
+                rangeLiteral: source as RangeExpression);
             sourceDecls.Add(item: loop);
             return new BlockStatement(Statements: sourceDecls, Location: srcLoc);
         }
@@ -766,7 +770,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             ? RoutineValueCalls.StepFailureClause(kind: failureKind, registry: ctx.Registry, loc: loc)
             : null;
 
-        return BuildPlainFor(tryNextCall: tryNextCall,
+        BlockStatement walk = BuildPlainFor(tryNextCall: tryNextCall,
             elseBody: elseBody,
             elseVarName: elseVarName,
             iterVarStmt: iterVarStmt,
@@ -775,6 +779,210 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             loc: loc,
             failureClause: failureClause,
             iteratorName: iterName);
+
+        // A range literal walked by one name may become a counter loop. Analysis decides once it knows the
+        // range's element type (RangeCounterLoop).
+        if (rangeLiteral != null && iterationSourceName != null && eachStmt.VariablePattern == null &&
+            failureClause == null && walk.Statements is [_, LoopStatement walkLoop])
+        {
+            walk.Statements[index: 1] = walkLoop with
+            {
+                RangeWalk = new RangeWalk(SourceName: iterationSourceName,
+                    Inclusive: !rangeLiteral.IsExclusive,
+                    Stepped: rangeLiteral.Step != null)
+            };
+        }
+
+        return walk;
+    }
+
+    /// <summary>
+    /// The counter loop an <c>each</c> over an integer range literal runs instead of walking an emitter: the
+    /// statements that take the place of <paramref name="walk"/> (the emitter's declaration and the loop over it),
+    /// or null when <paramref name="walk"/> is not such a loop. The range itself is still made first (its local,
+    /// <see cref="RangeWalk.SourceName"/>, comes before <paramref name="walk"/>), so its start, end and step are
+    /// evaluated once, in the order written, and give the counter its type. Analysis calls this once it knows the
+    /// element type is an integer.
+    /// <para>The values are the emitter's. A loop without <c>by</c> counts up by one: <c>til</c> stops before the
+    /// end, and <c>to</c> compares with the end before it steps, so an end at the type's largest value never steps
+    /// past it. A loop with <c>by</c> takes the step's size from the range (a step of zero crashes there, as the
+    /// emitter does) and asks the range before each step whether another one still fits. <c>continue</c> goes back
+    /// to the loop's top, which is why the counter moves before the body runs.</para>
+    /// <code>
+    /// var _lf_end_N = src.end                    var _lf_end_N = src.end
+    /// var _lf_at_N = src.start                   var _lf_at_N = src.start
+    /// loop                                       var _lf_more_N = _lf_at_N &lt;= _lf_end_N
+    ///     if _lf_at_N &gt;= _lf_end_N               loop
+    ///         break                                  if not _lf_more_N
+    ///     var i = _lf_at_N                               break
+    ///     _lf_at_N = _lf_at_N + 1                    var i = _lf_at_N
+    ///     body                                       _lf_more_N = _lf_at_N &lt; _lf_end_N
+    ///                                                if _lf_more_N
+    ///                                                    _lf_at_N = _lf_at_N + 1
+    ///                                                body
+    /// </code>
+    /// </summary>
+    internal static List<Statement>? RangeCounterLoop(List<Statement> walk)
+    {
+        if (walk is not
+            [
+                DeclarationStatement,
+                LoopStatement
+                {
+                    RangeWalk: { } range,
+                    Body: BlockStatement { Statements: [WhenStatement { Clauses: [.., { Pattern: ElsePattern arm } last] }] }
+                } loop
+            ])
+        {
+            return null;
+        }
+
+        SourceLocation loc = loop.Location;
+        string suffix = loop.IteratorName is { } iterator && iterator.StartsWith(value: "_lf_iter_", comparisonType: StringComparison.Ordinal)
+            ? iterator["_lf_iter_".Length..]
+            : range.SourceName;
+        string at = $"_lf_at_{suffix}";
+        string end = $"_lf_end_{suffix}";
+        string more = $"_lf_more_{suffix}";
+        string by = $"_lf_by_{suffix}";
+
+        var statements = new List<Statement>();
+        var round = new List<Statement>();
+        if (range.Stepped)
+        {
+            statements.Add(item: Local(name: by, value: SourceCall(range: range, routine: "walk_stride", arguments: [], loc: loc), loc: loc));
+            statements.Add(item: Local(name: at, value: SourceMember(range: range, member: "start", loc: loc), loc: loc));
+            statements.Add(item: Local(name: more,
+                value: new UnaryExpression(Operator: UnaryOperator.Not,
+                    Operand: SourceCall(range: range, routine: "is_empty", arguments: [], loc: loc),
+                    Location: loc),
+                loc: loc));
+            round.Add(item: BreakUnless(more: more, loc: loc));
+            AddBinding(round: round, arm: arm, at: at, loc: loc);
+            round.Add(item: new AssignmentStatement(Target: Name(name: more, loc: loc),
+                Value: SourceCall(range: range, routine: "continues_after", arguments: StepArguments(at: at, by: by, loc: loc), loc: loc),
+                Location: loc));
+            round.Add(item: new IfStatement(Condition: Name(name: more, loc: loc),
+                ThenStatement: new BlockStatement(Statements:
+                    [
+                        new AssignmentStatement(Target: Name(name: at, loc: loc),
+                            Value: SourceCall(range: range, routine: "next_after", arguments: StepArguments(at: at, by: by, loc: loc), loc: loc),
+                            Location: loc)
+                    ],
+                    Location: loc),
+                ElseStatement: null,
+                Location: loc));
+        }
+        else
+        {
+            statements.Add(item: Local(name: end, value: SourceMember(range: range, member: "end", loc: loc), loc: loc));
+            statements.Add(item: Local(name: at, value: SourceMember(range: range, member: "start", loc: loc), loc: loc));
+            Statement stepOne = new AssignmentStatement(Target: Name(name: at, loc: loc),
+                Value: new BinaryExpression(Left: Name(name: at, loc: loc),
+                    Operator: BinaryOperator.Add,
+                    Right: new LiteralExpression(Value: "1", LiteralType: TokenType.UndecidedInteger, Location: loc),
+                    Location: loc),
+                Location: loc);
+            if (range.Inclusive)
+            {
+                statements.Add(item: Local(name: more, value: Compare(left: at, op: BinaryOperator.LessEqual, right: end, loc: loc), loc: loc));
+                round.Add(item: BreakUnless(more: more, loc: loc));
+                AddBinding(round: round, arm: arm, at: at, loc: loc);
+                round.Add(item: new AssignmentStatement(Target: Name(name: more, loc: loc),
+                    Value: Compare(left: at, op: BinaryOperator.Less, right: end, loc: loc),
+                    Location: loc));
+                round.Add(item: new IfStatement(Condition: Name(name: more, loc: loc),
+                    ThenStatement: new BlockStatement(Statements: [stepOne], Location: loc),
+                    ElseStatement: null,
+                    Location: loc));
+            }
+            else
+            {
+                round.Add(item: new IfStatement(Condition: Compare(left: at, op: BinaryOperator.GreaterEqual, right: end, loc: loc),
+                    ThenStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
+                    ElseStatement: null,
+                    Location: loc));
+                AddBinding(round: round, arm: arm, at: at, loc: loc);
+                round.Add(item: stepOne);
+            }
+        }
+
+        if (last.Body is BlockStatement body)
+        {
+            round.AddRange(collection: body.Statements);
+        }
+        else
+        {
+            round.Add(item: last.Body);
+        }
+
+        statements.Add(item: new LoopStatement(Body: new BlockStatement(Statements: round, Location: loc), Location: loc));
+        return statements;
+    }
+
+    /// <summary><c>var name = value</c>, a local of the counter loop.</summary>
+    private static DeclarationStatement Local(string name, Expression value, SourceLocation loc)
+    {
+        return new DeclarationStatement(Declaration: new VariableDeclaration(Name: name,
+                Type: null,
+                Initializer: value,
+                Visibility: VisibilityModifier.Secret,
+                Location: loc),
+            Location: loc);
+    }
+
+    private static IdentifierExpression Name(string name, SourceLocation loc)
+    {
+        return new IdentifierExpression(Name: name, Location: loc);
+    }
+
+    private static BinaryExpression Compare(string left, BinaryOperator op, string right, SourceLocation loc)
+    {
+        return new BinaryExpression(Left: Name(name: left, loc: loc), Operator: op, Right: Name(name: right, loc: loc),
+            Location: loc);
+    }
+
+    /// <summary><c>if not more</c> <c>break</c>.</summary>
+    private static IfStatement BreakUnless(string more, SourceLocation loc)
+    {
+        return new IfStatement(Condition: new UnaryExpression(Operator: UnaryOperator.Not,
+                Operand: Name(name: more, loc: loc),
+                Location: loc),
+            ThenStatement: new BlockStatement(Statements: [new BreakStatement(Location: loc)], Location: loc),
+            ElseStatement: null,
+            Location: loc);
+    }
+
+    /// <summary>The loop's own name for the value of this round (<c>var i = _lf_at_N</c>), unless it is <c>_</c>.</summary>
+    private static void AddBinding(List<Statement> round, ElsePattern arm, string at, SourceLocation loc)
+    {
+        if (arm.VariableName is { } variable)
+        {
+            round.Add(item: Local(name: variable, value: Name(name: at, loc: loc), loc: loc));
+        }
+    }
+
+    /// <summary>The arguments of the range's step questions: <c>value: _lf_at_N, stride: _lf_by_N</c>.</summary>
+    private static List<Expression> StepArguments(string at, string by, SourceLocation loc)
+    {
+        return
+        [
+            new NamedArgumentExpression(Name: "value", Value: Name(name: at, loc: loc), Location: loc),
+            new NamedArgumentExpression(Name: "stride", Value: Name(name: by, loc: loc), Location: loc)
+        ];
+    }
+
+    private static MemberExpression SourceMember(RangeWalk range, string member, SourceLocation loc)
+    {
+        return new MemberExpression(Object: Name(name: range.SourceName, loc: loc), MemberName: member, Location: loc);
+    }
+
+    private static CallExpression SourceCall(RangeWalk range, string routine, List<Expression> arguments,
+        SourceLocation loc)
+    {
+        return new CallExpression(Callee: SourceMember(range: range, member: routine, loc: loc),
+            Arguments: arguments,
+            Location: loc) { IsSynthesizedLowering = true };
     }
 
     /// <summary>The iterator step an <c>each</c> loop recovers with <c>try</c>.</summary>

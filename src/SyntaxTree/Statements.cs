@@ -552,6 +552,14 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     public string? IteratorName { get; init; }
 
     /// <summary>
+    /// For a lowered <c>each</c> loop over a range literal (<c>each i in a til b</c>), what the range was written
+    /// with. Analysis turns such a loop into a counter loop when the range's element type is an integer
+    /// (<see cref="Builder.Desugaring.Passes.ControlFlowLoweringPass.RangeCounterLoop"/>), and any other range
+    /// keeps the emitter walk. Null for every other loop.
+    /// </summary>
+    public RangeWalk? RangeWalk { get; init; }
+
+    /// <summary>
     /// For a lowered <c>each</c> loop over an iterator adapter (<c>each x in xs.where(...)</c>), the path of the
     /// container at the head of the adapter chain (<c>"xs"</c>), set by analysis once the chain's types are known (an
     /// adapter has <c>emit</c>, a fresh collection like <c>xs.copy()</c> does not). The shape checks guard it like
@@ -559,6 +567,15 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// </summary>
     public string? AdapterSourcePath { get; set; }
 }
+
+/// <summary>
+/// How a range literal an <c>each</c> loop walks was written: the local the lowering put the range in
+/// (<c>_lf_src_N</c>), whether it includes its end (<c>to</c>) and whether it has a <c>by</c> step.
+/// </summary>
+/// <param name="SourceName">The local that holds the range.</param>
+/// <param name="Inclusive">True for <c>to</c>, false for <c>til</c>.</param>
+/// <param name="Stepped">True when the range was written with <c>by</c>.</param>
+public sealed record RangeWalk(string SourceName, bool Inclusive, bool Stepped);
 
 /// <summary>
 /// Iterator loop statement that executes a body for each element in an iterable collection.

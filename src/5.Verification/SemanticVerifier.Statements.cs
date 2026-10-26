@@ -1089,6 +1089,16 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>Whether the range an <c>each</c> loop walks is over a concrete integer type (a fixed-width integer or
+    /// <c>Int</c>), so the loop can count instead of walking an emitter.</summary>
+    private bool WalksIntegerRange(RangeWalk rangeWalk)
+    {
+        return _registry.LookupVariable(name: rangeWalk.SourceName)?.Type is RecordTypeSymbol
+        {
+            GenericDefinition.Name: "Range", TypeArguments: [RecordTypeSymbol element]
+        } && IsIntegerType(type: element);
+    }
+
     private void AnalyzeBlockStatement(BlockStatement block)
     {
         if (block.Statements.Count == 0)
@@ -1108,6 +1118,15 @@ public sealed partial class SemanticVerifier
 
         _registry.EnterScope(kind: ScopeKind.Block, name: null);
 
+        // An `each` over an integer range literal counts: the emitter walk is replaced by a counter loop now that the
+        // range's local has its type. A range of any other element type keeps the walk.
+        if (block.Statements is [_, LoopStatement { RangeWalk: { } rangeWalk }] &&
+            WalksIntegerRange(rangeWalk: rangeWalk) &&
+            Desugaring.Passes.ControlFlowLoweringPass.RangeCounterLoop(walk: block.Statements) is { } counter)
+        {
+            block.Statements.Clear();
+            block.Statements.AddRange(collection: counter);
+        }
 
         // Once a statement unconditionally diverges (return / throw / break / continue),
         // any following statement in the same block can never execute — report the first such dead
