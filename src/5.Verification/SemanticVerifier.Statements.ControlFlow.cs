@@ -960,15 +960,28 @@ public sealed partial class SemanticVerifier
             return;
         }
 
+        // A routine declared without `->` has no result type until its body is analyzed, and gives nothing back.
+        TypeSymbol? declaredResult = _currentRoutine.ReturnType;
+        bool givesNothing = declaredResult is null or { IsNone: true };
+
+        // Bare `return` is normalized by NoneReturnNormalizationPass to `return None` with Location == ret.Location.
+        bool isBareReturn = ret.Value is null ||
+                            ret.Value is IdentifierExpression { Name: "None" } blankId &&
+                            blankId.Location == ret.Location;
+
+        // RF-S301: a bare `return` in a routine that gives back a value leaves the caller without one.
+        if (isBareReturn && !givesNothing)
+        {
+            string written = WrittenTypeName(type: declaredResult!);
+            ReportError(code: SemanticDiagnosticCode.ReturnTypeMismatch,
+                message: $"Routine '{_currentRoutine.Name}' gives back {Article.For(name: written)} '{written}', and this " +
+                         $"'return' hands back nothing. Return {Article.For(name: written)} '{written}' here, " +
+                         $"or take '-> {written}' off the routine if it gives nothing back.",
+                location: ret.Location);
+        }
+
         if (ret.Value != null)
         {
-            // Bare `return` is normalized by NoneReturnNormalizationPass to `return None`
-            // with Location == ret.Location. Treat these as unreachable-path terminators:
-            // skip the type check so exhaustive when-else blocks can end with bare `return`.
-            bool isNormalizedBareReturn =
-                ret.Value is IdentifierExpression { Name: "None" } blankId &&
-                blankId.Location == ret.Location;
-
             // A local handed over inside the returned value ends at this return: it moves without `steal`.
             HandOverReturnedLocals(ret: ret);
 
@@ -991,8 +1004,21 @@ public sealed partial class SemanticVerifier
                     location: ret.Value.Location);
             }
 
-            if (!isNormalizedBareReturn && _currentRoutine.ReturnType != null &&
-                !IsAssignableTo(source: returnType, target: _currentRoutine.ReturnType))
+            // RF-S301: a value returned from a routine that gives nothing back would be dropped without a word.
+            // The declaration states the result type, so the value never turns the routine into one that has one.
+            if (!isBareReturn && givesNothing && !returnType.IsNone && returnType is not ErrorTypeSymbol)
+            {
+                string written = WrittenTypeName(type: returnType);
+                ReportError(code: SemanticDiagnosticCode.ReturnTypeMismatch,
+                    message: (declaredResult == null
+                                 ? $"Routine '{_currentRoutine.Name}' gives nothing back (it has no '-> T'), "
+                                 : $"Routine '{_currentRoutine.Name}' gives nothing back (it is declared '-> None'), ") +
+                             $"and this 'return' hands back {Article.For(name: written)} '{written}'. " +
+                             $"Write '-> {written}' on the routine, or return without a value.",
+                    location: ret.Location);
+            }
+            else if (!isBareReturn && !givesNothing &&
+                !IsAssignableTo(source: returnType, target: _currentRoutine.ReturnType!))
             {
                 // A token where its entity is expected (`var b = boxes[0]` then `return b`): say what the value
                 // is and how to hand back an entity of its own.
