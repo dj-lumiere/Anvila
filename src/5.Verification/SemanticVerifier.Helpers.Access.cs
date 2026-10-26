@@ -441,6 +441,16 @@ public sealed partial class SemanticVerifier
             {
                 _workBoundCallables.Add(item: (current, handed.Name));
             }
+            // A routine value read from where a lambda may have been put earlier (a member variable, a collection
+            // element, a call's result, a variable given such a value) can be any lambda of its type stored before:
+            // the lambdas of that type that captured a one-thread part are checked after analysis.
+            else if (value is not LambdaExpression &&
+                     !(value is IdentifierExpression known && _registry.LookupVariable(name: known.Name) is { } held &&
+                       _lambdaVariables.Contains(item: held)))
+            {
+                _workBoundStoredRoutineTypes.TryAdd(key: RoutineShape(type: (RoutineTypeSymbol)type),
+                    value: value.Location);
+            }
 
             return null;
         }
@@ -580,17 +590,77 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        foreach ((string shape, (string captured, SourceLocation location)) in _oneThreadLambdas)
+        {
+            if (_workBoundStoredRoutineTypes.TryGetValue(key: shape, value: out SourceLocation? handedAt))
+            {
+                ReportError(code: SemanticDiagnosticCode.ThreadArgNotShareable,
+                    message: $"This lambda captured {captured}, and a routine value of its type ({shape}) kept " +
+                             $"elsewhere (a member variable, a collection, a call's result) is handed to a Work at " +
+                             $"line {handedAt.Line}, which may run it on another thread. The builder can't tell which " +
+                             "lambda that value is, so it counts this one: capture a Guarded, an Unbroken or a copied " +
+                             "value instead, or keep the lambdas a Work runs apart from this one's type.",
+                    location: location);
+            }
+        }
+
         _workBoundCallables.Clear();
         _forwardedCallables.Clear();
         _oneThreadCallableArguments.Clear();
+        _oneThreadLambdas.Clear();
+        _workBoundStoredRoutineTypes.Clear();
+        _lambdaVariables.Clear();
+    }
+
+    /// <summary>A routine type by its parameters and result, failable or not: a lambda that can't fail may be kept
+    /// where a failable routine value goes.</summary>
+    private static string RoutineShape(RoutineTypeSymbol type)
+    {
+        string parameters = string.Join(separator: ", ", values: type.ParameterTypes.Select(selector: p => p.Name));
+        return $"Callable[({parameters}), {type.ReturnType?.Name ?? "None"}]";
+    }
+
+    /// <summary>Every lambda that captured a part only one thread may use, by its routine type, with what it captured
+    /// and where it is written.</summary>
+    private readonly Dictionary<string, (string Captured, SourceLocation Location)> _oneThreadLambdaLocations =
+        new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The lambdas that captured a part only one thread may use, keyed by shape and location.</summary>
+    private readonly List<(string Shape, (string Captured, SourceLocation Location) Lambda)> _oneThreadLambdas = [];
+
+    /// <summary>The routine types of routine values handed to a Work from somewhere the builder does not follow (a
+    /// member variable, a collection element, a call's result), with the first place.</summary>
+    private readonly Dictionary<string, SourceLocation> _workBoundStoredRoutineTypes = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The variables bound to a lambda written in place: what they hold is known.</summary>
+    private readonly HashSet<VariableInfo> _lambdaVariables = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>Notes a lambda that captured a part only one thread may use (see <see cref="CheckWorkBoundCallables"/>).</summary>
+    private void NoteOneThreadLambda(LambdaExpression lambda, RoutineTypeSymbol type)
+    {
+        if (!ChecksOwnershipHere || OneThreadCapture(value: lambda) is not { } captured)
+        {
+            return;
+        }
+
+        string key = $"{lambda.Location.FileName}:{lambda.Location.Position}";
+        if (_oneThreadLambdaLocations.TryAdd(key: key, value: (captured, lambda.Location)))
+        {
+            _oneThreadLambdas.Add(item: (RoutineShape(type: type), (captured, lambda.Location)));
+        }
     }
 
     /// <summary>Notes a variable bound to a lambda that captured a part only one thread may use, so handing the
     /// variable to a job is checked like handing it the lambda.</summary>
     private void NoteOneThreadLambdaVariable(string name, Expression? initializer)
     {
-        if (initializer is LambdaExpression lambda && OneThreadCapture(value: lambda) is { } captured &&
-            _registry.LookupVariable(name: name) is { } variable)
+        if (initializer is not LambdaExpression lambda || _registry.LookupVariable(name: name) is not { } variable)
+        {
+            return;
+        }
+
+        _lambdaVariables.Add(item: variable);
+        if (OneThreadCapture(value: lambda) is { } captured)
         {
             _oneThreadLambdaVariables[key: variable] = captured;
         }
