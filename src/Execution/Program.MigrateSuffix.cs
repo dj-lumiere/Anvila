@@ -521,8 +521,9 @@ internal partial class Program
 
     /// <summary>
     /// Runs analysis over <paramref name="files"/> in a child process and reads back what it observed, by file and
-    /// offset: the type of each bare number (<c>--suffix-probe</c>), or the operand types of each comparison as
-    /// <c>left|right</c> (<c>--until-probe</c>).
+    /// offset: the type of each bare number (<c>--suffix-probe</c>), the operand types of each comparison as
+    /// <c>left|right</c> (<c>--until-probe</c>), or each number built from another value's bits as
+    /// <c>target|source|literal</c> (<c>--numbers-probe</c>).
     /// </summary>
     private static Dictionary<(string File, int Position), HashSet<string>> ProbeAnalysisTypes(
         List<(string Path, string? StandardRoot)> files, string mode)
@@ -609,8 +610,9 @@ internal partial class Program
     /// The child side of <see cref="ProbeSuffixTypes"/>: analyzes the files listed in <paramref name="list"/> and writes
     /// one line per bare number analysis typed in them (file, offset, type) to <paramref name="output"/>.
     /// </summary>
-    private static int RunSuffixProbe(string list, string output, bool comparisons = false)
+    private static int RunSuffixProbe(string list, string output, string mode)
     {
+        bool comparisons = mode == "--until-probe";
         var programs = new List<string>();
         var stdlibFiles = new Dictionary<string, string>(comparer: StringComparer.Ordinal);
         foreach (string line in File.ReadAllLines(path: list))
@@ -642,6 +644,15 @@ internal partial class Program
                     string both = $"{left.Name}|{right.Name}";
                     observedNow.Add(item: (binary.Location, binary.OperatorPosition, () => both));
                 }
+            };
+        }
+        else if (mode == "--numbers-probe")
+        {
+            SemanticVerifier.NumberBitReadSeen = (call, target, source) =>
+            {
+                bool literal = call.Arguments is [LiteralExpression or UnaryExpression { Operand: LiteralExpression }];
+                string seen = $"{target.Name}|{source?.Name ?? "?"}|{(literal ? 1 : 0)}";
+                observedNow.Add(item: (call.Callee.Location, call.Callee.Location.Position, () => seen));
             };
         }
         else
@@ -758,6 +769,7 @@ internal partial class Program
 
         LiteralExpression.TypeAssigned = null;
         BinaryExpression.OperandsTyped = null;
+        SemanticVerifier.NumberBitReadSeen = null;
         Builder.Parser.Parser.ReadsWhileLoops = false;
         return 0;
     }

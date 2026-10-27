@@ -907,6 +907,11 @@ public enum SemanticDiagnosticCode
     /// <c>modify_exit()</c>.</summary>
     AccessEnterWithoutToken = 654,
 
+    /// <summary>A number built from one value with <c>T(x)</c> in a program file outside <c>danger</c>: the
+    /// construction reads the value's bits as the new type and changes the number (<c>U8(300)</c> is 44). A literal
+    /// goes where the type is expected, a value converts with <c>x.to[T]()</c>.</summary>
+    NumberBuiltFromBits = 655,
+
     /// <summary>A binding from outside an <c>if</c>, a <c>when</c> or a loop is taken with <c>steal</c> on some paths
     /// that go on past it and kept on others (or taken inside a loop, so it is gone on the next turn): what a scope
     /// holds is torn down at its end by one rule, with no hidden flag remembering which path ran.</summary>

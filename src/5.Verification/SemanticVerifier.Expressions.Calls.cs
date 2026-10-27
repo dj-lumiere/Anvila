@@ -4455,6 +4455,12 @@ public sealed partial class SemanticVerifier
                     $"with {argTypes.Count} argument(s).",
                     location: call.Location);
             }
+            else if (type is RecordTypeSymbol { BackendType: not null } && IsRepresentationChange(call: call) &&
+                     IsNumberType(type: type) && !NumberBitReadAllowedHere())
+            {
+                ReportNumberBitRead(call: call, type: type, argTypes: argTypes);
+                return ErrorTypeSymbol.Instance;
+            }
             else if (type is RecordTypeSymbol { BackendType: not null } && !IsRepresentationChange(call: call))
             {
                 // A primitive has no member variables to fill: its construction from one value reads that value's
@@ -4462,7 +4468,10 @@ public sealed partial class SemanticVerifier
                 string from = argTypes is [{ } only] ? $" from {Article.For(name: only.Name)} '{only.Name}'" : "";
                 string hint = argTypes is [VariantTypeSymbol] && call.Arguments is [var arm]
                     ? $" If the value holds one, take it out with '{Unnamed(argument: arm)}.to[{type.Name}]()'."
-                    : $" Convert with '.to[{type.Name}]()' where a conversion exists.";
+                    : IsNumberType(type: type) && call.Arguments is [var number] &&
+                      NumberLiteralFix(type: type, value: number) is { } literalFix
+                        ? " " + literalFix
+                        : $" Convert with '.to[{type.Name}]()' where a conversion exists.";
                 ReportError(code: SemanticDiagnosticCode.SpecializationNotFound,
                     message: $"{Article.Capital(name: type.Name)} '{type.Name}' is not built{from}: no creator of '{type.Name}' takes these arguments." +
                              hint,
@@ -4558,6 +4567,114 @@ public sealed partial class SemanticVerifier
             message: $"'{name}' is built from its member variables, and you give {count} for its " +
                      $"{fields.Count} member variables. Give each one a value: '{name}({all})'.",
             location: call.Location);
+    }
+
+    /// <summary>Told of each number <c>T(x)</c> reported as reading bits (the call, the number type, the value's
+    /// type): <c>migrate --step numbers</c> reads them to rewrite the calls.</summary>
+    internal static Action<CallExpression, TypeSymbol, TypeSymbol?>? NumberBitReadSeen;
+
+    /// <summary>A number type: an integer, a binary float (<c>BF16</c> too) or a decimal float.</summary>
+    private bool IsNumberType(TypeSymbol type)
+    {
+        return IsNumericType(type: type) || type.Name is "BF16";
+    }
+
+    /// <summary>
+    /// Whether a number may be built from another value's bits here (<c>U8(x)</c> keeping the low eight bits of an
+    /// <c>S64</c>, <c>B64(bits)</c> reading a <c>U64</c> as a float): in a library file, in a body the builder
+    /// writes, and in a <c>danger</c> block. In a program file it changes the number without a word, so it is a
+    /// build error there.
+    /// </summary>
+    private bool NumberBitReadAllowedHere()
+    {
+        return _isInCompilerGeneratedBody || InDangerBlock || string.IsNullOrEmpty(value: _currentFilePath) ||
+               _currentFilePath.StartsWith(value: '<') || IsStdlibFile(filePath: _currentFilePath);
+    }
+
+    /// <summary>
+    /// Reports a number built from one value with <c>T(x)</c> in a program file (RF-S655). That construction reads
+    /// the value's bits as the new type, so the number changes (<c>U8(300)</c> is 44, <c>Decimal(2)</c> is not 2).
+    /// The message points to the spelling that keeps the number: a literal written where the type is expected, or
+    /// the conversion <c>x.to[T]()</c>, which fails when the value does not fit.
+    /// </summary>
+    private void ReportNumberBitRead(CallExpression call, TypeSymbol type, List<TypeSymbol> argTypes)
+    {
+        string name = type.BareName;
+        Expression value = call.Arguments[index: 0];
+        string from = argTypes is [{ Category: not TypeCategory.Error } only]
+            ? $"{Article.For(name: only.Name)} '{only.Name}'"
+            : "its value";
+        string fix = NumberLiteralFix(type: type, value: value) ??
+                     $"Convert the value with '{ConversionReceiverText(value: value)}.to[{name}]()', which keeps the " +
+                     $"number and fails when it does not fit {Article.For(name: name)} '{name}'.";
+        NumberBitReadSeen?.Invoke(arg1: call, arg2: type, arg3: argTypes is [{ } source] ? source : null);
+        ReportError(code: SemanticDiagnosticCode.NumberBuiltFromBits,
+            message: $"'{name}({WrittenArgumentText(value: value)})' reads the bits of {from} as {Article.For(name: name)} '{name}' and does not " +
+                     $"convert the number, so the result can be a different number. {fix}",
+            location: call.Location);
+    }
+
+    /// <summary>
+    /// How to write a number literal given to <c>T(...)</c> as a <c>T</c>: in a declaration of that type, where the
+    /// builder checks that it fits. Null when the value is not a literal.
+    /// </summary>
+    private string? NumberLiteralFix(TypeSymbol type, Expression value)
+    {
+        LiteralExpression? written = value switch
+        {
+            LiteralExpression lit => lit,
+            UnaryExpression { Operator: UnaryOperator.Minus, Operand: LiteralExpression lit } => lit,
+            _ => null
+        };
+        if (written == null)
+        {
+            return null;
+        }
+
+        string name = type.BareName;
+        string an = Article.For(name: name);
+        string text = (value is UnaryExpression ? "-" : "") + written.Value;
+        bool fraction = written.LiteralType is TokenType.UndecidedDecimal or
+            (>= TokenType.B16Literal and <= TokenType.DecimalLiteral);
+        if (fraction && IsIntegerType(type: type))
+        {
+            return $"{Article.Capital(name: name)} '{name}' holds whole numbers: write one where {an} '{name}' is " +
+                   $"expected ('var n: {name} = 1'), or convert a computed value with '.to[{name}]()'.";
+        }
+
+        if (text.StartsWith(value: '-') && name.StartsWith(value: 'U'))
+        {
+            return $"{Article.Capital(name: name)} '{name}' holds no negative numbers: write the number you mean " +
+                   $"where {an} '{name}' is expected ('var n: {name} = {name}_MAX' for all bits set).";
+        }
+
+        return $"Write the number where {an} '{name}' is expected, and the builder checks that it fits: " +
+               $"'var n: {name} = {text}'.";
+    }
+
+    /// <summary>The argument of a <c>T(x)</c> as the message shows it: a name or a number as written, anything else
+    /// as <c>...</c>.</summary>
+    private static string WrittenArgumentText(Expression value)
+    {
+        return value switch
+        {
+            IdentifierExpression id => id.Name,
+            LiteralExpression lit => $"{lit.Value}",
+            UnaryExpression { Operator: UnaryOperator.Minus, Operand: LiteralExpression lit } => $"-{lit.Value}",
+            _ => "..."
+        };
+    }
+
+    /// <summary>The receiver text of the suggested <c>.to[T]()</c>: a name as written, anything else in
+    /// parentheses.</summary>
+    private static string ConversionReceiverText(Expression value)
+    {
+        return value switch
+        {
+            IdentifierExpression id => id.Name,
+            MemberExpression { Object: IdentifierExpression owner } member => $"{owner.Name}.{member.MemberName}",
+            _ => "(value)"
+        };
     }
 
     /// <summary>True when a primitive's construction reads another primitive's bits (`S64(x)` with `x` a `U64`):

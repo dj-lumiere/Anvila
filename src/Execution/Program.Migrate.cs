@@ -21,9 +21,9 @@ internal partial class Program
     private static int RunMigrateCommand(string[] args)
     {
         // The analysis child of `--step suffix` (see RunSuffixProbe): not for people to run.
-        if (args.Length == 4 && args[1] is "--suffix-probe" or "--until-probe")
+        if (args.Length == 4 && args[1] is "--suffix-probe" or "--until-probe" or "--numbers-probe")
         {
-            return RunSuffixProbe(list: args[2], output: args[3], comparisons: args[1] == "--until-probe");
+            return RunSuffixProbe(list: args[2], output: args[3], mode: args[1]);
         }
 
         bool check = args.Contains(value: "--check");
@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
-                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce"))
+                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce" or "numbers"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names or pierce");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names, pierce or numbers");
             return 2;
         }
 
@@ -154,6 +154,13 @@ internal partial class Program
         if (step == "until")
         {
             return RunUntilStep(paths: paths, check: check);
+        }
+
+        // `--step numbers`: a number is not built from another value's bits with `T(x)`: a value conversion is
+        // `x.to[T]()`, and a literal goes in a declaration of the type, with analysis deciding each one.
+        if (step == "numbers")
+        {
+            return RunNumbersStep(paths: paths, check: check);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.
