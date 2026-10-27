@@ -63,6 +63,12 @@ internal static class ImplicitCallContract
         yield return (liveType, RuntimeContract.ShapeUse.RequireFree);
         yield return (liveType, RuntimeContract.ShapeUse.ControlToReshape);
 
+        // `h.represent()` / `h.diagnose()` on a handle become its own handle_represent / handle_diagnose
+        // (RoamedProjectionLoweringPass), in generic bodies too (a derived diagnose hands a handle member to
+        // nested_diagnose), once the body is made concrete.
+        yield return (liveType, RuntimeContract.RoamedMemberRoutine.HandleRepresent);
+        yield return (liveType, RuntimeContract.RoamedMemberRoutine.HandleDiagnose);
+
         // Display transparency: codegen re-resolves represent/diagnose on the Roamed handle to the
         // INNER value's, so the inner display routines must be live even when the inner type is only
         // ever reached through the wrapper (e.g. an SF entity local that is never held bare).
