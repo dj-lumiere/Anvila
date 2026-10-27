@@ -161,6 +161,18 @@ public sealed class InstantiationContext
         AnalyzePerUseBody { get; set; }
 
     /// <summary>
+    /// Checks one monomorphized copy of a generic routine against its body as written, for the rules whose answer
+    /// depends on the types it is used with (a <c>T(x)</c> that reads bits once <c>T</c> is a number): the routine
+    /// copy, the written body, the copy's body. Errors are reported at the written lines. Set by
+    /// <c>SemanticVerifier</c>.
+    /// </summary>
+    public Action<TypeModel.Symbols.RoutineInfo, SyntaxTree.Statement, SyntaxTree.Statement>? CheckInstanceBody
+    {
+        get;
+        set;
+    }
+
+    /// <summary>
     /// Builds the raw body of a variant-arm extractor creator (<c>Arm!(from: V)</c>:
     /// <c>when from { is Arm v =&gt; return v.duplicate(), else =&gt; absent }</c>) without storing it, or null
     /// when the routine is not one. The demand collector uses it for an extractor it reaches only from a

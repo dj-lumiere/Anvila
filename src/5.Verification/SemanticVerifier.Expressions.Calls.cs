@@ -1708,6 +1708,11 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
+        if (ReportsCharFromCodepointBits(call: call, creator: creator))
+        {
+            return ErrorTypeSymbol.Instance;
+        }
+
         CheckCreatorArgumentNames(arguments: call.Arguments, creator: creator, type: callableType);
         if (creator.IsSynthesized && callableType is not GenericParameterTypeSymbol)
         {
@@ -4439,6 +4444,11 @@ public sealed partial class SemanticVerifier
             if (creator != null && creator.Parameters.Count == argTypes.Count &&
                 !creator.Parameters.Any(predicate: p => p.IsVariadicParam))
             {
+                if (ReportsCharFromCodepointBits(call: call, creator: creator))
+                {
+                    return ErrorTypeSymbol.Instance;
+                }
+
                 CheckCreatorArgumentNames(arguments: call.Arguments, creator: creator, type: type);
                 call.ResolvedRoutine = creator;
                 call.LoweringKind = ClassifyConstruction(type: type);
@@ -4456,7 +4466,7 @@ public sealed partial class SemanticVerifier
                     location: call.Location);
             }
             else if (type is RecordTypeSymbol { BackendType: not null } && IsRepresentationChange(call: call) &&
-                     IsNumberType(type: type) && !NumberBitReadAllowedHere())
+                     IsBitReadGuardedType(type: type) && !NumberBitReadAllowedHere())
             {
                 ReportNumberBitRead(call: call, type: type, argTypes: argTypes);
                 return ErrorTypeSymbol.Instance;
@@ -4580,6 +4590,33 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// Reports <c>Char(n)</c> in a program file when it binds the library's own creator of a character from a
+    /// codepoint (the one a character literal uses), which takes the bits as they are, unchecked, like any
+    /// <c>T(x)</c> that reads bits (RF-S655).
+    /// </summary>
+    private bool ReportsCharFromCodepointBits(CallExpression call, RoutineInfo creator)
+    {
+        if (creator is not { IsCreator: true, Visibility: VisibilityModifier.Secret, ReturnType: { Name: "Char" } made } ||
+            call.Arguments is not [var codepoint] ||
+            (codepoint is NamedArgumentExpression named ? named.Value : codepoint).ResolvedType is not
+                RecordTypeSymbol { BackendType: not null } source || NumberBitReadAllowedHere())
+        {
+            return false;
+        }
+
+        ReportNumberBitRead(call: call, type: made, argTypes: [source]);
+        return true;
+    }
+
+    /// <summary>A type whose <c>T(x)</c> from another value reads that value's bits (RF-S655): a number type, a
+    /// <c>Char</c> (the bits are taken as a codepoint, unchecked) and a <c>Bool</c> (only the lowest bit is
+    /// kept, so <c>Bool(2)</c> is <c>false</c>).</summary>
+    private bool IsBitReadGuardedType(TypeSymbol type)
+    {
+        return IsNumberType(type: type) || type.Name is "Char" or "Bool";
+    }
+
+    /// <summary>
     /// Whether a number may be built from another value's bits here (<c>U8(x)</c> keeping the low eight bits of an
     /// <c>S64</c>, <c>B64(bits)</c> reading a <c>U64</c> as a float): in a library file, in a body the builder
     /// writes, and in a <c>danger</c> block. In a program file it changes the number without a word, so it is a
@@ -4599,19 +4636,161 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void ReportNumberBitRead(CallExpression call, TypeSymbol type, List<TypeSymbol> argTypes)
     {
-        string name = type.BareName;
-        Expression value = call.Arguments[index: 0];
-        string from = argTypes is [{ Category: not TypeCategory.Error } only]
-            ? $"{Article.For(name: only.Name)} '{only.Name}'"
-            : "its value";
-        string fix = NumberLiteralFix(type: type, value: value) ??
-                     $"Convert the value with '{ConversionReceiverText(value: value)}.to[{name}]()', which keeps the " +
-                     $"number and fails when it does not fit {Article.For(name: name)} '{name}'.";
-        NumberBitReadSeen?.Invoke(arg1: call, arg2: type, arg3: argTypes is [{ } source] ? source : null);
+        Expression value = call.Arguments[index: 0] is NamedArgumentExpression named ? named.Value : call.Arguments[index: 0];
+        TypeSymbol? source = argTypes is [{ Category: not TypeCategory.Error } only] ? only : null;
+        if (IsNumberType(type: type))
+        {
+            NumberBitReadSeen?.Invoke(arg1: call, arg2: type, arg3: argTypes is [{ } seen] ? seen : null);
+        }
+
         ReportError(code: SemanticDiagnosticCode.NumberBuiltFromBits,
-            message: $"'{name}({WrittenArgumentText(value: value)})' reads the bits of {from} as {Article.For(name: name)} '{name}' and does not " +
-                     $"convert the number, so the result can be a different number. {fix}",
+            message: BitReadMessage(written: type.BareName, type: type, value: value, source: source,
+                instance: null, at: call.Location),
             location: call.Location);
+    }
+
+    /// <summary>
+    /// The RF-S655 message for <c>written(value)</c> building a <paramref name="type"/> from a value of
+    /// <paramref name="source"/>: what the bits become and the spelling that keeps the value. <paramref name="written"/>
+    /// is the type as the call names it (<c>T</c> in a generic routine), <paramref name="instance"/> the
+    /// monomorphized routine the check is about (<c>make[U8]</c>), or null for a call checked as written.
+    /// </summary>
+    private string BitReadMessage(string written, TypeSymbol type, Expression value, TypeSymbol? source,
+        string? instance, SourceLocation at)
+    {
+        string name = type.BareName;
+        string from = source != null ? $"{Article.For(name: source.Name)} '{source.Name}'" : "its value";
+        string call = $"'{written}({WrittenArgumentText(value: value)})'";
+        string where = instance != null ? $" in '{instance}'" : "";
+        string receiver = ConversionReceiverText(value: value);
+        switch (name)
+        {
+            case "Char":
+            {
+                // A Suflae program makes a character from an `Int`, a RazorForge program from a `U32`.
+                string codepointType = DiagnosticLanguage.OfFile(fileName: at.FileName) == Language.Suflae
+                    ? "Int"
+                    : "U32";
+                string codepoint = source?.Name == codepointType ? receiver : $"{receiver}.to[{codepointType}]()";
+                string fix = value is LiteralExpression
+                    ? "Write the character itself ('A'), or make it with 'Char.from_codepoint(n: ...)', which fails " +
+                      "when the number is not a Unicode scalar."
+                    : $"Make the character with 'Char.from_codepoint(n: {codepoint})', which fails when the number " +
+                      "is not a Unicode scalar.";
+                return $"{call}{where} reads the bits of {from} as a 'Char' and does not check that they are a " +
+                       $"character's codepoint, so the result can be another character or no character at all. {fix}";
+            }
+            case "Bool":
+            {
+                string fix = value is LiteralExpression
+                    ? "Write 'true' or 'false'."
+                    : $"Compare the value instead: '{receiver} != 0'.";
+                return $"{call}{where} keeps only the lowest bit of {from}, so a value like 2 gives 'false'. {fix}";
+            }
+        }
+
+        string conversion = instance != null
+            ? $"'{receiver}.to[{written}]()'"
+            : $"'{receiver}.to[{name}]()'";
+        string numberFix = (instance == null ? NumberLiteralFix(type: type, value: value) : null) ??
+                           $"Convert the value with {conversion}, which keeps the number and fails when it does not " +
+                           $"fit {Article.For(name: name)} '{name}'.";
+        string built = instance != null ? $" as the '{name}' it is there" : $" as {Article.For(name: name)} '{name}'";
+        return $"{call}{where} reads the bits of {from}{built} and does not convert the number, so the result can " +
+               $"be a different number. {numberFix}";
+    }
+
+    /// <summary>
+    /// RF-S655 for one monomorphized copy of a generic routine a program wrote. A <c>T(x)</c> there is checked when
+    /// the routine is analyzed, where <c>T</c> is no number type yet, so a copy whose <c>T</c> is a number, a
+    /// <c>Char</c> or a <c>Bool</c> built from a value of another type (<c>make[U8](x: 300)</c> gives 44) is
+    /// reported here, naming the copy and pointing to <c>x.to[T]()</c>. <paramref name="definition"/> is the body as
+    /// written, <paramref name="body"/> the copy: only a construction whose type or value the definition left to
+    /// a type parameter is checked (any other one was checked as written), outside <c>danger</c>.
+    /// </summary>
+    internal void CheckBitReadsInInstance(RoutineInfo instance, Statement definition, Statement body)
+    {
+        string file = definition.Location.FileName ?? "";
+        if (file.Length == 0 || file.StartsWith(value: '<') || IsStdlibFile(filePath: file))
+        {
+            return;
+        }
+
+        // The constructions the definition left to a type parameter, by where they are written, with the name the
+        // call gives the type.
+        var generic = new Dictionary<SourceLocation, string>();
+        AstWalker.WalkExpressions(root: definition, visit: e =>
+        {
+            if (e is CallExpression { Callee: IdentifierExpression callee, Arguments: [var only] } call &&
+                only is not NamedArgumentExpression &&
+                (call.ConstructedType is GenericParameterTypeSymbol || only.ResolvedType is GenericParameterTypeSymbol))
+            {
+                generic[key: call.Location] = callee.Name;
+            }
+        });
+        if (generic.Count == 0)
+        {
+            return;
+        }
+
+        string use = InstanceText(routine: instance);
+        var reported = new HashSet<SourceLocation>();
+        CheckBitReadsOutsideDanger(node: body, generic: generic, reported: reported, use: use);
+    }
+
+    /// <summary>Walks <paramref name="node"/> for <see cref="CheckBitReadsInInstance"/>, leaving <c>danger</c>
+    /// blocks out.</summary>
+    private void CheckBitReadsOutsideDanger(Statement node, Dictionary<SourceLocation, string> generic,
+        HashSet<SourceLocation> reported, string use)
+    {
+        AstWalker.Walk(root: node, visit: n =>
+        {
+            if (n is not CallExpression { Arguments: [var only] } call || only is NamedArgumentExpression ||
+                !generic.TryGetValue(key: call.Location, value: out string? written) ||
+                (call.ConstructedType ?? call.ResolvedType) is not RecordTypeSymbol { BackendType: not null } built ||
+                !IsBitReadGuardedType(type: built) ||
+                only.ResolvedType is not RecordTypeSymbol { BackendType: not null } source ||
+                source.FullName == built.FullName || IsInsideDanger(root: node, target: call) ||
+                !reported.Add(item: call.Location))
+            {
+                return;
+            }
+
+            ReportError(code: SemanticDiagnosticCode.NumberBuiltFromBits,
+                message: BitReadMessage(written: written, type: built, value: only, source: source, instance: use,
+                    at: call.Location),
+                location: call.Location);
+        });
+    }
+
+    /// <summary>Whether <paramref name="target"/> sits inside a <c>danger</c> block of <paramref name="root"/>.</summary>
+    private static bool IsInsideDanger(Statement root, Expression target)
+    {
+        bool inside = false;
+        AstWalker.Walk(root: root, visit: n =>
+        {
+            if (!inside && n is DangerStatement danger)
+            {
+                AstWalker.WalkExpressions(root: danger.Body, visit: e => inside |= ReferenceEquals(objA: e, objB: target));
+            }
+        });
+        return inside;
+    }
+
+    /// <summary>A monomorphized routine as a message names it: <c>make[U8]</c>, <c>Box[U8].get</c>.</summary>
+    private static string InstanceText(RoutineInfo routine)
+    {
+        static string TypeText(TypeSymbol type)
+        {
+            return type.TypeArguments is { Count: > 0 } arguments
+                ? $"{type.BareName}[{string.Join(separator: ", ", values: arguments.Select(selector: TypeText))}]"
+                : type.BareName;
+        }
+
+        string name = routine.TypeArguments is { Count: > 0 } typeArguments
+            ? $"{routine.Name}[{string.Join(separator: ", ", values: typeArguments.Select(selector: TypeText))}]"
+            : routine.Name;
+        return routine.OwnerType is { } owner ? $"{TypeText(type: owner)}.{name}" : name;
     }
 
     /// <summary>
@@ -4974,6 +5153,10 @@ public sealed partial class SemanticVerifier
 
         AnalyzeCallArguments(routine: routine, arguments: call.Arguments, location: call.Location);
         ValidateExclusiveTokenUniqueness(arguments: call.Arguments, location: call.Location);
+        if (ReportsCharFromCodepointBits(call: call, creator: routine))
+        {
+            return ErrorTypeSymbol.Instance;
+        }
 
         TypeSymbol returnType = routine.ReturnType ??
                                 _registry.LookupType(name: NoneTypeName) ??

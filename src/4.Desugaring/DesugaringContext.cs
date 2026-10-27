@@ -73,6 +73,14 @@ public sealed class DesugaringContext
     public Func<TypeModel.Symbols.RoutineInfo, SyntaxTree.Statement, SyntaxTree.Statement>?
         AnalyzePerUseBody { get; set; }
 
+    /// <summary>Hook mirrored from <see cref="InstantiationContext.CheckInstanceBody"/>: checks one monomorphized
+    /// copy of a generic routine against its body as written.</summary>
+    public Action<TypeModel.Symbols.RoutineInfo, SyntaxTree.Statement, SyntaxTree.Statement>? CheckInstanceBody
+    {
+        get;
+        set;
+    }
+
     /// <summary>
     /// Builds the raw body of a variant-arm extractor creator (<c>Arm!(from: V)</c>:
     /// <c>when from { is Arm v =&gt; return v.duplicate(), else =&gt; absent }</c>) without storing it, or null

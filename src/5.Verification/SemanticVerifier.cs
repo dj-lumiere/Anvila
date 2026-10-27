@@ -1283,6 +1283,7 @@ public sealed partial class SemanticVerifier
         // resolved in the owner's context before the fresh-body lowering sweep folds its operators.
         ctx.AnalyzeMaterializedDeriveBody = AnalyzeMaterializedDeriveBodyOnDemand;
         ctx.AnalyzePerUseBody = AnalyzePerUseBodyOnDemand;
+        ctx.CheckInstanceBody = CheckBitReadsInInstance;
         ctx.BuildVariantArmExtractorBody = BuildVariantArmExtractorBody;
 
         // v0.2.0 may-suspend effect analysis over the call graph RoutineReachabilityPass populated

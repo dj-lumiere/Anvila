@@ -68,6 +68,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
                 AnalyzeRoutineOnDemand = ctx.AnalyzeRoutineOnDemand,
                 AnalyzeMaterializedDeriveBody = ctx.AnalyzeMaterializedDeriveBody,
                 AnalyzePerUseBody = ctx.AnalyzePerUseBody,
+                CheckInstanceBody = ctx.CheckInstanceBody,
                 BuildVariantArmExtractorBody = ctx.BuildVariantArmExtractorBody
             };
 

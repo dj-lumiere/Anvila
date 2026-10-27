@@ -2636,6 +2636,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             };
         }
 
+        ctx.CheckInstanceBody?.Invoke(arg1: resolvedRoutine, arg2: astDecl.Body, arg3: rewrittenDecl.Body);
         ctx.InstantiatedGenericBodies[key: resolvedRoutine.RegistryKey] = new MonomorphizedBody(
             Ast: rewrittenDecl,
             Info: resolvedRoutine,
