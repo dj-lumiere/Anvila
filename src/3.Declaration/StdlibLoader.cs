@@ -121,9 +121,11 @@ public sealed partial class StdlibLoader
     /// </summary>
     /// <param name="stdlibRoot">Path to the stdlib root directory (containing razorforge/ and suflae/ subdirectories).</param>
     /// <param name="language">The language being built.</param>
-    public StdlibLoader(string stdlibRoot, Language language)
+    /// <param name="parsedStdlib">Files the build driver already parsed, taken in place of parsing them again.</param>
+    public StdlibLoader(string stdlibRoot, Language language, ParsedStdlibFiles? parsedStdlib = null)
     {
         _language = language;
+        _parsedStdlib = parsedStdlib;
         // RazorForge is always scanned: it is the RF-realm System, and — under a Suflae compile — the bridged
         // delegation backend an SF wrapper reaches via `RF::System.X`. A Suflae compile ALSO scans
         // Standard/Suflae/*.sf, the SF-realm System surface (types there declare `module System` too; they are
@@ -133,6 +135,9 @@ public sealed partial class StdlibLoader
         _razorForgeRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),
             path2: Builder.Frontends.Languages.For(language: Language.RazorForge).Name) + Path.DirectorySeparatorChar;
     }
+
+    /// <summary>Files the build driver parsed for the import index, taken by <see cref="ScanStdlibFiles"/>.</summary>
+    private ParsedStdlibFiles? _parsedStdlib;
 
     /// <summary>The folder of RazorForge's own library, with a trailing separator.</summary>
     private readonly string _razorForgeRoot;
@@ -381,11 +386,13 @@ public sealed partial class StdlibLoader
         {
             try
             {
-                string code = File.ReadAllText(path: filePath);
                 // Parse stdlib files by their own extension, not the user language: the stdlib is
                 // RazorForge source (`.rf`, uses `danger`/`extern`), so a Suflae compile must still
-                // parse it with the RazorForge grammar (else SF-G112 on the `danger` bang).
-                Program ast = ParseFileByExtension(code: code, filePath: filePath);
+                // parse it with the RazorForge grammar (else SF-G112 on the `danger` bang). The build
+                // driver may have parsed the file already for the import index.
+                Program ast = _parsedStdlib?.Take(filePath: filePath) is { } parsed
+                    ? TakeParsedFacts(program: parsed, filePath: filePath)
+                    : ParseFileByExtension(code: File.ReadAllText(path: filePath), filePath: filePath);
 
                 // Find module declaration, or derive from directory
                 string? fileModule = GetDeclaredModule(program: ast);
@@ -417,6 +424,9 @@ public sealed partial class StdlibLoader
                 _parseErrors.Add(item: $"{filePath}: {ex.Message}");
             }
         }
+
+        // What is left (the other language's files of an index parse) is not needed.
+        _parsedStdlib = null;
     }
 
     /// <summary>
@@ -433,6 +443,16 @@ public sealed partial class StdlibLoader
         var parser = new Parser.Parser(tokens: tokens, language: language, fileName: filePath);
         Program program = parser.Parse();
         _parseErrors.AddRange(collection: parser.GetErrors());
+        return TakeParsedFacts(program: program, filePath: filePath);
+    }
+
+    /// <summary>
+    /// What the loader does to a standard library file right after it is parsed: the module from its folder, the
+    /// <c>@rf("...")</c> declarations taken out, the RazorForge library types noted, and a loose top-level
+    /// statement rejected.
+    /// </summary>
+    private Program TakeParsedFacts(Program program, string filePath)
+    {
         TakeModuleFromFolder(program: program, filePath: filePath);
 
         // An `@rf("...")` declaration shows a shared RazorForge declaration in the file's language and creates

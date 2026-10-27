@@ -922,9 +922,12 @@ public sealed partial class TypeRegistry
     /// </summary>
     /// <param name="language">The language being built.</param>
     /// <param name="stdlibPath">Optional path to the stdlib directory.</param>
-    public TypeRegistry(Language language, string? stdlibPath = null)
+    /// <param name="parsedStdlib">Standard library files the build driver already parsed, which the loader takes
+    /// in place of parsing them again.</param>
+    public TypeRegistry(Language language, string? stdlibPath = null, ParsedStdlibFiles? parsedStdlib = null)
     {
         Language = language;
+        _parsedStdlib = parsedStdlib;
         RegisterAsAmbient(registry: this);
         GlobalScope = new Scope(kind: ScopeKind.Global);
         _currentScope = GlobalScope;
@@ -966,7 +969,8 @@ public sealed partial class TypeRegistry
 
         if (_stdlibPath != null && Directory.Exists(path: _stdlibPath))
         {
-            _stdlibLoader ??= new StdlibLoader(stdlibRoot: _stdlibPath, language: Language);
+            _stdlibLoader ??= new StdlibLoader(stdlibRoot: _stdlibPath, language: Language, parsedStdlib: _parsedStdlib);
+            _parsedStdlib = null;
             _stdlibLoader.LoadCoreModule(registry: this);
         }
         else
@@ -977,6 +981,9 @@ public sealed partial class TypeRegistry
                          "Ensure standard/ directory exists and contains the System module.");
         }
     }
+
+    /// <summary>Standard library files the build driver parsed, until the loader is made.</summary>
+    private ParsedStdlibFiles? _parsedStdlib;
 
     /// <summary>
     /// Checks if the System module has been loaded.

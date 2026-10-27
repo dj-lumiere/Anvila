@@ -376,10 +376,12 @@ public sealed partial class SemanticVerifier
     /// <param name="stdlibPath">Optional path to the stdlib directory.</param>
     /// <param name="target">Target platform -> drives BuilderQuery platform constants. Defaults to host.</param>
     /// <param name="buildMode">Build mode -> drives BuilderQuery.build_mode. Defaults to Debug.</param>
+    /// <param name="parsedStdlib">Standard library files the build driver already parsed for its import index
+    /// (<see cref="BuildDriver.TakeParsedStdlib"/>), taken in place of parsing them again.</param>
     public SemanticVerifier(Language language, string? stdlibPath = null,
-        TargetConfig? target = null, RfBuildMode buildMode = RfBuildMode.Debug)
+        TargetConfig? target = null, RfBuildMode buildMode = RfBuildMode.Debug, ParsedStdlibFiles? parsedStdlib = null)
     {
-        _registry = new TypeRegistry(language: language, stdlibPath: stdlibPath);
+        _registry = new TypeRegistry(language: language, stdlibPath: stdlibPath, parsedStdlib: parsedStdlib);
         _registry.CurrentModule = GetCurrentModuleName;
         _typeResolver = new TypeResolver(sa: this);
         _typeBodyResolver = new TypeBodyResolver(sa: this, typeResolver: _typeResolver);

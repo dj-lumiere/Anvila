@@ -82,6 +82,19 @@ public sealed class BuildDriver
 
     private readonly IReadOnlyDictionary<string, string>? _cachedStdlibIndex;
 
+    /// <summary>The standard library files this driver parsed for the import index, until they are taken.</summary>
+    private ParsedStdlibFiles? _parsedStdlib;
+
+    /// <summary>Hands over the standard library files this driver parsed for the import index (see
+    /// <see cref="ParsedStdlibFiles"/>), once: the driver keeps no reference. Null when it parsed none (a daemon
+    /// seeded a cached index) or they were taken already.</summary>
+    public ParsedStdlibFiles? TakeParsedStdlib()
+    {
+        ParsedStdlibFiles? parsed = _parsedStdlib;
+        _parsedStdlib = null;
+        return parsed;
+    }
+
     /// <summary>
     /// Source text that stands in for a file's contents on disk, keyed by full path (case-insensitive): the
     /// language server builds the documents open in the editor as they are being edited, saved or not.
@@ -836,6 +849,7 @@ public sealed class BuildDriver
     /// </summary>
     private void PreRegisterStdlib()
     {
+        _parsedStdlib = new ParsedStdlibFiles();
         foreach (Builder.Frontends.LanguageRules rules in Builder.Frontends.Languages.All)
         {
             RegisterStdlibDirectory(subdirectory: rules.Name, extension: "*" + rules.FileExtension);
@@ -866,10 +880,15 @@ public sealed class BuildDriver
                 continue;
             }
 
-            Program? ast = ParseAstOnly(filePath: filePath);
+            Program? ast = ParseAstOnly(filePath: filePath, cleanParse: out bool cleanParse);
             if (ast is null)
             {
                 continue;
+            }
+
+            if (cleanParse)
+            {
+                _parsedStdlib?.Add(filePath: filePath, program: ast);
             }
 
             string? moduleName = null;
@@ -975,6 +994,14 @@ public sealed class BuildDriver
     /// </summary>
     private static Program? ParseAstOnly(string filePath)
     {
+        return ParseAstOnly(filePath: filePath, cleanParse: out _);
+    }
+
+    /// <summary>Parses <paramref name="filePath"/> for the import index. <paramref name="cleanParse"/> tells whether
+    /// the parser found no error.</summary>
+    private static Program? ParseAstOnly(string filePath, out bool cleanParse)
+    {
+        cleanParse = false;
         try
         {
             string code = File.ReadAllText(path: filePath);
@@ -986,7 +1013,9 @@ public sealed class BuildDriver
             {
                 PrintsErrors = false
             };
-            return parser.Parse();
+            Program program = parser.Parse();
+            cleanParse = parser.GetErrors().Count == 0;
+            return program;
         }
         catch
         {

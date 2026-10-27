@@ -1419,15 +1419,17 @@ internal partial class Program
             }
             : new SemanticVerifier(language: ctx.Language,
                 target: target,
-                buildMode: ctx.BuildMode)
+                buildMode: ctx.BuildMode,
+                parsedStdlib: driver.TakeParsedStdlib())
             {
                 SaTiming = ctx.SaTiming || DiagnosticFlags.PhaseTiming
             };
         if (swBuild != null)
         {
             Console.Error.WriteLine(
-                value:
-                $"[timing] warm-restore ctor (rebuild verifier from snapshot): {swBuild.ElapsedMilliseconds} ms");
+                value: warmState != null
+                    ? $"[timing] verifier from the stdlib snapshot: {swBuild.ElapsedMilliseconds} ms"
+                    : $"[timing] verifier (register the System stdlib): {swBuild.ElapsedMilliseconds} ms");
             swBuild.Restart();
         }
 
