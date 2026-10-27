@@ -791,7 +791,7 @@ internal sealed class TesseraWriter
         _texts[key: key] = name;
         _globals.Append(value: $"{Private}preset {name}: &{type} <- {initial}\n\n");
         // The value is a pointer to the first element, taken from the view of every element.
-        name = $"{name}.to[@[{TypeText(type: data.ElementType)}]]().to[@{TypeText(type: data.ElementType)}]()";
+        name = $"{name}.getview().to[@{TypeText(type: data.ElementType)}]()";
         _texts[key: key] = name;
         return name;
     }
