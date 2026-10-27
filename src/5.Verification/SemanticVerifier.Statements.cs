@@ -1082,7 +1082,7 @@ public sealed partial class SemanticVerifier
             // bare number takes the routine's result type, as in the routine it was written in.
             TypeSymbol? returned = variantReturn.SiteKind == VariantSiteKind.FromReturn &&
                                    _currentRoutine?.ReturnType is
-                                       { BareName: "Maybe" or "Check" or "Lookup", TypeArguments: [{ } value] }
+                                       { BareName: "Maybe" or "Optional" or "Check" or "Lookup", TypeArguments: [{ } value] }
                 ? value
                 : null;
             AnalyzeExpression(expression: variantReturn.Value, expectedType: returned);

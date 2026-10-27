@@ -2945,7 +2945,7 @@ public sealed partial class SemanticVerifier
                 if (call.IsSynthesizedLowering && member.MemberName == Declaration.RuntimeContract.TakeEach)
                 {
                     ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
-                        message: $"Walking with 'steal' takes the elements out of a 'List', and '{objectType.Name}' " +
+                        message: $"Walking with 'steal' takes the elements out of a 'List' or a 'Slots', and '{objectType.Name}' " +
                                  "can't be taken apart that way. Walk it without 'steal', or move its elements " +
                                  "into a 'List' first.",
                         location: call.Location);

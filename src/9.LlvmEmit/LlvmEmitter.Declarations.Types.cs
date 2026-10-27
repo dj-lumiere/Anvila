@@ -121,7 +121,7 @@ public partial class LlvmEmitter
         // GetFieldStorageLlvmType.
         _typeDeclarationsRecord[key: typeName] = BuildStructTypeDeclaration(typeName: typeName,
             memberVariables: record.MemberVariables,
-            fieldTypeSelector: mv => GetFieldStorageLlvmType(type: mv.Type),
+            fieldTypeSelector: mv => GetFieldStorageLlvmType(record: record, field: mv),
             emptyBody: "{ }",
             packed: record.IsPacked);
     }
@@ -132,7 +132,7 @@ public partial class LlvmEmitter
     /// </summary>
     private static bool ShouldSkipRecordTypeGeneration(RecordTypeSymbol record)
     {
-        return record.BackendType != null || record.IsGenericDefinition ||
+        return record.BackendType != null || record.IsGenericDefinition || record.IsOptionalCarrier ||
                record.TypeArguments?.Any(predicate: t =>
                    ContainsGenericParameter(type: t) || t is ErrorTypeSymbol ||
                    ContainsAbstractProjection(type: t)) == true;

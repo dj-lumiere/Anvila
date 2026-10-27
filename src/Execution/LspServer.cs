@@ -1952,7 +1952,7 @@ public static class LspServer
         // The structure of a `###` doc comment: a field (`:param`, `:returns:`) and a field's name or a `{Reference}`.
         "docTag", // 17
         "docValue", // 18
-        "bundleType" // 19: a carrier or variant whose kind is not decided yet (its declaration, or an instance over a parameter)
+        "memberKindType" // 19: a carrier or variant whose kind follows its members, not decided yet (its declaration, or an instance over a parameter)
     };
 
     private static int SemTok(string name)
@@ -3662,8 +3662,8 @@ public static class LspServer
             RecordTypeSymbol { IsInPlaceEntity: true } => "entityType",
             // A carrier is what its instantiation makes it: an entity when it holds one, a value when it holds none.
             // Its declaration, and an instance over a type parameter, decide nothing yet.
-            RecordTypeSymbol bundle when IsBundleLike(record: bundle) => HoldsEntity(type: bundle) ? "entityType"
-                : MayHoldEntity(type: bundle) ? "bundleType"
+            RecordTypeSymbol carrier when IsMemberKindCarrier(record: carrier) => HoldsEntity(type: carrier) ? "entityType"
+                : MayHoldEntity(type: carrier) ? "memberKindType"
                 : "recordType",
             RecordTypeSymbol or RoutineTypeSymbol => "recordType",
             ProtocolTypeSymbol => "interface",
@@ -3674,7 +3674,7 @@ public static class LspServer
 
     /// <summary>A record whose kind follows its type arguments: a carrier (<c>Maybe</c>, <c>Check</c>,
     /// <c>Lookup</c>), which is a variant of its value type and <c>None</c> or an error.</summary>
-    private static bool IsBundleLike(RecordTypeSymbol record)
+    private static bool IsMemberKindCarrier(RecordTypeSymbol record)
     {
         return record.CarrierKind != TypeModel.Enums.CarrierKind.None;
     }
@@ -3688,7 +3688,7 @@ public static class LspServer
             GenericParameterTypeSymbol => true,
             VariantTypeSymbol variant => variant.Members.Any(predicate: m => m.Type != null && MayHoldEntity(type: m.Type)),
             TupleTypeSymbol tuple => tuple.ElementTypes.Any(predicate: MayHoldEntity),
-            RecordTypeSymbol bundle when IsBundleLike(record: bundle) => bundle.TypeArguments is not { Count: > 0 } arguments ||
+            RecordTypeSymbol carrier when IsMemberKindCarrier(record: carrier) => carrier.TypeArguments is not { Count: > 0 } arguments ||
                                                           arguments.Any(predicate: MayHoldEntity),
             _ => false
         };
@@ -3707,7 +3707,7 @@ public static class LspServer
             EntityTypeSymbol => true,
             VariantTypeSymbol variant => variant.Members.Any(predicate: m => m.Type != null && HoldsEntity(type: m.Type)),
             TupleTypeSymbol tuple => tuple.ElementTypes.Any(predicate: HoldsEntity),
-            RecordTypeSymbol bundle when IsBundleLike(record: bundle) => (bundle.TypeArguments ?? []).Any(predicate: HoldsEntity),
+            RecordTypeSymbol carrier when IsMemberKindCarrier(record: carrier) => (carrier.TypeArguments ?? []).Any(predicate: HoldsEntity),
             _ => false
         };
     }

@@ -55,6 +55,45 @@ public partial class LlvmEmitter
             : GetValueLlvmType(type: type);
     }
 
+    /// <summary>
+    /// The aggregate LLVM type of member variable <paramref name="field"/> of <paramref name="record"/>: the
+    /// presence flag of <c>Maybe[T]</c> stays <c>i1</c> (<c>{ i1, T }</c>), every other <c>Bool</c> is stored as
+    /// <c>i8</c> (see <see cref="GetFieldStorageLlvmType"/>).
+    /// </summary>
+    private string GetFieldStorageLlvmType(RecordTypeSymbol record, MemberVariableInfo field)
+    {
+        return IsMaybePresenceField(record: record, field: field)
+            ? "i1"
+            : GetFieldStorageLlvmType(type: field.Type);
+    }
+
+    /// <summary>Whether <paramref name="field"/> is the presence flag of a <c>Maybe[T]</c>, kept as <c>i1</c>.</summary>
+    private static bool IsMaybePresenceField(RecordTypeSymbol record, MemberVariableInfo field)
+    {
+        return record is { CarrierKind: CarrierKind.Maybe, IsOptionalCarrier: false } &&
+               field.Name == Builder.Declaration.RuntimeContract.Carrier.PresentField;
+    }
+
+    /// <summary><see cref="CoerceBoolToStorage"/> for a member variable of <paramref name="record"/>: the presence
+    /// flag of <c>Maybe[T]</c> is written as it is.</summary>
+    private string CoerceBoolToStorage(System.Text.StringBuilder sb, string value, RecordTypeSymbol record,
+        MemberVariableInfo field)
+    {
+        return IsMaybePresenceField(record: record, field: field)
+            ? value
+            : CoerceBoolToStorage(sb: sb, value: value, fieldType: field.Type);
+    }
+
+    /// <summary><see cref="CoerceStorageToBool"/> for a member variable of <paramref name="record"/>: the presence
+    /// flag of <c>Maybe[T]</c> is read as it is.</summary>
+    private string CoerceStorageToBool(System.Text.StringBuilder sb, string storageValue, RecordTypeSymbol record,
+        MemberVariableInfo field)
+    {
+        return IsMaybePresenceField(record: record, field: field)
+            ? storageValue
+            : CoerceStorageToBool(sb: sb, storageValue: storageValue, fieldType: field.Type);
+    }
+
     /// <summary>True when a record field's register type is <c>i1</c> (Bool) and needs <c>i8</c> storage.</summary>
     private bool FieldNeedsBoolStorage(TypeSymbol type)
     {
@@ -210,6 +249,12 @@ public partial class LlvmEmitter
     /// </summary>
     private string EnsureRecordTypeDeclared(RecordTypeSymbol record)
     {
+        // `Optional[T]` has no struct: it is the entity's address, null when absent.
+        if (record.IsOptionalCarrier)
+        {
+            return "ptr";
+        }
+
         string name = GetRecordTypeName(record: record);
         // Proactively declare if not yet emitted -> covers types created on-demand
         // that are never visited by the registry iteration in GenerateTypes().

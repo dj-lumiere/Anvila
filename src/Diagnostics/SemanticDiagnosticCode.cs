@@ -1144,6 +1144,13 @@ public enum SemanticDiagnosticCode
     ///<summary>Nested Maybe types (Maybe[Maybe[T]] / T??) are not allowed.</summary>
     NestedMaybeProhibited = 808,
 
+    /// <summary>`Maybe[E]` written with an entity `E`: the optional over an entity is `Optional[E]` (`E?`).</summary>
+    MaybeOverEntity = 817,
+
+    /// <summary>`Optional[T]` written with a `T` that is not an entity: the optional over a value is `Maybe[T]`
+    /// (`T?`).</summary>
+    OptionalOverValue = 818,
+
     /// <summary>`from_serial` is the builder's own name: a program neither writes nor calls it, it reads a value
     /// back with `sv.to[T]()`.</summary>
     FromSerialIsBuilderInternal = 809,

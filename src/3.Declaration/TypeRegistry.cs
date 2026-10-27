@@ -2170,6 +2170,16 @@ public sealed partial class TypeRegistry
             _resolutions[key: shortKey] = resolved;
         }
 
+        // `Maybe` over an entity is named `Optional[...]`: a lookup by that name finds the same instance.
+        if (resolved is RecordTypeSymbol { IsOptionalCarrier: true } optional && !otherRealmArgument)
+        {
+            _resolutions.TryAdd(key: optional.Name, value: optional);
+            _resolutions.TryAdd(key: optional.FullName, value: optional);
+            _resolutions.TryAdd(
+                key: $"{RecordTypeSymbol.OptionalCarrierName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name))}]",
+                value: optional);
+        }
+
         if (_stdlibAnalysisActive)
         {
             // Defer: this type was created as a side-effect of stdlib body analysis.

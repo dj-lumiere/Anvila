@@ -668,6 +668,13 @@ public partial class LlvmEmitter
         }
 
         string structAddr = EmitLvalueAddress(sb: sb, expr: member.Object);
+        if (structRecord.IsOptionalCarrier)
+        {
+            EmitOptionalMemberWrite(sb: sb, optionalAddress: structAddr, memberVariableName: member.MemberName,
+                value: value);
+            return;
+        }
+
         string structTypeName = EnsureRecordTypeDeclared(record: structRecord);
         string sFieldPtr = NextTemp();
         EmitLine(sb: sb,
@@ -675,6 +682,43 @@ public partial class LlvmEmitter
             $"  {sFieldPtr} = getelementptr {structTypeName}, ptr {structAddr}, i32 0, i32 {sfIndex}");
         EmitLine(sb: sb,
             line: $"  store {GetLlvmType(type: sfInfo.Type)} {value}, ptr {sFieldPtr}");
+    }
+
+    /// <summary>
+    /// Writes a member variable of the <c>Optional[T]</c> at <paramref name="optionalAddress"/>: <c>value</c> stores
+    /// the entity's address, <c>present = false</c> stores null, and <c>present = true</c> leaves the address as the
+    /// <c>value</c> written with it set it. A presence flag known only at run time keeps the address or clears it.
+    /// </summary>
+    private void EmitOptionalMemberWrite(StringBuilder sb, string optionalAddress, string memberVariableName,
+        string value)
+    {
+        if (memberVariableName == Declaration.RuntimeContract.Carrier.ValueField)
+        {
+            EmitLine(sb: sb, line: $"  store ptr {value}, ptr {optionalAddress}");
+            return;
+        }
+
+        if (memberVariableName != Declaration.RuntimeContract.Carrier.PresentField)
+        {
+            throw new InvalidOperationException(
+                message: $"A write of '{memberVariableName}' on an Optional reached the LLVM emitter in " +
+                         $"[{_currentRoutineDiagName}].");
+        }
+
+        switch (value)
+        {
+            case "true" or "1":
+                return;
+            case "false" or "0":
+                EmitLine(sb: sb, line: $"  store ptr null, ptr {optionalAddress}");
+                return;
+        }
+
+        string held = NextTemp();
+        EmitLine(sb: sb, line: $"  {held} = load ptr, ptr {optionalAddress}");
+        string kept = NextTemp();
+        EmitLine(sb: sb, line: $"  {kept} = select i1 {value}, ptr {held}, ptr null");
+        EmitLine(sb: sb, line: $"  store ptr {kept}, ptr {optionalAddress}");
     }
 
     /// <summary>

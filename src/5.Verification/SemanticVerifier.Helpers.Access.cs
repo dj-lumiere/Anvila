@@ -149,7 +149,7 @@ public sealed partial class SemanticVerifier
     /// iterator's <c>emit</c> gives under <c>try</c>, unpacked with <c>when</c> where it is made.</summary>
     private static bool IsTokenCarrier(TypeSymbol type)
     {
-        return type.BareName is "Maybe" or "Check" or "Lookup" && type.TypeArguments is [{ } carried] &&
+        return type.BareName is "Maybe" or "Optional" or "Check" or "Lookup" && type.TypeArguments is [{ } carried] &&
                (IsInlineOnlyTokenType(type: carried) || IsTokenTuple(type: carried));
     }
 
@@ -906,7 +906,7 @@ public sealed partial class SemanticVerifier
     private static bool IsCarrierLayoutField(MemberVariableInfo memberVariable)
     {
         string? carrier = memberVariable.Owner?.BareName;
-        return carrier is "Maybe" or "Check" &&
+        return carrier is "Maybe" or "Optional" or "Check" &&
                memberVariable.Name is Declaration.RuntimeContract.Carrier.PresentField
                    or Declaration.RuntimeContract.Carrier.ValueField
                    or Declaration.RuntimeContract.Carrier.TypeIdField

@@ -2083,12 +2083,12 @@ public sealed partial class SemanticVerifier
         // `A?` is written for an optional member variable, and its own member variables are the `A`'s.
         static TypeSymbol Held(TypeSymbol type)
         {
-            return type is { BareName: "Maybe", TypeArguments: [{ } inner] } ? inner : type;
+            return type is { BareName: "Maybe" or "Optional", TypeArguments: [{ } inner] } ? inner : type;
         }
 
         static string Shown(MemberVariableInfo field)
         {
-            return field.Type is { BareName: "Maybe", TypeArguments: [{ } inner] }
+            return field.Type is { BareName: "Maybe" or "Optional", TypeArguments: [{ } inner] }
                 ? MemberTypeName(type: inner) + "?"
                 : MemberTypeName(type: field.Type) + (field.IsNullable ? "?" : "");
         }

@@ -624,6 +624,14 @@ internal sealed class TypeResolver
     private TypeSymbol ResolveGenericType(TypeExpression typeExpr)
     {
         TypeSymbol? genericDef = LookupTypeWithImports(name: typeExpr.Name);
+        // `Optional[E]` is the name `Maybe` takes over an entity: the same generic definition.
+        bool writtenOptional = false;
+        if (genericDef == null && typeExpr.Name == RecordTypeSymbol.OptionalCarrierName)
+        {
+            genericDef = LookupTypeWithImports(name: MaybeTypeName);
+            writtenOptional = genericDef != null;
+        }
+
         if (genericDef == null)
         {
             if (_sa.TryReportSecretTypeAccess(name: typeExpr.Name, location: typeExpr.Location))
@@ -674,6 +682,11 @@ internal sealed class TypeResolver
             return noneResult;
         }
 
+        if (genericDefCarrierName == MaybeTypeName)
+        {
+            CheckOptionalCarrierName(typeExpr: typeExpr, writtenOptional: writtenOptional, held: typeArgs[index: 0]);
+        }
+
         // Reject nested Maybe types (#83): Maybe[Maybe[T]] / T??
         if (genericDefCarrierName == MaybeTypeName && IsMaybeType(type: typeArgs[index: 0]))
         {
@@ -702,6 +715,41 @@ internal sealed class TypeResolver
 
         return _sa._registry.GetOrCreateResolution(genericDef: genericDef,
             typeArguments: typeArgs);
+    }
+
+    /// <summary>
+    /// The optional's written name against what it holds: <c>T?</c> picks <c>Maybe[T]</c> for a value and
+    /// <c>Optional[T]</c> for an entity, so a written <c>Maybe[E]</c> over an entity is RF-S817 and a written
+    /// <c>Optional[T]</c> over a value is RF-S818. A <c>T?</c> (parsed as <c>Maybe</c> at <c>T</c>'s own location) and
+    /// a type parameter are left alone.
+    /// </summary>
+    private void CheckOptionalCarrierName(TypeExpression typeExpr, bool writtenOptional, TypeSymbol held)
+    {
+        if (held is GenericParameterTypeSymbol or ErrorTypeSymbol || _sa._registry.EntitiesAreShared)
+        {
+            return;
+        }
+
+        string heldName = held.Name;
+        bool isEntity = held is EntityTypeSymbol;
+        if (writtenOptional && !isEntity)
+        {
+            _sa.ReportError(code: SemanticDiagnosticCode.OptionalOverValue,
+                message: $"'Optional[{heldName}]' holds an entity, and '{heldName}' is not one. The optional over a " +
+                         $"value is 'Maybe[{heldName}]': write '{heldName}?'.",
+                location: typeExpr.Location);
+            return;
+        }
+
+        bool writtenMaybe = !writtenOptional && typeExpr.GenericArguments is [var argument] &&
+                            argument.Location != typeExpr.Location;
+        if (writtenMaybe && isEntity && !_sa.IsStdlibFile(filePath: typeExpr.Location.FileName))
+        {
+            _sa.ReportError(code: SemanticDiagnosticCode.MaybeOverEntity,
+                message: $"'Maybe[{heldName}]' holds a value, and '{heldName}' is an entity. The optional over an " +
+                         $"entity is 'Optional[{heldName}]': write '{heldName}?' or 'Optional[{heldName}]'.",
+                location: typeExpr.Location);
+        }
     }
 
     /// <summary>

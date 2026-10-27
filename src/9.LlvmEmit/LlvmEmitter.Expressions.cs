@@ -663,6 +663,12 @@ public partial class LlvmEmitter
         string carrierVal = EmitExpression(sb: sb, expr: payload.Carrier);
 
         TypeSymbol carrierType = payload.Carrier.ResolvedType!;
+        // `Optional[T]` is the entity's address itself.
+        if (carrierType is RecordTypeSymbol { IsOptionalCarrier: true })
+        {
+            return carrierVal;
+        }
+
         // Both a Result/Lookup/Maybe carrier and a general user variant store their payload at field 1
         // ({ tag/flag, payload }); pick the right aggregate LLVM type for each.
         string carrierLlvmType =

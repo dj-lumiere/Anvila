@@ -448,9 +448,10 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// <c>variant Maybe[T]</c> (members <c>T</c> and <c>None</c>) in <c>System</c> is the optional carrier behind
-    /// <c>T?</c>. Its two members are laid out as a presence flag and the value (<c>{ i8, T }</c>, an entity <c>T</c> as
-    /// <c>{ i8, ptr }</c>), which the carrier machinery reads as the secret member variables <c>present</c> and
-    /// <c>value</c>, so the declaration is turned into that record here, before any pass sees it.
+    /// <c>T?</c>. Its two members are read as the secret member variables <c>present</c> and <c>value</c>, so the
+    /// declaration is turned into that record here, before any pass sees it. The LLVM emitter lays a value <c>T</c> out
+    /// as <c>{ i1, T }</c> (<c>Maybe[T]</c>) and an entity <c>T</c> as its address alone (<c>Optional[T]</c>, null for
+    /// none).
     /// </summary>
     private static void LayOutMaybeCarrier(Program program, string module)
     {

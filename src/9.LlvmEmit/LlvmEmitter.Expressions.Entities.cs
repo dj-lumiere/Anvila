@@ -559,6 +559,11 @@ public partial class LlvmEmitter
     private string EmitMemberwiseRecordStruct(StringBuilder sb, RecordTypeSymbol record,
         Func<int, MemberVariableInfo, string?> valueForField)
     {
+        if (record.IsOptionalCarrier)
+        {
+            return EmitOptionalFromMembers(sb: sb, record: record, valueForField: valueForField);
+        }
+
         string typeName = EnsureRecordTypeDeclared(record: record);
         string result = "zeroinitializer";
         for (int i = 0; i < record.MemberVariables.Count; i++)
@@ -571,8 +576,8 @@ public partial class LlvmEmitter
             }
 
             // Bool fields are stored as i8 in the aggregate — zext the i1 value to its storage form.
-            value = CoerceBoolToStorage(sb: sb, value: value, fieldType: field.Type);
-            string memberVariableType = GetFieldStorageLlvmType(type: field.Type);
+            value = CoerceBoolToStorage(sb: sb, value: value, record: record, field: field);
+            string memberVariableType = GetFieldStorageLlvmType(record: record, field: field);
 
             string newResult = NextTemp();
             EmitLine(sb: sb,
@@ -582,6 +587,67 @@ public partial class LlvmEmitter
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Builds an <c>Optional[T]</c> from its two member variables: the entity's address when it is present, null
+    /// otherwise. A presence flag known only at run time chooses between the two with <c>select</c>.
+    /// </summary>
+    private string EmitOptionalFromMembers(StringBuilder sb, RecordTypeSymbol record,
+        Func<int, MemberVariableInfo, string?> valueForField)
+    {
+        string? present = null;
+        string? value = null;
+        for (int i = 0; i < record.MemberVariables.Count; i++)
+        {
+            MemberVariableInfo field = record.MemberVariables[index: i];
+            string? emitted = valueForField(arg1: i, arg2: field);
+            if (field.Name == Declaration.RuntimeContract.Carrier.PresentField)
+            {
+                present = emitted;
+            }
+            else if (field.Name == Declaration.RuntimeContract.Carrier.ValueField)
+            {
+                value = emitted;
+            }
+        }
+
+        if (value == null || present is null or "false" or "0")
+        {
+            return "null";
+        }
+
+        if (present is "true" or "1")
+        {
+            return value;
+        }
+
+        string chosen = NextTemp();
+        EmitLine(sb: sb, line: $"  {chosen} = select i1 {present}, ptr {value}, ptr null");
+        return chosen;
+    }
+
+    /// <summary>
+    /// Reads a member variable of an <c>Optional[T]</c> held in <paramref name="optional"/> (its address):
+    /// <c>present</c> is whether the address is not null, <c>value</c> is the address itself.
+    /// </summary>
+    private string EmitOptionalMemberRead(StringBuilder sb, string optional, string memberVariableName)
+    {
+        if (memberVariableName == Declaration.RuntimeContract.Carrier.ValueField)
+        {
+            return optional;
+        }
+
+        if (memberVariableName != Declaration.RuntimeContract.Carrier.PresentField)
+        {
+            throw new InvalidOperationException(
+                message: $"A read of '{memberVariableName}' on an Optional reached the LLVM emitter in " +
+                         $"[{_currentRoutineDiagName}].");
+        }
+
+        string present = NextTemp();
+        EmitLine(sb: sb, line: $"  {present} = icmp ne ptr {optional}, null");
+        return present;
     }
 
     /// <summary>
@@ -755,6 +821,11 @@ public partial class LlvmEmitter
                          $"LLVM emitter in [{_currentRoutineDiagName}].");
         }
 
+        if (record.IsOptionalCarrier)
+        {
+            return EmitOptionalMemberRead(sb: sb, optional: recordValue, memberVariableName: memberVariableName);
+        }
+
         // Find member variable index
         int memberVariableIndex = -1;
         MemberVariableInfo? memberVariable = null;
@@ -781,7 +852,7 @@ public partial class LlvmEmitter
         string value = NextTemp();
         EmitLine(sb: sb,
             line: $"  {value} = extractvalue {typeName} {recordValue}, {memberVariableIndex}");
-        value = CoerceStorageToBool(sb: sb, storageValue: value, fieldType: memberVariable.Type);
+        value = CoerceStorageToBool(sb: sb, storageValue: value, record: record, field: memberVariable);
 
         return value;
     }

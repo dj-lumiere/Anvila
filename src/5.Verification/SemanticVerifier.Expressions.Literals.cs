@@ -118,7 +118,7 @@ public sealed partial class SemanticVerifier
             VariantTypeSymbol variant => variant.Members.Where(predicate: m => m.Type != null)
                                                 .Select(selector: m => m.Type!)
                                                 .ToList(),
-            { BareName: "Maybe", TypeArguments: [{ } payload] } => [payload],
+            { BareName: "Maybe" or "Optional", TypeArguments: [{ } payload] } => [payload],
             _ => []
         };
         if (arms.Count == 0)

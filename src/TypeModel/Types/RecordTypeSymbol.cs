@@ -117,6 +117,12 @@ public class RecordTypeSymbol : TypeSymbol
                 return be;
             }
 
+            // `Optional[T]` is the entity's address alone (null when absent).
+            if (IsOptionalCarrier)
+            {
+                return "ptr";
+            }
+
             // A variant has no member variables: it is the tag and the largest arm's words, the layout both
             // backends write (see VariantTypeSymbol.SizeBytes), so a record holding one can be sized.
             if (this is VariantTypeSymbol variant)
@@ -143,6 +149,12 @@ public class RecordTypeSymbol : TypeSymbol
         if (LiveBackendType is { } be && !IsGenericDefinition)
         {
             return SizeOfLlvmType(llvmType: be, pointerSize: pointerSize);
+        }
+
+        // Optional[T]: the entity's address alone.
+        if (IsOptionalCarrier)
+        {
+            return pointerSize;
         }
 
         // Result[T]: 8-byte type-id tag + max(payload, 8). Maybe is handled by
@@ -243,6 +255,24 @@ public class RecordTypeSymbol : TypeSymbol
     /// </summary>
     public CarrierKind CarrierKind { get; init; } = CarrierKind.None;
 
+    /// <summary>The name of the optional carrier over an entity: <c>T?</c> for an entity <c>T</c> is
+    /// <c>Optional[T]</c>, and for any other <c>T</c> it is <c>Maybe[T]</c>.</summary>
+    public const string OptionalCarrierName = "Optional";
+
+    /// <summary>
+    /// Whether this is <c>Optional[T]</c>: the optional carrier over an entity <c>T</c>. It is laid out as the
+    /// entity's address alone, with the null address for <c>none</c>, where <c>Maybe[T]</c> is a presence flag and
+    /// the value (<c>{ i1, T }</c>). Both share one generic definition, <c>Maybe</c>, and its routines.
+    /// </summary>
+    public bool IsOptionalCarrier => IsOptionalCarrierOver(carrierKind: CarrierKind, typeArguments: TypeArguments);
+
+    /// <summary>Whether a <see cref="CarrierKind.Maybe"/> carrier over <paramref name="typeArguments"/> is
+    /// <c>Optional[T]</c>: its one argument is an entity reached through its address.</summary>
+    public static bool IsOptionalCarrierOver(CarrierKind carrierKind, IReadOnlyList<TypeSymbol>? typeArguments)
+    {
+        return carrierKind == CarrierKind.Maybe && typeArguments is [EntityTypeSymbol];
+    }
+
     /// <summary>
     /// Declared <c>entity</c> with an <c>@llvm</c> layout (<c>Slots[T, COUNT]</c>): an entity whose storage is laid
     /// out in place, where it is kept, rather than behind a pointer. Every instance is kept in one place like any
@@ -308,7 +338,11 @@ public class RecordTypeSymbol : TypeSymbol
         // Build resolved type name using FullName for each type argument so the resolved
         // type carries fully-qualified inner names (e.g., "Hijacked[System.Byte]").
         // TypeSymbol.FullName then prepends the module: "System.Hijacked[System.Byte]".
-        string resolvedName = $"{Name}[{string.Join(separator: ", ",
+        // `Maybe` over an entity is `Optional`: the same definition, named and laid out for an entity.
+        string baseName = IsOptionalCarrierOver(carrierKind: CarrierKind, typeArguments: typeArguments)
+            ? OptionalCarrierName
+            : Name;
+        string resolvedName = $"{baseName}[{string.Join(separator: ", ",
             values: typeArguments.Select(selector: t => t.InstanceArgumentName))}]";
 
         var substitutedProtocols = ImplementedProtocols.Select(selector: p =>

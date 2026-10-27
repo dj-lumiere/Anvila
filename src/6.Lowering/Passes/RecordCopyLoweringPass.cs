@@ -563,7 +563,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // A recovery variant returns its value wrapped in its carrier (`return x` became `return Maybe(present:
         // true, value: x)`). The wrapped value is still what the routine returns, so it moves out like a bare
         // return: copying a returned local here left one share nobody released.
-        if (isReturn && expr is CreatorExpression { ResolvedType.BareName: "Maybe" or "Check" } carrier)
+        if (isReturn && expr is CreatorExpression { ResolvedType.BareName: "Maybe" or "Optional" or "Check" } carrier)
         {
             return StripStealFromCreator(creator: carrier, membersAreReturned: true);
         }

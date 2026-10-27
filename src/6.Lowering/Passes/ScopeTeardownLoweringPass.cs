@@ -1327,7 +1327,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             {
                 Value: CreatorExpression
                 {
-                    ResolvedType.BareName: "Maybe" or "Check",
+                    ResolvedType.BareName: "Maybe" or "Optional" or "Check",
                     MemberVariables: var members
                 }
             } => members.Select(selector: m => m.Value)
