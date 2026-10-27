@@ -49,9 +49,17 @@ public partial class Parser
     /// <summary>
     /// Check if current token matches any of the expected types
     /// </summary>
-    private bool Check(params TokenType[] types)
+    private bool Check(params ReadOnlySpan<TokenType> types)
     {
-        return types.Any(predicate: Check);
+        foreach (TokenType type in types)
+        {
+            if (Check(type: type))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -114,7 +122,7 @@ public partial class Parser
     /// <summary>
     /// Consume token if it matches any expected type, return whether successful
     /// </summary>
-    protected bool CheckAndAdvance(params TokenType[] types)
+    protected bool CheckAndAdvance(params ReadOnlySpan<TokenType> types)
     {
         foreach (TokenType type in types)
         {
