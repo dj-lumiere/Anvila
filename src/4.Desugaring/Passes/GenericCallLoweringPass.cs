@@ -376,7 +376,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         // `Array[N](a, b, ...)`: an array built from its elements, with the element type left to the
         // elements. It is the array literal `[a, b, ...]` of length N (analysis infers `Array[T, N]`).
         // `Array[T, N](a, b, ...)` is the same literal with the element type written out.
-        if (gmc is { Object: IdentifierExpression { Name: "Array" }, MemberRoutineName: "Array",
+        if (gmc is { Object: IdentifierExpression { Name: "Items" }, MemberRoutineName: "Items",
                 TypeArguments.Count: 1 or 2, Arguments.Count: > 0 } &&
             gmc.Arguments.All(predicate: a => a is not NamedArgumentExpression))
         {

@@ -92,7 +92,7 @@ public static class VariadicParamDesugar
         // `module System` type (auto-imported), so a bare reference resolves in every file.
         // Suflae has no `Slots` (an entity there is a shared handle, which an `Array` holds as a value).
         string pack = param.Location.FileName.EndsWith(value: ".sf", comparisonType: StringComparison.Ordinal)
-            ? "Array"
+            ? "Items"
             : PackTypeName;
         var arrayType = new TypeExpression(Name: pack,
             GenericArguments:
@@ -115,7 +115,7 @@ public static class VariadicParamDesugar
     /// <summary>A variadic param is already desugared when its type is <c>Slots[_, __Vararg…]</c>.</summary>
     private static bool IsAlreadyDesugared(TypeExpression paramType)
     {
-        return paramType is { Name: PackTypeName or "Array", GenericArguments: [_, { Name: var n }] } &&
+        return paramType is { Name: PackTypeName or "Items", GenericArguments: [_, { Name: var n }] } &&
                n.StartsWith(value: VarargGenericPrefix);
     }
 

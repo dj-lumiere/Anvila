@@ -663,7 +663,7 @@ public sealed partial class StdlibLoader
     /// </summary>
     private static void ConformPresetArrayLiterals(Expression value, TypeSymbol presetType)
     {
-        if (value is not ListLiteralExpression list || presetType.BareName != "Array" ||
+        if (value is not ListLiteralExpression list || presetType.BareName != "Items" ||
             presetType.TypeArguments is not { Count: > 0 } args)
         {
             return;

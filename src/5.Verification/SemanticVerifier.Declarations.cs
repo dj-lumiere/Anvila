@@ -422,12 +422,12 @@ public sealed partial class SemanticVerifier
         if (preset.Value is ListLiteralExpression && presetType is not ErrorTypeSymbol)
         {
             string baseName = presetType.BareName;
-            if (baseName is not ("Array" or "BitArray"))
+            if (baseName is not ("Items" or "Bits"))
             {
                 ReportError(code: SemanticDiagnosticCode.NonPresettableCollectionPreset,
                     message:
                     $"Preset '{preset.Name}' has type '{presetType.Name}': a collection-literal preset must be " +
-                    "a fixed-size 'Array[T, COUNT]' or 'BitArray[BITS]'. Other collection types would rebuild the whole " +
+                    "a fixed-size 'Items[T, COUNT]' or 'Bits[BITS]'. Other collection types would rebuild the whole " +
                     "collection on every use.",
                     location: preset.Location);
             }
@@ -440,7 +440,7 @@ public sealed partial class SemanticVerifier
             ConformPresetListElements(preset: preset, list: list, presetType: presetType);
 
             // A BitArray table is kept in its stored form, the packed bytes, so every backend lays it down as is.
-            if (presetType.BareName == "BitArray" && LookupTypeWithImports(name: "U8") is { } byteType)
+            if (presetType.BareName == "Bits" && LookupTypeWithImports(name: "U8") is { } byteType)
             {
                 presetValue = BitArrayPacking.Pack(bits: list.Elements,
                                   bitArrayType: presetType,
@@ -480,8 +480,8 @@ public sealed partial class SemanticVerifier
     {
         TypeSymbol? elementType = presetType.BareName switch
         {
-            "Array" when presetType.TypeArguments is { Count: > 0 } args => args[0],
-            "BitArray" => LookupTypeWithImports(name: "Bool"),
+            "Items" when presetType.TypeArguments is { Count: > 0 } args => args[0],
+            "Bits" => LookupTypeWithImports(name: "Bool"),
             _ => null
         };
         if (elementType == null)

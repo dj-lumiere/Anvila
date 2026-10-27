@@ -836,7 +836,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             // carries its elements to the callee, which stores what it keeps. Each fresh element is then an
             // argument like any other and is torn down after the call. A literal that initializes a binding
             // (not an argument) owns its elements, so nothing is torn down there.
-            case ListLiteralExpression { ResolvedType: RecordTypeSymbol { GenericDefinition.Name: "Array" or "Slots" } } arr
+            case ListLiteralExpression { ResolvedType: RecordTypeSymbol { GenericDefinition.Name: "Items" or "Slots" } } arr
                 when objectPos:
                 return arr with
                 {

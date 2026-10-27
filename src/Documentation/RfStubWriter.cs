@@ -62,7 +62,7 @@ internal sealed class RfStubWriter
         "DD", "FloatDigits", "FloatParsed",
         "IntegerLimbView", "IntV",
         // Suflae has its own lists and no structure-of-arrays layouts.
-        "SplitList", "SplitArray", "RotatableList"
+        "SplitList", "SplitItems", "RotatableList"
     };
 
     /// <summary>The protocols a Suflae program has no use for, left out of an <c>obeys</c> list.</summary>

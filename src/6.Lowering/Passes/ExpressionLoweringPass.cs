@@ -1589,7 +1589,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         string baseName = GetCollectionBaseName(type: listType) ?? "List";
 
         // Array/Slots/BitArray are pure inline IR (insertvalue) -- pass through with element recursion only.
-        if (baseName is "Array" or "Slots" or "BitArray")
+        if (baseName is "Items" or "Slots" or "Bits")
         {
             return LowerInlineArrayLiteral(list: list);
         }

@@ -903,8 +903,8 @@ internal sealed class TypeResolver
                 $"'{constraint.ParameterName}' needs a record ('needs RecordType {constraint.ParameterName}'), and " +
                 $"'{typeArg.ShortTypeName}' is not one." +
                 // An `Array` or a `SplitArray` holds values: the fixed run of places that holds entities is `Slots`.
-                (genericName is "Array" or "SplitArray"
-                    ? $" {(genericName == "Array" ? "An Array" : "A SplitArray")} holds values: for elements that may be entities, use 'Slots[{typeArg.ShortTypeName}, COUNT]'."
+                (genericName is "Items" or "SplitItems"
+                    ? $" '{genericName}' holds values: for elements that may be entities, use 'Slots[{typeArg.ShortTypeName}, COUNT]'."
                     : ""),
                 location: location);
         }

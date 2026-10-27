@@ -74,7 +74,7 @@ public sealed class VariableInfo
     /// </summary>
     public bool IsPresettableAggregate =>
         IsPreset && PresetValue is ListLiteralExpression && Type is RecordTypeSymbol record &&
-        (record.GenericDefinition ?? record).BareName is "Array" or "BitArray";
+        (record.GenericDefinition ?? record).BareName is "Items" or "Bits";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="VariableInfo"/> class.

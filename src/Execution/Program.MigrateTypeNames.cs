@@ -16,19 +16,27 @@ internal partial class Program
         ["CircularList"] = "RotatableList",
         ["CircularListEmittable"] = "RotatableListEmitter",
         ["MemoryAllocationError"] = "OutOfMemoryError",
-        ["Integer"] = "Int"
+        ["Integer"] = "Int",
+        ["Array"] = "Items",
+        ["ArrayEmitter"] = "ItemsEmitter",
+        ["SplitArray"] = "SplitItems",
+        ["SplitArrayEmitter"] = "SplitItemsEmitter",
+        ["BitArray"] = "Bits",
+        ["BitArrayEmitter"] = "BitsEmitter"
     };
 
     /// <summary>An old type name written as a whole word, also as a module path part
     /// (<c>Collections.CircularList</c>).</summary>
     private static readonly Regex OldTypeName =
-        new(pattern: @"(?<![\w`$])(?:AtomicType|Atomic|CircularListEmittable|CircularList|MemoryAllocationError|Integer)(?![\w`])",
+        new(pattern: @"(?<![\w`$])(?:AtomicType|Atomic|CircularListEmittable|CircularList|MemoryAllocationError|Integer|SplitArrayEmitter|SplitArray|BitArrayEmitter|BitArray|ArrayEmitter|Array)(?![\w`])",
             options: RegexOptions.Compiled);
 
     /// <summary>
     /// <c>--step type-names</c>: <c>Atomic</c> becomes <c>Unbroken</c>, <c>AtomicType</c> becomes
     /// <c>UnbrokenType</c>, <c>CircularList</c> (with its iterator) becomes <c>RotatableList</c>, and
-    /// <c>MemoryAllocationError</c> becomes <c>OutOfMemoryError</c>, and <c>Integer</c> becomes <c>Int</c>, in code only
+    /// <c>MemoryAllocationError</c> becomes <c>OutOfMemoryError</c>, <c>Integer</c> becomes <c>Int</c>, and the fixed runs
+    /// <c>Array</c>, <c>SplitArray</c> and <c>BitArray</c> (with their emitters) become <c>Items</c>, <c>SplitItems</c> and
+    /// <c>Bits</c>, in code only
     /// (never inside a string or a comment).
     /// </summary>
     private static string RewriteTypeNames(string file, string source, Language language, int lineOffset)

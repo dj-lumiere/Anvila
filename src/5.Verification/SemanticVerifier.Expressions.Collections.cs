@@ -526,9 +526,9 @@ public sealed partial class SemanticVerifier
     }
 
     private const string LiteralBuilderRoutineName = "from_literal";
-    private const string CollectionNameArray = "Array";
+    private const string CollectionNameArray = "Items";
     private const string CollectionNameSlots = "Slots";
-    private const string CollectionNameBitArray = "BitArray";
+    private const string CollectionNameBitArray = "Bits";
 
     private TypeSymbol AnalyzeSetLiteralExpression(SetLiteralExpression set,
         TypeSymbol? expectedType = null)
@@ -1380,7 +1380,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol ResolveArgTypeForInference(Expression argExpr)
     {
         if (argExpr is ListLiteralExpression { ResolvedType: { } packed } &&
-            GetTypeBaseName(type: packed) is "Array" or Builder.Declaration.VariadicParamDesugar.PackTypeName)
+            GetTypeBaseName(type: packed) is "Items" or Builder.Declaration.VariadicParamDesugar.PackTypeName)
         {
             return packed;
         }

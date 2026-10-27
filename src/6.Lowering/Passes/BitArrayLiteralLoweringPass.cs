@@ -12,7 +12,7 @@ namespace Builder.Lowering.Passes;
 /// </summary>
 internal sealed class BitArrayLiteralLoweringPass(TypeSymbol byteType) : AstRewriter
 {
-    private const string BitArray = "BitArray";
+    private const string BitArray = "Bits";
 
     /// <summary>Lowers the BitArray literals of one routine body in place.</summary>
     public static void Run(Statement body, TypeRegistry registry)

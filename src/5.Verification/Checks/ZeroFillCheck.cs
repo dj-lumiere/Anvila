@@ -18,7 +18,7 @@ internal static class ZeroFillCheck
         DiagnosticReporter report)
     {
         if (rules.ZeroIsEmptyPlace || argumentCount != 0 ||
-            constructed is not RecordTypeSymbol { GenericDefinition.Name: "Array" or "Slots", TypeArguments: [var element, ..] } ||
+            constructed is not RecordTypeSymbol { GenericDefinition.Name: "Items" or "Slots", TypeArguments: [var element, ..] } ||
             DescribeNoZeroValue(type: element, seen: []) is not { } blocker)
         {
             return;
@@ -28,7 +28,7 @@ internal static class ZeroFillCheck
             message:
             $"'{constructed.Name}()' fills every slot with zero, but '{element.Name}' has no zero value " +
             $"({blocker}), so each slot would be a null handle that crashes when it is read or torn down. " +
-            $"Build the array from its elements instead, for example 'Array[2](a, b)'.",
+            $"Build the array from its elements instead, for example 'Items[2](a, b)'.",
             location: location);
     }
 
@@ -59,7 +59,7 @@ internal static class ZeroFillCheck
                               .Where(predicate: m => m.Type != null)
                               .Select(selector: m => DescribeNoZeroValue(type: m.Type!, seen: seen))
                               .FirstOrDefault(predicate: b => b != null);
-            case RecordTypeSymbol { GenericDefinition.Name: "Array" or "Slots", TypeArguments: [var inner, ..] }:
+            case RecordTypeSymbol { GenericDefinition.Name: "Items" or "Slots", TypeArguments: [var inner, ..] }:
                 return DescribeNoZeroValue(type: inner, seen: seen);
             case RecordTypeSymbol record:
                 foreach (MemberVariableInfo field in record.MemberVariables)
