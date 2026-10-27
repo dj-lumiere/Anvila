@@ -1330,9 +1330,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// <summary>
     /// The late run's registration: a local a lowering marked as owing its teardown, holding a fresh value it
     /// owns (a call or construction, not a token or a view of a value kept elsewhere) of a type whose destroy
-    /// releases something counted: a managed leaf like <c>Text</c>, an RC wrapper, or a record carrying one. An
-    /// entity, a plain value record, or a scalar is left alone, as <see cref="TemporaryTeardownPass"/> does
-    /// for the temporaries it spills.
+    /// releases something: a managed leaf like <c>Text</c>, an RC wrapper, a record carrying one, or a value that
+    /// holds an entity (<c>when try make_part()</c> holds a <c>Maybe[Part]</c>). An entity, a plain value record,
+    /// or a scalar is left alone, as <see cref="TemporaryTeardownPass"/> does for the temporaries it spills.
     /// </summary>
     private void RegisterLateDeclaration(VariableDeclaration v, List<Owned> live)
     {
@@ -1352,7 +1352,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
 
         TypeRegistry.Lifecycle lc = ctx.Registry.GetLifecycle(type: rec);
-        if (lc.Store != null || rec.HasRCMemberVariables || TypeRegistry.GetRcWrapperBaseName(type: rec) is not null)
+        if (lc.Store != null || rec.HasRCMemberVariables || TypeRegistry.GetRcWrapperBaseName(type: rec) is not null ||
+            ctx.Registry.IsEntityKind(type: rec))
         {
             live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: d));
         }
@@ -1397,13 +1398,75 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             });
         });
 
+        // Which matched values left is told per binding: two arms may bind the same name (`else as p` in two
+        // `when`s), and a move of one of them says nothing about the other's matched value. A binding moves its
+        // matched value out when a statement after it in its own block moves its name. A name moved where no
+        // block shows it (a `steal` analysis recorded but lowering no longer spells) keeps every matched value its
+        // bindings read.
+        var movedSources = new HashSet<string>(comparer: StringComparer.Ordinal);
+        var placed = new HashSet<string>(comparer: StringComparer.Ordinal);
+        AstWalker.Walk(root: stmt, visit: node =>
+        {
+            if (node is not BlockStatement block)
+            {
+                return;
+            }
+
+            for (int i = 0; i < block.Statements.Count; i++)
+            {
+                if (block.Statements[index: i] is DeclarationStatement
+                    {
+                        Declaration: VariableDeclaration { IsPatternBinding: true, Initializer: { } read } binding
+                    } && _movedNames.Contains(item: binding.Name) &&
+                    MovesName(statements: block.Statements.Skip(count: i + 1), name: binding.Name))
+                {
+                    placed.Add(item: binding.Name);
+                    AstWalker.WalkExpressions(root: read, visit: e =>
+                    {
+                        if (e is IdentifierExpression id)
+                        {
+                            movedSources.Add(item: id.Name);
+                        }
+                    });
+                }
+            }
+        });
+
         foreach ((string bound, HashSet<string> sources) in _patternSources)
         {
-            if (_movedNames.Contains(item: bound))
+            if (_movedNames.Contains(item: bound) && !placed.Contains(item: bound))
             {
-                _movedNames.UnionWith(other: sources);
-                _movedWithoutEmptying.UnionWith(other: sources);
+                movedSources.UnionWith(other: sources);
             }
+        }
+
+        _movedNames.UnionWith(other: movedSources);
+        _movedWithoutEmptying.UnionWith(other: movedSources);
+    }
+
+    /// <summary>Whether <paramref name="statements"/> move <paramref name="name"/> by the rules of
+    /// <see cref="CollectMovedNames"/>. Leaves the routine's own move record as it was.</summary>
+    private bool MovesName(IEnumerable<Statement> statements, string name)
+    {
+        var savedMoved = new HashSet<string>(collection: _movedNames, comparer: StringComparer.Ordinal);
+        var savedWithoutEmptying =
+            new HashSet<string>(collection: _movedWithoutEmptying, comparer: StringComparer.Ordinal);
+        try
+        {
+            _movedNames.Clear();
+            foreach (Statement statement in statements)
+            {
+                AstWalker.Walk(root: statement, visit: CollectMovedNamesFromNode);
+            }
+
+            return _movedNames.Contains(item: name);
+        }
+        finally
+        {
+            _movedNames.Clear();
+            _movedNames.UnionWith(other: savedMoved);
+            _movedWithoutEmptying.Clear();
+            _movedWithoutEmptying.UnionWith(other: savedWithoutEmptying);
         }
     }
 
