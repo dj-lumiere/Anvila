@@ -78,6 +78,52 @@ internal static class IngridTessera
     }
 
     /// <summary>
+    /// Returns the path of the library as LLVM bitcode, next to the IR, made from the IR when the bitcode is missing or
+    /// older than it. A build links the bitcode: llvm-link reads it in a fraction of the time it takes to parse the
+    /// text IR, and the linked module compiles to the same machine code (only the names llvm-link gives types that
+    /// have the same layout can differ). Returns null when the bitcode can't be written: the caller then links the IR.
+    /// </summary>
+    internal static string? BitcodePath(string exeDir)
+    {
+        string ir = IrPath(exeDir: exeDir);
+        string bc = Path.ChangeExtension(path: ir, extension: BitcodeExtension);
+        lock (CacheLock)
+        {
+            if (File.Exists(path: bc) && File.GetLastWriteTimeUtc(path: bc) >= File.GetLastWriteTimeUtc(path: ir))
+            {
+                return bc;
+            }
+
+            // A file of this process's own, so a build in another process can't see it half written.
+            string tmp = $"{bc}.{Environment.ProcessId}.tmp";
+            if (!NativeToolchain.TryWriteBitcode(irFile: ir, bitcodeFile: tmp))
+            {
+                TryDelete(path: tmp);
+                return null;
+            }
+
+            try
+            {
+                File.Move(sourceFileName: tmp, destFileName: bc, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Another process put its copy in place first and has it open: that one is just as good.
+                TryDelete(path: tmp);
+                if (!File.Exists(path: bc))
+                {
+                    return null;
+                }
+            }
+
+            return bc;
+        }
+    }
+
+    /// <summary>The extension of the library's bitcode next to the IR.</summary>
+    internal const string BitcodeExtension = ".bc";
+
+    /// <summary>
     /// Returns the path of the library compiled to a native object for the in-process JIT, compiling it from the cached IR
     /// when the object is missing or older than the IR. The JIT loads this object instead of parsing and compiling the
     /// whole library's IR on every run: the object is only relocated and linked, and only when the program reaches one

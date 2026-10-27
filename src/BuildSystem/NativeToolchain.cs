@@ -722,10 +722,35 @@ internal static class NativeToolchain
             return false;
         }
 
+        // The bitcode when it can be had: it reads several times faster than the text IR.
+        string? bitcode = null;
+        try
+        {
+            bitcode = IngridTessera.BitcodePath(exeDir: exeDir);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A folder that can't be written to keeps the IR.
+        }
+
         string linked = Path.ChangeExtension(path: llFile, extension: ".ingrid.ll");
-        int rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-            args: $"-S \"{llFile}\" --only-needed \"{ingrid}\" -o \"{linked}\"",
-            stderr: out string err);
+        int rc = -1;
+        string err = "";
+        if (bitcode != null)
+        {
+            rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
+                args: $"-S \"{llFile}\" --only-needed \"{bitcode}\" -o \"{linked}\"",
+                stderr: out err);
+        }
+
+        // Without bitcode, or with bitcode this llvm-link can't read (written by another LLVM release), the IR.
+        if (rc != 0)
+        {
+            rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
+                args: $"-S \"{llFile}\" --only-needed \"{ingrid}\" -o \"{linked}\"",
+                stderr: out err);
+        }
+
         if (rc != 0)
         {
             error = $"llvm-link could not merge Ingrid's Tessera library into the module: {err.Trim()}";
@@ -735,6 +760,15 @@ internal static class NativeToolchain
         linkedFile = linked;
         error = "";
         return true;
+    }
+
+    /// <summary>Writes <paramref name="irFile"/> as LLVM bitcode to <paramref name="bitcodeFile"/> (llvm-link with one
+    /// input and no <c>-S</c>). Returns false when llvm-link fails.</summary>
+    internal static bool TryWriteBitcode(string irFile, string bitcodeFile)
+    {
+        return RunToolCapture(toolPath: LlvmLinkTool.Value,
+            args: $"\"{irFile}\" -o \"{bitcodeFile}\"",
+            stderr: out _) == 0;
     }
 
     /// <summary>

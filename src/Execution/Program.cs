@@ -368,9 +368,10 @@ internal partial class Program
     /// Usage: <c>emit-prebuilt [outDir] [--all|--sf]</c>. Default outDir = the resolved stdlib root's <c>.prebuilt</c>.
     /// </summary>
     /// <summary>
-    /// Writes Ingrid's Tessera library as LLVM IR next to the executable (<see cref="IngridTessera.IrFileName"/>), where
-    /// every build links it from. A packaging step: an installed layout has no sources to compile it from, so the
-    /// package ships this file. Usage: <c>emit-ingrid</c>, run from inside the workspace that holds <c>Ingrid/tessera</c>.
+    /// Writes Ingrid's Tessera library as LLVM IR next to the executable (<see cref="IngridTessera.IrFileName"/>), and
+    /// the same as bitcode, which every build links. A packaging step: an installed layout has no sources to compile it
+    /// from, so the package ships both files. Usage: <c>emit-ingrid</c>, run from inside the workspace that holds
+    /// <c>Ingrid/tessera</c>.
     /// </summary>
     private static int EmitIngrid()
     {
@@ -378,6 +379,13 @@ internal partial class Program
         {
             string path = IngridTessera.IrPath(exeDir: AppContext.BaseDirectory);
             Console.WriteLine(value: $"[emit-ingrid] {path}");
+            if (IngridTessera.BitcodePath(exeDir: AppContext.BaseDirectory) is not { } bitcode)
+            {
+                Console.Error.WriteLine(value: "[emit-ingrid] llvm-link could not write the library as bitcode");
+                return 1;
+            }
+
+            Console.WriteLine(value: $"[emit-ingrid] {bitcode}");
             return 0;
         }
         catch (InvalidOperationException ex)
