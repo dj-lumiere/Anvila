@@ -13,7 +13,15 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
     public override TypeCategory Category => TypeCategory.Protocol;
 
     /// <summary>memberRoutine signatures defined by this protocol.</summary>
-    public List<ProtocolMemberRoutineInfo> MemberRoutines { get; set; } = [];
+    public List<ProtocolMemberRoutineInfo> MemberRoutines
+    {
+        get;
+        set
+        {
+            field = value;
+            TypeShapeVersion.Bump();
+        }
+    } = [];
 
     /// <summary>Parent protocols that this protocol extends. An instance makes its own from its definition's when
     /// first asked: a parent can name this protocol back (<c>Emitter[T] obeys Emittable[T]</c>, whose slot is
@@ -47,6 +55,7 @@ public sealed class ProtocolTypeSymbol : TypeSymbol
         {
             _parentsPending = false;
             _parentProtocols = value;
+            TypeShapeVersion.Bump();
         }
     }
 

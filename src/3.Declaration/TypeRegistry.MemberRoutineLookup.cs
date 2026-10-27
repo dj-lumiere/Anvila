@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Symbols;
@@ -173,6 +174,7 @@ public sealed partial class TypeRegistry
 
     public void RegisterRoutine(RoutineInfo routine)
     {
+        TypeShapeVersion.Bump();
         // Realm-aware storage key: ambient-realm routines key bare (unchanged); a bridged-realm routine
         // (e.g. the RF-realm System.List reached via RF:: inside an SF compile) is `{realm}::`-prefixed so it
         // never collides with / shadows the ambient same-signature routine — the two world-lines coexist.
@@ -875,6 +877,8 @@ public sealed partial class TypeRegistry
         {
             return null;
         }
+
+        TypeShapeVersion.Bump();
 
         // Create updated routine with resolved signature
         var updatedRoutine = new RoutineInfo(name: routine.Name)
@@ -3288,6 +3292,66 @@ public sealed partial class TypeRegistry
     /// (<c>routine T.to[S32]() needs ChoiceType T</c>), bound to the owner. Recovery variants are not among them.
     /// </summary>
     public List<RoutineInfo> LookupSpecializedMemberRoutines(TypeSymbol owner, string name)
+    {
+        // The answer depends on the owner, the name, which surface routines the asking code sees
+        // (VisibleOverloads), and what the registry and the types hold, which TypeShapeVersion counts.
+        var key = new SpecializedMemberRoutinesKey(Owner: owner,
+            Name: name,
+            SurfaceViewSet: _surfaceViewSet,
+            SurfaceView: _surfaceView,
+            InStdlibSource: _stdlibSourceScopes != 0,
+            Realm: ResolutionRealm,
+            Version: TypeShapeVersion.Current);
+        if (_specializedMemberRoutines.TryGetValue(key: key, value: out List<RoutineInfo>? known))
+        {
+            return [.. known];
+        }
+
+        List<RoutineInfo> found = FindSpecializedMemberRoutines(owner: owner, name: name);
+        // Finding them may itself register a type or a routine, which moves the count: the answer is then
+        // kept under the count it was asked at only if nothing moved.
+        if (key.Version == TypeShapeVersion.Current)
+        {
+            _specializedMemberRoutines[key: key] = [.. found];
+        }
+
+        return found;
+    }
+
+    /// <summary>What <see cref="LookupSpecializedMemberRoutines"/> answers depend on. The owner is compared by
+    /// reference: two symbols of one name can obey different protocols while one is being filled in.</summary>
+    private readonly record struct SpecializedMemberRoutinesKey(
+        TypeSymbol Owner,
+        string Name,
+        bool SurfaceViewSet,
+        string? SurfaceView,
+        bool InStdlibSource,
+        string? Realm,
+        long Version)
+    {
+        public bool Equals(SpecializedMemberRoutinesKey other)
+        {
+            return ReferenceEquals(objA: Owner, objB: other.Owner) && Name == other.Name &&
+                   SurfaceViewSet == other.SurfaceViewSet && SurfaceView == other.SurfaceView &&
+                   InStdlibSource == other.InStdlibSource && Realm == other.Realm && Version == other.Version;
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(value1: RuntimeHelpers.GetHashCode(o: Owner),
+                value2: Name,
+                value3: SurfaceViewSet,
+                value4: SurfaceView,
+                value5: InStdlibSource,
+                value6: Realm,
+                value7: Version);
+        }
+    }
+
+    private readonly Dictionary<SpecializedMemberRoutinesKey, List<RoutineInfo>> _specializedMemberRoutines = [];
+
+    /// <summary>The work of <see cref="LookupSpecializedMemberRoutines"/>, without the memo.</summary>
+    private List<RoutineInfo> FindSpecializedMemberRoutines(TypeSymbol owner, string name)
     {
         var candidates = new List<RoutineInfo>();
         CollectMemberRoutineCandidates(type: owner, memberRoutineName: name, candidates: candidates);

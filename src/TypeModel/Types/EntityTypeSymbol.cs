@@ -17,14 +17,30 @@ public class EntityTypeSymbol : TypeSymbol
     public override bool ImplicitConstructorReturnsInFlight => true;
 
     /// <summary>MemberVariables declared in this entity.</summary>
-    public List<MemberVariableInfo> MemberVariables { get; set; } = [];
+    public List<MemberVariableInfo> MemberVariables
+    {
+        get;
+        set
+        {
+            field = value;
+            TypeShapeVersion.Bump();
+        }
+    } = [];
 
     /// <summary>Decl-position <c>expand</c> column templates (SoA layout). Populated only on a generic
     /// definition; the registry materializes one member per source-type field at instantiation.</summary>
     public List<MemberExpandTemplateInfo> ExpandTemplates { get; set; } = [];
 
     /// <summary>Protocols this entity implements (obeys).</summary>
-    public List<TypeSymbol> ImplementedProtocols { get; set; } = [];
+    public List<TypeSymbol> ImplementedProtocols
+    {
+        get;
+        set
+        {
+            field = value;
+            TypeShapeVersion.Bump();
+        }
+    } = [];
 
     /// <summary>Conditional-conformance conditions from an <c>obeys P when param obeys proto and …</c>
     /// clause, stored on the generic DEFINITION and keyed by the conditionally-obeyed protocol's bare name.

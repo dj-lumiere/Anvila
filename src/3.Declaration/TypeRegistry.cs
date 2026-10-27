@@ -685,6 +685,7 @@ public sealed partial class TypeRegistry
     /// through here.</summary>
     private void SetRoutineEntry(string key, RoutineInfo routine)
     {
+        TypeShapeVersion.Bump();
         if (_routines.TryAdd(key: key, value: routine))
         {
             int hash = key.IndexOf(value: '#');
@@ -1428,6 +1429,8 @@ public sealed partial class TypeRegistry
         }
 
         _types[key: key] = type;
+
+        TypeShapeVersion.Bump();
     }
 
     /// <summary>
@@ -1442,6 +1445,7 @@ public sealed partial class TypeRegistry
         if (_types.ContainsKey(key: key))
         {
             _types[key: key] = newType;
+            TypeShapeVersion.Bump();
             _typesByShortName.Remove(key: oldType.Name);
         }
     }
@@ -1568,6 +1572,7 @@ public sealed partial class TypeRegistry
             Module = crashable.Module
         };
         _types[key: typeName] = updated;
+        TypeShapeVersion.Bump();
         _typesByShortName.Remove(key: crashable.Name);
     }
 
@@ -1590,6 +1595,7 @@ public sealed partial class TypeRegistry
             Module = crashable.Module
         };
         _types[key: typeName] = updated;
+        TypeShapeVersion.Bump();
         _typesByShortName.Remove(key: crashable.Name);
     }
 
@@ -1622,6 +1628,8 @@ public sealed partial class TypeRegistry
         };
 
         _types[key: choiceName] = updatedChoice;
+
+        TypeShapeVersion.Bump();
         _typesByShortName.Remove(key: choice.Name);
     }
 
@@ -1653,6 +1661,8 @@ public sealed partial class TypeRegistry
         };
 
         _types[key: flagsName] = updatedFlags;
+
+        TypeShapeVersion.Bump();
         _typesByShortName.Remove(key: flags.Name);
     }
 
@@ -1690,6 +1700,8 @@ public sealed partial class TypeRegistry
         };
 
         _types[key: protocolName] = updatedProtocol;
+
+        TypeShapeVersion.Bump();
         _typesByShortName.Remove(key: protocol.Name);
     }
 
@@ -1726,6 +1738,8 @@ public sealed partial class TypeRegistry
         };
 
         _types[key: choiceName] = updatedChoice;
+
+        TypeShapeVersion.Bump();
         _typesByShortName.Remove(key: choice.Name);
     }
 
@@ -1756,6 +1770,8 @@ public sealed partial class TypeRegistry
         };
 
         _types[key: flagsName] = updated;
+
+        TypeShapeVersion.Bump();
         _typesByShortName.Remove(key: flags.Name);
     }
 

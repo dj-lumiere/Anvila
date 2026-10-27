@@ -170,6 +170,7 @@ partial class TypeRegistry
         GlobalScope = new Scope(kind: ScopeKind.Global);
         _currentScope = GlobalScope;
 
+        TypeShapeVersion.Bump();
         RestoreTypeStorage(snapshot: snapshot);
         RestoreRoutineStorage(snapshot: snapshot);
         RestorePresetStorage(snapshot: snapshot);
