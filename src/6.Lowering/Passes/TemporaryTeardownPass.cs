@@ -123,6 +123,33 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     }
 
     /// <summary>
+    /// The first run over the monomorphized bodies named by <paramref name="keys"/>: bodies cloned for an
+    /// implementer from an analyzed body no temporaries' teardown ran on (see
+    /// <see cref="ScopeTeardownLoweringPass.RunOnOwedBodies"/>), lowered as a variant body is.
+    /// </summary>
+    public void RunOnOwedBodies(Dictionary<string, MonomorphizedBody> bodies, IReadOnlySet<string> keys)
+    {
+        foreach (string key in keys)
+        {
+            if (!bodies.TryGetValue(key: key, value: out MonomorphizedBody? entry))
+            {
+                continue;
+            }
+
+            Statement lowered;
+            using (ctx.Registry.ViewSurfaceOf(fileName: entry.Ast.Body.Location.FileName))
+            {
+                lowered = TransformStatement(stmt: entry.Ast.Body);
+            }
+
+            if (!ReferenceEquals(objA: lowered, objB: entry.Ast.Body))
+            {
+                bodies[key: key] = entry with { Ast = entry.Ast with { Body = lowered } };
+            }
+        }
+    }
+
+    /// <summary>
     /// Lowers monomorphized bodies. In a generic definition a value typed <c>T</c> has no known lifecycle,
     /// so the pre-monomorphization run leaves it alone: an <c>a[i]</c> handed to a call, or an overwrite
     /// of a <c>T</c> local. Once <c>T</c> is concrete (<c>Retained[E]</c>, <c>Roamed[E]</c>, <c>Text</c>, a

@@ -306,6 +306,11 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // teardown, so the late teardown run gives it its destroys.
         // A parameter written `x: T` that this instance makes an entity is the routine's to tear down unless it
         // keeps it: the definition's teardown could not see that.
+        // A protocol's own routine made for an implementer (and its recovery variant) is cloned from an analyzed body
+        // no teardown ran on: it gets the full run here, with the implementer's types, as the variant bodies get
+        // it after their lowering, and the temporaries' run that follows it there.
+        HashSet<string> owed = new ScopeTeardownLoweringPass(ctx: postCtx).RunOnOwedBodies(bodies: freshBodies);
+        new TemporaryTeardownPass(ctx: postCtx).RunOnOwedBodies(bodies: freshBodies, keys: owed);
         new ScopeTeardownLoweringPass(ctx: postCtx).RunOnGenericEntityParameters(bodies: freshBodies);
         new ScopeTeardownLoweringPass(ctx: postCtx).RunLateOnInstantiatedGenericBodies(bodies: freshBodies);
         new TemporaryTeardownPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);

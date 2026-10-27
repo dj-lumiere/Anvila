@@ -2531,6 +2531,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             return false;
         }
 
+        // ProtocolDefaultImplLoweringPass builds this one for the implementer.
+        if (IsProtocolVariantForImplementer(variantDefinition: variantDefinition, concreteInfo: resolvedRoutine))
+        {
+            return true;
+        }
+
         MonomorphizedBody? variantBodyBuilt = BuildVariantBody(
             genMemberRoutine: variantDefinition,
             concreteInfo: resolvedRoutine,
@@ -2876,6 +2882,11 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // (RoutineInfo.RecoveryOf), which has the same name and parameters.
         if (genMemberRoutine.IsRecoveryVariant)
         {
+            if (IsProtocolVariantForImplementer(variantDefinition: genMemberRoutine, concreteInfo: concreteInfo))
+            {
+                return null;
+            }
+
             return BuildVariantBody(genMemberRoutine: genMemberRoutine,
                 concreteInfo: concreteInfo,
                 genDef: genDef,
@@ -3000,6 +3011,18 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         skippedForStdlibFallback = true;
         return null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="concreteInfo"/> is the recovery variant of a protocol's own routine made concrete for
+    /// an implementer. ProtocolDefaultImplLoweringPass builds that body from the protocol's body with the
+    /// implementer's types, as it builds the routine itself: the variant built from the definition holds the
+    /// protocol's abstract types, so its teardown and its type bindings are not the implementer's.
+    /// </summary>
+    private static bool IsProtocolVariantForImplementer(RoutineInfo variantDefinition, RoutineInfo concreteInfo)
+    {
+        return variantDefinition.OwnerType is ProtocolTypeSymbol &&
+               concreteInfo.OwnerType is RecordTypeSymbol or EntityTypeSymbol;
     }
 
     private MonomorphizedBody? BuildVariantBody(RoutineInfo genMemberRoutine,

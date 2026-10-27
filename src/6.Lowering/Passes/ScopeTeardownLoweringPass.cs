@@ -170,6 +170,55 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
     }
 
+    /// <summary>
+    /// The first (full) run over the monomorphized bodies that owe it
+    /// (<see cref="Instantiation.MonomorphizedBody.OwesScopeTeardown"/>): a protocol's own routine, or its recovery
+    /// variant, cloned for an implementer from an analyzed body no teardown ran on. Its locals are torn down at every exit with the implementer's types, as the variant
+    /// bodies are after their lowering. An entity parameter is owned (passed with <c>steal</c>) and torn down too.
+    /// Clears the mark and returns the keys of the bodies it lowered.
+    /// </summary>
+    public HashSet<string> RunOnOwedBodies(Dictionary<string, Instantiation.MonomorphizedBody> bodies)
+    {
+        var lowered = new HashSet<string>(comparer: StringComparer.Ordinal);
+        foreach (string key in bodies.Keys.ToList())
+        {
+            Instantiation.MonomorphizedBody entry = bodies[key: key];
+            if (!entry.OwesScopeTeardown)
+            {
+                continue;
+            }
+
+            Statement body = entry.Ast.Body;
+            _meType = entry.Info.OwnerType;
+            _movedNames.Clear();
+            CollectMovedNames(stmt: body);
+            MarkMovedPatternSubjects(stmt: body);
+            var live = new List<Owned>();
+            if (!ctx.Registry.EntitiesAreSharedIn(filePath: body.Location.FileName))
+            {
+                foreach (ParamInfo p in entry.Info.Parameters)
+                {
+                    if (p.Name != "me" && !_movedNames.Contains(item: p.Name) && p.Type is EntityTypeSymbol pt &&
+                        TryResolveDestroy(type: pt, destroy: out RoutineInfo? d) && d != null)
+                    {
+                        live.Add(item: new Owned(Name: p.Name, Type: pt, Destroy: d));
+                    }
+                }
+            }
+
+            Statement newBody;
+            using (ctx.Registry.ViewSurfaceOf(fileName: body.Location.FileName))
+            {
+                newBody = LowerStatement(stmt: body, live: live, loopBoundary: 0);
+            }
+
+            bodies[key: key] = entry with { Ast = entry.Ast with { Body = newBody }, OwesScopeTeardown = false };
+            lowered.Add(item: key);
+        }
+
+        return lowered;
+    }
+
     /// <summary>For each parameter <see cref="RunOnGenericEntityParameters"/> tracks, the uses of its name that keep
     /// the entity.</summary>
     private readonly Dictionary<string, HashSet<IdentifierExpression>> _keepingUses =

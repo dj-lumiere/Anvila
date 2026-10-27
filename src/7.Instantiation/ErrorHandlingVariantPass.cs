@@ -365,7 +365,35 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     public static Statement GenerateVariantBody(Statement baseBody, GeneratedVariant variant,
         TypeRegistry registry, bool resolveFailurePoints = true)
     {
-        ErrorHandlingVariantKind kind = DetermineVariantKind(variant: variant);
+        return GenerateVariantBody(baseBody: baseBody,
+            kind: DetermineVariantKind(variant: variant),
+            registry: registry,
+            resolveFailurePoints: resolveFailurePoints);
+    }
+
+    /// <summary>
+    /// The variant kind a registered recovery variant routine is built as: its recovery keyword, and for a
+    /// <c>try</c> over a routine that gives nothing, the Bool-returning form.
+    /// </summary>
+    internal static ErrorHandlingVariantKind KindOf(RoutineInfo variant)
+    {
+        return variant.Recovery switch
+        {
+            RecoveryKind.Check => ErrorHandlingVariantKind.Check,
+            _ when variant.FailableVariant == FailableVariant.TryBool => ErrorHandlingVariantKind.TryBool,
+            _ => ErrorHandlingVariantKind.Try
+        };
+    }
+
+    /// <summary>
+    /// Builds a variant body of <paramref name="kind"/> from <paramref name="baseBody"/>, as
+    /// <see cref="GenerateVariantBody(Statement, GeneratedVariant, TypeRegistry, bool)"/> does for a registered
+    /// variant. <paramref name="resolveFailurePoints"/> is false for the variant of a routine that is not
+    /// failable, which passes on only the failures of the routine values it reaches.
+    /// </summary>
+    public static Statement GenerateVariantBody(Statement baseBody, ErrorHandlingVariantKind kind,
+        TypeRegistry registry, bool resolveFailurePoints)
+    {
         // Checked operators and subscripts in the body are failable calls too: spell them out before the
         // propagation below, so their failures become this variant's carrier instead of a crash. A library
         // routine recovered only for the routine values it reaches keeps its own operators as they are.

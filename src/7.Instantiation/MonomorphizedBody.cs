@@ -17,10 +17,14 @@ namespace Builder.Instantiation;
 /// <param name="VariantStatus">The variant status.</param>
 /// <param name="VariantInnerType">The variant inner type.</param>
 /// <param name="IsSynthesized">Whether this is synthesized.</param>
+/// <param name="OwesScopeTeardown">Whether the body was cloned from an analyzed body that no scope teardown ran
+///   on (a protocol's own routine made for an implementer, or its recovery variant), so the instantiated-body
+///   lowering gives it its scope teardown once its types are the implementer's.</param>
 public sealed record MonomorphizedBody(
     RoutineDeclaration Ast,
     RoutineInfo Info,
     Dictionary<string, TypeSymbol> TypeSubs,
     FailableVariant? VariantStatus,
     TypeSymbol? VariantInnerType,
-    bool IsSynthesized);
+    bool IsSynthesized,
+    bool OwesScopeTeardown = false);

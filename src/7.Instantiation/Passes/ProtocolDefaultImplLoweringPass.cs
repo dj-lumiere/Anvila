@@ -133,6 +133,13 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
             return false;
         }
 
+        // A recovery variant of a protocol's own routine (`try xs.select(...).to[List]()`) is built for the
+        // implementer from the protocol's body, as the routine itself is below.
+        if (rr0 is { IsRecoveryVariant: true })
+        {
+            return SynthesizeRecoveryVariantBody(variant: rr0);
+        }
+
         if (!TryResolveProtocolDefaultImpl(resolvedRoutine: rr0,
                 receiverResolvedType: recvType0,
                 protoRoutine: out RoutineInfo? pr,
@@ -170,6 +177,118 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
 
         return SynthesizeStandardBody(pr: pr, impl: impl,
             typeArguments: specialization ? rr.TypeArguments : null);
+    }
+
+    /// <summary>
+    /// Builds the body of <paramref name="variant"/>, the recovery variant of a protocol's own routine made concrete
+    /// for an implementer (<c>Emittable[T].to[List[T]]</c>'s <c>try</c> variant on a <c>SelectManyEmittable</c>),
+    /// from the protocol's analyzed body: cloned for the implementer with the protocol's parameters bound by the
+    /// conformance (the protocol's <c>T</c> is what the implementer emits, not the implementer's own <c>T</c>), then
+    /// turned into the variant. The variant built once from the definition keeps the protocol's abstract types, so
+    /// its teardown cannot tell an entity element from a value. The body is stored under the variant's own key,
+    /// which the call already names. Returns true if a new body was added.
+    /// </summary>
+    private bool SynthesizeRecoveryVariantBody(RoutineInfo variant)
+    {
+        if (variant is not { RecoveryOf: { } recovered, OwnerType: RecordTypeSymbol or EntityTypeSymbol } ||
+            variant.GenericDefinition?.OwnerType is not ProtocolTypeSymbol ||
+            ctx.InstantiatedGenericBodies.ContainsKey(key: variant.RegistryKey) ||
+            !TryResolveProtocolDefaultImpl(resolvedRoutine: recovered,
+                receiverResolvedType: variant.OwnerType,
+                protoRoutine: out RoutineInfo? pr,
+                implementer: out TypeSymbol? impl) || pr == null || impl == null)
+        {
+            return false;
+        }
+
+        Dictionary<string, TypeSymbol> subs = BuildCallSubs(pr: pr,
+            impl: impl,
+            typeArguments: variant.TypeArguments,
+            specialization: recovered.IsSpecialization || pr.IsSpecialization);
+        Statement? cloned = CloneProtocolRoutineBody(protocolRoutine: pr,
+            implementer: impl,
+            synthesized: variant,
+            protoSubs: subs);
+        if (cloned == null)
+        {
+            return false;
+        }
+
+        // As the variants built from a definition are: a call written with type arguments is a plain call by now,
+        // so the variant's rewrite sees the failable call it is. A routine that is not failable passes on only
+        // what fails through the routine values it reaches.
+        Statement source = new Builder.Desugaring.Passes.GenericCallLoweringPass(registry: ctx.Registry,
+            variantBodies: new Dictionary<string, Statement>()).VisitStatement(stmt: cloned);
+        Statement body = ErrorHandlingVariantPass.GenerateVariantBody(baseBody: source,
+            kind: ErrorHandlingVariantPass.KindOf(variant: variant),
+            registry: ctx.Registry,
+            resolveFailurePoints: recovered.IsFailable || recovered.HasThrow);
+        if (ctx.AnalyzeMaterializedDeriveBody is { } analyze)
+        {
+            body = analyze(arg1: variant, arg2: body);
+        }
+
+        ctx.LiveRoutineKeys.Add(item: variant.RegistryKey);
+        TypeSymbol me = MeFor(implementer: impl);
+        var bodySubs = new Dictionary<string, TypeSymbol>(dictionary: subs) { [key: "me"] = me, [key: "Me"] = me };
+        bool check = variant.Recovery == RecoveryKind.Check;
+        ctx.InstantiatedGenericBodies[key: variant.RegistryKey] = new MonomorphizedBody(
+            Ast: WrapInShellDecl(name: variant.Name, body: body, info: variant),
+            Info: variant,
+            TypeSubs: bodySubs,
+            VariantStatus: check
+                ? FailableVariant.Check
+                : variant.FailableVariant == FailableVariant.TryBool
+                    ? FailableVariant.TryBool
+                    : null,
+            VariantInnerType: check && variant.ReturnType?.TypeArguments is [var inner] ? inner : null,
+            IsSynthesized: false,
+            OwesScopeTeardown: true);
+        SeedConstructorCallees(body: body);
+        return true;
+    }
+
+    /// <summary>
+    /// The bindings a body made for <paramref name="impl"/> from the protocol routine <paramref name="pr"/> uses:
+    /// the protocol's parameters from the conformance, then the call's type arguments, either the routine's own
+    /// parameters (<c>select[U]</c>, aligned from the end, after the protocol's) or a specialization's bracket
+    /// (<c>to[Array[T, N]]</c> called as <c>to[Array[S64, 3]]</c>), which binds the parameters it names.
+    /// </summary>
+    private static Dictionary<string, TypeSymbol> BuildCallSubs(RoutineInfo pr, TypeSymbol impl,
+        List<TypeSymbol>? typeArguments, bool specialization)
+    {
+        Dictionary<string, TypeSymbol> subs = BuildProtocolGenericSubs(protocolRoutine: pr, implementer: impl);
+        if (typeArguments is not { Count: > 0 })
+        {
+            return subs;
+        }
+
+        RoutineInfo written = pr.GenericDefinition ?? pr;
+        if (specialization)
+        {
+            if (written is { TypeArguments: { } pattern, GenericParameters: { Count: > 0 } own } &&
+                pattern.Count == typeArguments.Count)
+            {
+                for (int i = 0; i < pattern.Count; i++)
+                {
+                    Builder.Declaration.TypeRegistry.UnifyReceiverGenerics(pattern: pattern[index: i],
+                        concrete: typeArguments[index: i], genericParams: own, into: subs);
+                }
+            }
+
+            return subs;
+        }
+
+        if (pr.GenericParameters is { Count: > 0 } allParams && typeArguments.Count <= allParams.Count)
+        {
+            int offset = allParams.Count - typeArguments.Count;
+            for (int i = 0; i < typeArguments.Count; i++)
+            {
+                subs[key: allParams[index: offset + i]] = typeArguments[index: i];
+            }
+        }
+
+        return subs;
     }
 
     /// <summary>
@@ -227,7 +346,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
             TypeSubs: mgSubs,
             VariantStatus: null,
             VariantInnerType: null,
-            IsSynthesized: false);
+            IsSynthesized: false,
+            OwesScopeTeardown: true);
         SeedConstructorCallees(body: mgBody);
         return true;
     }
@@ -302,7 +422,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
             TypeSubs: bodySubs,
             VariantStatus: null,
             VariantInnerType: null,
-            IsSynthesized: false);
+            IsSynthesized: false,
+            OwesScopeTeardown: true);
         SeedConstructorCallees(body: clonedBody);
         return true;
     }
