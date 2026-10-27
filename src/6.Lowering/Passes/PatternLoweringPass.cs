@@ -187,7 +187,26 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             subjectType: subjectType,
             loweredClauses: loweredClauses,
             loc: loc,
-            ownsSubject: !s.IsEachStep || s.StepHandsOver);
+            ownsSubject: !s.IsEachStep || s.StepHandsOver || StepHandsOver(step: s));
+    }
+
+    /// <summary>
+    /// Whether the step of an <c>each</c> loop walks an emitter that hands its items over (<c>select</c>,
+    /// <c>select_many</c>, see <see cref="Declaration.EmitterWalk"/>): the step then owns its item and tears it down
+    /// when it ends, unless the step moves it on.
+    /// </summary>
+    private bool StepHandsOver(WhenStatement step)
+    {
+        CallExpression? emit = step.Expression switch
+        {
+            RecoveryExpression { Inner: CallExpression inner } => inner,
+            CallExpression call => call,
+            _ => null
+        };
+        return emit != null &&
+               Declaration.EmitterWalk.EmitHandsOver(emit: emit.ResolvedRoutine,
+                   receiver: (emit.Callee as MemberExpression)?.Object.ResolvedType,
+                   registry: ctx.Registry);
     }
 
     /// <summary>

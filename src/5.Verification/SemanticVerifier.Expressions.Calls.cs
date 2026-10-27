@@ -2986,6 +2986,65 @@ public sealed partial class SemanticVerifier
         return "";
     }
 
+    /// <summary>
+    /// The <c>Emittable</c> routines that keep what the walk hands out: the collecting conversions (<c>to[List]</c>,
+    /// <c>to[Set]</c>, <c>to[Items]</c>, ...) and the terminals that give one item back.
+    /// </summary>
+    private static readonly HashSet<string> KeepingTerminals =
+    [
+        ToConversionName, "first", "last", "first_or_default", "last_or_default", "min", "max", "min_by", "max_by"
+    ];
+
+    /// <summary>
+    /// RF-S413 at a terminal that would keep entities a walk only lends (<c>xs.where(...).to[List]()</c> over a
+    /// <c>List[Crate]</c>): the walk reaches each entity where the container keeps it, so a new collection of them, or
+    /// one of them given back, would keep the same entity in a second place, and both places would end it.
+    /// </summary>
+    private void CheckKeepsLentEntities(Expression receiver, TypeSymbol? objectType, RoutineInfo? memberRoutine,
+        SourceLocation location)
+    {
+        if (memberRoutine == null || objectType == null)
+        {
+            return;
+        }
+
+        RoutineInfo declared = memberRoutine.RecoveryOf ?? memberRoutine;
+        declared = declared.GenericDefinition ?? declared;
+        if (_registry.EntitiesAreShared || IsStdlibFile(filePath: _currentFilePath) ||
+            !KeepingTerminals.Contains(item: declared.Name) ||
+            declared.OwnerType is not { } owner || owner.BareName != "Emittable" ||
+            !Declaration.EmitterWalk.LendsEntities(emittable: objectType, registry: _registry,
+                lentEntity: out TypeSymbol? entity))
+        {
+            return;
+        }
+
+        // The container the chain walks: the receiver under every adapter call (`xs` in `xs.where(...).take(2)`).
+        Expression root = receiver;
+        while (root switch
+               {
+                   CallExpression { Callee: MemberExpression { Object: var called } } => called,
+                   GenericMemberRoutineCallExpression { Object: var specialized } => specialized,
+                   _ => null
+               } is { } inner)
+        {
+            root = inner;
+        }
+
+        string container = root is IdentifierExpression { Name: var source } ? source : "xs";
+        string terminal = declared.Name == ToConversionName
+            ? $"'.to[{(memberRoutine.ReturnType is { } made ? ShortTypeName(type: made) : "...")}]()' would put them in a " +
+              "new collection"
+            : $"'.{declared.Name}()' would give one of them back";
+        ReportError(code: SemanticDiagnosticCode.BareEntityAssignment,
+            message: $"This walk reaches each '{ShortTypeName(type: entity!)}' where '{container}' keeps it, and {terminal}. " +
+                     $"An entity has one original, which this would hold there too. To get copies, make them in the walk with " +
+                     $"'.select(e => e.duplicate())'. To hand the originals over, take the container: " +
+                     $"'(steal {container}).where(...)'. To use them where they are, walk them with 'each' and pass " +
+                     "tokens ('Viewing', 'Modifying').",
+            location: location);
+    }
+
     private TypeSymbol? AnalyzeResolvedMemberCall(CallExpression call, MemberExpression member,
         TypeSymbol objectType, TypeSymbol dispatchType, RoutineInfo? memberRoutine,
         TypeSymbol? expectedType = null)
@@ -3039,6 +3098,9 @@ public sealed partial class SemanticVerifier
             objectType: objectType,
             dispatchType: dispatchType,
             memberRoutine: memberRoutine);
+
+        CheckKeepsLentEntities(receiver: member.Object, objectType: objectType, memberRoutine: memberRoutine,
+            location: call.Location);
 
         // Variadic member routine (e.g. a collection `create(elements...: T)`): pack the K
         // trailing args into an Array[T, K] literal so arg count matches the desugared single

@@ -492,6 +492,13 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
     private readonly HashSet<string> _movedNames = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>
+    /// The locals a recovery variant made to hold what an emitter's <c>emit</c> gave (<c>var __rf_prop_1 =
+    /// me.source.emit()</c>), by name, with that call: a local that then reads the item out of it
+    /// (<c>var item = __rf_prop_1.value</c>) holds what the emitter gave.
+    /// </summary>
+    private readonly Dictionary<string, CallExpression> _emitCarriers = new(comparer: StringComparer.Ordinal);
+
     /// <summary>The type that owns the routine being lowered, the type of its <c>me</c>.</summary>
     private TypeSymbol? _meType;
 
@@ -758,6 +765,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         {
             if (s is DeclarationStatement { Declaration: VariableDeclaration v } declaration)
             {
+                if (v.Initializer is CallExpression carried &&
+                    (carried.ResolvedRoutine?.RecoveryOf ?? carried.ResolvedRoutine)?.Name == RuntimeContract.Emit)
+                {
+                    _emitCarriers[key: v.Name] = carried;
+                }
+
                 // Once looked at here, a local a lowering marked as owing its teardown has it (or does not
                 // need it), so a later run leaves it alone. A local of a generic routine whose type is known only in
                 // each instance keeps (or gets) the mark until a run sees it with a concrete type.
@@ -765,7 +778,11 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 {
                     stmts.Add(item: declaration with
                     {
-                        Declaration = v with { OwesTeardown = true, OwnsItsValue = true }
+                        Declaration = v with
+                        {
+                            OwesTeardown = true, OwnsItsValue = true,
+                            OwnsWhenHandedOver = v.OwnsWhenHandedOver || TakesSourceItem(v: v)
+                        }
                     });
                     continue;
                 }
@@ -1397,6 +1414,11 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             return marked == null || TypeContainsGenericParameter(type: marked);
         }
 
+        if (!_late && TakesSourceItem(v: v) && !_movedNames.Contains(item: v.Name))
+        {
+            return true;
+        }
+
         // A recovery variant's binding of a routine value's result moves it out of the carrier (see
         // ErrorHandlingVariantPass) and owns it as the routine's own `var x = f(y)` does.
         bool takenFromCarrier = v is { OwnsItsValue: true, Initializer: StealExpression or IdentifierExpression };
@@ -1429,11 +1451,50 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                v.Initializer is not CallExpression { ResolvedRoutine.ReturnType: GenericParameterTypeSymbol };
     }
 
+    /// <summary>
+    /// Whether <paramref name="v"/> holds what an emitter whose type is known only per instance gave a generic routine
+    /// (<c>var item = me.source.emit()</c>): an instance owns it when that emitter hands its items over (see
+    /// <see cref="VariableDeclaration.OwnsWhenHandedOver"/>).
+    /// </summary>
+    private bool TakesSourceItem(VariableDeclaration v)
+    {
+        return SourceStepOf(v: v) is { ResolvedRoutine: { } step } &&
+               (step.RecoveryOf ?? step).Name == RuntimeContract.Emit &&
+               (v.Type?.ResolvedType ?? v.Initializer?.ResolvedType) is { } t && TypeContainsGenericParameter(type: t) &&
+               !ctx.Registry.EntitiesAreSharedIn(filePath: v.Location?.FileName);
+    }
+
+    /// <summary>
+    /// The <c>emit</c> call whose item <paramref name="v"/> holds: its own initializer, or the call a recovery
+    /// variant's carrier holds when <paramref name="v"/> reads the item out of it (see <see cref="_emitCarriers"/>).
+    /// </summary>
+    private CallExpression? SourceStepOf(VariableDeclaration v)
+    {
+        // The item read out of a carrier moves out of it (`steal __rf_prop_1.value`) or, for a value, is shared.
+        Expression? read = v.Initializer switch
+        {
+            StealExpression { Operand: { } moved } => moved,
+            CallExpression
+            {
+                Callee: MemberExpression { Object: MemberExpression shared, MemberName: RuntimeContract.Duplication.Share }
+            } => shared,
+            _ => v.Initializer
+        };
+        return read switch
+        {
+            // A recovery variant's call gives a carrier (`Maybe[T]`), which holds the item only until it is read out.
+            CallExpression { ResolvedRoutine.RecoveryOf: null } call => call,
+            MemberExpression { Object: IdentifierExpression carrier, MemberName: RuntimeContract.Carrier.ValueField }
+                when _emitCarriers.TryGetValue(key: carrier.Name, value: out CallExpression? held) => held,
+            _ => null
+        };
+    }
+
     /// <summary>Whether <paramref name="type"/> still names a type parameter of the routine being lowered.</summary>
     private static bool TypeContainsGenericParameter(TypeSymbol type)
     {
         if (type is GenericParameterTypeSymbol or ErrorTypeSymbol or ProtocolSelfTypeSymbol or
-            BuildtimeConstGenericTypeSymbol)
+            BuildtimeConstGenericTypeSymbol or AssociatedProjectionTypeSymbol)
         {
             return true;
         }
@@ -1450,6 +1511,13 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// </summary>
     private void RegisterLateDeclaration(VariableDeclaration v, List<Owned> live)
     {
+        // What a source emitter gave an adapter is the adapter's own only when that emitter hands its items over.
+        if (v.OwnsWhenHandedOver)
+        {
+            RegisterHandedOverItem(v: v, live: live);
+            return;
+        }
+
         if (!v.OwesTeardown || _movedNames.Contains(item: v.Name) || IsViewBinding(v: v) ||
             v.Initializer is not (CallExpression or CreatorExpression) &&
             v is not { OwnsItsValue: true, Initializer: StealExpression or IdentifierExpression } ||
@@ -1493,6 +1561,36 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ctx.Registry.IsEntityKind(type: rec))
         {
             live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: d));
+        }
+    }
+
+    /// <summary>
+    /// The late run's registration of a local holding what a source emitter gave a generic adapter (see
+    /// <see cref="VariableDeclaration.OwnsWhenHandedOver"/>): torn down when the emitter hands its items over and the
+    /// type is concrete, left alone otherwise.
+    /// </summary>
+    private void RegisterHandedOverItem(VariableDeclaration v, List<Owned> live)
+    {
+        TypeSymbol? t = v.Type?.ResolvedType ?? v.Initializer?.ResolvedType;
+        if (!v.OwesTeardown || _movedNames.Contains(item: v.Name) || t == null || TypeContainsGenericParameter(type: t) ||
+            SourceStepOf(v: v) is not { } step ||
+            !EmitterWalk.EmitHandsOver(emit: step.ResolvedRoutine,
+                receiver: (step.Callee as MemberExpression)?.Object.ResolvedType,
+                registry: ctx.Registry))
+        {
+            return;
+        }
+
+        if (!TryResolveDestroy(type: t, destroy: out RoutineInfo? destroy) || destroy == null)
+        {
+            destroy = t is EntityTypeSymbol
+                ? ctx.Registry.LookupMemberRoutine(type: t, memberRoutineName: RuntimeContract.Destroy)
+                : null;
+        }
+
+        if (destroy != null)
+        {
+            live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: destroy));
         }
     }
 

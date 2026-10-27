@@ -193,6 +193,14 @@ public record VariableDeclaration(
     public bool OwnsItsValue { get; init; }
 
     /// <summary>
+    /// With <see cref="OwnsItsValue"/>: the local holds what a source emitter's <c>emit</c> gave a generic adapter
+    /// (<c>var item = me.source.emit()</c> in <c>WhereEmitter.emit</c>). It owns that item only in an instance whose
+    /// source hands its items over (<c>select</c>), so an item the adapter passes by is torn down there and an item
+    /// it only lends is left alone.
+    /// </summary>
+    public bool OwnsWhenHandedOver { get; init; }
+
+    /// <summary>
     /// The type of the local's storage, stamped at Phase 9 by <c>LocalTypeStampPass</c> for the backends:
     /// the declared type, else the initializer's.
     /// </summary>

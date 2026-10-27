@@ -114,7 +114,7 @@ public partial class Parser
     private static readonly HashSet<string> KnownAnnotations =
     [
         "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "noinline", "no_optimize",
-        "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking",
+        "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking", "hands_over",
         RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rf",
         "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"
     ];

@@ -22,6 +22,8 @@ public sealed partial class SemanticVerifier
         // A generic call (`make_channel[S64](capacity: 4)`, `obj.method[T](..)`) resolves through a path distinct from
         // the plain-call analyzer, so the Suflae unsafe-call gate is applied here too on its resolved routine.
         EnforceUnsafeCallAllowed(resolved: generic.ResolvedRoutine, location: generic.Location);
+        CheckKeepsLentEntities(receiver: generic.Object, objectType: generic.Object.ResolvedType,
+            memberRoutine: generic.ResolvedRoutine, location: generic.Location);
         ReportNotRebuildableFromSerial(generic: generic, target: result);
         return result;
     }

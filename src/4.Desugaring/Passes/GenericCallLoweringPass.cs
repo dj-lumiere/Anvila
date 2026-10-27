@@ -201,8 +201,36 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     protected override Expression VisitGenericMemberRoutineCall(
         GenericMemberRoutineCallExpression e)
     {
+        // `(steal xs).to[Set]()`: as for a plain call (see VisitCall), the walk takes the container.
+        if (e is { Object: StealExpression stolen, ResolvedType: null } &&
+            TakenWalkRoutines.Contains(item: e.MemberRoutineName))
+        {
+            e = e with { Object = TakeEachOf(stolen: stolen) };
+        }
+
         return TryLowerGenericCall(gmc: e) ?? LowerGenericCallChildren(gmc: e);
     }
+
+    /// <summary>The container <paramref name="stolen"/> as a walk takes it apart: <c>TakenList(list: steal xs)</c>,
+    /// whose walk is <c>take_each</c>.</summary>
+    private static Expression TakeEachOf(StealExpression stolen)
+    {
+        return new CallExpression(
+            Callee: new IdentifierExpression(Name: Declaration.RuntimeContract.TakenList, Location: stolen.Location),
+            Arguments: [new NamedArgumentExpression(Name: "list", Value: stolen, Location: stolen.Location)],
+            Location: stolen.Location) { IsSynthesizedLowering = true };
+    }
+
+    /// <summary>
+    /// The <c>Emittable</c> routines that walk their receiver (the adapters and the terminals), written after a taken
+    /// container (<c>(steal xs).where(...)</c>). <c>first</c> and <c>last</c> are left out: a <c>List</c> has its own.
+    /// </summary>
+    private static readonly HashSet<string> TakenWalkRoutines =
+    [
+        "accumulate", "all", "any", "distinct", "distinct_by", "enumerate", "exclude", "extend", "first_or_default",
+        "get_count", "intersect", "join", "last_or_default", "max", "max_by", "min", "min_by", "reverse", "select",
+        "select_many", "skip", "skip_while", "sum", "take", "take_while", "to", "union", "where", "where_not"
+    ];
 
     /// <summary>
     /// Rewrites children, then re-copies the mutable resolution metadata that <c>with</c> drops.
@@ -222,6 +250,18 @@ internal sealed class GenericCallLoweringPass : AstRewriter
             ) is CallExpression lowered
                 ? lowered with { IsSynthesizedLowering = true }
                 : e;
+        }
+
+        // `(steal xs).where(...)`: an adapter or a terminal over a taken container walks it the same way, so the walk
+        // hands the elements over and the container ends with the walk. Without it the walk would lend elements of a
+        // container nothing keeps.
+        if (e is
+            {
+                ResolvedType: null, IsSynthesizedLowering: false,
+                Callee: MemberExpression { Object: StealExpression stolen, MemberName: var walked } over
+            } && TakenWalkRoutines.Contains(item: walked))
+        {
+            return VisitCall(e: e with { Callee = over with { Object = TakeEachOf(stolen: stolen) } });
         }
 
         Expression rebuilt = base.VisitCall(e: e);

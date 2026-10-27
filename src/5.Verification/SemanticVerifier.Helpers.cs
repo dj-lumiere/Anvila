@@ -949,7 +949,8 @@ public sealed partial class SemanticVerifier
         if (!ChecksOwnershipHere && HoldsRazorForgeEntity(type: type))
         {
             return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {holder} still holds. An entity from a " +
-                   "`.rf` module is not shared, so two places holding it would each release it. Make it where it goes " +
+                   "`.rf` module is not shared: it has one original, and two names holding it would each release it. " +
+                   "Make it where it goes " +
                    $"('{type.BareName}(...)' written in place), or keep working on it through {holder}.";
         }
 
@@ -959,8 +960,8 @@ public sealed partial class SemanticVerifier
             string from = value is IdentifierExpression id
                 ? $"'{id.Name}'"
                 : "the value it belongs to";
-            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {from} still holds. '{parameter}' may be an entity, and then " +
-                   $"this would share it between two places with no manager. Hand it over with 'steal', or keep '{parameter}' " +
+            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {from} still holds. '{parameter}' may be an entity, and an " +
+                   $"entity has one original, which this would hold here too with no manager. Hand it over with 'steal', or keep '{parameter}' " +
                    $"to values with 'needs RecordType {parameter}'.";
         }
 
@@ -972,8 +973,8 @@ public sealed partial class SemanticVerifier
               "(a call or field write on the element reaches it in place)."
             : $"Hand it over with 'steal'{copy}, or put it under a manager to share it.";
         string written = WrittenTypeName(type: type);
-        return $"{action} {Article.For(name: written)} '{written}' that {holder} still holds, which would share one entity " +
-               $"between two places with no manager. {fix}";
+        return $"{action} {Article.For(name: written)} '{written}' that {holder} still holds. An entity has one original, and " +
+               $"this would hold it here too with no manager. {fix}";
     }
 
     /// <summary>

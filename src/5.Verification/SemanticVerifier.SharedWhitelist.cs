@@ -124,6 +124,14 @@ public sealed partial class SemanticVerifier
                 Check(expression: expression);
             }
 
+            // A type the builder completed (`to[List]` written, `List[Crate]` filled in) is checked as the type it
+            // stands for. The arguments it spells are how the builder holds that type (a Suflae entity's handle), not
+            // names the program wrote.
+            if (node is TypeExpression { KnownType: not null })
+            {
+                return;
+            }
+
             foreach (object child in AstWalker.EnumerateChildren(node: node))
             {
                 Visit(node: child);

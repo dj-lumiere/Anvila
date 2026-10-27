@@ -1604,6 +1604,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
         CallExpression failCall;
         string? bindName;
+        VariableDeclaration? bound = null;
         switch (stmt)
         {
             case DeclarationStatement
@@ -1612,6 +1613,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             } when CanPassOn(call: ce, registry: registry):
                 failCall = ce;
                 bindName = vd.Name;
+                bound = vd;
                 break;
             case ExpressionStatement { Expression: CallExpression ce2 }
                 when CanPassOn(call: ce2, registry: registry):
@@ -1720,7 +1722,13 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             // Looking `assign` up on it would reach the value's own `assign` through the token.
             // A value that holds an entity (a tuple of entities) is not copied by `=` either, though the record
             // `share` template is found for it: it moves out like an entity.
-            bool payloadAssignable = valueType != null && !IsAccessToken(type: valueType) &&
+            // An adapter's item that its source hands over (see VariableDeclaration.OwnsWhenHandedOver) is the
+            // adapter's own: it moves out of the carrier as an entity does, so the carrier keeps no second count.
+            bool handedOver = bound?.OwnsWhenHandedOver == true &&
+                              EmitterWalk.EmitHandsOver(emit: failRoutine,
+                                  receiver: (failCall.Callee as MemberExpression)?.Object.ResolvedType,
+                                  registry: registry);
+            bool payloadAssignable = !handedOver && valueType != null && !IsAccessToken(type: valueType) &&
                                      !registry.IsEntityKind(type: valueType) && registry.LookupMemberRoutine(
                 type: valueType,
                 memberRoutineName: RuntimeContract.Duplication.Share,
@@ -1737,12 +1745,19 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     ? new StealExpression(Operand: valueAccess, Location: loc) { ResolvedType = valueType }
                     : valueAccess;
 
+            // The binding keeps what teardown marked on the declaration it replaces (an adapter's item that its
+            // instance owns when the source hands its items over).
             bindStmt = new DeclarationStatement(
                 Declaration: new VariableDeclaration(Name: bindName,
                     Type: null,
                     Initializer: boundValue,
                     Visibility: VisibilityModifier.Secret,
-                    Location: loc),
+                    Location: loc)
+                {
+                    OwesTeardown = bound?.OwesTeardown ?? false,
+                    OwnsItsValue = bound?.OwnsItsValue ?? false,
+                    OwnsWhenHandedOver = bound?.OwnsWhenHandedOver ?? false
+                },
                 Location: loc);
 
             // A payload with no `assign` (an entity) moves out: the carrier gives it up, as `strip_out` does.
