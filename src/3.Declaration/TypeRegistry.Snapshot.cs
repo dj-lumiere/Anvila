@@ -223,7 +223,7 @@ partial class TypeRegistry
     {
         foreach (KeyValuePair<string, RoutineInfo> kv in snapshot.Routines)
         {
-            _routines[key: kv.Key] = kv.Value;
+            SetRoutineEntry(key: kv.Key, routine: kv.Value);
             if (kv.Value.IsRecoveryVariant)
             {
                 IndexRecoveryVariant(variant: kv.Value);

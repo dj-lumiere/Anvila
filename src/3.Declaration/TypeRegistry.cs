@@ -670,8 +670,57 @@ public sealed partial class TypeRegistry
     /// stay demand-analyzed every build (correct); the far more common no-repair files still cache.</summary>
     public bool StdlibSignatureRepairOccurred { get; set; }
 
-    /// <summary>All registered routines by their full name.</summary>
+    /// <summary>All registered routines by their full name. Written only through <see cref="SetRoutineEntry"/>,
+    /// which keeps <see cref="_routineKeysByBaseName"/> in step.</summary>
     private readonly Dictionary<string, RoutineInfo> _routines = new();
+
+    /// <summary>Every key of <see cref="_routines"/> grouped by its base name (the text before the first
+    /// <c>#</c>), in the order the keys were first added. A question about one base name's overloads reads
+    /// its list instead of walking every key. Keys are never removed from <see cref="_routines"/>, so the
+    /// lists only grow.</summary>
+    private readonly Dictionary<string, List<string>> _routineKeysByBaseName = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>Stores <paramref name="routine"/> under <paramref name="key"/> in <see cref="_routines"/> and
+    /// records a new key in <see cref="_routineKeysByBaseName"/>. Every write to <see cref="_routines"/> goes
+    /// through here.</summary>
+    private void SetRoutineEntry(string key, RoutineInfo routine)
+    {
+        if (_routines.TryAdd(key: key, value: routine))
+        {
+            int hash = key.IndexOf(value: '#');
+            string baseName = hash < 0 ? key : key[..hash];
+            if (!_routineKeysByBaseName.TryGetValue(key: baseName, value: out List<string>? keys))
+            {
+                keys = [];
+                _routineKeysByBaseName[key: baseName] = keys;
+            }
+
+            keys.Add(item: key);
+            return;
+        }
+
+        _routines[key: key] = routine;
+    }
+
+    /// <summary>The keys of <see cref="_routines"/> that are <paramref name="baseName"/> itself or
+    /// <c>baseName#…</c>, in the order they were first added.</summary>
+    private IReadOnlyList<string> RoutineKeysWithBaseName(string baseName)
+    {
+        if (baseName.Contains(value: '#'))
+        {
+            // A base name never holds a `#`, but if one did, the grouping by the first `#` would not find
+            // its keys, so answer by walking every key.
+            string prefix = baseName + "#";
+            return _routines.Keys
+                            .Where(predicate: k => k == baseName ||
+                                                   k.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal))
+                            .ToList();
+        }
+
+        return _routineKeysByBaseName.TryGetValue(key: baseName, value: out List<string>? keys)
+            ? keys
+            : [];
+    }
 
     /// <summary>The routine registered under <paramref name="registryKey"/> (its <see cref="RoutineInfo.RegistryKey"/>),
     /// or null.</summary>

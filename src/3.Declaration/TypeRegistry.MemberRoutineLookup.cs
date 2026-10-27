@@ -208,7 +208,7 @@ public sealed partial class TypeRegistry
         bool bareExists = _routines.TryGetValue(key: baseName, value: out RoutineInfo? existingBare);
         if (!bareExists || (existingBare!.IsForeign && !routine.IsForeign))
         {
-            _routines[key: baseName] = routine;
+            SetRoutineEntry(key: baseName, routine: routine);
         }
 
         // A foreign routine is ALSO indexed under its realm-qualified base name (`LLVM::atan2`) so an
@@ -222,7 +222,7 @@ public sealed partial class TypeRegistry
             string qualifiedBase = $"{realmTag}::{baseName}";
             if (!_routines.ContainsKey(key: qualifiedBase))
             {
-                _routines[key: qualifiedBase] = routine;
+                SetRoutineEntry(key: qualifiedBase, routine: routine);
             }
         }
 
@@ -286,12 +286,12 @@ public sealed partial class TypeRegistry
             bool incomingIsSynthetic = routine.IsSynthesized;
             if (!(existingIsUser && incomingIsSynthetic))
             {
-                _routines[key: registryKey] = routine;
+                SetRoutineEntry(key: registryKey, routine: routine);
             }
         }
         else
         {
-            _routines[key: registryKey] = routine;
+            SetRoutineEntry(key: registryKey, routine: routine);
         }
     }
 
@@ -535,15 +535,9 @@ public sealed partial class TypeRegistry
     /// </summary>
     internal RoutineInfo? LookupOverloadNeedingRepair(string baseName, List<ParamInfo> resolvedParams)
     {
-        string prefix = baseName + "#";
-        foreach ((string key, RoutineInfo r) in _routines)
+        foreach (string key in RoutineKeysWithBaseName(baseName: baseName))
         {
-            if (key != baseName &&
-                !key.StartsWith(value: prefix, comparisonType: StringComparison.Ordinal))
-            {
-                continue;
-            }
-
+            RoutineInfo r = _routines[key: key];
             if (r.Parameters.Count != resolvedParams.Count ||
                 r.Parameters.All(predicate: p => p.Type is not ErrorTypeSymbol))
             {
@@ -589,12 +583,7 @@ public sealed partial class TypeRegistry
     /// correct for a lone overload.</summary>
     private bool HasMultipleRegisteredOverloads(string baseName)
     {
-        string prefix = baseName + "#";
-        return _routines.Keys
-                        .Where(predicate: k => k == baseName || k.StartsWith(value: prefix,
-                             comparisonType: StringComparison.Ordinal))
-                        .Skip(count: 1)
-                        .Any();
+        return RoutineKeysWithBaseName(baseName: baseName).Count > 1;
     }
 
     /// <summary>
@@ -916,13 +905,13 @@ public sealed partial class TypeRegistry
         };
 
         // Replace base name entry
-        _routines[key: baseName] = updatedRoutine;
+        SetRoutineEntry(key: baseName, routine: updatedRoutine);
 
         // Register with resolved RegistryKey for overload-specific lookup
         string registryKey = updatedRoutine.RegistryKey;
         if (registryKey != baseName)
         {
-            _routines[key: registryKey] = updatedRoutine;
+            SetRoutineEntry(key: registryKey, routine: updatedRoutine);
         }
 
         // Update the module-qualified name index
