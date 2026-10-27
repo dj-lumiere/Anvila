@@ -1118,6 +1118,12 @@ public abstract class AstRewriter
     protected virtual Expression VisitGenericMemberRoutineCall(
         GenericMemberRoutineCallExpression e)
     {
+        // A call of an element (`fs[0]()`) is the call of the indexed value after analysis.
+        if (e.ElementCall is { } elementCall)
+        {
+            return VisitExpression(expr: elementCall);
+        }
+
         Expression o = VisitExpression(expr: e.Object);
         List<Expression> args = RewriteList(items: e.Arguments, rewrite: VisitExpression);
         return ReferenceEquals(objA: o, objB: e.Object) &&

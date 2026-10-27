@@ -96,7 +96,7 @@ internal static class BracketReclassifyPass
                 TypeArguments: typeArgs,
                 Arguments: node.CallArgs,
                 IsMemoryOperation: node.IsFailable,
-                Location: node.Location) { IsFree = free };
+                Location: node.Location) { IsFree = free, BracketArguments = node.Args };
         }
 
         return new GenericMemberExpression(Object: receiver,

@@ -334,6 +334,12 @@ public partial class LlvmEmitter
                     ResolvedRoutine: call.ResolvedRoutine,
                     ResolvedReturnType: call.ResolvedType,
                     TypeArguments: call.TypeArguments) { IsFailable = call.IsFailable }),
+            // A call of a routine value another expression gives (`fs[0]()`, the element read lowered to its
+            // getitem call): the value is computed, then called through.
+            { ResolvedType: RoutineTypeSymbol valueType } callee => EmitFatRoutineIndirectCall(sb: sb,
+                fatVal: EmitExpression(sb: sb, expr: callee),
+                routineType: valueType,
+                arguments: call.Arguments),
             _ => throw new NotImplementedException(
                 message: $"Cannot emit call for callee type: {call.Callee.GetType().Name}")
         };

@@ -538,6 +538,12 @@ public static class AstWalker
     private static IEnumerable<object> GenericMemberRoutineCallExpressionChildren(
         GenericMemberRoutineCallExpression e)
     {
+        if (e.ElementCall is { } elementCall)
+        {
+            yield return elementCall;
+            yield break;
+        }
+
         yield return e.Object;
         foreach (TypeExpression t in e.TypeArguments)
         {

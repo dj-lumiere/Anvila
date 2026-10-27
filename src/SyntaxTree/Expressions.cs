@@ -1192,6 +1192,18 @@ public record GenericMemberRoutineCallExpression(
     /// The target type being constructed by this generic call, when applicable.
     /// </summary>
     public TypeSymbol? ConstructedType { get; set; }
+
+    /// <summary>
+    /// The bracket contents as the parser read them, as expressions: <c>0</c> and <c>i</c> in <c>fs[0]()</c> and
+    /// <c>fs[i]()</c>. Analysis reads them when the name before the bracket is a value, not a routine.
+    /// </summary>
+    public List<Expression>? BracketArguments { get; init; }
+
+    /// <summary>
+    /// Set by analysis when the call is a call of an element (<c>fs[0]()</c> with <c>fs</c> a list of routine values):
+    /// the call of the indexed value, which takes this node's place in every pass after analysis.
+    /// </summary>
+    public CallExpression? ElementCall { get; set; }
 }
 
 /// <summary>

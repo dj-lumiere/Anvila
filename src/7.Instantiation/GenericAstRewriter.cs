@@ -1451,6 +1451,9 @@ internal static class GenericAstRewriter
         {
             TypeExpression te => RewriteType(type: te, ctx: ctx),
 
+            GenericMemberRoutineCallExpression { ElementCall: { } elementCall } =>
+                RewriteExpression(expr: elementCall, ctx: ctx),
+
             GenericMemberRoutineCallExpression gmc => CarryGmcMutableProps(
                 clone: gmc with
                 {

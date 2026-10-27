@@ -113,12 +113,13 @@ public partial class LlvmEmitter
         // require the element type to match EXACTLY, so a named value into a structural-element array is a
         // hard type error. Rebuild the array type from the element's own GetLlvmType (the single source of
         // truth for the named form) so element positions everywhere — literal, param, alloca — agree.
+        // A routine value element is the fat pair, not the `ptr` the template spells for it.
         // Scalars/wrappers are skipped (their structural form already equals their named form).
         if (type is RecordTypeSymbol
             {
                 IsGenericResolution: true,
                 BackendType: ['[', ..],
-                TypeArguments: [RecordTypeSymbol or VariantTypeSymbol, ConstGenericValueTypeSymbol]
+                TypeArguments: [RecordTypeSymbol or VariantTypeSymbol or RoutineTypeSymbol, ConstGenericValueTypeSymbol]
             } arrayType)
         {
             TypeSymbol elem = arrayType.TypeArguments![index: 0];

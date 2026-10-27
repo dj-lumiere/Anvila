@@ -12,12 +12,83 @@ public sealed partial class SemanticVerifier
     private TypeSymbol AnalyzeGenericMemberRoutineCallExpression(
         GenericMemberRoutineCallExpression generic)
     {
+        if (ElementCallOf(generic: generic) is { } elementCall)
+        {
+            generic.ElementCall = elementCall;
+            return AnalyzeExpression(expression: elementCall);
+        }
+
         TypeSymbol result = AnalyzeGenericMemberRoutineCallExpressionCore(generic: generic);
         // A generic call (`make_channel[S64](capacity: 4)`, `obj.method[T](..)`) resolves through a path distinct from
         // the plain-call analyzer, so the Suflae unsafe-call gate is applied here too on its resolved routine.
         EnforceUnsafeCallAllowed(resolved: generic.ResolvedRoutine, location: generic.Location);
         ReportNotRebuildableFromSerial(generic: generic, target: result);
         return result;
+    }
+
+    /// <summary>
+    /// The call of an element a bracket call stands for: <c>fs[0]()</c> where <c>fs</c> is a variable (or
+    /// <c>o.fs[0]()</c> where <c>fs</c> is a member variable of the variable <c>o</c>'s type and no member routine of
+    /// that name exists) calls the value at that index, so it is <c>(fs[0])()</c>. Null for a generic call
+    /// (<c>to[S64]()</c>, <c>identity[S64](x)</c>), and once analysis decided (the decision is kept on the node).
+    /// </summary>
+    private CallExpression? ElementCallOf(GenericMemberRoutineCallExpression generic)
+    {
+        if (generic.ElementCall is { } decided)
+        {
+            return decided;
+        }
+
+        if (generic is not { BracketArguments: [var index], IsMemoryOperation: false })
+        {
+            return null;
+        }
+
+        Expression? indexed = null;
+        if (generic is { IsFree: true, Object: IdentifierExpression name } &&
+            _registry.LookupVariable(name: name.Name) != null)
+        {
+            indexed = name;
+        }
+        else if (generic is { IsFree: false, Object: IdentifierExpression owner } &&
+                 ReceiverTypeWithoutAnalysis(receiver: owner) is { } ownerType &&
+                 MemberVariableNamed(type: ownerType, name: generic.MemberRoutineName) &&
+                 _registry.GetMemberRoutinesForType(type: ownerType)
+                          .All(predicate: r => r.Name != generic.MemberRoutineName))
+        {
+            indexed = new MemberExpression(Object: owner, MemberName: generic.MemberRoutineName,
+                Location: generic.Location);
+        }
+
+        return indexed == null
+            ? null
+            : new CallExpression(Callee: new IndexExpression(Object: indexed, Index: index, Location: generic.Location),
+                Arguments: generic.Arguments,
+                Location: generic.Location);
+    }
+
+    /// <summary>The type of a receiver that is a name, read from its declaration without analyzing it: a variable's
+    /// type, or <c>me</c> in a member routine. A token stands for the value it reaches.</summary>
+    private TypeSymbol? ReceiverTypeWithoutAnalysis(IdentifierExpression receiver)
+    {
+        TypeSymbol? type = receiver.Name == "me"
+            ? _currentType != null || _currentRoutine?.OwnerType != null
+                ? TryResolveSpecialIdentifier(id: receiver, result: out TypeSymbol? me) ? me : null
+                : null
+            : _registry.LookupVariable(name: receiver.Name)?.Type;
+        return type != null && IsAccessToken(type: type) && type.TypeArguments is [{ } reached] ? reached : type;
+    }
+
+    /// <summary>Whether <paramref name="type"/> (a record or an entity) has a member variable named
+    /// <paramref name="name"/>.</summary>
+    private static bool MemberVariableNamed(TypeSymbol type, string name)
+    {
+        return type switch
+        {
+            EntityTypeSymbol entity => entity.LookupMemberVariable(memberVariableName: name) != null,
+            RecordTypeSymbol record => record.LookupMemberVariable(memberVariableName: name) != null,
+            _ => false
+        };
     }
 
     /// <summary>
