@@ -128,10 +128,39 @@ public static class StdlibSnapshotCache
 
             File.Move(sourceFileName: tmp, destFileName: path, overwrite: true);
             log?.Invoke(obj: $"wrote {Path.GetFileName(path: path)}");
+            DeleteOlderSnapshots(path: path);
         }
         catch (Exception ex)
         {
             log?.Invoke(obj: $"prebuilt save failed ({ex.Message})");
+        }
+    }
+
+    /// <summary>Deletes the other snapshots of the language <paramref name="path"/> was written for: each names the
+    /// hash of the library and builder it was made from, so once a new one is written the older ones are never
+    /// read again. A snapshot another process has open stays (it is deleted after the next write).</summary>
+    private static void DeleteOlderSnapshots(string path)
+    {
+        string name = Path.GetFileName(path: path);
+        // `stdlib-{language}-{hash}{extension}`: the language's files share everything up to the hash.
+        string prefix = name[..(name.LastIndexOf(value: '-') + 1)];
+        string extension = Path.GetExtension(path: path);
+        foreach (string other in Directory.GetFiles(path: Path.GetDirectoryName(path: path)!,
+                     searchPattern: $"{prefix}*{extension}"))
+        {
+            if (string.Equals(a: Path.GetFileName(path: other), b: name, comparisonType: StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                File.Delete(path: other);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Still open in another process: the next write deletes it.
+            }
         }
     }
 
