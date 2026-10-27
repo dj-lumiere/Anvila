@@ -782,6 +782,15 @@ public partial class Parser
                 : declaration;
         }
 
+        // An entity with an `@llvm` layout (`Slots[T, COUNT]`) is laid out in place: it has no member variables of its
+        // own, so its body is a record's, kept as an entity.
+        if (Check(type: TokenType.Entity) && annotations.Any(predicate: a => a.StartsWith(value: "llvm(",
+                comparisonType: StringComparison.Ordinal)))
+        {
+            Advance();
+            return ParseRecordDeclaration(visibility: visibility, annotations: annotations) with { IsInPlaceEntity = true };
+        }
+
         if (CheckAndAdvance(type: TokenType.Entity))
         {
             return Bound(declaration: ParseEntityDeclaration(visibility: visibility));
@@ -792,9 +801,18 @@ public partial class Parser
             return ParseRecordDeclaration(visibility: visibility, annotations: annotations);
         }
 
-        if (CheckAndAdvance(type: TokenType.Bundle))
+        if (Check(type: TokenType.Bundle))
         {
-            return ParseRecordDeclaration(visibility: visibility, annotations: annotations) with { IsBundle = true };
+            Token word = CurrentToken;
+            RecordError(ex: ThrowParseError(code: GrammarDiagnosticCode.BundleKeyword,
+                message: "`bundle` is not a keyword. A named type is a `record` when it holds only values (a type " +
+                         "parameter it holds by value then takes `needs RecordType T`), or an `entity` when it may hold " +
+                         "an entity. `migrate --step bundle` rewrites each one.",
+                fix: new SuggestedFix(Title: "Write 'record'",
+                    Edits: [new TextEdit(StartLine: word.Line, StartColumn: word.Column, EndLine: word.Line,
+                        EndColumn: word.Column + word.Text.Length, NewText: "record")])));
+            Advance();
+            return ParseRecordDeclaration(visibility: visibility, annotations: annotations);
         }
 
         if (CheckAndAdvance(type: TokenType.Choice))
@@ -1010,7 +1028,9 @@ public partial class Parser
                                                          language: _language)) &&
                                                     CurrentToken.Type == TokenType.Entity))
                                               .ToList();
-        RejectNoEffect(when: ineffective.Count > 0 && CurrentToken.Type is not (TokenType.Record or TokenType.Bundle),
+        RejectNoEffect(when: ineffective.Count > 0 && CurrentToken.Type is not (TokenType.Record or TokenType.Bundle) &&
+                             !(CurrentToken.Type == TokenType.Entity &&
+                               ineffective.All(predicate: a => a.StartsWith(value: "llvm(", comparisonType: StringComparison.Ordinal))),
             at: CurrentToken,
             message: $"An annotation ({string.Join(separator: ", ", values: ineffective.Select(selector: a => "@" + a))}) " +
                      $"has no effect on {kind}. Remove it.");

@@ -218,6 +218,10 @@ public enum GrammarDiagnosticCode
     /// so only one of them can stand.</summary>
     InlineAndNoinline = 227,
 
+    /// <summary>The <c>bundle</c> keyword: a named type is a <c>record</c> (values only, copied by <c>=</c>) or an
+    /// <c>entity</c> (kept in one place). <c>migrate --step bundle</c> rewrites each one.</summary>
+    BundleKeyword = 228,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

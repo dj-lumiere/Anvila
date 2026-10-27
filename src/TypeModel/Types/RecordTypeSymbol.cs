@@ -244,11 +244,11 @@ public class RecordTypeSymbol : TypeSymbol
     public CarrierKind CarrierKind { get; init; } = CarrierKind.None;
 
     /// <summary>
-    /// Declared <c>bundle</c>: a generic aggregate whose kind each instantiation decides. An instance holding only
-    /// values is a value; one holding an entity is single-owner. A plain <c>record</c> is always a value, so it may
-    /// hold neither an entity nor a type parameter that could be one.
+    /// Declared <c>entity</c> with an <c>@llvm</c> layout (<c>Slots[T, COUNT]</c>): an entity whose storage is laid
+    /// out in place, where it is kept, rather than behind a pointer. Every instance is kept in one place like any
+    /// entity (never copied by <c>=</c>, handed over with <c>steal</c>), whatever its type arguments hold.
     /// </summary>
-    public bool IsBundle { get; init; }
+    public bool IsInPlaceEntity { get; init; }
 
     /// <summary>
     /// For generic definitions, the original generic type this was resolved from.
@@ -328,7 +328,7 @@ public class RecordTypeSymbol : TypeSymbol
             TypeArguments = typeArguments,
             GenericDefinition = this,
             CarrierKind = CarrierKind,
-            IsBundle = IsBundle,
+            IsInPlaceEntity = IsInPlaceEntity,
             BackendType =
                 ResolveBackendTypeTemplate(template: BackendType,
                     genericParams: GenericParameters,

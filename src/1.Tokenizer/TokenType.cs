@@ -251,9 +251,8 @@ public enum TokenType
     Record,
 
     /// <summary>
-    /// Bundle declaration keyword: a generic aggregate whose kind each instantiation decides. An instance whose
-    /// member variables are all values is a value (like a record); one that holds an entity is single-owner (like
-    /// an entity).
+    /// The word <c>bundle</c>: not a declaration keyword (a named type is a <c>record</c> or an <c>entity</c>). It
+    /// stays a token so the parser can say so (RF-G228) and <c>migrate --step bundle</c> can find it.
     /// </summary>
     Bundle,
 

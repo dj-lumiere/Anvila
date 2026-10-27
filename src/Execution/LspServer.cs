@@ -994,7 +994,7 @@ public static class LspServer
 
     private static readonly System.Text.RegularExpressions.Regex DeclarationWords = new(
         pattern: @"^(?:(?:secret|posted|external|dangerous|common)\s+)*" +
-                 @"(?:routine|record|entity|bundle|variant|protocol|choice|flags|crashable)\s+");
+                 @"(?:routine|record|entity|variant|protocol|choice|flags|crashable)\s+");
 
     /// <summary>
     /// The declaration's first line with each bound generic parameter written out (<c>List[Point].add_last(value:
@@ -1341,7 +1341,7 @@ public static class LspServer
             ChoiceTypeSymbol => "choice",
             FlagsTypeSymbol => "flags",
             TupleTypeSymbol => null,
-            RecordTypeSymbol { IsBundle: true } => "bundle",
+            RecordTypeSymbol { IsInPlaceEntity: true } => "entity",
             RecordTypeSymbol => "record",
             ProtocolTypeSymbol => "protocol",
             GenericParameterTypeSymbol or AssociatedProjectionTypeSymbol or ProtocolSelfTypeSymbol => "type parameter",
@@ -1592,7 +1592,7 @@ public static class LspServer
     }
 
     /// <summary>
-    /// What a bundle instance or a variant turned out to be, for the hovered token: <c>RecordType</c> when it holds
+    /// What a carrier instance or a variant turned out to be, for the hovered token: <c>RecordType</c> when it holds
     /// only values, <c>EntityType</c> when it holds an entity, the kinds a <c>needs</c> clause names. The type is the
     /// one the generic bindings are read from: a call's receiver or the type it makes, else the variable's or
     /// expression's type. Null for any other type, or one whose kind its type parameters still leave open.
@@ -1614,7 +1614,7 @@ public static class LspServer
         TypeSymbol? decides = subject == null
             ? null
             : Rules.SurfaceType(type: subject);
-        if (decides is not (RecordTypeSymbol { IsBundle: true } or RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None } or
+        if (decides is not (RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None } or
                 VariantTypeSymbol))
         {
             return null;
@@ -1952,7 +1952,7 @@ public static class LspServer
         // The structure of a `###` doc comment: a field (`:param`, `:returns:`) and a field's name or a `{Reference}`.
         "docTag", // 17
         "docValue", // 18
-        "bundleType" // 19: a bundle whose kind is not decided yet (its declaration, or an instance over a parameter)
+        "bundleType" // 19: a carrier or variant whose kind is not decided yet (its declaration, or an instance over a parameter)
     };
 
     private static int SemTok(string name)
@@ -3313,8 +3313,8 @@ public static class LspServer
         }
         string? kind = declaration switch
         {
-            // A bundle's declaration is every instantiation at once: its kind is not decided there.
-            RecordDeclaration { IsBundle: true } => "bundleType",
+            // An entity laid out in place (`Slots`) is an entity like any other.
+            RecordDeclaration { IsInPlaceEntity: true } => "entityType",
             RecordDeclaration or ChoiceDeclaration or FlagsDeclaration or CrashableDeclaration => "recordType",
             EntityDeclaration => "entityType",
             ProtocolDeclaration => "interface",
@@ -3646,7 +3646,7 @@ public static class LspServer
 
     /// <summary>
     /// The token kind of a type, as the served language's user knows it. A crashable reads as a record (it is
-    /// checked before entity, which it extends), a variant or a bundle is an entity when it holds one, a routine type
+    /// checked before entity, which it extends), a variant or a carrier is an entity when it holds one, a routine type
     /// is a value like a record, and <c>Me</c> or an associated type stands for a type the way a generic
     /// parameter does.
     /// </summary>
@@ -3659,8 +3659,9 @@ public static class LspServer
             VariantTypeSymbol variant => HoldsEntity(type: variant)
                 ? "entityType"
                 : "recordType",
-            // A bundle is what its instantiation makes it: single-owner when it holds an entity, a value when it holds
-            // none. Its declaration, and an instance over a type parameter, decide nothing yet.
+            RecordTypeSymbol { IsInPlaceEntity: true } => "entityType",
+            // A carrier is what its instantiation makes it: an entity when it holds one, a value when it holds none.
+            // Its declaration, and an instance over a type parameter, decide nothing yet.
             RecordTypeSymbol bundle when IsBundleLike(record: bundle) => HoldsEntity(type: bundle) ? "entityType"
                 : MayHoldEntity(type: bundle) ? "bundleType"
                 : "recordType",
@@ -3671,14 +3672,14 @@ public static class LspServer
         };
     }
 
-    /// <summary>A record whose kind follows its type arguments: a declared <c>bundle</c>, or a carrier
-    /// (<c>Maybe</c>, <c>Check</c>, <c>Lookup</c>), which the builder treats the same way.</summary>
+    /// <summary>A record whose kind follows its type arguments: a carrier (<c>Maybe</c>, <c>Check</c>,
+    /// <c>Lookup</c>), which is a variant of its value type and <c>None</c> or an error.</summary>
     private static bool IsBundleLike(RecordTypeSymbol record)
     {
-        return record.IsBundle || record.CarrierKind != TypeModel.Enums.CarrierKind.None;
+        return record.CarrierKind != TypeModel.Enums.CarrierKind.None;
     }
 
-    /// <summary>Whether a bundle's kind is still open: it is the declaration itself, or a type argument it holds by value
+    /// <summary>Whether a carrier's kind is still open: it is the declaration itself, or a type argument it holds by value
     /// is a type parameter (which may stand for an entity).</summary>
     private static bool MayHoldEntity(TypeSymbol type)
     {
@@ -3695,7 +3696,7 @@ public static class LspServer
 
     /// <summary>
     /// Whether a value of this type holds an entity by value: it is one, or a variant member, a tuple element, or a
-    /// bundle's type argument does (a bundle's kind follows its arguments). Behind a handle or inside a record it
+    /// carrier's type argument does (a carrier's kind follows its arguments). Behind a handle or inside a record it
     /// does not.
     /// </summary>
     private static bool HoldsEntity(TypeSymbol type)

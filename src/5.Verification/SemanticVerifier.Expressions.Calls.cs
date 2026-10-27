@@ -319,7 +319,10 @@ public sealed partial class SemanticVerifier
             return false;
         }
 
-        TypeSymbol? arrayDef = _registry.LookupType(name: "Array");
+        // The pack is the parameter's own type (`Slots`, or `Array` in Suflae), as the declaration desugared it.
+        TypeSymbol? arrayDef = routine.Parameters[index: variadicIndex].Type is RecordTypeSymbol { GenericDefinition: { } packDef }
+            ? packDef
+            : _registry.LookupType(name: Builder.Declaration.VariadicParamDesugar.PackTypeName);
         if (arrayDef == null)
         {
             return false;

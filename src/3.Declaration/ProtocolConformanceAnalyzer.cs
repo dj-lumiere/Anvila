@@ -260,7 +260,7 @@ internal sealed class ProtocolConformanceAnalyzer
     }
 
     /// <summary>
-    /// Places <c>Copyable</c> on a generic record or bundle DEFINITION (<c>Pair[T]</c>, <c>DictEntry[K, V]</c>) on the
+    /// Places <c>Copyable</c> on a generic record DEFINITION (<c>Pair[T]</c>) on the
     /// condition that each parameter a field holds is <c>Copyable</c> too (<c>Copyable when T obeys Copyable</c>). An
     /// instance made later folds in its definition's protocols, so it has <c>duplicate()</c> exactly when its
     /// arguments do. A field of another type must be <c>Copyable</c> itself, or the definition is left alone.

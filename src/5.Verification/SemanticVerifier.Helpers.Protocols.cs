@@ -289,7 +289,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>The whole type a constraint names, its type arguments read through <paramref name="bindings"/>
-    /// (<c>Iterable[DictEntry[K, V]]</c>). Null when a part is unknown or still a type parameter.</summary>
+    /// (<c>Iterable[(K, V)]</c>). Null when a part is unknown or still a type parameter.</summary>
     private TypeSymbol? ConstraintTypeOf(TypeExpression expression, Dictionary<string, TypeSymbol> bindings)
     {
         if (expression.GenericArguments is not { Count: > 0 } arguments)
@@ -300,7 +300,9 @@ public sealed partial class SemanticVerifier
                 : null;
         }
 
-        if (LookupTypeWithImports(name: expression.Name) is not { } definition)
+        // A tuple (`Iterable[(K, V)]`) is no registered generic definition: it is built from its items.
+        TypeSymbol? definition = expression.Name == "Tuple" ? null : LookupTypeWithImports(name: expression.Name);
+        if (definition == null && expression.Name != "Tuple")
         {
             return null;
         }
@@ -316,7 +318,9 @@ public sealed partial class SemanticVerifier
             resolvedArguments.Add(item: resolvedArgument);
         }
 
-        return _registry.GetOrCreateResolution(genericDef: definition, typeArguments: resolvedArguments);
+        return definition == null
+            ? _registry.GetOrCreateTupleType(elementTypes: resolvedArguments)
+            : _registry.GetOrCreateResolution(genericDef: definition, typeArguments: resolvedArguments);
     }
 
     /// <summary>A type's name with its type arguments, each without its module (<c>List[Text]</c>).</summary>

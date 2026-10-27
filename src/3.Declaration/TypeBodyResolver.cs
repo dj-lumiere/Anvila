@@ -112,14 +112,6 @@ internal sealed class TypeBodyResolver
 
     private void ResolveRecordBody(RecordDeclaration record)
     {
-        if (record.IsBundle && record.GenericParameters is not { Count: > 0 })
-        {
-            _sa.ReportError(code: SemanticDiagnosticCode.BundleWithoutParameters,
-                message: $"'{record.Name}' is a bundle with no type parameters, so its kind never varies. Declare it " +
-                         $"'record {record.Name}' if it holds only values, or 'entity {record.Name}' if it holds an entity.",
-                location: record.Location);
-        }
-
         if (record.Members.Count == 0 && !record.HasNothingBody)
         {
             ReportEmptyTypeBody(kind: "record", name: record.Name, location: record.Location);
@@ -189,13 +181,13 @@ internal sealed class TypeBodyResolver
 
     /// <summary>
     /// A <c>record</c> is a value: it is copied, and a copy of one that held an entity would make two of the one
-    /// entity. So a record may hold neither an entity nor a type parameter that could be one (RF-S409). A
-    /// <c>bundle</c>, whose instances holding an entity are single-owner, may. Ownership is RazorForge's, so the
-    /// rule is RazorForge's (in Suflae an entity is shared, and a record holding one copies the handle).
+    /// entity. So a record may hold neither an entity nor a type parameter that could be one (RF-S409). An entity
+    /// laid out in place (<c>Slots</c>) is kept in one place, so it may. The rule is RazorForge's (in Suflae an entity
+    /// is shared, and a record holding one copies the handle).
     /// </summary>
     private void CheckRecordHoldsNoEntity(RecordDeclaration record, VariableDeclaration memberVariable, TypeSymbol type)
     {
-        if (record.IsBundle || !_sa._registry.Rules.ChecksOwnership ||
+        if (record.IsInPlaceEntity || !_sa._registry.Rules.ChecksOwnership ||
             _sa._currentType is RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None })
         {
             return;
@@ -210,9 +202,8 @@ internal sealed class TypeBodyResolver
         _sa.ReportError(code: SemanticDiagnosticCode.RecordHoldsEntity,
             message: parameter != null
                 ? $"'{record.Name}' is a record, which is copied, and its member variable '{memberVariable.Name}' holds " +
-                  $"'{parameter}', which may be an entity: a copy would make two of the one entity. Declare it " +
-                  $"'bundle {record.Name}' (an instance holding an entity is then single-owner), or keep '{parameter}' " +
-                  $"to values with 'needs RecordType {parameter}'."
+                  $"'{parameter}', which may be an entity: a copy would make two of the one entity. Keep '{parameter}' " +
+                  $"to values with 'needs RecordType {parameter}', or declare '{record.Name}' as an entity."
                 : $"'{record.Name}' is a record, which is copied, and its member variable '{memberVariable.Name}' holds " +
                   $"the entity '{type.Name}': a copy would make two of it. Declare '{record.Name}' as an entity, or " +
                   $"hold a handle that can be copied, such as 'Retained[{type.Name}]'.",

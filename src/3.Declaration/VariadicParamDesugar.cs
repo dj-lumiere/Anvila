@@ -5,7 +5,7 @@ namespace Builder.Declaration;
 
 /// <summary>
 /// Desugars a homogeneous variadic parameter <c>nums...: T</c> into a const-generic
-/// <c>Array[T, __VarargN]</c> parameter plus an implicit <c>[__VarargN]</c> generic and a
+/// <c>Slots[T, __VarargN]</c> parameter (the arguments handed to the routine, kept in one place, entities included) plus an implicit <c>[__VarargN]</c> generic and a
 /// <c>needs __VarargN is U64</c> constraint. This turns a variadic routine into an ordinary
 /// const-generic template: a call site with <c>K</c> trailing arguments packs them into an
 /// <c>Array[T, K]</c> literal (see the call-site lowering) and binds <c>__VarargN = K</c>, so the
@@ -88,9 +88,13 @@ public static class VariadicParamDesugar
             [new TypeExpression(Name: "U64", GenericArguments: null, Location: param.Location)],
             Location: param.Location));
 
-        // nums: T   ->   nums: Array[T, __VarargN]. Array is a `module System` primitive (auto-imported),
-        // so a bare reference resolves via the import-gated System prefix in every file.
-        var arrayType = new TypeExpression(Name: "Array",
+        // nums: T   ->   nums: Slots[T, __VarargN]. Slots holds any T (the arguments may be entities), and is a
+        // `module System` type (auto-imported), so a bare reference resolves in every file.
+        // Suflae has no `Slots` (an entity there is a shared handle, which an `Array` holds as a value).
+        string pack = param.Location.FileName.EndsWith(value: ".sf", comparisonType: StringComparison.Ordinal)
+            ? "Array"
+            : PackTypeName;
+        var arrayType = new TypeExpression(Name: pack,
             GenericArguments:
             [
                 param.Type!,
@@ -105,10 +109,13 @@ public static class VariadicParamDesugar
         return param with { Type = arrayType };
     }
 
-    /// <summary>A variadic param is already desugared when its type is <c>Array[_, __Vararg…]</c>.</summary>
+    /// <summary>The type the arguments of a variadic parameter are packed into.</summary>
+    internal const string PackTypeName = "Slots";
+
+    /// <summary>A variadic param is already desugared when its type is <c>Slots[_, __Vararg…]</c>.</summary>
     private static bool IsAlreadyDesugared(TypeExpression paramType)
     {
-        return paramType is { Name: "Array", GenericArguments: [_, { Name: var n }] } &&
+        return paramType is { Name: PackTypeName or "Array", GenericArguments: [_, { Name: var n }] } &&
                n.StartsWith(value: VarargGenericPrefix);
     }
 

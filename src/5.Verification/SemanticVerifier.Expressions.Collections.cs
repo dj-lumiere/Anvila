@@ -88,8 +88,10 @@ public sealed partial class SemanticVerifier
         TypeSymbol elementType = list.ElementType is { } written
             ? ResolveType(typeExpr: written)
             : AnalyzeExpression(expression: list.Elements[index: 0]);
+        // The elements decide the kind: values make an `Array`, an element that is or holds an entity a `Slots`.
+        string kind = _registry.IsEntityKind(type: elementType) ? CollectionNameSlots : CollectionNameArray;
         if (length is ErrorTypeSymbol || elementType is ErrorTypeSymbol ||
-            _registry.LookupType(name: CollectionNameArray) is not { } arrayDef)
+            _registry.LookupType(name: kind) is not { } arrayDef)
         {
             return null;
         }
@@ -151,7 +153,7 @@ public sealed partial class SemanticVerifier
         string? expectedBaseName)
     {
         if (collectionExpectedType is { IsGenericResolution: true, TypeArguments.Count: >= 1 } &&
-            expectedBaseName is "List" or "RotatableList" or "SortedList" or CollectionNameArray)
+            expectedBaseName is "List" or "RotatableList" or "SortedList" or CollectionNameArray or CollectionNameSlots)
         {
             return collectionExpectedType.TypeArguments[index: 0];
         }
@@ -193,7 +195,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The type arguments with which the collection a literal builds by default (<c>List</c>, <c>Set</c>,
     /// <c>Dict</c>) obeys the expected protocol <paramref name="expected"/>: <c>[S64]</c> for a list literal where an
-    /// <c>Iterable[S64]</c> is expected, <c>[K, V]</c> for a dict literal where an <c>Iterable[DictEntry[K, V]]</c>
+    /// <c>Iterable[S64]</c> is expected, <c>[K, V]</c> for a dict literal where an <c>Iterable[(K, V)]</c>
     /// is expected. The literal's elements then take those types, the way a bare number takes the type it goes to.
     /// Null when the expected type is no protocol or the collection does not obey it with every argument fixed.
     /// </summary>
@@ -235,7 +237,18 @@ public sealed partial class SemanticVerifier
         return null;
     }
 
-    /// <summary>Matches a type written with type parameters (<c>Iterable[DictEntry[TKey, TValue]]</c>) against a
+    /// <summary>The items of a tuple type, or null for any other type.</summary>
+    private static IReadOnlyList<TypeSymbol>? TupleItems(TypeSymbol type)
+    {
+        return type switch
+        {
+            TupleTypeSymbol tuple => tuple.ElementTypes,
+            { BareName: "Tuple", TypeArguments: { Count: > 0 } items } => items,
+            _ => null
+        };
+    }
+
+    /// <summary>Matches a type written with type parameters (<c>Iterable[(TKey, TValue)]</c>) against a
     /// concrete one, recording what each parameter stands for. False on any mismatch.</summary>
     private static bool UnifyLiteralPattern(TypeSymbol pattern, TypeSymbol concrete,
         Dictionary<string, TypeSymbol> bindings)
@@ -254,6 +267,15 @@ public sealed partial class SemanticVerifier
 
             bindings[key: parameter.Name] = concrete;
             return true;
+        }
+
+        // A tuple (`Iterable[(TKey, TValue)]`) matches item by item, whichever way each side spells its items.
+        if (TupleItems(type: pattern) is { } patternItems)
+        {
+            return TupleItems(type: concrete) is { } concreteItems && patternItems.Count == concreteItems.Count &&
+                   patternItems.Zip(second: concreteItems)
+                               .All(predicate: pair => UnifyLiteralPattern(pattern: pair.First, concrete: pair.Second,
+                                    bindings: bindings));
         }
 
         IReadOnlyList<TypeSymbol> patternArguments = pattern.TypeArguments ?? [];
@@ -359,7 +381,7 @@ public sealed partial class SemanticVerifier
     private void ValidateListFixedArity(ListLiteralExpression list, string? expectedBaseName,
         TypeSymbol? collectionExpectedType)
     {
-        if (expectedBaseName == CollectionNameArray && collectionExpectedType?.TypeArguments is
+        if (expectedBaseName is CollectionNameArray or CollectionNameSlots && collectionExpectedType?.TypeArguments is
                 { Count: >= 2 })
         {
             long? expectedCount =
@@ -368,7 +390,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.ArgumentCountMismatch,
                     message:
-                    $"Array[{collectionExpectedType.TypeArguments[index: 0].Name}, {expectedCount.Value}] literal requires exactly {expectedCount.Value} elements, got {list.Elements.Count}.",
+                    $"{expectedBaseName}[{collectionExpectedType.TypeArguments[index: 0].Name}, {expectedCount.Value}] literal requires exactly {expectedCount.Value} elements, got {list.Elements.Count}.",
                     location: list.Location);
             }
         }
@@ -396,7 +418,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol? collectionExpectedType, TypeSymbol? elementType)
     {
         if (expectedType != null && (expectedBaseName is "List" or "RotatableList" or "SortedList"
-                or "BitList" or CollectionNameArray or CollectionNameBitArray ||
+                or "BitList" or CollectionNameArray or CollectionNameSlots or CollectionNameBitArray ||
             LiteralConformanceArguments(type: collectionExpectedType, literalProtocol: ListLiteralProtocol) != null))
         {
             return LiteralTypeFromExpected(expectedType: expectedType,
@@ -420,7 +442,7 @@ public sealed partial class SemanticVerifier
     /// node (<see cref="Expression.ResolvedLiteralBuilder"/>). No-op for the inline `Array`/`BitArray`
     /// literals (pure insertvalue) or a type with no variadic `from_literal`. The element type of the
     /// builder's `Array[E, K]` parameter is <paramref name="builderElementType"/> (T for list/set,
-    /// DictEntry[K, V] for dicts).
+    /// the tuple (K, V) for dicts).
     /// </summary>
     private void ResolveLiteralBuilder(Expression literal, TypeSymbol resultType,
         TypeSymbol? builderElementType, int elementCount)
@@ -432,7 +454,7 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol collectionType = UnwrapCollectionLiteralExpectedType(type: resultType);
         string? baseName = GetTypeBaseName(type: collectionType);
-        if (baseName is CollectionNameArray or CollectionNameBitArray or null)
+        if (baseName is CollectionNameArray or CollectionNameSlots or CollectionNameBitArray or null)
         {
             return;
         }
@@ -443,7 +465,10 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        TypeSymbol? arrayDef = _registry.LookupType(name: "Array");
+        TypeSymbol? arrayDef = builder.Parameters.FirstOrDefault(predicate: p => p.IsVariadicParam)?.Type is
+            RecordTypeSymbol { GenericDefinition: { } packDef }
+            ? packDef
+            : _registry.LookupType(name: Builder.Declaration.VariadicParamDesugar.PackTypeName);
         if (arrayDef == null)
         {
             return;
@@ -502,6 +527,7 @@ public sealed partial class SemanticVerifier
 
     private const string LiteralBuilderRoutineName = "from_literal";
     private const string CollectionNameArray = "Array";
+    private const string CollectionNameSlots = "Slots";
     private const string CollectionNameBitArray = "BitArray";
 
     private TypeSymbol AnalyzeSetLiteralExpression(SetLiteralExpression set,
@@ -695,12 +721,10 @@ public sealed partial class SemanticVerifier
             dictResult = dictType;
         }
 
-        // Dict literals build `DictEntry[K, V]` values — that's the from_literal element type.
-        if (keyType != null && valueType != null && _registry.LookupType(name: "DictEntry") is
-                { } dictEntryDef)
+        // Dict literals build `(K, V)` tuples: that is the from_literal element type.
+        if (keyType != null && valueType != null)
         {
-            TypeSymbol entryType = _registry.GetOrCreateResolution(genericDef: dictEntryDef,
-                typeArguments: [keyType, valueType]);
+            TypeSymbol entryType = _registry.GetOrCreateTupleType(elementTypes: [keyType, valueType]);
             ResolveLiteralBuilder(literal: dict,
                 resultType: dictResult,
                 builderElementType: entryType,
@@ -761,15 +785,8 @@ public sealed partial class SemanticVerifier
         TypeSymbol valueType =
             AnalyzeExpression(expression: dictEntry.Value, expectedType: expectedValueType);
 
-        // Resolve to DictEntry[K, V]
-        TypeSymbol? dictEntryDef = _registry.LookupType(name: "DictEntry");
-        if (dictEntryDef != null)
-        {
-            return _registry.GetOrCreateResolution(genericDef: dictEntryDef,
-                typeArguments: [keyType, valueType]);
-        }
-
-        return ErrorTypeSymbol.Instance;
+        // A `key: value` pair is the tuple `(K, V)`.
+        return _registry.GetOrCreateTupleType(elementTypes: [keyType, valueType]);
     }
 
     private TypeSymbol AnalyzeTupleLiteralExpression(TupleLiteralExpression tuple,
@@ -1363,7 +1380,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol ResolveArgTypeForInference(Expression argExpr)
     {
         if (argExpr is ListLiteralExpression { ResolvedType: { } packed } &&
-            GetTypeBaseName(type: packed) is "Array")
+            GetTypeBaseName(type: packed) is "Array" or Builder.Declaration.VariadicParamDesugar.PackTypeName)
         {
             return packed;
         }

@@ -4356,7 +4356,7 @@ public sealed partial class TypeRegistry
 
         if (type is RecordTypeSymbol rec)
         {
-            // A value aggregate holding an entity (a bundle instance such as `Labeled[Battery]`) is never copied by
+            // A value aggregate holding an entity (a tuple or variant holding a `Battery`) is never copied by
             // `=`: it moves with `steal`, or is copied on purpose with `.duplicate()`. No copy step then.
             if (rec is { IsGenericResolution: true } && IsEntityKind(type: rec))
             {

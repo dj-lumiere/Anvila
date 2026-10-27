@@ -338,7 +338,7 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool CanMemberVariableWalkAssignable(TypeSymbol type)
     {
-        // An aggregate that holds an entity (a bundle instance, a tuple, an Array of entities) is single-owner:
+        // An aggregate that holds an entity (a tuple, a variant, a Slots) is kept in one place:
         // a shallow store would make two owners. It is never Assignable, whatever protocols its entity obeys.
         if (IsEntityKind(type: type))
         {
@@ -401,8 +401,10 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool IsEntityKind(TypeSymbol type)
     {
-        // A declared entity is the base case — the walk stops here (no need to descend into its fields).
-        if (type is EntityTypeSymbol)
+        // A declared entity is the base case — the walk stops here (no need to descend into its fields). An entity
+        // laid out in place (`Slots`) is one whatever it holds.
+        if (type is EntityTypeSymbol or RecordTypeSymbol { IsInPlaceEntity: true } ||
+            type is RecordTypeSymbol { GenericDefinition: RecordTypeSymbol { IsInPlaceEntity: true } })
         {
             return true;
         }
@@ -441,7 +443,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// The first of the record's type parameters that <paramref name="type"/> holds by value and that is not kept to
     /// values by a kind constraint, or null. A parameter is held by value directly, or through a tuple, a variant or a
-    /// bundle (whose kind follows its arguments); behind a handle (<c>Retained[T]</c>, …) or inside a record it is not.
+    /// carrier (whose kind follows its arguments); behind a handle (<c>Retained[T]</c>, …) or inside a record it is not.
     /// </summary>
     public static string? EntityParameterIn(TypeSymbol type, IReadOnlyList<SyntaxTree.GenericConstraintDeclaration>? constraints)
     {
@@ -461,7 +463,7 @@ public sealed partial class TypeRegistry
                 return variant.Members.Where(predicate: m => m.Type != null)
                               .Select(selector: m => EntityParameterIn(type: m.Type!, constraints: constraints))
                               .FirstOrDefault(predicate: p => p != null);
-            case RecordTypeSymbol { IsBundle: true } or RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None }:
+            case RecordTypeSymbol { CarrierKind: not TypeModel.Enums.CarrierKind.None }:
                 return (type.TypeArguments ?? [])
                       .Select(selector: a => EntityParameterIn(type: a, constraints: constraints))
                       .FirstOrDefault(predicate: p => p != null);
@@ -574,7 +576,7 @@ public sealed partial class TypeRegistry
         // parent protocols), NOT from GetMemberRoutinesForType(...).Where(OwnerType is ProtocolTypeSymbol) — the
         // latter can be empty for a protocol whose sole memberRoutine was substituted onto a non-protocol owner
         // (e.g. Serializable's `serialize`), which then wrongly reported EVERY structural implementer as
-        // NON-conforming. That masked itself for records/entities that obey via a declared bundle
+        // NON-conforming. That masked itself for records/entities that obey via a declared conformance
         // (RecordType/EntityType), but broke a type like `List[Text]` that carries a conditionally-
         // available `serialize` without declaring Serializable — its derived `serialize()` field-walk
         // then boxed `represent()` instead of recursing (the json_encode `tags` regression).

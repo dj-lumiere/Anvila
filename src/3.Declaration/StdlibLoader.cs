@@ -447,6 +447,50 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
+    /// <c>variant Maybe[T]</c> (members <c>T</c> and <c>None</c>) in <c>System</c> is the optional carrier behind
+    /// <c>T?</c>. Its two members are laid out as a presence flag and the value (<c>{ i8, T }</c>, an entity <c>T</c> as
+    /// <c>{ i8, ptr }</c>), which the carrier machinery reads as the secret member variables <c>present</c> and
+    /// <c>value</c>, so the declaration is turned into that record here, before any pass sees it.
+    /// </summary>
+    private static void LayOutMaybeCarrier(Program program, string module)
+    {
+        if (module != "System")
+        {
+            return;
+        }
+
+        for (int i = 0; i < program.Declarations.Count; i++)
+        {
+            if (program.Declarations[index: i] is not VariantDeclaration
+                {
+                    Name: "Maybe", GenericParameters: [var parameter], Members.Count: 2
+                } maybe ||
+                !maybe.Members.Any(predicate: m => m.Type.Name == parameter) ||
+                !maybe.Members.Any(predicate: m => m.Type.Name == "None"))
+            {
+                continue;
+            }
+
+            SourceLocation at = maybe.Location;
+            program.Declarations[index: i] = new RecordDeclaration(Name: "Maybe",
+                GenericParameters: [parameter],
+                Protocols: [],
+                Members:
+                [
+                    new VariableDeclaration(Name: "present",
+                        Type: new TypeExpression(Name: "Bool", GenericArguments: null, Location: at),
+                        Initializer: null, Visibility: VisibilityModifier.Secret, Location: at),
+                    new VariableDeclaration(Name: "value",
+                        Type: new TypeExpression(Name: parameter, GenericArguments: null, Location: at),
+                        Initializer: null, Visibility: VisibilityModifier.Secret, Location: at)
+                ],
+                Visibility: VisibilityModifier.Open,
+                Location: at,
+                GenericConstraints: maybe.GenericConstraints);
+        }
+    }
+
+    /// <summary>
     /// What the loader does to a standard library file right after it is parsed: the module from its folder, the
     /// <c>@rf("...")</c> declarations taken out, the RazorForge library types noted, and a loose top-level
     /// statement rejected.
@@ -466,6 +510,8 @@ public sealed partial class StdlibLoader
             _rfBindings.Add(item: (binding, filePath, module));
             program.Declarations.Remove(item: binding);
         }
+
+        LayOutMaybeCarrier(program: program, module: module);
 
         if (Path.GetFullPath(path: filePath).StartsWith(value: _razorForgeRoot,
                 comparisonType: StringComparison.OrdinalIgnoreCase))

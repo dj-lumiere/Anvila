@@ -1588,8 +1588,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
         string baseName = GetCollectionBaseName(type: listType) ?? "List";
 
-        // Array/BitArray are pure inline IR (insertvalue) -- pass through with element recursion only.
-        if (baseName is "Array" or "BitArray")
+        // Array/Slots/BitArray are pure inline IR (insertvalue) -- pass through with element recursion only.
+        if (baseName is "Array" or "Slots" or "BitArray")
         {
             return LowerInlineArrayLiteral(list: list);
         }
@@ -1832,8 +1832,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Lowers a standalone dict-entry literal <c>key:value</c> to a
-    /// <c>CreatorExpression("DictEntry", ...)</c> record constructor.
+    /// Lowers a standalone dict-entry literal <c>key:value</c> to the tuple literal <c>(key, value)</c>.
     /// </summary>
     private (List<Statement> Hoisted, Expression Expr) LowerDictEntryLiteral(
         DictEntryLiteralExpression dictEntry)
@@ -1854,17 +1853,10 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return (hoisted, dictEntry with { Key = loweredKey, Value = loweredVal });
         }
 
-        string baseName = GetCollectionBaseName(type: entryType) ?? "DictEntry";
-        List<TypeExpression>? typeArgs = entryType.TypeArguments?.Count > 0
-            ? entryType.TypeArguments
-                       .Select(selector: t => TypeInfoToExpr(type: t, loc: dictEntry.Location))
-                       .ToList()
-            : null;
-
         return (hoisted,
-            new CreatorExpression(TypeName: baseName,
-                TypeArguments: typeArgs,
-                MemberVariables: [("key", loweredKey), ("value", loweredVal)],
+            new CreatorExpression(TypeName: entryType.Name,
+                TypeArguments: null,
+                MemberVariables: [("item0", loweredKey), ("item1", loweredVal)],
                 Location: dictEntry.Location) { ResolvedType = entryType });
     }
 

@@ -521,9 +521,9 @@ public record RecordDeclaration(
     /// <summary>Associated-type clauses (<c>relates …</c>) on this record. Set by the parser.</summary>
     public List<AssociatedTypeDeclaration>? AssociatedTypes { get; set; }
 
-    /// <summary>Declared <c>bundle</c>, not <c>record</c>: each instantiation's kind follows what it holds (see
-    /// <see cref="TypeModel.Types.RecordTypeSymbol.IsBundle"/>).</summary>
-    public bool IsBundle { get; init; }
+    /// <summary>Declared <c>entity</c> with an <c>@llvm</c> layout (<c>Slots[T, COUNT]</c>): an entity laid out in place,
+    /// which the builder parses as a record body (see <see cref="TypeModel.Types.RecordTypeSymbol.IsInPlaceEntity"/>).</summary>
+    public bool IsInPlaceEntity { get; init; }
 
     /// <inheritdoc/>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)

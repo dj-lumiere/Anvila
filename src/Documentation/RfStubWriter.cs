@@ -346,11 +346,6 @@ internal sealed class RfStubWriter
             }
 
             string line = raw.Replace(oldValue: "dangerous ", newValue: "");
-            // A bundle is RazorForge's spelling of a record whose members are laid out in place: to Suflae a record.
-            if (trimmed.StartsWith(value: "bundle ", comparisonType: StringComparison.Ordinal))
-            {
-                line = raw[..(raw.Length - trimmed.Length)] + "record " + trimmed["bundle ".Length..];
-            }
             if (trimmed.StartsWith(value: "obeys ", comparisonType: StringComparison.Ordinal))
             {
                 string indent = raw[..(raw.Length - trimmed.Length)];

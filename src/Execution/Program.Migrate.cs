@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
-                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce" or "numbers"))
+                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce" or "numbers" or "bundle"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names, pierce or numbers");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names, pierce, numbers or bundle");
             return 2;
         }
 
@@ -161,6 +161,12 @@ internal partial class Program
         if (step == "numbers")
         {
             return RunNumbersStep(paths: paths, check: check);
+        }
+
+        // `--step bundle`: a named type is a `record` or an `entity`, decided from what each bundle's uses hold.
+        if (step == "bundle")
+        {
+            return RunBundleStep(paths: paths, check: check);
         }
 
         // `--step suffix` takes the type-naming suffixes off numbers (`5_u8`), with analysis deciding each one.

@@ -1592,7 +1592,7 @@ public sealed partial class StdlibLoader
             Annotations = record.Annotations,
             BackendType = ExtractLlvmAnnotation(annotations: record.Annotations),
             CarrierKind = inheritedCarrierKind,
-            IsBundle = record.IsBundle
+            IsInPlaceEntity = record.IsInPlaceEntity
         };
         if (expandTemplates.Count > 0)
         {

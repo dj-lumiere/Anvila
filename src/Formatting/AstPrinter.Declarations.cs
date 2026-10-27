@@ -256,7 +256,7 @@ internal sealed partial class AstPrinter
                 PrintExternal(external: external, start: start, depth: depth);
                 break;
             case RecordDeclaration record:
-                PrintTypeHeader(keyword: record.IsBundle ? "bundle" : "record", declaration: record, start: start,
+                PrintTypeHeader(keyword: record.IsInPlaceEntity ? "entity" : "record", declaration: record, start: start,
                     depth: depth,
                     visibility: record.Visibility, constraints: record.GenericConstraints,
                     obeys: record.Protocols, relates: record.AssociatedTypes,

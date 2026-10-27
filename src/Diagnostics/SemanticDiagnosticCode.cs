@@ -462,13 +462,15 @@ public enum SemanticDiagnosticCode
     OperatorWithoutProtocol = 411,
 
     /// <summary>A record holds an entity, or a type parameter that may be one, by value: a record is copied, and a
-    /// copy would make two of the one entity. A bundle (or an entity) is the declaration that may.</summary>
+    /// copy would make two of the one entity. An entity is the declaration that may.</summary>
     RecordHoldsEntity = 409,
 
-    /// <summary>A bundle without type parameters: its kind never varies, so it is a record or an entity.</summary>
+    /// <summary>RETIRED: a bundle without type parameters. There is no <c>bundle</c> (RF-G228). Code number reserved
+    /// to avoid reuse.</summary>
     BundleWithoutParameters = 445,
 
-    /// <summary>A bundle that contains itself: a bundle is an inline value, so a recursive one has no finite size.</summary>
+    /// <summary>RETIRED: a bundle that contains itself. There is no <c>bundle</c> (RF-G228). Code number reserved to
+    /// avoid reuse.</summary>
     RecursiveBundle = 446,
 
     /// <summary>A Suflae program uses a RazorForge library type or routine that Suflae's library does not show (no

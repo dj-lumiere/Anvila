@@ -794,7 +794,8 @@ internal sealed class TypeResolver
 
             DispatchConstraintValidation(typeArg: typeArg,
                 constraint: constraint,
-                location: location);
+                location: location,
+                genericName: genericDef.Name);
         }
     }
 
@@ -803,7 +804,7 @@ internal sealed class TypeResolver
     /// <see cref="GenericConstraintDeclaration.ConstraintType"/>.
     /// </summary>
     internal void DispatchConstraintValidation(TypeSymbol typeArg,
-        GenericConstraintDeclaration constraint, SourceLocation location)
+        GenericConstraintDeclaration constraint, SourceLocation location, string? genericName = null)
     {
         switch (constraint.ConstraintType)
         {
@@ -816,7 +817,8 @@ internal sealed class TypeResolver
             case ConstraintKind.RecordType:
                 ValidateValueTypeConstraint(typeArg: typeArg,
                     constraint: constraint,
-                    location: location);
+                    location: location,
+                    genericName: genericName);
                 break;
 
             case ConstraintKind.EntityType:
@@ -890,7 +892,7 @@ internal sealed class TypeResolver
     /// requiring the argument to be a record (value type).
     /// </summary>
     private void ValidateValueTypeConstraint(TypeSymbol typeArg,
-        GenericConstraintDeclaration constraint, SourceLocation location)
+        GenericConstraintDeclaration constraint, SourceLocation location, string? genericName = null)
     {
         // A routine value is a value too: a copy is the same routine.
         if (typeArg.Category is not (TypeCategory.Record or TypeCategory.Routine) ||
@@ -899,7 +901,11 @@ internal sealed class TypeResolver
             _sa.ReportError(code: SemanticDiagnosticCode.ValueTypeConstraintViolation,
                 message:
                 $"'{constraint.ParameterName}' needs a record ('needs RecordType {constraint.ParameterName}'), and " +
-                $"'{typeArg.ShortTypeName}' is not one.",
+                $"'{typeArg.ShortTypeName}' is not one." +
+                // An `Array` or a `SplitArray` holds values: the fixed run of places that holds entities is `Slots`.
+                (genericName is "Array" or "SplitArray"
+                    ? $" {(genericName == "Array" ? "An Array" : "A SplitArray")} holds values: for elements that may be entities, use 'Slots[{typeArg.ShortTypeName}, COUNT]'."
+                    : ""),
                 location: location);
         }
     }
