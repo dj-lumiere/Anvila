@@ -14,6 +14,9 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Description>Anvila, the builder core shared by RazorForge and Suflae.</Description>
+    <!-- The builder runs optimized in every configuration: bin/Debug is what daily builds, the test suites and
+         the editors' language servers run. Build with -p:Optimize=false to step through it in a debugger. -->
+    <Optimize>true</Optimize>
   </PropertyGroup>
 
   <!-- The native runtime is Ingrid's (..\Ingrid\native). -->
