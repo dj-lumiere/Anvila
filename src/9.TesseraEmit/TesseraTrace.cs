@@ -34,7 +34,7 @@ internal static class TesseraTrace
             column: S32
 
         @threadlocal
-        global RF_TRACE_STACK: &Array[RfTraceFrame, 32]
+        global RF_TRACE_STACK: &Items[RfTraceFrame, 32]
 
         @threadlocal
         global RF_TRACE_DEPTH: &S32
@@ -43,7 +43,7 @@ internal static class TesseraTrace
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
             depth: S32 = RF_TRACE_DEPTH.peek()
             index: U64 = zext[S32, U64](band[S32](depth, 31))
-            frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
+            frame: @RfTraceFrame = RF_TRACE_STACK.to[@[RfTraceFrame]]().to[@RfTraceFrame]().stride(index)
             frame.`routine`.poke(routine_name)
             frame.file.poke(file)
             frame.line.poke(line)
@@ -61,7 +61,7 @@ internal static class TesseraTrace
             if depth.le(0)
                 return
             index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
-            frame: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(index)
+            frame: @RfTraceFrame = RF_TRACE_STACK.to[@[RfTraceFrame]]().to[@RfTraceFrame]().stride(index)
             frame.line.poke(line)
             frame.column.poke(column)
             return
@@ -75,7 +75,7 @@ internal static class TesseraTrace
         ### The trace's 32 frames, under the name the LLVM emitter exports them by.
         @export("_rf_trace_get_frames_shared")
         routine rf_trace_get_frames() -> @RfTraceFrame
-            frames: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]()
+            frames: @RfTraceFrame = RF_TRACE_STACK.to[@[RfTraceFrame]]().to[@RfTraceFrame]()
             return frames
 
         ### The trace's innermost frame, under the name the LLVM emitter exports it by: Ingrid's place of an access reads
@@ -86,18 +86,18 @@ internal static class TesseraTrace
             if depth.le(0)
                 return 0
             index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
-            out.poke(RF_TRACE_STACK.to[@RfTraceFrame]().stride(index).peek())
+            out.poke(RF_TRACE_STACK.to[@[RfTraceFrame]]().to[@RfTraceFrame]().stride(index).peek())
             return 1
 
         ### One failure a thread remembers: its number, the depth of the trace when it was thrown, and the trace.
         record RfFailure
             seq: U64
             depth: S32
-            frames: Array[RfTraceFrame, 32]
+            frames: Items[RfTraceFrame, 32]
 
         ### The program's most recent failures, a ring of 64: a failure a Work threw is reported where it is retrieved,
         ### on another thread.
-        global RF_FAILURES: &Array[RfFailure, 64]
+        global RF_FAILURES: &Items[RfFailure, 64]
 
         ### The number of the last failure, on every thread.
         global RF_FAILURE_COUNT: &U64
@@ -107,12 +107,12 @@ internal static class TesseraTrace
         routine rf_failure_note() -> U64
             previous: U64 = RF_FAILURE_COUNT.fetch_add_unbroken[RELAXED](1)
             seq: U64 = add[U64](previous, 1)
-            entry: @RfFailure = RF_FAILURES.to[@RfFailure]().stride(band[U64](previous, 63))
+            entry: @RfFailure = RF_FAILURES.to[@[RfFailure]]().to[@RfFailure]().stride(band[U64](previous, 63))
             entry.seq.poke_unbroken(0)
             RF_TRACE_DEPTH.peek().poke_into(entry.depth)
             each i in 0 til 32
-                from: @RfTraceFrame = RF_TRACE_STACK.to[@RfTraceFrame]().stride(i)
-                to: @RfTraceFrame = entry.frames.to[@RfTraceFrame]().stride(i)
+                from: @RfTraceFrame = RF_TRACE_STACK.to[@[RfTraceFrame]]().to[@RfTraceFrame]().stride(i)
+                to: @RfTraceFrame = entry.frames.to[@[RfTraceFrame]]().to[@RfTraceFrame]().stride(i)
                 to.poke(from.peek())
             entry.seq.poke_unbroken(seq)
             return seq
@@ -122,7 +122,7 @@ internal static class TesseraTrace
             if ieq[U64](seq, 0)
                 return .hollow()
             each i in 0 til 64
-                entry: @RfFailure = RF_FAILURES.to[@RfFailure]().stride(i)
+                entry: @RfFailure = RF_FAILURES.to[@[RfFailure]]().to[@RfFailure]().stride(i)
                 if ieq[U64](entry.seq.peek_unbroken(), seq)
                     return entry
             return .hollow()
@@ -133,7 +133,7 @@ internal static class TesseraTrace
             entry: @RfFailure = rf_failure_find(seq)
             if entry.is_hollow()
                 return .hollow()
-            return entry.frames.to[@RfTraceFrame]()
+            return entry.frames.to[@[RfTraceFrame]]().to[@RfTraceFrame]()
 
         ### The depth of failure `seq`'s trace, under the name the LLVM emitter exports it by, or 0.
         @export("_rf_failure_get_depth_shared")

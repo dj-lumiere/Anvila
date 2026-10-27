@@ -629,7 +629,7 @@ internal sealed class TesseraWriter
         text.Append(value: $"{Private}record {name}\n    tag: U64\n");
         if (payloads.Count > 0)
         {
-            text.Append(value: $"    payload: Array[Byte, max({string.Join(separator: ", ", values: payloads)})]\n");
+            text.Append(value: $"    payload: Items[Byte, max({string.Join(separator: ", ", values: payloads)})]\n");
         }
 
         _records.Append(value: text)
@@ -774,7 +774,7 @@ internal sealed class TesseraWriter
             return ".hollow()";
         }
 
-        string type = $"Array[{TypeText(type: data.ElementType)}, {data.Elements.Count}]";
+        string type = $"Items[{TypeText(type: data.ElementType)}, {data.Elements.Count}]";
         // Each element is given as the long with its bits: a U64 element (an Integer literal's limbs) is written
         // unsigned.
         bool unsigned64 = data.ElementType.Name == "U64";
@@ -790,14 +790,14 @@ internal sealed class TesseraWriter
         name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
         _texts[key: key] = name;
         _globals.Append(value: $"{Private}preset {name}: &{type} <- {initial}\n\n");
-        // The value is a pointer to the first element.
-        name = $"{name}.to[@{TypeText(type: data.ElementType)}]()";
+        // The value is a pointer to the first element, taken from the view of every element.
+        name = $"{name}.to[@[{TypeText(type: data.ElementType)}]]().to[@{TypeText(type: data.ElementType)}]()";
         _texts[key: key] = name;
         return name;
     }
 
     /// <summary>
-    /// The aggregate preset (an <c>Array[T, N]</c> or <c>BitArray[N]</c> table) <paramref name="name"/> names,
+    /// The aggregate preset (an <c>Items[T, N]</c> or <c>Bits[N]</c> table) <paramref name="name"/> names,
     /// seen from <paramref name="routine"/>: the bare name, then qualified by the routine's module, as in the LLVM
     /// emitter. Its table is read-only memory (a Tessera preset in memory), declared once; the preset's name is the
     /// table's address. Null when the
@@ -826,7 +826,7 @@ internal sealed class TesseraWriter
         _presets[key: preset.QualifiedName] = global;
         var elements = ((ListLiteralExpression)preset.PresetValue!).Elements;
         string type = TypeText(type: preset.Type);
-        // One element per slot (a BitArray table is registered as its packed bytes).
+        // One element per slot (a Bits table is registered as its packed bytes).
         IEnumerable<string> values = elements.Select(selector: e => e is LiteralExpression literal
             ? TesseraRoutineWriter.ConstantText(literal: literal)
             : throw new NotSupportedException(
@@ -1099,11 +1099,11 @@ internal sealed class TesseraWriter
                 : "Addr";
         }
 
-        // Array[T, N]: a fixed array of N values of T.
+        // Items[T, N]: a fixed array of N values of T.
         if (backend.StartsWith(value: '[') &&
             record.TypeArguments is [var element, ConstGenericValueTypeSymbol { Value: var count }])
         {
-            return $"Array[{TypeText(type: element)}, {count}]";
+            return $"Items[{TypeText(type: element)}, {count}]";
         }
 
         // Any other integer-backed type (a choice, flags, Char, a C integer alias) is the integer

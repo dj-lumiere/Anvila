@@ -736,10 +736,10 @@ internal sealed class TesseraRoutineWriter
             case SharedConstantListExpression:
                 // The LLVM emitter lays the list down as writable module data whose pointer fields hold the
                 // addresses of the list and of its elements. A Tessera global starts a pointer only as the address
-                // of a global or preset of that pointee type, and the elements are an Array preset, not a U64.
+                // of a global or preset of that pointee type, and the elements are an Items preset, not a U64.
                 throw new NotSupportedException(
                     message: "The Tessera backend does not lay down an Int literal outside the S64 range yet: its " +
-                             "limbs need a static list whose data field holds the address of the limbs' Array preset.");
+                             "limbs need a static list whose data field holds the address of the limbs' Items preset.");
             case LiteralExpression { Value: string text, LiteralType: TokenType.B16Literal or TokenType.B32Literal or
                 TokenType.B64Literal } literal:
                 return new Operand(Text: Temp(type: literal.ResolvedType, expression: FloatLiteral(text: text,
@@ -797,7 +797,7 @@ internal sealed class TesseraRoutineWriter
                 return new Operand(Text: Temp(type: address.ResolvedType, expression: $"{_module.RoutineName(routine: native)}.addr()"),
                     Type: address.ResolvedType, IsPlace: false);
             case ListLiteralExpression { ResolvedType: { } emptyType, Elements.Count: 0 }:
-                // An empty fixed array: its zero value (`Array[T, 0] {}` would read as a record literal).
+                // An empty fixed array: its zero value (`Items[T, 0] {}` would read as a record literal).
                 return new Operand(Text: Temp(type: emptyType, expression: ZeroValue(type: emptyType)), Type: emptyType,
                     IsPlace: false);
             case ListLiteralExpression { ResolvedType: { } arrayType } list:
@@ -1348,7 +1348,7 @@ internal sealed class TesseraRoutineWriter
             return EvaluateEntityCreator(creator: creator, entity: entity);
         }
 
-        // A backend-represented record (a number, an Array) built from nothing is its zero value.
+        // A backend-represented record (a number, an Items) built from nothing is its zero value.
         if (type is RecordTypeSymbol { BackendType: not null } && creator.MemberVariables.Count == 0)
         {
             return new Operand(Text: Temp(type: type, expression: ZeroValue(type: type)), Type: type, IsPlace: false);
