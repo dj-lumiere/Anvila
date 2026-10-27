@@ -28,9 +28,12 @@ namespace Builder.Lowering.Passes;
 ///   <item>Block fall-through end — destroy the locals declared in that block.</item>
 /// </list>
 ///
-/// <para>Move exclusion: a local that is moved anywhere in the routine (operand of <c>steal</c>, or
-/// receiver of <c>.retain()</c>/<c>.track()</c>) is never destroyed — ownership left the binding.
-/// This is flow-insensitive, mirroring the prior codegen behaviour.</para>
+/// <para>Move exclusion: a local moved by a statement of the routine (operand of <c>steal</c>, or receiver of
+/// <c>.retain()</c>/<c>.track()</c>) is not torn down at any exit: what it held left the binding. A local moved by
+/// the value of a <c>return</c> or a <c>throw</c> is moved on that path only, and the other exits still tear it
+/// down. A move by any other statement counts for the whole routine: a binding taken on some paths that go on past
+/// the join and kept on others is a build error (RF-S616), so no path reaches a join with the binding in doubt and
+/// no flag is kept at run time.</para>
 /// </summary>
 internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 {
@@ -847,17 +850,19 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // Returning or throwing a name a pattern bound (`else as h => return h`, `is Crashables as e => throw e`)
         // moves out the matched value it reads, so the local holding that value is not torn down on this path
         // either.
-        HashSet<string>? movedOut = ReturnedName(stmt: exit) is { } returned &&
-                                    _patternSources.TryGetValue(key: returned, value: out HashSet<string>? sources)
-            ? sources
-            : null;
+        HashSet<string> movedOut = ExitMoves(exit: exit);
+        if (ReturnedName(stmt: exit) is { } returned &&
+            _patternSources.TryGetValue(key: returned, value: out HashSet<string>? sources))
+        {
+            movedOut.UnionWith(other: sources);
+        }
 
         // Destroy in REVERSE declaration order (LIFO) — the safe RAII order, matching this pass's
         // documented contract and the fall-through end-of-block teardown above.
         for (int i = live.Count - 1; i >= from; i--)
         {
             if (skip != null && live[index: i].Name == skip ||
-                movedOut != null && movedOut.Contains(item: live[index: i].Name) ||
+                movedOut.Contains(item: live[index: i].Name) ||
                 IsKeptParameter(owned: live[index: i]))
             {
                 continue;
@@ -1486,7 +1491,69 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private void CollectMovedNames(Statement stmt)
     {
         _movedWithoutEmptying.Clear();
-        AstWalker.Walk(root: stmt, visit: CollectMovedNamesFromNode);
+        CollectMovesOutsideExits(node: stmt);
+    }
+
+    /// <summary>
+    /// Records the moves of <paramref name="node"/> and what it holds, except the value of a <c>return</c> or a
+    /// <c>throw</c>. That value leaves the routine with its exit, so what it moves (a local boxed into the carrier,
+    /// <c>return Check(value: result)</c>, or handed to the thrown crashable) is moved on that path only, and every
+    /// other exit still tears it down (see <see cref="ExitMoves"/>). The paths are told apart at buildtime, so no
+    /// flag is kept at run time.
+    /// </summary>
+    private void CollectMovesOutsideExits(object node)
+    {
+        CollectMovedNamesFromNode(node: node);
+        if (node is ReturnStatement or VariantReturnStatement or ThrowStatement)
+        {
+            return;
+        }
+
+        foreach (object child in AstWalker.EnumerateChildren(node: node))
+        {
+            CollectMovesOutsideExits(node: child);
+        }
+    }
+
+    /// <summary>
+    /// The bindings the value of <paramref name="exit"/> moves (the rules of <see cref="CollectMovedNamesFromNode"/>
+    /// applied to that value alone), with the locals a moved pattern name reads its value from. Empty for an exit
+    /// that is not a <c>return</c> or a <c>throw</c>. Leaves the routine's own move record as it was.
+    /// </summary>
+    private HashSet<string> ExitMoves(Statement exit)
+    {
+        var moves = new HashSet<string>(comparer: StringComparer.Ordinal);
+        if (exit is not (ReturnStatement or VariantReturnStatement or ThrowStatement))
+        {
+            return moves;
+        }
+
+        var savedMoved = new HashSet<string>(collection: _movedNames, comparer: StringComparer.Ordinal);
+        var savedWithoutEmptying =
+            new HashSet<string>(collection: _movedWithoutEmptying, comparer: StringComparer.Ordinal);
+        try
+        {
+            _movedNames.Clear();
+            AstWalker.Walk(root: exit, visit: CollectMovedNamesFromNode);
+            moves.UnionWith(other: _movedNames);
+        }
+        finally
+        {
+            _movedNames.Clear();
+            _movedNames.UnionWith(other: savedMoved);
+            _movedWithoutEmptying.Clear();
+            _movedWithoutEmptying.UnionWith(other: savedWithoutEmptying);
+        }
+
+        foreach (string moved in moves.ToList())
+        {
+            if (_patternSources.TryGetValue(key: moved, value: out HashSet<string>? sources))
+            {
+                moves.UnionWith(other: sources);
+            }
+        }
+
+        return moves;
     }
 
     /// <summary>The names a move reaches whose slot is not emptied by it (a handle made from the entity, an
