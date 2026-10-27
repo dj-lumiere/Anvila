@@ -145,6 +145,15 @@ internal static class NativeToolchain
             // tree. Two at once (the RazorForge and Suflae test suites side by side) could configure it while the
             // other builds in it, so each holds the tree's lock while it builds and copies.
             using FileStream held = LockNativeBuildTree(nativeBuildDir: nativeBuildDir);
+            // Nothing cmake builds from changed and the copies are in place since the last build here: running cmake
+            // would only find that out (about 0.3 s).
+            string stampFile = Path.Combine(path1: exeDir, path2: NativeRuntimeStampFileName);
+            string stamp = NativeRuntimeStamp(exeDir: exeDir, nativeBuildDir: nativeBuildDir);
+            if (File.Exists(path: stampFile) && File.ReadAllText(path: stampFile) == stamp)
+            {
+                return 0;
+            }
+
             // Resolve cmake to an absolute path (rather than letting Process.Start search PATH at
             // launch) so the tool directory is fixed and a cmake planted earlier on PATH can't be
             // picked up. A missing tool throws and is reported by the catch below.
@@ -204,6 +213,8 @@ internal static class NativeToolchain
                 }
             }
 
+            WriteNativeRuntimeStamp(stampFile: stampFile,
+                stamp: NativeRuntimeStamp(exeDir: exeDir, nativeBuildDir: nativeBuildDir));
             return 0;
         }
         catch (Exception ex)
@@ -212,6 +223,106 @@ internal static class NativeToolchain
             Console.WriteLine(
                 value: "Make sure CMake is installed and the native runtime has been configured.");
             return 1;
+        }
+    }
+
+    /// <summary>The file next to the executable that records <see cref="NativeRuntimeStamp"/> after a native runtime
+    /// build and copy.</summary>
+    internal const string NativeRuntimeStampFileName = "native-runtime.stamp";
+
+    /// <summary>
+    /// What a native runtime build in <paramref name="nativeBuildDir"/> (Ingrid/native/build) depends on, and what it
+    /// left: the path, size and time of every file cmake builds from (Ingrid/native's CMake files, Ingrid's runtime
+    /// Tessera sources, Tessera's standard library, the Tessera builder named in the CMake cache, the cache and the
+    /// build rules), of every file it built, and of the copies next to <paramref name="exeDir"/>. One line per file.
+    /// </summary>
+    private static string NativeRuntimeStamp(string exeDir, string nativeBuildDir)
+    {
+        string nativeDir = Path.GetDirectoryName(path: Path.TrimEndingDirectorySeparator(path: nativeBuildDir))!;
+        string ingridDir = Path.GetDirectoryName(path: nativeDir)!;
+        string workspace = Path.GetDirectoryName(path: ingridDir)!;
+        var files = new List<string>();
+        AddFiles(files: files, dir: nativeDir, pattern: "CMakeLists.txt", recursive: false);
+        AddFiles(files: files, dir: nativeDir, pattern: "*.cmake", recursive: false);
+        AddFiles(files: files, dir: Path.Combine(path1: ingridDir, path2: "runtime-tessera"), pattern: "*.te",
+            recursive: false);
+        AddFiles(files: files, dir: Path.Combine(path1: workspace, path2: "Tessera", path3: "Standard"),
+            pattern: "*.te", recursive: true);
+        string cache = Path.Combine(path1: nativeBuildDir, path2: "CMakeCache.txt");
+        files.Add(item: cache);
+        files.Add(item: Path.Combine(path1: nativeBuildDir, path2: "build.ninja"));
+        files.Add(item: Path.Combine(path1: nativeBuildDir, path2: "Makefile"));
+        if (File.Exists(path: cache) && File.ReadLines(path: cache)
+                                            .FirstOrDefault(predicate: l =>
+                                                 l.StartsWith(value: "TESSERA_DLL:", comparisonType: StringComparison.Ordinal))
+                                           ?.Split(separator: '=', count: 2) is [_, { } tesseraDll])
+        {
+            files.Add(item: tesseraDll);
+        }
+
+        foreach (string sub in new[] { "bin", "lib" })
+        {
+            string built = Path.Combine(path1: nativeBuildDir, path2: sub);
+            if (!Directory.Exists(path: built))
+            {
+                continue;
+            }
+
+            foreach (string file in Directory.GetFiles(path: built).Order(comparer: StringComparer.Ordinal))
+            {
+                files.Add(item: file);
+                files.Add(item: Path.Combine(exeDir, NativeDirName, "build", sub, Path.GetFileName(path: file)));
+                if (sub == "bin" && file.EndsWith(value: ".dll", comparisonType: StringComparison.OrdinalIgnoreCase))
+                {
+                    files.Add(item: Path.Combine(path1: exeDir, path2: Path.GetFileName(path: file)));
+                }
+            }
+        }
+
+        var stamp = new System.Text.StringBuilder();
+        foreach (string file in files)
+        {
+            var info = new FileInfo(fileName: file);
+            stamp.Append(value: info.Exists
+                ? $"{file}|{info.Length}|{info.LastWriteTimeUtc.Ticks}\n"
+                : $"{file}|missing\n");
+        }
+
+        return stamp.ToString();
+
+        static void AddFiles(List<string> files, string dir, string pattern, bool recursive)
+        {
+            if (Directory.Exists(path: dir))
+            {
+                files.AddRange(collection: Directory.GetFiles(path: dir, searchPattern: pattern,
+                                                        searchOption: recursive
+                                                            ? SearchOption.AllDirectories
+                                                            : SearchOption.TopDirectoryOnly)
+                                                    .Order(comparer: StringComparer.Ordinal));
+            }
+        }
+    }
+
+    /// <summary>Writes the stamp through a file of this process's own, so a reader never sees half of it. A stamp
+    /// that can't be written only means cmake runs again next time.</summary>
+    private static void WriteNativeRuntimeStamp(string stampFile, string stamp)
+    {
+        string tmp = $"{stampFile}.{Environment.ProcessId}.tmp";
+        try
+        {
+            File.WriteAllText(path: tmp, contents: stamp);
+            File.Move(sourceFileName: tmp, destFileName: stampFile, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            try
+            {
+                File.Delete(path: tmp);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                // A leftover temporary file is harmless.
+            }
         }
     }
 
