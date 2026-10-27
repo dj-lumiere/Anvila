@@ -961,7 +961,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ThrowStatement t => t.Error,
             _ => null
         };
-        // A recovery carrier around the returned local (`Maybe(present: true, value: x)`) reads only that local,
+        // A recovery carrier around the returned local (`Optional(present: true, value: x)`) reads only that local,
         // which `skip` already keeps alive, and literals: nothing it reads is torn down, so it needs no spill.
         // Spilling would also move `skip` off the local and free the value being returned.
         if (retVal is null or IdentifierExpression ||
@@ -1009,8 +1009,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // own resolved type, so the slot must match THAT, not the declared routine return type
         // (they can disagree, e.g. a synthesized diagnose whose AST return type lags the body, or
         // a return that codegen wraps). The failable-passthrough case (node says S64, emits
-        // Maybe[S64]) is handled at the source: ErrorHandlingVariantPass stamps the passthrough
-        // call's ResolvedType with the variant carrier, so EXPR inference already sees Maybe[S64].
+        // Optional[S64]) is handled at the source: ErrorHandlingVariantPass stamps the passthrough
+        // call's ResolvedType with the variant carrier, so EXPR inference already sees Optional[S64].
         var decl = new VariableDeclaration(Name: tmp,
             Type: null,
             Initializer: retVal,
@@ -1159,7 +1159,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
 
         return fieldType is EntityTypeSymbol ||
-               fieldType is RecordTypeSymbol { GenericDefinition.Name: "Maybe", TypeArguments: [EntityTypeSymbol] };
+               fieldType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [EntityTypeSymbol] };
     }
 
     /// <summary>The declared type of the field <paramref name="target"/> names when it is a field of <c>me</c>.</summary>
@@ -1321,13 +1321,13 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                     }
                 }
             } => released.Name,
-            // A recovery variant's `return x` wrapped in its carrier (`return Maybe(present: true, value: x)`)
+            // A recovery variant's `return x` wrapped in its carrier (`return Optional(present: true, value: x)`)
             // still returns `x`: it moves out, as RecordCopyLoweringPass treats it.
             ReturnStatement
             {
                 Value: CreatorExpression
                 {
-                    ResolvedType.BareName: "Maybe" or "Optional" or "Check",
+                    ResolvedType.BareName: "Optional" or "Check",
                     MemberVariables: var members
                 }
             } => members.Select(selector: m => m.Value)
@@ -1390,7 +1390,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                // payload out from under it: a read-only `represent` would then corrupt `me`, and the
                // auto-synthesized variant `destruct` (explicit `v.destruct()`) would double-free. So exclude it.
                || v.Initializer is CarrierPayloadExpression
-               // Any other name a pattern binds (a `Maybe`'s `.value`, as an `each` loop in a recovery variant
+               // Any other name a pattern binds (a `Optional`'s `.value`, as an `each` loop in a recovery variant
                // binds its item) is a view too: the matched carrier is torn down and frees it.
                || v.IsPatternBinding
                // A member variable read into a temp ahead of a call: the entity still holds the value.
@@ -1482,7 +1482,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         };
         return read switch
         {
-            // A recovery variant's call gives a carrier (`Maybe[T]`), which holds the item only until it is read out.
+            // A recovery variant's call gives a carrier (`Optional[T]`), which holds the item only until it is read out.
             CallExpression { ResolvedRoutine.RecoveryOf: null } call => call,
             MemberExpression { Object: IdentifierExpression carrier, MemberName: RuntimeContract.Carrier.ValueField }
                 when _emitCarriers.TryGetValue(key: carrier.Name, value: out CallExpression? held) => held,
@@ -1506,7 +1506,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// The late run's registration: a local a lowering marked as owing its teardown, holding a fresh value it
     /// owns (a call or construction, not a token or a view of a value kept elsewhere) of a type whose destroy
     /// releases something: a managed leaf like <c>Text</c>, an RC wrapper, a record carrying one, or a value that
-    /// holds an entity (<c>when try make_part()</c> holds a <c>Maybe[Part]</c>). An entity, a plain value record,
+    /// holds an entity (<c>when try make_part()</c> holds a <c>Optional[Part]</c>). An entity, a plain value record,
     /// or a scalar is left alone, as <see cref="TemporaryTeardownPass"/> does for the temporaries it spills.
     /// </summary>
     private void RegisterLateDeclaration(VariableDeclaration v, List<Owned> live)

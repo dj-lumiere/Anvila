@@ -41,7 +41,7 @@ internal static class ControlFlowExits
                                           AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: c.Body)),
             DangerStatement danger => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: danger.Body),
             UsingStatement usingStmt => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: usingStmt.Body),
-            // A `viewing` / `modifying` block runs its body (a `try` block too, with its names Maybes).
+            // A `viewing` / `modifying` block runs its body (a `try` block too, with its names Optionals).
             AccessStatement access => AlwaysTerminates(exhaustiveWhens: exhaustiveWhens, statement: access.Body),
             // A `loop` doesn't end by itself: control goes on after it only through a `break` that targets it.
             // With no such break, control leaves the loop only by `return` or `throw`, so a routine whose

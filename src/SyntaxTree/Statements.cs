@@ -1080,13 +1080,13 @@ public record GuardPattern(Pattern InnerPattern, Expression Guard, SourceLocatio
     : Pattern(Location: Location);
 
 /// <summary>
-/// Pattern for matching the None/absent value in Maybe, Result, or Lookup types.
+/// Pattern for matching the None/absent value in Optional, Result, or Lookup types.
 /// </summary>
 /// <param name="Location">Source location information</param>
 /// <remarks>
 /// Examples:
 /// <list type="bullet">
-/// <item>is None => ... (matches Maybe.None or Lookup.None)</item>
+/// <item>is None => ... (matches Optional.None or Lookup.None)</item>
 /// </list>
 /// </remarks>
 public record NonePattern(SourceLocation Location) : Pattern(Location: Location);
@@ -1137,7 +1137,7 @@ public record ElsePattern(string? VariableName, SourceLocation Location)
 
     /// <summary>
     /// Set by semantic analysis on an <c>else as name</c> arm: the one type left after the earlier arms, which the name
-    /// has (the value of a <c>Maybe</c>, a variant's remaining member type, or the subject's own type when nothing was
+    /// has (the value of a <c>Optional</c>, a variant's remaining member type, or the subject's own type when nothing was
     /// taken out). Lowering binds the name to that part of the subject.
     /// </summary>
     public TypeModel.Types.TypeSymbol? RemainingType { get; set; }
@@ -1374,11 +1374,11 @@ public sealed record AccessTarget(bool IsWrite, Expression Target, string Name, 
 /// enter / exit pair is entered in the order written (<c>view_enter()</c> / <c>modify_enter()</c>, whose token the name
 /// is) and given up in the opposite order on every way out of the body (<c>view_exit()</c> / <c>modify_exit()</c>), so
 /// <c>modifying a, b</c> is <c>modifying a</c> with <c>modifying b</c> inside. With <see cref="IsTry"/>
-/// (<c>try modifying seats as s</c>) each name is a <c>Maybe</c> of its token, present when the target was entered.
+/// (<c>try modifying seats as s</c>) each name is a <c>Optional</c> of its token, present when the target was entered.
 /// </summary>
 /// <param name="Targets">The targets, in source order.</param>
 /// <param name="Body">The block body, where each target's name is its token.</param>
-/// <param name="IsTry">Whether the block enters with <c>try</c>, its names <c>Maybe</c>s of the tokens.</param>
+/// <param name="IsTry">Whether the block enters with <c>try</c>, its names <c>Optional</c>s of the tokens.</param>
 /// <param name="Location">Source location of the block.</param>
 public record AccessStatement(
     List<AccessTarget> Targets,

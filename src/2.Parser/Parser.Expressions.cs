@@ -102,12 +102,12 @@ public partial class Parser
             "discard" when before => "'discard' is now 'drop': write 'drop f()' to throw a result away on purpose.",
             "grab" when before => "'grab' is now 'check': 'check f()' gives a Check[T] to take apart with 'when'.",
             "lookup" when before =>
-                "'lookup' is gone: a routine that finds nothing throws, and 'try f()' gives a Maybe[T] (none when it " +
+                "'lookup' is gone: a routine that finds nothing throws, and 'try f()' gives an Optional[T] (none when it " +
                 "failed) or 'check f()' a Check[T].",
             "unless" when before => "'unless' is gone: write 'if not (condition)'.",
             "absent" when next.Type is TokenType.Newline or TokenType.Dedent or TokenType.Eof =>
                 "'absent' is gone: a routine that has nothing to give throws (`throw KeyNotFoundError(...)`), and the " +
-                "caller recovers with 'try' (a Maybe[T]) or 'check'.",
+                "caller recovers with 'try' (an Optional[T]) or 'check'.",
             _ => null
         };
         if (fix != null)
@@ -214,7 +214,7 @@ public partial class Parser
                 message: "`None` is the nothing type, used in a type or a pattern (`Work[None]`, `is None`). " +
                          "The absent value is `none`: " + (_language == TypeModel.Enums.Language.Suflae
                              ? "`var m: S64? = none`."
-                             : "`var m: Maybe[S64] = none`."));
+                             : "`var m: Optional[S64] = none`."));
         }
 
         throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,

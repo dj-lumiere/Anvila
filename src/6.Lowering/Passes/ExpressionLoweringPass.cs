@@ -26,7 +26,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 {
     private const string NoneTypeName = "None";
     private const string TypeIdFieldName = "type_id";
-    private const string MaybeTypeName = "Maybe";
+    private const string MaybeTypeName = "Optional";
 
     private int _tempCount;
 
@@ -248,8 +248,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return ([], new BlockStatement(Statements: hoisted, Location: es.Location));
     }
 
-    // Lowers an assignment statement, auto-wrapping the value into a Maybe creator when the
-    // target member field is Maybe[T] and the value is a bare T.
+    // Lowers an assignment statement, auto-wrapping the value into an Optional creator when the
+    // target member field is Optional[T] and the value is a bare T.
     private (List<Statement> Hoisted, Statement Lowered) LowerAssignmentStatement(
         AssignmentStatement asgn, Statement stmt)
     {
@@ -267,8 +267,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         }
 
         (List<Statement> hoisted, Expression loweredVal) = LowerExpr(expr: asgn.Value);
-        // Maybe auto-wrap on a member store: `me.field = x` where `field : Maybe[T]` and
-        // `x : T` boxes the bare value into `Maybe[T](present: true, value: x)` as a real
+        // Optional auto-wrap on a member store: `me.field = x` where `field : Optional[T]` and
+        // `x : T` boxes the bare value into `Optional[T](present: true, value: x)` as a real
         // CreatorExpression (codegen's record-creator path builds the { i1, T } aggregate),
         // instead of codegen hand-building the insertvalue at the store site.
         Expression effectiveVal =
@@ -526,7 +526,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return ([], acc);
         }
 
-        // Carrier (Maybe/Result/Lookup): single-level payload extraction.
+        // Carrier (Optional/Result/Lookup): single-level payload extraction.
         return ([], extractStep(carrier: rawRead(), step: target));
     }
 
@@ -562,7 +562,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             // Step 1h-2: obeys -> buildtime Bool literal
             { Operator: BinaryOperator.Obeys } => LowerObeysExpr(
                 obeysBin: bin),
-            // Step 1j: binary-assign with Maybe member target
+            // Step 1j: binary-assign with Optional member target
             { Operator: BinaryOperator.Assign } => LowerBinaryAssign(assignBin: bin, expr: expr),
             // Recursive descent for all other binary nodes
             _ => LowerGenericBinary(bin: bin, expr: expr)
@@ -597,8 +597,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         });
     }
 
-    // Step 1j: lowers a binary-assign expression, auto-wrapping the RHS into a Maybe creator
-    // when the LHS member field type is Maybe[T] and the RHS is a bare T.
+    // Step 1j: lowers a binary-assign expression, auto-wrapping the RHS into an Optional creator
+    // when the LHS member field type is Optional[T] and the RHS is a bare T.
     private (List<Statement> Hoisted, Expression Expr) LowerBinaryAssign(
         BinaryExpression assignBin, Expression expr)
     {
@@ -951,7 +951,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return args;
     }
 
-    // Lowers a single named argument, wrapping the value for a variant arm or Maybe parameter if needed.
+    // Lowers a single named argument, wrapping the value for a variant arm or Optional parameter if needed.
     private NamedArgumentExpression LowerNamedCallArg(NamedArgumentExpression namedArg,
         RoutineInfo? callRoutine, List<Statement> hoisted, TypeSymbol? constructed, List<Expression> earlier)
     {
@@ -993,7 +993,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return fields != null && index < fields.Count ? fields[index: index].Type : null;
     }
 
-    // Lowers a single positional argument, wrapping the value for a variant arm or Maybe parameter if needed.
+    // Lowers a single positional argument, wrapping the value for a variant arm or Optional parameter if needed.
     private Expression LowerPositionalCallArg(Expression arg, RoutineInfo? callRoutine,
         int posArgIdx, List<Statement> hoisted, List<Expression> earlier, TypeSymbol? constructed)
     {
@@ -1864,11 +1864,11 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
     /// <summary>
     /// Implicit carrier-wrap rewrite for variable declarations:
-    /// <c>var m: Maybe[T] = expr</c> where <c>expr : T</c> is rewritten to
-    /// <c>var m: Maybe[T] = Maybe[T](present: true, value: expr)</c>.
+    /// <c>var m: Optional[T] = expr</c> where <c>expr : T</c> is rewritten to
+    /// <c>var m: Optional[T] = Optional[T](present: true, value: expr)</c>.
     /// Returns null when no wrap applies (init already matches the carrier, type
-    /// annotation is absent, or carrier isn't Maybe). Mirrors the SA assignability
-    /// rule that permits <c>T -&gt; Maybe[T]</c> in initializers.
+    /// annotation is absent, or carrier isn't Optional). Mirrors the SA assignability
+    /// rule that permits <c>T -&gt; Optional[T]</c> in initializers.
     /// </summary>
     private static Expression? TryWrapCarrier(TypeExpression? varType, Expression init)
     {
@@ -1897,9 +1897,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         }
 
         string carrierName = LastNameSegment(name: varType.Name);
-        // Only Maybe handled at this stage. Result/Lookup payloads need TypeLayoutPass
+        // Only Optional handled at this stage. Result/Lookup payloads need TypeLayoutPass
         // to stamp byte sizes before their construction can be synthesized. The written `E?` of a
-        // Suflae entity resolves to its nullable Roamed[E] handle, not to a Maybe, so the resolved
+        // Suflae entity resolves to its nullable Roamed[E] handle, not to an Optional, so the resolved
         // type decides too: an entity handle is stored into an `E?` slot as it is.
         if (carrierName != MaybeTypeName ||
             targetType != null && CarrierBaseName(type: targetType) != MaybeTypeName)
@@ -1912,14 +1912,14 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return null;
         }
 
-        // Skip if init already produces the carrier itself (e.g. explicit Maybe[T](...)).
+        // Skip if init already produces the carrier itself (e.g. explicit Optional[T](...)).
         string initBase = CarrierBaseName(type: initType);
         if (initBase == MaybeTypeName)
         {
             return null;
         }
 
-        // Build `Maybe[T](present: true, value: init)`. The carrier is a stdlib record
+        // Build `Optional[T](present: true, value: init)`. The carrier is a stdlib record
         // with named fields {present: Bool, value: T} — field-init lowering in codegen
         // handles construction via the existing record-creator path.
         var trueLit = new LiteralExpression(Value: true,
@@ -1937,9 +1937,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Member-store Maybe auto-wrap: when the assignment target is a <c>MemberExpression</c> whose
-    /// resolved field type is <c>Maybe[T]</c> and the value is a bare <c>T</c> (not already a Maybe,
-    /// not the <c>none</c> literal), box it into <c>Maybe[T](present: true, value: value)</c>. Returns
+    /// Member-store Optional auto-wrap: when the assignment target is a <c>MemberExpression</c> whose
+    /// resolved field type is <c>Optional[T]</c> and the value is a bare <c>T</c> (not already an Optional,
+    /// not the <c>none</c> literal), box it into <c>Optional[T](present: true, value: value)</c>. Returns
     /// null otherwise. Mirrors <see cref="TryWrapCarrier"/> but keys off the target member's resolved
     /// TypeSymbol rather than a declared TypeExpression — replaces the hand-built { i1, T } insertvalue
     /// that codegen used to emit at the member store (D3).
@@ -1952,9 +1952,9 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Maybe auto-wrap into a slot of type <paramref name="targetType"/> (a member store, a call argument):
-    /// when the slot is <c>Maybe[T]</c> and the value is a bare <c>T</c> (not already a Maybe, not the
-    /// <c>none</c> literal), box it into <c>Maybe[T](present: true, value: value)</c>. Returns null otherwise.
+    /// Optional auto-wrap into a slot of type <paramref name="targetType"/> (a member store, a call argument):
+    /// when the slot is <c>Optional[T]</c> and the value is a bare <c>T</c> (not already an Optional, not the
+    /// <c>none</c> literal), box it into <c>Optional[T](present: true, value: value)</c>. Returns null otherwise.
     /// </summary>
     private CreatorExpression? TryWrapMaybe(TypeSymbol? targetType, Expression value)
     {
@@ -1969,13 +1969,13 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return null;
         }
 
-        // The `none` literal is Maybe's zero value — leave it as-is (codegen stores zeroinitializer).
+        // The `none` literal is Optional's zero value — leave it as-is (codegen stores zeroinitializer).
         if (value is LiteralExpression { LiteralType: TokenType.NoneValue })
         {
             return null;
         }
 
-        // Already a Maybe carrier — no wrap.
+        // Already an Optional carrier — no wrap.
         TypeSymbol? valueType = value.ResolvedType;
         if (valueType != null && CarrierBaseName(type: valueType) == MaybeTypeName)
         {
@@ -2499,12 +2499,12 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// <summary>
     /// 1f. Lowers <c>x is None</c> / <c>x is None</c> / their negated forms for carriers:
     /// <list type="bullet">
-    ///   <item><c>Maybe[T record] is None</c>  ->  <c>not x.present</c></item>
-    ///   <item><c>Maybe[T record] isnot None</c>  ->  <c>x.present</c></item>
+    ///   <item><c>Optional[T record] is None</c>  ->  <c>not x.present</c></item>
+    ///   <item><c>Optional[T record] isnot None</c>  ->  <c>x.present</c></item>
     ///   <item><c>Lookup[T] is None</c>  ->  <c>x.type_id == 0_u64</c></item>
     ///   <item><c>Lookup[T] isnot None</c>  ->  <c>x.type_id != 0_u64</c></item>
     /// </list>
-    /// <c>Maybe[T entity]</c> absence checks are NOT lowered here (require Snatched null compare);
+    /// <c>Optional[T entity]</c> absence checks are NOT lowered here (require Snatched null compare);
     /// they fall through unchanged for <c>EmitIsPattern</c> in codegen.
     /// </summary>
     // Hoists the with-base to a temp var if it isn't already a trivial identifier (avoid double-eval),
@@ -2586,7 +2586,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         TypeSymbol? boolType = ctx.Registry.LookupType(name: "Bool");
         TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
 
-        // Maybe[T record]: x is None -> not x.present; x isnot None -> x.present
+        // Optional[T record]: x is None -> not x.present; x isnot None -> x.present
         if (isNoneCheck && IsMaybeRecord(type: operandType))
         {
             return LowerMaybeAbsenceCheck(ipe: ipe,
@@ -2622,7 +2622,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             }
         }
 
-        // Not lowerable (Maybe[T entity] or other): pass through, but recurse operand.
+        // Not lowerable (Optional[T entity] or other): pass through, but recurse operand.
         if (ReferenceEquals(objA: loweredExpr, objB: ipe.Expression) && hoisted.Count == 0)
         {
             return ([], ipe);
@@ -2726,7 +2726,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             Location: ipe.Location) { ResolvedType = boolType });
     }
 
-    // Maybe[T record]: x is None -> not x.present; x isnot None -> x.present
+    // Optional[T record]: x is None -> not x.present; x isnot None -> x.present
     private (List<Statement> Hoisted, Expression Expr) LowerMaybeAbsenceCheck(
         IsPatternExpression ipe, Expression loweredExpr, TypeSymbol? boolType,
         List<Statement> hoisted)
@@ -3280,7 +3280,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Returns true if <paramref name="type"/> is <c>Maybe[T]</c> where T is a record/value type
+    /// Returns true if <paramref name="type"/> is <c>Optional[T]</c> where T is a record/value type
     /// (the two-field variant with <c>present</c> and <c>value</c> fields).
     /// </summary>
     private static bool IsMaybeRecord(TypeSymbol? type)
@@ -3305,8 +3305,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return false;
         }
 
-        // Maybe[T entity] uses the same record-shaped carrier
-        // as Maybe[T record] (single `present`+`value` layout), so accept both.
+        // Optional[T entity] uses the same record-shaped carrier
+        // as Optional[T record] (single `present`+`value` layout), so accept both.
         return true;
     }
 
@@ -3363,7 +3363,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// </summary>
     internal static TypeExpression TypeInfoToExpr(TypeSymbol type, SourceLocation loc)
     {
-        // For generic resolutions, use the base definition name (not the resolved "Maybe[S64]").
+        // For generic resolutions, use the base definition name (not the resolved "Optional[S64]").
         string baseName = type switch
         {
             RecordTypeSymbol { GenericDefinition: not null } r => r.GenericDefinition.Name,

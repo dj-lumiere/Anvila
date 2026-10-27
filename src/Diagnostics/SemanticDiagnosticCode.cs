@@ -81,7 +81,7 @@ public enum SemanticDiagnosticCode
 
     /// <summary>
     /// The value literal 'none' was used outside a carrier or variant slot.
-    /// Legal contexts: target type is Maybe[T] or a variant with a None arm.
+    /// Legal contexts: target type is Optional[T] or a variant with a None arm.
     /// </summary>
     NoneOutsideCarrierSlot = 16,
 
@@ -737,7 +737,7 @@ public enum SemanticDiagnosticCode
     TokenReturnNotAllowed = 600,
 
     /// <summary>A token stored in a member variable, or written or inferred as a type argument (<c>List[Viewing[T]]</c>,
-    /// a tuple, a variant, a generic type), or a <c>Maybe</c> of a token kept in a name.</summary>
+    /// a tuple, a variant, a generic type), or a <c>Optional</c> of a token kept in a name.</summary>
     TokenMemberVariableNotAllowed = 601,
 
     /// <summary>Cannot use scope-bound token as variant payload.</summary>
@@ -1138,18 +1138,11 @@ public enum SemanticDiagnosticCode
     /// <summary>Suflae type inference falls back to Data.</summary>
     SuflaeDataFallback = 831,
 
-    /// <summary>Routine cannot directly return Maybe&lt;T&gt;/Result&lt;T&gt;/Lookup&lt;T&gt; — use failable routines (!) instead.</summary>
+    /// <summary>Routine cannot directly return Optional&lt;T&gt;/Result&lt;T&gt;/Lookup&lt;T&gt; — use failable routines (!) instead.</summary>
     ErrorHandlingTypeAsReturnType = 806,
 
-    ///<summary>Nested Maybe types (Maybe[Maybe[T]] / T??) are not allowed.</summary>
+    ///<summary>Nested Optional types (Optional[Optional[T]] / T??) are not allowed.</summary>
     NestedMaybeProhibited = 808,
-
-    /// <summary>`Maybe[E]` written with an entity `E`: the optional over an entity is `Optional[E]` (`E?`).</summary>
-    MaybeOverEntity = 817,
-
-    /// <summary>`Optional[T]` written with a `T` that is not an entity: the optional over a value is `Maybe[T]`
-    /// (`T?`).</summary>
-    OptionalOverValue = 818,
 
     /// <summary>`from_serial` is the builder's own name: a program neither writes nor calls it, it reads a value
     /// back with `sv.to[T]()`.</summary>
@@ -1195,7 +1188,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Unknown <c>expand</c> source — not allmemvarof/openmemvarof/caseof/branchof.</summary>
     UnknownExpandSource = 953,
 
-    /// <summary>Bare entity type used as type argument to Maybe/Result/Lookup. Wrap in Retained[T] or Guarded[T].</summary>
+    /// <summary>Bare entity type used as type argument to Optional/Result/Lookup. Wrap in Retained[T] or Guarded[T].</summary>
     BareEntityInCarrierType = 961,
 
     /// <summary>Residual high-level AST node survived backend-entry lowering validation.</summary>

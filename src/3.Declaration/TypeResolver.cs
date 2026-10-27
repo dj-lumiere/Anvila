@@ -14,7 +14,7 @@ namespace Builder.Declaration;
 /// </summary>
 internal sealed class TypeResolver
 {
-    private const string MaybeTypeName = "Maybe";
+    private const string MaybeTypeName = "Optional";
 
     private readonly SemanticVerifier _sa;
 
@@ -164,8 +164,8 @@ internal sealed class TypeResolver
 
     /// <summary>
     /// Resolves a type expression to a TypeSymbol.
-    /// Nullable types (T?) are desugared to Maybe&lt;T&gt; at parse time,
-    /// so by the time we see them here, they're already Maybe&lt;T&gt;.
+    /// Nullable types (T?) are desugared to Optional&lt;T&gt; at parse time,
+    /// so by the time we see them here, they're already Optional&lt;T&gt;.
     /// </summary>
     /// <param name="typeExpr">The type expression to resolve.</param>
     /// <returns>The resolved type, or an error type if resolution fails.</returns>
@@ -214,9 +214,9 @@ internal sealed class TypeResolver
     /// substituted to <c>Roamed[E]</c> at this single choke point instead of per-site gates.
     /// <para>Carve-outs: the stdlib is excluded (borrowed RazorForge source keeps bare single-owner
     /// entities); an already-<c>Roamed[...]</c> type is idempotent (no <c>Roamed[Roamed[E]]</c>); and
-    /// <c>Maybe[E]</c> / <c>Maybe[Roamed[E]]</c> (from the <c>E?</c> desugaring) COLLAPSES to a nullable
+    /// <c>Optional[E]</c> / <c>Optional[Roamed[E]]</c> (from the <c>E?</c> desugaring) COLLAPSES to a nullable
     /// bare <c>Roamed[E]</c> — an entity reference carries its own none via a null handle, so it needs no
-    /// <c>Maybe</c> wrapper (value types still use <c>Maybe[T]</c> for <c>T?</c>).</para>
+    /// <c>Optional</c> wrapper (value types still use <c>Optional[T]</c> for <c>T?</c>).</para>
     /// </summary>
     /// <summary>
     /// The same Suflae substitution for a slot type that was INFERRED rather than written: a collection
@@ -348,7 +348,7 @@ internal sealed class TypeResolver
             return ResolveRoutineType(typeExpr: typeExpr);
         }
 
-        // Handle generic types (List<T>, Dict<K, V>, Maybe<T>)
+        // Handle generic types (List<T>, Dict<K, V>, Optional<T>)
         if (typeExpr.GenericArguments is { Count: > 0 })
         {
             return ResolveGenericType(typeExpr: typeExpr);
@@ -617,21 +617,13 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// Resolves a generic type expression (e.g., <c>List[T]</c>, <c>Maybe[s32]</c>) to a concrete
+    /// Resolves a generic type expression (e.g., <c>List[T]</c>, <c>Optional[S32]</c>) to a concrete
     /// generic resolution, looking up the base type, resolving each type argument, validating
     /// argument counts and generic constraints, and returning the cached resolved type.
     /// </summary>
     private TypeSymbol ResolveGenericType(TypeExpression typeExpr)
     {
         TypeSymbol? genericDef = LookupTypeWithImports(name: typeExpr.Name);
-        // `Optional[E]` is the name `Maybe` takes over an entity: the same generic definition.
-        bool writtenOptional = false;
-        if (genericDef == null && typeExpr.Name == RecordTypeSymbol.OptionalCarrierName)
-        {
-            genericDef = LookupTypeWithImports(name: MaybeTypeName);
-            writtenOptional = genericDef != null;
-        }
-
         if (genericDef == null)
         {
             if (_sa.TryReportSecretTypeAccess(name: typeExpr.Name, location: typeExpr.Location))
@@ -682,25 +674,20 @@ internal sealed class TypeResolver
             return noneResult;
         }
 
-        if (genericDefCarrierName == MaybeTypeName)
-        {
-            CheckOptionalCarrierName(typeExpr: typeExpr, writtenOptional: writtenOptional, held: typeArgs[index: 0]);
-        }
-
-        // Reject nested Maybe types (#83): Maybe[Maybe[T]] / T??
+        // Reject nested Optional types (#83): Optional[Optional[T]] / T??
         if (genericDefCarrierName == MaybeTypeName && IsMaybeType(type: typeArgs[index: 0]))
         {
             _sa.ReportError(code: SemanticDiagnosticCode.NestedMaybeProhibited,
                 message:
-                "'Maybe[Maybe[T]]' is not allowed. A single '?' already expresses optionality.",
+                "'Optional[Optional[T]]' ('T??') is not allowed. A single '?' already expresses optionality.",
                 location: typeExpr.Location);
         }
 
-        // A bare entity T IS the lvalue/bound form, so Maybe[T] /
+        // A bare entity T IS the lvalue/bound form, so Optional[T] /
         // Check[T] over a bare entity is now a valid carrier shape — the
         // carrier owns the bound entity directly. The previous S953 rejection of this
-        // case was removed alongside Maybe's `needs T is RecordType` constraint.
-        // The identity/ownership-transfer semantics of `Maybe[Entity].unwrap() -> T`
+        // case was removed alongside Optional's `needs T is RecordType` constraint.
+        // The identity/ownership-transfer semantics of `Optional[Entity].unwrap() -> T`
         // are still an open design question (likely `T` — return-position rvalue).
 
         // A bare entity T in collection slots is fine — bound T is
@@ -718,42 +705,7 @@ internal sealed class TypeResolver
     }
 
     /// <summary>
-    /// The optional's written name against what it holds: <c>T?</c> picks <c>Maybe[T]</c> for a value and
-    /// <c>Optional[T]</c> for an entity, so a written <c>Maybe[E]</c> over an entity is RF-S817 and a written
-    /// <c>Optional[T]</c> over a value is RF-S818. A <c>T?</c> (parsed as <c>Maybe</c> at <c>T</c>'s own location) and
-    /// a type parameter are left alone.
-    /// </summary>
-    private void CheckOptionalCarrierName(TypeExpression typeExpr, bool writtenOptional, TypeSymbol held)
-    {
-        if (held is GenericParameterTypeSymbol or ErrorTypeSymbol || _sa._registry.EntitiesAreShared)
-        {
-            return;
-        }
-
-        string heldName = held.Name;
-        bool isEntity = held is EntityTypeSymbol;
-        if (writtenOptional && !isEntity)
-        {
-            _sa.ReportError(code: SemanticDiagnosticCode.OptionalOverValue,
-                message: $"'Optional[{heldName}]' holds an entity, and '{heldName}' is not one. The optional over a " +
-                         $"value is 'Maybe[{heldName}]': write '{heldName}?'.",
-                location: typeExpr.Location);
-            return;
-        }
-
-        bool writtenMaybe = !writtenOptional && typeExpr.GenericArguments is [var argument] &&
-                            argument.Location != typeExpr.Location;
-        if (writtenMaybe && isEntity && !_sa.IsStdlibFile(filePath: typeExpr.Location.FileName))
-        {
-            _sa.ReportError(code: SemanticDiagnosticCode.MaybeOverEntity,
-                message: $"'Maybe[{heldName}]' holds a value, and '{heldName}' is an entity. The optional over an " +
-                         $"entity is 'Optional[{heldName}]': write '{heldName}?' or 'Optional[{heldName}]'.",
-                location: typeExpr.Location);
-        }
-    }
-
-    /// <summary>
-    /// Handles <c>None</c> type arguments: the carrier None-collapse identity (<c>Maybe[None]</c> ≡ <c>Bool</c>)
+    /// Handles <c>None</c> type arguments: the carrier None-collapse identity (<c>Optional[None]</c> ≡ <c>Bool</c>)
     /// and the rejection of <c>None</c> as a type argument for any type that does not allow it. Returns the
     /// substitute/error type to short-circuit with, or null when no <c>None</c>-specific handling applies.
     /// </summary>
@@ -761,7 +713,7 @@ internal sealed class TypeResolver
         List<TypeSymbol> typeArgs, string? genericDefCarrierName, bool allowsNone)
     {
         // Carrier None-collapse (design invariant): a recovery carrier over the unit type None degenerates —
-        //   Maybe[None]  ≡ Bool          (present|absent with no payload = a 2-state = Bool)
+        //   Optional[None]  ≡ Bool          (present|absent with no payload = a 2-state = Bool)
         // Check[None] is the canonical no-payload carrier and stays. These arise from `try` over a unit-returning
         // call. Enforce the identity in resolution so the carrier type is uniform.
         if (typeArgs.Count == 1 && typeArgs[index: 0] is { Name: "None" })

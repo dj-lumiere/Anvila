@@ -15,14 +15,14 @@ namespace Builder.Declaration;
 ///
 /// <para>Scope mirrors <see cref="RuntimeContract"/>: it checks the declared-in-stdlib routine names
 /// (<see cref="RuntimeContract.StdlibRoutineContracts"/>), the wrapper TYPE names
-/// (<see cref="RuntimeContract.WrapperTypes"/>), and the <c>Maybe</c> carrier fields. It deliberately
+/// (<see cref="RuntimeContract.WrapperTypes"/>), and the <c>Optional</c> carrier fields. It deliberately
 /// does NOT check builder-generated / intrinsic names (the <c>try</c> variant of <c>emit</c>, <c>refer</c>/<c>control</c>,
 /// BuilderQuery/<c>data_size</c>) or the native <c>rf_*</c> externs (link-checked C-ABI).</para>
 /// </summary>
 public static class RuntimeContractCheck
 {
     /// <summary>The record type that carries the <c>present</c>/<c>value</c> optional fields.</summary>
-    private const string CarrierTypeName = "Maybe";
+    private const string CarrierTypeName = "Optional";
 
     /// <summary>Runs the contract-resolution check against a fully-loaded stdlib registry. Returns a
     /// human-readable description for each broken contract; an empty list means every contract holds.</summary>
@@ -41,7 +41,7 @@ public static class RuntimeContractCheck
         // 3. Wrapper / marker-protocol TYPE-name contracts must each resolve to a registered type.
         CheckTypeContracts(registry: registry, errors: errors);
 
-        // 4. Carrier-field contracts must exist as member variables on the Maybe record.
+        // 4. Carrier-field contracts must exist as member variables on the Optional record.
         CheckCarrierFieldContracts(registry: registry, errors: errors);
 
         return errors;
@@ -104,7 +104,7 @@ public static class RuntimeContractCheck
     }
 
     /// <summary>
-    /// Asserts the <c>present</c>/<c>value</c> carrier fields exist as member variables on the Maybe
+    /// Asserts the <c>present</c>/<c>value</c> carrier fields exist as member variables on the Optional
     /// record.
     /// </summary>
     private static void CheckCarrierFieldContracts(TypeRegistry registry, List<string> errors)

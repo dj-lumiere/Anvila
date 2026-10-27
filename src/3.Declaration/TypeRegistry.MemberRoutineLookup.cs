@@ -3225,8 +3225,8 @@ public sealed partial class TypeRegistry
     private static TypeSymbol? SubstituteOwnerReturnType(RoutineInfo memberRoutine,
         TypeSymbol? genericDef, TypeSymbol resolvedOwner, Dictionary<string, TypeSymbol> substitution)
     {
-        // Special case: if return type IS the owner's generic def (e.g. Maybe.store returns Maybe_def),
-        // the concrete return type is resolvedOwner itself (Maybe[ListNode[S64]], not Maybe_def).
+        // Special case: if return type IS the owner's generic def (e.g. Optional.store returns Maybe_def),
+        // the concrete return type is resolvedOwner itself (Optional[ListNode[S64]], not Maybe_def).
         TypeSymbol? result;
         if (memberRoutine.ReturnType != null && genericDef != null &&
             (ReferenceEquals(objA: memberRoutine.ReturnType, objB: genericDef) ||
@@ -4186,7 +4186,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>The owned-value lifecycle of a type, resolved through the single unified own-memberRoutine
     /// resolver (<see cref="GetOwnMemberRoutinesResolved"/>) so the teardown and copy passes agree about
-    /// generic resolutions like <c>Retained[Tracer]</c> / <c>Maybe[Text]</c>.</summary>
+    /// generic resolutions like <c>Retained[Tracer]</c> / <c>Optional[Text]</c>.</summary>
     public readonly record struct Lifecycle(
         RoutineInfo? Store,
         RoutineInfo? Destroy,
@@ -4255,7 +4255,7 @@ public sealed partial class TypeRegistry
             return true;
         }
 
-        // The owner's parameter names come from its generic definition, whether it is a record (`Maybe[T]`) or
+        // The owner's parameter names come from its generic definition, whether it is a record (`Optional[T]`) or
         // an entity (`List[T]`).
         List<string>? paramNames = ownerType switch
         {

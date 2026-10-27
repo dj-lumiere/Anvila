@@ -82,7 +82,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // when lowering `??` and `?.` (see MakeAbsencePattern), and hoists when-expressions into
         // WhenStatements. Those are inserted AFTER the first PatternLoweringPass run, so re-run PLP
         // to fold them into the if/else chains codegen expects. That second PLP run can introduce
-        // UnaryExpression(Not) (e.g. `not present`) on Maybe[T record] absence checks, so re-run ELP
+        // UnaryExpression(Not) (e.g. `not present`) on Optional[T record] absence checks, so re-run ELP
         // after it to lower those into ConditionalExpression form. When the first ELP produced NO
         // WhenStatement, this whole round is a pure no-op re-walk — skip it.
         if (elp.ProducedWhenStatement)

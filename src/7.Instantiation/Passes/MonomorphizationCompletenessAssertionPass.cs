@@ -155,7 +155,7 @@ internal static class MonomorphizationCompletenessAssertionPass
 
     /// <summary>
     /// True when the type IS a residual generic parameter (<c>T</c>), or nests one at any depth in
-    /// its type arguments. A bare generic DEFINITION used as a type label (<c>Maybe</c> with no
+    /// its type arguments. A bare generic DEFINITION used as a type label (<c>Optional</c> with no
     /// arguments) is deliberately NOT flagged: it is not a substitutable parameter — codegen never
     /// monomorphizes it — and pre-existing type-label imprecision on some identifier nodes tags such
     /// bare defs. C1 targets unsubstituted <see cref="GenericParameterTypeSymbol"/> and generic-def

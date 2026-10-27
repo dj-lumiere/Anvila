@@ -668,7 +668,7 @@ public partial class LlvmEmitter
         }
 
         string structAddr = EmitLvalueAddress(sb: sb, expr: member.Object);
-        if (structRecord.IsOptionalCarrier)
+        if (structRecord.IsEntityOptional)
         {
             EmitOptionalMemberWrite(sb: sb, optionalAddress: structAddr, memberVariableName: member.MemberName,
                 value: value);

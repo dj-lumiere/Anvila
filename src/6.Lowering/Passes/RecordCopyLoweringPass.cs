@@ -410,10 +410,10 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private Statement LowerDeclarationStatement(DeclarationStatement ds, VariableDeclaration vd,
         Statement stmt)
     {
-        // A carrier PAYLOAD EXTRACTION — `<Maybe/Result/Lookup>.value` (a MemberExpression on a
+        // A carrier PAYLOAD EXTRACTION — `<Optional/Result/Lookup>.value` (a MemberExpression on a
         // carrier), or the `CarrierPayloadExpression` the Result/Lookup path lowers to — is a VIEW
         // into a payload the carrier still owns, NOT an owning copy. It is the shape every `when`/
-        // `each` element binding takes (`else var v -> …` from `try it.emit()`'s `Maybe`). Retaining it
+        // `each` element binding takes (`else var v -> …` from `try it.emit()`'s `Optional`). Retaining it
         // makes the loop element a co-owner (+1) that never escapes the each scope and is never
         // released → a per-iteration leak + needless churn. The carrier owns the payload for as long
         // as the binding is live (non-escaping), and any ESCAPING use retains at its own store site,
@@ -423,9 +423,9 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // here. Two shapes reach this: the non-escaping loop-element binding above, and
         // `strip_out`'s `return me.value` (spilled to `__td_ret_N` by ScopeTeardownLoweringPass) —
         // which hands the payload's SINGLE reference to the caller and empties the carrier
-        // (`present = false`), the model a `Maybe[Entity]` requires (an entity cannot be co-owned).
+        // (`present = false`), the model a `Optional[Entity]` requires (an entity cannot be co-owned).
         // NOTE: `unwrap`/`!!` does NOT reach here — it returns `me.value.copy()` (an explicit
-        // co-owning duplicate in Maybe.rf; `copy` is the unified record/variant/managed-leaf
+        // co-owning duplicate in Optional.rf; `copy` is the unified record/variant/managed-leaf
         // duplication verb, so a Copyable variant like SerialValue resolves via its arm-walk copy),
         // a CallExpression, so the carrier stays a co-owner and the caller gets an independent
         // reference (correct for record/value/managed payloads).
@@ -560,10 +560,10 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
 
         // (`a[i]` is a `getitem` call, which hands back a holder of its own — no copy injection is needed here.)
 
-        // A recovery variant returns its value wrapped in its carrier (`return x` became `return Maybe(present:
+        // A recovery variant returns its value wrapped in its carrier (`return x` became `return Optional(present:
         // true, value: x)`). The wrapped value is still what the routine returns, so it moves out like a bare
         // return: copying a returned local here left one share nobody released.
-        if (isReturn && expr is CreatorExpression { ResolvedType.BareName: "Maybe" or "Optional" or "Check" } carrier)
+        if (isReturn && expr is CreatorExpression { ResolvedType.BareName: "Optional" or "Check" } carrier)
         {
             return StripStealFromCreator(creator: carrier, membersAreReturned: true);
         }
@@ -857,7 +857,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // Same unified decision the teardown pass uses (TypeRegistry.GetLifecycle): a retaining copy
         // is needed iff the type has a hand-written (non-synthesized) zero-arg `store` — restricted to
         // records and excluding the borrow tier — resolved through GetOwnMemberRoutinesResolved so generic
-        // resolutions (e.g. Maybe[Text]) agree with what teardown sees for the same type.
+        // resolutions (e.g. Optional[Text]) agree with what teardown sees for the same type.
         TypeRegistry.Lifecycle lc = ctx.Registry.GetLifecycle(type: type);
         copyMemberRoutine = lc.Store;
         return !lc.IsBorrow && copyMemberRoutine != null;
@@ -872,7 +872,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     /// <summary>
     /// True when <paramref name="init"/> extracts a carrier's inline payload — a <c>CarrierPayloadExpression</c>
     /// (the Result/Lookup arm-binding form) or a member access <c>&lt;carrier&gt;.value</c> where the receiver
-    /// is a <c>Maybe</c>/<c>Result</c>/<c>Lookup</c> carrier (the <c>Maybe</c> arm-binding form, e.g. an
+    /// is a <c>Optional</c>/<c>Result</c>/<c>Lookup</c> carrier (the <c>Optional</c> arm-binding form, e.g. an
     /// <c>each</c>/<c>when</c> element). Such a binding is a VIEW into a payload the carrier owns, so it must
     /// not be retained as an owning copy.
     /// </summary>

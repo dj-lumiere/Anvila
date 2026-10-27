@@ -118,7 +118,7 @@ public class RecordTypeSymbol : TypeSymbol
             }
 
             // `Optional[T]` is the entity's address alone (null when absent).
-            if (IsOptionalCarrier)
+            if (IsEntityOptional)
             {
                 return "ptr";
             }
@@ -152,12 +152,12 @@ public class RecordTypeSymbol : TypeSymbol
         }
 
         // Optional[T]: the entity's address alone.
-        if (IsOptionalCarrier)
+        if (IsEntityOptional)
         {
             return pointerSize;
         }
 
-        // Result[T]: 8-byte type-id tag + max(payload, 8). Maybe is handled by
+        // Result[T]: 8-byte type-id tag + max(payload, 8). Optional is handled by
         // the member-sum path since its layout is just {i1, T}.
         if (CarrierKind is CarrierKind.Result &&
             TypeArguments is { Count: 1 } args)
@@ -249,28 +249,24 @@ public class RecordTypeSymbol : TypeSymbol
         RCWrapperBaseNames.Contains(item: wrapper));
 
     /// <summary>
-    /// Whether this is a builder-known error-handling carrier (Maybe, Result, Lookup).
+    /// Whether this is a builder-known error-handling carrier (Optional, Result, Lookup).
     /// Set on the generic definition shells registered by TypeRegistry before stdlib loads.
     /// Propagated to all resolved instances via <see cref="CreateInstance"/>.
     /// </summary>
     public CarrierKind CarrierKind { get; init; } = CarrierKind.None;
 
-    /// <summary>The name of the optional carrier over an entity: <c>T?</c> for an entity <c>T</c> is
-    /// <c>Optional[T]</c>, and for any other <c>T</c> it is <c>Maybe[T]</c>.</summary>
-    public const string OptionalCarrierName = "Optional";
-
     /// <summary>
-    /// Whether this is <c>Optional[T]</c>: the optional carrier over an entity <c>T</c>. It is laid out as the
-    /// entity's address alone, with the null address for <c>none</c>, where <c>Maybe[T]</c> is a presence flag and
-    /// the value (<c>{ i1, T }</c>). Both share one generic definition, <c>Maybe</c>, and its routines.
+    /// Whether this is <c>Optional[T]</c> over an entity <c>T</c>. It is laid out as the entity's address alone, with
+    /// the null address for <c>none</c>, where <c>Optional[T]</c> over a value is a presence flag and the value
+    /// (<c>{ i1, T }</c>). Both are the one generic definition, <c>Optional</c>, with its routines.
     /// </summary>
-    public bool IsOptionalCarrier => IsOptionalCarrierOver(carrierKind: CarrierKind, typeArguments: TypeArguments);
+    public bool IsEntityOptional => IsEntityOptionalOver(carrierKind: CarrierKind, typeArguments: TypeArguments);
 
-    /// <summary>Whether a <see cref="CarrierKind.Maybe"/> carrier over <paramref name="typeArguments"/> is
-    /// <c>Optional[T]</c>: its one argument is an entity reached through its address.</summary>
-    public static bool IsOptionalCarrierOver(CarrierKind carrierKind, IReadOnlyList<TypeSymbol>? typeArguments)
+    /// <summary>Whether a <see cref="CarrierKind.Optional"/> carrier over <paramref name="typeArguments"/> is laid out as
+    /// an address: its one argument is an entity reached through its address.</summary>
+    public static bool IsEntityOptionalOver(CarrierKind carrierKind, IReadOnlyList<TypeSymbol>? typeArguments)
     {
-        return carrierKind == CarrierKind.Maybe && typeArguments is [EntityTypeSymbol];
+        return carrierKind == CarrierKind.Optional && typeArguments is [EntityTypeSymbol];
     }
 
     /// <summary>
@@ -338,11 +334,7 @@ public class RecordTypeSymbol : TypeSymbol
         // Build resolved type name using FullName for each type argument so the resolved
         // type carries fully-qualified inner names (e.g., "Hijacked[System.Byte]").
         // TypeSymbol.FullName then prepends the module: "System.Hijacked[System.Byte]".
-        // `Maybe` over an entity is `Optional`: the same definition, named and laid out for an entity.
-        string baseName = IsOptionalCarrierOver(carrierKind: CarrierKind, typeArguments: typeArguments)
-            ? OptionalCarrierName
-            : Name;
-        string resolvedName = $"{baseName}[{string.Join(separator: ", ",
+        string resolvedName = $"{Name}[{string.Join(separator: ", ",
             values: typeArguments.Select(selector: t => t.InstanceArgumentName))}]";
 
         var substitutedProtocols = ImplementedProtocols.Select(selector: p =>
@@ -833,7 +825,7 @@ public class RecordTypeSymbol : TypeSymbol
                           .ToList();
 
         // Route through the ambient TypeRegistry so entity-type specializations
-        // (e.g. Maybe[Text] -> { Hijacked[T] } layout) are picked up.
+        // (e.g. Optional[Text] -> { Hijacked[T] } layout) are picked up.
         TypeRegistry? registry = TypeRegistry.Ambient;
 
         // Get the generic definition and create resolved instance with new args

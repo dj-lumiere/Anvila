@@ -59,7 +59,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             }
 
             string keyword = prefix == "try_" ? "try" : "check";
-            string gives = keyword == "try" ? "a Maybe" : "a Check";
+            string gives = keyword == "try" ? "a 'T?'" : "a Check";
             string call = member ? $"{keyword} x.{bare}(...)" : $"{keyword} {bare}(...)";
             return $" Recovery is a keyword at the call now: write '{call}', which gives {gives} to " +
                    "take apart with 'when' (migrate rewrites it).";
@@ -88,6 +88,12 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         {
             return " A number every job changes is a 'global' or a member variable of an entity: the builder keeps " +
                    "each change whole, so write 'hits += 1' on it.";
+        }
+
+        // The optional has one name, and code writes it `T?`.
+        if (name == "Maybe")
+        {
+            return " The optional type is 'Optional[T]', written 'T?' (migrate --step type-names rewrites it).";
         }
 
         string? renamed = name switch
@@ -270,7 +276,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             case "try_view" or "try_modify" or "open_view" or "open_modify" or "close_view" or "close_modify"
                 when type.BareName is RuntimeContract.Guarded:
                 return " A block opens a Guarded: 'viewing g as v' / 'modifying g as m' (which call view_enter() / " +
-                       "modify_enter() and the matching exit), and 'try modifying g as m' gives a Maybe of the token " +
+                       "modify_enter() and the matching exit), and 'try modifying g as m' gives an Optional of the token " +
                        "(migrate --step access rewrites the old forms).";
             case "all_off" when type is FlagsTypeSymbol:
                 return $" The flags value with no member on is written 'none' now ('var empty: {type.Name} = none').";

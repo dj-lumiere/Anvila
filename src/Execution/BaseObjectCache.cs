@@ -22,7 +22,7 @@ public sealed class BaseObjectCache
     /// bodies, 53% of them <c>Hijacked[…]</c> cycle-collector combinations no real program uses — and bloats
     /// the base). Under monomorphization there is no separable "non-generic stdlib core" to precompile (an
     /// empty-<c>start</c> analysis yields only ~38 per-type lifecycle hooks). The stable, amortizable surface
-    /// is instead the COMMON generic instances that most programs share — List/Dict/Set/Maybe over common
+    /// is instead the COMMON generic instances that most programs share — List/Dict/Set/Optional over common
     /// element types plus the scalar/collection display closure — so we build the base by analyzing a
     /// representative program that actually EXERCISES them. The normal demand pipeline then materializes
     /// exactly that reached closure; each program's own tail (uncommon instances) falls to the per-run delta.

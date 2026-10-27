@@ -240,7 +240,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         // (a PDIL body is call-reached from an entry point, so the walk steps into it once it exists) — NOT
         // by GMP.RunIncremental, whose registry-wide `AllConcrete*InstancesUnfiltered` drain builds every
         // instance the registry holds. That drain is the warm/cold divergence: warm's restored registry
-        // holds the whole stdlib's instances, so it over-materialized derives (Maybe[X].duplicate,
+        // holds the whole stdlib's instances, so it over-materialized derives (Optional[X].duplicate,
         // *Emittable.destroy) a cold partial-registry build never reaches. Demand-only keeps them identical.
         bool pdilSynth = false;
         meas(arg1: "pdil", arg2: () => pdilSynth = pdil.Run());

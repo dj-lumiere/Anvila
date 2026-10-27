@@ -442,7 +442,7 @@ public sealed partial class SemanticVerifier
 
         MarkDangerousCallableParameters(routineInfo: routineInfo);
 
-        // A routine may give back `Maybe` of a token (an iterator's `emit` under `try`), unpacked where it is called.
+        // A routine may give back `Optional` of a token (an iterator's `emit` under `try`), unpacked where it is called.
         if (routineInfo.ReturnType is { } returned)
         {
             ValidateNoTokenTypeArgument(type: returned, what: $"the result of '{routineInfo.Name}'",
@@ -956,7 +956,7 @@ public sealed partial class SemanticVerifier
         }
 
         bool wholeVariable = stolen.Place is IdentifierExpression;
-        bool optionalPlace = placeType is RecordTypeSymbol { GenericDefinition.Name: "Maybe" };
+        bool optionalPlace = placeType is RecordTypeSymbol { GenericDefinition.Name: "Optional" };
         if (stolen.Fresh == null && !wholeVariable && !optionalPlace)
         {
             ReportError(code: SemanticDiagnosticCode.StealLeavesEmptyPlace,
@@ -1078,11 +1078,11 @@ public sealed partial class SemanticVerifier
     {
         if (variantReturn.Value != null)
         {
-            // A value the routine returns goes into the carrier the variant gives back (`Maybe[S64]` for `-> S64`): a
+            // A value the routine returns goes into the carrier the variant gives back (`Optional[S64]` for `-> S64`): a
             // bare number takes the routine's result type, as in the routine it was written in.
             TypeSymbol? returned = variantReturn.SiteKind == VariantSiteKind.FromReturn &&
                                    _currentRoutine?.ReturnType is
-                                       { BareName: "Maybe" or "Optional" or "Check" or "Lookup", TypeArguments: [{ } value] }
+                                       { BareName: "Optional" or "Check" or "Lookup", TypeArguments: [{ } value] }
                 ? value
                 : null;
             AnalyzeExpression(expression: variantReturn.Value, expectedType: returned);

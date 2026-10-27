@@ -5,8 +5,8 @@ namespace Builder.Verification.Enums;
 /// </summary>
 public enum ErrorHandlingKind
 {
-    /// <summary>Maybe&lt;T&gt; / T? - optional value (None or value).</summary>
-    Maybe,
+    /// <summary>Optional&lt;T&gt; / T? - optional value (None or value).</summary>
+    Optional,
 
     /// <summary>Result&lt;T&gt; - error or value.</summary>
     Result,

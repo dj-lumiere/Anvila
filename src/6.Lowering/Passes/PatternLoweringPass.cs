@@ -21,12 +21,12 @@ namespace Builder.Lowering.Passes;
 /// <item><see cref="GuardPattern"/> -> inner condition AND guard; inner must be lowerable.</item>
 /// </list>
 ///
-/// <para>Lowerable patterns (Maybe subjects):</para>
+/// <para>Lowerable patterns (Optional subjects):</para>
 /// <list type="bullet">
-/// <item><see cref="NonePattern"/> on <c>Maybe[T record]</c> -> <c>not subject.present</c>.</item>
-/// <item><see cref="TypePattern"/> T on <c>Maybe[T record]</c> -> <c>subject.present</c>,
+/// <item><see cref="NonePattern"/> on <c>Optional[T record]</c> -> <c>not subject.present</c>.</item>
+/// <item><see cref="TypePattern"/> T on <c>Optional[T record]</c> -> <c>subject.present</c>,
 /// binding -> <c>subject.value</c>.</item>
-/// <item><see cref="ElsePattern"/> on <c>Maybe[T record]</c> -> binding -> <c>subject.value</c>.</item>
+/// <item><see cref="ElsePattern"/> on <c>Optional[T record]</c> -> binding -> <c>subject.value</c>.</item>
 /// </list>
 ///
 /// <para>Lowerable patterns (record subjects -> destructuring):</para>
@@ -45,12 +45,12 @@ namespace Builder.Lowering.Passes;
 /// <item><see cref="ElsePattern"/> with binding on Result/Lookup -> <see cref="CarrierPayloadExpression"/>.</item>
 /// </list>
 ///
-/// <para>Lowerable patterns (Maybe[T entity] subjects):</para>
+/// <para>Lowerable patterns (Optional[T entity] subjects):</para>
 /// <list type="bullet">
-/// <item><see cref="NonePattern"/> on <c>Maybe[T entity]</c> -> <c>subject.value.is_none()</c>.</item>
-/// <item><see cref="TypePattern"/> T on <c>Maybe[T entity]</c> -> <c>not subject.value.is_none()</c>,
+/// <item><see cref="NonePattern"/> on <c>Optional[T entity]</c> -> <c>subject.value.is_none()</c>.</item>
+/// <item><see cref="TypePattern"/> T on <c>Optional[T entity]</c> -> <c>not subject.value.is_none()</c>,
 /// binding -> <c>subject.value.extract()</c>.</item>
-/// <item><see cref="ElsePattern"/> with binding on <c>Maybe[T entity]</c> -> binding -> <c>subject.value.extract()</c>.</item>
+/// <item><see cref="ElsePattern"/> with binding on <c>Optional[T entity]</c> -> binding -> <c>subject.value.extract()</c>.</item>
 /// </list>
 ///
 /// <para><see cref="NegatedTypePattern"/> (<c>isnot T</c>) lowers to the negation of <c>is T</c>'s condition,
@@ -91,7 +91,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// <summary>
     /// Lowers monomorphized generic bodies that GMP cloned from generic-def ASTs after the
     /// per-program Phase 8 sweep finished. Without this, `when me.field is None => ... else x => ...`
-    /// over <c>Maybe[Wrapper[T]]</c> (e.g. <c>Maybe[Retained[ListNode[T]]]</c>) reaches codegen
+    /// over <c>Optional[Wrapper[T]]</c> (e.g. <c>Optional[Retained[ListNode[T]]]</c>) reaches codegen
     /// as an unlowered TypePattern/ElsePattern pair; the codegen TypePattern path then falls
     /// through to an unconditional match, silently selecting the first arm regardless of state.
     /// Mirror of <c>ExpressionLoweringPass.RunOnInstantiatedGenericBodies</c>.
@@ -453,7 +453,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             ExpressionPattern => true,
             ComparisonPattern => true,
 
-            // ElsePattern with binding on Result/Lookup, Maybe[T entity], or Maybe[T record]: lowerable.
+            // ElsePattern with binding on Result/Lookup, Optional[T entity], or Optional[T record]: lowerable.
             ElsePattern ep => !ep.VariableName.HasValue() || IsResultOrLookup(type: subjectType) ||
                               IsMaybeEntity(type: subjectType) || IsMaybeRecord(type: subjectType) ||
                               ep.RemainingType != null,
@@ -461,10 +461,10 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             NonePattern => IsMaybeRecord(type: subjectType) || IsMaybeEntity(type: subjectType) ||
                            IsResultOrLookup(type: subjectType),
 
-            // Maybe[T record] TypePattern: lowerable (uses bool present field, if/else is optimal)
+            // Optional[T record] TypePattern: lowerable (uses bool present field, if/else is optimal)
             TypePattern when IsMaybeRecord(type: subjectType) => true,
 
-            // Maybe[T entity] TypePattern: lowerable (null-ptr check via is_none())
+            // Optional[T entity] TypePattern: lowerable (null-ptr check via is_none())
             TypePattern when IsMaybeEntity(type: subjectType) => true,
 
             // Result/Lookup and user variant TypePatterns: lowerable -> condition is type_id == constant.
@@ -623,7 +623,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     u64Type: ctx.Registry.LookupType(name: "U64")), null);
 
             case NonePattern:
-                // Maybe[T] (both entity and record T): use the present flag. Bound T is
+                // Optional[T] (both entity and record T): use the present flag. Bound T is
                 // record-shaped (pointer slot), so the entity-vs-record split collapses at
                 // the carrier level.
                 return (MakeNotPresent(subject: subject, loc: loc, boolType: boolType), null);
@@ -767,7 +767,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             Expression bindValue;
             if (IsMaybeRecord(type: subjectType) || IsMaybeEntity(type: subjectType))
             {
-                // Maybe[T] (record or entity): bind to inner .value field. Bound T is
+                // Optional[T] (record or entity): bind to inner .value field. Bound T is
                 // record-shaped (pointer slot) so both branches read the same way.
                 bindValue = MakeMemberAccess(subject: subject,
                     field: ValueFieldName,
@@ -796,21 +796,21 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
     /// <summary>
     /// Returns the condition and optional binding for a <see cref="TypePattern"/> over a
-    /// <c>Maybe[T record]</c>/<c>Maybe[T entity]</c> subject. Extracted from
+    /// <c>Optional[T record]</c>/<c>Optional[T entity]</c> subject. Extracted from
     /// <see cref="GetPatternCondition"/>.
     /// </summary>
     private (Expression? Cond, Statement? Binding) GetMaybeTypePatternCondition(TypePattern tp,
         Expression subject, TypeSymbol? subjectType, SourceLocation loc,
         TypeSymbol? boolType)
     {
-        // `is None` on Maybe[T record] tests absence (`not present`); other TypePatterns
+        // `is None` on Optional[T record] tests absence (`not present`); other TypePatterns
         // test presence. Parser emits `is None` as TypePattern with Type.Name == "None".
         TypeSymbol? innerType = subjectType!.TypeArguments![index: 0];
         TypeSymbol? armType = tp.Type.ResolvedType ?? ctx.Registry.LookupType(name: tp.Type.Name);
         if (tp.Type.Name != "None" && innerType is VariantTypeSymbol carried && armType != null &&
             armType.FullName != carried.FullName)
         {
-            // `is Deposit` on a `Maybe[Command]`: present, and the value holds a Deposit.
+            // `is Deposit` on a `Optional[Command]`: present, and the value holds a Deposit.
             Expression value = MakeMemberAccess(subject: subject, field: ValueFieldName, fieldType: carried, loc: loc);
             (Expression? armCond, Statement? armBinding) = GetResultLookupTypePatternCondition(tp: tp,
                 subject: value,
@@ -1063,7 +1063,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         return (cond, binding);
     }
 
-    /// <summary>Builds <c>not subject.present</c> for Maybe absence check.</summary>
+    /// <summary>Builds <c>not subject.present</c> for Optional absence check.</summary>
     private UnaryExpression MakeNotPresent(Expression subject, SourceLocation loc,
         TypeSymbol? boolType)
     {
@@ -1276,7 +1276,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     // -----------------------------------------------------------------------------
 
     /// <summary>
-    /// Returns the generic base name of a type (e.g., "Maybe" for <c>Maybe[S64]</c>).
+    /// Returns the generic base name of a type (e.g., "Optional" for <c>Optional[S64]</c>).
     /// Returns the type's own name if it is not a resolved generic.
     /// </summary>
     private static string GetCarrierBaseName(TypeSymbol type)
@@ -1295,9 +1295,9 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Returns true if <paramref name="type"/> is <c>Maybe[T]</c> where T is a record/value type
+    /// Returns true if <paramref name="type"/> is <c>Optional[T]</c> where T is a record/value type
     /// (the two-field variant with an accessible <c>present</c> and <c>value</c> field).
-    /// Entity-T Maybe has no <c>present</c> field and is not lowerable here.
+    /// Entity-T Optional has no <c>present</c> field and is not lowerable here.
     /// </summary>
     private static bool IsMaybeRecord(TypeSymbol? type)
     {
@@ -1306,7 +1306,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             return false;
         }
 
-        if (GetCarrierBaseName(type: type) != "Maybe")
+        if (GetCarrierBaseName(type: type) != "Optional")
         {
             return false;
         }
@@ -1316,12 +1316,12 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             return false;
         }
 
-        // Entity-T Maybe only has `value: Hijacked[T]`, no `present` field.
+        // Entity-T Optional only has `value: Hijacked[T]`, no `present` field.
         return type.TypeArguments[index: 0] is not EntityTypeSymbol;
     }
 
     /// <summary>
-    /// Returns true if <paramref name="type"/> is <c>Maybe[T]</c> where T is an entity type
+    /// Returns true if <paramref name="type"/> is <c>Optional[T]</c> where T is an entity type
     /// (the single-field variant with only a <c>Hijacked[T]</c> value field -> no <c>present</c>).
     /// </summary>
     private static bool IsMaybeEntity(TypeSymbol? type)
@@ -1331,7 +1331,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             return false;
         }
 
-        if (GetCarrierBaseName(type: type) != "Maybe")
+        if (GetCarrierBaseName(type: type) != "Optional")
         {
             return false;
         }

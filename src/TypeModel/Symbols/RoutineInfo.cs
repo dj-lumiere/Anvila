@@ -519,7 +519,7 @@ public sealed class RoutineInfo
     /// </summary>
     public string? SurfaceRealm { get; init; }
 
-    /// <summary>The recovery keyword this variant serves: <c>try</c> (Maybe[T] or Bool), <c>check</c>
+    /// <summary>The recovery keyword this variant serves: <c>try</c> (Optional[T] or Bool), <c>check</c>
     /// (Check[T]) or <c>lookup</c> (Lookup[T]). Null for every other routine.</summary>
     public RecoveryKind? Recovery { get; init; }
 
@@ -770,7 +770,7 @@ public sealed class RoutineInfo
                           .ToList();
 
         // Route through the ambient TypeRegistry so entity-type specializations
-        // (e.g. Maybe[Text] -> { Hijacked[T] } layout) are picked up instead of
+        // (e.g. Optional[Text] -> { Hijacked[T] } layout) are picked up instead of
         // blindly using the primary generic definition's layout.
         TypeRegistry? registry = TypeRegistry.Ambient;
 

@@ -130,7 +130,7 @@ internal partial class Program
         }
 
         // `--step type-names`: `Atomic` is `Unbroken` (and `AtomicType` is `UnbrokenType`), `CircularList` is
-        // `RotatableList`, `MemoryAllocationError` is `OutOfMemoryError`, and `Integer` is `Int`.
+        // `RotatableList`, `MemoryAllocationError` is `OutOfMemoryError`, `Integer` is `Int`, and `Maybe` is `Optional`.
         if (step == "type-names")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteTypeNames);

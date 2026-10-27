@@ -71,7 +71,7 @@ public partial class Parser
             return true;
         }
 
-        // Force unwrap: expr!! — extracts the value from Maybe[T], panics if None
+        // Force unwrap: expr!! — extracts the value from Optional[T], panics if None
         if (CheckAndAdvance(type: TokenType.BangBang))
         {
             expr = new UnaryExpression(Operator: UnaryOperator.ForceUnwrap,

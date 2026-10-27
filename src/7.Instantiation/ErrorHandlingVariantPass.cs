@@ -515,7 +515,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         VariantCallRewriter? rewriter = null, TypeRegistry? registry = null,
         bool nextOnlyPropagation = false)
     {
-        // Every variant kind propagates its non-tail failable calls: Try (the flat Maybe {present,value}
+        // Every variant kind propagates its non-tail failable calls: Try (the flat Optional {present,value}
         // unwrap), TryBool (the same unwrap, its failure branch returning false) and Check/Lookup (the
         // tag-based `when` over the inner's variant, TryBuildCarrierSafeCall/BuildCarrierPropagationWhen).
         // A kind left without the registry keeps its inner failable calls raw, and their failure then
@@ -995,9 +995,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// absence must instead become this variant's own <c>None</c> return.
     ///
     /// For each such statement the remainder of the block is folded into the success branch of a
-    /// plain <c>if</c> over the inner safe variant's Maybe carrier:
+    /// plain <c>if</c> over the inner safe variant's Optional carrier:
     /// <code>
-    /// var __rf_prop_N = src.emit() (under try)      # Maybe[T]
+    /// var __rf_prop_N = src.emit() (under try)      # Optional[T]
     /// if __rf_prop_N.present
     ///   var item = __rf_prop_N.value
     ///   &lt;rest of block&gt;
@@ -1007,7 +1007,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Only the <c>if</c>, Bool field-read and field access are used — all codegen-ready without
     /// pattern/operator lowering, so this works in BOTH the global variant path (which has
     /// downstream lowering) and the monomorphized fallback path (which does not). Scoped to the
-    /// <c>Try</c> kind: only the <c>Maybe</c> carrier has the flat <c>{present,value}</c> layout this
+    /// <c>Try</c> kind: only the <c>Optional</c> carrier has the flat <c>{present,value}</c> layout this
     /// unwrap relies on; Check/Lookup carriers keep the existing tail-position behavior.
     /// </summary>
     private static List<Statement> TransformBlockStatements(List<Statement> stmts, int start,
@@ -1142,7 +1142,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             }
 
             // Check variants: Result carriers are tag-based (not the flat {present,value}
-            // of Maybe), so propagate a non-tail failable call through a `when` over the inner's
+            // of Optional), so propagate a non-tail failable call through a `when` over the inner's
             // same-kind variant. A variant built from a monomorphized body (nextOnly) does it for an inner `emit`
             // only, as for try (see TryBuildTryPropagation).
             if (kind is ErrorHandlingVariantKind.Check &&
@@ -1581,7 +1581,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// <summary>
     /// If <paramref name="stmt"/> uses a failable call in non-tail position (a <c>var x = F!(...)</c>
     /// declaration or a bare <c>F!(...)</c> expression statement) and the callee has a <c>try</c>
-    /// variant returning a <c>Maybe</c>, produces the spliced pieces:
+    /// variant returning a <c>Optional</c>, produces the spliced pieces:
     /// <list type="bullet">
     /// <item><paramref name="tempDecl"/>: <c>var __rf_prop_N = recv.try_X(...)</c></item>
     /// <item><paramref name="presentCondition"/>: <c>__rf_prop_N.present</c> (the <c>if</c> condition)</item>
@@ -1591,7 +1591,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// teardown does not free what <c>x</c> now holds</item>
     /// </list>
     /// Returns false — leaving the original crash-on-absence statement untouched — when no matching
-    /// Maybe-returning <c>try</c> variant resolves.
+    /// Optional-returning <c>try</c> variant resolves.
     /// </summary>
     private static bool TryBuildTryPropagation(Statement stmt, TypeRegistry registry,
         bool nextOnly, out Statement? tempDecl, out Expression? presentCondition,

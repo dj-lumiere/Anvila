@@ -381,8 +381,8 @@ public sealed partial class SemanticVerifier
                 result = null;
                 return false;
             case "None":
-                // None represents Maybe.None - return a generic Maybe type
-                result = _registry.LookupType(name: "Maybe") ?? ErrorTypeSymbol.Instance;
+                // None represents Optional.None - return a generic Optional type
+                result = _registry.LookupType(name: "Optional") ?? ErrorTypeSymbol.Instance;
                 return true;
             default:
                 result = null;
@@ -1148,7 +1148,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Resolves the result type of the <c>??</c> none-coalescing operator. Built-in carrier types
-    /// (Maybe/Result) unwrap directly; user types are dispatched through <c>unwrap_or</c>.
+    /// (Optional/Result) unwrap directly; user types are dispatched through <c>unwrap_or</c>.
     /// </summary>
     private TypeSymbol AnalyzeNoneCoalesce(BinaryExpression binary, TypeSymbol leftType,
         TypeSymbol rightType)
@@ -2171,7 +2171,7 @@ public sealed partial class SemanticVerifier
         // enforce this through the structural rule — no variant-specific check needed.
 
         // #42: ??= narrowing — `a ??= b` is expanded to `a = a ?? b`.
-        // When assigning `target = target ?? default` where target is Maybe[T],
+        // When assigning `target = target ?? default` where target is Optional[T],
         // narrow the variable to T after the coalescing assignment.
         if (target is IdentifierExpression narrowId &&
             value is BinaryExpression { Operator: BinaryOperator.NoneCoalesce } &&

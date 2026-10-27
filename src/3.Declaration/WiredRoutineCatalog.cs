@@ -347,7 +347,7 @@ public static class WiredRoutineCatalog
                 Failable = true
             },
 
-            // ---- Unwrap (Maybe / Result / Lookup) ----
+            // ---- Unwrap (Optional / Result / Lookup) ----
             new WiredEntry
             {
                 Name = "unwrap", Kind = WiredKind.Unwrap, Views = Known | Seed, Failable = true

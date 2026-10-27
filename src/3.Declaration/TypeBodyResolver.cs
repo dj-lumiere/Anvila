@@ -408,7 +408,7 @@ internal sealed class TypeBodyResolver
 
     /// <summary>
     /// Resolves a single entity member variable: resolves its (already-Roamed) type and records
-    /// Suflae nullability as a flow fact from the <c>E?</c>-desugared <c>Maybe[...]</c> type expr.
+    /// Suflae nullability as a flow fact from the <c>E?</c>-desugared <c>Optional[...]</c> type expr.
     /// </summary>
     private MemberVariableInfo ResolveEntityMemberVariable(VariableDeclaration memberVariable,
         int memberVariableIndex)
@@ -420,12 +420,12 @@ internal sealed class TypeBodyResolver
         // Suflae: an entity-typed field is a `Roamed[E]` biased-RC handle. The substitution now
         // happens at the single ResolveType choke point (TypeResolver.RoamSharedEntitySlot), so
         // memberVariableType is ALREADY `Roamed[E]` here (bare `x: E`) or a nullable `Roamed[E]`
-        // (`x: E?` — the choke point collapses `Maybe[E]` to a bare nullable Roamed, since an
+        // (`x: E?` — the choke point collapses `Optional[E]` to a bare nullable Roamed, since an
         // entity reference carries its own none via a null handle). We only still record
         // NULLABILITY as a flow fact: it is no longer visible in the resolved type, so detect it
-        // from the AST — the field was written `E?`, which desugars to a `Maybe[...]` type expr.
+        // from the AST — the field was written `E?`, which desugars to a `Optional[...]` type expr.
         bool fieldNullable = _sa._registry.EntitiesAreShared &&
-                             memberVariable.Type is { Name: "Maybe" } &&
+                             memberVariable.Type is { Name: "Optional" } &&
                              memberVariableType is RecordTypeSymbol
                              {
                                  GenericDefinition.Name: RuntimeContract.Roamed
@@ -1126,7 +1126,7 @@ internal sealed class TypeBodyResolver
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is "Maybe" or "Check"
+        return baseName is "Optional" or "Check"
             ? baseName
             : null;
     }
@@ -1138,7 +1138,7 @@ internal sealed class TypeBodyResolver
 
     private static bool IsMaybeType(TypeSymbol type)
     {
-        return GetCarrierBaseName(type: type) == "Maybe";
+        return GetCarrierBaseName(type: type) == "Optional";
     }
 
     private static readonly HashSet<string> AssignableWrapperTypes =

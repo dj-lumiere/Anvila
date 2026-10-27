@@ -832,7 +832,7 @@ public sealed partial class SemanticVerifier
         // UndecidedInteger) and (b) produces a CONCRETE annotated return type. Without
         // this, the call used to annotate ResolvedType=T — harmless for direct emission
         // (intrinsics emit from the explicit TypeArguments) but fatal for any consumer
-        // that needs the value's type, e.g. the Maybe-carrier construction inside
+        // that needs the value's type, e.g. the Optional-carrier construction inside
         // generated try/check variant bodies.
         Dictionary<string, TypeSymbol>? typeSubs = null;
         List<ParamInfo> declParams = routine.Parameters;

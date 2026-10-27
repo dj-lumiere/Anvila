@@ -481,7 +481,7 @@ public sealed partial class SemanticVerifier
         foreach ((string subject, string binding) in _matchedSubjects)
         {
             // A value branch's name is a copy, so only a name that reaches the variant's own value (an entity, a
-            // `Retained`, `Hijacked` or `Maybe`) pins the variable.
+            // `Retained`, `Hijacked` or `Optional`) pins the variable.
             if (subject == id.Name && _registry.LookupVariable(name: binding)?.Type is { } held &&
                 (held is EntityTypeSymbol || IsMaybeType(type: held) ||
                  held.BareName is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Hijacked))
@@ -758,7 +758,7 @@ public sealed partial class SemanticVerifier
         ref bool handledNone, ref bool handledNoneValue, ref bool handledCrashable)
     {
         string? carrierBase = GetCarrierBaseName(type: matchedType);
-        bool carrierUsesNoneForAbsent = carrierBase is "Maybe";
+        bool carrierUsesNoneForAbsent = carrierBase is "Optional";
         if (carrierUsesNoneForAbsent && IsNonePattern(pattern: clause.Pattern))
         {
             handledNone = true;
@@ -1455,7 +1455,7 @@ public sealed partial class SemanticVerifier
     /// Analyzes a <c>viewing</c> / <c>modifying</c> block. Each target is a type the block enters (a <c>Guarded</c>, a
     /// <c>FileStorage</c>, any type with <c>view_enter</c> / <c>modify_enter</c> and the matching exit), an access token
     /// (only checked to differ from the others), or an entity (whose token the block gives), and its name inside the
-    /// block is a <c>Viewing</c> or <c>Modifying</c> token, a <c>Maybe</c> of it in a <c>try</c> block. A target named
+    /// block is a <c>Viewing</c> or <c>Modifying</c> token, a <c>Optional</c> of it in a <c>try</c> block. A target named
     /// twice is RF-S650, one that can't be opened with its verb RF-S651, an enter that gives no token RF-S654, a
     /// <c>try</c> on one the block doesn't enter RF-S611, and a <c>Guarded</c> an enclosing block of the routine
     /// already opened RF-S630.
@@ -1576,7 +1576,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The type a <c>viewing</c> / <c>modifying</c> target's name has inside its block (its token, a <c>Maybe</c> of it
+    /// The type a <c>viewing</c> / <c>modifying</c> target's name has inside its block (its token, a <c>Optional</c> of it
     /// in a <c>try</c> block), or null after reporting why the target can't be opened that way.
     /// <paramref name="lockBacked"/> says whether the block takes a <c>Guarded</c>'s access (an <c>Exclusive</c> or
     /// <c>MultiRead</c> policy). A target the block enters gets its analyzed enter and exit calls on

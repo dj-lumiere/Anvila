@@ -447,13 +447,12 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// <c>variant Maybe[T]</c> (members <c>T</c> and <c>None</c>) in <c>System</c> is the optional carrier behind
+    /// <c>variant Optional[T]</c> (members <c>T</c> and <c>None</c>) in <c>System</c> is the optional carrier behind
     /// <c>T?</c>. Its two members are read as the secret member variables <c>present</c> and <c>value</c>, so the
     /// declaration is turned into that record here, before any pass sees it. The LLVM emitter lays a value <c>T</c> out
-    /// as <c>{ i1, T }</c> (<c>Maybe[T]</c>) and an entity <c>T</c> as its address alone (<c>Optional[T]</c>, null for
-    /// none).
+    /// as <c>{ i1, T }</c> and an entity <c>T</c> as its address alone (null for none).
     /// </summary>
-    private static void LayOutMaybeCarrier(Program program, string module)
+    private static void LayOutOptionalCarrier(Program program, string module)
     {
         if (module != "System")
         {
@@ -464,7 +463,7 @@ public sealed partial class StdlibLoader
         {
             if (program.Declarations[index: i] is not VariantDeclaration
                 {
-                    Name: "Maybe", GenericParameters: [var parameter], Members.Count: 2
+                    Name: "Optional", GenericParameters: [var parameter], Members.Count: 2
                 } maybe ||
                 !maybe.Members.Any(predicate: m => m.Type.Name == parameter) ||
                 !maybe.Members.Any(predicate: m => m.Type.Name == "None"))
@@ -473,7 +472,7 @@ public sealed partial class StdlibLoader
             }
 
             SourceLocation at = maybe.Location;
-            program.Declarations[index: i] = new RecordDeclaration(Name: "Maybe",
+            program.Declarations[index: i] = new RecordDeclaration(Name: "Optional",
                 GenericParameters: [parameter],
                 Protocols: [],
                 Members:
@@ -512,7 +511,7 @@ public sealed partial class StdlibLoader
             program.Declarations.Remove(item: binding);
         }
 
-        LayOutMaybeCarrier(program: program, module: module);
+        LayOutOptionalCarrier(program: program, module: module);
 
         if (Path.GetFullPath(path: filePath).StartsWith(value: _razorForgeRoot,
                 comparisonType: StringComparison.OrdinalIgnoreCase))

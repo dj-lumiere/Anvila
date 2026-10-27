@@ -48,13 +48,13 @@ public enum UnaryOperator
 
     /// <summary>
     /// Force unwrap operator (x!!).
-    /// Extracts the value from a Maybe[T], panicking if None.
+    /// Extracts the value from an Optional[T], panicking if None.
     /// </summary>
     /// <remarks>
     /// The force unwrap operator is a postfix unary operator that:
     /// <list type="bullet">
-    /// <item>Returns the inner value if the Maybe is not None</item>
-    /// <item>Panics/stops if the Maybe is None</item>
+    /// <item>Returns the inner value if the Optional is not None</item>
+    /// <item>Panics/stops if the Optional is None</item>
     /// </list>
     /// This should only be used when the programmer is certain the value is not None.
     /// </remarks>

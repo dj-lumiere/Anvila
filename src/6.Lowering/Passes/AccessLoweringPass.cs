@@ -20,7 +20,7 @@ namespace Builder.Lowering.Passes;
 /// body                                  # with the exits before every way out of the block
 /// target_j.modify_exit() ...            # in the opposite order
 /// </code>
-/// <para>In a <c>try</c> block the enter is <c>try target.modify_enter()</c>, a <c>Maybe</c>, and its exit runs only
+/// <para>In a <c>try</c> block the enter is <c>try target.modify_enter()</c>, a <c>Optional</c>, and its exit runs only
 /// when it is present. A <c>return</c> inside computes its value before the targets are given up. A statement that
 /// passes <c>g.modify()</c> enters <c>g</c> before it and gives it up after it, and the argument becomes the
 /// token.</para>

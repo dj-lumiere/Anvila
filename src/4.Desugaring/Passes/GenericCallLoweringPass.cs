@@ -13,7 +13,7 @@ namespace Builder.Desugaring.Passes;
 /// <para>Lowered cases (require <c>ResolvedRoutine != null</c> from Phase 4):</para>
 /// <list type="bullet">
 /// <item><b>Type constructor with resolved <c>create</c></b>:
-/// <c>Maybe[S64](value: x)</c> -> <c>CallExpression(IdentifierExpression("create"), args)</c></item>
+/// <c>Optional[S64](value: x)</c> -> <c>CallExpression(IdentifierExpression("create"), args)</c></item>
 /// <item><b>Generic memberRoutine call on receiver</b>:
 /// <c>buf.read![U8](offset)</c> ??
 /// <c>CallExpression(MemberExpression(buf, "read!"), args, TypeArguments=[U8])</c></item>
@@ -505,7 +505,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         }
 
         // -----------------------------------------------------------------------------
-        // e.g., Maybe[S64](present: true, value: x) -> SA resolved create and set ResolvedRoutine.
+        // e.g., Optional[S64](present: true, value: x) -> SA resolved create and set ResolvedRoutine.
         // Also handles standalone generic free routines and LLVM intrinsic free functions where
         // Object.Name == memberRoutineName but there is no constructable type.
         // A failable generic construction `Type![Args](args)` parses with a BARE memberRoutineName equal to

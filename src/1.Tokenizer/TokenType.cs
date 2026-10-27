@@ -448,7 +448,7 @@ public enum TokenType
     Until,
 
 
-    /// <summary>`try` prefix keyword — recover a failable call into Maybe[T] (present|absent, no crash info).</summary>
+    /// <summary>`try` prefix keyword — recover a failable call into Optional[T] (present|absent, no crash info).</summary>
     Try,
 
     /// <summary>`check` prefix keyword — recover a failable call into Check[T] (carries the Crashable error).</summary>
@@ -559,7 +559,7 @@ public enum TokenType
     /// <summary>`None` keyword — the absent-arm *type* (used in patterns: `is None`, and as variant member declaration).</summary>
     None,
 
-    /// <summary>`none` keyword — the absent *value* literal (only legal where the target type is Maybe[T] / Result[None] / a variant with a None arm).</summary>
+    /// <summary>`none` keyword — the absent *value* literal (only legal where the target type is Optional[T] / Result[None] / a variant with a None arm).</summary>
     NoneValue,
 
     #endregion

@@ -12,12 +12,12 @@ public partial class Parser
     /// <summary>
     /// Parses a type expression.
     /// Supports: named types, generic types (Type[T]),
-    /// Me (self type), and nullable types (T? = Maybe[T]).
+    /// Me (self type), and nullable types (T? = Optional[T]).
     /// </summary>
     /// <remarks>
     /// The old `T` rvalue-entity prefix was removed 2026-07-13: it was redundant with position and
     /// the move-vs-link distinction (bare entity = move, borrow-wrapper = link), and confusable with
-    /// the `T?` Maybe suffix. Entity rvalue-ness is now inferred (see SignatureResolver return
+    /// the `T?` Optional suffix. Entity rvalue-ness is now inferred (see SignatureResolver return
     /// inference); moves are marked by `steal` at use sites.
     /// </remarks>
     /// <returns>A <see cref="TypeExpression"/> AST node.</returns>
@@ -159,15 +159,15 @@ public partial class Parser
             Location: first.Location) { UnionMembers = members };
     }
 
-    /// <summary>A type, with <c>?</c> after it making it a <c>Maybe</c>.</summary>
+    /// <summary>A type, with <c>?</c> after it making it a <c>Optional</c>.</summary>
     private TypeExpression ParseOptionalType()
     {
         TypeExpression baseType = ParseBaseType();
 
-        // Handle nullable suffix: T? Maybe[T]
+        // Handle nullable suffix: T? Optional[T]
         if (CheckAndAdvance(type: TokenType.Question))
         {
-            return new TypeExpression(Name: "Maybe",
+            return new TypeExpression(Name: "Optional",
                 GenericArguments: [baseType],
                 Location: baseType.Location);
         }

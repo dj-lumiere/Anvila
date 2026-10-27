@@ -815,7 +815,7 @@ internal sealed partial class AstPrinter
 
     /// <summary>
     /// A type argument written in an expression bracket (<c>xs.get[T]()</c>): read as an expression and converted,
-    /// so it is spelled the way that conversion reads back (<c>Maybe[T]</c>, never <c>T?</c>).
+    /// so it is spelled the way that conversion reads back (<c>Optional[T]</c>, never <c>T?</c>).
     /// </summary>
     private string TypeArgumentText(TypeExpression type)
     {
@@ -1258,8 +1258,8 @@ internal sealed partial class AstPrinter
 
         List<TypeExpression>? arguments = type.GenericArguments;
 
-        // `T?` is `Maybe[T]` located at `T` itself.
-        if (type is { Name: "Maybe", Realm: null } && arguments is [var inner] && inner.Location == type.Location)
+        // `T?` is `Optional[T]` located at `T` itself.
+        if (type is { Name: "Optional", Realm: null } && arguments is [var inner] && inner.Location == type.Location)
         {
             return TypeText(type: inner) + "?";
         }

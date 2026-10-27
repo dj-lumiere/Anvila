@@ -144,12 +144,12 @@ public sealed partial class SemanticVerifier
         return null;
     }
 
-    /// <summary>Whether <paramref name="type"/> is a recovery carrier of a token (<c>Maybe[Viewing[T]]</c>, and the
+    /// <summary>Whether <paramref name="type"/> is a recovery carrier of a token (<c>Optional[Viewing[T]]</c>, and the
     /// <c>Check</c> / <c>Lookup</c> that <c>grab</c> / <c>lookup</c> give on a routine returning a token): what an
     /// iterator's <c>emit</c> gives under <c>try</c>, unpacked with <c>when</c> where it is made.</summary>
     private static bool IsTokenCarrier(TypeSymbol type)
     {
-        return type.BareName is "Maybe" or "Optional" or "Check" or "Lookup" && type.TypeArguments is [{ } carried] &&
+        return type.BareName is "Optional" or "Check" or "Lookup" && type.TypeArguments is [{ } carried] &&
                (IsInlineOnlyTokenType(type: carried) || IsTokenTuple(type: carried));
     }
 
@@ -190,9 +190,9 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Rejects a token as a type argument (RF-S601): a token holds the address of the place an entity or value is in,
-    /// and a container, a <c>Maybe</c>, a tuple, a variant or a generic type holding one could keep it after that
+    /// and a container, a <c>Optional</c>, a tuple, a variant or a generic type holding one could keep it after that
     /// place is gone (the block that held the entity ended, or the entity was torn down). A token lives in a variable
-    /// of its own. <paramref name="carrierAllowed"/> lets a routine's result be <c>Maybe</c> of a token (an
+    /// of its own. <paramref name="carrierAllowed"/> lets a routine's result be <c>Optional</c> of a token (an
     /// iterator's <c>emit</c> under <c>try</c>), which the caller unpacks with <c>when</c> where it gets it.
     /// </summary>
     private void ValidateNoTokenTypeArgument(TypeSymbol type, string what, SourceLocation location,
@@ -713,7 +713,7 @@ public sealed partial class SemanticVerifier
     private void ValidateMemberVariableAccess(MemberVariableInfo memberVariable, bool isWrite,
         SourceLocation accessLocation)
     {
-        // A recovery carrier's layout (`Maybe.present`/`value`, `Check`/`Lookup` `type_id`/`payload`) is what the
+        // A recovery carrier's layout (`Optional.present`/`value`, `Check`/`Lookup` `type_id`/`payload`) is what the
         // builder builds and reads when it lowers `try`/`check`. Its own bodies reach those secret fields
         // by construction, whichever module they land in.
         if (_isInCompilerGeneratedBody && IsCarrierLayoutField(memberVariable: memberVariable))
@@ -906,7 +906,7 @@ public sealed partial class SemanticVerifier
     private static bool IsCarrierLayoutField(MemberVariableInfo memberVariable)
     {
         string? carrier = memberVariable.Owner?.BareName;
-        return carrier is "Maybe" or "Optional" or "Check" &&
+        return carrier is "Optional" or "Check" &&
                memberVariable.Name is Declaration.RuntimeContract.Carrier.PresentField
                    or Declaration.RuntimeContract.Carrier.ValueField
                    or Declaration.RuntimeContract.Carrier.TypeIdField

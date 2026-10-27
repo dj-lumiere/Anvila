@@ -170,13 +170,13 @@ public sealed partial class TypeRegistry
                 typeArguments: [entity]),
             RecordTypeSymbol
             {
-                GenericDefinition.Name: "Maybe",
+                GenericDefinition.Name: "Optional",
                 TypeArguments: [EntityTypeSymbol innerEntity]
             } => GetOrCreateResolution(genericDef: roamedDef,
                 typeArguments: [innerEntity]),
             RecordTypeSymbol
             {
-                GenericDefinition.Name: "Maybe", TypeArguments: [{ } innerRoamed]
+                GenericDefinition.Name: "Optional", TypeArguments: [{ } innerRoamed]
             } when IsRoamedSlot(type: innerRoamed) => innerRoamed,
             _ => resolved
         };
@@ -184,7 +184,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// Recursively lowers each entity generic type argument to <c>Roamed[E]</c> and rebuilds the generic
-    /// resolution. <c>Maybe[...]</c> is skipped (the caller's switch collapses it); an already-<c>Roamed</c>
+    /// resolution. <c>Optional[...]</c> is skipped (the caller's switch collapses it); an already-<c>Roamed</c>
     /// argument is left untouched by <see cref="RoamEntitySlot"/>'s idempotency guard.
     /// </summary>
     private TypeSymbol RoamTypeArguments(TypeSymbol resolved, TypeSymbol roamedDef)
@@ -206,8 +206,8 @@ public sealed partial class TypeRegistry
             return resolved;
         }
 
-        // Maybe[E] is collapsed to a nullable bare Roamed[E] by RoamEntitySlot's switch, not element-substituted.
-        if (genericDef.Name == "Maybe")
+        // Optional[E] is collapsed to a nullable bare Roamed[E] by RoamEntitySlot's switch, not element-substituted.
+        if (genericDef.Name == "Optional")
         {
             return resolved;
         }
@@ -577,10 +577,10 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Entity-type specializations of constrained generics, keyed by bare type name.
     /// When a generic has two layout variants — one for record types and one for entity types
-    /// (e.g. <c>Maybe[T] needs T is EntityType</c>) — the entity layout is stored here.
+    /// (e.g. <c>Optional[T] needs T is EntityType</c>) — the entity layout is stored here.
     /// <see cref="GetOrCreateResolution"/> consults this table when a type argument is an
     /// <see cref="EntityTypeSymbol"/> so it can pick the correct struct layout
-    /// (e.g. <c>{ Hijacked[T] }</c> for <c>Maybe[Text]</c> instead of <c>{ Bool, T }</c>).
+    /// (e.g. <c>{ Hijacked[T] }</c> for <c>Optional[Text]</c> instead of <c>{ Bool, T }</c>).
     /// </summary>
     private readonly Dictionary<string, TypeSymbol> _entitySpecializations = new();
 
@@ -596,7 +596,7 @@ public sealed partial class TypeRegistry
     /// <summary>Gets the stdlib directory path.</summary>
     public string? StdlibPath => _stdlibPath;
 
-    /// <summary>Set of loaded module paths (e.g., "Collections.List", "ErrorHandling.Maybe").</summary>
+    /// <summary>Set of loaded module paths (e.g., "Collections.List", "ErrorHandling.Optional").</summary>
     private readonly HashSet<string> _loadedModules =
         new(comparer: StringComparer.OrdinalIgnoreCase);
 
@@ -934,13 +934,13 @@ public sealed partial class TypeRegistry
         _stdlibPath = stdlibPath ?? StdlibLoader.GetDefaultStdlibPath();
 
         // Register well-known error handling types BEFORE loading the System module.
-        // This ensures that when System stdlib routines (e.g. Maybe[T].unwrap) are registered
-        // during LoadCoreModule, LookupType("Maybe") returns the initial Maybe definition
-        // (FullName="Maybe", no module prefix), so memberRoutines are keyed under "Maybe" in
-        // _routinesByOwner and are reachable via LookupMemberRoutine on Maybe[T] resolutions.
-        // If LoadCoreModule ran first, it would register System.Maybe (FullName="System.Maybe")
-        // before the initial Maybe, causing memberRoutine registration under "System.Maybe" — a key
-        // that LookupMemberRoutine never checks when resolving memberRoutines on Maybe[S64].
+        // This ensures that when System stdlib routines (e.g. Optional[T].unwrap) are registered
+        // during LoadCoreModule, LookupType("Optional") returns the initial Optional definition
+        // (FullName="Optional", no module prefix), so memberRoutines are keyed under "Optional" in
+        // _routinesByOwner and are reachable via LookupMemberRoutine on Optional[T] resolutions.
+        // If LoadCoreModule ran first, it would register System.Optional (FullName="System.Optional")
+        // before the initial Optional, causing memberRoutine registration under "System.Optional" — a key
+        // that LookupMemberRoutine never checks when resolving memberRoutines on Optional[S64].
         RegisterErrorHandlingTypes();
 
         // Load System module eagerly - System types are fundamental to every program.
@@ -1142,7 +1142,7 @@ public sealed partial class TypeRegistry
     /// Loads a module on-demand by its import path.
     /// Handles both stdlib modules and project modules.
     /// </summary>
-    /// <param name="importPath">The import path (e.g., "Collections/List", "ErrorHandling/Maybe").</param>
+    /// <param name="importPath">The import path (e.g., "Collections/List", "ErrorHandling/Optional").</param>
     /// <param name="currentFile">The file containing the import statement (for relative import resolution).</param>
     /// <param name="location">Source location for error reporting.</param>
     /// <param name="effectiveModule">The effective module name of the loaded module, or null on failure.</param>
@@ -1304,21 +1304,21 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Registers all well-known error handling types (Maybe, Result, Lookup) as ordinary generic records.
+    /// Registers all well-known error handling types (Optional, Result, Lookup) as ordinary generic records.
     /// </summary>
     private void RegisterErrorHandlingTypes()
     {
-        // Register Maybe, Result, Lookup as type shells (name + GenericParameters only).
+        // Register Optional, Result, Lookup as type shells (name + GenericParameters only).
         // MemberVariables reference System types (Bool, U64, Addr) that aren't available yet
         // because LoadCoreModule hasn't run.  ResolveProgramMemberVariables (pass 1c inside
         // LoadCoreModule) fills in the members from the stdlib source once all System types exist.
         // We must register the shells HERE (before LoadCoreModule) so that when
-        // LoadCoreModule's RegisterProgramRoutines processes Maybe[T].unwrap etc., it calls
-        // LookupType("Maybe") and gets this shell (FullName="Maybe"), causing those memberRoutines to
-        // be keyed under "Maybe" in _routinesByOwner rather than "System.Maybe".
-        RegisterType(type: new RecordTypeSymbol(name: "Maybe")
+        // LoadCoreModule's RegisterProgramRoutines processes Optional[T].unwrap etc., it calls
+        // LookupType("Optional") and gets this shell (FullName="Optional"), causing those memberRoutines to
+        // be keyed under "Optional" in _routinesByOwner rather than "System.Optional".
+        RegisterType(type: new RecordTypeSymbol(name: "Optional")
         {
-            GenericParameters = ["T"], Module = "System", CarrierKind = CarrierKind.Maybe
+            GenericParameters = ["T"], Module = "System", CarrierKind = CarrierKind.Optional
         });
         // Check is a variant (`T | Crashables`): its arms come from the stdlib
         // declarations the same way.
@@ -1333,10 +1333,10 @@ public sealed partial class TypeRegistry
     #region Type Registration and Lookup
 
     /// <summary>
-    /// Registers a constrained generic specialization (e.g. <c>Maybe[T] needs T is EntityType</c>).
+    /// Registers a constrained generic specialization (e.g. <c>Optional[T] needs T is EntityType</c>).
     /// Unlike <see cref="RegisterType"/>, multiple specializations with the same bare name are allowed.
     /// Registers the entity-type specialization of a constrained generic
-    /// (e.g. <c>record Maybe[T] needs T is EntityType</c>).
+    /// (e.g. <c>record Optional[T] needs T is EntityType</c>).
     /// When <see cref="GetOrCreateResolution"/> is asked to resolve this generic with an
     /// <see cref="EntityTypeSymbol"/> argument it will use this specialization instead of the
     /// primary (record-type) definition, ensuring the correct struct layout.
@@ -1501,10 +1501,10 @@ public sealed partial class TypeRegistry
 
         // Mutate in-place so that all existing references (pending routine OwnerType pointers,
         // cached resolutions in _resolutions, etc.) see the updated member variable list.
-        // Creating a new object here would leave _resolutions entries (e.g. Maybe[Bool] created
+        // Creating a new object here would leave _resolutions entries (e.g. Optional[Bool] created
         // from the pre-registered carrier shell) with stale GenericDefinition pointers that have
         // empty MemberVariables — causing "Member variable 'present' not found on record
-        // 'System.Maybe[System.Bool]'" errors during codegen of synthesized represent bodies that
+        // 'System.Optional[System.Bool]'" errors during codegen of synthesized represent bodies that
         // iterate via for-loop (NonePattern lowering emits subject.present access).
         // Mirrors the in-place strategy in UpdateEntityMemberVariables.
         record.MemberVariables = memberVariables;
@@ -2131,7 +2131,7 @@ public sealed partial class TypeRegistry
 
         // If an entity-type specialization exists for this generic and the first type argument
         // is an entity type, use that specialization instead of the primary (record-type) definition.
-        // This ensures e.g. Maybe[Text] gets { Hijacked[T] } layout instead of { Bool, T }.
+        // This ensures e.g. Optional[Text] gets { Hijacked[T] } layout instead of { Bool, T }.
         TypeSymbol bestDef = genericDef;
         if (typeArguments.Count > 0 && typeArguments[index: 0] is EntityTypeSymbol &&
             _entitySpecializations.TryGetValue(key: genericDef.Name,
@@ -2168,16 +2168,6 @@ public sealed partial class TypeRegistry
              ResolutionGenericDefMatches(resolved: shortOccupant, genericDef: genericDef)))
         {
             _resolutions[key: shortKey] = resolved;
-        }
-
-        // `Maybe` over an entity is named `Optional[...]`: a lookup by that name finds the same instance.
-        if (resolved is RecordTypeSymbol { IsOptionalCarrier: true } optional && !otherRealmArgument)
-        {
-            _resolutions.TryAdd(key: optional.Name, value: optional);
-            _resolutions.TryAdd(key: optional.FullName, value: optional);
-            _resolutions.TryAdd(
-                key: $"{RecordTypeSymbol.OptionalCarrierName}[{string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name))}]",
-                value: optional);
         }
 
         if (_stdlibAnalysisActive)
@@ -2518,7 +2508,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// Refreshes stale cached record resolutions whose member variable list is incomplete.
     /// Called after <see cref="UpdateRecordMemberVariables"/> updates a generic record definition
-    /// (e.g. Maybe[T], Result[T]) with its full member list. Mirrors
+    /// (e.g. Optional[T], Result[T]) with its full member list. Mirrors
     /// <see cref="RefreshEntityResolutions"/>.
     /// </summary>
     public void RefreshRecordResolutions(RecordTypeSymbol genericDef)
@@ -2969,7 +2959,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// WARM-RESTORE: marks every concrete generic/wrapper instance stdlib-lazy in THIS registry.
-    /// The whole-stdlib snapshot capture UN-lazied instances the stdlib's own bodies reference (Maybe/Result/
+    /// The whole-stdlib snapshot capture UN-lazied instances the stdlib's own bodies reference (Optional/Result/
     /// Hijacked[X] for many X) — far more than any single user program uses (measured warm 638 vs cold 378
     /// processed, only 122 live). Re-lazying on restore makes a warm compile re-discover from the USER
     /// program's reachability (via <see cref="MaterializeIfLazy"/>), like a cold compile does, instead of
@@ -3002,7 +2992,7 @@ public sealed partial class TypeRegistry
     /// <summary>
     /// All concrete (non-generic-definition) entity and record instances created during semantic analysis,
     /// filtered to live (reachable) types and excluding stdlib-lazy deferred instances. Examples: <c>List[S64]</c>,
-    /// <c>Maybe[Text]</c>. Used by <c>GenericMonomorphizationPass</c> to enumerate which member-routine bodies
+    /// <c>Optional[Text]</c>. Used by <c>GenericMonomorphizationPass</c> to enumerate which member-routine bodies
     /// need rewriting. Deduplicated by reference because the dual-index scheme stores the same <see cref="TypeSymbol"/>
     /// under both the full and short keys.
     /// </summary>

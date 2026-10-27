@@ -37,7 +37,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Analyzes a <c>try</c>/<c>check</c> <see cref="RecoveryExpression"/> as a whole-expression
-    /// composition (see the class remarks). Returns the carrier type (Maybe/Check[T], None-collapsed);
+    /// composition (see the class remarks). Returns the carrier type (Optional/Check[T], None-collapsed);
     /// stashes the synthesized variant call on <see cref="RecoveryExpression.LoweredCall"/>.
     /// </summary>
     /// <summary>
@@ -102,11 +102,11 @@ public sealed partial class SemanticVerifier
                 ]));
     }
 
-    /// <summary>The payload type a <c>try</c> (<c>Maybe[T]</c>) or <c>check</c> (<c>Check[T]</c>) carrier holds, or
+    /// <summary>The payload type a <c>try</c> (<c>Optional[T]</c>) or <c>check</c> (<c>Check[T]</c>) carrier holds, or
     /// null when <paramref name="carrier"/> is not that keyword's carrier.</summary>
     private static TypeSymbol? CarrierPayload(TypeSymbol? carrier, RecoveryKind kind)
     {
-        string expectedBase = kind == RecoveryKind.Try ? "Maybe" : "Check";
+        string expectedBase = kind == RecoveryKind.Try ? "Optional" : "Check";
         return carrier is RecordTypeSymbol { GenericDefinition: { } definition, TypeArguments: [var payload] } &&
                definition.Name == expectedBase
             ? payload
@@ -156,7 +156,7 @@ public sealed partial class SemanticVerifier
         // reference (TypeRegistry.LookupRecoveryVariant) — the variant is the base routine's, never found by
         // a name. The base call already resolved concretely (a concrete receiver → the concrete member
         // routine, or the failable free reader for a conversion), so the variant comes substituted for that
-        // same owner: concrete carrier `Maybe[S64]` (not the generic-def `Maybe[T]`), receiver stays in place
+        // same owner: concrete carrier `Optional[S64]` (not the generic-def `Optional[T]`), receiver stays in place
         // so an entity is BORROWED as the base call borrowed it (no synth-routine by-value capture → no
         // spurious RF-S413). Routine synthesis (below) is the fallback ONLY for a MULTI-call short-circuit, or
         // a shape the base has no variant for (check over an absent-only base — the routine path shapes that).
@@ -173,7 +173,7 @@ public sealed partial class SemanticVerifier
             BindResolvedVariantCall(call: singleCall, variant: singleVariant) is { } boundCall)
         {
             // A protocol's routine reached through its receiver carries `Me` in its carrier
-            // (`Maybe[Me/Item]` for `try it.emit()`): `Me` is that receiver.
+            // (`Optional[Me/Item]` for `try it.emit()`): `Me` is that receiver.
             if (boundCall is { Callee: MemberExpression { Object.ResolvedType: { } boundReceiver }, ResolvedType: { } carrier })
             {
                 boundCall.ResolvedType = _registry.ReplaceProtocolSelf(type: carrier, owner: boundReceiver);
@@ -226,7 +226,7 @@ public sealed partial class SemanticVerifier
         // Synthesize the failable base routine __recover_N! and register it. It is a TEMPLATE — never called
         // directly (only its recovery variant is), so it is never collected/emitted on its own.
         // The carrier the KEYWORD selects drives which variant the base must expose:
-        //  - try    → try    (Maybe): pessimistic (throw+absent) generates try.
+        //  - try    → try    (Optional): pessimistic (throw+absent) generates try.
         //  - lookup → lookup (Lookup): pessimistic (throw+absent) generates lookup.
         //  - check   → check  (Check): check collapses the WHOLE crashable set (and, per the design, promotes
         //    a sub-call's absent to AbsentValueError) into Check's single Crashable arm. The variant rules
@@ -399,7 +399,7 @@ public sealed partial class SemanticVerifier
         // CONVERSION recovery (`try x.S8()`): the base is a failable free reader `S8!(from:)` bound as a
         // TypeConstructor; its variant is the reader's recovery variant. Keep the member-call shape — the
         // construction passes the receiver as the `from:` argument and dispatches on ResolvedRoutine — and
-        // stamp the variant + carrier return (the variant's ReturnType is Maybe/Check[T]).
+        // stamp the variant + carrier return (the variant's ReturnType is Optional/Check[T]).
         if (call.LoweringKind == CallLoweringKind.TypeConstructor)
         {
             var conv = call with { IsFailable = false, IsPreAnalyzed = true };

@@ -17,7 +17,7 @@ namespace Builder.Instantiation.Passes;
 ///
 /// <para>
 /// The pass iterates every concrete generic type instance recorded in the
-/// <see cref="TypeRegistry"/> during Phase 4 (e.g., <c>List[S64]</c>, <c>Maybe[Text]</c>)
+/// <see cref="TypeRegistry"/> during Phase 4 (e.g., <c>List[S64]</c>, <c>Optional[Text]</c>)
 /// and generates <see cref="MonomorphizedBody"/> entries for each of the generic
 /// definition's memberRoutines.  Bodies are sourced from three places:
 /// <list type="bullet">
@@ -3129,12 +3129,12 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // The fallback body is the original failable AST (ReturnStatement nodes, not
         // VariantReturnStatement). Transform it so codegen emits carrier construction.
         //
-        // Check/Lookup/TryBool are driven by variantStatus. The try (Maybe) variant leaves
+        // Check/Lookup/TryBool are driven by variantStatus. The try (Optional) variant leaves
         // variantStatus null — codegen natively wraps top-level `return`->Some and `absent`->None
-        // — but a Maybe variant whose source uses a failable call in NON-tail position (e.g.
+        // — but an Optional variant whose source uses a failable call in NON-tail position (e.g.
         // `var item = src.emit!()` in EnumerateEmitter) needs that inner call routed through its
         // own try variant; otherwise the raw `!` call hard-crashes at exhaustion. Run the
-        // Try-kind transform for Maybe returns so TransformBlockStatements can splice in that
+        // Try-kind transform for Optional returns so TransformBlockStatements can splice in that
         // propagation. (ListEmitter etc. have no such inner call, so the transform is a no-op for
         // them beyond the equivalent VariantReturn rewrite codegen already understands.)
         ErrorHandlingVariantKind? fallbackKind = variantStatus switch
@@ -3142,7 +3142,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             FailableVariant.Check => ErrorHandlingVariantKind.Check,
             FailableVariant.TryBool => ErrorHandlingVariantKind.TryBool,
             _ when emitInfo.ReturnType != null &&
-                   GetGenericBaseName(type: emitInfo.ReturnType) == "Maybe" =>
+                   GetGenericBaseName(type: emitInfo.ReturnType) == "Optional" =>
                 ErrorHandlingVariantKind.Try,
             _ => null
         };
@@ -3696,7 +3696,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// Uses a pre-built index for O(1) name lookup.
     /// When <paramref name="typeSubs"/> is provided, routines whose generic constraints are not
     /// satisfied by the concrete type arguments are skipped -> this prevents the record-layout
-    /// overload of e.g. <c>Maybe[T]</c> from being selected when T is an entity type.
+    /// overload of e.g. <c>Optional[T]</c> from being selected when T is an entity type.
     /// </summary>
     private RoutineDeclaration? FindInStdlib(string genericAstName, int expectedParamCount = -1,
         Dictionary<string, TypeSymbol>? typeSubs = null, List<string>? expectedParamNames = null,

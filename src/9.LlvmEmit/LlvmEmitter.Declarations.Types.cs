@@ -132,7 +132,7 @@ public partial class LlvmEmitter
     /// </summary>
     private static bool ShouldSkipRecordTypeGeneration(RecordTypeSymbol record)
     {
-        return record.BackendType != null || record.IsGenericDefinition || record.IsOptionalCarrier ||
+        return record.BackendType != null || record.IsGenericDefinition || record.IsEntityOptional ||
                record.TypeArguments?.Any(predicate: t =>
                    ContainsGenericParameter(type: t) || t is ErrorTypeSymbol ||
                    ContainsAbstractProjection(type: t)) == true;
@@ -154,7 +154,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// Recursively ensures struct type definitions exist for member variable types.
     /// Handles nested generic resolutions that may not be in the registry (e.g.,
-    /// Maybe[BTreeSetNode[S64]] created during member variable substitution).
+    /// Optional[BTreeSetNode[S64]] created during member variable substitution).
     /// </summary>
     private void EnsureMemberVariableTypesGenerated(List<MemberVariableInfo> memberVariables)
     {
@@ -167,7 +167,7 @@ public partial class LlvmEmitter
 
     // Recursively descends into a type's TypeArguments and wrapper inner types so that
     // concrete nested generics (e.g. Retained[BTreeDictNode[S64, S64]] inside a
-    // Maybe[Retained[...]] field of SortedDict[S64, S64]) get their struct types emitted.
+    // Optional[Retained[...]] field of SortedDict[S64, S64]) get their struct types emitted.
     private void EnsureTypeGenerated(TypeSymbol? type, HashSet<string> visited)
     {
         if (type == null)

@@ -1395,7 +1395,7 @@ public partial class LlvmEmitter
         {
             // `Optional[T]` is the entity's address alone: its `value` is stored where the Optional is. Its
             // `present` is no stored field and is written through EmitOptionalMemberWrite.
-            case RecordTypeSymbol { IsOptionalCarrier: true }:
+            case RecordTypeSymbol { IsEntityOptional: true }:
                 return member.MemberName == Declaration.RuntimeContract.Carrier.ValueField
                     ? (0, "{ ptr }", EmitLvalueAddress(sb: sb, expr: member.Object))
                     : (-1, null, null);

@@ -559,7 +559,7 @@ public partial class LlvmEmitter
     private string EmitMemberwiseRecordStruct(StringBuilder sb, RecordTypeSymbol record,
         Func<int, MemberVariableInfo, string?> valueForField)
     {
-        if (record.IsOptionalCarrier)
+        if (record.IsEntityOptional)
         {
             return EmitOptionalFromMembers(sb: sb, record: record, valueForField: valueForField);
         }
@@ -821,7 +821,7 @@ public partial class LlvmEmitter
                          $"LLVM emitter in [{_currentRoutineDiagName}].");
         }
 
-        if (record.IsOptionalCarrier)
+        if (record.IsEntityOptional)
         {
             return EmitOptionalMemberRead(sb: sb, optional: recordValue, memberVariableName: memberVariableName);
         }
@@ -928,8 +928,8 @@ public partial class LlvmEmitter
         string typeName = GetEntityTypeName(entity: entity);
         string memberVariableType = GetLlvmType(type: memberVariable.Type);
 
-        // Maybe auto-wrap (bare `T` -> `Maybe[T]` on a nullable member store) is now an AST rewrite:
-        // ExpressionLoweringPass.TryWrapMemberMaybe boxes the value into a Maybe CreatorExpression
+        // Optional auto-wrap (bare `T` -> `Optional[T]` on a nullable member store) is now an AST rewrite:
+        // ExpressionLoweringPass.TryWrapMemberMaybe boxes the value into an Optional CreatorExpression
         // before codegen, so the { i1, T } aggregate is built through the normal record-creator path
         // rather than hand-emitted here (D3).
         _ = valueType;

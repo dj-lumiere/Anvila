@@ -59,7 +59,7 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
 
     /// <summary>Lowers Roamed receiver projections in routines made concrete from generic ones: a library
     /// routine made concrete for a shared entity holds it as its handle (an iterator `iter` hands back, a
-    /// `Maybe` value it displays), and reaches the entity through it like any other code.</summary>
+    /// `Optional` value it displays), and reaches the entity through it like any other code.</summary>
     public void RunOnInstantiatedGenericBodies(Dictionary<string, Instantiation.MonomorphizedBody> bodies)
     {
         BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: bodies,

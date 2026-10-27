@@ -230,7 +230,7 @@ internal sealed class SignatureResolver
             ? _typeResolver.ResolveType(typeExpr: routine.ReturnType)
             : null;
 
-        // Validate that Maybe<T>/Result<T>/Lookup<T> are not used as return types
+        // Validate that Optional<T>/Result<T>/Lookup<T> are not used as return types
         // These are builder-generated wrapper types for failable routines (!)
         ValidateReturnTypeNotCarrier(returnType: returnType, routine: routine);
 
@@ -498,7 +498,7 @@ internal sealed class SignatureResolver
 
     /// <summary>
     /// Reports <c>ErrorHandlingTypeAsReturnType</c> when a routine written in a program returns a carrier type
-    /// (Maybe/Check, builder-generated wrappers for failable routines). A routine the builder writes (the work
+    /// (Optional/Check, builder-generated wrappers for failable routines). A routine the builder writes (the work
     /// routine of <c>try job f()</c> returns the carrier) is exempt.
     /// </summary>
     private void ValidateReturnTypeNotCarrier(TypeSymbol? returnType, RoutineDeclaration routine)
@@ -507,12 +507,15 @@ internal sealed class SignatureResolver
             !_sa.IsStdlibFile(filePath: _sa._currentFilePath))
         {
             string carrierName = GetCarrierBaseName(type: returnType)!;
+            // The optional is written `T?`, so the message names it that way.
+            string held = returnType.TypeArguments is [{ } argument] ? argument.Name : "T";
+            string carrierShown = carrierName == "Check" ? $"Check[{held}]" : $"{held}?";
             _sa.ReportError(code: SemanticDiagnosticCode.ErrorHandlingTypeAsReturnType,
-                message: $"'{routine.Name}' returns '{carrierName}[T]', which only 'try' and 'check' make at a call. " +
+                message: $"'{routine.Name}' returns '{carrierShown}', which only 'try' and 'check' make at a call. " +
                          "Return the value itself and declare the routine failable ('failable routine " +
                          $"{routine.Name}(...)'), with 'throw' where it fails: a caller then writes " +
                          $"'{(carrierName == "Check" ? "check" : "try")} {routine.Name}(...)' to get the " +
-                         $"'{carrierName}'.",
+                         $"'{carrierShown}'.",
                 location: routine.ReturnType?.Location ?? routine.Location);
         }
     }
@@ -659,7 +662,7 @@ internal sealed class SignatureResolver
                                 paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Unbroken },
                 // A Suflae `E?` parameter resolves to a bare Roamed[E] handle (the null handle is none), so
                 // the `?` survives only in the written type, as for an entity field (TypeBodyResolver).
-                IsNullable = _sa._registry.EntitiesAreShared && param.Type is { Name: "Maybe" } &&
+                IsNullable = _sa._registry.EntitiesAreShared && param.Type is { Name: "Optional" } &&
                              paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed }
             });
         }
@@ -1464,7 +1467,7 @@ internal sealed class SignatureResolver
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is "Maybe" or "Check"
+        return baseName is "Optional" or "Check"
             ? baseName
             : null;
     }
@@ -1476,7 +1479,7 @@ internal sealed class SignatureResolver
 
     private static bool IsMaybeType(TypeSymbol type)
     {
-        return GetCarrierBaseName(type: type) == "Maybe";
+        return GetCarrierBaseName(type: type) == "Optional";
     }
     private static Dictionary<string, string>? BuildProtocolSubstitution(ProtocolTypeSymbol protocol)
     {

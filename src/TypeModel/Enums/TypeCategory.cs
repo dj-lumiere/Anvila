@@ -56,7 +56,7 @@ public enum TypeCategory
     /// <summary>Interface/trait definition (protocol).</summary>
     Protocol,
 
-    /// <summary>Builder-generated error handling types (Maybe, Result, Lookup).</summary>
+    /// <summary>Builder-generated error handling types (Optional, Result, Lookup).</summary>
     ErrorHandling,
 
     /// <summary>First-class function type for lambdas and function references (e.g., Routine&lt;s32, s32, s32&gt; = two s32 params, returns s32).</summary>

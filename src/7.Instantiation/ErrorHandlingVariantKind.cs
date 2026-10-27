@@ -5,7 +5,7 @@ namespace Builder.Instantiation;
 /// </summary>
 public enum ErrorHandlingVariantKind
 {
-    /// <summary>try variant - returns Maybe&lt;T&gt;, errors become None.</summary>
+    /// <summary>try variant - returns Optional&lt;T&gt;, errors become None.</summary>
     Try,
 
     /// <summary>try variant for None-returning routines - returns Bool (true=success, false=error/absent).</summary>

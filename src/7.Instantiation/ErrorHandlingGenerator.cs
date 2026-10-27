@@ -277,7 +277,7 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Generates the try variant (returns Maybe&lt;T&gt;).
+    /// Generates the try variant (returns Optional&lt;T&gt;).
     /// throw -> return None
     /// absent -> return None
     /// </summary>
@@ -307,7 +307,7 @@ public sealed class ErrorHandlingGenerator
         TypeSymbol returnType = original.ReturnType ?? noneType;
 
         // the try variant of a None-returning routine returns Bool (true=success, false=absent/throw)
-        // Maybe[None] = { i1, void } is not valid LLVM, so Bool is used directly.
+        // Optional[None] = { i1, void } is not valid LLVM, so Bool is used directly.
         if (returnType.Name == NoneTypeName)
         {
             TypeSymbol boolType = _registry.LookupType(name: "Bool") ??
@@ -343,9 +343,9 @@ public sealed class ErrorHandlingGenerator
 
         TypeSymbol carrierInner = WrapBareEntityForCarrier(type: returnType, original: original);
 
-        TypeSymbol maybeDef = _registry.LookupType(name: "Maybe") ??
+        TypeSymbol maybeDef = _registry.LookupType(name: "Optional") ??
                             throw new InvalidOperationException(
-                                message: "Maybe type not registered");
+                                message: "Optional type not registered");
         TypeSymbol maybeType = _registry.GetOrCreateResolution(
             genericDef: maybeDef,
             typeArguments: [carrierInner]);
@@ -424,7 +424,7 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// The value a recovery variant's carrier (<c>Maybe[T]</c> / <c>Check[T]</c>) holds. A
+    /// The value a recovery variant's carrier (<c>Optional[T]</c> / <c>Check[T]</c>) holds. A
     /// bare entity is held as such, except in a file of a language that shares entities: there a creator builds
     /// the bare entity and its caller makes the handle, but the variant hands the value on inside the carrier,
     /// so the carrier holds the handle, as every other value of that language does.

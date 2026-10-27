@@ -106,7 +106,7 @@ internal partial class Program
 
     /// <summary>
     /// The lines with each <c>try viewing</c> / <c>try modifying</c> block that still has an <c>else</c> written the way
-    /// a <c>try</c> block is now: it has no <c>else</c>, its name is a <c>Maybe</c> of the token, and the body branches
+    /// a <c>try</c> block is now: it has no <c>else</c>, its name is a <c>Optional</c> of the token, and the body branches
     /// with <c>when</c>. <c>try modifying s as c</c> / body / <c>else</c> / other becomes <c>try modifying s as
     /// c_entered</c> with <c>when c_entered</c>, <c>is None =&gt;</c> other and <c>else as c =&gt;</c> body. A block with
     /// several targets is listed to rewrite by hand.
@@ -148,7 +148,7 @@ internal partial class Program
             if (name == null)
             {
                 Console.WriteLine(value: $"{file}:{lineOffset + i + 1}: a 'try' block has no 'else' now and its names are " +
-                                         "Maybes of the tokens: branch with 'when' inside it, by hand");
+                                         "Optionals of the tokens: branch with 'when' inside it, by hand");
                 result.Add(item: lines[i]);
                 i++;
                 continue;

@@ -1848,7 +1848,7 @@ internal static class GenericAstRewriter
             IdentifierExpression identifier => ctx.RebindRoutineValueOn(identifier: identifier),
 
             // Leaf nodes have no children, but their ResolvedType may still carry a generic
-            // parameter (e.g. `none : Maybe[Hijacked[BTreeListNode[T]]]`). Clone so the ResolvedType
+            // parameter (e.g. `none : Optional[Hijacked[BTreeListNode[T]]]`). Clone so the ResolvedType
             // substitution block below runs (it is gated on a fresh reference).
             LiteralExpression literal => ConformParameterLiteral(literal: literal, ctx: ctx),
             ZeroValueExpression zero => zero with { },

@@ -45,15 +45,15 @@ internal enum NumericTypeKind
 /// </summary>
 public sealed partial class SemanticVerifier
 {
-    private const string MaybeTypeName = "Maybe";
+    private const string MaybeTypeName = "Optional";
     private const string IterableProtocolName = "Emittable";
 
     #region Carrier Type Helpers
 
     /// <summary>
-    /// Returns the base name ("Maybe" or "Check") for a carrier type,
+    /// Returns the base name ("Optional" or "Check") for a carrier type,
     /// or null if the type is not a carrier type.
-    /// Works for both generic definitions (name == "Maybe") and resolved instances (GenericDefinition.Name == "Maybe").
+    /// Works for both generic definitions (name == "Optional") and resolved instances (GenericDefinition.Name == "Optional").
     /// </summary>
     private static string? GetCarrierBaseName(TypeSymbol type)
     {
@@ -69,7 +69,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Returns true if the type is a carrier type (Maybe, Result, or Lookup).
+    /// Returns true if the type is a carrier type (Optional, Result, or Lookup).
     /// </summary>
     private static bool IsCarrierType(TypeSymbol type)
     {
@@ -77,7 +77,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Returns true if the type is a Maybe carrier type.
+    /// Returns true if the type is an Optional carrier type.
     /// </summary>
     private static bool IsMaybeType(TypeSymbol type)
     {
@@ -86,7 +86,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Returns true if the type is a legal target for the value-position `none` literal:
-    /// Maybe[T] (its absent arm is matched by `is None`), or a variant
+    /// Optional[T] (its absent arm is matched by `is None`), or a variant
     /// that declares a None member. Result[T] is NOT included — Result's two arms are Ok/Err.
     /// </summary>
     private static bool IsNoneCarrierSlot(TypeSymbol type)
@@ -120,7 +120,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Checks if a pattern is the absent arm for a carrier type.
-    /// Maybe[T] uses `is None`. Result[T] has no absent state
+    /// Optional[T] uses `is None`. Result[T] has no absent state
     /// (only Crashable | T); when T == None, success matches `is None` in value position.
     /// </summary>
     private static bool IsAbsentPattern(Pattern pattern, TypeSymbol carrierType)
@@ -1229,7 +1229,7 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        // Maybe auto-wrap cases.
+        // Optional auto-wrap cases.
         return IsMaybeAssignable(source: source, target: target);
     }
 
@@ -1392,9 +1392,9 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Returns true when <paramref name="source"/> is implicitly assignable to a <c>Maybe[T]</c>
-    /// <paramref name="target"/>: the None generic def to any Maybe, and entity/record/wrapper types
-    /// to <c>Maybe[SameType]</c>. Extracted from <see cref="IsAssignableTo"/>.
+    /// Returns true when <paramref name="source"/> is implicitly assignable to a <c>Optional[T]</c>
+    /// <paramref name="target"/>: the None generic def to any Optional, and entity/record/wrapper types
+    /// to <c>Optional[SameType]</c>. Extracted from <see cref="IsAssignableTo"/>.
     /// </summary>
     private static bool IsMaybeAssignable(TypeSymbol source, TypeSymbol target)
     {
@@ -1416,10 +1416,10 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Handles the <c>Maybe[T]</c> auto-wrap case of <see cref="IsAssignableTo"/>: an entity/record/
-    /// wrapper source is assignable to <c>Maybe[SameType]</c>.
+    /// Handles the <c>Optional[T]</c> auto-wrap case of <see cref="IsAssignableTo"/>: an entity/record/
+    /// wrapper source is assignable to <c>Optional[SameType]</c>.
     /// The caller has already verified the source category and that <paramref name="maybeTarget"/> is a
-    /// single-arg Maybe.
+    /// single-arg Optional.
     /// </summary>
     private static bool IsAssignableToMaybeInner(TypeSymbol source, TypeSymbol maybeTarget)
     {
@@ -2083,12 +2083,12 @@ public sealed partial class SemanticVerifier
         // `A?` is written for an optional member variable, and its own member variables are the `A`'s.
         static TypeSymbol Held(TypeSymbol type)
         {
-            return type is { BareName: "Maybe" or "Optional", TypeArguments: [{ } inner] } ? inner : type;
+            return type is { BareName: "Optional", TypeArguments: [{ } inner] } ? inner : type;
         }
 
         static string Shown(MemberVariableInfo field)
         {
-            return field.Type is { BareName: "Maybe" or "Optional", TypeArguments: [{ } inner] }
+            return field.Type is { BareName: "Optional", TypeArguments: [{ } inner] }
                 ? MemberTypeName(type: inner) + "?"
                 : MemberTypeName(type: field.Type) + (field.IsNullable ? "?" : "");
         }

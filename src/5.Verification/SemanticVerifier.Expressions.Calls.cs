@@ -176,7 +176,7 @@ public sealed partial class SemanticVerifier
                 }
             }
 
-            // The binding already gave the carrier of what the call returns here (`Maybe[T]` for a call bound to one
+            // The binding already gave the carrier of what the call returns here (`Optional[T]` for a call bound to one
             // member of a specialization family), which the variant's own return may not be.
             call.ResolvedType = call.ResolvedType is { } here and not ErrorTypeSymbol ? here : carrier;
             return call.ResolvedType;
@@ -923,7 +923,7 @@ public sealed partial class SemanticVerifier
         // Clean-diagnostic gate, on the overload the arguments picked: a member routine whose owner-level
         // `needs param obeys P` constraint is unmet by the concrete receiver (e.g. `List[Widget].duplicate()` with
         // `needs T obeys Copyable`, Widget not Copyable) is RF-S150 here, not an over-prune crash. A kind-split
-        // routine (`Maybe[T].unwrap_or` for value / entity / variant T) is checked against the implementation that
+        // routine (`Optional[T].unwrap_or` for value / entity / variant T) is checked against the implementation that
         // applies to this owner.
         if (memberRoutine != null)
         {

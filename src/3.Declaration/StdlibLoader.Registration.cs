@@ -1401,7 +1401,7 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// Detects whether a stdlib record is an entity-type specialization of a constrained generic
-    /// (e.g. <c>record Maybe[T] needs T is EntityType</c>) — which needs separate layout registration —
+    /// (e.g. <c>record Optional[T] needs T is EntityType</c>) — which needs separate layout registration —
     /// versus a transparent pointer wrapper or an all-ptr-wrapper record that merely carries the
     /// <c>needs T is EntityType</c> contract but has a single fixed LLVM layout for all type arguments.
     /// </summary>
@@ -1409,7 +1409,7 @@ public sealed partial class StdlibLoader
     {
         // In stdlib .rf files, `needs T is EntityType` is parsed as a ConstGeneric constraint
         // with ConstraintTypes[0].Name == "EntityType". These create a second layout specialization
-        // (e.g. Maybe[Text] uses { Hijacked[T] } instead of { Bool, T }) and must be stored
+        // (e.g. Optional[Text] uses { Hijacked[T] } instead of { Bool, T }) and must be stored
         // separately so GetOrCreateResolution can select the right definition.
         string? entityConstraintParam = record.GenericConstraints
                                              ?.Where(predicate: c => c is
@@ -1570,7 +1570,7 @@ public sealed partial class StdlibLoader
         }
 
         // Inherit CarrierKind from the pre-registered generic definition shell when building
-        // entity-type specializations (e.g. Maybe[T] needs T is EntityType).
+        // entity-type specializations (e.g. Optional[T] needs T is EntityType).
         CarrierKind inheritedCarrierKind = CarrierKind.None;
         if (isEntitySpecialization && registry.LookupType(name: record.Name) is RecordTypeSymbol
             {
@@ -1622,7 +1622,7 @@ public sealed partial class StdlibLoader
         if (isEntitySpecialization)
         {
             // This is the entity-type specialization of a constrained generic
-            // (e.g. Maybe[T] needs T is EntityType -> { Hijacked[T] } layout).
+            // (e.g. Optional[T] needs T is EntityType -> { Hijacked[T] } layout).
             // Register it so GetOrCreateResolution can select it for entity type arguments.
             registry.RegisterEntitySpecialization(type: typeInfo);
         }
@@ -2528,7 +2528,7 @@ public sealed partial class StdlibLoader
     /// <summary>
     /// Resolves one protocol memberRoutine signature into a <see cref="ProtocolMemberRoutineInfo"/>
     /// (appended to <paramref name="memberRoutines"/>). For a failable memberRoutine also appends the
-    /// auto-derived <c>try_X</c> non-failable variant returning Maybe[T] (or Bool when T is None).
+    /// auto-derived <c>try_X</c> non-failable variant returning Optional[T] (or Bool when T is None).
     /// </summary>
     private static void AppendProtocolMemberRoutine(TypeRegistry registry,
         ProtocolDeclaration protocol, RoutineSignature memberRoutine,

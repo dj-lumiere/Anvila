@@ -1044,7 +1044,7 @@ internal sealed class AutoWiredRegistrationPass
             return;
         }
 
-        // A GENERIC DEFINITION (Maybe[T]/Result[T]/user generic obeying P) IS processed: registering the
+        // A GENERIC DEFINITION (Optional[T]/Result[T]/user generic obeying P) IS processed: registering the
         // derive on the DEF is what lets GMP monomorphize it onto each concrete instance. Its everywhere
         // condition is DEFERRED to instantiation (a generic-param member obeys P only for a concrete arg),
         // so the EverywhereObeys gate below is skipped for a def — the def carries the derive's

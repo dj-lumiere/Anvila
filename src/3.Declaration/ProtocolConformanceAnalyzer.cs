@@ -334,7 +334,7 @@ internal sealed class ProtocolConformanceAnalyzer
                                          .ToList();
 
         // A hand-written `eq` / keyed `hash` gives the protocol whatever the member variables are. On a generic
-        // definition it holds under the routine's own `needs T obeys P` lines (`Maybe[T].eq` needs `T` to have
+        // definition it holds under the routine's own `needs T obeys P` lines (`Optional[T].eq` needs `T` to have
         // `==`), so an instance whose argument lacks them doesn't get it.
         foreach (TypeSymbol type in candidates.Where(predicate: t =>
                                                    _sa._registry.WritesOwnValueRoutine(type: t,
@@ -437,7 +437,7 @@ internal sealed class ProtocolConformanceAnalyzer
         {
             VariantTypeSymbol or ChoiceTypeSymbol or FlagsTypeSymbol or CrashableTypeSymbol or TupleTypeSymbol => false,
             // `Unbroken[T]` is read only through its atomic routines, so a walk over its member variables would
-            // compare or hash what is not its value. (`Maybe[T]` writes its own `eq` and `hash`.)
+            // compare or hash what is not its value. (`Optional[T]` writes its own `eq` and `hash`.)
             RecordTypeSymbol record => !Wrappers.IsWrapperType(type: record) &&
                                        (record.GenericDefinition?.Name ?? record.Name) is var name &&
                                        !RuntimeContract.WrapperTypes.Contains(item: name) &&

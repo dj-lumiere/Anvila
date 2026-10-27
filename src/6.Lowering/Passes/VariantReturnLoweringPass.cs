@@ -15,14 +15,14 @@ namespace Builder.Lowering.Passes;
 /// <c>FromThrow</c>/<c>FromAbsent</c> site becomes <c>return false</c>. The thrown error is discarded
 /// in a TryBool context (the routine returns Bool, never the error) — matching codegen's
 /// <c>EmitTryBoolVariantReturn</c>, which drops it — so it is simply never constructed: nothing to
-/// clean up, no leak. Try (Maybe) / Check (Result) / Lookup carriers still lower in codegen and are
+/// clean up, no leak. Try (Optional) / Check (Result) / Lookup carriers still lower in codegen and are
 /// handled by later stages.
 /// </summary>
 internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : AstRewriter
 {
     private readonly Dictionary<string, Statement>? _variantBodies = ctx.VariantBodies;
 
-    /// <summary>Return type (the concrete carrier, e.g. <c>Maybe[S64]</c>) of the routine whose body
+    /// <summary>Return type (the concrete carrier, e.g. <c>Optional[S64]</c>) of the routine whose body
     /// is being lowered — needed to construct the carrier record.</summary>
     private TypeSymbol? _carrierReturn;
 
@@ -146,7 +146,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             Location: vr.Location);
     }
 
-    // Try → Maybe[T] (a plain `{present: Bool, value: T}` record) built with a real
+    // Try → Optional[T] (a plain `{present: Bool, value: T}` record) built with a real
     // CreatorExpression: present carries the value; throw / absent / return-a-crashable = absent.
     private ReturnStatement LowerTryVariant(VariantReturnStatement vr, RecordTypeSymbol maybe)
     {
@@ -238,7 +238,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
         return s switch
         {
             { VariantKind: ErrorHandlingVariantKind.TryBool } => LowerTryBoolVariant(vr: s),
-            // Try → Maybe[T] (a plain `{present: Bool, value: T}` record) built with a real
+            // Try → Optional[T] (a plain `{present: Bool, value: T}` record) built with a real
             // CreatorExpression: present carries the value; throw / absent / return-a-crashable = absent.
             { VariantKind: ErrorHandlingVariantKind.Try } when
                 _carrierReturn is RecordTypeSymbol maybe => LowerTryVariant(vr: s, maybe: maybe),

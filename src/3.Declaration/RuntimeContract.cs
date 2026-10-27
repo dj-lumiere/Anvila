@@ -278,7 +278,7 @@ public static class RuntimeContract
     /// (<c>steal xs[i] as old inject fresh</c>).</summary>
     public const string Exchange = "exchange";
 
-    /// <summary>Carrier record field names on <c>Maybe[T]</c>/<c>Result[T]</c>.</summary>
+    /// <summary>Carrier record field names on <c>Optional[T]</c>/<c>Result[T]</c>.</summary>
     /// <remarks>Sites: ExpressionLoweringPass (tuple synthesis), PatternLoweringPass, ErrorHandlingVariantPass,
     /// LlvmEmitter.Statements (field lookup).</remarks>
     public static class Carrier

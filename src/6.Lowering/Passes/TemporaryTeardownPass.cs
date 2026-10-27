@@ -613,8 +613,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         stmts.Add(item: rebuild(
             arg: new IdentifierExpression(Name: newName, Location: owner.Location)
             {
-                // The spill's own type: a value going into a `Maybe` place (`n = 5` with `n: Int?`) is still
-                // the bare value here, and the later Maybe wrap needs to see that.
+                // The spill's own type: a value going into a `Optional` place (`n = 5` with `n: Int?`) is still
+                // the bare value here, and the later Optional wrap needs to see that.
                 ResolvedType = rhs2.ResolvedType ?? t, IsSynthesizedTeardownTemp = true
             }));
         AddStatementEndDestroys(stmts: stmts, spills: spills, loc: owner.Location);

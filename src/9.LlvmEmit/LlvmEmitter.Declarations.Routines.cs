@@ -405,7 +405,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Computes the LLVM return type for a routine definition. A recovery variant's return type is its carrier
-    /// (<c>Check[T]</c>, <c>Maybe[T]</c>, <c>Bool</c>).
+    /// (<c>Check[T]</c>, <c>Optional[T]</c>, <c>Bool</c>).
     /// </summary>
     private string ComputeDefinitionReturnType(RoutineInfo info)
     {
@@ -1172,7 +1172,7 @@ public partial class LlvmEmitter
         {
             RecordTypeSymbol { BackendType: not null } record => GetZeroValueForLlvmType(
                 llvmType: record.BackendType),
-            EntityTypeSymbol or RecordTypeSymbol { IsOptionalCarrier: true } => "null",
+            EntityTypeSymbol or RecordTypeSymbol { IsEntityOptional: true } => "null",
             _ => "zeroinitializer"
         };
     }

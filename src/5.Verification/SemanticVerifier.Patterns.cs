@@ -233,7 +233,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.PatternTypeMismatch,
                 message:
-                $"Type pattern 'is None' can only match Maybe[T] or a variant type — not '{matchedType.Name}'.",
+                $"Type pattern 'is None' can only match Optional[T] or a variant type — not '{matchedType.Name}'.",
                 location: typePat.Location);
         }
     }
@@ -561,7 +561,7 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        // Carrier types (Maybe<T>, Result<T>, Lookup<T>) can be matched against any type/protocol
+        // Carrier types (Optional<T>, Result<T>, Lookup<T>) can be matched against any type/protocol
         if (IsCarrierType(type: matchedType))
         {
             return true;
@@ -835,7 +835,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Checks whether Maybe/Result/Lookup error handling types are exhaustively matched.
+    /// Checks whether Optional/Result/Lookup error handling types are exhaustively matched.
     /// </summary>
     private static ExhaustivenessResult CheckErrorHandlingExhaustiveness(List<WhenClause> clauses,
         TypeSymbol carrierType)
@@ -863,7 +863,7 @@ public sealed partial class SemanticVerifier
             }
         }
 
-        // Arms that name the types a variant T holds (`is Deposit`, `is Withdraw` for `Maybe[Command]`) take the
+        // Arms that name the types a variant T holds (`is Deposit`, `is Withdraw` for `Optional[Command]`) take the
         // value only together: every type T holds must be named.
         if (!hasValue && carrierType.TypeArguments is [VariantTypeSymbol carried] &&
             clauses.Any(predicate: c => IsHeldTypeArm(pattern: c.Pattern, carrierType: carrierType)))
@@ -898,7 +898,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Computes the missing arms for a carrier type given which arm kinds were seen: Maybe needs
+    /// Computes the missing arms for a carrier type given which arm kinds were seen: Optional needs
     /// None + value, Result needs Crashable + value, Lookup needs None + Crashable + value.
     /// </summary>
     private static List<string> CollectCarrierMissingCases(string? carrierBaseName, bool hasAbsent,
@@ -908,7 +908,7 @@ public sealed partial class SemanticVerifier
 
         switch (carrierBaseName)
         {
-            case "Maybe":
+            case "Optional":
                 if (!hasAbsent)
                 {
                     missing.Add(item: "None");
@@ -996,7 +996,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The one type an <c>else as name</c> arm gives its name: what is left of <paramref name="matchedType"/> after the
-    /// unguarded arms before it. A <c>Maybe</c> is its value or <c>None</c>, a <c>Check</c> is its value or the caught
+    /// unguarded arms before it. A <c>Optional</c> is its value or <c>None</c>, a <c>Check</c> is its value or the caught
     /// error (every crashable together counts as one type), a variant is its member types, and anything else is
     /// itself. When more than one type is left, reports RF-S359 and returns null.
     /// </summary>

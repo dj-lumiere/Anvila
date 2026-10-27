@@ -145,7 +145,7 @@ public record VariableDeclaration(
     public bool IsPreset { get; init; }
 
     /// <summary>
-    /// A name a <c>when</c> pattern binds to what it matched (the payload of a <c>Maybe</c> or a variant arm, or
+    /// A name a <c>when</c> pattern binds to what it matched (the payload of a <c>Optional</c> or a variant arm, or
     /// the subject itself), written as a local by pattern lowering. The matched value still owns it, so the
     /// local is a view: tearing it down as well would free it twice.
     /// </summary>
@@ -646,7 +646,7 @@ public record CrashableDeclaration(
 /// <list type="bullet">
 /// <item>Type-based: variant Value { S64, Text, None }</item>
 /// <item>Pattern matching: when v is S64 n => use n</item>
-/// <item>Generic variants: variant Maybe[T] { T, None }</item>
+/// <item>Generic variants: variant Optional[T] { T, None }</item>
 /// <item>No duplicate types allowed</item>
 /// </list>
 /// </remarks>
@@ -799,8 +799,8 @@ public enum FailableVariant
 
     /// <summary>
     /// Builder-generated try variant for non-None failable routines.
-    /// Returns Maybe[T] carrier: absent/throw -> zeroinitializer (None), return value -> present.
-    /// RoutineInfo.ReturnType is the full Maybe[T] type; codegen uses GetLLVMType directly.
+    /// Returns Optional[T] carrier: absent/throw -> zeroinitializer (None), return value -> present.
+    /// RoutineInfo.ReturnType is the full Optional[T] type; codegen uses GetLLVMType directly.
     /// </summary>
     Try
 }

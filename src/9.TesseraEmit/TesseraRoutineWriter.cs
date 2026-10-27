@@ -1356,7 +1356,7 @@ internal sealed class TesseraRoutineWriter
 
         if (type is not RecordTypeSymbol
             {
-                BackendType: null, CarrierKind: CarrierKind.None or CarrierKind.Maybe
+                BackendType: null, CarrierKind: CarrierKind.None or CarrierKind.Optional
             } record || type is VariantTypeSymbol)
         {
             throw Unsupported(what: $"a construction of {type?.FullName ?? creator.TypeName}");
@@ -1368,7 +1368,7 @@ internal sealed class TesseraRoutineWriter
         }
 
         // Values come in field order; a field left without one is zero, as in the LLVM emitter (an absent
-        // Maybe is built from its `present` flag alone).
+        // Optional is built from its `present` flag alone).
         var fields = new List<string>();
         for (int i = 0; i < record.MemberVariables.Count; i++)
         {

@@ -336,7 +336,7 @@ public partial class Parser
     {
         // Recovery prefix keywords (try/check/lookup): wrap a failable CALL into a carrier. MILESTONE
         // lowering — rewrite the wrapped call's name to the existing generated recovery variant:
-        //   try foo(a)      -> foo's try variant    (Maybe[T])
+        //   try foo(a)      -> foo's try variant    (Optional[T])
         //   check x.foo()    -> x.foo's check variant (Check[T])
         // Bare-word keywords only (`try_foo` etc. tokenize as single identifiers). Whole-expression
         // monadic composition + a dedicated RecoveryExpression node replace this rewrite later.
@@ -494,7 +494,7 @@ public partial class Parser
         // No CallExpression requirement: the inner may be any expression (a bare call, a member chain, or
         // a checked-arith composition like `a + b`). An operand with no failable call or operator degenerates
         // to an always-present carrier in SA — harmless, and keeping the surface uniform.
-        // `try job f()` recovers inside the deferred work: a Work over the recovery (`Work[Maybe[T]]`).
+        // `try job f()` recovers inside the deferred work: a Work over the recovery (`Work[Optional[T]]`).
         Expression recovery = callSpine is WorkExpression agent
             ? agent with
             {

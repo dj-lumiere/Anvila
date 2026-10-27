@@ -8,9 +8,9 @@ using TypeModel.Types;
 namespace Builder.Lowering.Passes;
 
 /// <summary>
-/// Makes the optional a <c>Maybe[T]</c> place takes explicit: <c>return v</c> with a bare <c>T</c> in a routine that
-/// returns <c>Maybe[T]</c>, and <c>x = v</c> into a <c>T?</c> variable or member variable, become
-/// <c>Maybe[T](present: true, value: v)</c>, so a backend stores the value it is given. A value that is already an
+/// Makes the optional a <c>Optional[T]</c> place takes explicit: <c>return v</c> with a bare <c>T</c> in a routine that
+/// returns <c>Optional[T]</c>, and <c>x = v</c> into a <c>T?</c> variable or member variable, become
+/// <c>Optional[T](present: true, value: v)</c>, so a backend stores the value it is given. A value that is already an
 /// optional, or is the empty optional (<c>none</c>), stays as it is. Runs at Phase 9 over every body that reaches a
 /// backend, with the routine whose body it is.
 /// </summary>
@@ -28,7 +28,7 @@ internal sealed class MaybeReturnLoweringPass(RecordTypeSymbol? maybe, TypeSymbo
         TypeSymbol boolType = registry.LookupType(name: "Bool") ??
                               throw new InvalidOperationException(message: "The Bool type is not registered.");
         var pass = new MaybeReturnLoweringPass(
-            maybe: routine?.ReturnType as RecordTypeSymbol is { CarrierKind: CarrierKind.Maybe } returned ? returned : null,
+            maybe: routine?.ReturnType as RecordTypeSymbol is { CarrierKind: CarrierKind.Optional } returned ? returned : null,
             boolType: boolType);
         for (int i = 0; i < block.Statements.Count; i++)
         {
@@ -45,7 +45,7 @@ internal sealed class MaybeReturnLoweringPass(RecordTypeSymbol? maybe, TypeSymbo
             return visited;
         }
 
-        return PlaceType(place: assign.Target) is RecordTypeSymbol { CarrierKind: CarrierKind.Maybe } into &&
+        return PlaceType(place: assign.Target) is RecordTypeSymbol { CarrierKind: CarrierKind.Optional } into &&
                Wrapped(value: assign.Value, into: into) is { } wrapped
             ? assign with { Value = wrapped }
             : visited;
@@ -56,7 +56,7 @@ internal sealed class MaybeReturnLoweringPass(RecordTypeSymbol? maybe, TypeSymbo
     {
         Statement visited = base.VisitExpressionStatement(s: s);
         return visited is ExpressionStatement { Expression: BinaryExpression { Operator: BinaryOperator.Assign } assign } statement &&
-               PlaceType(place: assign.Left) is RecordTypeSymbol { CarrierKind: CarrierKind.Maybe } into &&
+               PlaceType(place: assign.Left) is RecordTypeSymbol { CarrierKind: CarrierKind.Optional } into &&
                Wrapped(value: assign.Right, into: into) is { } wrapped
             ? statement with { Expression = assign with { Right = wrapped } }
             : visited;
@@ -74,7 +74,7 @@ internal sealed class MaybeReturnLoweringPass(RecordTypeSymbol? maybe, TypeSymbo
     private CreatorExpression? Wrapped(Expression value, RecordTypeSymbol into)
     {
         if (value.ResolvedType is not { } type || value is LiteralExpression { LiteralType: TokenType.NoneValue } ||
-            type is RecordTypeSymbol { CarrierKind: CarrierKind.Maybe } or ErrorTypeSymbol || type.IsNone)
+            type is RecordTypeSymbol { CarrierKind: CarrierKind.Optional } or ErrorTypeSymbol || type.IsNone)
         {
             return null;
         }

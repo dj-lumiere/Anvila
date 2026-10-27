@@ -57,39 +57,39 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// The aggregate LLVM type of member variable <paramref name="field"/> of <paramref name="record"/>: the
-    /// presence flag of <c>Maybe[T]</c> stays <c>i1</c> (<c>{ i1, T }</c>), every other <c>Bool</c> is stored as
+    /// presence flag of a value <c>Optional[T]</c> stays <c>i1</c> (<c>{ i1, T }</c>), every other <c>Bool</c> is stored as
     /// <c>i8</c> (see <see cref="GetFieldStorageLlvmType"/>).
     /// </summary>
     private string GetFieldStorageLlvmType(RecordTypeSymbol record, MemberVariableInfo field)
     {
-        return IsMaybePresenceField(record: record, field: field)
+        return IsOptionalPresenceField(record: record, field: field)
             ? "i1"
             : GetFieldStorageLlvmType(type: field.Type);
     }
 
-    /// <summary>Whether <paramref name="field"/> is the presence flag of a <c>Maybe[T]</c>, kept as <c>i1</c>.</summary>
-    private static bool IsMaybePresenceField(RecordTypeSymbol record, MemberVariableInfo field)
+    /// <summary>Whether <paramref name="field"/> is the presence flag of a value <c>Optional[T]</c>, kept as <c>i1</c>.</summary>
+    private static bool IsOptionalPresenceField(RecordTypeSymbol record, MemberVariableInfo field)
     {
-        return record is { CarrierKind: CarrierKind.Maybe, IsOptionalCarrier: false } &&
+        return record is { CarrierKind: CarrierKind.Optional, IsEntityOptional: false } &&
                field.Name == Builder.Declaration.RuntimeContract.Carrier.PresentField;
     }
 
     /// <summary><see cref="CoerceBoolToStorage"/> for a member variable of <paramref name="record"/>: the presence
-    /// flag of <c>Maybe[T]</c> is written as it is.</summary>
+    /// flag of <c>Optional[T]</c> is written as it is.</summary>
     private string CoerceBoolToStorage(System.Text.StringBuilder sb, string value, RecordTypeSymbol record,
         MemberVariableInfo field)
     {
-        return IsMaybePresenceField(record: record, field: field)
+        return IsOptionalPresenceField(record: record, field: field)
             ? value
             : CoerceBoolToStorage(sb: sb, value: value, fieldType: field.Type);
     }
 
     /// <summary><see cref="CoerceStorageToBool"/> for a member variable of <paramref name="record"/>: the presence
-    /// flag of <c>Maybe[T]</c> is read as it is.</summary>
+    /// flag of <c>Optional[T]</c> is read as it is.</summary>
     private string CoerceStorageToBool(System.Text.StringBuilder sb, string storageValue, RecordTypeSymbol record,
         MemberVariableInfo field)
     {
-        return IsMaybePresenceField(record: record, field: field)
+        return IsOptionalPresenceField(record: record, field: field)
             ? storageValue
             : CoerceStorageToBool(sb: sb, storageValue: storageValue, fieldType: field.Type);
     }
@@ -250,7 +250,7 @@ public partial class LlvmEmitter
     private string EnsureRecordTypeDeclared(RecordTypeSymbol record)
     {
         // `Optional[T]` has no struct: it is the entity's address, null when absent.
-        if (record.IsOptionalCarrier)
+        if (record.IsEntityOptional)
         {
             return "ptr";
         }
@@ -345,7 +345,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Returns the named LLVM type for an error-handling carrier (Maybe[T], Check[T]).
+    /// Returns the named LLVM type for an error-handling carrier (Optional[T], Check[T]).
     /// Delegates to GetLLVMType -> carrier layouts come from their Standard library definitions.
     /// </summary>
     private string GetCarrierLlvmType(TypeSymbol type)
@@ -353,16 +353,16 @@ public partial class LlvmEmitter
         return GetLlvmType(type: type);
     }
 
-    /// <summary>Returns true if <paramref name="type"/> is a Maybe[T] or Check[T] carrier.</summary>
+    /// <summary>Returns true if <paramref name="type"/> is an Optional[T] or Check[T] carrier.</summary>
     private static bool IsCarrierType(TypeSymbol type)
     {
         return type is RecordTypeSymbol { CarrierKind: not CarrierKind.None };
     }
 
-    /// <summary>Returns true if <paramref name="type"/> is a Maybe[T] carrier.</summary>
+    /// <summary>Returns true if <paramref name="type"/> is an Optional[T] carrier.</summary>
     private static bool IsMaybeType(TypeSymbol type)
     {
-        return type is RecordTypeSymbol { CarrierKind: CarrierKind.Maybe };
+        return type is RecordTypeSymbol { CarrierKind: CarrierKind.Optional };
     }
 
     /// <summary>

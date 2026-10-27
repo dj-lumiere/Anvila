@@ -535,7 +535,7 @@ public sealed partial class SemanticVerifier
             // reached solely through its try variant), SA never annotated its body, so an inner failable
             // call (`from_digit_bytes_at`) carries NO ResolvedRoutine. The variant-body rewriter's non-tail
             // propagation (ErrorHandlingVariantPass.TryBuildTryPropagation) keys on `ce.ResolvedRoutine is
-            // { IsFailable: true }` to convert that inner call into its own try variant + Maybe-unwrap; with a
+            // { IsFailable: true }` to convert that inner call into its own try variant + Optional-unwrap; with a
             // null ResolvedRoutine it silently skips, leaving the RAW crashable call in the recover variant →
             // the throw propagates and CRASHES on the recoverable path instead of returning absent. Annotate
             // the base body in its owner's context FIRST (idempotent, once per base) so the inner call is

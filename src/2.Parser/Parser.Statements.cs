@@ -1545,7 +1545,7 @@ public partial class Parser
     /// <summary>
     /// Parses a block that opens access: <c>viewing rates, modifying payer as from, to</c>, then its indented body. A
     /// verb applies to the targets after it until another verb comes, and each target takes its own <c>as</c> (a target
-    /// without one keeps its own name). After <c>try</c> (consumed by the caller) each name is a <c>Maybe</c> of its
+    /// without one keeps its own name). After <c>try</c> (consumed by the caller) each name is a <c>Optional</c> of its
     /// token, and an <c>else</c> after the body is a grammar error.
     /// </summary>
     /// <param name="isTry">Whether the block was written <c>try viewing</c> / <c>try modifying</c>.</param>
@@ -1580,13 +1580,13 @@ public partial class Parser
         } while (CheckAndAdvance(type: TokenType.Comma));
 
         Statement body = ParseBody();
-        // A `try` block has no `else`: each name is a Maybe of its token, and the body branches on it. The `else` of
+        // A `try` block has no `else`: each name is an Optional of its token, and the body branches on it. The `else` of
         // the old form is reported, and its body read so the lines after it parse.
         if (isTry && Check(type: TokenType.Else))
         {
             Token word = Advance();
             RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.TryAccessElse,
-                message: "A 'try viewing' / 'try modifying' block has no 'else'. Inside it each name is a Maybe of its " +
+                message: "A 'try viewing' / 'try modifying' block has no 'else'. Inside it each name is an Optional of its " +
                          "token: branch with 'when v' ('is None => ...' for a target it could not enter, 'else => ...' " +
                          "with the token), and 'migrate --step access' rewrites the old form.",
                 fileName: FileName,

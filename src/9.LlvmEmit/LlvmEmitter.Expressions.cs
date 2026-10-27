@@ -48,7 +48,7 @@ public partial class LlvmEmitter
                 BitPackExpression pack => EmitBitArrayRuntime(sb: sb,
                     resolvedType: pack.ResolvedType!,
                     arguments: pack.Bits),
-                // CarrierPayloadExpression is the RESULT of PatternLoweringPass (Maybe/Result payload
+                // CarrierPayloadExpression is the RESULT of PatternLoweringPass (Optional/Result payload
                 // projection) — codegen consumes it, it is not a surface node.
                 VariantWidenExpression widen => EmitVariantWiden(sb: sb, widen: widen),
                 CarrierPayloadExpression payload => EmitCarrierPayloadExpression(sb: sb,
@@ -664,12 +664,12 @@ public partial class LlvmEmitter
 
         TypeSymbol carrierType = payload.Carrier.ResolvedType!;
         // `Optional[T]` is the entity's address itself.
-        if (carrierType is RecordTypeSymbol { IsOptionalCarrier: true })
+        if (carrierType is RecordTypeSymbol { IsEntityOptional: true })
         {
             return carrierVal;
         }
 
-        // Both a Result/Lookup/Maybe carrier and a general user variant store their payload at field 1
+        // Both a Result/Lookup/Optional carrier and a general user variant store their payload at field 1
         // ({ tag/flag, payload }); pick the right aggregate LLVM type for each.
         string carrierLlvmType =
             carrierType is VariantTypeSymbol variant && !IsCarrierType(type: carrierType)

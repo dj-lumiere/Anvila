@@ -251,7 +251,7 @@ public partial class SemanticVerifier
                 new Dictionary<string, (RoutineInfo, Statement)>(dictionary: _synthesizedBodies),
             VariantBodies = new Dictionary<string, Statement>(dictionary: _variantBodies),
             // Capture an EMPTY instantiation set. The snapshot is analyzed from a throwaway `import EVERY module`
-            // program, so its demand collector materializes that program's monomorphizations (Maybe[X].assign,
+            // program, so its demand collector materializes that program's monomorphizations (Optional[X].assign,
             // Unbroken[X].destroy, …) — which are NOT what any real warm build reaches. Carrying them pollutes every
             // warm build: codegen (a dumb translator) emits the whole InstantiatedGenericBodies set, so a warm
             // build of `show("hi")` would emit hundreds of unrelated derives that the equivalent cold build prunes

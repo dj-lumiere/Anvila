@@ -741,7 +741,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Arguments: [],
             Location: loc) { IsSynthesizedLowering = true };
 
-        // Each step is `try _lf_iter_N.emit()`: the iterator's failable `emit` recovered to a Maybe.
+        // Each step is `try _lf_iter_N.emit()`: the iterator's failable `emit` recovered to an Optional.
         var tryNextReceiver = new IdentifierExpression(Name: iterName, Location: loc);
         var emitCall = new CallExpression(
             Callee: new MemberExpression(Object: tryNextReceiver,

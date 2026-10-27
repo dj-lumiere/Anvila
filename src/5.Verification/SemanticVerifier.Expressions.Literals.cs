@@ -24,7 +24,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol? expectedType = null)
     {
         // `none` value literal: needs a carrier-slot expected type
-        // (Maybe[T] / variant-with-None). Anything else is a hard error.
+        // (Optional[T] / variant-with-None). Anything else is a hard error.
         if (literal.LiteralType == TokenType.NoneValue)
         {
             return AnalyzeNoneValueLiteral(literal: literal, expectedType: expectedType);
@@ -101,7 +101,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The member of a variant or the payload of a <c>Maybe</c> a bare number goes to (<c>var m: Maybe[S64] = 42</c>,
+    /// The member of a variant or the payload of a <c>Optional</c> a bare number goes to (<c>var m: Optional[S64] = 42</c>,
     /// <c>var n: Number = 3.14</c> with one float member), or null when the expected type is neither or the number
     /// fits no single member. A member that is the number's default type wins, as it would without the variant.
     /// </summary>
@@ -118,7 +118,7 @@ public sealed partial class SemanticVerifier
             VariantTypeSymbol variant => variant.Members.Where(predicate: m => m.Type != null)
                                                 .Select(selector: m => m.Type!)
                                                 .ToList(),
-            { BareName: "Maybe" or "Optional", TypeArguments: [{ } payload] } => [payload],
+            { BareName: "Optional", TypeArguments: [{ } payload] } => [payload],
             _ => []
         };
         if (arms.Count == 0)
@@ -336,7 +336,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Resolves the type of a bare <c>none</c> value literal against its expected carrier slot
-    /// (Maybe[T] / variant-with-None, or a Suflae <c>Roamed[E]</c> optional entity slot).
+    /// (Optional[T] / variant-with-None, or a Suflae <c>Roamed[E]</c> optional entity slot).
     /// Reports RF-S if no valid carrier context is present.
     /// </summary>
     private TypeSymbol AnalyzeNoneValueLiteral(LiteralExpression literal, TypeSymbol? expectedType)
@@ -347,7 +347,7 @@ public sealed partial class SemanticVerifier
         }
 
         // A flags slot: `none` is the flags value with no member on (`marks: CellMarks = none`), lowered to the
-        // zero bitmask. A `Maybe[CellMarks]` slot is a carrier and took the branch above, so the expected type
+        // zero bitmask. A `Optional[CellMarks]` slot is a carrier and took the branch above, so the expected type
         // decides which `none` it is.
         if (expectedType is FlagsTypeSymbol)
         {
@@ -364,7 +364,7 @@ public sealed partial class SemanticVerifier
 
         // Suflae: `none` against a `Roamed[E]` slot (an OPTIONAL entity reference `x: E?`) is a null
         // Roamed handle (Roamed[E].hollow()). Entity references carry their own none via a null pointer, so
-        // no Maybe carrier is needed.
+        // no Optional carrier is needed.
         if (_registry.EntitiesAreShared && expectedType is RecordTypeSymbol
             {
                 GenericDefinition.Name: Declaration.RuntimeContract.Roamed
@@ -373,9 +373,15 @@ public sealed partial class SemanticVerifier
             return expectedType;
         }
 
+        // A slot whose type already failed to resolve has had its error.
+        if (expectedType is ErrorTypeSymbol)
+        {
+            return ErrorTypeSymbol.Instance;
+        }
+
         ReportError(code: SemanticDiagnosticCode.NoneOutsideCarrierSlot,
             message:
-            $"'none' is only valid where the expected type is Maybe[T], a variant with a None arm or a flags type; got {expectedType?.Name ?? "no contextual type"}.",
+            $"'none' is only valid where the expected type is 'T?' ('Optional[T]'), a variant with a None arm or a flags type; got {expectedType?.Name ?? "no contextual type"}.",
             location: literal.Location);
         return ErrorTypeSymbol.Instance;
     }

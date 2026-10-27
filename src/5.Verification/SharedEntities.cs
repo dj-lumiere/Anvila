@@ -116,7 +116,7 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
     /// Suflae: resolves an entity-reference variable/parameter type annotation into its <c>Roamed[E]</c>
     /// storage representation, mirroring the field substitution in <c>TypeBodyResolver</c>. A bare
     /// <c>E</c> annotation is a NON-NULL <c>Roamed[E]</c>; an optional <c>E?</c> (parsed as
-    /// <c>Maybe[E]</c>) is a NULLABLE <c>Roamed[E]</c>.
+    /// <c>Optional[E]</c>) is a NULLABLE <c>Roamed[E]</c>.
     /// </summary>
     /// <returns>
     /// (resolved storage type, isNullable, isEntitySlot). For non-Suflae or non-entity annotations the
@@ -147,17 +147,17 @@ internal sealed class SharedEntities(TypeRegistry registry, DiagnosticReporter r
             EntityTypeSymbol entity => (
                 registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [entity]),
                 false, true),
-            // `E?` (= Maybe[E]) -> nullable Roamed[E]
+            // `E?` (= Optional[E]) -> nullable Roamed[E]
             RecordTypeSymbol
             {
-                GenericDefinition.Name: "Maybe", TypeArguments: [EntityTypeSymbol inner]
+                GenericDefinition.Name: "Optional", TypeArguments: [EntityTypeSymbol inner]
             } => (
                 registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [inner]),
                 true, true),
-            // Already a Roamed[E]: the type resolver collapses a written `E?` (`Maybe[E]`) into the handle
+            // Already a Roamed[E]: the type resolver collapses a written `E?` (`Optional[E]`) into the handle
             // itself, so the written type says whether the slot may be empty. Any other spelling is non-null.
             RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed } => (
-                annotated, typeExpr is { Name: "Maybe" }, true),
+                annotated, typeExpr is { Name: "Optional" }, true),
             _ => (annotated, false, false)
         };
     }

@@ -577,7 +577,7 @@ public partial class LlvmEmitter
     /// <summary>
     /// True if <paramref name="type"/> is, or contains, an unresolved associated-type projection
     /// ('Me/Value', 'S/Iter'). Such a type is abstract until monomorphization resolves the slot, so
-    /// a record instantiation built over it (e.g. Maybe[Me/Value] from an abstract protocol memberRoutine
+    /// a record instantiation built over it (e.g. Optional[Me/Value] from an abstract protocol memberRoutine
     /// signature) is not emittable LLVM IR and must be skipped at the record-declaration sites.
     /// Kept separate from <see cref="ContainsGenericParameter"/> so routine emission is unaffected.
     /// </summary>

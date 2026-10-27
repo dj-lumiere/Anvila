@@ -97,14 +97,14 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
             return visited;
         }
 
-        // A recovery variant's return wrapped in its carrier (`return Maybe(present: true, value: x)`) hands out
+        // A recovery variant's return wrapped in its carrier (`return Optional(present: true, value: x)`) hands out
         // what the carrier holds: read `x` when the carrier holds the value, not a token.
         if (value is CreatorExpression
             {
                 ResolvedType: RecordTypeSymbol { TypeArguments: [{ } held] } carrier,
                 MemberVariables: var members
             } creator &&
-            carrier.BareName is "Maybe" or "Optional" or "Check" && !IsToken(type: held))
+            carrier.BareName is "Optional" or "Check" && !IsToken(type: held))
         {
             var readMembers = members.Select(selector: m => (m.Name, m.Value is null ? m.Value : ReadAs(expr: m.Value, target: held))).ToList();
             return readMembers.Select(selector: m => m.Item2)

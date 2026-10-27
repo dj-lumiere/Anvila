@@ -541,7 +541,7 @@ public static class LspServer
             return;
         }
 
-        // `Node?` written as a type is one type, `Maybe[Node]`: its `?` hovers as the name before it, and the hover
+        // `Node?` written as a type is one type, `Optional[Node]`: its `?` hovers as the name before it, and the hover
         // covers both.
         Token? optionalMark = null;
         int at = doc.Tokens.IndexOf(item: hit);
@@ -1554,7 +1554,7 @@ public static class LspServer
     }
 
     /// <summary>Whether a name is the written part of an optional type (<c>Node</c> in <c>Node?</c>): the analysis
-    /// paired it with the <c>Maybe[Node]</c> it makes.</summary>
+    /// paired it with the <c>Optional[Node]</c> it makes.</summary>
     private static bool IsOptionalTypeName(DocState doc, Token token)
     {
         SemanticRoles roles = BuildSemanticRoles(nodes: AllNodes(program: doc.Program), tokens: doc.Tokens,
@@ -3077,7 +3077,7 @@ public static class LspServer
         TypeSymbol shown = Rules.SurfaceType(type: resolved);
 
         // Desugaring wraps a written type at its own position (a variadic `items...: T` becomes the array of its
-        // arguments, `Array[T, N]`, and `T?` a `Maybe[T]`): only the wrapped type was written there.
+        // arguments, `Array[T, N]`, and `T?` a `Optional[T]`): only the wrapped type was written there.
         if (written.GenericArguments is [var wrapped, ..] &&
             wrapped.Location.Line == written.Location.Line && wrapped.Location.Column == written.Location.Column)
         {
@@ -3085,8 +3085,8 @@ public static class LspServer
                 resolved: shown.TypeArguments is [var wrappedType, ..] ? wrappedType : null,
                 roles: roles);
 
-            // `Node?` is colored as the `Node` written there, but it means the whole `Maybe[Node]`: hover shows that.
-            if (written.Name == "Maybe")
+            // `Node?` is colored as the `Node` written there, but it means the whole `Optional[Node]`: hover shows that.
+            if (written.Name == "Optional")
             {
                 roles.Symbols[key: (written.Location.Line, written.Location.Column)] = shown;
             }
@@ -3457,6 +3457,7 @@ public static class LspServer
 
         var spans = new List<(int Line, int Column, int Length, int Type, int Mods)>();
         int modulePathLine = -1; // the line of an `import` / `module` header: its names are a module path
+        int previousType = -1; // the kind given to the token before this one
         for (int i = 0; i < toks.Count; i++)
         {
             Token t = toks[index: i];
@@ -3474,7 +3475,10 @@ public static class LspServer
                 : t.Type == TokenType.Identifier
                     ? ClassifyIdentifierToken(doc: doc, toks: toks, at: i, roles: roles,
                         modulePathLine: modulePathLine)
-                    : ClassifyNonIdentifierToken(t: t);
+                    : IsOptionalMark(toks: toks, at: i, roles: roles)
+                        ? previousType
+                        : ClassifyNonIdentifierToken(t: t);
+            previousType = type;
             if (type < 0)
             {
                 continue; // punctuation, text, comments — left to the TextMate grammar
@@ -3672,7 +3676,7 @@ public static class LspServer
         };
     }
 
-    /// <summary>A record whose kind follows its type arguments: a carrier (<c>Maybe</c>, <c>Check</c>,
+    /// <summary>A record whose kind follows its type arguments: a carrier (<c>Optional</c>, <c>Check</c>,
     /// <c>Lookup</c>), which is a variant of its value type and <c>None</c> or an error.</summary>
     private static bool IsMemberKindCarrier(RecordTypeSymbol record)
     {
@@ -3710,6 +3714,23 @@ public static class LspServer
             RecordTypeSymbol carrier when IsMemberKindCarrier(record: carrier) => (carrier.TypeArguments ?? []).Any(predicate: HoldsEntity),
             _ => false
         };
+    }
+
+    /// <summary>Whether the token at <paramref name="at"/> is the <c>?</c> of an optional type (<c>Node?</c>), which is
+    /// colored with the name before it: the kind of <c>T?</c> follows <c>T</c>'s.</summary>
+    private static bool IsOptionalMark(List<Token> toks, int at, SemanticRoles roles)
+    {
+        if (at == 0 || toks[index: at].Type != TokenType.Question)
+        {
+            return false;
+        }
+
+        Token name = toks[index: at - 1];
+        Token mark = toks[index: at];
+        return name.Type == TokenType.Identifier && name.Line == mark.Line &&
+               name.Column + name.Text.Length == mark.Column &&
+               roles.Symbols.TryGetValue(key: (name.Line, name.Column), value: out TypeSymbol? type) &&
+               Rules.SurfaceType(type: type) is RecordTypeSymbol { CarrierKind: TypeModel.Enums.CarrierKind.Optional };
     }
 
     /// <summary>Classifies a non-identifier token as comment, string, number, keyword, operator, or -1
