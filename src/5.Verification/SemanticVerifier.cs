@@ -753,6 +753,8 @@ public sealed partial class SemanticVerifier
             new MemberKindGateChecker(registry: _registry, report: ReportError).Check(programs: list);
         }
 
+        new EmitterReuseChecker(registry: _registry, report: ReportError).Check(programs: list);
+
         if (!_userBodyCheckMade)
         {
             _userBodyCheck = _registry.Rules.CreateUserBodyCheck(report: ReportError);

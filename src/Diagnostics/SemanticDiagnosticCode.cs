@@ -691,6 +691,11 @@ public enum SemanticDiagnosticCode
     /// (<c>10 to 0 by -1</c> counts down).</summary>
     RangeStepZero = 516,
 
+    /// <summary>An <c>each</c> over an emitter that has certainly run out: an earlier <c>each</c> over the same name
+    /// took every item on every path here, or the emitter was made outside a loop that walks it on every pass. It
+    /// would run zero times. Make a new emitter for the loop, or walk the collection itself.</summary>
+    EmitterRunOut = 517,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // COLLECTION LITERAL ERRORS (RF-S550 - RF-S599)
     // ═══════════════════════════════════════════════════════════════════════════

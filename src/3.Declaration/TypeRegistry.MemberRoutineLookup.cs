@@ -120,6 +120,14 @@ public sealed partial class TypeRegistry
             return;
         }
 
+        // An `emit` a generic type forwards for one instance (`Modifying[T]`'s for `Modifying[ListEmitter[S64]]`, which
+        // gives `Modifying[S64]`) says what that instance emits, not the type itself. Binding an instance of the type on
+        // its own definition would make every instance hold another one, without end.
+        if (routine.OwnerType is { IsGenericDefinition: true } owner && Mentions(type: emitted, definition: owner))
+        {
+            return;
+        }
+
         Dictionary<string, TypeSymbol>? bindings = routine.OwnerType switch
         {
             EntityTypeSymbol entity => entity.AssociatedTypeBindings,
@@ -131,6 +139,19 @@ public sealed partial class TypeRegistry
         {
             bindings[key: itemSlot] = emitted;
         }
+    }
+
+    /// <summary>Whether <paramref name="type"/> is or holds an instance of <paramref name="definition"/>.</summary>
+    private static bool Mentions(TypeSymbol type, TypeSymbol definition)
+    {
+        TypeSymbol? made = type switch
+        {
+            RecordTypeSymbol r => r.GenericDefinition,
+            EntityTypeSymbol e => e.GenericDefinition,
+            _ => null
+        };
+        return ReferenceEquals(objA: made, objB: definition) ||
+               (type.TypeArguments ?? []).Any(predicate: a => Mentions(type: a, definition: definition));
     }
 
     /// <summary>
