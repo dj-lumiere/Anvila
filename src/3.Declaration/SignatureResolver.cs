@@ -510,7 +510,7 @@ internal sealed class SignatureResolver
             _sa.ReportError(code: SemanticDiagnosticCode.ErrorHandlingTypeAsReturnType,
                 message: $"'{routine.Name}' returns '{carrierName}[T]', which only 'try' and 'check' make at a call. " +
                          "Return the value itself and declare the routine failable ('failable routine " +
-                         $"{routine.Name}(...)'), with 'throw' or 'absent' where it fails: a caller then writes " +
+                         $"{routine.Name}(...)'), with 'throw' where it fails: a caller then writes " +
                          $"'{(carrierName == "Check" ? "check" : "try")} {routine.Name}(...)' to get the " +
                          $"'{carrierName}'.",
                 location: routine.ReturnType?.Location ?? routine.Location);
