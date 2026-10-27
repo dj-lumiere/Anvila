@@ -39,10 +39,18 @@ namespace Builder.Lowering.Passes;
 /// <c>store</c> on <c>me</c>/lvalue returns) — so freeing the receiver leaves the result valid. The
 /// only alias hazard is a borrow/view result pointing into the receiver, which the guard excludes.</para>
 ///
+/// <para><b>Entities.</b> A RazorForge entity a call or construction makes only to call one of its routines or read
+/// one of its member variables (<c>pair(x: 3).count()</c>, <c>make().a().b()</c>) is its own (a routine never
+/// gives back an entity it still keeps), so it is spilled too, into a local that lives to the end of its block as a
+/// declared one would: what the call gives back may point into it (an emitter or adapter over it, a token), and its
+/// teardown may wait for work it started. The local is marked for the late scope teardown, which also covers every
+/// exit leaving the block. In a return or throw it ends with the statement, unless what is handed out may point into
+/// it, where it is left alone. A call that gives back where the entity is (<c>hijack</c>, an address) hands it to
+/// code that places it by hand, so it is not spilled.</para>
+///
 /// <para>Crucially NOT spilled (each a real double-free / leak-vs-crash hazard): call
 /// <b>arguments</b> (an rvalue arg is moved into the callee), <b>discarded</b> statement values (a
-/// fluent <c>me</c>-returning call aliases an existing binding), <b>entities</b> (single-owner
-/// lifetime + fluent returns are not provably alias-free here), non-scalar results, <c>var</c>
+/// fluent <c>me</c>-returning call aliases an existing binding), non-scalar results, <c>var</c>
 /// initializers / assignment RHS / return values (owned by the binding or moved out), and
 /// <c>steal</c> operands.</para>
 ///
@@ -53,9 +61,8 @@ namespace Builder.Lowering.Passes;
 /// its own <c>destruct</c> calls; codegen's emit-on-demand resolves the concrete <c>destruct</c>.</para>
 ///
 /// <para><b>Known limitations</b> (leak preserved, never a crash): argument-position temporaries,
-/// non-scalar-returning chains, entity temporaries, and owned temporaries
-/// inside loop/if conditions are not freed. User-defined generic routine bodies monomorphized before
-/// this pass also miss it.</para>
+/// non-scalar-returning chains, an entity temporary a return hands out a value pointing into, and owned
+/// temporaries inside loop/if conditions are not freed.</para>
 /// </summary>
 internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 {
@@ -84,7 +91,22 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         return RuntimeContract.IsRawStore(resolved: call.ResolvedRoutine, callee: call.Callee);
     }
 
-    private sealed record Spill(string Name, TypeSymbol Type, RoutineInfo Destroy, Expression Init);
+    // ForScope: the temporary lives to the end of its block (an entity temporary, see SpillEntityTemporary), so its local
+    // is marked for the late scope teardown instead of being torn down at the statement's end.
+    private sealed record Spill(string Name, TypeSymbol Type, RoutineInfo Destroy, Expression Init, bool ForScope = false);
+
+    /// <summary>Whether the value being visited lives on after its statement: it is the value a declaration, an
+    /// assignment or a return keeps, an argument (a callee may keep it), or a value taken from one of those that may
+    /// still point into what it was taken from.</summary>
+    private bool _kept;
+
+    /// <summary>Whether the statement being lowered leaves the routine (a return or a throw), so a temporary cannot
+    /// outlive it.</summary>
+    private bool _terminator;
+
+    /// <summary>Whether the body being lowered got a temporary that lives to the end of its scope, so the late scope
+    /// teardown has to run over it.</summary>
+    private bool _scopeHoisted;
 
     public void Run(Program program)
     {
@@ -118,7 +140,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
         foreach (string key in bodies.Keys.ToList())
         {
-            bodies[key: key] = TransformStatement(stmt: bodies[key: key]);
+            _scopeHoisted = false;
+            bodies[key: key] = WithScopeTeardown(body: TransformStatement(stmt: bodies[key: key]));
         }
     }
 
@@ -139,7 +162,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             Statement lowered;
             using (ctx.Registry.ViewSurfaceOf(fileName: entry.Ast.Body.Location.FileName))
             {
-                lowered = TransformStatement(stmt: entry.Ast.Body);
+                _scopeHoisted = false;
+                lowered = WithScopeTeardown(r: entry.Ast with { Body = TransformStatement(stmt: entry.Ast.Body) }).Body;
             }
 
             if (!ReferenceEquals(objA: lowered, objB: entry.Ast.Body))
@@ -166,7 +190,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         try
         {
             BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: bodies,
-                lower: (_, entry) => TransformStatement(stmt: entry.Ast.Body));
+                lower: (_, entry) =>
+                {
+                    _scopeHoisted = false;
+                    return WithScopeTeardown(r: entry.Ast with { Body = TransformStatement(stmt: entry.Ast.Body) })
+                       .Body;
+                });
         }
         finally
         {
@@ -190,10 +219,37 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
     private RoutineDeclaration LowerRoutine(RoutineDeclaration r)
     {
+        _scopeHoisted = false;
         Statement body = TransformStatement(stmt: r.Body);
-        return r.Body == body
+        RoutineDeclaration lowered = r.Body == body
             ? r
             : r with { Body = body };
+        return WithScopeTeardown(r: lowered);
+    }
+
+    /// <summary>Gives the receiver temporaries that live to the end of their scope (see <see cref="Spill"/>) their
+    /// destroys there and at every exit that leaves it, through the late scope teardown run.</summary>
+    private RoutineDeclaration WithScopeTeardown(RoutineDeclaration r)
+    {
+        if (!_scopeHoisted)
+        {
+            return r;
+        }
+
+        _scopeHoisted = false;
+        return new ScopeTeardownLoweringPass(ctx: ctx).LowerLateRoutine(r: r);
+    }
+
+    /// <summary><see cref="WithScopeTeardown(RoutineDeclaration)"/> for a body with no declaration of its own.</summary>
+    private Statement WithScopeTeardown(Statement body)
+    {
+        if (!_scopeHoisted)
+        {
+            return body;
+        }
+
+        _scopeHoisted = false;
+        return new ScopeTeardownLoweringPass(ctx: ctx).LowerLateBody(body: body);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -216,9 +272,18 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                         continue;
                     }
 
-                    Statement lowered = TransformStatement(stmt: original);
-                    stmts.Add(item: HoistLockExit(lowered: lowered, following: b.Statements, after: i,
-                        hoisted: hoisted));
+                    Statement lowered = HoistLockExit(lowered: TransformStatement(stmt: original),
+                        following: b.Statements, after: i, hoisted: hoisted);
+                    // A temporary that lives to the end of its scope is declared in this block, so the late scope
+                    // teardown ends it with the block and not with the statement's own wrapper.
+                    if (lowered is BlockStatement { IntroducesScope: false } spilled &&
+                        spilled.Statements.Any(predicate: IsScopeTemporary))
+                    {
+                        stmts.AddRange(collection: spilled.Statements);
+                        continue;
+                    }
+
+                    stmts.Add(item: lowered);
                 }
 
                 return b with { Statements = stmts };
@@ -398,7 +463,21 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         bool isTerminator = false)
     {
         var spills = new List<Spill>();
-        Expression rewritten = Visit(e: root, objectPos: !topOwning, spills: spills);
+        bool savedKept = _kept;
+        bool savedTerminator = _terminator;
+        _kept = topOwning;
+        _terminator = isTerminator;
+        Expression rewritten;
+        try
+        {
+            rewritten = Visit(e: root, objectPos: !topOwning, spills: spills);
+        }
+        finally
+        {
+            _kept = savedKept;
+            _terminator = savedTerminator;
+        }
+
         if (spills.Count == 0)
         {
             return owner;
@@ -407,13 +486,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         var stmts = new List<Statement>(capacity: spills.Count * 2 + 2);
         foreach (Spill s in spills)
         {
-            stmts.Add(item: new DeclarationStatement(
-                Declaration: new VariableDeclaration(Name: s.Name,
-                    Type: null,
-                    Initializer: s.Init,
-                    Visibility: VisibilityModifier.Secret,
-                    Location: owner.Location),
-                Location: owner.Location));
+            stmts.Add(item: SpillDecl(spill: s, loc: owner.Location));
         }
 
         if (isTerminator)
@@ -426,12 +499,41 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         }
 
         stmts.Add(item: rebuildWithCondition(arg: rewritten));
+        AddStatementEndDestroys(stmts: stmts, spills: spills, loc: owner.Location);
+        return new BlockStatement(Statements: stmts, Location: owner.Location) { IntroducesScope = false };
+    }
+
+    /// <summary>The local a spill is held in. One that lives to the end of its scope is marked for the late scope
+    /// teardown, which tears it down whatever its type.</summary>
+    private static DeclarationStatement SpillDecl(Spill spill, SourceLocation loc)
+    {
+        return new DeclarationStatement(Declaration: new VariableDeclaration(Name: spill.Name,
+                Type: null,
+                Initializer: spill.Init,
+                Visibility: VisibilityModifier.Secret,
+                Location: loc) { OwesTeardown = spill.ForScope, OwnsItsValue = spill.ForScope },
+            Location: loc);
+    }
+
+    /// <summary>Whether <paramref name="stmt"/> declares a temporary that lives to the end of its scope.</summary>
+    private static bool IsScopeTemporary(Statement stmt)
+    {
+        return stmt is DeclarationStatement
+        {
+            Declaration: VariableDeclaration { OwesTeardown: true, OwnsItsValue: true } v
+        } && v.Name.StartsWith(value: "__tt_", comparisonType: StringComparison.Ordinal);
+    }
+
+    /// <summary>Tears down the spills that end with the statement, last one first.</summary>
+    private void AddStatementEndDestroys(List<Statement> stmts, List<Spill> spills, SourceLocation loc)
+    {
         for (int i = spills.Count - 1; i >= 0; i--)
         {
-            stmts.Add(item: MakeDestroyStmt(spill: spills[index: i], loc: owner.Location));
+            if (!spills[index: i].ForScope)
+            {
+                stmts.Add(item: MakeDestroyStmt(spill: spills[index: i], loc: loc));
+            }
         }
-
-        return new BlockStatement(Statements: stmts, Location: owner.Location) { IntroducesScope = false };
     }
 
     // Compute the transferred value while the spills are still alive, tear them down, then
@@ -493,12 +595,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         var spills = new List<Spill>();
         Expression rhs2 = _instantiated
             ? rhs
-            : Visit(e: rhs, objectPos: false, spills: spills);
+            : VisitIn(e: rhs, objectPos: false, spills: spills, kept: true);
 
         var stmts = new List<Statement>(capacity: spills.Count * 2 + 3);
         foreach (Spill s in spills)
         {
-            stmts.Add(item: DeclStmt(name: s.Name, init: s.Init, loc: owner.Location));
+            stmts.Add(item: SpillDecl(spill: s, loc: owner.Location));
         }
 
         string newName = $"__rv_{_counter++}";
@@ -515,10 +617,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 // the bare value here, and the later Maybe wrap needs to see that.
                 ResolvedType = rhs2.ResolvedType ?? t, IsSynthesizedTeardownTemp = true
             }));
-        for (int i = spills.Count - 1; i >= 0; i--)
-        {
-            stmts.Add(item: MakeDestroyStmt(spill: spills[index: i], loc: owner.Location));
-        }
+        AddStatementEndDestroys(stmts: stmts, spills: spills, loc: owner.Location);
 
         return new BlockStatement(Statements: stmts, Location: owner.Location) { IntroducesScope = false };
     }
@@ -632,6 +731,28 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     // `objectPos` is true only for positions whose owned producer should be torn down here.
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary><see cref="Visit"/> with <see cref="_kept"/> set to <paramref name="kept"/> for the subtree.</summary>
+    private Expression VisitIn(Expression e, bool objectPos, List<Spill> spills, bool kept)
+    {
+        bool saved = _kept;
+        _kept = kept;
+        try
+        {
+            return Visit(e: e, objectPos: objectPos, spills: spills);
+        }
+        finally
+        {
+            _kept = saved;
+        }
+    }
+
+    /// <summary>Whether a part of <paramref name="whole"/> lives on after the statement: the whole is kept and may
+    /// still point into the part.</summary>
+    private bool PartKept(Expression whole)
+    {
+        return _kept && MayHoldReceiver(type: whole.ResolvedType, depth: 0);
+    }
+
     private Expression Visit(Expression e, bool objectPos, List<Spill> spills)
     {
         switch (e)
@@ -644,7 +765,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
             case CallExpression call:
             {
-                Expression newCallee = Visit(e: call.Callee, objectPos: false, spills: spills);
+                Expression newCallee = VisitIn(e: call.Callee, objectPos: false, spills: spills, kept: false);
                 // See the member-call case: owning-position args (torn down at the caller) unless this is
                 // a store primitive.
                 bool argsOwned = !RuntimeContract.IsMemberwiseConstruction(
@@ -662,16 +783,24 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 // A field read on a fresh owned value (`xs[0].id`, where `getitem` hands back a share of its
                 // own) reads the field out within the statement, so the value is torn down when the statement
                 // ends, unless the field's value may point into it.
-                Expression newObj = Visit(e: m.Object,
-                    objectPos: !ResultMayAliasReceiver(resultType: m.ResolvedType),
-                    spills: spills);
+                // An entity made for the read (`pair(x: 3).items.count()`) is torn down the same way.
+                bool fieldMayAlias = ResultMayAliasReceiver(resultType: m.ResolvedType);
+                Expression newObj = VisitIn(e: m.Object,
+                    objectPos: !fieldMayAlias,
+                    spills: spills,
+                    kept: PartKept(whole: m));
+                if (!fieldMayAlias && IsSpillableEntityTemporary(e: newObj))
+                {
+                    newObj = SpillEntityTemporary(producer: newObj, consumer: m, spills: spills);
+                }
+
                 return m with { Object = newObj };
             }
 
             case IndexExpression ix:
             {
-                Expression newObj = Visit(e: ix.Object, objectPos: false, spills: spills);
-                Expression newIdx = Visit(e: ix.Index, objectPos: false, spills: spills);
+                Expression newObj = VisitIn(e: ix.Object, objectPos: false, spills: spills, kept: false);
+                Expression newIdx = VisitIn(e: ix.Index, objectPos: false, spills: spills, kept: false);
                 return ix with { Object = newObj, Index = newIdx };
             }
 
@@ -681,32 +810,38 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 return na with { Value = Visit(e: na.Value, objectPos: objectPos, spills: spills) };
 
             case BinaryExpression b:
+            {
+                bool operandsKept = PartKept(whole: b);
                 return b with
                 {
-                    Left = Visit(e: b.Left, objectPos: false, spills: spills),
-                    Right = Visit(e: b.Right, objectPos: false, spills: spills)
+                    Left = VisitIn(e: b.Left, objectPos: false, spills: spills, kept: operandsKept),
+                    Right = VisitIn(e: b.Right, objectPos: false, spills: spills, kept: operandsKept)
                 };
+            }
 
             case UnaryExpression u:
-                return u with { Operand = Visit(e: u.Operand, objectPos: false, spills: spills) };
+                return u with
+                {
+                    Operand = VisitIn(e: u.Operand, objectPos: false, spills: spills, kept: PartKept(whole: u))
+                };
 
             case StealExpression st:
                 // `steal` is an explicit move — never tear down its operand.
                 return st with
                 {
-                    Operand = Visit(e: st.Operand, objectPos: false, spills: spills)
+                    Operand = VisitIn(e: st.Operand, objectPos: false, spills: spills, kept: true)
                 };
 
             // An inline `Array[T, N]` literal handed to a call (the packed `elements...` of `from_literal`) only
             // carries its elements to the callee, which stores what it keeps. Each fresh element is then an
             // argument like any other and is torn down after the call. A literal that initializes a binding
             // (not an argument) owns its elements, so nothing is torn down there.
-            case ListLiteralExpression { ResolvedType: RecordTypeSymbol { GenericDefinition.Name: "Array" } } arr
+            case ListLiteralExpression { ResolvedType: RecordTypeSymbol { GenericDefinition.Name: "Array" or "Slots" } } arr
                 when objectPos:
                 return arr with
                 {
                     Elements = arr.Elements
-                                  .Select(selector: el => Visit(e: el, objectPos: true, spills: spills))
+                                  .Select(selector: el => VisitIn(e: el, objectPos: true, spills: spills, kept: true))
                                   .ToList()
                 };
 
@@ -743,7 +878,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                                 m.Object.ResolvedType is EntityTypeSymbol &&
                                 call.ResolvedType is { } rcCtorRes &&
                                 TypeRegistry.GetRcWrapperBaseName(type: rcCtorRes) is not null;
-        Expression newRecv = Visit(e: m.Object, objectPos: false, spills: spills);
+        Expression newRecv = VisitIn(e: m.Object, objectPos: false, spills: spills, kept: PartKept(whole: call));
 
         // Spill the receiver iff it is a fresh heap-owning RC-record producer, the verb does
         // not consume it (retain/track move it into the RC controller), and the call result
@@ -757,6 +892,14 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             !ResultMayAliasReceiver(resultType: call.ResolvedType))
         {
             newRecv = MakeSpill(producer: newRecv, spills: spills);
+        }
+        // An entity made only to call one of its routines (`pair(x: 3).count()`, `make().emitter()`) is torn down at
+        // the end of its block (see SpillEntityTemporary).
+        else if (!receiverConsumed && IsSpillableEntityTemporary(e: newRecv) &&
+                 !ResultMayAliasReceiver(resultType: call.ResolvedType) &&
+                 !ResultLocatesEntity(resultType: call.ResolvedType))
+        {
+            newRecv = SpillEntityTemporary(producer: newRecv, consumer: call, spills: spills);
         }
 
         // Three-rules model: a fresh owned RVALUE arg passed to a borrow param is torn down at
@@ -790,7 +933,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         _droppedEntityTop = false;
         try
         {
-            return arguments.Select(selector: a => Visit(e: a, objectPos: argsOwned, spills: spills))
+            return arguments.Select(selector: a => VisitIn(e: a, objectPos: argsOwned, spills: spills, kept: true))
                             .ToList();
         }
         finally
@@ -834,16 +977,168 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                ImplicitToken.IsTokenParameter(parameter: returned, tokenKind: out _, target: out _);
     }
 
-    private IdentifierExpression MakeSpill(Expression producer, List<Spill> spills)
+    /// <summary>
+    /// Spills an entity temporary used by <paramref name="consumer"/> (a call of one of its routines, or a read of one
+    /// of its member variables). The entity lives to the end of its block, as a local the block declared would: what
+    /// the call gives back may point into it and live on (an emitter, an adapter, a token), and its teardown may wait
+    /// for work it started (<c>f.to[Work](...).start_now()</c> runs until the block ends). In a return or throw the
+    /// statement's end is the block's end, unless what is handed out may point into the entity (see
+    /// <see cref="MayHoldReceiver"/>): it cannot outlive the routine, so there it is left as it was.
+    /// </summary>
+    private Expression SpillEntityTemporary(Expression producer, Expression consumer, List<Spill> spills)
+    {
+        if (_terminator)
+        {
+            return PartKept(whole: consumer)
+                ? producer
+                : MakeSpill(producer: producer, spills: spills);
+        }
+
+        _scopeHoisted = true;
+        return MakeSpill(producer: producer, spills: spills, forScope: true);
+    }
+
+    /// <summary>
+    /// True for an entity a call or construction made fresh (RazorForge: a routine never gives back an entity it still
+    /// keeps) with a destroy: not a token, not a view verb's result, and not what a library routine that gives back a
+    /// bare <c>T</c> reads in place (<c>get_raw</c>, <c>peek</c>). In a monomorphized body only a routine value's
+    /// result and a construction are spilled, as only those the definition could not see are fresh for sure. Shared
+    /// entities (Suflae) are handles, torn down as records.
+    /// </summary>
+    private bool IsSpillableEntityTemporary(Expression e)
+    {
+        if (ctx.Registry.CompilationRules.EntitiesAreShared || e is not (CallExpression or CreatorExpression) ||
+            e.ResolvedType is not EntityTypeSymbol entity || HandsOutAccess(e: e))
+        {
+            return false;
+        }
+
+        if (e is CallExpression call)
+        {
+            if (call.Callee is MemberExpression vm && ViewVerbs.Contains(item: vm.MemberName))
+            {
+                return false;
+            }
+
+            RoutineInfo? routine = call.ResolvedRoutine;
+            RoutineInfo? declared = routine?.GenericDefinition ?? routine?.RecoveryOf?.GenericDefinition ??
+                                    routine?.RecoveryOf ?? routine;
+            if (declared?.ReturnType is GenericParameterTypeSymbol &&
+                ctx.Registry.IsStandardLibraryFile(filePath: declared.Location?.FileName ?? ""))
+            {
+                return false;
+            }
+
+            if (_instantiated && call.LoweringKind != CallLoweringKind.DynamicCall && call.ConstructedType == null)
+            {
+                return false;
+            }
+        }
+
+        return DestroyOf(type: entity) != null;
+    }
+
+    /// <summary>Whether a call on an entity gives back where the entity is (<c>make().hijack()</c>, an address): the
+    /// entity is placed by hand from then on, so it is not torn down.</summary>
+    private static bool ResultLocatesEntity(TypeSymbol? resultType)
+    {
+        return resultType is { Name: RuntimeContract.Addr } ||
+               WrapperShape.TryGet(type: resultType, name: out string wrapper, inner: out _) &&
+               wrapper is not (RuntimeContract.Viewing or RuntimeContract.Modifying) &&
+               TypeRegistry.GetRcWrapperBaseName(type: resultType!) is null;
+    }
+
+    /// <summary>
+    /// Whether a value of <paramref name="type"/> may still point into the value it was taken from, so that value has
+    /// to live as long as this one: a token or another view, an unknown type, an emitter, or a value holding a pointer
+    /// to an emittable (the adapter <c>xs.select(f)</c> points at <c>xs</c>). A value of its own (a number, <c>Text</c>,
+    /// a counted handle, a list a terminal collected) does not.
+    /// </summary>
+    private bool MayHoldReceiver(TypeSymbol? type, int depth)
+    {
+        switch (type)
+        {
+            case null or GenericParameterTypeSymbol or ProtocolTypeSymbol or ProtocolSelfTypeSymbol:
+                return true;
+        }
+
+        if (TypeRegistry.GetRcWrapperBaseName(type: type) is not null || type.IsNone)
+        {
+            return false;
+        }
+
+        if (WrapperShape.TryGet(type: type, name: out _, inner: out _))
+        {
+            return true;
+        }
+
+        if (ctx.Registry.TypeObeysProtocol(type: type, protocolName: "Emitter"))
+        {
+            return true;
+        }
+
+        if (depth > 3 || type is RecordTypeSymbol && ctx.Registry.GetLifecycle(type: type).Store != null)
+        {
+            return false;
+        }
+
+        IEnumerable<TypeSymbol> fields = type switch
+        {
+            EntityTypeSymbol entity => entity.MemberVariables.Select(selector: f => f.Type),
+            RecordTypeSymbol record => record.MemberVariables.Select(selector: f => f.Type),
+            _ => []
+        };
+        foreach (TypeSymbol field in fields)
+        {
+            if (TypeRegistry.GetRcWrapperBaseName(type: field) is null &&
+                WrapperShape.TryGet(type: field, name: out _, inner: out TypeSymbol pointee))
+            {
+                if (pointee is GenericParameterTypeSymbol ||
+                    ctx.Registry.TypeObeysProtocol(type: pointee, protocolName: "Emittable"))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (field is EntityTypeSymbol or RecordTypeSymbol && MayHoldReceiver(type: field, depth: depth + 1))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The destroy of <paramref name="type"/>, null for a borrow. An entity made concrete in a monomorphized body
+    /// (<c>List[Crate]</c>) may have only its instance routines registered so far, so its destroy is looked up as a
+    /// call to it would be.
+    /// </summary>
+    private RoutineInfo? DestroyOf(TypeSymbol type)
+    {
+        TypeRegistry.Lifecycle lc = ctx.Registry.GetLifecycle(type: type);
+        if (lc.IsBorrow)
+        {
+            return null;
+        }
+
+        return lc.Destroy ?? (type is EntityTypeSymbol
+            ? ctx.Registry.LookupMemberRoutine(type: type, memberRoutineName: RuntimeContract.Destroy)
+            : null);
+    }
+
+    private IdentifierExpression MakeSpill(Expression producer, List<Spill> spills, bool forScope = false)
     {
         TypeSymbol type = producer.ResolvedType!;
-        RoutineInfo destroy = ctx.Registry.GetLifecycle(type: type)
-                                 .Destroy!;
+        RoutineInfo destroy = DestroyOf(type: type)!;
         string name = $"__tt_{_counter++}";
         spills.Add(item: new Spill(Name: name,
             Type: type,
             Destroy: destroy,
-            Init: producer));
+            Init: producer,
+            ForScope: forScope));
         return new IdentifierExpression(Name: name, Location: producer.Location)
         {
             ResolvedType = type

@@ -183,6 +183,16 @@ public record VariableDeclaration(
     public bool OwesTeardown { get; init; }
 
     /// <summary>
+    /// With <see cref="OwesTeardown"/>: the local holds a value of its own that the late teardown run tears down
+    /// whatever its type, an entity included. Three locals carry it: an entity temporary used as a receiver that
+    /// <c>TemporaryTeardownPass</c> moved into a local living to the end of its block, a local of a generic routine
+    /// whose type is known only in each instance (an emitter of <c>List[T]</c>, a value a routine value handed back),
+    /// which keeps the mark until its type is concrete, and a recovery variant's binding of what a routine value
+    /// handed back.
+    /// </summary>
+    public bool OwnsItsValue { get; init; }
+
+    /// <summary>
     /// The type of the local's storage, stamped at Phase 9 by <c>LocalTypeStampPass</c> for the backends:
     /// the declared type, else the initializer's.
     /// </summary>

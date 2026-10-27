@@ -784,7 +784,8 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             iterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable),
             loc: loc,
             failureClause: failureClause,
-            iteratorName: iterName);
+            iteratorName: iterName,
+            handsOver: walkRoutine == Declaration.RuntimeContract.TakeEach);
 
         // A range literal walked by one name may become a counter loop. Analysis decides once it knows the
         // range's element type (RangeCounterLoop).
@@ -1159,7 +1160,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     private static BlockStatement BuildPlainFor(Expression tryNextCall, Statement elseBody,
         string? elseVarName, Statement iterVarStmt, string? iterationSourceName,
         string? iterationSourcePath,
-        SourceLocation loc, WhenClause? failureClause, string? iteratorName = null)
+        SourceLocation loc, WhenClause? failureClause, string? iteratorName = null, bool handsOver = false)
     {
         Statement noneBody = new BlockStatement(Statements:
             [new BreakStatement(Location: loc)],
@@ -1177,7 +1178,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Clauses: failureClause != null
                 ? [noneClause, failureClause, elseClause]
                 : [noneClause, elseClause],
-            Location: loc) { IsEachStep = true };
+            Location: loc) { IsEachStep = true, StepHandsOver = handsOver };
         var loopStmt =
             new LoopStatement(Body: new BlockStatement(Statements: [whenStmt], Location: loc),
                 Location: loc)

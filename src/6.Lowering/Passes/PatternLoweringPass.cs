@@ -187,7 +187,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             subjectType: subjectType,
             loweredClauses: loweredClauses,
             loc: loc,
-            ownsSubject: !s.IsEachStep);
+            ownsSubject: !s.IsEachStep || s.StepHandsOver);
     }
 
     /// <summary>

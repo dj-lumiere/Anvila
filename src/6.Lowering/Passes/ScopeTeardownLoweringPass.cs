@@ -91,6 +91,44 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
     }
 
+    /// <summary>The late run (see <see cref="RunLate"/>) over one routine: TemporaryTeardownPass gives it the routines
+    /// in which it moved a receiver temporary into a local that lives to the end of its scope.</summary>
+    public RoutineDeclaration LowerLateRoutine(RoutineDeclaration r)
+    {
+        _late = true;
+        try
+        {
+            return LowerRoutine(r: r);
+        }
+        finally
+        {
+            _late = false;
+        }
+    }
+
+    /// <summary>The late run (see <see cref="RunLate"/>) over a body with no declaration of its own (a variant body).</summary>
+    public Statement LowerLateBody(Statement body)
+    {
+        if (!HasMarkedLocal(stmt: body))
+        {
+            return body;
+        }
+
+        _late = true;
+        try
+        {
+            _meType = null;
+            _movedNames.Clear();
+            CollectMovedNames(stmt: body);
+            MarkMovedPatternSubjects(stmt: body);
+            return LowerStatement(stmt: body, live: [], loopBoundary: 0);
+        }
+        finally
+        {
+            _late = false;
+        }
+    }
+
     /// <summary>The late run (see <see cref="RunLate"/>) over monomorphized bodies.</summary>
     public void RunLateOnInstantiatedGenericBodies(
         Dictionary<string, Instantiation.MonomorphizedBody> bodies)
@@ -721,7 +759,17 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             if (s is DeclarationStatement { Declaration: VariableDeclaration v } declaration)
             {
                 // Once looked at here, a local a lowering marked as owing its teardown has it (or does not
-                // need it), so a later run leaves it alone.
+                // need it), so a later run leaves it alone. A local of a generic routine whose type is known only in
+                // each instance keeps (or gets) the mark until a run sees it with a concrete type.
+                if (!_parametersOnly && DefersToInstance(v: v))
+                {
+                    stmts.Add(item: declaration with
+                    {
+                        Declaration = v with { OwesTeardown = true, OwnsItsValue = true }
+                    });
+                    continue;
+                }
+
                 stmts.Add(item: v.OwesTeardown && !_parametersOnly
                     ? declaration with { Declaration = v with { OwesTeardown = false } }
                     : s);
@@ -1333,6 +1381,67 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
+    /// Whether <paramref name="v"/> is a local of a generic routine that owns its value but whose type is known only in
+    /// each instance, so its teardown waits for the late run over the instance (see
+    /// <see cref="VariableDeclaration.OwnsItsValue"/>). Two kinds: an entity whose type takes the routine's type
+    /// parameters (<c>var walk = me.emitter()</c> in <c>List[T].represent</c>, <c>var buffer = List[T]()</c>), made by a
+    /// call or a construction, and any value a routine value hands back (<c>var key = me.key(item)</c>). A token, a view
+    /// and a value read in place (a library routine that gives back a bare <c>T</c>) are not owned, so they are left
+    /// alone. Shared entities (Suflae) are handles and are left alone.
+    /// </summary>
+    private bool DefersToInstance(VariableDeclaration v)
+    {
+        if (v.OwnsItsValue && v.OwesTeardown)
+        {
+            TypeSymbol? marked = v.Type?.ResolvedType ?? v.Initializer?.ResolvedType;
+            return marked == null || TypeContainsGenericParameter(type: marked);
+        }
+
+        // A recovery variant's binding of a routine value's result moves it out of the carrier (see
+        // ErrorHandlingVariantPass) and owns it as the routine's own `var x = f(y)` does.
+        bool takenFromCarrier = v is { OwnsItsValue: true, Initializer: StealExpression or IdentifierExpression };
+        if (_late || v.Initializer is not (CallExpression or CreatorExpression) && !takenFromCarrier ||
+            _movedNames.Contains(item: v.Name) || IsUsingBinding(v: v) || IsViewBinding(v: v) ||
+            ctx.Registry.EntitiesAreSharedIn(filePath: v.Location?.FileName))
+        {
+            return false;
+        }
+
+        TypeSymbol? t = v.Type?.ResolvedType ?? v.Initializer.ResolvedType;
+        if (t == null || !TypeContainsGenericParameter(type: t) ||
+            TryResolveDestroy(type: t, destroy: out RoutineInfo? known) && known != null)
+        {
+            return false;
+        }
+
+        if (v.Initializer is CallExpression { ResolvedRoutine.ReturnType: { } returned } &&
+            ImplicitToken.IsTokenParameter(parameter: returned, tokenKind: out _, target: out _))
+        {
+            return false;
+        }
+
+        if (takenFromCarrier || v.Initializer is CallExpression { LoweringKind: CallLoweringKind.DynamicCall })
+        {
+            return true;
+        }
+
+        return t is EntityTypeSymbol &&
+               v.Initializer is not CallExpression { ResolvedRoutine.ReturnType: GenericParameterTypeSymbol };
+    }
+
+    /// <summary>Whether <paramref name="type"/> still names a type parameter of the routine being lowered.</summary>
+    private static bool TypeContainsGenericParameter(TypeSymbol type)
+    {
+        if (type is GenericParameterTypeSymbol or ErrorTypeSymbol or ProtocolSelfTypeSymbol or
+            BuildtimeConstGenericTypeSymbol)
+        {
+            return true;
+        }
+
+        return type.TypeArguments?.Any(predicate: TypeContainsGenericParameter) ?? false;
+    }
+
+    /// <summary>
     /// The late run's registration: a local a lowering marked as owing its teardown, holding a fresh value it
     /// owns (a call or construction, not a token or a view of a value kept elsewhere) of a type whose destroy
     /// releases something: a managed leaf like <c>Text</c>, an RC wrapper, a record carrying one, or a value that
@@ -1342,7 +1451,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private void RegisterLateDeclaration(VariableDeclaration v, List<Owned> live)
     {
         if (!v.OwesTeardown || _movedNames.Contains(item: v.Name) || IsViewBinding(v: v) ||
-            v.Initializer is not (CallExpression or CreatorExpression) ||
+            v.Initializer is not (CallExpression or CreatorExpression) &&
+            v is not { OwnsItsValue: true, Initializer: StealExpression or IdentifierExpression } ||
             v.Initializer is CallExpression { ResolvedRoutine.ReturnType: { } returned } &&
             ImplicitToken.IsTokenParameter(parameter: returned, tokenKind: out _, target: out _))
         {
@@ -1350,6 +1460,28 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         }
 
         TypeSymbol? t = v.Type?.ResolvedType ?? v.Initializer.ResolvedType;
+        // A local that holds a value of its own whatever its type (see VariableDeclaration.OwnsItsValue) is torn down
+        // as the first run tears down any local with a destroy, an entity included.
+        if (v.OwnsItsValue)
+        {
+            // An entity made concrete in a monomorphized body may have only its instance routines registered so
+            // far, so its destroy is looked up as a call to it would be.
+            RoutineInfo? owned = null;
+            if (t != null && !TypeContainsGenericParameter(type: t) &&
+                !TryResolveDestroy(type: t, destroy: out owned) && !ctx.Registry.GetLifecycle(type: t).IsBorrow &&
+                t is EntityTypeSymbol)
+            {
+                owned = ctx.Registry.LookupMemberRoutine(type: t, memberRoutineName: RuntimeContract.Destroy);
+            }
+
+            if (t != null && owned != null && !TypeContainsGenericParameter(type: t))
+            {
+                live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: owned));
+            }
+
+            return;
+        }
+
         if (t is not RecordTypeSymbol rec || !TryResolveDestroy(type: t, destroy: out RoutineInfo? d) ||
             d == null)
         {

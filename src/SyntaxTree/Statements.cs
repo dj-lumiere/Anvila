@@ -796,6 +796,12 @@ public record WhenStatement(
     /// </summary>
     public bool IsEachStep { get; init; }
 
+    /// <summary>
+    /// With <see cref="IsEachStep"/>: the walk hands each item over instead of lending it (<c>each x in steal xs</c>),
+    /// so the subject owns the item and is torn down when the step ends, unless the step moves the item on.
+    /// </summary>
+    public bool StepHandsOver { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

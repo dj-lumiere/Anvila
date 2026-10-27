@@ -1354,8 +1354,17 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         /// <summary>The hoisted temp declarations, in evaluation order.</summary>
         public List<Statement> Hoisted { get; } = [];
 
+        /// <summary>The calls whose value is the receiver of another call of the statement, with that other call.</summary>
+        private readonly Dictionary<CallExpression, CallExpression> _receiverOf =
+            new(comparer: ReferenceEqualityComparer.Instance);
+
         protected override Expression VisitCall(CallExpression e)
         {
+            if (e.Callee is MemberExpression { Object: CallExpression receiver })
+            {
+                _receiverOf[key: receiver] = e;
+            }
+
             Expression rewritten = base.VisitCall(e: e);
             int index = _index++;
             if (rewritten is not CallExpression call)
@@ -1381,12 +1390,24 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             {
                 ResolvedType = call.ResolvedType
             };
-            return call.ResolvedType?.Category == TypeCategory.Entity
+            // An entity the statement only calls a routine of (`me.transform(outer).to[List]()`) stays the temp's own,
+            // so the scope tears the temp down. One that is handed on, or moved into a handle, is stolen from it.
+            return call.ResolvedType?.Category == TypeCategory.Entity && !StaysWithTemp(call: e)
                 ? new StealExpression(Operand: reference, Location: call.Location)
                 {
                     ResolvedType = call.ResolvedType
                 }
                 : reference;
+        }
+
+        /// <summary>Whether the entity <paramref name="call"/> makes is only the receiver of another call that leaves it
+        /// where it is: not <c>release_inner</c> and not a call that moves it into a counted handle.</summary>
+        private bool StaysWithTemp(CallExpression call)
+        {
+            return _receiverOf.TryGetValue(key: call, value: out CallExpression? user) &&
+                   user.Callee is MemberExpression { MemberName: var verb } &&
+                   verb != RuntimeContract.RoamedMemberRoutine.ReleaseInner &&
+                   (user.ResolvedType is null || TypeRegistry.GetRcWrapperBaseName(type: user.ResolvedType) is null);
         }
 
         protected override Expression VisitBinary(BinaryExpression e)
@@ -1899,6 +1920,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     private readonly record struct CarrierCapabilities(
         ErrorHandlingVariantKind Kind, bool InnerCanNone, bool InnerCanError);
 
+    /// <summary>Whether the binding of a recovered call's success value owns what a routine value handed back.</summary>
+    private static bool OwnsRoutineValueResult(bool movesOut, Expression subject)
+    {
+        return movesOut && subject is CallExpression { LoweringKind: CallLoweringKind.DynamicCall };
+    }
+
     private static Statement BuildCarrierPropagationWhen(Expression subject, string? bindName,
         CarrierCapabilities caps, List<Statement> remainder, TypeRegistry registry, SourceLocation loc)
     {
@@ -2010,7 +2037,14 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                             ? new StealExpression(Operand: payloadRef, Location: loc) { ResolvedType = payloadType }
                             : payloadRef,
                         Visibility: VisibilityModifier.Secret,
-                        Location: loc),
+                        Location: loc)
+                    {
+                        // What a routine value hands back is the binding's own, as `var x = f(y)` would own it, also
+                        // where a generic routine's type for it is known only in each instance and where the
+                        // propagation is built for a monomorphized body after its scope teardown ran.
+                        OwnsItsValue = OwnsRoutineValueResult(movesOut: movesOut, subject: subject),
+                        OwesTeardown = OwnsRoutineValueResult(movesOut: movesOut, subject: subject)
+                    },
                     Location: loc),
                 .. remainder
             ];
