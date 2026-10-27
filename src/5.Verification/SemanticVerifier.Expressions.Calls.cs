@@ -4483,6 +4483,11 @@ public sealed partial class SemanticVerifier
                     location: call.Location);
                 return ErrorTypeSymbol.Instance;
             }
+            else if (PositionalMemberwiseMismatch(call: call, type: type) is { } fields)
+            {
+                ReportPositionalMemberwiseMismatch(call: call, type: type, fields: fields, argTypes: argTypes);
+                return ErrorTypeSymbol.Instance;
+            }
             else
             {
                 ReportUnknownMemberVariableArguments(call: call, type: type);
@@ -4495,6 +4500,64 @@ public sealed partial class SemanticVerifier
         call.IsInFlight = type.ImplicitConstructorReturnsInFlight;
 
         return type;
+    }
+
+    /// <summary>
+    /// The member variables of <paramref name="type"/> when no creator took the call and its arguments, all written
+    /// without names, are not one value per member variable (<c>Point(3)</c> for <c>x</c> and <c>y</c>), so the
+    /// memberwise construction cannot bind them either. Null otherwise.
+    /// </summary>
+    private static List<MemberVariableInfo>? PositionalMemberwiseMismatch(CallExpression call, TypeSymbol type)
+    {
+        return type is RecordTypeSymbol { BackendType: null, MemberVariables: { Count: > 0 } fields } and
+                   not VariantTypeSymbol &&
+               !type.IsGenericDefinition && call.Arguments.Count != fields.Count &&
+               call.Arguments.All(predicate: a => a is not NamedArgumentExpression)
+            ? fields
+            : null;
+    }
+
+    /// <summary>
+    /// Reports a construction whose unnamed arguments are not one value per member variable. A type whose member
+    /// variables this module may not set (<c>Int(1)</c>) is not built from those values at all: the message points
+    /// to the spelling that gives one (a number written where the type is expected, or a conversion). Otherwise it
+    /// names the member variables to give.
+    /// </summary>
+    private void ReportPositionalMemberwiseMismatch(CallExpression call, TypeSymbol type,
+        List<MemberVariableInfo> fields, List<TypeSymbol> argTypes)
+    {
+        string name = type.BareName;
+        bool closed = !_isInCompilerGeneratedBody && !IsAccessingFromSameModule(memberModule: type.Module) &&
+                      fields.Any(predicate: f => f.Visibility is VisibilityModifier.Secret or VisibilityModifier.Posted);
+        if (closed && argTypes is [{ } same] && same.FullName == type.FullName)
+        {
+            ReportError(code: SemanticDiagnosticCode.SpecializationNotFound,
+                message: $"You build {Article.For(name: name)} '{name}' from a value that is {Article.For(name: name)} " +
+                         $"'{name}' already: use the value as it is.",
+                location: call.Location);
+            return;
+        }
+
+        if (closed)
+        {
+            string from = argTypes is [{ } only] ? $" from {Article.For(name: only.Name)} '{only.Name}'" : "";
+            string hint = call.Arguments is [LiteralExpression literal]
+                ? $" Write the number where {Article.For(name: name)} '{name}' is expected and it becomes one: " +
+                  $"'var n: {name} = {literal.Value}'."
+                : $" Convert the value with '.to[{name}]()' where a conversion exists.";
+            ReportError(code: SemanticDiagnosticCode.SpecializationNotFound,
+                message: $"{Article.Capital(name: name)} '{name}' is not built{from}: no creator of '{name}' takes " +
+                         "these arguments." + hint,
+                location: call.Location);
+            return;
+        }
+
+        string all = string.Join(separator: ", ", values: fields.Select(selector: f => $"{f.Name}: ..."));
+        string count = call.Arguments.Count == 1 ? "1 value" : $"{call.Arguments.Count} values";
+        ReportError(code: SemanticDiagnosticCode.MissingRequiredMemberVariable,
+            message: $"'{name}' is built from its member variables, and you give {count} for its " +
+                     $"{fields.Count} member variables. Give each one a value: '{name}({all})'.",
+            location: call.Location);
     }
 
     /// <summary>True when a primitive's construction reads another primitive's bits (`S64(x)` with `x` a `U64`):

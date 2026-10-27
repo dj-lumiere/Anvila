@@ -585,6 +585,18 @@ public partial class Parser
             return new IdentifierExpression(Name: "None", Location: location);
         }
 
+        // The empty tuple `()` as a type argument, the parameter list of a routine type that takes nothing
+        // (`List[Callable[(), S64]]()`): no expression of its own, so it is read here as the type is in an
+        // annotation.
+        if (Check(type: TokenType.LeftParen) && PeekToken(offset: 1).Type == TokenType.RightParen &&
+            PeekToken(offset: 2).Type is TokenType.Comma or TokenType.RightBracket)
+        {
+            SourceLocation location = GetLocation();
+            Advance(); // consume (
+            Advance(); // consume )
+            return new TupleLiteralExpression(Elements: [], Location: location);
+        }
+
         return ParseExpression();
     }
 
