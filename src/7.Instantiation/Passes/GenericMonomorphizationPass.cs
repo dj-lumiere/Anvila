@@ -1482,14 +1482,34 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             // (BodyDispatch skips IsSynthesized entries). Marking it non-synthesized routes it through the
             // same lowering + emit path as a hand-written stdlib body (which MaterializeReachedStdlibBodies
             // also stores IsSynthesized: false), so its `is ME_SMALL` / operator nodes get lowered.
+            // OwesScopeTeardown: the template was analyzed here, after every scope and temporaries' teardown run,
+            // so without it the texts a derived `represent` builds piece by piece (`result + ", "`, the member's
+            // own `represent()`) are never released. The lifecycle steps are the exception (see LifecycleDerives).
             _ctx.InstantiatedGenericBodies[key: key] = new MonomorphizedBody(
                 Ast: WrapInShellDecl(name: r.Name, body: rewritten, info: r),
                 Info: r,
                 TypeSubs: typeSubs,
                 VariantStatus: null,
                 VariantInnerType: null,
-                IsSynthesized: false);
+                IsSynthesized: false,
+                OwesScopeTeardown: !LifecycleDerives.Contains(item: r.Name));
         }
+
+        /// <summary>
+        /// The derives that are the lifecycle steps themselves: the copy step (<c>share</c>, <c>duplicate</c>), the
+        /// teardown (<c>destruct</c>) and the cycle collector's walks. Their templates handle each member variable by
+        /// hand (<c>var result = me</c> then <c>result.m = me.m.share()</c>, <c>v.destruct()</c> on a variant's live
+        /// case), so a scope teardown over them would release what they hand on or tear a member down twice.
+        /// </summary>
+        private static readonly IReadOnlySet<string> LifecycleDerives = new HashSet<string>(comparer: StringComparer.Ordinal)
+        {
+            DestroyMemberRoutineName,
+            RuntimeContract.Duplication.Share,
+            RuntimeContract.Duplication.Duplicate,
+            "roam_free",
+            "roam_trace",
+            "cyclic_visit"
+        };
 
         /// <summary>
         /// Builds the body of a reached builder-registered <c>common routine T.from_serial!(value: SerialValue)</c>
@@ -1638,14 +1658,16 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             body = _ctx.AnalyzeMaterializedDeriveBody?.Invoke(arg1: r, arg2: body) ?? body;
 
             // Not IsSynthesized, like a materialized derive: the raw AST still needs the fresh-body lowering
-            // sweep (the generic helper calls and the constructor call are resolved there).
+            // sweep (the generic helper calls and the constructor call are resolved there). Built after the
+            // teardown runs, so it owes its scope teardown too.
             _ctx.InstantiatedGenericBodies[key: key] = new MonomorphizedBody(
                 Ast: WrapInShellDecl(name: r.Name, body: body, info: r),
                 Info: r,
                 TypeSubs: new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal),
                 VariantStatus: null,
                 VariantInnerType: null,
-                IsSynthesized: false);
+                IsSynthesized: false,
+                OwesScopeTeardown: true);
         }
 
         /// <summary>

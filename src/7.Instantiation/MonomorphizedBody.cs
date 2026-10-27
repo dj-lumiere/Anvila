@@ -18,8 +18,9 @@ namespace Builder.Instantiation;
 /// <param name="VariantInnerType">The variant inner type.</param>
 /// <param name="IsSynthesized">Whether this is synthesized.</param>
 /// <param name="OwesScopeTeardown">Whether the body was cloned from an analyzed body that no scope teardown ran
-///   on (a protocol's own routine made for an implementer, or its recovery variant), so the instantiated-body
-///   lowering gives it its scope teardown once its types are the implementer's.</param>
+///   on (a protocol's own routine made for an implementer, or its recovery variant, and a derive template or
+///   from-serial body built for a concrete type), so the instantiated-body lowering gives it its scope and
+///   temporaries' teardown once its types are concrete.</param>
 public sealed record MonomorphizedBody(
     RoutineDeclaration Ast,
     RoutineInfo Info,
