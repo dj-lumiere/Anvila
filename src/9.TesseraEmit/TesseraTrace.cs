@@ -86,7 +86,8 @@ internal static class TesseraTrace
             if depth.le(0)
                 return 0
             index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
-            out.poke(RF_TRACE_STACK.getview().to[@RfTraceFrame]().stride(index).peek())
+            frame: @RfTraceFrame = RF_TRACE_STACK.getview().to[@RfTraceFrame]().stride(index)
+            out.poke(frame.peek())
             return 1
 
         ### One failure a thread remembers: its number, the depth of the trace when it was thrown, and the trace.
