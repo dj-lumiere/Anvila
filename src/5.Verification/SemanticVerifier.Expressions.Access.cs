@@ -874,6 +874,9 @@ public sealed partial class SemanticVerifier
         // so the block does not reach into it.
         int dangerDepthAroundLambda = _dangerBlockDepth;
         _dangerBlockDepth = 0;
+        // A parameter is a new name: an outer variable of the same name that a `steal` or `drop` ended (an earlier
+        // `each c` handed over with `steal c`) is not this one. The outer name's state comes back after the lambda.
+        List<string> endedOuterNames = ShadowEndedNames(names: parameterNames);
         TypeSymbol returnType;
         try
         {
@@ -882,6 +885,7 @@ public sealed partial class SemanticVerifier
         finally
         {
             _dangerBlockDepth = dangerDepthAroundLambda;
+            RestoreEndedNames(names: parameterNames, ended: endedOuterNames);
         }
 
         // RF-S413, as for `return`: a lambda that gives back a member variable or a container element of an entity
@@ -912,6 +916,44 @@ public sealed partial class SemanticVerifier
             isFailable: Builder.Instantiation.FailurePointCalls.HasFailurePoint(body: lambda.Body, registry: _registry));
         NoteOneThreadLambda(lambda: lambda, type: lambdaType);
         return lambdaType;
+    }
+
+    /// <summary>
+    /// Forgets, while a scope that declares <paramref name="names"/> anew is analyzed, that an outer variable of one
+    /// of those names was ended (stolen, dropped, or declared without a value yet).
+    /// </summary>
+    /// <returns>The marks taken off, which <see cref="RestoreEndedNames"/> puts back.</returns>
+    private List<string> ShadowEndedNames(IEnumerable<string> names)
+    {
+        var ended = new List<string>();
+        foreach (string name in names)
+        {
+            foreach (string mark in (string[])[name, UnassignedMark + name])
+            {
+                if (_deadrefVariables.Remove(item: mark))
+                {
+                    ended.Add(item: mark);
+                }
+            }
+        }
+
+        return ended;
+    }
+
+    /// <summary>
+    /// Gives the outer variables named <paramref name="names"/> back the state they had before the scope that
+    /// declared the names anew: the marks <see cref="ShadowEndedNames"/> took off, and none the scope made for its
+    /// own names.
+    /// </summary>
+    private void RestoreEndedNames(IEnumerable<string> names, List<string> ended)
+    {
+        foreach (string name in names)
+        {
+            _deadrefVariables.Remove(item: name);
+            _deadrefVariables.Remove(item: UnassignedMark + name);
+        }
+
+        _deadrefVariables.UnionWith(other: ended);
     }
 
     /// <summary>
