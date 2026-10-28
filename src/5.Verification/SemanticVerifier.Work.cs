@@ -346,6 +346,13 @@ public sealed partial class SemanticVerifier
                     Value = HoistWorkValue(analyzed: analyzedNamed.Value, pristine: pristineNamed.Value,
                         hoisted: hoisted)
                 },
+                // A variable named like its parameter, written without a name (`f.to[Work](a, b: 2)`), was punned
+                // into `a: a` by the call's analysis. The deferred call keeps that name, since the value it passes
+                // is the work's own parameter, whose name no longer matches.
+                (NamedArgumentExpression analyzedPunned, _) => new NamedArgumentExpression(Name: analyzedPunned.Name,
+                    Value: HoistWorkValue(analyzed: analyzedPunned.Value, pristine: pristine[index: i],
+                        hoisted: hoisted),
+                    Location: pristine[index: i].Location),
                 _ => HoistWorkValue(analyzed: analyzed[index: i], pristine: pristine[index: i], hoisted: hoisted)
             });
         }

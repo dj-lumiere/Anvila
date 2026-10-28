@@ -122,9 +122,11 @@ internal sealed class SignatureResolver
         VariadicParamDesugar.Apply(routine: routine);
 
         // `routine Box[TItem].peek()` for `record Box[T]`: the receiver's names are the type's own slots.
+        // A name that is a type is looked up as the routine's own module sees it (`Retained[Cell]` with the module's
+        // own `Cell`), so it stays as written.
         ReceiverSlotRename.Apply(routine: routine,
             owner: refreshedOwnerType,
-            namesType: name => _sa._registry.LookupType(name: name) != null);
+            namesType: name => LookupTypeSeenFrom(name: name, module: pending.Module) != null);
 
         // `needs T is TypeName` declares T as a generic type parameter (equivalent to `[T]`, a different
         // surface form) — fold declared names into the AST decl's GenericParameters HERE (SA layer, not
@@ -157,7 +159,7 @@ internal sealed class SignatureResolver
         var filteredGenericParams = routine.GenericParameters
                                           ?.Where(predicate: p =>
                                                 !receiverLeaves.Contains(item: p) ||
-                                                _sa._registry.LookupType(name: p) is null)
+                                                LookupTypeSeenFrom(name: p, module: pending.Module) is null)
                                            .ToList();
         if (filteredGenericParams is { Count: 0 })
         {
@@ -669,6 +671,16 @@ internal sealed class SignatureResolver
     }
 
     /// <summary>
+    /// The type <paramref name="name"/> names as the routine's own module sees it: the module's own type first, then
+    /// the imported ones and the global lookup.
+    /// </summary>
+    private TypeSymbol? LookupTypeSeenFrom(string name, string? module)
+    {
+        return (module != null ? _sa._registry.LookupType(name: $"{module}.{name}") : null) ??
+               _sa.LookupTypeWithImports(name: name);
+    }
+
+    /// <summary>
     /// Resolves the <c>me</c> type for a specialized-receiver member: if the receiver is a generic
     /// instantiation whose top-level type arguments are concrete types (not the owner's own bare
     /// generic params) — e.g. <c>List[Work[V]]</c> — resolve it (the routine's generic params, incl.
@@ -695,7 +707,7 @@ internal sealed class SignatureResolver
                 predicate: a =>
                     a.GenericArguments is { Count: > 0 } ||
                     a.Name != null && !(filteredGenericParams?.Contains(item: a.Name) ?? false) &&
-                    _sa._registry.LookupType(name: a.Name) is not null);
+                    LookupTypeSeenFrom(name: a.Name, module: pending.Module) is not null);
             if (isSpecialized)
             {
                 TypeSymbol resolvedRecv = _typeResolver.ResolveType(typeExpr: recvExpr!);

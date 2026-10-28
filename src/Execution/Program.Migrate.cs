@@ -31,10 +31,9 @@ internal partial class Program
         // on the code examples of .md pages: `xs have x` is `xs.has(x)` now.
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
-        if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
-                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce" or "numbers" or "bundle" or "random"))
+        if (stepAt >= 0 && !MigrationSteps.Contains(value: step))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names, pierce, numbers, bundle or random");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes {MigrationStepList()}");
             return 2;
         }
 
@@ -210,14 +209,30 @@ internal partial class Program
         {
             string source = File.ReadAllText(path: file);
             Language language = SourceLanguage(path: file);
-            // A program whose manifest says it is written for this release already is left alone: the rewrites
-            // assume the previous spelling, and some of them would change this release's code.
+            // A program whose manifest says it is written for this release is left alone when its code reads as this
+            // release's: the rewrites assume the previous spelling, and some of them would change this release's code.
+            // A file the current reader stops on is the previous release's code whatever the manifest says, and is
+            // moved like any other.
             string? manifest = ManifestAbove(file: file);
             if (manifest != null && MigrationLanguageVersion(manifest: manifest, language: language) is { } written &&
                 written >= MigrationRelease)
             {
-                skippedFiles++;
-                continue;
+                List<Builder.Diagnostics.GrammarException> stops =
+                    CurrentReleaseReadErrors(source: source, file: file, language: language);
+                if (stops.Count == 0)
+                {
+                    skippedFiles++;
+                    continue;
+                }
+
+                // What stopped the reader names the step that rewrites it when a named step does (a `while` loop
+                // names `--step until`), so it is shown before the general rewrites run.
+                Console.WriteLine(value: $"{file}: its manifest says {written.Major}.{written.Minor}, but the code " +
+                                         "does not read as it: moving it");
+                foreach (Builder.Diagnostics.GrammarException stop in stops.Take(count: 5))
+                {
+                    Console.WriteLine(value: $"{file}:{stop.Line}: {stop.RawMessage}");
+                }
             }
 
             // The indent comes first: the lexer reads only a file indented in steps of 4 spaces.
@@ -359,9 +374,16 @@ internal partial class Program
 
         string verb = check ? "would change" : "changed";
         string skipped = skippedFiles > 0
-            ? $", {skippedFiles} file(s) already written for {MigrationRelease}"
+            ? $", {skippedFiles} file(s) skipped"
             : "";
         Console.WriteLine(value: $"{changedFiles} file(s) {verb}{skipped}, {namesToRename} name(s) to rename by hand");
+        if (skippedFiles > 0)
+        {
+            Console.WriteLine(value: $"Skipped: the manifest says {MigrationRelease} and the code reads as " +
+                                     $"{MigrationRelease}. A step that still applies runs on its own, whatever the " +
+                                     $"manifest says: {CliRules.ToolName} migrate --step <name> <file-or-dir>, " +
+                                     $"with <name> one of {MigrationStepList()}.");
+        }
         return check && changedFiles > 0 || namesToRename > 0 ? 1 : 0;
     }
 
@@ -505,6 +527,43 @@ internal partial class Program
             _ => ""
         };
         Console.Error.WriteLine(value: $"{file}: cannot read it: {error.Message}{hint}");
+    }
+
+    /// <summary>The named steps <c>migrate --step</c> takes, each one rewrite run on its own.</summary>
+    private static readonly string[] MigrationSteps =
+    [
+        "indent", "have", "suffix", "failable", "names", "modules", "access", "cpu-events", "addr", "files", "until",
+        "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random"
+    ];
+
+    /// <summary>The named steps as a list for a message: <c>indent, have, ... or random</c>.</summary>
+    private static string MigrationStepList()
+    {
+        return string.Join(separator: ", ", values: MigrationSteps[..^1]) + " or " + MigrationSteps[^1];
+    }
+
+    /// <summary>
+    /// What stops the current lexer and parser on <paramref name="source"/>, empty when it reads as this release's
+    /// code. Code written for the previous release (a loop written <c>while</c>, a <c>!</c> on a call, a type suffix
+    /// on a number, an indent of 2) stops one of them.
+    /// </summary>
+    private static List<Builder.Diagnostics.GrammarException> CurrentReleaseReadErrors(string source, string file,
+        Language language)
+    {
+        try
+        {
+            List<Token> tokens = Lexers.Tokenize(source: source, fileName: file, language: language);
+            var parser = new Builder.Parser.Parser(tokens: tokens, language: language, fileName: file)
+            {
+                PrintsErrors = false
+            };
+            parser.Parse();
+            return parser.GetStructuredErrors().ToList();
+        }
+        catch (Builder.Diagnostics.GrammarException e)
+        {
+            return [e];
+        }
     }
 
     /// <summary>The release a manifest says its sources are written for (<c>razorforge-version = "0.5.0"</c> under

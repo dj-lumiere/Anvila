@@ -1769,6 +1769,17 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // Resolve the count member routine on the receiver; its return type is U64.
         // A Suflae collection held by its `Roamed` handle counts as the collection (RoamedProjectionLoweringPass
         // projects the receiver), as `getitem` does.
+        // Through a token on an entity container (`xs[^1]` with `xs: Modifying[List[S64]]`) the count is the
+        // container's own: the token shares the entity's pointer, so it is the receiver as it is (as in
+        // MintElementToken).
+        if (targetType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+            targetType.TypeArguments is [EntityTypeSymbol tokenInner] &&
+            ctx.Registry.LookupMemberRoutine(type: targetType,
+                memberRoutineName: Declaration.RuntimeContract.Collection.Count) == null)
+        {
+            targetType = tokenInner;
+        }
+
         RoutineInfo? countRoutine = ctx.Registry.LookupMemberRoutine(type: targetType,
                                         memberRoutineName: Declaration.RuntimeContract.Collection.Count) ??
                                     (UnwrapRoamedInner(type: targetType) is { } innerTarget
