@@ -4130,8 +4130,9 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The unified own-memberRoutine resolver: returns the memberRoutines a type provides ITSELF, including — for a
-    /// generic resolution whose concrete owner is absent from <c>_routinesByOwner</c> — the generic
-    /// definition's own memberRoutines substituted for this owner (via <see cref="SubstituteMemberRoutineForOwner"/>).
+    /// generic resolution — the generic definition's own memberRoutines substituted for this owner (via
+    /// <see cref="SubstituteMemberRoutineForOwner"/>) for every name the concrete owner has none of in
+    /// <c>_routinesByOwner</c>.
     /// This is the single source of truth the find-side and the lifecycle (teardown/copy) passes share,
     /// so <c>GetMemberRoutinesForType</c> (raw) and <see cref="LookupMemberRoutine"/> can no longer disagree about
     /// whether e.g. <c>Retained[Tracer]</c> has a <c>destruct</c>.
@@ -4143,18 +4144,38 @@ public sealed partial class TypeRegistry
     /// </summary>
     public IEnumerable<RoutineInfo> GetOwnMemberRoutinesResolved(TypeSymbol type)
     {
-        if (_routinesByOwner.TryGetValue(key: RealmRegistryKey(type: type),
-                value: out Dictionary<string, List<RoutineInfo>>? ownByName))
-        {
-            return OwnerMemberRoutines(byName: ownByName);
-        }
-
+        bool hasOwn = _routinesByOwner.TryGetValue(key: RealmRegistryKey(type: type),
+            value: out Dictionary<string, List<RoutineInfo>>? ownByName);
         if (!type.IsGenericResolution || type.TypeArguments is null ||
             type.TypeArguments.Any(predicate: a =>
                 a is GenericParameterTypeSymbol or ErrorTypeSymbol || a.IsNone))
         {
-            return [];
+            return hasOwn
+                ? OwnerMemberRoutines(byName: ownByName)
+                : [];
         }
+
+        if (hasOwn)
+        {
+            // A concrete instance can hold routines of its own before its definition's routines are built for it: a
+            // routine the builder writes for this instance alone (a protocol default `List[S32].where`). Those do not
+            // stand for the rest, so a definition routine of a name the instance has not got yet is the definition's
+            // one, written for this instance (`List[S32].destruct`). Read without that, a local of the instance would
+            // have no teardown.
+            var own = OwnerMemberRoutines(byName: ownByName).ToList();
+            var ownNames = new HashSet<string>(collection: own.Select(selector: m => m.Name),
+                comparer: StringComparer.Ordinal);
+            return own.Concat(second: DefinitionMemberRoutinesFor(type: type)
+                              .Where(predicate: m => !ownNames.Contains(item: m.Name)));
+        }
+
+        return DefinitionMemberRoutinesFor(type: type);
+    }
+
+    /// <summary>The routines of a concrete generic resolution's definition, written for that resolution (see
+    /// <see cref="GetOwnMemberRoutinesResolved"/>), cached per resolution.</summary>
+    private List<RoutineInfo> DefinitionMemberRoutinesFor(TypeSymbol type)
+    {
 
         // Cache key is realm-QUALIFIED: RF and SF resolutions share a realm-free FullName
         // (`System.List[System.U64]`), so a FullName key would cross-contaminate — the first-computed realm's
