@@ -278,6 +278,10 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " A block opens a Guarded: 'viewing g as v' / 'modifying g as m' (which call view_enter() / " +
                        "modify_enter() and the matching exit), and 'try modifying g as m' gives an Optional of the token " +
                        "(migrate --step access rewrites the old forms).";
+            case "next_u64" or "next_u32" or "next_b64" when MemberSuggestionCandidates(type: type).Contains(value: "next"):
+                string drawn = name[5..].ToUpperInvariant();
+                return $" It is 'next[{drawn}]()' now: 'next[T]()' gives any integer type over its full range, or a " +
+                       "'B32' / 'B64' in [0, 1) (migrate --step random rewrites it).";
             case "all_off" when type is FlagsTypeSymbol:
                 return $" The flags value with no member on is written 'none' now ('var empty: {type.Name} = none').";
             case "codepoint" when type.BareName is "Byte":

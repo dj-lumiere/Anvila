@@ -1597,6 +1597,13 @@ public sealed partial class SemanticVerifier
             : null;
     }
 
+    /// <summary>The entity an entity's token is on (<c>Modifying[Random]</c> is on a <c>Random</c>), or null for
+    /// anything else.</summary>
+    private static TypeSymbol? EntityTokenTarget(TypeSymbol type)
+    {
+        return IsAccessToken(type: type) && type.TypeArguments is [EntityTypeSymbol entity] ? entity : null;
+    }
+
     private bool SupportsOperator(TypeSymbol type, BinaryOperator op)
     {
         // Choice types support ==/!= natively: they carry a discrete integer discriminant, and

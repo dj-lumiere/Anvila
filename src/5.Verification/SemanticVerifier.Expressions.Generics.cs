@@ -357,15 +357,38 @@ public sealed partial class SemanticVerifier
         // receiver when the body is made concrete.
         // A value's token (an element `each` hands out, `Modifying[Text]`) converts the value it is on: the family is
         // the value's, and the lowering reads the value through the token (TokenReadLoweringPass).
-        if (typeArgs.Count > 0 && ValueTokenTarget(type: objectType) is { } held &&
+        // An entity's token (`rng: Modifying[Random]`, `rng.next[U64]()`) calls the entity's own member: the lowering
+        // reaches the entity through the token's `control()` (`access()` for a `Viewing`, whose member must only read).
+        if (typeArgs.Count > 0 && (ValueTokenTarget(type: objectType) ?? EntityTokenTarget(type: objectType)) is { } held &&
             FamilyOfReceiver(receiver: held, name: generic.MemberRoutineName) is { Count: > 0 } heldFamily &&
             heldFamily.Any(predicate: r => r.TypeArguments is { } args && args.Count == typeArgs.Count &&
+                                           (held is not EntityTypeSymbol || r.IsReadOnly ||
+                                            (objectType as RecordTypeSymbol)?.GenericDefinition?.BareName ==
+                                            Declaration.RuntimeContract.Modifying) &&
                                            typeArgs.Select(selector: (t, i) =>
                                                         SameTypeInRealm(a: FamilyTarget(routine: r, index: i),
                                                             b: Unroamed(type: t)))
                                                     .All(predicate: same => same)))
         {
             objectType = held;
+        }
+
+        // A `Viewing` only reads, so a member that changes the entity is not reached through it.
+        if (typeArgs.Count > 0 && EntityTokenTarget(type: objectType) is { } viewed &&
+            FamilyOfReceiver(receiver: viewed, name: generic.MemberRoutineName).Any(predicate: r =>
+                !r.IsReadOnly && r.TypeArguments?.Count == typeArgs.Count))
+        {
+            ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
+                message: $"'{generic.MemberRoutineName}[{string.Join(separator: ", ", values: typeArgs.Select(selector: t => t.Name))}]()' " +
+                         $"changes the '{viewed.Name}', and a '{objectType.Name}' only reads it. Take a " +
+                         $"'Modifying[{viewed.Name}]' to call it.",
+                location: generic.Location);
+            foreach (Expression argument in generic.Arguments)
+            {
+                AnalyzeExpression(expression: argument);
+            }
+
+            return ErrorTypeSymbol.Instance;
         }
 
         // A bare number takes its type from where it goes, and a conversion is where it goes: `5.to[Wid]()` with only

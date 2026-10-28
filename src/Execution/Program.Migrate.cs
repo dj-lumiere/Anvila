@@ -32,9 +32,9 @@ internal partial class Program
         int stepAt = Array.IndexOf(array: args, value: "--step");
         string? step = stepAt >= 0 && stepAt + 1 < args.Length ? args[stepAt + 1] : null;
         if (stepAt >= 0 && step is not ("indent" or "have" or "suffix" or "failable" or "names" or "modules" or "access"
-                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce" or "numbers" or "bundle"))
+                or "cpu-events" or "addr" or "files" or "until" or "verbs" or "nothing" or "bytes" or "return-steal" or "work" or "type-names" or "pierce" or "numbers" or "bundle" or "random"))
         {
-            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names, pierce, numbers or bundle");
+            Console.Error.WriteLine(value: $"error: migrate: --step takes indent, have, suffix, failable, names, modules, access, cpu-events, addr, files, until, verbs, nothing, bytes, return-steal, work, type-names, pierce, numbers, bundle or random");
             return 2;
         }
 
@@ -141,6 +141,12 @@ internal partial class Program
         if (step == "pierce")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewritePierce);
+        }
+
+        // `--step random`: a draw names its type as a type argument (`next_u64()` is `next[U64]()`).
+        if (step == "random")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteRandom);
         }
 
         // `--step return-steal`: a local handed over inside a `return` expression moves without `steal`.
@@ -1036,6 +1042,17 @@ internal partial class Program
                 string renamed = token.Text == "Agent" ? "Work" : "WorkStartError";
                 edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: renamed,
                     Line: token.Line, What: $"{token.Text} → {renamed}"));
+                continue;
+            }
+
+            // A random draw names its type as a type argument: `rng.next_u64()` is `rng.next[U64]()` (the same rename as
+            // `--step random`).
+            if (token.Text is "next_u64" or "next_u32" or "next_b64" && i > 0 &&
+                tokens[index: i - 1].Type == TokenType.Dot && next.Type == TokenType.LeftParen)
+            {
+                string drawn = $"next[{token.Text[5..].ToUpperInvariant()}]";
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: drawn,
+                    Line: token.Line, What: $".{token.Text}() → .{drawn}()"));
                 continue;
             }
 

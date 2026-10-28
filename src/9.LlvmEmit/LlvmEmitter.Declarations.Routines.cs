@@ -911,12 +911,15 @@ public partial class LlvmEmitter
             return Q(name: fullName);
         }
 
-        // Common (type-level static) routines: `[member, common, …] Module.Type.name(label: Type, …)`.
+        // Common (type-level static) routines: `[member, common, …] Module.Type.name[typeargs](label: Type, …)`. The
+        // member's own type arguments tell the specializations of a family apart (`Entropy.next[U64]()` and
+        // `Entropy.next[B64]()` take the same parameters).
         if (routine.IsCommon)
         {
             string typeName = RealmMangleBase(t: routine.OwnerType);
-            return Q(
-                name: $"{AttrPrefix(r: routine)}{typeName}.{name}{LabeledParams(r: routine)}");
+            string commonBase = AppendMemberRoutineTypeArgs(routine: routine,
+                baseName: $"{AttrPrefix(r: routine)}{typeName}.{name}");
+            return Q(name: $"{commonBase}{LabeledParams(r: routine)}");
         }
 
         // memberRoutine: `[member, crashable?, …] Module.OwnerType.name(label: Type, …)`

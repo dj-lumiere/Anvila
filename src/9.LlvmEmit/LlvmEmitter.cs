@@ -1541,14 +1541,25 @@ public partial class LlvmEmitter
     }
 
     /// <summary>What the emitted entry passes the runtime's AccessManager: whether the deadlock check is on
-    /// (<c>[debug] deadlock-check</c>, else on in a debug build), whether the access-order check is
-    /// (<c>[debug] access-order</c>), and the language its reports speak (1 RazorForge, 2 Suflae).</summary>
+    /// (<c>[debug] deadlock-check</c>, else on in a debug build and in a Suflae program with globals), whether the
+    /// access-order check is (<c>[debug] access-order</c>), and the language its reports speak (1 RazorForge, 2
+    /// Suflae). A Suflae statement that uses the globals and a shared entity takes both locks, so two jobs doing it in
+    /// opposite orders wait on each other: with globals the check is on in every mode, so that ends as a
+    /// <c>DeadlockError</c> instead of a hang. It runs only when a job is about to wait.</summary>
     internal static (int DeadlockCheck, int AccessOrder, int Language) AccessChecks(TypeRegistry registry,
         RfBuildMode mode)
     {
-        bool deadlockCheck = Diagnostics.DiagnosticFlags.DeadlockCheck ?? mode == RfBuildMode.Debug;
+        bool deadlockCheck = Diagnostics.DiagnosticFlags.DeadlockCheck ??
+                             (mode == RfBuildMode.Debug || HasModuleGlobals(registry: registry));
         return (deadlockCheck ? 1 : 0, Diagnostics.DiagnosticFlags.AccessOrder ? 1 : 0,
             registry.Language == Language.Suflae ? 2 : 1);
+    }
+
+    /// <summary>Whether the program keeps Suflae globals (the hidden singleton entity holding them exists).</summary>
+    private static bool HasModuleGlobals(TypeRegistry registry)
+    {
+        return registry.Language == Language.Suflae &&
+               registry.GetAllTypes().Any(predicate: t => t.BareName == RuntimeContract.ModuleGlobals.EntityName);
     }
 
     /// <summary>
