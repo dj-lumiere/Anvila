@@ -1079,6 +1079,19 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 _worklist.Enqueue(item: (k, b));
             }
 
+            // Every routine an earlier round made live is emitted, so its body is walked again in the form it has
+            // now. An earlier round may have reached it through a body that was not lowered yet (a crashable's
+            // derived diagnose reached from a recovery variant before its lowering), and the walk of the lowered
+            // body no longer reaches it. Its body must still be walked as it is now, or the callees its lowering
+            // added (an each-loop's emitter, an operator's routine) stay undefined at link.
+            foreach (string liveKey in _ctx.LiveRoutineKeys.ToArray())
+            {
+                if (!_ctx.ResidentInstanceKeys.Contains(item: liveKey) && GetBody(key: liveKey) is { } liveBody)
+                {
+                    _worklist.Enqueue(item: (liveKey, liveBody));
+                }
+            }
+
             // Every program can crash where the walk sees no throw: a read of a binding `steal` emptied crashes, and
             // by the time of the walk an entity's `steal` is already the hand-over calls it lowers to. The crash
             // report is always there.
