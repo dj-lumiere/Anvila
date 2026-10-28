@@ -180,7 +180,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                 yield return v.Initializer; break;
             case IfStatement s: yield return s.Condition; break;
             case WhileStatement s: yield return s.Condition; break;
-            case EachStatement s: yield return s.Iterable; break;
+            case ForStatement s: yield return s.Iterable; break;
             case WhenStatement s: yield return s.Expression; break;
             case UsingStatement s: yield return s.Resource; break;
         }
@@ -359,7 +359,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
             case LoopStatement l:
                 RecurseStmt(stmt: l.Body);
                 break;
-            case EachStatement f:
+            case ForStatement f:
                 RecurseStmt(stmt: f.Body);
                 break;
             case DangerStatement d:

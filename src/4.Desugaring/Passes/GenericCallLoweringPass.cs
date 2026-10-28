@@ -237,7 +237,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     /// </summary>
     protected override Expression VisitCall(CallExpression e)
     {
-        // `(steal xs).emitter()` takes the container and hands its elements over, like `each x in steal xs`: the
+        // `(steal xs).emitter()` takes the container and hands its elements over, like `for x in steal xs`: the
         // emitter it gives holds the elements itself (`take_each`), not a pointer into a container that ends with
         // the statement. Before analysis only, as a written call.
         if (e is

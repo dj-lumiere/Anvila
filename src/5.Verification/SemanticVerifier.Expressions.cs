@@ -2029,7 +2029,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <summary>
     /// Records the <c>setitem</c> a subscript write calls (<see cref="IndexExpression.ResolvedSetItem"/>, for the shape
-    /// check of the indirect cases), and reports <c>d[k] = v</c> on the container an <c>each</c> loop is walking when
+    /// check of the indirect cases), and reports <c>d[k] = v</c> on the container a <c>for</c> loop is walking when
     /// that <c>setitem</c> is <c>@reshaping</c> (a <c>Dict</c>'s may add the key): RF-S625, as a call of a reshaping
     /// routine on it would be. A language that checks shapes as the program runs (Suflae) leaves this to that check.
     /// </summary>
@@ -2131,7 +2131,7 @@ public sealed partial class SemanticVerifier
 
         // Phase 1: warn when the RHS is a non-trivially-copyable wrapper reference.
         // See AnalyzeVariableDeclaration for the same rule applied to var initializers.
-        // A value's token assigned to a place of the value's type (`best = item` with `item` an `each` element) is a
+        // A value's token assigned to a place of the value's type (`best = item` with `item` a `for` element) is a
         // read of the value, not a copy of the token.
         bool readsTokenValue = ValueTokenTarget(type: valueType) is { } tokenValue &&
                                IsAssignableTo(source: tokenValue, target: targetType) &&
@@ -2353,8 +2353,8 @@ public sealed partial class SemanticVerifier
         string? regularMemberRoutine)
     {
         string opSymbol = $"{compound.Operator.ToStringRepresentation()}=";
-        // A token on the right reads its value, as in the binary form (`total += x` over `each x in xs`). So does
-        // an iterator's `Item` in a generic body (`each x in you` over `you: Iterable[S64]`).
+        // A token on the right reads its value, as in the binary form (`total += x` over `for x in xs`). So does
+        // an iterator's `Item` in a generic body (`for x in you` over `you: Iterable[S64]`).
         if (ProjectionReadTarget(type: valueType) is { } projected)
         {
             valueType = projected;

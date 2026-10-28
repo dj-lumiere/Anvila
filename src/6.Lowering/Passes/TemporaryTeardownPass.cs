@@ -338,7 +338,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                     Body = TransformStatement(stmt: w.Body)
                 };
 
-            case EachStatement f:
+            case ForStatement f:
                 return f with
                 {
                     Body = TransformStatement(stmt: f.Body)

@@ -120,12 +120,12 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 rebuild: b => w with { With = null, Body = b, HadWith = true }),
             LoopStatement { With.Count: > 0 } l => LowerCarried(loop: l with { With = null }, carried: l.With, body: l.Body,
                 rebuild: b => l with { With = null, Body = b }),
-            EachStatement { With.Count: > 0 } f => LowerCarried(loop: f with { With = null }, carried: f.With, body: f.Body,
+            ForStatement { With.Count: > 0 } f => LowerCarried(loop: f with { With = null }, carried: f.With, body: f.Body,
                 rebuild: b => f with { With = null, Body = b }),
-            EachStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then),
+            ForStatement { ThenBranch: { } then } f => LowerLoopThen(loop: f with { ThenBranch = null }, then: then),
             WhileStatement { ThenBranch: { } then } w => LowerLoopThen(loop: w with { ThenBranch = null }, then: then),
             LoopStatement { ThenBranch: { } then } l => LowerLoopThen(loop: l with { ThenBranch = null }, then: then),
-            EachStatement f => LowerEach(eachStmt: f),
+            ForStatement f => LowerFor(forStmt: f),
             DestructuringStatement ds => LowerDestructuring(destruct: ds),
             BlockStatement b => LowerBlock(b: b),
             WhileStatement w => LowerWhile(whileStmt: w),
@@ -443,7 +443,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             return stmt switch
             {
                 ContinueStatement { With: { } with } c => Stores(with: with, at: c.Location),
-                WhileStatement or EachStatement or LoopStatement => stmt,
+                WhileStatement or ForStatement or LoopStatement => stmt,
                 _ => base.VisitStatement(stmt: stmt)
             };
         }
@@ -674,7 +674,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         };
     }
 
-    /// <summary>The declaration of a name an <c>each</c> loop gives a temporary it walks.</summary>
+    /// <summary>The declaration of a name a <c>for</c> loop gives a temporary it walks.</summary>
     private static DeclarationStatement SourceDeclaration(string name, Expression value)
     {
         return new DeclarationStatement(
@@ -686,21 +686,21 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Location: value.Location);
     }
 
-    private BlockStatement LowerEach(EachStatement eachStmt, string walkRoutine = Declaration.RuntimeContract.Iter,
+    private BlockStatement LowerFor(ForStatement forStmt, string walkRoutine = Declaration.RuntimeContract.Iter,
         RangeExpression? rangeLiteral = null)
     {
-        // A loop over a value nothing holds (`each w in make()`, `each w in text.words()`) walks a temporary
+        // A loop over a value nothing holds (`for w in make()`, `for w in text.words()`) walks a temporary
         // the iterator only borrows: name it in a block around the loop, so it lives until the loop is done
         // and is released when the block ends. (Before analysis only: afterwards the name would carry no type.)
-        if (eachStmt.Iterable.ResolvedType == null && !IsHeldPlace(expr: eachStmt.Iterable))
+        if (forStmt.Iterable.ResolvedType == null && !IsHeldPlace(expr: forStmt.Iterable))
         {
-            SourceLocation srcLoc = eachStmt.Location;
+            SourceLocation srcLoc = forStmt.Location;
             // A temporary receiver in the chain (`text.words()` in `text.words().enumerate()`) is named too: the
             // adapter keeps only a pointer to it.
             var sourceDecls = new List<Statement>();
-            Expression source = NameTemporaryReceivers(expr: eachStmt.Iterable, into: sourceDecls);
+            Expression source = NameTemporaryReceivers(expr: forStmt.Iterable, into: sourceDecls);
             string sourceName = $"_lf_src_{_iterCount++}";
-            // `each x in steal xs`: the loop takes `xs` and hands each element over (`take_each`), not a token on it.
+            // `for x in steal xs`: the loop takes `xs` and hands each element over (`take_each`), not a token on it.
             bool takes = source is StealExpression;
             DeclarationStatement sourceDecl = SourceDeclaration(name: sourceName, value: source);
             if (takes)
@@ -712,9 +712,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             }
 
             sourceDecls.Add(item: sourceDecl);
-            BlockStatement loop = LowerEach(eachStmt: eachStmt with
+            BlockStatement loop = LowerFor(forStmt: forStmt with
                 {
-                    Iterable = new IdentifierExpression(Name: sourceName, Location: eachStmt.Iterable.Location)
+                    Iterable = new IdentifierExpression(Name: sourceName, Location: forStmt.Iterable.Location)
                 },
                 walkRoutine: takes ? Declaration.RuntimeContract.TakeEach : Declaration.RuntimeContract.Iter,
                 rangeLiteral: source as RangeExpression);
@@ -722,20 +722,20 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             return new BlockStatement(Statements: sourceDecls, Location: srcLoc);
         }
 
-        SourceLocation loc = eachStmt.Location;
+        SourceLocation loc = forStmt.Location;
         int n = _iterCount++;
         string iterName = $"_lf_iter_{n}";
 
         // Preserve the surface iteration-source name (only when it is a plain variable) so the
-        // Phase-5 reshaping-during-iteration check can recover it — this EachStatement is gone by
+        // Phase-5 reshaping-during-iteration check can recover it — this ForStatement is gone by
         // the time body analysis runs.
-        string? iterationSourceName = eachStmt.Iterable is IdentifierExpression iterSource
+        string? iterationSourceName = forStmt.Iterable is IdentifierExpression iterSource
             ? iterSource.Name
             : null;
 
         // -----------------------------------------------------------------------------
         var iterCallExpr = new CallExpression(
-            Callee: new MemberExpression(Object: eachStmt.Iterable,
+            Callee: new MemberExpression(Object: forStmt.Iterable,
                 MemberName: walkRoutine,
                 Location: loc),
             Arguments: [],
@@ -749,7 +749,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                 Location: loc),
             Arguments: [],
             Location: loc) { IsSynthesizedLowering = true };
-        Expression tryNextCall = LowerEachStep(eachStmt: eachStmt,
+        Expression tryNextCall = LowerForStep(forStmt: forStmt,
             iterCallExpr: iterCallExpr,
             tryNextReceiver: tryNextReceiver,
             emitCall: emitCall);
@@ -763,16 +763,16 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Location: loc);
 
         // -----------------------------------------------------------------------------
-        Statement loweredBody = LowerStatement(stmt: eachStmt.Body);
+        Statement loweredBody = LowerStatement(stmt: forStmt.Body);
 
         // -----------------------------------------------------------------------------
-        (Statement elseBody, string? elseVarName) = BuildElseArm(eachStmt: eachStmt,
+        (Statement elseBody, string? elseVarName) = BuildElseArm(forStmt: forStmt,
             n: n,
             loweredBody: loweredBody,
             loc: loc);
 
         // In a recovery variant, a failure beneath a lookup-shaped step returns as the variant's failure.
-        WhenClause? failureClause = eachStmt.StepFailureKind is { } failureKind
+        WhenClause? failureClause = forStmt.StepFailureKind is { } failureKind
             ? RoutineValueCalls.StepFailureClause(kind: failureKind, registry: ctx.Registry, loc: loc)
             : null;
 
@@ -781,7 +781,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             elseVarName: elseVarName,
             iterVarStmt: iterVarStmt,
             iterationSourceName: iterationSourceName,
-            iterationSourcePath: IterationSourcePathOf(source: eachStmt.Iterable),
+            iterationSourcePath: IterationSourcePathOf(source: forStmt.Iterable),
             loc: loc,
             failureClause: failureClause,
             iteratorName: iterName,
@@ -789,7 +789,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
 
         // A range literal walked by one name may become a counter loop. Analysis decides once it knows the
         // range's element type (RangeCounterLoop).
-        if (rangeLiteral != null && iterationSourceName != null && eachStmt.VariablePattern == null &&
+        if (rangeLiteral != null && iterationSourceName != null && forStmt.VariablePattern == null &&
             failureClause == null && walk.Statements is [_, LoopStatement walkLoop])
         {
             walk.Statements[index: 1] = walkLoop with
@@ -804,7 +804,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// The counter loop an <c>each</c> over an integer range literal runs instead of walking an emitter: the
+    /// The counter loop a <c>for</c> over an integer range literal runs instead of walking an emitter: the
     /// statements that take the place of <paramref name="walk"/> (the emitter's declaration and the loop over it),
     /// or null when <paramref name="walk"/> is not such a loop. The range itself is still made first (its local,
     /// <see cref="RangeWalk.SourceName"/>, comes before <paramref name="walk"/>), so its start, end and step are
@@ -992,20 +992,20 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Location: loc) { IsSynthesizedLowering = true };
     }
 
-    /// <summary>The iterator step an <c>each</c> loop recovers with <c>try</c>.</summary>
+    /// <summary>The iterator step a <c>for</c> loop recovers with <c>try</c>.</summary>
     private const string EmitRoutineName = "emit";
 
-    /// <summary>The recovery an <c>each</c> loop's step takes: <c>try</c>, or <c>check</c> in a recovery variant
-    /// whose loop may reach a routine value (<see cref="EachStatement.StepFailureKind"/>): there the walk's end
+    /// <summary>The recovery a <c>for</c> loop's step takes: <c>try</c>, or <c>check</c> in a recovery variant
+    /// whose loop may reach a routine value (<see cref="ForStatement.StepFailureKind"/>): there the walk's end
     /// (<c>AbsentValueError</c>) ends the loop and any other failure is the variant's.</summary>
-    private static RecoveryKind StepKind(EachStatement eachStmt)
+    private static RecoveryKind StepKind(ForStatement forStmt)
     {
-        return eachStmt.StepFailureKind != null
+        return forStmt.StepFailureKind != null
             ? RecoveryKind.Check
             : RecoveryKind.Try;
     }
 
-    /// <summary>The arm that ends an <c>each</c> loop: <c>is None</c> after a <c>try</c> step, or
+    /// <summary>The arm that ends a <c>for</c> loop: <c>is None</c> after a <c>try</c> step, or
     /// <c>is AbsentValueError</c> after a <c>check</c> step (a loop with a <paramref name="failureClause"/>).</summary>
     private static Pattern EndOfWalkPattern(WhenClause? failureClause, SourceLocation loc)
     {
@@ -1018,16 +1018,16 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// The step of an <c>each</c> loop: <c>try _lf_iter_N.emit()</c>. Before analysis it is that recovery
+    /// The step of a <c>for</c> loop: <c>try _lf_iter_N.emit()</c>. Before analysis it is that recovery
     /// expression, which analysis binds. After analysis (stdlib and variant bodies) the iterable is typed,
     /// so the <c>iter</c> call is annotated and the step is bound here to the try variant of the CONCRETE
     /// iterator's <c>emit</c> (so reachability marks that iterator's variant). Skip ErrorTypeSymbol: SA
     /// suppresses stdlib errors.
     /// </summary>
-    private Expression LowerEachStep(EachStatement eachStmt, CallExpression iterCallExpr,
+    private Expression LowerForStep(ForStatement forStmt, CallExpression iterCallExpr,
         IdentifierExpression tryNextReceiver, CallExpression emitCall)
     {
-        if (eachStmt.Iterable.ResolvedType is { } iterType and not ErrorTypeSymbol &&
+        if (forStmt.Iterable.ResolvedType is { } iterType and not ErrorTypeSymbol &&
             ctx.Registry.LookupMemberRoutine(type: Declaration.RoamedTransparency.SharedEntityOf(type: iterType), memberRoutineName: "emitter") is
                 { ReturnType: { } rawIteratorType } iterMemberRoutine)
         {
@@ -1050,7 +1050,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                     type: TokenHeldEntity(type: Declaration.RoamedTransparency.SharedEntityOf(type: iteratorType)),
                     memberRoutineName: EmitRoutineName,
                     isFailable: true) is { } emit &&
-                ctx.Registry.LookupRecoveryVariant(recovered: emit, kind: StepKind(eachStmt: eachStmt)) is { } step)
+                ctx.Registry.LookupRecoveryVariant(recovered: emit, kind: StepKind(forStmt: forStmt)) is { } step)
             {
                 return emitCall with
                 {
@@ -1062,7 +1062,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             }
         }
 
-        return new RecoveryExpression(Kind: StepKind(eachStmt: eachStmt),
+        return new RecoveryExpression(Kind: StepKind(forStmt: forStmt),
             Inner: emitCall,
             Location: emitCall.Location) { IsSynthesized = true };
     }
@@ -1084,20 +1084,20 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     /// name. For tuple destructuring, prepends the positional <c>var a = elem.itemI</c> bindings to
     /// the loop body; otherwise the arm binds the loop variable directly (or discards on <c>_</c>).
     /// </summary>
-    private static (Statement elseBody, string? elseVarName) BuildElseArm(EachStatement eachStmt,
+    private static (Statement elseBody, string? elseVarName) BuildElseArm(ForStatement forStmt,
         int n, Statement loweredBody, SourceLocation loc)
     {
-        if (eachStmt.VariablePattern != null)
+        if (forStmt.VariablePattern != null)
         {
             // Tuple destructuring: else var _lf_elem_M -> { var a = elem.item0; var b = elem.item1; ... body }
             string elemName = $"_lf_elem_{n}";
 
             // Prepend: var a = _lf_elem_M.item0, var b = _lf_elem_M.item1, ??
             var bindStmts =
-                new List<Statement>(capacity: eachStmt.VariablePattern.Bindings.Count + 1);
-            for (int i = 0; i < eachStmt.VariablePattern.Bindings.Count; i++)
+                new List<Statement>(capacity: forStmt.VariablePattern.Bindings.Count + 1);
+            for (int i = 0; i < forStmt.VariablePattern.Bindings.Count; i++)
             {
-                DestructuringBinding binding = eachStmt.VariablePattern.Bindings[index: i];
+                DestructuringBinding binding = forStmt.VariablePattern.Bindings[index: i];
                 string bindName = binding.BindingName ?? binding.MemberVariableName ?? $"_lf_b{i}";
                 if (bindName == "_")
                 {
@@ -1127,14 +1127,14 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
         }
 
         // Simple variable or discard
-        string? elseVarName = eachStmt.Variable == "_"
+        string? elseVarName = forStmt.Variable == "_"
             ? null
-            : eachStmt.Variable;
+            : forStmt.Variable;
         return (loweredBody, elseVarName);
     }
 
     /// <summary>
-    /// The shape path of an <c>each</c> source: a name, a field chain (<c>me.items</c>) or an element
+    /// The shape path of a <c>for</c> source: a name, a field chain (<c>me.items</c>) or an element
     /// (<c>grid[0]</c> is <c>grid[]</c>, the index is not tracked). Null for any other source.
     /// </summary>
     private static string? IterationSourcePathOf(Expression source)
@@ -1155,7 +1155,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Builds the <c>each</c> lowering: the <c>None</c> arm breaks.
+    /// Builds the <c>for</c> lowering: the <c>None</c> arm breaks.
     /// </summary>
     private static BlockStatement BuildPlainFor(Expression tryNextCall, Statement elseBody,
         string? elseVarName, Statement iterVarStmt, string? iterationSourceName,
@@ -1178,12 +1178,12 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             Clauses: failureClause != null
                 ? [noneClause, failureClause, elseClause]
                 : [noneClause, elseClause],
-            Location: loc) { IsEachStep = true, StepHandsOver = handsOver };
+            Location: loc) { IsForStep = true, StepHandsOver = handsOver };
         var loopStmt =
             new LoopStatement(Body: new BlockStatement(Statements: [whenStmt], Location: loc),
                 Location: loc)
             {
-                IsIteratorEachLoop = true, IterationSourceName = iterationSourceName,
+                IsIteratorForLoop = true, IterationSourceName = iterationSourceName,
                 IterationSourcePath = iterationSourcePath, IteratorName = iteratorName
             };
 
@@ -1245,7 +1245,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Lower EachStatement/DestructuringStatement etc. in monomorphized bodies that GMP
+    /// Lower ForStatement/DestructuringStatement etc. in monomorphized bodies that GMP
     /// produced from stdlib originals (which never went through Phase 6 desugaring).
     /// Notable consumer: <see cref="Builder.Instantiation.Passes.ProtocolDefaultImplLoweringPass"/>,
     /// which clones stdlib protocol-default-impl bodies (e.g. <c>Iterable[Text].join</c>) into

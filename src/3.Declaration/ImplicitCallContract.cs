@@ -55,7 +55,7 @@ internal static class ImplicitCallContract
         yield return (liveType, RuntimeContract.RoamedMemberRoutine.RawInner);
         yield return (liveType, RuntimeContract.Control);
 
-        // The shape-use bracket Suflae puts around an `each` loop over a handle, and the check before a change of
+        // The shape-use bracket Suflae puts around a `for` loop over a handle, and the check before a change of
         // its shape: inserted after this list is read, into generic bodies too, where the concrete handle's
         // routines are only known once the body is made concrete.
         yield return (liveType, RuntimeContract.ShapeUse.Begin);

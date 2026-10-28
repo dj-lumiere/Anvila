@@ -99,7 +99,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
             IfStatement ifs => FoldIfStmt(stmt: stmt, ifs: ifs),
             WhileStatement w => FoldWhileStmt(stmt: stmt, w: w),
             LoopStatement loop => FoldLoopStmt(stmt: stmt, loop: loop),
-            EachStatement f => FoldEachStmt(stmt: stmt, f: f),
+            ForStatement f => FoldForStmt(stmt: stmt, f: f),
             WhenStatement ws => FoldWhenStmt(stmt: stmt, ws: ws),
             ReturnStatement { Value: not null } ret => FoldReturnStmt(stmt: stmt, ret: ret),
             AssignmentStatement asg => FoldAssignmentStmt(stmt: stmt, asg: asg),
@@ -168,7 +168,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
             : loop with { Body = body };
     }
 
-    private Statement FoldEachStmt(Statement stmt, EachStatement f)
+    private Statement FoldForStmt(Statement stmt, ForStatement f)
     {
         Expression it = FoldReflectionExpr(expr: f.Iterable);
         Statement body = FoldReflectionStmt(stmt: f.Body);

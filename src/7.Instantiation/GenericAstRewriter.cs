@@ -1390,7 +1390,7 @@ internal static class GenericAstRewriter
     #region Expression Rewriting
     /// <summary>
     /// A <c>try</c>/<c>check</c> over one member call that could not be bound while its receiver was
-    /// still generic (the step of an <c>each</c> loop over <c>List[Work[V]]</c>, lowered after analysis): with
+    /// still generic (the step of a <c>for</c> loop over <c>List[Work[V]]</c>, lowered after analysis): with
     /// the receiver concrete, bind the call to the recovery variant of that receiver's failable routine. A shared
     /// entity's handle (<c>Roamed[E]</c>, a Suflae iterator) binds to the entity's routine, and the call reaches
     /// the entity through the handle as any call on it does (RoamedProjectionLoweringPass).
@@ -2826,7 +2826,7 @@ internal static class GenericAstRewriter
                     : null
             },
 
-            EachStatement fs => fs with
+            ForStatement fs => fs with
             {
                 Iterable = RewriteExpression(expr: fs.Iterable, ctx: ctx),
                 Body = RewriteStatement(stmt: fs.Body, ctx: ctx),

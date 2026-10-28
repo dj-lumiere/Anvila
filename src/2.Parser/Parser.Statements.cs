@@ -305,8 +305,8 @@ public partial class Parser
     /// Syntax: <c>for variable in iterable</c> or <c>for (a, b) in iterable</c> followed by body.
     /// An optional <c>then</c> block runs once the loop is left for the line after it.
     /// </summary>
-    /// <returns>A <see cref="EachStatement"/> AST node.</returns>
-    private EachStatement ParseEachStatement()
+    /// <returns>A <see cref="ForStatement"/> AST node.</returns>
+    private ForStatement ParseForStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
@@ -325,8 +325,8 @@ public partial class Parser
             if (Check(type: TokenType.Comma))
             {
                 throw ThrowParseError(message:
-                    $"Several names after 'each' go in parentheses, as a tuple: 'each ({variable}, ...) in ...'. A " +
-                    "dictionary's pairs are 'each (key, value) in d.items()'.");
+                    $"Several names after 'for' go in parentheses, as a tuple: 'for ({variable}, ...) in ...'. A " +
+                    "dictionary's pairs are 'for (key, value) in d.items()'.");
             }
         }
 
@@ -336,7 +336,7 @@ public partial class Parser
         Statement body = ParseCarryingBody(with: with, location: location);
         RejectLoopElse();
 
-        return new EachStatement(Variable: variable,
+        return new ForStatement(Variable: variable,
             VariablePattern: variablePattern,
             Iterable: sequenceable,
             Body: body,
@@ -346,7 +346,7 @@ public partial class Parser
     /// <summary>
     /// Parses a buildtime member-expansion loop.
     /// Syntax (Phase 1): <c>expand m in allmemvarof(T)</c> followed by an indented body.
-    /// Unlike <c>each</c> there is no <c>else</c> clause — the loop is unrolled at monomorphization.
+    /// Unlike <c>for</c> there is no <c>else</c> clause — the loop is unrolled at monomorphization.
     /// </summary>
     /// <returns>An <see cref="ExpandStatement"/> AST node.</returns>
     private ExpandStatement ParseExpandStatement()

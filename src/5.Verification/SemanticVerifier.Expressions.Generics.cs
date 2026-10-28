@@ -355,7 +355,7 @@ public sealed partial class SemanticVerifier
         // type parameter's family is what the protocols it obeys write (`source.to[List]()` with
         // `TSource obeys Iterable[T]`): the member is bound to the protocol for now and picked again on the concrete
         // receiver when the body is made concrete.
-        // A value's token (an element `each` hands out, `Modifying[Text]`) converts the value it is on: the family is
+        // A value's token (an element `for` hands out, `Modifying[Text]`) converts the value it is on: the family is
         // the value's, and the lowering reads the value through the token (TokenReadLoweringPass).
         // An entity's token (`rng: Modifying[Random]`, `rng.next[U64]()`) calls the entity's own member: the lowering
         // reaches the entity through the token's `control()` (`access()` for a `Viewing`, whose member must only read).

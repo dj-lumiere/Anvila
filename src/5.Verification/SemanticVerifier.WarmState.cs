@@ -153,7 +153,7 @@ public partial class SemanticVerifier
         // raw: cloning `Iterable[T].first_or_default` from one lowered its `when` without analysis and returned
         // 0 instead of the default. A key with no declaration in the programs keeps the snapshot body.
         // A file restored from the cache was already desugared and lowered, so its program body is no longer
-        // what analysis left behind (an `each` is a `while` whose `when` subject analysis never saw, and a
+        // what analysis left behind (a `for` is a `while` whose `when` subject analysis never saw, and a
         // generic template's body is never analyzed after that): the template is the cached analyzed body.
         var templateBodies = new Dictionary<string, Statement>(dictionary: warm.RoutineBodies,
             comparer: StringComparer.Ordinal);

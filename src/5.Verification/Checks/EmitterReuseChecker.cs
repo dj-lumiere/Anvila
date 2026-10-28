@@ -7,12 +7,12 @@ using TypeModel.Types;
 namespace Builder.Verification;
 
 /// <summary>
-/// The rule for an emitter that ran out (RF-S517). <c>each x in it</c> takes items from the emitter <c>it</c> until its
-/// <c>emit</c> fails, so after an <c>each</c> that wasn't left with <c>break</c>, <c>it</c> has nothing left: a second
-/// <c>each</c> over it runs zero times, silently. The rule follows each name a routine walks with <c>each</c> through
-/// the routine's own lines and reports an <c>each</c> over a name that has certainly run out there:
+/// The rule for an emitter that ran out (RF-S517). <c>for x in it</c> takes items from the emitter <c>it</c> until its
+/// <c>emit</c> fails, so after a <c>for</c> that wasn't left with <c>break</c>, <c>it</c> has nothing left: a second
+/// <c>for</c> over it runs zero times, silently. The rule follows each name a routine walks with <c>for</c> through
+/// the routine's own lines and reports a <c>for</c> over a name that has certainly run out there:
 /// <list type="bullet">
-/// <item>after an earlier <c>each</c> over it on every path to this one, with no <c>break</c> out of that earlier
+/// <item>after an earlier <c>for</c> over it on every path to this one, with no <c>break</c> out of that earlier
 /// loop, or</item>
 /// <item>inside a loop that comes round again, when the name is made outside that loop and the pass before took every
 /// item.</item>
@@ -20,7 +20,7 @@ namespace Builder.Verification;
 /// <para>Anything else the routine does with the emitter or with what it was made from (any line that names them,
 /// other than <c>it.emit()</c>) may refill it, and the name counts as not run out from there. So the rule reports only
 /// what certainly runs zero times.</para>
-/// <para>Runs over the analyzed user bodies, where every <c>each</c> is already lowered: the iterator declaration
+/// <para>Runs over the analyzed user bodies, where every <c>for</c> is already lowered: the iterator declaration
 /// <c>var _lf_iter_N = it.emitter()</c> followed by a <see cref="LoopStatement"/> marked with
 /// <see cref="LoopStatement.IterationSourceName"/>, whose body is the step <c>when try _lf_iter_N.emit()</c>. The
 /// step's end-of-walk arm is the loop ending by itself, every other way out is a <c>break</c>.</para>
@@ -64,7 +64,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
         return type != null && registry.LookupMemberRoutine(type: type, memberRoutineName: "emit", isFailable: true) != null;
     }
 
-    /// <summary>The names that have run out on every path to a line, each with the <c>each</c> that emptied it.</summary>
+    /// <summary>The names that have run out on every path to a line, each with the <c>for</c> that emptied it.</summary>
     private sealed class State
     {
         public readonly Dictionary<string, LoopStatement> Empty = new(comparer: StringComparer.Ordinal);
@@ -111,7 +111,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
     }
 
     /// <summary>Where the paths through a body go: off its end, out of the loop it is in, round that loop again, or out
-    /// of the <c>each</c> loop it is in because the emitter ran out.</summary>
+    /// of the <c>for</c> loop it is in because the emitter ran out.</summary>
     private sealed class Paths
     {
         public State? Fall;
@@ -142,7 +142,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
                 }
 
                 Statement s = body[index: i];
-                // The iterator an `each` declares (`var _lf_iter_N = it.emitter()`) is part of the loop after it, not a
+                // The iterator a `for` declares (`var _lf_iter_N = it.emitter()`) is part of the loop after it, not a
                 // line that names `it`.
                 if (s is DeclarationStatement { Declaration: VariableDeclaration { Name: var iterName } } &&
                     i + 1 < body.Count && body[index: i + 1] is LoopStatement { IteratorName: { } walking } &&
@@ -189,9 +189,9 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
                     Join(into: paths, then, other);
                     return State.Meet(paths: [then.Fall, other.Fall]);
                 }
-                case WhenStatement { IsEachStep: true } step:
+                case WhenStatement { IsForStep: true } step:
                 {
-                    // The step of an `each`: its first arm is the emitter running out, the loop ends by itself.
+                    // The step of a `for`: its first arm is the emitter running out, the loop ends by itself.
                     var arms = new List<Paths>();
                     for (int c = 0; c < step.Clauses.Count; c++)
                     {
@@ -300,7 +300,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
         private State? WalkLoop(LoopStatement loop, State cur, Paths outer, Expression? condition)
         {
             string? source = loop.IterationSourceName;
-            if (source == null || !loop.IsIteratorEachLoop || !IsWalkedEmitter(loop: loop))
+            if (source == null || !loop.IsIteratorForLoop || !IsWalkedEmitter(loop: loop))
             {
                 source = null;
             }
@@ -334,7 +334,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
                 _loops.RemoveAt(index: _loops.Count - 1);
             }
 
-            // Out of the loop: through a break, or, for an `each`, when the emitter ran out (it is then empty). A
+            // Out of the loop: through a break, or, for a `for`, when the emitter ran out (it is then empty). A
             // `while` ends by itself at its condition, from the state at its head.
             var exits = new List<State?>(collection: first.Breaks);
             if (second != null)
@@ -366,19 +366,19 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
             return State.Meet(paths: exits);
         }
 
-        /// <summary>Whether the source an <c>each</c> loop walks is an emitter, read from the iterator declaration
+        /// <summary>Whether the source a <c>for</c> loop walks is an emitter, read from the iterator declaration
         /// before it (<c>var _lf_iter_N = it.emitter()</c>).</summary>
         private bool IsWalkedEmitter(LoopStatement loop)
         {
             return _iteratorSources.TryGetValue(key: loop, value: out TypeSymbol? type) && owner.IsEmitter(type: type);
         }
 
-        /// <summary>The type of the source each <c>each</c> loop walks, noted when the walk passes its iterator
+        /// <summary>The type of the source each <c>for</c> loop walks, noted when the walk passes its iterator
         /// declaration.</summary>
         private readonly Dictionary<LoopStatement, TypeSymbol?> _iteratorSources =
             new(comparer: ReferenceEqualityComparer.Instance);
 
-        /// <summary>Notes the source type of the <c>each</c> loops in <paramref name="body"/> from their iterator
+        /// <summary>Notes the source type of the <c>for</c> loops in <paramref name="body"/> from their iterator
         /// declarations.</summary>
         public void NoteSources(Statement body)
         {
@@ -505,7 +505,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
                                  }
                 ? from.Name
                 : null;
-            string item = loop.Body is BlockStatement { Statements: [WhenStatement { IsEachStep: true } step] } &&
+            string item = loop.Body is BlockStatement { Statements: [WhenStatement { IsForStep: true } step] } &&
                           step.Clauses[^1].Pattern is ElsePattern { VariableName: { } bound } &&
                           !bound.StartsWith(value: "_lf_", comparisonType: StringComparison.Ordinal)
                 ? bound
@@ -514,7 +514,7 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
                 ? $"var {source} = {collection}.emitter()"
                 : $"the line that makes '{source}'";
             string direct = collection != null
-                ? $", or walk the collection itself (each {item} in {collection})"
+                ? $", or walk the collection itself (for {item} in {collection})"
                 : "";
             // The first pass reports what runs out on one pass, so a pass after it reports what the loop brought round.
             (LoopStatement Loop, bool Again) around = _loops.LastOrDefault(predicate: x => x.Again);
@@ -522,20 +522,20 @@ internal sealed class EmitterReuseChecker(TypeRegistry registry, DiagnosticRepor
             {
                 owner._report(code: SemanticDiagnosticCode.EmitterRunOut,
                     message:
-                    $"This each over '{source}' runs zero times on every pass of the loop on line " +
+                    $"This for loop over '{source}' runs zero times on every pass of the loop on line " +
                     $"{around.Loop.Location.Line} after the first: you made '{source}' outside that loop, and " +
                     (ReferenceEquals(objA: emptied, objB: loop)
-                        ? "this each"
-                        : $"the each on line {emptied.Location.Line}") +
+                        ? "this for loop"
+                        : $"the for loop on line {emptied.Location.Line}") +
                     " takes every item from it on the first pass. Make the emitter inside the loop, just before this " +
-                    $"each ({remake}), so each pass walks the collection from its start{direct}.",
+                    $"for loop ({remake}), so each pass walks the collection from its start{direct}.",
                     location: loop.Location);
                 return;
             }
 
             owner._report(code: SemanticDiagnosticCode.EmitterRunOut,
                 message:
-                $"This each over '{source}' runs zero times: the each on line {emptied.Location.Line} already took " +
+                $"This for loop over '{source}' runs zero times: the for loop on line {emptied.Location.Line} already took " +
                 $"every item from it, and an emitter hands out each item once. Make a new emitter for this loop " +
                 $"({remake}) to walk the collection again{direct}.",
                 location: loop.Location);

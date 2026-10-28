@@ -77,7 +77,7 @@ public static class RuntimeContract
         public const string Share = "share";
     }
 
-    /// <summary>Container shape use (the IterGuard), Suflae only: while an `each` loop over a shared entity or a
+    /// <summary>Container shape use (the IterGuard), Suflae only: while a `for` loop over a shared entity or a
     /// call on one of its elements runs, its shape (element count and positions) must stay as it is. The
     /// counter lives on the entity's `Roamed` controller, so every name of the entity sees it. The builder
     /// brackets a use with <see cref="Begin"/>/<see cref="End"/> on the handle, and puts <see cref="RequireFree"/>
@@ -462,7 +462,7 @@ public static class RuntimeContract
     /// <summary>The <c>Emittable[T]</c> routine that gives a fresh emitter; what it returns is the type's <c>Emitter</c>.</summary>
     public const string Iter = "emitter";
 
-    /// <summary>The routine that hands a collection's elements over to a walk, for <c>each x in steal xs</c>.</summary>
+    /// <summary>The routine that hands a collection's elements over to a walk, for <c>for x in steal xs</c>.</summary>
     public const string TakeEach = "take_each";
 
     /// <summary>The list a walk takes apart (<c>(steal xs).where(...)</c> walks <c>TakenList(list: steal xs)</c>).</summary>

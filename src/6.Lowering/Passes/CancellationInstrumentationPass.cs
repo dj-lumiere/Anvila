@@ -300,7 +300,7 @@ public sealed class CancellationInstrumentationPass
             case LoopStatement l:
                 RecurseStmt(stmt: l.Body, locals: locals);
                 break;
-            case EachStatement f:
+            case ForStatement f:
                 RecurseStmt(stmt: f.Body, locals: locals);
                 break;
             case DangerStatement d:

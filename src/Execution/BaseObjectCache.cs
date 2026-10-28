@@ -37,7 +37,7 @@ public sealed class BaseObjectCache
         "    xs.add_first(value: 0)\n" +
         "    show(f\"xs: {xs} size {xs.count()} first {xs[0]}\")\n" +
         "    var sum = 0\n" +
-        "    each x in xs\n" +
+        "    for x in xs\n" +
         "        sum = sum + x\n" +
         "    show(f\"sum: {sum}\")\n" +
         "    var names = [\"alpha\", \"beta\"]\n" +

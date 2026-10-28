@@ -171,7 +171,7 @@ public partial class LlvmEmitter
 
         // Scalar presets must be inlined before backend entry. Codegen should not read declaration
         // AST to recover their values on demand.
-        // A local of the routine shadows a preset of the same name (`each letter in word` beside a preset
+        // A local of the routine shadows a preset of the same name (`for letter in word` beside a preset
         // `letter`).
         if (!_localVariables.ContainsKey(key: identifier.Name) &&
             _registry.LookupVariable(name: identifier.Name) is { IsPreset: true })

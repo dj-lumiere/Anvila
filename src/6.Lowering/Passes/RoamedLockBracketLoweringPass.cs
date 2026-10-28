@@ -127,7 +127,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                                                                seenPlaces.Add(item: key)))
                                        .ToList();
             // The IterGuard: a write to a member variable of an entity changes the entity itself (a container's
-            // count, capacity or buffer), which an `each` loop over it or a call on one of its elements relies
+            // count, capacity or buffer), which a `for` loop over it or a call on one of its elements relies
             // on. Where shapes are checked at run time, the write crashes while such a use is open. An element's
             // value lives in the container's buffer, not in a member variable, so changing it stays allowed.
             if (Registry.CompilationRules.ChecksShapeAtRunTime && WrittenFieldHandle(stmt: stmt) is { } written &&
@@ -798,7 +798,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 yield return v.Initializer; break;
             case IfStatement s: yield return s.Condition; break;
             case WhileStatement s: yield return s.Condition; break;
-            case EachStatement s: yield return s.Iterable; break;
+            case ForStatement s: yield return s.Iterable; break;
             case WhenStatement s: yield return s.Expression; break;
             case UsingStatement s: yield return s.Resource; break;
         }
@@ -913,7 +913,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             case LoopStatement l:
                 RecurseStmt(stmt: l.Body);
                 break;
-            case EachStatement f:
+            case ForStatement f:
                 RecurseStmt(stmt: f.Body);
                 break;
             case DangerStatement d:

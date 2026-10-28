@@ -18,7 +18,7 @@ internal static class MemberVariableWrites
             BlockStatement block => block.Statements.Any(predicate: WritesMe),
             IfStatement ifs => WritesMe(body: ifs.ThenStatement) || WritesMe(body: ifs.ElseStatement),
             WhileStatement loop => WritesMe(body: loop.Body) || WritesMe(body: loop.ThenBranch),
-            EachStatement each => WritesMe(body: each.Body) || WritesMe(body: each.ThenBranch),
+            ForStatement each => WritesMe(body: each.Body) || WritesMe(body: each.ThenBranch),
             LoopStatement loop => WritesMe(body: loop.Body),
             WhenStatement whenStmt => whenStmt.Clauses.Any(predicate: c => WritesMe(body: c.Body)),
             DangerStatement danger => WritesMe(body: danger.Body),

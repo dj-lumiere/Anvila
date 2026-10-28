@@ -137,7 +137,7 @@ public sealed partial class SemanticVerifier
         _registry.DeferredVariantBases[key: routineInfo.RegistryKey] =
             (routineInfo, decl.Body, !hasDirect);
 
-        // ITERATOR `emit` stays EAGER and is owned END-TO-END by the existing pipeline (an `each` loop steps
+        // ITERATOR `emit` stays EAGER and is owned END-TO-END by the existing pipeline (a `for` loop steps
         // with `try it.emit()`; Phase-8 monomorphization path-2 generates each composed emitter's try-variant
         // BODY). The on-demand hook deliberately SKIPS `emit`: a stub-only on-demand variant would have no body
         // and be pruned (over-prune), and on the warm path — where PreRegisterStdlibVariants is skipped — the

@@ -154,7 +154,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Whether <paramref name="type"/> is a tuple whose elements are tokens or hold none (the
-    /// <c>(U64, Modifying[T])</c> an <c>enumerate</c> step gives), with at least one token: an <c>each</c> loop takes it
+    /// <c>(U64, Modifying[T])</c> an <c>enumerate</c> step gives), with at least one token: a <c>for</c> loop takes it
     /// apart, and its tokens last as long as one pass of the loop.</summary>
     private static bool IsTokenTuple(TypeSymbol type)
     {
@@ -164,7 +164,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>Whether <paramref name="expression"/> takes a type holding a token from one of its parts (the receiver
     /// or an argument already has it, so its declaration reported it), or is a call the builder wrote (an
-    /// <c>each</c> loop's <c>iter()</c>, a block's enter): only a value the program makes here reports.</summary>
+    /// <c>for</c> loop's <c>iter()</c>, a block's enter): only a value the program makes here reports.</summary>
     private static bool TakesTokenTypeFromPart(Expression expression)
     {
         static bool Carries(Expression? part)

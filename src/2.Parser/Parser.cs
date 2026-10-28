@@ -201,7 +201,7 @@ public partial class Parser
     /// <summary>
     /// The word operators (<c>to</c> <c>til</c> <c>by</c> <c>have</c> <c>lack</c> <c>is</c> <c>isnot</c> <c>in</c>
     /// <c>as</c> <c>and</c> <c>or</c>) are keywords only where an operator stands: right after something that ends an
-    /// expression (<c>0 to 10</c>, <c>xs have v</c>, <c>each x in xs</c>). Anywhere else the word is a name
+    /// expression (<c>0 to 10</c>, <c>xs have v</c>, <c>for x in xs</c>). Anywhere else the word is a name
     /// (<c>var to = 3</c>, <c>routine step(by: S64)</c>, <c>by + to</c>), so it is turned into an identifier here,
     /// before parsing. A pattern arm still starts with <c>is</c> (<c>is S64 as n =&gt;</c>) or a flags arm with
     /// <c>have</c>/<c>lack</c> (<c>have READ =&gt;</c>), and an <c>else</c> arm
@@ -355,7 +355,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Script mode (RazorForge and Suflae): a file whose top level has loose STATEMENTS (an expression, `each`/`while`/
+    /// Script mode (RazorForge and Suflae): a file whose top level has loose STATEMENTS (an expression, `for`/`while`/
     /// `if`, an assignment, …) needs no explicit entry point — those statements, together with any top-level
     /// runtime <c>var</c> declarations, become the body of an implicit <c>routine start()</c> (in source
     /// order; a trailing <c>return</c> is added). Hoistable declarations (module/import/type/routine/preset/
@@ -1357,9 +1357,22 @@ public partial class Parser
             case TokenType.Loop:
                 Advance();
                 return ParseLoopStatement();
-            case TokenType.Each:
+            case TokenType.For:
                 Advance();
-                return ParseEachStatement();
+                return ParseForStatement();
+            case TokenType.Each:
+            {
+                // `each x in xs` is read as the `for` loop it means, so the rest of the file is still checked.
+                Token word = CurrentToken;
+                RecordError(ex: ThrowParseError(code: GrammarDiagnosticCode.EachKeyword,
+                    message: "You wrote a loop with `each`, which is a reserved word: a loop over a range or a " +
+                             "collection is written `for x in xs`. `migrate --step for` rewrites these loops.",
+                    fix: new SuggestedFix(Title: "Write 'for'",
+                        Edits: [new TextEdit(StartLine: word.Line, StartColumn: word.Column, EndLine: word.Line,
+                            EndColumn: word.Column + word.Text.Length, NewText: "for")])));
+                Advance();
+                return ParseForStatement();
+            }
             case TokenType.Expand:
                 Advance();
                 return ParseExpandStatement();

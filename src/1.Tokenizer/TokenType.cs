@@ -397,7 +397,11 @@ public enum TokenType
     /// <summary><c>loop</c>: the loop that doesn't end by itself, left with <c>break</c>, <c>return</c> or <c>throw</c>.</summary>
     Loop,
 
-    /// <summary>Each loop keyword</summary>
+    /// <summary><c>for</c>: the loop over a range or a collection (<c>for x in xs</c>).</summary>
+    For,
+
+    /// <summary>The word <c>each</c>: reserved, it cannot name anything. A loop over a range or a collection is written
+    /// <c>for</c> (RF-G229).</summary>
     Each,
 
     /// <summary>Buildtime member-expansion loop keyword (`expand m in allmemvarof(T)`)</summary>
@@ -497,11 +501,11 @@ public enum TokenType
     /// Ownership transfer keyword (RazorForge only).
     /// Transfers ownership and invalidates the source (becomes deadref).
     /// Used for: single entity transfer (steal node), container push (list.push(steal node)),
-    /// and consuming iteration (each item in steal list).
+    /// and consuming iteration (for item in steal list).
     /// </summary>
     Steal,
 
-    /// <summary>In keyword for iteration ONLY (each i in list). Containment moved to `have`/`lack`.</summary>
+    /// <summary>In keyword for iteration ONLY (for i in list). Containment moved to `have`/`lack`.</summary>
     In,
 
     /// <summary>Not in keyword - RETIRED containment token, retained only for the BinaryOperator mapping;
@@ -517,13 +521,13 @@ public enum TokenType
     /// <summary>Lack keyword - negated container-first containment (coll lack x, flags lack READ).</summary>
     Lack,
 
-    /// <summary>To keyword for ascending Range (each i in 1 to 10)</summary>
+    /// <summary>To keyword for ascending Range (for i in 1 to 10)</summary>
     To,
 
-    /// <summary>Til keyword for exclusive range end (each i in 0 til 10 means [0, 10))</summary>
+    /// <summary>Til keyword for exclusive range end (for i in 0 til 10 means [0, 10))</summary>
     Til,
 
-    /// <summary>By keyword for Range step size (each i in 1 to 10 by 2)</summary>
+    /// <summary>By keyword for Range step size (for i in 1 to 10 by 2)</summary>
     By,
 
     /// <summary>

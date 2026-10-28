@@ -799,10 +799,10 @@ public sealed partial class SemanticVerifier
                 _unassignedAtBreak.Push(item: []);
                 _endedAtContinue.Push(item: []);
                 _registry.EnterScope(kind: ScopeKind.Loop, name: "loop");
-                // A lowered `each x in a` loop carries the surface source name so the
-                // reshaping-during-iteration check can fire even though the EachStatement was
+                // A lowered `for x in a` loop carries the surface source name so the
+                // reshaping-during-iteration check can fire even though the ForStatement was
                 // rewritten away before this phase. Track it for the duration of the body.
-                // An `each` over an adapter chain (`xs.where(...)`) walks the container at its head.
+                // A `for` over an adapter chain (`xs.where(...)`) walks the container at its head.
                 if (loopStmt.IterationSourceName is { } sourceName &&
                     _adapterSourcePaths.TryGetValue(key: sourceName, value: out string? sourceHead))
                 {
@@ -837,8 +837,8 @@ public sealed partial class SemanticVerifier
                 break;
             }
 
-            case EachStatement eachStmt:
-                AnalyzeEachStatement(eachStmt: eachStmt);
+            case ForStatement forStmt:
+                AnalyzeForStatement(forStmt: forStmt);
                 break;
 
             case ExpandStatement expandStmt:
@@ -1089,7 +1089,7 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>Whether the range an <c>each</c> loop walks is over a concrete integer type (a fixed-width integer or
+    /// <summary>Whether the range a <c>for</c> loop walks is over a concrete integer type (a fixed-width integer or
     /// <c>Int</c>), so the loop can count instead of walking an emitter.</summary>
     private bool WalksIntegerRange(RangeWalk rangeWalk)
     {
@@ -1118,7 +1118,7 @@ public sealed partial class SemanticVerifier
 
         _registry.EnterScope(kind: ScopeKind.Block, name: null);
 
-        // An `each` over an integer range literal counts: the emitter walk is replaced by a counter loop now that the
+        // A `for` over an integer range literal counts: the emitter walk is replaced by a counter loop now that the
         // range's local has its type. A range of any other element type keeps the walk.
         if (block.Statements is [_, LoopStatement { RangeWalk: { } rangeWalk }] &&
             WalksIntegerRange(rangeWalk: rangeWalk) &&
@@ -1275,7 +1275,7 @@ public sealed partial class SemanticVerifier
 
         NoteStealDestination(value: varDecl.Initializer,
             destination: varDecl.IsLoopTakeSource
-                ? $"the 'each' loop on line {varDecl.Location.Line}"
+                ? $"the 'for' loop on line {varDecl.Location.Line}"
                 : $"'{varDecl.Name}'");
 
         // Suflae flow typing: a local is nullable when it was annotated `E?`, or (with no annotation)
@@ -1332,14 +1332,14 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Records whether a variable walks from a read-only place: the iterator an <c>each</c> loop declares
+    /// Records whether a variable walks from a read-only place: the iterator a <c>for</c> loop declares
     /// (<c>var _lf_iter_N = source.iter()</c>), or an iterator or adapter made from one (<c>var big =
-    /// boxes.where(...)</c>, the source an <c>each</c> over a call names). Any other declaration of the name clears it,
+    /// boxes.where(...)</c>, the source a <c>for</c> over a call names). Any other declaration of the name clears it,
     /// so a name reused in another routine starts over.
     /// </summary>
     private void TrackReadOnlyIterator(VariableDeclaration varDecl)
     {
-        // An adapter kept in a variable (`var big = xs.where(...)`, or the `_lf_src_N` an `each` over a call names)
+        // An adapter kept in a variable (`var big = xs.where(...)`, or the `_lf_src_N` a `for` over a call names)
         // walks the container at the head of its chain, and so does an iterator taken from it.
         CallExpression? adapterChain = varDecl.Initializer switch
         {
@@ -1386,7 +1386,7 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>The iterator variables of <c>each</c> loops over an adapter chain, with the path of the container at
+    /// <summary>The iterator variables of <c>for</c> loops over an adapter chain, with the path of the container at
     /// the chain's head (see <see cref="LoopStatement.AdapterSourcePath"/>).</summary>
     private readonly Dictionary<string, string> _adapterSourcePaths = new(comparer: StringComparer.Ordinal);
 
@@ -1442,7 +1442,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Whether a value of <paramref name="type"/> is walked: an iterator (it has <c>emit</c>) or an adapter
-    /// an <c>each</c> loop asks for one (it has <c>iter</c>).</summary>
+    /// a <c>for</c> loop asks for one (it has <c>iter</c>).</summary>
     private bool Walks(TypeSymbol type)
     {
         return _registry.LookupMemberRoutine(type: type, memberRoutineName: "emit", isFailable: true) != null ||
@@ -1472,7 +1472,7 @@ public sealed partial class SemanticVerifier
         };
     }
 
-    /// <summary>The element token an <c>each</c> loop binds when its walk starts read-only: <c>Viewing[T]</c> in place
+    /// <summary>The element token a <c>for</c> loop binds when its walk starts read-only: <c>Viewing[T]</c> in place
     /// of the <c>Modifying[T]</c> the iterator hands out. Any other type stays as it is.</summary>
     private TypeSymbol ReadOnlyElement(TypeSymbol element)
     {

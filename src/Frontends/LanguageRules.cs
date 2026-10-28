@@ -222,7 +222,7 @@ public abstract class LanguageRules
     {
     }
 
-    /// <summary>Lowers the run-time shape checks of each-loops, after operators are lowered.</summary>
+    /// <summary>Lowers the run-time shape checks of for-loops, after operators are lowered.</summary>
     public virtual void LowerShapeUse(PostprocessingContext ctx, Program program)
     {
     }

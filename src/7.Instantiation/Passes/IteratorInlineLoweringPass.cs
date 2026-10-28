@@ -16,7 +16,7 @@ namespace Builder.Instantiation.Passes;
 ///
 /// <para>Lowered for-loop shape produced by CFLP (the discriminator):</para>
 /// <code>
-/// loop /*IsIteratorEachLoop*/ {
+/// loop /*IsIteratorForLoop*/ {
 ///   when try _lf_iter_N.emit() {
 ///     is None -> break
 ///     else v -> &lt;bindings + user body&gt;
@@ -121,7 +121,7 @@ internal sealed class IteratorInlineLoweringPass
     {
         switch (stmt)
         {
-            case LoopStatement { IsIteratorEachLoop: true } loop:
+            case LoopStatement { IsIteratorForLoop: true } loop:
                 return RewriteIteratorLoop(loop: loop);
             case LoopStatement loop:
             {
@@ -455,7 +455,7 @@ internal sealed class IteratorInlineLoweringPass
         WalkStatements(stmt: stmt,
             visit: s =>
             {
-                if (s is LoopStatement or WhileStatement or EachStatement)
+                if (s is LoopStatement or WhileStatement or ForStatement)
                 {
                     found = true;
                 }
@@ -584,7 +584,7 @@ internal sealed class IteratorInlineLoweringPass
                 Body = (BlockStatement)RewriteNextStatement(stmt: d.Body, ctx: ctx)
             },
             // Loops must never appear (the gate excludes them); guard defensively.
-            LoopStatement or WhileStatement or EachStatement =>
+            LoopStatement or WhileStatement or ForStatement =>
                 // Should be unreachable — fall back to a plain clone rather than crash.
                 CloneStatement(stmt: stmt, ctx: ctx),
             _ => CloneStatement(stmt: stmt, ctx: ctx)
@@ -970,7 +970,7 @@ internal sealed class IteratorInlineLoweringPass
             case LoopStatement l:
                 WalkStatements(stmt: l.Body, visit: visit);
                 break;
-            case EachStatement f:
+            case ForStatement f:
                 WalkStatements(stmt: f.Body, visit: visit);
                 break;
             case WhenStatement wn:

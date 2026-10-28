@@ -111,7 +111,7 @@ internal static class TesseraTrace
             entry: @RfFailure = RF_FAILURES.getview().to[@RfFailure]().stride(band[U64](previous, 63))
             entry.seq.poke_unbroken(0)
             RF_TRACE_DEPTH.peek().poke_into(entry.depth)
-            each i in 0 til 32
+            for i in 0 til 32
                 from: @RfTraceFrame = RF_TRACE_STACK.getview().to[@RfTraceFrame]().stride(i)
                 to: @RfTraceFrame = entry.frames.getview().to[@RfTraceFrame]().stride(i)
                 to.poke(from.peek())
@@ -122,7 +122,7 @@ internal static class TesseraTrace
         routine rf_failure_find(seq: U64) -> @RfFailure
             if ieq[U64](seq, 0)
                 return .hollow()
-            each i in 0 til 64
+            for i in 0 til 64
                 entry: @RfFailure = RF_FAILURES.getview().to[@RfFailure]().stride(i)
                 if ieq[U64](entry.seq.peek_unbroken(), seq)
                     return entry

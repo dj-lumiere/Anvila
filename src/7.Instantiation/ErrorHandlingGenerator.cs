@@ -87,7 +87,7 @@ public sealed class ErrorHandlingGenerator
     /// checked operator, a subscript, a call of a routine that is not failable but fails beneath its own call)
     /// is only known once its body is built, and each keyword must keep that failure's error.</param>
     /// <param name="withCheck">Generate the check variant as well whatever the body says: an iterator's <c>emit</c>
-    /// needs it for an <c>each</c> loop beneath a recovery keyword, whose step must tell the end of the iteration
+    /// needs it for a <c>for</c> loop beneath a recovery keyword, whose step must tell the end of the iteration
     /// (<c>AbsentValueError</c>) apart from a failure beneath it (any other error).</param>
     public ErrorHandlingResult GenerateVariants(RoutineInfo routine, Statement body,
         bool pessimistic, bool everyKind = false, bool withCheck = false)
@@ -254,8 +254,8 @@ public sealed class ErrorHandlingGenerator
                 AnalyzeStatementRecursive(statement: whileStmt.Body, analysis: analysis);
                 break;
 
-            case EachStatement eachStmt:
-                AnalyzeStatementRecursive(statement: eachStmt.Body, analysis: analysis);
+            case ForStatement forStmt:
+                AnalyzeStatementRecursive(statement: forStmt.Body, analysis: analysis);
                 break;
 
             case WhenStatement whenStmt:

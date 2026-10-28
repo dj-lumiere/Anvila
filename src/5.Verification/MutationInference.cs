@@ -157,8 +157,8 @@ public sealed class MutationInference
                 AnalyzeStatementForMutation(node: node, statement: loopStmt.Body);
                 break;
 
-            case EachStatement eachStmt:
-                AnalyzeStatementForMutation(node: node, statement: eachStmt.Body);
+            case ForStatement forStmt:
+                AnalyzeStatementForMutation(node: node, statement: forStmt.Body);
                 break;
 
             // Other statement types don't directly mutate member variables

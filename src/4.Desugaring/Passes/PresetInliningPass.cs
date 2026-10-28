@@ -42,7 +42,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     private readonly HashSet<string> _inlining = new(comparer: StringComparer.Ordinal);
 
     /// <summary>The names the routine being lowered binds itself (parameters, variables, loop and pattern names): a
-    /// preset of the same name is out of sight there (`each letter in word` next to a preset `letter`).</summary>
+    /// preset of the same name is out of sight there (`for letter in word` next to a preset `letter`).</summary>
     private HashSet<string> _locals = new(comparer: StringComparer.Ordinal);
 
     /// <summary>The presets of each library module, over all its files, once computed.</summary>

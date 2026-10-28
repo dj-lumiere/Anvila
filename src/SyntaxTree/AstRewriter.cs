@@ -35,7 +35,7 @@ public abstract class AstRewriter
             IfStatement s => VisitIf(s: s),
             WhileStatement s => VisitWhile(s: s),
             LoopStatement s => VisitLoop(s: s),
-            EachStatement s => VisitEach(s: s),
+            ForStatement s => VisitFor(s: s),
             WhenStatement s => VisitWhen(s: s),
             DangerStatement s => VisitDanger(s: s),
             UsingStatement s => VisitUsing(s: s),
@@ -135,12 +135,12 @@ public abstract class AstRewriter
     }
 
     /// <summary>
-    /// Rewrites an <see cref="EachStatement"/> by visiting its iterable expression, loop body and <c>then</c>.
+    /// Rewrites an <see cref="ForStatement"/> by visiting its iterable expression, loop body and <c>then</c>.
     /// Returns the original node when none of them changed.
     /// </summary>
-    /// <param name="s">The each statement to rewrite.</param>
+    /// <param name="s">The for statement to rewrite.</param>
     /// <returns>The rewritten each statement, or the original reference if nothing changed.</returns>
-    protected virtual Statement VisitEach(EachStatement s)
+    protected virtual Statement VisitFor(ForStatement s)
     {
         Expression iterable = VisitExpression(expr: s.Iterable);
         Statement body = VisitStatement(stmt: s.Body);

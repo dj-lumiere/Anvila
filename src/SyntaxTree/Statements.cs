@@ -529,30 +529,30 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     /// <c>IteratorInlineLoweringPass</c> can find the iterator-advance loops to rewrite, instead of
     /// brittle shape-matching against every <c>loop</c>.
     /// </summary>
-    public bool IsIteratorEachLoop { get; init; }
+    public bool IsIteratorForLoop { get; init; }
 
     /// <summary>
-    /// For a lowered <c>each x in a</c> loop whose iteration source is a plain variable, the name of
+    /// For a lowered <c>for x in a</c> loop whose iteration source is a plain variable, the name of
     /// that variable (<c>"a"</c>); otherwise <c>null</c>. ControlFlowLoweringPass (Phase 7) rewrites
-    /// the surface <see cref="EachStatement"/> away before Phase 5 body analysis, so this marker is
+    /// the surface <see cref="ForStatement"/> away before Phase 5 body analysis, so this marker is
     /// how the reshaping-during-iteration check (SemanticVerifier) recovers the source name to
     /// populate its active-iteration set.
     /// </summary>
     public string? IterationSourceName { get; init; }
 
     /// <summary>
-    /// For a lowered <c>each x in ...</c> loop whose source is a name, field chain or element, its path
+    /// For a lowered <c>for x in ...</c> loop whose source is a name, field chain or element, its path
     /// (<c>"a"</c>, <c>"me.items"</c>, <c>"grid[]"</c> for <c>grid[0]</c>: the index is not tracked); otherwise
     /// <c>null</c>. The build-time shape check guards the source through it. A path, not the expression
     /// itself: the expression is lowered afterwards, and a stale copy here would reach backend validation.
     /// </summary>
     public string? IterationSourcePath { get; init; }
 
-    /// <summary>For a lowered <c>each</c> loop, the name of the iterator variable it walks (<c>_lf_iter_N</c>).</summary>
+    /// <summary>For a lowered <c>for</c> loop, the name of the iterator variable it walks (<c>_lf_iter_N</c>).</summary>
     public string? IteratorName { get; init; }
 
     /// <summary>
-    /// For a lowered <c>each</c> loop over a range literal (<c>each i in a til b</c>), what the range was written
+    /// For a lowered <c>for</c> loop over a range literal (<c>for i in a til b</c>), what the range was written
     /// with. Analysis turns such a loop into a counter loop when the range's element type is an integer
     /// (<see cref="Builder.Desugaring.Passes.ControlFlowLoweringPass.RangeCounterLoop"/>), and any other range
     /// keeps the emitter walk. Null for every other loop.
@@ -560,7 +560,7 @@ public record LoopStatement(Statement Body, SourceLocation Location)
     public RangeWalk? RangeWalk { get; init; }
 
     /// <summary>
-    /// For a lowered <c>each</c> loop over an iterator adapter (<c>each x in xs.where(...)</c>), the path of the
+    /// For a lowered <c>for</c> loop over an iterator adapter (<c>for x in xs.where(...)</c>), the path of the
     /// container at the head of the adapter chain (<c>"xs"</c>), set by analysis once the chain's types are known (an
     /// adapter has <c>emit</c>, a fresh collection like <c>xs.copy()</c> does not). The shape checks guard it like
     /// <see cref="IterationSourcePath"/>.
@@ -569,7 +569,7 @@ public record LoopStatement(Statement Body, SourceLocation Location)
 }
 
 /// <summary>
-/// How a range literal an <c>each</c> loop walks was written: the local the lowering put the range in
+/// How a range literal a <c>for</c> loop walks was written: the local the lowering put the range in
 /// (<c>_lf_src_N</c>), whether it includes its end (<c>to</c>) and whether it has a <c>by</c> step.
 /// </summary>
 /// <param name="SourceName">The local that holds the range.</param>
@@ -596,7 +596,7 @@ public sealed record RangeWalk(string SourceName, bool Inclusive, bool Stepped);
 /// <item>Tuple destructuring: for (index, item) in items.enumerate()</item>
 /// </list>
 /// </remarks>
-public record EachStatement(
+public record ForStatement(
     string? Variable,
     DestructuringPattern? VariablePattern,
     Expression Iterable,
@@ -613,7 +613,7 @@ public record EachStatement(
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
-        return visitor.VisitEachStatement(node: this);
+        return visitor.VisitForStatement(node: this);
     }
 
     /// <summary>
@@ -651,7 +651,7 @@ public enum ExpandSourceKind
 
 /// <summary>
 /// Buildtime member-expansion loop: <c>expand m in allmemvarof(T)</c>. Unlike the runtime
-/// <see cref="EachStatement"/>, this never survives to codegen — it is UNROLLED at monomorphization
+/// <see cref="ForStatement"/>, this never survives to codegen — it is UNROLLED at monomorphization
 /// (once per member of the concrete <c>T</c>) by the generic AST rewriter, with the handle
 /// projections (<c>m.name</c>, <c>m.id</c>) folded to literals and <c>x.${m.name}</c> splices
 /// rewritten to real member accesses.
@@ -790,14 +790,14 @@ public record WhenStatement(
     WhenArmExpansion? ArmExpansion = null) : Statement(Location: Location)
 {
     /// <summary>
-    /// The step of an <c>each</c> loop, matching what the walk hands out next. The item is lent by the walk,
+    /// The step of a <c>for</c> loop, matching what the walk hands out next. The item is lent by the walk,
     /// which still keeps it (a walk over a list reads the element in place), so the subject owns nothing and
     /// is not torn down when the step ends.
     /// </summary>
-    public bool IsEachStep { get; init; }
+    public bool IsForStep { get; init; }
 
     /// <summary>
-    /// With <see cref="IsEachStep"/>: the walk hands each item over instead of lending it (<c>each x in steal xs</c>),
+    /// With <see cref="IsForStep"/>: the walk hands each item over instead of lending it (<c>for x in steal xs</c>),
     /// so the subject owns the item and is torn down when the step ends, unless the step moves the item on.
     /// </summary>
     public bool StepHandsOver { get; init; }

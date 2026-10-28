@@ -9,10 +9,10 @@ namespace Builder.Verification;
 
 /// <summary>
 /// Build-time shape checks (RazorForge). A container's SHAPE is its element count and positions; a
-/// <c>@reshaping</c> routine can change it. While an <c>each</c> loop goes through a container, or a statement
+/// <c>@reshaping</c> routine can change it. While a <c>for</c> loop goes through a container, or a statement
 /// works on one of its entity elements in place, the shape must not change: the loop could no longer trust
 /// its next element, and the element access could be left pointing at a moved or freed element.
-/// <para>The direct case (<c>xs.add_last(...)</c> inside <c>each x in xs</c>) is RF-S625 at the call. This
+/// <para>The direct case (<c>xs.add_last(...)</c> inside <c>for x in xs</c>) is RF-S625 at the call. This
 /// check also sees the INDIRECT cases, because every routine gets a RESHAPE EFFECT: the set of its
 /// parameters (and <c>me</c>) whose shape it may change. A <c>@reshaping</c> routine changes <c>me</c>; a
 /// routine that hands one of its parameters to a slot that is changed changes that parameter too,
@@ -421,7 +421,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
 
     /// <summary>
     /// Walks a statement, checking the calls in every region where a container's shape must stay still:
-    /// the body of an <c>each</c> loop over a container it can name as a path, and a statement that works on an entity
+    /// the body of a <c>for</c> loop over a container it can name as a path, and a statement that works on an entity
     /// element of a named container in place.
     /// </summary>
     private void CheckStatementShapes(Statement stmt, List<ShapeGuard> guards,
@@ -746,7 +746,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                     {
                         report(code: SemanticDiagnosticCode.ReshapingDuringIteration,
                             message:
-                            $"You are trying to {change} while an `each` loop is going through '{g.Shown}': {same}, and after " +
+                            $"You are trying to {change} while a `for` loop is going through '{g.Shown}': {same}, and after " +
                             $"such a change the loop could no longer trust that its next element is really the next one. " +
                             $"Make the change after the loop, or {multi}.",
                             location: call.Location);
@@ -940,7 +940,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
         {
             report(code: SemanticDiagnosticCode.ReshapingDuringIteration,
                 message:
-                $"You are trying to {attempt} while an `each` loop is going through '{guard.Shown}': {why}. " +
+                $"You are trying to {attempt} while a `for` loop is going through '{guard.Shown}': {why}. " +
                 "After such a change the loop could no longer trust that its next element is really the " +
                 "next one. Make the change after the loop.",
                 location: location);
@@ -955,7 +955,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
             location: location);
     }
 
-    /// <summary>The type of an <c>each</c> loop's source, read from its iterator declaration among the
+    /// <summary>The type of a <c>for</c> loop's source, read from its iterator declaration among the
     /// statements before the loop (<c>var _iter = xs.iter()</c>): the analyzed expression with that path.</summary>
     private static TypeSymbol? LoopSourceType(string path, List<Statement> preceding)
     {

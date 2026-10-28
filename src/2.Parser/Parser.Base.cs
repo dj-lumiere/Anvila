@@ -495,6 +495,7 @@ public partial class Parser
             TokenType.Preset => true,
             TokenType.If => true,
             TokenType.Loop => true,
+            TokenType.For => true,
             TokenType.Each => true,
             TokenType.Return => true,
             TokenType.Throw => true,

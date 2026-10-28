@@ -101,7 +101,7 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         // Moves the Stage 2b spawn-boundary `promote()` out of codegen into a real AST call: for each
         // Roamed[T] argument of a suspended/threaded spawn, inserts `arg.promote()` before the spawn.
         new RoamedSpawnPromotionLoweringPass(ctx: ctx).Run(program: program);
-        // Opens a shape use of a container around an `each` loop over it and around a statement that reaches
+        // Opens a shape use of a container around a `for` loop over it and around a statement that reaches
         // one of its entity elements through a token, so a change that could move the elements crashes
         // (require_shape_free at every @reshaping routine). After OperatorLoweringPass, which builds the tokens.
         // Only where the language checks shapes at run time: RazorForge rejects those changes at build

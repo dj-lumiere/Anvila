@@ -131,7 +131,7 @@ internal static class RoutineValueCalls
     }
 
     /// <summary>
-    /// The step of an <c>each</c> loop (<c>try iterator.emit()</c>, built by the loop's lowering) as the
+    /// The step of a <c>for</c> loop (<c>try iterator.emit()</c>, built by the loop's lowering) as the
     /// lookup-shaped step a recovery variant takes when the iterator may call a routine value: its end stays
     /// the absent state and a failure beneath it (inside the lambda it calls) comes back as the error state, so
     /// it can be propagated instead of ending the loop. Null when <paramref name="subject"/> is no such step, or
@@ -225,7 +225,7 @@ internal static class RoutineValueCalls
         return result;
     }
 
-    /// <summary>Whether <paramref name="expr"/> is an <c>each</c> loop's step over an iterator that may call a
+    /// <summary>Whether <paramref name="expr"/> is a <c>for</c> loop's step over an iterator that may call a
     /// routine value (see <see cref="CheckIterationStep"/>).</summary>
     public static bool IsRecoverableIterationStep(Expression expr)
     {

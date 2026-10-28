@@ -271,7 +271,7 @@ internal sealed class TesseraWriter
                 data: @U32 = text.data
                 count: U64 = text.count
 
-                each i in 0 til count
+                for i in 0 til count
                     code: U32 = data.stride(i).peek()
                     character: Char = code.to[Char]()
                     into.write("{character}")

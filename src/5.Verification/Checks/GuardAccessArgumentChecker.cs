@@ -70,7 +70,7 @@ internal sealed class GuardAccessArgumentChecker(DiagnosticReporter report)
                 Walk(stmt: loop.Body, open: open);
                 Walk(stmt: loop.ThenBranch, open: open);
                 return;
-            case EachStatement each:
+            case ForStatement each:
                 CheckOwn(expr: each.Iterable, inOwnStatement: false, open: open);
                 Walk(stmt: each.Body, open: open);
                 Walk(stmt: each.ThenBranch, open: open);

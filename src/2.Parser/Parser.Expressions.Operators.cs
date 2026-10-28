@@ -470,11 +470,11 @@ public partial class Parser
         Expression expr = ParseInfix();
 
         // `x in coll` as a test: containment is written container-first. `in` only introduces a loop
-        // source (`each x in xs`, `expand m in ...`), which those headers consume themselves.
+        // source (`for x in xs`, `expand m in ...`), which those headers consume themselves.
         if (!_inWhenPatternContext && !_inWhenClauseBody && Check(type: TokenType.In))
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.InAsMembership,
-                message: "'in' only names what a loop walks (`each x in xs`). To test membership, " +
+                message: "'in' only names what a loop walks (`for x in xs`). To test membership, " +
                          "ask the container: `xs.has(x)` (or `xs.lacks(x)`, and `d.has_key(k)` on a map).",
                 fix: MembershipFix(start: start));
         }

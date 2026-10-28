@@ -224,7 +224,7 @@ internal sealed class CallOverloadResolutionPass
             case LoopStatement loop:
                 WalkStatement(stmt: loop.Body);
                 break;
-            case EachStatement f:
+            case ForStatement f:
                 WalkExpression(expr: f.Iterable);
                 WalkStatement(stmt: f.Body);
                 break;
@@ -576,7 +576,7 @@ internal sealed class CallOverloadResolutionPass
     /// Returns true when the call's ResolvedType is a stale abstract-protocol return left by
     /// GenericAstRewriter on a monomorphized body whose receiver is now fully concrete.
     /// Forces a full re-resolution of the call (e.g. iter()) on the concrete receiver so that
-    /// the each-loop iterator var gets the concrete type instead of leaking a protocol to codegen.
+    /// the for-loop iterator var gets the concrete type instead of leaking a protocol to codegen.
     /// Only fires when the receiver has no generic parameters — a still-generic receiver would
     /// spawn unbounded RangeEmittable[RangeEmittable[…]] monomorphization.
     /// </summary>
@@ -661,7 +661,7 @@ internal sealed class CallOverloadResolutionPass
         // body leaves member-call ResolvedTypes stale: `var n = me.count()` keeps an ErrorTypeSymbol so `n` is
         // untyped and a later `n.eq(...)` can't recover its receiver; `var it = r.iter()` keeps the abstract
         // Emittable[S64] which leaks into codegen. Propagating the concrete return forward types the local
-        // (count→U64 lets `n` resolve, iter→RangeEmittable[S64] fixes the each-loop var).
+        // (count→U64 lets `n` resolve, iter→RangeEmittable[S64] fixes the for-loop var).
         if (call.ResolvedType is null or ErrorTypeSymbol or ProtocolTypeSymbol &&
             memberRoutine.ReturnType is { } concreteRet &&
             concreteRet is not ProtocolTypeSymbol and not ErrorTypeSymbol)

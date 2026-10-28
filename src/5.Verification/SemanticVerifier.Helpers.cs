@@ -2306,7 +2306,7 @@ public sealed partial class SemanticVerifier
         if (!IsOrObeysIterable(iterableType: iterableType))
         {
             ReportError(code: SemanticDiagnosticCode.TypeNotIterable,
-                message: $"You walk '{iterableType.Name}' with 'each' here, but it has no 'emitter()'. A type that " +
+                message: $"You walk '{iterableType.Name}' with 'for' here, but it has no 'emitter()'. A type that " +
                          "obeys 'Emittable' can be walked.",
                 location: location);
             return ErrorTypeSymbol.Instance;

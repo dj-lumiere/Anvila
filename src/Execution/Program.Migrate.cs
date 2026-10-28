@@ -142,6 +142,12 @@ internal partial class Program
             return RunRewriteStep(paths: paths, check: check, rewrite: RewritePierce);
         }
 
+        // `--step for`: the loop over a range or a collection is `for x in xs`, not `each x in xs`.
+        if (step == "for")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteForKeyword);
+        }
+
         // `--step random`: a draw names its type as a type argument (`next_u64()` is `next[U64]()`).
         if (step == "random")
         {
@@ -287,7 +293,7 @@ internal partial class Program
                 if (old && tokens[index: i - 1].Text == "." && tokens[index: i + 1].Text == "(")
                 {
                     Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: a dict's '{pairs}()' is 'items()' now, " +
-                                             "(key, value) pairs: each (k, v) in d.items(), rewrite it by hand " +
+                                             "(key, value) pairs: for (k, v) in d.items(), rewrite it by hand " +
                                              "(a directory's 'entries()' stays)");
                     namesToRename++;
                 }
@@ -301,7 +307,7 @@ internal partial class Program
                              t.Text is "make_channel" or "make_shared_channel"))
                 {
                     Console.WriteLine(value: $"{file}:{channel.Line}: '{channel.Text}' is a Mailbox[T] now " +
-                                             "(var m = Mailbox[T](capacity: n), m.add_last(value: x), each x in m, " +
+                                             "(var m = Mailbox[T](capacity: n), m.add_last(value: x), for x in m, " +
                                              "m.close()), rewrite it by hand");
                     namesToRename++;
                 }
@@ -533,7 +539,7 @@ internal partial class Program
     private static readonly string[] MigrationSteps =
     [
         "indent", "have", "suffix", "failable", "names", "modules", "access", "cpu-events", "addr", "files", "until",
-        "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random"
+        "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random", "for"
     ];
 
     /// <summary>The named steps as a list for a message: <c>indent, have, ... or random</c>.</summary>
@@ -739,7 +745,7 @@ internal partial class Program
     [
         TokenType.Newline, TokenType.Indent, TokenType.Dedent, TokenType.Comma, TokenType.Colon, TokenType.FatArrow,
         TokenType.Arrow, TokenType.Then, TokenType.Else, TokenType.If, TokenType.Elseif, TokenType.Until,
-        TokenType.Return, TokenType.When, TokenType.Each, TokenType.In, TokenType.Throw, TokenType.Eof,
+        TokenType.Return, TokenType.When, TokenType.For, TokenType.Each, TokenType.In, TokenType.Throw, TokenType.Eof,
         TokenType.Assign, TokenType.PlusAssign, TokenType.MinusAssign, TokenType.StarAssign, TokenType.SlashAssign,
         TokenType.PercentAssign, TokenType.AmpersandAssign, TokenType.PipeAssign, TokenType.CaretAssign,
         TokenType.LeftShiftAssign, TokenType.RightShiftAssign, TokenType.LogicalRightShiftAssign,
@@ -1006,6 +1012,14 @@ internal partial class Program
         for (int i = 0; i < tokens.Count; i++)
         {
             Token token = tokens[index: i];
+            // `each x in xs` is `for x in xs`: `each` is a reserved word, so a token of it is always the loop keyword.
+            if (token.Type == TokenType.Each && token.Position >= 0)
+            {
+                edits.Add(item: new MigrationEdit(Start: token.Position, Length: token.Text.Length, Replacement: "for",
+                    Line: token.Line, What: "each → for"));
+                continue;
+            }
+
             // `dangerous routine T.destruct()` is `routine T.destruct()`: the builder calls it (the old name `destroy`
             // is renamed below).
             if (token.Type == TokenType.Dangerous && i + 4 < tokens.Count && tokens[index: i + 1].Type == TokenType.Routine &&
@@ -1812,7 +1826,7 @@ internal partial class Program
         {
             Token token = tokens[index: i];
             if (token.Type is not (TokenType.Check or TokenType.Drop or TokenType.Nothing or TokenType.Todo or TokenType.ReservedWord
-                or TokenType.Viewing or TokenType.Modifying))
+                or TokenType.For or TokenType.Viewing or TokenType.Modifying))
             {
                 continue;
             }

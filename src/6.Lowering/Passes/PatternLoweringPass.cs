@@ -150,7 +150,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
         TypeSymbol? subjectType = s.Expression.ResolvedType;
 
-        // A token subject (`each m in marks` binds one) is matched by the value it reaches.
+        // A token subject (`for m in marks` binds one) is matched by the value it reaches.
         if (subjectType is { } tokenType && Declaration.RuntimeContract.AccessTokenTypes.Contains(item: tokenType.BareName) &&
             Verification.Wrappers.GetWrapperInnerType(wrapperType: tokenType) is { } reached)
         {
@@ -187,11 +187,11 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             subjectType: subjectType,
             loweredClauses: loweredClauses,
             loc: loc,
-            ownsSubject: !s.IsEachStep || s.StepHandsOver || StepHandsOver(step: s));
+            ownsSubject: !s.IsForStep || s.StepHandsOver || StepHandsOver(step: s));
     }
 
     /// <summary>
-    /// Whether the step of an <c>each</c> loop walks an emitter that hands its items over (<c>select</c>,
+    /// Whether the step of a <c>for</c> loop walks an emitter that hands its items over (<c>select</c>,
     /// <c>select_many</c>, see <see cref="Declaration.EmitterWalk"/>): the step then owns its item and tears it down
     /// when it ends, unless the step moves it on.
     /// </summary>
@@ -226,7 +226,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             string subjName = NextTempName(prefix: "subj");
             // The temp owns what the subject produced (`when try watcher.hold()` holds a handle), so it is
             // torn down when the `when` ends. A program is lowered after its scope teardown ran, so the mark
-            // tells the late teardown run to give it its destroys. The step of an `each` loop owns nothing,
+            // tells the late teardown run to give it its destroys. The step of a `for` loop owns nothing,
             // the walk lends its item.
             AddTempVar(hoisted: hoisted,
                 name: subjName,
@@ -1475,7 +1475,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// <summary>
     /// Gives each reference to a binding declared in <paramref name="binding"/> that has no type in
     /// <paramref name="body"/> the bound value's type. A generic template analyzed before its subject was
-    /// concrete (an <c>each</c> over a protocol-typed <c>me</c>) leaves those references untyped, and the
+    /// concrete (a <c>for</c> over a protocol-typed <c>me</c>) leaves those references untyped, and the
     /// bound value is concrete once the body is monomorphized. Also used for the loop variable an inlined
     /// iterator step binds (IteratorInlineLoweringPass).
     /// </summary>

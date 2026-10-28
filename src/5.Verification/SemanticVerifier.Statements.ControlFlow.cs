@@ -354,34 +354,34 @@ public sealed partial class SemanticVerifier
         _registry.ExitScope();
     }
 
-    private void AnalyzeEachStatement(EachStatement eachStmt)
+    private void AnalyzeForStatement(ForStatement forStmt)
     {
-        _registry.EnterScope(kind: ScopeKind.Loop, name: "each");
+        _registry.EnterScope(kind: ScopeKind.Loop, name: "for");
 
         // Analyze iterable expression
-        TypeSymbol iterableType = AnalyzeExpression(expression: eachStmt.Iterable);
+        TypeSymbol iterableType = AnalyzeExpression(expression: forStmt.Iterable);
 
         // Get element type from iterable
         TypeSymbol elementType =
-            GetIterableElementType(iterableType: iterableType, location: eachStmt.Location);
+            GetIterableElementType(iterableType: iterableType, location: forStmt.Location);
 
         // Handle either simple variable or destructuring pattern
-        if (eachStmt.Variable != null)
+        if (forStmt.Variable != null)
         {
             // Simple variable binding: for item in items
-            _registry.DeclareVariable(name: eachStmt.Variable,
+            _registry.DeclareVariable(name: forStmt.Variable,
                 type: elementType,
-                location: eachStmt.Location);
-            _deadrefVariables.Remove(item: eachStmt.Variable);
+                location: forStmt.Location);
+            _deadrefVariables.Remove(item: forStmt.Variable);
         }
-        else if (eachStmt.VariablePattern != null)
+        else if (forStmt.VariablePattern != null)
         {
             // Destructuring pattern: for (index, item) in items.enumerate()
-            DeclareEachDestructuringBindings(eachStmt: eachStmt, elementType: elementType);
+            DeclareForDestructuringBindings(forStmt: forStmt, elementType: elementType);
         }
 
         // #22: Track active iteration source for reshaping-during-iteration check
-        string? iterationSourceName = eachStmt.Iterable is IdentifierExpression iterSource
+        string? iterationSourceName = forStmt.Iterable is IdentifierExpression iterSource
             ? iterSource.Name
             : null;
 
@@ -391,7 +391,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Analyze loop body
-        AnalyzeStatement(statement: eachStmt.Body);
+        AnalyzeStatement(statement: forStmt.Body);
 
         if (iterationSourceName != null)
         {
@@ -402,39 +402,39 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Declares the bindings of an each-loop destructuring pattern: matched positionally against a
+    /// Declares the bindings of a for-loop destructuring pattern: matched positionally against a
     /// tuple element type, or with error types (plus a diagnostic) for a non-tuple element type.
     /// </summary>
-    private void DeclareEachDestructuringBindings(EachStatement eachStmt, TypeSymbol elementType)
+    private void DeclareForDestructuringBindings(ForStatement forStmt, TypeSymbol elementType)
     {
         if (elementType is TupleTypeSymbol tupleType)
         {
-            DeclareTupleDestructuringBindings(eachStmt: eachStmt, tupleType: tupleType);
+            DeclareTupleDestructuringBindings(forStmt: forStmt, tupleType: tupleType);
         }
         else
         {
-            DeclareErrorDestructuringBindings(eachStmt: eachStmt, elementType: elementType);
+            DeclareErrorDestructuringBindings(forStmt: forStmt, elementType: elementType);
         }
     }
 
     /// <summary>
-    /// Declares each-loop bindings for a tuple element type, matching positionally and reporting an
+    /// Declares for-loop bindings for a tuple element type, matching positionally and reporting an
     /// arity mismatch when the binding count differs from the tuple's element count.
     /// </summary>
-    private void DeclareTupleDestructuringBindings(EachStatement eachStmt, TupleTypeSymbol tupleType)
+    private void DeclareTupleDestructuringBindings(ForStatement forStmt, TupleTypeSymbol tupleType)
     {
-        int bindingCount = eachStmt.VariablePattern!.Bindings.Count;
+        int bindingCount = forStmt.VariablePattern!.Bindings.Count;
         if (bindingCount != tupleType.Arity)
         {
             ReportError(code: SemanticDiagnosticCode.DestructuringArityMismatch,
                 message:
                 $"Destructuring pattern has {bindingCount} bindings but tuple has {tupleType.Arity} elements.",
-                location: eachStmt.VariablePattern.Location);
+                location: forStmt.VariablePattern.Location);
         }
 
-        for (int i = 0; i < eachStmt.VariablePattern.Bindings.Count; i++)
+        for (int i = 0; i < forStmt.VariablePattern.Bindings.Count; i++)
         {
-            DestructuringBinding binding = eachStmt.VariablePattern.Bindings[index: i];
+            DestructuringBinding binding = forStmt.VariablePattern.Bindings[index: i];
             if (binding.BindingName == null)
             {
                 continue;
@@ -452,12 +452,12 @@ public sealed partial class SemanticVerifier
     /// Reports a non-tuple destructuring mismatch and declares all bindings as the error type so
     /// downstream analysis can continue.
     /// </summary>
-    private void DeclareErrorDestructuringBindings(EachStatement eachStmt, TypeSymbol elementType)
+    private void DeclareErrorDestructuringBindings(ForStatement forStmt, TypeSymbol elementType)
     {
         ReportError(code: SemanticDiagnosticCode.DestructuringArityMismatch,
             message: $"Cannot destructure non-tuple type '{elementType.Name}' in for loop.",
-            location: eachStmt.VariablePattern!.Location);
-        foreach (string? name in eachStmt.VariablePattern
+            location: forStmt.VariablePattern!.Location);
+        foreach (string? name in forStmt.VariablePattern
                                          .Bindings
                                          .Select(selector: b => b.BindingName)
                                          .Where(predicate: n => n != null))
@@ -499,7 +499,7 @@ public sealed partial class SemanticVerifier
     private void AnalyzeWhenStatement(WhenStatement whenStmt)
     {
         TypeSymbol matchedType = AnalyzeExpression(expression: whenStmt.Expression);
-        // A token (`each m in marks` binds one) is matched by the value it reaches.
+        // A token (`for m in marks` binds one) is matched by the value it reaches.
         if (Declaration.RuntimeContract.AccessTokenTypes.Contains(item: matchedType.BareName) &&
             Wrappers.GetWrapperInnerType(wrapperType: matchedType) is { } reached)
         {
@@ -528,8 +528,8 @@ public sealed partial class SemanticVerifier
                 ? wv
                 : null;
         var handledArms = new List<string>();
-        // The step of an `each` loop whose walk starts read-only hands its element out as `Viewing`.
-        bool viewingElement = whenStmt.IsEachStep &&
+        // The step of a `for` loop whose walk starts read-only hands its element out as `Viewing`.
+        bool viewingElement = whenStmt.IsForStep &&
                               whenStmt.Expression is RecoveryExpression
                               {
                                   Inner: CallExpression { Callee: MemberExpression { Object: IdentifierExpression iterator } }

@@ -195,7 +195,7 @@ internal sealed class AccessLoweringPass(TypeRegistry registry) : AstRewriter
                         ? Release(stmt: w.ThenBranch, exit: exit, loopDepth: loopDepth)
                         : null
                 };
-            case EachStatement each:
+            case ForStatement each:
                 return each with
                 {
                     Body = Release(stmt: each.Body, exit: exit, loopDepth: loopDepth + 1),

@@ -319,7 +319,7 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
 
     /// <summary>
     /// Set by semantic analysis to the <see cref="VariableInfo"/> this identifier bound to (a local,
-    /// parameter, each-loop/using/pattern binding, global, or preset), or null when it resolved to
+    /// parameter, for-loop/using/pattern binding, global, or preset), or null when it resolved to
     /// something else (type, choice case, routine) or did not resolve. Because lookup returns the ONE
     /// stored instance per binding, two references to the same binding carry the SAME object — so
     /// reference-identity gives scope-precise "same variable" grouping for the language server's
@@ -1701,7 +1701,7 @@ public record RecoveryExpression(RecoveryKind Kind, Expression Inner, SourceLoca
     /// <c>try</c>/<c>check</c> variant carrying the same arguments). Phase-6 replaces the
     /// node with this. Null until analyzed.
     /// </summary>
-    /// <summary>True for a keyword the builder writes (an <c>each</c> loop's step, a work's <c>check</c>, a
+    /// <summary>True for a keyword the builder writes (a <c>for</c> loop's step, a work's <c>check</c>, a
     /// <c>try viewing</c> opener), which is not reported for having nothing to receive.</summary>
     public bool IsSynthesized { get; init; }
 

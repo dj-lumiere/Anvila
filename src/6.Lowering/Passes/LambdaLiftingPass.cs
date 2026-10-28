@@ -255,7 +255,7 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     inheritedGenericConstraints: inheritedGenericConstraints,
                     includeMe: includeMe)
             },
-            EachStatement eachStmt => RewriteEach(eachStmt: eachStmt,
+            ForStatement forStmt => RewriteFor(forStmt: forStmt,
                 scope: scope,
                 inheritedGenericParameters: inheritedGenericParameters,
                 inheritedGenericConstraints: inheritedGenericConstraints,
@@ -394,30 +394,30 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
         return block with { Statements = statements };
     }
 
-    private Statement RewriteEach(EachStatement eachStmt, HashSet<string> scope,
+    private Statement RewriteFor(ForStatement forStmt, HashSet<string> scope,
         List<string>? inheritedGenericParameters,
         List<GenericConstraintDeclaration>? inheritedGenericConstraints, bool includeMe)
     {
         var bodyScope = new HashSet<string>(collection: scope, comparer: StringComparer.Ordinal);
-        if (eachStmt.Variable != null)
+        if (forStmt.Variable != null)
         {
-            bodyScope.Add(item: eachStmt.Variable);
+            bodyScope.Add(item: forStmt.Variable);
         }
 
-        foreach (string binding in GetPatternBindings(pattern: eachStmt.VariablePattern))
+        foreach (string binding in GetPatternBindings(pattern: forStmt.VariablePattern))
         {
             bodyScope.Add(item: binding);
         }
 
-        return eachStmt with
+        return forStmt with
         {
             Iterable =
-            RewriteExpression(expression: eachStmt.Iterable,
+            RewriteExpression(expression: forStmt.Iterable,
                 scope: scope,
                 inheritedGenericParameters: inheritedGenericParameters,
                 inheritedGenericConstraints: inheritedGenericConstraints,
                 includeMe: includeMe),
-            Body = RewriteStatement(statement: eachStmt.Body,
+            Body = RewriteStatement(statement: forStmt.Body,
                 scope: bodyScope,
                 inheritedGenericParameters: inheritedGenericParameters,
                 inheritedGenericConstraints: inheritedGenericConstraints,
@@ -1991,12 +1991,12 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
                     parameterNames: parameterNames,
                     captures: captures);
                 break;
-            case EachStatement eachStmt:
-                CollectLocalCapturesRecursive(expression: eachStmt.Iterable,
+            case ForStatement forStmt:
+                CollectLocalCapturesRecursive(expression: forStmt.Iterable,
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);
-                CollectLocalCapturesInStatement(statement: eachStmt.Body,
+                CollectLocalCapturesInStatement(statement: forStmt.Body,
                     outerScope: outerScope,
                     parameterNames: parameterNames,
                     captures: captures);

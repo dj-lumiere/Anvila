@@ -222,6 +222,10 @@ public enum GrammarDiagnosticCode
     /// <c>entity</c> (kept in one place). <c>migrate --step bundle</c> rewrites each one.</summary>
     BundleKeyword = 228,
 
+    /// <summary>A loop written <c>each x in xs</c>: <c>each</c> is a reserved word, the loop over a range or a
+    /// collection is <c>for x in xs</c>. <c>migrate --step for</c> rewrites each one.</summary>
+    EachKeyword = 229,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

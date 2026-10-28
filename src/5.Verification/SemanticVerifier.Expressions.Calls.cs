@@ -2906,7 +2906,7 @@ public sealed partial class SemanticVerifier
     {
         if (objectType is EntityTypeSymbol or RecordTypeSymbol)
         {
-            // Through an access token (`each h in holders` hands out `Modifying[Holder]`) the member variables are
+            // Through an access token (`for h in holders` hands out `Modifying[Holder]`) the member variables are
             // the held value's, as a member variable read through the token sees them.
             TypeSymbol fieldOwner = IsAccessToken(type: objectType) && WrapperShape.InnerOf(type: objectType) is { } held
                 ? held
@@ -2940,7 +2940,7 @@ public sealed partial class SemanticVerifier
                     return ErrorTypeSymbol.Instance;
                 }
 
-                // The walk an `each x in steal xs` loop or a `(steal xs).emitter()` asks for: only a collection that
+                // The walk a `for x in steal xs` loop or a `(steal xs).emitter()` asks for: only a collection that
                 // can be taken apart has one.
                 if (call.IsSynthesizedLowering && member.MemberName == Declaration.RuntimeContract.TakeEach)
                 {
@@ -3040,7 +3040,7 @@ public sealed partial class SemanticVerifier
             message: $"This walk reaches each '{ShortTypeName(type: entity!)}' where '{container}' keeps it, and {terminal}. " +
                      $"An entity has one original, which this would hold there too. To get copies, make them in the walk with " +
                      $"'.select(e => e.duplicate())'. To hand the originals over, take the container: " +
-                     $"'(steal {container}).where(...)'. To use them where they are, walk them with 'each' and pass " +
+                     $"'(steal {container}).where(...)'. To use them where they are, walk them with 'for' and pass " +
                      "tokens ('Viewing', 'Modifying').",
             location: location);
     }
@@ -3086,7 +3086,7 @@ public sealed partial class SemanticVerifier
                 location: call.Location);
         }
 
-        // The `iter()` / `emit()` an `each` loop is lowered to are the loop the program wrote, so a dangerous one
+        // The `iter()` / `emit()` a `for` loop is lowered to are the loop the program wrote, so a dangerous one
         // needs the loop inside `danger` like any other call.
         ValidateRoutineAccess(routine: memberRoutine,
             accessLocation: call.Location,
@@ -3358,7 +3358,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.ReshapingDuringIteration,
                 message:
-                $"'{memberRoutine.Name}' adds to or removes from '{iterTarget.Name}' while an 'each' loop goes through " +
+                $"'{memberRoutine.Name}' adds to or removes from '{iterTarget.Name}' while a 'for' loop goes through " +
                 "it, so the loop could no longer trust that its next element is really the next one. Collect the " +
                 "changes and make them after the loop.",
                 location: call.Location);

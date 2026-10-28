@@ -112,7 +112,7 @@ public sealed class BackendEntryValidator
     private static void Walk(ISyntaxTreeNode node, List<SemanticError> errors,
         TypeRegistry registry, HashSet<string>? locals = null, ISyntaxTreeNode? callee = null)
     {
-        // The names a routine binds itself hide a preset of the same name inside it (`each letter in word` beside
+        // The names a routine binds itself hide a preset of the same name inside it (`for letter in word` beside
         // a preset `letter`).
         if (node is RoutineDeclaration || locals == null)
         {

@@ -21,7 +21,7 @@ public sealed partial class SemanticVerifier
     private TypeSymbol IndexLookupType(TypeSymbol type)
     {
         // An iterator's `Item` in a generic body reads as its element type for indexing, as it does for member
-        // access (`each part in parts` over `Iterable[Text]`, then `part[i]`).
+        // access (`for part in parts` over `Iterable[Text]`, then `part[i]`).
         TryUnwrapMarkerReceiver(type: type, innerType: out TypeSymbol target);
         return target is RecordTypeSymbol
         {
@@ -875,7 +875,7 @@ public sealed partial class SemanticVerifier
         int dangerDepthAroundLambda = _dangerBlockDepth;
         _dangerBlockDepth = 0;
         // A parameter is a new name: an outer variable of the same name that a `steal` or `drop` ended (an earlier
-        // `each c` handed over with `steal c`) is not this one. The outer name's state comes back after the lambda.
+        // `for c` handed over with `steal c`) is not this one. The outer name's state comes back after the lambda.
         List<string> endedOuterNames = ShadowEndedNames(names: parameterNames);
         TypeSymbol returnType;
         try

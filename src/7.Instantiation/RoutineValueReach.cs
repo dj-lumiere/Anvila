@@ -8,7 +8,7 @@ namespace Builder.Instantiation;
 /// Whether a library routine's body reaches a routine value, read from the body as written (a library body may
 /// not be analyzed yet): it calls a routine value it was handed or holds in a field (<c>predicate(item)</c>,
 /// <c>me.transform(item)</c>), hands one on to another routine (<c>me.insertion_sort_by(compare: compare)</c>),
-/// or steps an iterator (<c>each item in me</c>, <c>source.emit()</c>), which may be an adapter calling a lambda.
+/// or steps an iterator (<c>for item in me</c>, <c>source.emit()</c>), which may be an adapter calling a lambda.
 /// A routine that is not failable is a wall: it is recovered beneath <c>try</c>/<c>check</c> only through
 /// the routine values that may fail it reaches (parameters and member variables of a <c>failable Callable[...]</c>
 /// type, see <see cref="RoutineValueCalls"/>).
@@ -83,7 +83,7 @@ internal static class RoutineValueReach
                 return stmt;
             }
 
-            if (stmt is EachStatement)
+            if (stmt is ForStatement)
             {
                 Found = Reach.Steps;
             }

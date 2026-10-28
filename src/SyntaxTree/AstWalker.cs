@@ -41,7 +41,7 @@ public static class AstWalker
                 {
                     Parameter parameter => parameter.Name,
                     VariableDeclaration variable => variable.Name,
-                    EachStatement each => each.Variable,
+                    ForStatement each => each.Variable,
                     CarriedValue carried => carried.Name,
                     TypePattern type => type.VariableName,
                     CrashablePattern crashable => crashable.VariableName,
@@ -181,7 +181,7 @@ public static class AstWalker
             LoopStatement s => s.ThenBranch != null
                 ? new object[] { s.Body, s.ThenBranch }
                 : new object[] { s.Body },
-            EachStatement s => EachStatementChildren(s: s),
+            ForStatement s => ForStatementChildren(s: s),
             BlockStatement s => BlockStatementChildren(s: s),
             WhenStatement s => WhenStatementChildren(s: s),
             DangerStatement s => new object[]
@@ -216,7 +216,7 @@ public static class AstWalker
         }
     }
 
-    private static IEnumerable<object> EachStatementChildren(EachStatement s)
+    private static IEnumerable<object> ForStatementChildren(ForStatement s)
     {
         if (s.VariablePattern != null)
         {

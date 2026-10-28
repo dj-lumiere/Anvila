@@ -442,7 +442,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// <summary>Visits a for statement node (iterator loop over collections)</summary>
     /// <param name="node">The for statement to visit</param>
     /// <returns>Result of visiting the for statement</returns>
-    T VisitEachStatement(EachStatement node);
+    T VisitForStatement(ForStatement node);
 
     /// <summary>Visits a buildtime member-expansion statement node (expand m in allmemvarof(T))</summary>
     /// <param name="node">The expand statement to visit</param>

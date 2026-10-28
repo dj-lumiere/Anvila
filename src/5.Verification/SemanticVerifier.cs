@@ -252,9 +252,9 @@ public sealed partial class SemanticVerifier
     private readonly HashSet<string> _activeIterationSources = [];
 
     /// <summary>
-    /// The iterators and adapters (<c>var big = boxes.where(...)</c>, the iterator an <c>each</c> loop declares) whose
+    /// The iterators and adapters (<c>var big = boxes.where(...)</c>, the iterator a <c>for</c> loop declares) whose
     /// walk starts at a read-only place (a <c>Viewing</c> token, or <c>me</c> in a <c>@readonly</c> routine). An
-    /// <c>each</c> loop over one hands its elements out as <c>Viewing</c>, whatever token <c>emit</c> gives, so a
+    /// <c>for</c> loop over one hands its elements out as <c>Viewing</c>, whatever token <c>emit</c> gives, so a
     /// read-only start stays read-only through every adapter.
     /// </summary>
     private readonly HashSet<string> _readOnlyIterators = [];

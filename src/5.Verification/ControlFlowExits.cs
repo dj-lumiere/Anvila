@@ -64,7 +64,7 @@ internal static class ControlFlowExits
     /// True when <paramref name="statement"/> contains a <c>break</c> that targets the *enclosing*
     /// loop — i.e. a break not nested inside another loop. Used by
     /// <see cref="AlwaysTerminates"/> to decide whether an unconditional <c>loop</c> has a
-    /// fall-through edge. Nested loops (<c>loop</c>/<c>while</c>/<c>each</c>) are boundaries: a break
+    /// fall-through edge. Nested loops (<c>loop</c>/<c>while</c>/<c>for</c>) are boundaries: a break
     /// inside them belongs to that inner loop, so we do not descend into them. RazorForge breaks are
     /// unlabeled, so a break always targets the nearest enclosing loop.
     /// </summary>
@@ -83,7 +83,7 @@ internal static class ControlFlowExits
             UsingStatement usingStmt => LoopBodyCanBreakOut(statement: usingStmt.Body),
             AccessStatement access => LoopBodyCanBreakOut(statement: access.Body),
             // Nested loops swallow their own breaks — do not descend.
-            LoopStatement or WhileStatement or EachStatement => false,
+            LoopStatement or WhileStatement or ForStatement => false,
             _ => false
         };
     }

@@ -367,12 +367,12 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
                     : loopStmt with { Body = newBody };
             }
 
-            case EachStatement eachStmt:
+            case ForStatement forStmt:
             {
-                Statement newBody = LowerStatement(stmt: eachStmt.Body);
-                return ReferenceEquals(objA: newBody, objB: eachStmt.Body)
+                Statement newBody = LowerStatement(stmt: forStmt.Body);
+                return ReferenceEquals(objA: newBody, objB: forStmt.Body)
                     ? stmt
-                    : eachStmt with { Body = newBody };
+                    : forStmt with { Body = newBody };
             }
 
             case WhenStatement whenStmt:
@@ -413,11 +413,11 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // A carrier PAYLOAD EXTRACTION — `<Optional/Result/Lookup>.value` (a MemberExpression on a
         // carrier), or the `CarrierPayloadExpression` the Result/Lookup path lowers to — is a VIEW
         // into a payload the carrier still owns, NOT an owning copy. It is the shape every `when`/
-        // `each` element binding takes (`else var v -> …` from `try it.emit()`'s `Optional`). Retaining it
-        // makes the loop element a co-owner (+1) that never escapes the each scope and is never
+        // `for` element binding takes (`else var v -> …` from `try it.emit()`'s `Optional`). Retaining it
+        // makes the loop element a co-owner (+1) that never escapes the for scope and is never
         // released → a per-iteration leak + needless churn. The carrier owns the payload for as long
         // as the binding is live (non-escaping), and any ESCAPING use retains at its own store site,
-        // so skip the retain here. (dj: iter can't leave the each scope → no escape machinery.)
+        // so skip the retain here. (dj: iter can't leave the for scope → no escape machinery.)
         //
         // A bare `<carrier>.value` extraction is a MOVE-OUT, not a copy, so it is not retained
         // here. Two shapes reach this: the non-escaping loop-element binding above, and
@@ -873,7 +873,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     /// True when <paramref name="init"/> extracts a carrier's inline payload — a <c>CarrierPayloadExpression</c>
     /// (the Result/Lookup arm-binding form) or a member access <c>&lt;carrier&gt;.value</c> where the receiver
     /// is a <c>Optional</c>/<c>Result</c>/<c>Lookup</c> carrier (the <c>Optional</c> arm-binding form, e.g. an
-    /// <c>each</c>/<c>when</c> element). Such a binding is a VIEW into a payload the carrier owns, so it must
+    /// <c>for</c>/<c>when</c> element). Such a binding is a VIEW into a payload the carrier owns, so it must
     /// not be retained as an owning copy.
     /// </summary>
     private static bool IsCarrierPayloadExtraction(Expression? init)

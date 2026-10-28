@@ -278,7 +278,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             return;
         }
 
-        // The check variant is the step of an `each` loop beneath a recovery keyword (RoutineValueCalls).
+        // The check variant is the step of a `for` loop beneath a recovery keyword (RoutineValueCalls).
         ErrorHandlingResult result =
             generator.GenerateVariants(routine: routine, body: body, pessimistic: false, withCheck: true);
         if (result.Error != null)
@@ -313,7 +313,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Statement variantSourceBody = GenericAstRewriter.RewriteStatement(
                     stmt: body,
                     subs: new Dictionary<string, string>());
-                // The try variant is every `each` loop's step: a lambda the iterator calls stays a plain call there.
+                // The try variant is every `for` loop's step: a lambda the iterator calls stays a plain call there.
                 _valueCallsStayPlain = kind is ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool;
                 Statement variantBody;
                 try
@@ -644,7 +644,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     registry: registry,
                     nextOnly: nextOnly),
 
-            // The step of an `each` loop over an iterator that may call a routine value (an adapter holding a
+            // The step of a `for` loop over an iterator that may call a routine value (an adapter holding a
             // lambda): it takes the iterator's check variant, whose AbsentValueError still ends the loop and whose
             // other errors, a failure inside the lambda, become this variant's failure instead of a crash.
             WhenStatement ws when registry != null && ValueCallsRecover(kind: kind, nextOnly: nextOnly) &&
@@ -681,7 +681,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 rewriter: rewriter,
                 registry: registry,
                 nextOnly: nextOnly),
-            EachStatement fs => TransformEach(fs: fs,
+            ForStatement fs => TransformFor(fs: fs,
                 kind: kind,
                 rewriter: rewriter,
                 registry: registry,
@@ -755,7 +755,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
 
     /// <summary>
     /// Set while the try variant of an iterator's <c>emit</c> is built: that variant is the step of every
-    /// <c>each</c> loop, whose absent state ENDS the loop, so a call through a routine value inside it (an
+    /// <c>for</c> loop, whose absent state ENDS the loop, so a call through a routine value inside it (an
     /// adapter's lambda) stays a plain call and its failure crashes instead of quietly ending the loop. A loop
     /// beneath a recovery keyword takes the iterator's lookup variant instead, which keeps the failure apart
     /// from the end (<see cref="TransformRecoverableIteration"/>).
@@ -767,7 +767,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Not inside the try variant of an iterator's <c>emit</c> (<see cref="_valueCallsStayPlain"/>). A variant
     /// built from a monomorphized body (<paramref name="nextOnly"/>) does it only for check and lookup, whose
     /// carrier keeps a failure beneath apart from the absent end of an iteration: such a body is an iterator's
-    /// <c>emit</c>, whose try variant is the plain step of an <c>each</c> loop. The recovering call reaches no
+    /// <c>emit</c>, whose try variant is the plain step of a <c>for</c> loop. The recovering call reaches no
     /// routine of its own (the entry travels in the value), so it needs nothing marked live.
     /// </summary>
     private static bool ValueCallsRecover(ErrorHandlingVariantKind kind, bool nextOnly)
@@ -785,7 +785,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// The <c>when</c> of an <c>each</c> loop over an iterator that may call a routine value, stepping with the
+    /// The <c>when</c> of a <c>for</c> loop over an iterator that may call a routine value, stepping with the
     /// iterator's check variant (<paramref name="checkStep"/>): its <c>AbsentValueError</c> (the walk is over) ends
     /// the loop where the <c>try</c> step's empty arm did, and an arm for any other error, a failure beneath the
     /// step, returns it as this variant's failure.
@@ -947,7 +947,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 nextOnly: nextOnly);
     }
 
-    private static EachStatement TransformEach(EachStatement fs, ErrorHandlingVariantKind kind,
+    private static ForStatement TransformFor(ForStatement fs, ErrorHandlingVariantKind kind,
         VariantCallRewriter? rewriter, TypeRegistry? registry, bool nextOnly)
     {
         // A loop not lowered yet (a library body) over an iterator that may call a routine value is lowered with a

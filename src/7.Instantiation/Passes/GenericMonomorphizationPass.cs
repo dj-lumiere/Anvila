@@ -1083,7 +1083,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             // now. An earlier round may have reached it through a body that was not lowered yet (a crashable's
             // derived diagnose reached from a recovery variant before its lowering), and the walk of the lowered
             // body no longer reaches it. Its body must still be walked as it is now, or the callees its lowering
-            // added (an each-loop's emitter, an operator's routine) stay undefined at link.
+            // added (a for-loop's emitter, an operator's routine) stay undefined at link.
             foreach (string liveKey in _ctx.LiveRoutineKeys.ToArray())
             {
                 if (!_ctx.ResidentInstanceKeys.Contains(item: liveKey) && GetBody(key: liveKey) is { } liveBody)
@@ -1898,7 +1898,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     memberRoutineName: wiredName);
                 Discover(r: seeded);
 
-                // An `each` loop steps with `try it.emit()`: the iterator step's try variant.
+                // A `for` loop steps with `try it.emit()`: the iterator step's try variant.
                 if (seeded is { IsFailable: true, Name: "emit" })
                 {
                     Discover(r: _ctx.Registry.LookupRecoveryVariant(recovered: seeded, kind: RecoveryKind.Try));
@@ -2396,7 +2396,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// <see cref="Builder.Declaration.WiredRoutineCatalog.AlwaysLiveNames"/>) — scope-exit teardown
     /// inserts <c>destruct</c> calls that must always have a concrete body, and the matching
     /// retaining <c>store</c> likewise; (2) the <c>try</c> variant of the iterator step <c>emit</c>,
-    /// reachable only through synthesized `each` iteration bodies whose owner type (ListEmitter[Byte],
+    /// reachable only through synthesized `for` iteration bodies whose owner type (ListEmitter[Byte],
     /// etc.) is created post-pass during GMP body rewriting, so ReachabilityPass cannot trace it. Kept
     /// narrow otherwise — broader sets cascade into derived-op chains (ne->eq) where the missing companion
     /// is the actual culprit.
@@ -4201,7 +4201,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             case LoopStatement loop:
                 ScanStatementForMemberRoutineGenericCalls(stmt: loop.Body);
                 break;
-            case EachStatement f:
+            case ForStatement f:
                 ScanExprForMemberRoutineGenericCalls(expr: f.Iterable);
                 ScanStatementForMemberRoutineGenericCalls(stmt: f.Body);
                 break;

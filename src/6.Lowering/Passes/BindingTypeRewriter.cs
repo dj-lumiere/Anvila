@@ -493,7 +493,7 @@ internal sealed class BindingTypeRewriter : ISyntaxTreeVisitor<bool>
         Visit(s: node.Body);
         return false;
     }
-    public bool VisitEachStatement(EachStatement node)
+    public bool VisitForStatement(ForStatement node)
     {
         Visit(e: node.Iterable);
         Visit(s: node.Body);

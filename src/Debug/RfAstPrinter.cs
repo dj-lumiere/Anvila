@@ -1432,7 +1432,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
 
 
     /// <inheritdoc/>
-    public string VisitEachStatement(EachStatement node)
+    public string VisitForStatement(ForStatement node)
     {
         // Runtime loop — lowered to loop+if before codegen; only appears in un-lowered generic defs.
         string patternBinder = node.VariablePattern != null
@@ -1440,7 +1440,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
             : "_";
         string binder = node.Variable ?? patternBinder;
         var sb = new StringBuilder();
-        sb.AppendLine(handler: $"{I}each {binder} in {node.Iterable.Accept(visitor: this)}");
+        sb.AppendLine(handler: $"{I}for {binder} in {node.Iterable.Accept(visitor: this)}");
         sb.Append(value: PrintBodyOf(stmt: node.Body));
         return sb.ToString()
                  .TrimEnd();

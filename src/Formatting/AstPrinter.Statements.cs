@@ -141,7 +141,7 @@ internal sealed partial class AstPrinter
                 PrintThenBranch(thenBranch: whileStatement.ThenBranch, depth: depth, at: whileStatement.Location);
                 break;
             case LoopStatement loop:
-                if (loop.IsIteratorEachLoop || loop.IterationSourceName != null || loop.IterationSourcePath != null)
+                if (loop.IsIteratorForLoop || loop.IterationSourceName != null || loop.IterationSourcePath != null)
                 {
                     throw Unsupported(node: loop, at: loop.Location);
                 }
@@ -150,8 +150,8 @@ internal sealed partial class AstPrinter
                 PrintBody(body: loop.Body, depth: depth + 1, at: loop.Location);
                 PrintThenBranch(thenBranch: loop.ThenBranch, depth: depth, at: loop.Location);
                 break;
-            case EachStatement each:
-                PrintEach(each: each, start: start, depth: depth, prefix: prefix);
+            case ForStatement each:
+                PrintFor(each: each, start: start, depth: depth, prefix: prefix);
                 break;
             case ExpandStatement expand:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix,
@@ -243,7 +243,7 @@ internal sealed partial class AstPrinter
         }
     }
 
-    /// <summary>An <c>else</c> header and its block (of an if, a while or an each).</summary>
+    /// <summary>An <c>else</c> header and its block (of an if, a while or a for).</summary>
     private void PrintThenBranch(Statement? thenBranch, int depth, SourceLocation at)
     {
         if (thenBranch != null)
@@ -287,12 +287,12 @@ internal sealed partial class AstPrinter
                     Expr(expression: c.Init, context: ExprContext.ListItem)))));
     }
 
-    private void PrintEach(EachStatement each, int start, int depth, Doc prefix)
+    private void PrintFor(ForStatement each, int start, int depth, Doc prefix)
     {
         string variable = each.VariablePattern != null
             ? BindingsText(bindings: each.VariablePattern.Bindings)
-            : each.Variable ?? throw Refuse(at: each.Location, reason: "an each loop without a variable");
-        EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "each " + variable + " in "),
+            : each.Variable ?? throw Refuse(at: each.Location, reason: "a for loop without a variable");
+        EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "for " + variable + " in "),
             Expr(expression: each.Iterable, context: ExprContext.Statement), With(carried: each.With)));
         PrintBody(body: each.Body, depth: depth + 1, at: each.Location);
         PrintThenBranch(thenBranch: each.ThenBranch, depth: depth, at: each.Location);
