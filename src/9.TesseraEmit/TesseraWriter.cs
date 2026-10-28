@@ -789,7 +789,7 @@ internal sealed class TesseraWriter
 
         name = UniqueName(wanted: $"RF_DATA_{_texts.Count}");
         _texts[key: key] = name;
-        _globals.Append(value: $"{Private}preset {name}: &{type} <- {initial}\n\n");
+        _globals.Append(value: $"{Private}preset {name}: {type} = {initial}\n\n");
         // The value is a pointer to the first element, taken from the view of every element.
         name = $"{name}.getview().to[@{TypeText(type: data.ElementType)}]()";
         _texts[key: key] = name;
@@ -799,8 +799,8 @@ internal sealed class TesseraWriter
     /// <summary>
     /// The aggregate preset (an <c>Items[T, N]</c> or <c>Bits[N]</c> table) <paramref name="name"/> names,
     /// seen from <paramref name="routine"/>: the bare name, then qualified by the routine's module, as in the LLVM
-    /// emitter. Its table is read-only memory (a Tessera preset in memory), declared once; the preset's name is the
-    /// table's address. Null when the
+    /// emitter. Its table is a Tessera preset, a value in read-only data declared once, which Tessera reads in place
+    /// through its name (a routine on the table's address, `peek` included, takes it as a view). Null when the
     /// name is not an aggregate preset.
     /// </summary>
     public (string Global, TypeSymbol Type)? AggregatePreset(string name, RoutineInfo routine)
@@ -831,7 +831,7 @@ internal sealed class TesseraWriter
             ? TesseraRoutineWriter.ConstantText(literal: literal)
             : throw new NotSupportedException(
                 message: $"The Tessera backend found a non-literal element in the preset {preset.QualifiedName}."));
-        _globals.Append(value: $"{Private}preset {global}: &{type} <- [{string.Join(separator: ", ", values: values)}]\n\n");
+        _globals.Append(value: $"{Private}preset {global}: {type} = [{string.Join(separator: ", ", values: values)}]\n\n");
         return (global, preset.Type);
     }
 
