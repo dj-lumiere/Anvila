@@ -3282,6 +3282,11 @@ internal static class GenericAstRewriter
                 CrashableTypeSymbol => "Crashable",
                 _ => TypeRegistry.KindMarkerProtocolName(type: concrete)
             };
+            if (kind.Name == RuntimeContract.DerivedDisplayKind)
+            {
+                return registry.DisplaysByDerive(type: concrete);
+            }
+
             return kindName == kind.Name || registry.TypeObeysProtocol(type: concrete, protocolName: kind.Name);
         }
 

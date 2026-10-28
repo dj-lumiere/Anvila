@@ -693,6 +693,24 @@ public sealed partial class TypeRegistry
 
     /// <summary>The marker protocol every type of <paramref name="type"/>'s kind obeys (<c>RecordType</c>,
     /// <c>EntityType</c>, <c>ChoiceType</c>, <c>FlagsType</c>), else null.</summary>
+    /// <summary>
+    /// Whether <paramref name="type"/> is a record or an entity whose <c>represent</c> is the one the builder derives
+    /// (it writes none of its own, and neither does its generic definition): its text is its type name and its member
+    /// variables, so a derived <c>diagnose</c> can write it the same way with each member in its diagnose form. A
+    /// tuple, a crashable and a type that writes its own <c>represent</c> (a number, <c>Text</c>, a collection) are not.
+    /// </summary>
+    public bool DisplaysByDerive(TypeSymbol type)
+    {
+        if (type is not (RecordTypeSymbol or EntityTypeSymbol) || type is TupleTypeSymbol or CrashableTypeSymbol ||
+            GetRcWrapperBaseName(type: type) is not null || WrapperShape.TryGet(type: type, name: out _, inner: out _))
+        {
+            return false;
+        }
+
+        RoutineInfo? represent = LookupMemberRoutine(type: type, memberRoutineName: RuntimeContract.Display.Represent);
+        return represent == null || represent.IsSynthesized || represent.OwnerType is GenericParameterTypeSymbol;
+    }
+
     internal static string? KindMarkerProtocolName(TypeSymbol type)
     {
         return type.Category switch

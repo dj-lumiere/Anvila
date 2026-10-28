@@ -226,6 +226,10 @@ public static class RuntimeContract
         public const string Duplicate = "duplicate";
     }
 
+    /// <summary>The kind a buildtime type switch tests (<c>when T</c> / <c>is DerivedDisplay</c>) for a record or entity
+    /// whose <c>represent</c> is the one the builder derives (see <see cref="TypeRegistry.DisplaysByDerive"/>).</summary>
+    public const string DerivedDisplayKind = "DerivedDisplay";
+
     /// <summary>The auto-derived display routines emitted for every type.</summary>
     public static class Display
     {
