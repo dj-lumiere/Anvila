@@ -395,6 +395,29 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     ///   <item>A replacement expression (often the original, or a temp-var ref).</item>
     /// </list>
     /// </summary>
+    /// <summary>
+    /// Lowers <c>steal x</c>. The wrapper goes, except on a record whose copy takes one more count (a <c>Text</c>, a
+    /// record holding a counted value): there the copy pass that runs later must see the move, or it would
+    /// copy the value into its new place while the name it was taken from is never torn down, and the count stays
+    /// one too high.
+    /// </summary>
+    private (List<Statement> Hoisted, Expression Expr) LowerSteal(StealExpression steal)
+    {
+        (List<Statement> hoisted, Expression operand) = LowerExpr(expr: steal.Operand);
+        TypeSymbol? type = steal.Operand.ResolvedType;
+        // A counted handle keeps the stripped form: the lowerings after this one balance a handle's count by the
+        // copy they add for it (a Suflae construction takes a handle it is given without one).
+        if (type is null or EntityTypeSymbol || TypeRegistry.GetRcWrapperBaseName(type: type) is not null)
+        {
+            return (hoisted, operand);
+        }
+
+        TypeRegistry.Lifecycle lifecycle = ctx.Registry.GetLifecycle(type: type);
+        return lifecycle is { IsBorrow: false, Store: not null }
+            ? (hoisted, steal with { Operand = operand })
+            : (hoisted, operand);
+    }
+
     private (List<Statement> Hoisted, Expression Expr) LowerExpr(Expression expr)
     {
         return expr switch
@@ -449,9 +472,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 ConsumesReceiver = true,
                 LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: release)
             }),
-            StealExpression steal =>
-                // Strip the wrapper -- ownership transfer semantics are only needed during SA.
-                LowerExpr(expr: steal.Operand),
+            StealExpression steal => LowerSteal(steal: steal),
             InsertedTextExpression ftext => LowerInsertedText(ftext: ftext, expr: expr),
             ConditionalExpression cond => LowerConditionalExpr(cond: cond),
             TupleLiteralExpression tuple => LowerTupleLiteral(tuple: tuple),

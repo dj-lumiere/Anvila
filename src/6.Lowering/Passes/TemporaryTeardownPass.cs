@@ -141,6 +141,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         foreach (string key in bodies.Keys.ToList())
         {
             _scopeHoisted = false;
+            CountPastSpillsIn(body: bodies[key: key]);
             bodies[key: key] = WithScopeTeardown(body: TransformStatement(stmt: bodies[key: key]));
         }
     }
@@ -163,6 +164,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             using (ctx.Registry.ViewSurfaceOf(fileName: entry.Ast.Body.Location.FileName))
             {
                 _scopeHoisted = false;
+                CountPastSpillsIn(body: entry.Ast.Body);
                 lowered = WithScopeTeardown(r: entry.Ast with { Body = TransformStatement(stmt: entry.Ast.Body) }).Body;
             }
 
@@ -193,6 +195,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 lower: (_, entry) =>
                 {
                     _scopeHoisted = false;
+                    CountPastSpillsIn(body: entry.Ast.Body);
                     return WithScopeTeardown(r: entry.Ast with { Body = TransformStatement(stmt: entry.Ast.Body) })
                        .Body;
                 });
@@ -201,6 +204,24 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         {
             _instantiated = false;
         }
+    }
+
+    /// <summary>
+    /// Moves the spill counter past every <c>__tt_N</c> local <paramref name="body"/> declares already (a monomorphized
+    /// body keeps the spills an earlier run made over its definition), so a new spill never takes the name of one and
+    /// a later read never reaches the wrong local.
+    /// </summary>
+    private void CountPastSpillsIn(Statement body)
+    {
+        AstWalker.Walk(root: body, visit: node =>
+        {
+            if (node is VariableDeclaration { Name: var name } &&
+                name.StartsWith(value: "__tt_", comparisonType: StringComparison.Ordinal) &&
+                int.TryParse(s: name.AsSpan(start: 5), result: out int n) && n >= _counter)
+            {
+                _counter = n + 1;
+            }
+        });
     }
 
     /// <summary>True while lowering monomorphized bodies (see <see cref="RunOnInstantiatedGenericBodies"/>).</summary>
@@ -220,6 +241,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     private RoutineDeclaration LowerRoutine(RoutineDeclaration r)
     {
         _scopeHoisted = false;
+        CountPastSpillsIn(body: r.Body);
         Statement body = TransformStatement(stmt: r.Body);
         RoutineDeclaration lowered = r.Body == body
             ? r
@@ -747,10 +769,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     }
 
     /// <summary>Whether a part of <paramref name="whole"/> lives on after the statement: the whole is kept and may
-    /// still point into the part.</summary>
-    private bool PartKept(Expression whole)
+    /// still point into the part (<paramref name="part"/>, the receiver, object or operand being visited).</summary>
+    private bool PartKept(Expression whole, Expression? part)
     {
-        return _kept && MayHoldReceiver(type: whole.ResolvedType, depth: 0);
+        return _kept && MayHoldReceiver(type: whole.ResolvedType, part: part?.ResolvedType, depth: 0);
     }
 
     private Expression Visit(Expression e, bool objectPos, List<Spill> spills)
@@ -788,7 +810,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 Expression newObj = VisitIn(e: m.Object,
                     objectPos: !fieldMayAlias,
                     spills: spills,
-                    kept: PartKept(whole: m));
+                    kept: PartKept(whole: m, part: m.Object));
                 if (!fieldMayAlias && IsSpillableEntityTemporary(e: newObj))
                 {
                     newObj = SpillEntityTemporary(producer: newObj, consumer: m, spills: spills);
@@ -811,7 +833,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
 
             case BinaryExpression b:
             {
-                bool operandsKept = PartKept(whole: b);
+                bool operandsKept = PartKept(whole: b, part: b.Left) || PartKept(whole: b, part: b.Right);
                 return b with
                 {
                     Left = VisitIn(e: b.Left, objectPos: false, spills: spills, kept: operandsKept),
@@ -822,8 +844,26 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             case UnaryExpression u:
                 return u with
                 {
-                    Operand = VisitIn(e: u.Operand, objectPos: false, spills: spills, kept: PartKept(whole: u))
+                    Operand = VisitIn(e: u.Operand,
+                        objectPos: false,
+                        spills: spills,
+                        kept: PartKept(whole: u, part: u.Operand))
                 };
+
+            // A construction keeps its member values (`Optional[Text](present: true, value: a + b)`, the value a
+            // recovery variant gives back), so a value is not torn down, the temporaries it is made from are.
+            // The construction itself is a fresh value like a call's result, spilled where one would be.
+            case CreatorExpression creator:
+                return MaybeSpillTop(e: creator with
+                    {
+                        MemberVariables = creator.MemberVariables
+                                                 .Select(selector: mv => (mv.Name,
+                                                      VisitIn(e: mv.Value, objectPos: false, spills: spills,
+                                                          kept: true)))
+                                                 .ToList()
+                    },
+                    objectPos: objectPos,
+                    spills: spills);
 
             case StealExpression st:
                 // `steal` is an explicit move — never tear down its operand.
@@ -878,7 +918,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                                 m.Object.ResolvedType is EntityTypeSymbol &&
                                 call.ResolvedType is { } rcCtorRes &&
                                 TypeRegistry.GetRcWrapperBaseName(type: rcCtorRes) is not null;
-        Expression newRecv = VisitIn(e: m.Object, objectPos: false, spills: spills, kept: PartKept(whole: call));
+        Expression newRecv = VisitIn(e: m.Object,
+            objectPos: false,
+            spills: spills,
+            kept: PartKept(whole: call, part: m.Object));
 
         // Spill the receiver iff it is a fresh heap-owning RC-record producer, the verb does
         // not consume it (retain/track move it into the RC controller), and the call result
@@ -900,6 +943,14 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                  !ResultLocatesEntity(resultType: call.ResolvedType))
         {
             newRecv = SpillEntityTemporary(producer: newRecv, consumer: call, spills: spills);
+        }
+        // A carrier a call gives back holding an entity of its own (`(try xs.to[List]()).represent()`, the value of
+        // an f-text slot) is read by its display routine and ends with the statement.
+        else if (!receiverConsumed && m.MemberName is RuntimeContract.Display.Represent
+                     or RuntimeContract.Display.Diagnose &&
+                 IsFreshEntityCarrier(e: newRecv))
+        {
+            newRecv = MakeSpill(producer: newRecv, spills: spills);
         }
 
         // Three-rules model: a fresh owned RVALUE arg passed to a borrow param is torn down at
@@ -989,7 +1040,7 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     {
         if (_terminator)
         {
-            return PartKept(whole: consumer)
+            return PartKept(whole: consumer, part: producer)
                 ? producer
                 : MakeSpill(producer: producer, spills: spills);
         }
@@ -1038,6 +1089,26 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         return DestroyOf(type: entity) != null;
     }
 
+    /// <summary>
+    /// Whether <paramref name="e"/> is a call giving back a carrier (<c>Optional</c>, <c>Check</c>) of an entity,
+    /// which the carrier's teardown ends: a RazorForge routine never gives back an entity it still keeps, so the
+    /// entity is the carrier's own.
+    /// </summary>
+    private bool IsFreshEntityCarrier(Expression e)
+    {
+        if (_instantiated || ctx.Registry.CompilationRules.EntitiesAreShared ||
+            e is not CallExpression call || HandsOutAccess(e: e) ||
+            call.Callee is MemberExpression vm && ViewVerbs.Contains(item: vm.MemberName) ||
+            e.ResolvedType is not { TypeArguments: [EntityTypeSymbol] } carrier ||
+            carrier is EntityTypeSymbol || TypeRegistry.GetRcWrapperBaseName(type: carrier) is not null ||
+            WrapperShape.TryGet(type: carrier, name: out _, inner: out _))
+        {
+            return false;
+        }
+
+        return DestroyOf(type: carrier) != null;
+    }
+
     /// <summary>Whether a call on an entity gives back where the entity is (<c>make().hijack()</c>, an address): the
     /// entity is placed by hand from then on, so it is not torn down.</summary>
     private static bool ResultLocatesEntity(TypeSymbol? resultType)
@@ -1051,10 +1122,12 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
     /// <summary>
     /// Whether a value of <paramref name="type"/> may still point into the value it was taken from, so that value has
     /// to live as long as this one: a token or another view, an unknown type, an emitter, or a value holding a pointer
-    /// to an emittable (the adapter <c>xs.select(f)</c> points at <c>xs</c>). A value of its own (a number, <c>Text</c>,
-    /// a counted handle, a list a terminal collected) does not.
+    /// to an emittable that may be <paramref name="part"/> or lie inside it (the adapter <c>xs.select(f)</c> points at
+    /// <c>xs</c>). A value of its own (a number, <c>Text</c>, a counted handle, a list a terminal collected) does not:
+    /// a <c>List[Text]</c> collected from an adapter holds a pointer to its own Text values, which are emittables of
+    /// another type than anything in the adapter.
     /// </summary>
-    private bool MayHoldReceiver(TypeSymbol? type, int depth)
+    private bool MayHoldReceiver(TypeSymbol? type, TypeSymbol? part, int depth)
     {
         switch (type)
         {
@@ -1094,7 +1167,8 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 WrapperShape.TryGet(type: field, name: out _, inner: out TypeSymbol pointee))
             {
                 if (pointee is GenericParameterTypeSymbol ||
-                    ctx.Registry.TypeObeysProtocol(type: pointee, protocolName: "Emittable"))
+                    ctx.Registry.TypeObeysProtocol(type: pointee, protocolName: "Emittable") &&
+                    (part == null || MayLieInside(inner: pointee, outer: part, depth: 0)))
                 {
                     return true;
                 }
@@ -1102,13 +1176,58 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 continue;
             }
 
-            if (field is EntityTypeSymbol or RecordTypeSymbol && MayHoldReceiver(type: field, depth: depth + 1))
+            if (field is EntityTypeSymbol or RecordTypeSymbol &&
+                MayHoldReceiver(type: field, part: part, depth: depth + 1))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether a value of <paramref name="inner"/> may be <paramref name="outer"/> itself or sit inside it: one of its
+    /// member variables, or what one of its pointers points at, followed a few levels down. An unknown or generic type
+    /// on either side may be anything.
+    /// </summary>
+    private static bool MayLieInside(TypeSymbol inner, TypeSymbol outer, int depth)
+    {
+        if (outer is GenericParameterTypeSymbol or ProtocolTypeSymbol or ProtocolSelfTypeSymbol ||
+            SameType(a: inner, b: outer))
+        {
+            return true;
+        }
+
+        if (depth > 3)
+        {
+            return false;
+        }
+
+        IEnumerable<TypeSymbol> fields = outer switch
+        {
+            EntityTypeSymbol entity => entity.MemberVariables.Select(selector: f => f.Type),
+            RecordTypeSymbol record => record.MemberVariables.Select(selector: f => f.Type),
+            _ => []
+        };
+        foreach (TypeSymbol field in fields)
+        {
+            TypeSymbol next = TypeRegistry.GetRcWrapperBaseName(type: field) is null &&
+                              WrapperShape.TryGet(type: field, name: out _, inner: out TypeSymbol pointee)
+                ? pointee
+                : field;
+            if (MayLieInside(inner: inner, outer: next, depth: depth + 1))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool SameType(TypeSymbol a, TypeSymbol b)
+    {
+        return ReferenceEquals(objA: a, objB: b) || a.FullName == b.FullName;
     }
 
     /// <summary>
@@ -1155,13 +1274,18 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
             return false;
         }
 
-        if (_instantiated && e is not CallExpression { Callee: MemberExpression { MemberName: "getitem" } })
+        // In a monomorphized body only a read that hands back a holder of its own is spilled: `a[i]` (getitem) and a
+        // token read out where the value is wanted (`v.access()`, which TokenReadLoweringPass writes once `T` is known).
+        if (_instantiated && e is not CallExpression
+            {
+                Callee: MemberExpression { MemberName: "getitem" or RuntimeContract.Access }
+            })
         {
             return false;
         }
 
         if (e is CallExpression { Callee: MemberExpression vm } &&
-            ViewVerbs.Contains(item: vm.MemberName))
+            ViewVerbs.Contains(item: vm.MemberName) && !ReadsRecordOutOfToken(call: (CallExpression)e))
         {
             return false;
         }
@@ -1187,6 +1311,17 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         // and would only bloat the IR.
         return t is RecordTypeSymbol rec && (lc.Store != null || rec.HasRCMemberVariables ||
                                              TypeRegistry.GetRcWrapperBaseName(type: rec) is not null);
+    }
+
+    /// <summary>Whether <paramref name="call"/> reads a record out of its token (<c>v.access()</c> on a
+    /// <c>Viewing[T]</c> or <c>Modifying[T]</c>): the record comes back as a holder of its own, as <c>getitem</c> gives
+    /// one, unlike an entity's <c>access</c>, which is the entity itself.</summary>
+    private static bool ReadsRecordOutOfToken(CallExpression call)
+    {
+        return call.Callee is MemberExpression { MemberName: RuntimeContract.Access } access &&
+               call.ResolvedType is RecordTypeSymbol &&
+               WrapperShape.TryGet(type: access.Object.ResolvedType, name: out string token, inner: out _) &&
+               token is RuntimeContract.Viewing or RuntimeContract.Modifying;
     }
 
     /// <summary>True when a call result MAY be a borrow/view pointing into the receiver, so freeing

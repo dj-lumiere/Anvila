@@ -770,6 +770,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 {
                     _emitCarriers[key: v.Name] = carried;
                 }
+                // The item a check carrier of an emit holds, read out of it, comes from that emit too.
+                else if (v.Initializer is CarrierPayloadExpression { Carrier: IdentifierExpression payloadOf } &&
+                         _emitCarriers.TryGetValue(key: payloadOf.Name, value: out CallExpression? stepOfPayload))
+                {
+                    _emitCarriers[key: v.Name] = stepOfPayload;
+                }
 
                 // Once looked at here, a local a lowering marked as owing its teardown has it (or does not
                 // need it), so a later run leaves it alone. A local of a generic routine whose type is known only in
@@ -1486,6 +1492,9 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             CallExpression { ResolvedRoutine.RecoveryOf: null } call => call,
             MemberExpression { Object: IdentifierExpression carrier, MemberName: RuntimeContract.Carrier.ValueField }
                 when _emitCarriers.TryGetValue(key: carrier.Name, value: out CallExpression? held) => held,
+            // The item already read out of a check carrier (`steal __rc_ok_N`).
+            IdentifierExpression payload when _emitCarriers.TryGetValue(key: payload.Name,
+                value: out CallExpression? stepOfPayload) => stepOfPayload,
             _ => null
         };
     }

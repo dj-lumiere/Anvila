@@ -1941,6 +1941,13 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         return movesOut && subject is CallExpression { LoweringKind: CallLoweringKind.DynamicCall };
     }
 
+    /// <summary>Whether the binding of a recovered call's success value takes the item an <c>emit</c> gave.</summary>
+    private static bool TakesEmittedItem(bool movesOut, Expression subject)
+    {
+        return movesOut && subject is CallExpression { ResolvedRoutine: { } step } &&
+               (step.RecoveryOf ?? step).Name == RuntimeContract.Emit;
+    }
+
     private static Statement BuildCarrierPropagationWhen(Expression subject, string? bindName,
         CarrierCapabilities caps, List<Statement> remainder, TypeRegistry registry, SourceLocation loc)
     {
@@ -2058,7 +2065,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                         // where a generic routine's type for it is known only in each instance and where the
                         // propagation is built for a monomorphized body after its scope teardown ran.
                         OwnsItsValue = OwnsRoutineValueResult(movesOut: movesOut, subject: subject),
-                        OwesTeardown = OwnsRoutineValueResult(movesOut: movesOut, subject: subject)
+                        OwesTeardown = OwnsRoutineValueResult(movesOut: movesOut, subject: subject) ||
+                                       TakesEmittedItem(movesOut: movesOut, subject: subject),
+                        // An item an emit gave is the binding's own when that emitter hands its items over, which
+                        // the scope teardown decides once the emitter's type is known.
+                        OwnsWhenHandedOver = TakesEmittedItem(movesOut: movesOut, subject: subject)
                     },
                     Location: loc),
                 .. remainder
