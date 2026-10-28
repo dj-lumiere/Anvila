@@ -519,7 +519,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // deadref tracking; trust that so a stolen binding is never torn down here (double-free).
         if (r.StolenVariableNames is { Count: > 0 } stolen)
         {
-            _movedNames.UnionWith(other: stolen);
+            _movedNames.UnionWith(other: stolen.Where(predicate: name => !_onlyLent.Contains(item: name)));
         }
 
         MarkMovedPatternSubjects(stmt: r.Body);
@@ -1730,7 +1730,67 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     private void CollectMovedNames(Statement stmt)
     {
         _movedWithoutEmptying.Clear();
+        CollectLentSteals(stmt: stmt);
         CollectMovesOutsideExits(node: stmt);
+    }
+
+    /// <summary>The <c>steal</c>s of the body being lowered that hand a counted record to a routine's parameter
+    /// (<see cref="CollectLentSteals"/>): they move nothing.</summary>
+    private readonly HashSet<StealExpression> _lentSteals = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>The locals whose every <c>steal</c> in the body being lowered is one of <see cref="_lentSteals"/>.</summary>
+    private readonly HashSet<string> _onlyLent = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>
+    /// Finds each <c>steal x</c> written as an argument of a routine call where <c>x</c> holds a counted record
+    /// (<c>Text</c>, a record holding one): <c>kept.add_last(steal made)</c>. A routine's record parameter only
+    /// lends the value to the routine: what the routine keeps of it (a list slot, a member variable, a Work's
+    /// recipe) it copies, one more holder, and it never tears the parameter down. So the local still holds its
+    /// own value after the call, and its teardown stays. A construction (<c>Tag(label: steal made)</c>) or a
+    /// variable (<c>var kept = steal made</c>) takes the value as it is, and an entity, an RC wrapper or a token
+    /// handed over is the callee's, so those still move.
+    /// </summary>
+    private void CollectLentSteals(Statement stmt)
+    {
+        _lentSteals.Clear();
+        _onlyLent.Clear();
+        var stolenElsewhere = new HashSet<string>(comparer: StringComparer.Ordinal);
+        AstWalker.Walk(root: stmt, visit: node =>
+        {
+            List<Expression>? arguments = node switch
+            {
+                CallExpression { ResolvedRoutine: not null } call => call.Arguments,
+                GenericMemberRoutineCallExpression { ResolvedRoutine: not null } gcall => gcall.Arguments,
+                _ => null
+            };
+            foreach (Expression argument in arguments ?? [])
+            {
+                if ((argument is NamedArgumentExpression named ? named.Value : argument) is StealExpression
+                    {
+                        Operand: IdentifierExpression { ResolvedType: RecordTypeSymbol record }
+                    } lent && LendsCountedRecord(record: record))
+                {
+                    _lentSteals.Add(item: lent);
+                }
+            }
+        });
+        AstWalker.Walk(root: stmt, visit: node =>
+        {
+            if (node is StealExpression { Operand: IdentifierExpression id } steal)
+            {
+                (_lentSteals.Contains(item: steal) ? _onlyLent : stolenElsewhere).Add(item: id.Name);
+            }
+        });
+        _onlyLent.ExceptWith(other: stolenElsewhere);
+    }
+
+    /// <summary>Whether a record handed to a routine's parameter with <c>steal</c> stays with the caller: a value
+    /// record with a teardown, not an RC wrapper, a token or another wrapper, whose handle <c>steal</c> hands over.</summary>
+    private bool LendsCountedRecord(RecordTypeSymbol record)
+    {
+        return !TypeContainsGenericParameter(type: record) && !WrapperShape.Is(type: record) &&
+               TypeRegistry.GetRcWrapperBaseName(type: record) is null && !ctx.Registry.IsEntityKind(type: record) &&
+               TryResolveDestroy(type: record, destroy: out RoutineInfo? destroy) && destroy != null;
     }
 
     /// <summary>
@@ -1857,7 +1917,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
         switch (node)
         {
-            case StealExpression { Operand: IdentifierExpression id }:
+            case StealExpression { Operand: IdentifierExpression id } steal when !_lentSteals.Contains(item: steal):
                 _movedNames.Add(item: id.Name);
                 break;
             // `var (a, b) = pair()` spelled out (`var t = pair()`, `var a = t.item0`): an entity read out of a value
