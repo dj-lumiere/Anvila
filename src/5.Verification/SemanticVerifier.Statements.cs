@@ -1312,7 +1312,8 @@ public sealed partial class SemanticVerifier
             type: varType,
             isNullable: varIsNullable,
             location: varDecl.Location,
-            isReadOnly: varDecl.IsPreset);
+            isReadOnly: varDecl.IsPreset,
+            isLoopVariable: varDecl.IsLoopVariable);
         if (varDecl.Initializer != null)
         {
             TakeDangerousCallableIntoLocal(name: varDecl.Name, value: varDecl.Initializer);
@@ -1939,6 +1940,11 @@ public sealed partial class SemanticVerifier
         if (assign.Target is IdentifierExpression id)
         {
             VariableInfo? varInfo = id.ResolvedVariable ?? _registry.LookupVariable(name: id.Name);
+            if (ReportLoopVariableAssignment(id: id, location: assign.Location))
+            {
+                return;
+            }
+
             if (varInfo is { IsModifiable: false } && !assign.IsGlobalInit)
             {
                 ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,

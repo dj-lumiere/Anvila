@@ -3346,11 +3346,13 @@ public sealed partial class TypeRegistry
     /// <returns>True if successful, false if already declared in this scope.</returns>
     public bool DeclareVariable(string name, TypeSymbol type, bool isPreset = false,
         Expression? presetValue = null, bool isNullable = false, bool isGlobal = false,
-        SourceLocation? location = null, bool isParameter = false, bool isReadOnly = false, string? module = null)
+        SourceLocation? location = null, bool isParameter = false, bool isReadOnly = false, string? module = null,
+        bool isLoopVariable = false)
     {
         var variable = new VariableInfo(name: name, type: type)
         {
             Module = module,
+            IsLoopVariable = isLoopVariable,
             // A routine-local `preset` is read-only without being a module preset (no inlined value).
             IsModifiable = !isPreset && !isReadOnly,
             IsPreset = isPreset,

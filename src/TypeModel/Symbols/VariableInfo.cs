@@ -37,6 +37,9 @@ public sealed class VariableInfo
     /// not reuse the name of.</summary>
     public bool IsParameter { get; init; }
 
+    /// <summary>Whether a <c>for</c> loop binds this name to each round's element: the body may not assign it.</summary>
+    public bool IsLoopVariable { get; init; }
+
     /// <summary>Whether the variable holds a routine value from a dangerous routine: a local given one, or a
     /// <c>Callable</c> parameter of a dangerous routine. Calling it is dangerous, and it goes only where a dangerous
     /// routine's value may (see SemanticVerifier.DangerousCallables).</summary>

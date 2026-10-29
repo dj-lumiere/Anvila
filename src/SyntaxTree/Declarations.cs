@@ -157,6 +157,10 @@ public record VariableDeclaration(
     /// </summary>
     public bool IsLoopTakeSource { get; init; }
 
+    /// <summary>The name a <c>for</c> loop binds each round's element to (<c>i</c> in <c>for i in 0 til n</c>, or one
+    /// name of a destructured element), which the loop body may not assign.</summary>
+    public bool IsLoopVariable { get; init; }
+
     /// <summary>
     /// The member routine (<c>Hero.attack</c>) a builder-written local keeps the replacement of, for ObjectHacker's
     /// <c>implant</c>. A value of another type is reported as a replacement of the wrong signature, naming the

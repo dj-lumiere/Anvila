@@ -577,7 +577,8 @@ public sealed partial class SemanticVerifier
                 ctx: new WhenClauseContext(WhenVarName: whenVarName,
                     WhenVariant: whenVariant,
                     HandledArms: handledArms,
-                    ViewingElement: viewingElement),
+                    ViewingElement: viewingElement,
+                    ForStep: whenStmt.IsForStep),
                 handledNone: ref handledNone,
                 handledNoneValue: ref handledNoneValue,
                 handledCrashable: ref handledCrashable,
@@ -680,7 +681,8 @@ public sealed partial class SemanticVerifier
         string? WhenVarName,
         VariantTypeSymbol? WhenVariant,
         List<string> HandledArms,
-        bool ViewingElement = false);
+        bool ViewingElement = false,
+        bool ForStep = false);
 
     private bool AnalyzeWhenClause(WhenClause clause, TypeSymbol matchedType,
         IEnumerable<WhenClause> priorClauses, WhenClauseContext ctx, ref bool handledNone, ref bool handledNoneValue,
@@ -712,7 +714,8 @@ public sealed partial class SemanticVerifier
                     : ctx.ViewingElement && IsCarrierType(type: matchedType)
                         ? ReadOnlyElement(element: rest)
                         : rest,
-                location: elsePat.Location);
+                location: elsePat.Location,
+                isLoopVariable: ctx.ForStep);
             AnalyzeStatement(statement: clause.Body);
             _registry.ExitScope();
             return true;

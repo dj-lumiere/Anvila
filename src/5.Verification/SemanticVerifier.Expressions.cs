@@ -1841,6 +1841,11 @@ public sealed partial class SemanticVerifier
         }
 
 
+        if (target is IdentifierExpression loopTarget && ReportLoopVariableAssignment(id: loopTarget, location: location))
+        {
+            return targetType;
+        }
+
         switch (target)
         {
             case IdentifierExpression id:
@@ -1929,6 +1934,26 @@ public sealed partial class SemanticVerifier
         return inThisCall
             ? steal
             : null;
+    }
+
+    /// <summary>
+    /// An assignment to the name a <c>for</c> loop binds each element to (RF-S251): the loop binds it again every
+    /// round, so the assignment would change nothing the loop sees. Reports it and returns true, else false.
+    /// </summary>
+    private bool ReportLoopVariableAssignment(IdentifierExpression id, SourceLocation location)
+    {
+        if ((id.ResolvedVariable ?? _registry.LookupVariable(name: id.Name)) is not { IsLoopVariable: true })
+        {
+            return false;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.AssignmentToImmutable,
+            message:
+            $"'{id.Name}' is the loop variable, which each round of the 'for' loop binds to the next element, so it " +
+            "can't be assigned. Put the new value in a variable of its own, or change the element through the " +
+            "collection ('xs[i] = ...').",
+            location: location);
+        return true;
     }
 
     private void ValidateIdentifierAssignmentTarget(IdentifierExpression id, Expression value,

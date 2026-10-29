@@ -18,7 +18,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Declares a pattern binding variable, checking for shadowing of variables in outer scopes.
     /// </summary>
-    private void DeclarePatternVariable(string name, TypeSymbol type, SourceLocation location)
+    private void DeclarePatternVariable(string name, TypeSymbol type, SourceLocation location,
+        bool isLoopVariable = false)
     {
         // Check if this name exists in a parent scope (shadowing)
         Scope? parent = _registry.CurrentScope.Parent;
@@ -32,7 +33,7 @@ public sealed partial class SemanticVerifier
 
         // Still declare the variable even if shadowing, to avoid cascading errors. A new binding of a name holds a
         // value again, whatever an earlier `steal` did to a variable of that name.
-        _registry.DeclareVariable(name: name, type: type, location: location);
+        _registry.DeclareVariable(name: name, type: type, location: location, isLoopVariable: isLoopVariable);
         _deadrefVariables.Remove(item: name);
     }
 

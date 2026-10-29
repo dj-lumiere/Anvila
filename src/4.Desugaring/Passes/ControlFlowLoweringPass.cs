@@ -965,7 +965,11 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     {
         if (arm.VariableName is { } variable)
         {
-            round.Add(item: Local(name: variable, value: Name(name: at, loc: loc), loc: loc));
+            DeclarationStatement binding = Local(name: variable, value: Name(name: at, loc: loc), loc: loc);
+            round.Add(item: binding with
+            {
+                Declaration = ((VariableDeclaration)binding.Declaration) with { IsLoopVariable = true }
+            });
         }
     }
 
@@ -1117,7 +1121,7 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
                             MemberName: $"item{i}",
                             Location: loc),
                         Visibility: VisibilityModifier.Secret,
-                        Location: loc),
+                        Location: loc) { IsLoopVariable = true },
                     Location: loc));
             }
 
