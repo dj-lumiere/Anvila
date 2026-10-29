@@ -505,6 +505,12 @@ public sealed partial class SemanticVerifier
         bool isFailableCall = call.IsFailable;
         string callName = id.Name;
 
+        // `import Shop/Prices.total as price_total`: `price_total(...)` calls Shop/Prices' `total`.
+        if (ImportedRoutineUnderAlias(name: callName) is { } aliased)
+        {
+            return AnalyzeRoutineCallOfModule(call: call, routine: aliased.Routine, name: aliased.Member);
+        }
+
         TypeSymbol? callableType = ResolveCallableType(call: call, id: id, callName: callName);
 
         // `Dict(1: 10, 2: 20)`: key-value pairs build a map only as a literal.
@@ -692,6 +698,12 @@ public sealed partial class SemanticVerifier
                   : _registry.LookupRoutine(fullName: $"{_currentModuleName}.{callName}", isFailable: true))
             : null;
         routine ??= _registry.LookupRoutine(fullName: callName, isFailable: isFailableCall);
+
+        // The bare lookup sees every module: a routine the file's imports narrowed out is not this call's.
+        if (routine != null && !callName.Contains(value: '.') && IsNarrowedOut(module: routine.Module, name: callName))
+        {
+            routine = null;
+        }
 
         // Same rule for a routine of that name in an imported module. A foreign routine stays only
         // when nothing else of that name is visible, so the realm gate can say "call it as LLVM::…".
@@ -1392,14 +1404,17 @@ public sealed partial class SemanticVerifier
     /// ambiguity error, sets <paramref name="ambiguous"/>, and returns null.
     /// </summary>
     private RoutineInfo? ResolveModuleQualifiedRoutine(string moduleRef, string routineName,
-        SourceLocation location, out bool ambiguous)
+        SourceLocation location, out bool ambiguous, int arity = -1)
     {
         ambiguous = false;
         var matches = new List<RoutineInfo>();
         var seenKeys = new HashSet<string>(comparer: StringComparer.Ordinal);
-        foreach (string module in _importedModules)
+        // `import IO/Console as C`: `C` names that module alone. The module's own name still reaches it too.
+        string? aliased = ImportAliasModule(name: moduleRef);
+        IEnumerable<string> candidates = aliased != null ? [aliased] : _importedModules;
+        foreach (string module in candidates)
         {
-            bool isLeafOrFull = module == moduleRef ||
+            bool isLeafOrFull = aliased != null || module == moduleRef ||
                                 module.LastIndexOf(value: '/') is var slash && slash >= 0 && module
                                    .AsSpan(start: slash + 1)
                                    .SequenceEqual(other: moduleRef);
@@ -1408,7 +1423,10 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            RoutineInfo? candidate = _registry.LookupRoutine(fullName: $"{module}.{routineName}");
+            // A routine set of generic overloads only is not under the plain name key.
+            RoutineInfo? candidate = _registry.LookupRoutine(fullName: $"{module}.{routineName}") ??
+                                     _registry.LookupGenericOverload(name: routineName, preferredArity: arity,
+                                         module: module);
             if (candidate is { OwnerType: null } && seenKeys.Add(item: candidate.RegistryKey))
             {
                 matches.Add(item: candidate);
@@ -2514,12 +2532,24 @@ public sealed partial class SemanticVerifier
               .All(predicate: ok => ok);
     }
 
+    /// <summary>The module a module-qualified call (<c>Console.show(...)</c>) named while its overload is picked:
+    /// only that module's routines are candidates then.</summary>
+    private (string Module, string Name)? _qualifiedCall;
+
     /// <summary>Whether a free routine is visible in the file being analyzed: declared in this module, in
-    /// System, or in an imported module.</summary>
+    /// System, or in an imported module (and not narrowed out by the import).</summary>
     private bool IsFreeRoutineVisible(RoutineInfo routine)
     {
+        // Only the qualified call's own routine set is restricted: the calls inside its arguments resolve as usual.
+        if (_qualifiedCall is var (module, name) && routine.Name == name)
+        {
+            return string.Equals(a: routine.Module, b: module, comparisonType: StringComparison.OrdinalIgnoreCase);
+        }
+
         return string.IsNullOrEmpty(value: routine.Module) || routine.Module == "System" ||
-               routine.Module == _currentModuleName || _importedModules.Contains(item: routine.Module);
+               routine.Module == _currentModuleName ||
+               _importedModules.Contains(item: routine.Module) &&
+               !IsNarrowedOut(module: routine.Module, name: routine.Name);
     }
 
     private bool HasArgumentTypeMismatch(CallExpression call, RoutineInfo routine)
@@ -4070,7 +4100,8 @@ public sealed partial class SemanticVerifier
             RoutineInfo? modRoutine = ResolveModuleQualifiedRoutine(moduleRef: moduleRef.Name,
                 routineName: modName,
                 location: call.Location,
-                ambiguous: out bool ambiguous);
+                ambiguous: out bool ambiguous,
+                arity: call.Arguments.Count);
             if (ambiguous)
             {
                 return ErrorTypeSymbol.Instance;
@@ -4078,11 +4109,37 @@ public sealed partial class SemanticVerifier
 
             if (modRoutine is { OwnerType: null })
             {
-                return AnalyzeModuleQualifiedRoutineCall(call: call, routine: modRoutine);
+                return AnalyzeRoutineCallOfModule(call: call, routine: modRoutine, name: modName);
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// A call that names its module (<c>Console.show(...)</c>, or a name an import aliased to a module's routine):
+    /// picks the overload of that module the arguments fit, as a bare call does among the visible ones
+    /// (<c>Console.show(42)</c> is the S64 <c>show</c>, not the first one), and analyzes the call.
+    /// </summary>
+    private TypeSymbol? AnalyzeRoutineCallOfModule(CallExpression call, RoutineInfo routine, string name)
+    {
+        RoutineInfo? picked = routine;
+        (string, string)? previous = _qualifiedCall;
+        _qualifiedCall = (routine.Module ?? "", name);
+        try
+        {
+            SelectFallbackGenericOverload(call: call, callName: name, routine: ref picked);
+            InferFallbackFreeTypeArguments(call: call, expectedType: null, routine: ref picked);
+            ResolveFallbackFreeOverload(call: call, callName: name, routine: ref picked);
+        }
+        finally
+        {
+            _qualifiedCall = previous;
+        }
+
+        return picked != null
+            ? AnalyzeModuleQualifiedRoutineCall(call: call, routine: picked)
+            : null;
     }
 
     private TypeSymbol? AnalyzeFallbackFreeRoutine(CallExpression call, IdentifierExpression id,
@@ -5194,7 +5251,7 @@ public sealed partial class SemanticVerifier
         }
 
         List<RoutineInfo> fitting = _importedModules
-                                   .Where(predicate: ns => ns != home)
+                                   .Where(predicate: ns => ns != home && !IsNarrowedOut(module: ns, name: callName))
                                    .Select(selector: ns => _registry.FreeRoutinesWithBaseName(baseName: $"{ns}.{callName}")
                                                                     .FirstOrDefault(predicate: r => !r.IsForeign && Fits(r: r)))
                                    .OfType<RoutineInfo>()
@@ -5218,7 +5275,8 @@ public sealed partial class SemanticVerifier
         }
 
         List<string> others = _importedModules
-                             .Where(predicate: ns => ns != home && ns != _currentModuleName)
+                             .Where(predicate: ns => ns != home && ns != _currentModuleName &&
+                                                     !IsNarrowedOut(module: ns, name: routine.Name))
                              .Where(predicate: ns => _registry.FreeRoutinesWithBaseName(baseName: $"{ns}.{routine.Name}")
                                                               .Any(predicate: r => !r.IsForeign))
                              .Order(comparer: StringComparer.Ordinal)

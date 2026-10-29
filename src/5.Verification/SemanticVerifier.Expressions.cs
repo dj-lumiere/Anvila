@@ -251,7 +251,7 @@ public sealed partial class SemanticVerifier
 
         ReportError(code: SemanticDiagnosticCode.UnknownIdentifier,
             message:
-            $"Unknown identifier '{id.Name}'.{Suggestions.ForIdentifier(name: id.Name)}",
+            $"Unknown identifier '{id.Name}'.{NarrowedImportHint(name: id.Name) ?? Suggestions.ForIdentifier(name: id.Name)}",
             location: id.Location);
         return ErrorTypeSymbol.Instance;
     }
@@ -429,6 +429,17 @@ public sealed partial class SemanticVerifier
     private VariableInfo? LookupVariableWithModulePrefix(string name)
     {
         VariableInfo? varInfo = _registry.LookupVariable(name: name);
+        if (varInfo != null && !name.Contains(value: '.') && IsNarrowedOut(module: varInfo.Module, name: name))
+        {
+            varInfo = null;
+        }
+
+        // `import Counter.HITS as hits`: `hits` is Counter's `HITS`.
+        if (varInfo == null && ImportMemberAlias(name: name) is var (aliasModule, aliasMember))
+        {
+            varInfo = _registry.LookupVariable(name: $"{aliasModule}.{aliasMember}");
+        }
+
         if (varInfo == null && _currentModuleName != null && !name.Contains(value: '.'))
         {
             varInfo = _registry.LookupVariable(name: $"{_currentModuleName}.{name}");
@@ -456,6 +467,14 @@ public sealed partial class SemanticVerifier
         // name key, so LookupRoutine misses them. A bare reference — e.g. the receiver identifier of
         // an explicit `gen_id[T](...)` call — must consult it too. A routine of the same bare name in a
         // module this file does not import is not visible here.
+        // `import Shop/Prices.total as price_total`: the routine value `price_total` is Shop/Prices' `total`.
+        if (routine == null && bare && ImportMemberAlias(name: name) is var (aliasModule, aliasMember))
+        {
+            routine = _registry.LookupRoutine(fullName: $"{aliasModule}.{aliasMember}") ??
+                      _registry.LookupGenericOverload(name: aliasMember, preferredArity: preferredArity,
+                          module: aliasModule);
+        }
+
         if (routine == null && _registry.LookupRoutine(fullName: name) is { } plain &&
             (!bare || IsFreeRoutineVisible(routine: plain)))
         {

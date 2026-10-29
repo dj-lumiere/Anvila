@@ -13,6 +13,11 @@ namespace Builder.Declaration;
 /// </summary>
 public sealed partial class TypeRegistry
 {
+    private ImportScopes? _importScopes;
+
+    /// <summary>What each user file's imports let it name (narrowed imports, <c>as</c> aliases).</summary>
+    public ImportScopes ImportScopes => _importScopes ??= new ImportScopes(registry: this);
+
     /// <summary>
     /// Ambient registry reference for static helpers that need to route generic resolutions
     /// through <see cref="GetOrCreateResolution"/> (to pick up entity specializations) but
@@ -3341,10 +3346,11 @@ public sealed partial class TypeRegistry
     /// <returns>True if successful, false if already declared in this scope.</returns>
     public bool DeclareVariable(string name, TypeSymbol type, bool isPreset = false,
         Expression? presetValue = null, bool isNullable = false, bool isGlobal = false,
-        SourceLocation? location = null, bool isParameter = false, bool isReadOnly = false)
+        SourceLocation? location = null, bool isParameter = false, bool isReadOnly = false, string? module = null)
     {
         var variable = new VariableInfo(name: name, type: type)
         {
+            Module = module,
             // A routine-local `preset` is read-only without being a module preset (no inlined value).
             IsModifiable = !isPreset && !isReadOnly,
             IsPreset = isPreset,

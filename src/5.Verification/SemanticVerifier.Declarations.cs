@@ -266,6 +266,7 @@ public sealed partial class SemanticVerifier
         if (effectiveModule != null)
         {
             _importedModules.Add(item: effectiveModule);
+            _registry.ImportScopes.Record(file: _currentFilePath, import: import, module: effectiveModule);
         }
 
         // Realm-qualified foreign imports (`import Module.C::qsort`): record each so a BARE call to the
@@ -450,13 +451,15 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        // The module goes with the name, so a file whose import narrowed this module out does not see it.
+        string? module = GetCurrentModuleName();
         _registry.DeclareVariable(name: preset.Name,
             type: presetType,
             isPreset: true,
-            presetValue: presetValue);
+            presetValue: presetValue,
+            module: module);
 
         // Also register as a module-level preset for cross-file access
-        string? module = GetCurrentModuleName();
         if (module != null)
         {
             _registry.RegisterPreset(name: preset.Name,

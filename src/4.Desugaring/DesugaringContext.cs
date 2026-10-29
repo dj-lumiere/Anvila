@@ -45,6 +45,10 @@ public sealed class DesugaringContext
     public HashSet<string> RestoredVariantKeys { get; init; } =
         new(comparer: StringComparer.Ordinal);
 
+    /// <summary>The file a per-file desugaring run lowers and its module, for what the file's imports let it name
+    /// (<see cref="TypeRegistry.ImportScopes"/>). Null outside a per-file run.</summary>
+    public (string File, string? Module)? CurrentFile { get; init; }
+
     /// <summary>Target platform — drives BuilderQuery platform constants.</summary>
     public TargetConfig Target { get; }
 

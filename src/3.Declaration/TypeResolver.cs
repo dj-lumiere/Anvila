@@ -62,6 +62,13 @@ internal sealed class TypeResolver
             }
         }
 
+        // `import Shop/Prices.Item as Thing`: `Thing` is Shop/Prices' `Item`.
+        if (_sa.ImportMemberAlias(name: name) is var (aliasModule, aliasMember) &&
+            _sa._registry.LookupType(name: $"{aliasModule}.{aliasMember}") is { } aliasedType)
+        {
+            return aliasedType;
+        }
+
         foreach (string ns in _sa._importedModules)
         {
             TypeSymbol? imported = _sa._registry.LookupType(name: $"{ns}.{name}");
@@ -76,6 +83,12 @@ internal sealed class TypeResolver
                     continue;
                 }
 
+                // `import Shop.[Price]` brings only `Price` bare, `import Shop as S` brings nothing bare.
+                if (_sa.IsNarrowedOut(module: ns, name: name))
+                {
+                    continue;
+                }
+
                 return imported;
             }
         }
@@ -86,6 +99,11 @@ internal sealed class TypeResolver
         TypeSymbol? fallback = _sa._registry.LookupType(name: name);
         if (fallback is { Visibility: VisibilityModifier.Secret } &&
             !SecretReaches(owner: fallback.Module))
+        {
+            return null;
+        }
+
+        if (fallback != null && !name.Contains(value: '.') && _sa.IsNarrowedOut(module: fallback.Module, name: name))
         {
             return null;
         }
@@ -123,7 +141,8 @@ internal sealed class TypeResolver
         foreach (string ns in _sa._importedModules)
         {
             TypeSymbol? imported = _sa._registry.LookupType(name: $"{ns}.{name}");
-            if (imported is not null && imported.Visibility != VisibilityModifier.Secret)
+            if (imported is not null && imported.Visibility != VisibilityModifier.Secret &&
+                !_sa.IsNarrowedOut(module: ns, name: name))
             {
                 declarers.Add(item: ns);
             }
@@ -154,6 +173,7 @@ internal sealed class TypeResolver
 
         // Try each imported module
         List<RoutineInfo> imported = _sa._importedModules
+                                        .Where(predicate: ns => !_sa.IsNarrowedOut(module: ns, name: name))
                                         .Select(selector: ns =>
                                              _sa._registry.LookupRoutine(fullName: $"{ns}.{name}"))
                                         .OfType<RoutineInfo>()
@@ -1497,9 +1517,15 @@ internal sealed class TypeResolver
     private VariableInfo? LookupPresetWithImports(string name)
     {
         VariableInfo? preset = _sa._registry.LookupVariable(name: name);
-        if (preset is { IsPreset: true })
+        if (preset is { IsPreset: true } && (name.Contains(value: '.') || !_sa.IsNarrowedOut(module: preset.Module, name: name)))
         {
             return preset;
+        }
+
+        if (_sa.ImportMemberAlias(name: name) is var (aliasModule, aliasMember) &&
+            _sa._registry.LookupVariable(name: $"{aliasModule}.{aliasMember}") is { IsPreset: true } aliased)
+        {
+            return aliased;
         }
 
         if (_sa._currentModuleName != null && !name.Contains(value: '.'))
@@ -1512,6 +1538,7 @@ internal sealed class TypeResolver
         }
 
         return _sa._importedModules
+                  .Where(predicate: ns => !_sa.IsNarrowedOut(module: ns, name: name))
                   .Select(selector: ns => _sa._registry.LookupVariable(name: $"{ns}.{name}"))
                   .FirstOrDefault(predicate: v => v is { IsPreset: true });
     }

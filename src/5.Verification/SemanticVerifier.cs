@@ -510,6 +510,7 @@ public sealed partial class SemanticVerifier
         _symbolNameSnapshots.Clear();
         _moduleNameSnapshots.Clear();
         _foreignAliasSnapshots.Clear();
+        _registry.ImportScopes.Clear();
         _currentFilePath = filePath ?? program.Location.FileName;
         _currentModuleName = null;
         _importedModules.Clear();
@@ -1409,7 +1410,7 @@ public sealed partial class SemanticVerifier
         var ctx = new DesugaringContext(registry: _registry,
             routineBodies: _routineBodies,
             target: _target,
-            buildMode: _buildMode);
+            buildMode: _buildMode) { CurrentFile = (_currentFilePath, _currentModuleName) };
         new DesugaringPipeline(ctx: ctx).Run(program: program);
     }
 
@@ -2579,6 +2580,7 @@ public sealed partial class SemanticVerifier
         _symbolNameSnapshots.Clear();
         _moduleNameSnapshots.Clear();
         _foreignAliasSnapshots.Clear();
+        _registry.ImportScopes.Clear();
         bool saTiming = SaTiming;
         var swPhase = Stopwatch.StartNew();
 

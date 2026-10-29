@@ -45,6 +45,11 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     /// preset of the same name is out of sight there (`for letter in word` next to a preset `letter`).</summary>
     private HashSet<string> _locals = new(comparer: StringComparer.Ordinal);
 
+    /// <summary>The file being lowered and its module, for what its imports let it name.</summary>
+    private string? _file;
+
+    private string? _module;
+
     /// <summary>The presets of each library module, over all its files, once computed.</summary>
     private Dictionary<string, Dictionary<string, PresetDeclaration>>? _stdlibPresetsByModule;
 
@@ -69,6 +74,8 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     public void Run(Program program)
     {
         _ownPresets = CollectOwnPresets(program: program);
+        _file = ctx.CurrentFile?.File;
+        _module = ctx.CurrentFile?.Module;
         // A secret preset of a library module is the module's: another file of the module may name it.
         if (ctx.Registry.StdlibPrograms.FirstOrDefault(predicate: p => ReferenceEquals(objA: p.Program, objB: program))
                 is { Module: { } module, FilePath: { } path } &&
@@ -327,6 +334,24 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
         }
 
         VariableInfo? v = ctx.Registry.LookupVariable(name: id.Name);
+
+        // `import Shop/Prices.[with_tax]` leaves Shop/Prices' other presets out of sight (the identifier stays and
+        // the analysis says why), and `import Shop/Prices.RATE as rate` names `RATE` as `rate`.
+        if (_file != null && !id.Name.Contains(value: '.'))
+        {
+            if (v is { IsPreset: true } && _ownPresets?.ContainsKey(key: id.Name) != true &&
+                ctx.Registry.ImportScopes.IsNarrowedOut(file: _file, currentModule: _module, module: v.Module,
+                    name: id.Name))
+            {
+                return expr;
+            }
+
+            if (v is not { IsPreset: true } &&
+                ctx.Registry.ImportScopes.MemberAlias(file: _file, name: id.Name) is var (aliasModule, aliasMember))
+            {
+                v = ctx.Registry.LookupVariable(name: $"{aliasModule}.{aliasMember}");
+            }
+        }
 
         // A `secret preset` is MODULE-private: inline it inside any file of the module that declares
         // it (same granularity as `secret record`/`secret entity`). A reference from ANOTHER module is
