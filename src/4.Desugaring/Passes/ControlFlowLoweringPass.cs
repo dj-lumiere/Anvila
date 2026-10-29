@@ -1034,12 +1034,17 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             // A shared entity is walked through its handle by the entity's own `iter`, whose type parameters
             // the entity's type arguments bind (not the handle's).
             iterType = Declaration.RoamedTransparency.SharedEntityOf(type: iterType);
-            // LookupMemberRoutine returns the generic-def `iter`, whose ReturnType still carries the
+            // When LookupMemberRoutine returns the generic-def `iter`, its ReturnType still carries the
             // owner's params (e.g. `?EnumerateEmitter[T, S/Iter]`). Substitute the concrete owner's type
-            // args so the step binds on the CONCRETE emitter (`EnumerateEmitter[Text, ListEmitter[Text]]`);
+            // args so the step binds on the CONCRETE emitter (`EnumerateEmitter[Text, ListEmitter[Text]]`),
             // otherwise reachability marks the unresolved-projection emitter's variant and the concrete
-            // one never generates.
-            TypeSymbol iteratorType = SubstituteForConcreteOwner(type: rawIteratorType, owner: iterType);
+            // one never generates. An instance it returns (one with a generic definition) has its return
+            // type in the owner's arguments already. Substituting that again replaces a parameter the
+            // arguments themselves hold: in `List[Work[T]].gather` the list's `T` is `Work[T]`, so a
+            // second pass turned `ListEmitter[Work[T]]` into `ListEmitter[Work[Work[T]]]`.
+            TypeSymbol iteratorType = iterMemberRoutine.GenericDefinition == null
+                ? SubstituteForConcreteOwner(type: rawIteratorType, owner: iterType)
+                : rawIteratorType;
             iterCallExpr.ResolvedRoutine = iterMemberRoutine;
             iterCallExpr.ResolvedType = iteratorType;
             // Carry the concrete emitter type onto the receiver so reachability/codegen see it.

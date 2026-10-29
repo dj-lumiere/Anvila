@@ -227,13 +227,16 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             // The temp owns what the subject produced (`when try watcher.hold()` holds a handle), so it is
             // torn down when the `when` ends. A program is lowered after its scope teardown ran, so the mark
             // tells the late teardown run to give it its destroys. The step of a `for` loop owns nothing,
-            // the walk lends its item.
+            // the walk lends its item. A recovery variant's body gets its scope teardown after this lowering,
+            // and that run looks at every local, so the temp also says it only reads the item the container
+            // keeps. Otherwise `for job in me` in a `try` variant tears each item down once per round.
             AddTempVar(hoisted: hoisted,
                 name: subjName,
                 typeHint: subjectType,
                 initializer: subject,
                 loc: loc,
-                owesTeardown: ownsSubject);
+                owesTeardown: ownsSubject,
+                readsHeldValue: !ownsSubject);
             subject = new IdentifierExpression(Name: subjName, Location: loc)
             {
                 ResolvedType = subjectType
@@ -1541,7 +1544,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// Performs the add temp var step for this builder phase.
     /// </summary>
     private static void AddTempVar(List<Statement> hoisted, string name, TypeSymbol? typeHint,
-        Expression initializer, SourceLocation loc, bool owesTeardown = false)
+        Expression initializer, SourceLocation loc, bool owesTeardown = false, bool readsHeldValue = false)
     {
         var decl = new VariableDeclaration(Name: name,
             Type: typeHint != null
@@ -1549,7 +1552,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 : null,
             Initializer: initializer,
             Visibility: VisibilityModifier.Secret,
-            Location: loc) { OwesTeardown = owesTeardown };
+            Location: loc) { OwesTeardown = owesTeardown, ReadsHeldValue = readsHeldValue };
         hoisted.Add(item: new DeclarationStatement(Declaration: decl, Location: loc));
     }
 
