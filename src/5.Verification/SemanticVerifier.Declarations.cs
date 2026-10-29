@@ -888,12 +888,12 @@ public sealed partial class SemanticVerifier
         }
 
         const string advice =
-            " An entity from a `.rf` module is not shared and has no reference count, so handing it across a " +
-            "routine here would release the same object more than once. Keep it as a member variable of an " +
-            "entity of this program and pass that entity, or do the work on it inside the `.rf` module.";
+            " A RazorForge entity written with `RF::` is not shared and has no reference count, so handing it " +
+            "across a routine here would release the same object more than once. Keep it as a member variable of " +
+            "an entity of this program and pass that entity, or do the work on it inside a `.rf` module.";
 
-        // The resolved type decides, not the spelling: a bare `Counter` from an imported `.rf` module is the
-        // same RazorForge entity as `RF::Counter`.
+        // The resolved type decides: an entity of an imported `.rf` module resolves to a shared handle here, and
+        // only one written with `RF::` stays bare.
         foreach (ParamInfo p in parameters)
         {
             if (p.Type is EntityTypeSymbol pe && IsRazorForgeEntity(type: pe))
@@ -901,7 +901,7 @@ public sealed partial class SemanticVerifier
                 Parameter? declared = routine.Parameters.FirstOrDefault(predicate: d => d.Name == p.Name);
                 ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
                     message:
-                    $"You declare parameter '{p.Name}' as '{pe.Name}', an entity from a `.rf` module." +
+                    $"You declare parameter '{p.Name}' as '{pe.Name}', a RazorForge entity." +
                     advice,
                     location: declared?.Type?.Location ?? routine.Location);
             }
@@ -912,7 +912,7 @@ public sealed partial class SemanticVerifier
         if (kind != RoutineKind.Creator && returnType is EntityTypeSymbol re && IsRazorForgeEntity(type: re))
         {
             ReportError(code: SemanticDiagnosticCode.SuflaeBareRfEntityInSignature,
-                message: $"You declare the return type as '{re.Name}', an entity from a `.rf` module." +
+                message: $"You declare the return type as '{re.Name}', a RazorForge entity." +
                          advice,
                 location: routine.ReturnType?.Location ?? routine.Location);
         }

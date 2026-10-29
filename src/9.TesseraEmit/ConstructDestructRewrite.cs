@@ -268,7 +268,7 @@ internal static partial class ConstructDestructRewrite
         return head.Trim().Split('/')[^1];
     }
 
-    /// The `T: typename` and `COUNT: U64` parts of a type's `require` lines, which each of its routines lists.
+    /// The `RecordType T` and `U64 COUNT` parts of a type's needs lines, which each of its routines lists.
     private static string Kinds(List<string> require)
     {
         var parts = new List<string>();
@@ -286,7 +286,8 @@ internal static partial class ConstructDestructRewrite
                 else if (k == body.Length || body[k] == ',' && depth == 0)
                 {
                     string part = body[start..k].Trim();
-                    if (Regex.IsMatch(part, @"^\w+\s*:\s*\w+$")) parts.Add(part);
+                    // `RecordType T`, `U64 COUNT`: a parameter's kind and name (a protocol constraint is the type's own).
+                    if (Regex.IsMatch(part, @"^\w+\s+\w+$")) parts.Add(part);
                     start = k + 1;
                 }
             }

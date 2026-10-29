@@ -865,12 +865,22 @@ public sealed partial class SemanticVerifier
         return ChecksOwnershipHere || HoldsRazorForgeEntity(type: type);
     }
 
-    /// <summary>Whether <paramref name="type"/> is an entity from a `.rf` module met in a program file of a language
-    /// whose entities are shared.</summary>
+    /// <summary>Whether <paramref name="type"/> is a RazorForge library entity (`RF::System.List`) met in a program file
+    /// of a language whose entities are shared. An entity of a `.rf` module the program imports is held there by a
+    /// shared handle, as the language's own entities are.</summary>
     private bool HoldsRazorForgeEntity(TypeSymbol type)
     {
-        return _registry.EntitiesAreShared && IsRazorForgeEntity(type: type) &&
+        return _registry.EntitiesAreShared && IsRazorForgeEntity(type: type) && !IsProgramModuleEntity(type: type) &&
                !_isInCompilerGeneratedBody && !IsStdlibFile(filePath: _currentFilePath);
+    }
+
+    /// <summary>Whether <paramref name="type"/> is an entity declared in a source file of the program (a `.rf`
+    /// module it imports), not in the standard library.</summary>
+    private bool IsProgramModuleEntity(TypeSymbol type)
+    {
+        return type is EntityTypeSymbol entity &&
+               (entity.GenericDefinition ?? entity).Location?.FileName is { } file &&
+               Builder.Frontends.Languages.HasSourceExtension(fileName: file) && !IsStdlibFile(filePath: file);
     }
 
     /// <summary>Whether <paramref name="type"/> is an entity written in RazorForge: one declared in a `.rf` file, or
@@ -948,8 +958,8 @@ public sealed partial class SemanticVerifier
         };
         if (!ChecksOwnershipHere && HoldsRazorForgeEntity(type: type))
         {
-            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {holder} still holds. An entity from a " +
-                   "`.rf` module is not shared: it has one original, and two names holding it would each release it. " +
+            return $"{action} {Article.For(name: type.Name)} '{type.Name}' that {holder} still holds. A RazorForge " +
+                   "library entity is not shared: it has one original, and two names holding it would each release it. " +
                    "Make it where it goes " +
                    $"('{type.BareName}(...)' written in place), or keep working on it through {holder}.";
         }
