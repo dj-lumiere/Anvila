@@ -929,6 +929,13 @@ public sealed partial class SemanticVerifier
             return typeMemberRoutine.ReturnType != null;
         }
 
+        // A return of `Me` is the implementing type itself, as a parameter of `Me` is.
+        if (protoMemberRoutine.ReturnType is ProtocolSelfTypeSymbol && typeMemberRoutine is
+                { ReturnType: { } ownReturn, OwnerType: { } owner })
+        {
+            return TypesMatch(actual: ownReturn, expected: owner);
+        }
+
         // Check return type (if specified)
         if (protoMemberRoutine.ReturnType != null && typeMemberRoutine.ReturnType != null)
         {
