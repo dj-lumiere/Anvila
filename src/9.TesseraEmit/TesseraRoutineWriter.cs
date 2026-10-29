@@ -1294,7 +1294,9 @@ internal sealed class TesseraRoutineWriter
         }
 
         string text = $"{_module.RoutineName(routine: routine)}({string.Join(separator: ", ", values: arguments)})";
-        if (TesseraWriter.IsVoid(type: routine.ReturnType))
+        // A routine that gives back nothing used as a value (a `Work[None]`'s result going into a `List[None]`):
+        // Tessera takes the call as a value of type None, so it is bound once like any other result.
+        if (TesseraWriter.IsVoid(type: routine.ReturnType) && (asStatement || routine.ReturnType is null))
         {
             Emit(line: text);
             return null;
