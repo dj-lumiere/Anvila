@@ -602,8 +602,16 @@ public sealed partial class SemanticVerifier
         }
 
         CheckTakenOnEveryPath(paths: armEnds, before: deadrefBefore, construct: "when", at: whenStmt.Location);
+        // What holds after the `when` is what holds at the end of an arm that goes on past it. Without an `else` arm
+        // the `when` may also match nothing, which goes on from the state before it. With one, a name every arm that
+        // goes on gives a value to has one after the `when`, even when an arm that throws gives it none.
+        bool coversAll = whenStmt.Clauses.Any(predicate: c => c.Pattern is ElsePattern);
         _deadrefVariables.Clear();
-        _deadrefVariables.UnionWith(other: deadrefBefore);
+        if (!coversAll)
+        {
+            _deadrefVariables.UnionWith(other: deadrefBefore);
+        }
+
         foreach ((HashSet<string> dead, bool exits) in armEnds.Where(predicate: a => !a.Exits))
         {
             _deadrefVariables.UnionWith(other: dead);
