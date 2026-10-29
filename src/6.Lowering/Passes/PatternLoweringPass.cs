@@ -749,8 +749,13 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         bool restIsSubject = rest == null || subjectType == null || rest.FullName == subjectType.FullName;
         if (ep.VariableName != null && rest is { Name: "None" } && !restIsSubject)
         {
-            // Only `None` is left: the name holds nothing worth reading.
-            return (null, null);
+            // Only `None` is left: the name holds `none`, which the arm may still use (`show(e)` shows `None`).
+            return (null, MakeBinding(name: ep.VariableName,
+                value: new LiteralExpression(Value: null!, LiteralType: TokenType.NoneValue, Location: loc)
+                {
+                    ResolvedType = rest
+                },
+                loc: loc));
         }
 
         if (ep.VariableName != null && !restIsSubject && subjectType is VariantTypeSymbol &&

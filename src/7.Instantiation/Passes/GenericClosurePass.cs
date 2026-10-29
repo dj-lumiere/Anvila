@@ -263,6 +263,10 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // member-routine calls and Text concatenation before operator lowering can fold the chain.
         new FStringLoweringPass(ctx: postCtx).RunOnInstantiatedGenericBodies(
             instantiatedGenericBodies: freshBodies);
+        // A body made concrete for `Crashables` (`show[T]` called with a caught error) calls the error's routines
+        // through the type-id dispatch. After the f-strings (their parts render through `represent`), before the
+        // pattern lowering (it turns the `is Crashables e` arms this writes into tests).
+        new CrashableExpansionPass(ctx: postCtx).RunOnInstantiatedGenericBodies(bodies: freshBodies);
         // ExpressionLoweringPass: handles RangeExpression, UnaryExpression(Not), pattern lowering
         // etc. Must run before OperatorLoweringPass — operator lowering folds the BinaryExpressions
         // ExpressionLowering produces (e.g. `1 til n` -> a range record with `+ 1` / `< n` checks).

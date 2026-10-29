@@ -167,7 +167,30 @@ public sealed class BackendEntryValidator
                    registry: registry,
                    error: out error) || TryCreateIndexGenericError(node: node, error: out error) ||
                TryCreateMissingReprError(node: node, error: out error) ||
+               TryCreateUndispatchedCrashablesCallError(node: node, error: out error) ||
                TryCreateResidualNodeError(node: node, error: out error);
+    }
+
+    /// <summary>
+    /// Errors when a call of a <c>Crashables</c> routine the builder supplies (<c>@innate</c>: represent, crash_message,
+    /// ...) reached backend entry as a plain call. Its declaration has no body, so the call must have become the
+    /// type-id dispatch (CrashableExpansionPass), or the caught error would show as empty text.
+    /// </summary>
+    private static bool TryCreateUndispatchedCrashablesCallError(ISyntaxTreeNode node, out SemanticError? error)
+    {
+        if (node is CallExpression { ResolvedRoutine: { OwnerType.Name: RuntimeContract.Crashables } routine } call &&
+            routine.Annotations.Contains(value: "innate"))
+        {
+            error = new SemanticError(Code: SemanticDiagnosticCode.MissingCallLoweringMetadata,
+                Message:
+                $"Call of 'Crashables.{routine.Name}' reached backend entry without its type-id dispatch. " +
+                "CrashableExpansionPass must lower it before code generation.",
+                Location: call.Location);
+            return true;
+        }
+
+        error = null;
+        return false;
     }
 
     /// <summary>

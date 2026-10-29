@@ -67,6 +67,17 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
         }
     }
 
+    /// <summary>
+    /// Lowers the bodies made concrete this run: a generic body called with a <c>Crashables</c> (<c>show(e)</c> runs
+    /// <c>show[T]</c>, whose <c>value.represent()</c> is now the caught error's) reaches the error's own routine
+    /// through the type-id dispatch, not the <c>@innate</c> declaration, which has no body of its own.
+    /// </summary>
+    public void RunOnInstantiatedGenericBodies(Dictionary<string, Instantiation.MonomorphizedBody> bodies)
+    {
+        BodyDispatch.RunOnInstantiatedGenericBodies(registry: ctx.Registry, bodies: bodies,
+            lower: (_, mono) => Lower(body: mono.Ast.Body));
+    }
+
     private void LowerMemberList(List<SyntaxTree.Declaration> members)
     {
         for (int j = 0; j < members.Count; j++)
