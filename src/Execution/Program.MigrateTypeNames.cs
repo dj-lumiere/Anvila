@@ -42,6 +42,16 @@ internal partial class Program
     /// </summary>
     private static string RewriteTypeNames(string file, string source, Language language, int lineOffset)
     {
-        return ReplaceInCode(text: source, pattern: OldTypeName, replacement: m => RenamedTypeNames[key: m.Value]);
+        // A type the file declares under an old name (a program's own `record SplitArray[T, N]`) is the program's and
+        // keeps its name.
+        var declared = DeclaredTypeName.Matches(input: source).Select(selector: d => d.Groups[groupname: "name"].Value)
+                                       .ToHashSet(comparer: StringComparer.Ordinal);
+        return ReplaceInCode(text: source, pattern: OldTypeName,
+            replacement: m => declared.Contains(item: m.Value) ? m.Value : RenamedTypeNames[key: m.Value]);
     }
+
+    /// <summary>A type declaration at the start of a line, its name in the <c>name</c> group.</summary>
+    private static readonly Regex DeclaredTypeName =
+        new(pattern: @"(?m)^(?:(?:secret|posted)\s+)?(?:record|entity|choice|flags|variant|protocol|crashable|bundle|define)\s+(?<name>\w+)",
+            options: RegexOptions.Compiled);
 }
