@@ -1771,13 +1771,16 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // projects the receiver), as `getitem` does.
         // Through a token on an entity container (`xs[^1]` with `xs: Modifying[List[S64]]`) the count is the
         // container's own: the token shares the entity's pointer, so it is the receiver as it is (as in
-        // MintElementToken).
+        // MintElementToken). This holds whether or not the token type has a forwarded `count` registered: such a
+        // forwarder is reached by no call the collector sees, so a call to it links to nothing.
         if (targetType.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
-            targetType.TypeArguments is [EntityTypeSymbol tokenInner] &&
-            ctx.Registry.LookupMemberRoutine(type: targetType,
-                memberRoutineName: Declaration.RuntimeContract.Collection.Count) == null)
+            targetType.TypeArguments is [EntityTypeSymbol tokenInner])
         {
             targetType = tokenInner;
+            // The count call reads the receiver as the container itself, so later passes resolve `count` on the
+            // container and not on the token type.
+            loweredObj = loweredObj with { };
+            loweredObj.ResolvedType = tokenInner;
         }
 
         RoutineInfo? countRoutine = ctx.Registry.LookupMemberRoutine(type: targetType,

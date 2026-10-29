@@ -223,6 +223,8 @@ internal sealed class NameSuggestions(TypeRegistry registry)
             "FrozenController" => " 'FrozenController' is gone, with nothing in its place.",
             "PQEntry" => " 'PQEntry' is gone: a PriorityQueue gives '(priority, element)' tuples ('peek_entry()', " +
                          "'ordered()', 'drain()'), taken apart with 'var (p, e) = queue.peek_entry()'.",
+            "DictEntry" => " 'DictEntry' is gone: a dictionary entry is the tuple '(TKey, TValue)', taken apart " +
+                           "with 'for (k, v) in d' or read as 'e.item0' and 'e.item1'.",
             _ => null
         };
     }
