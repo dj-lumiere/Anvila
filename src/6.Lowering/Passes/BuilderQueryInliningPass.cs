@@ -2,6 +2,7 @@ using Builder.Instantiation;
 using Builder.Tokenizer;
 using Builder.Declaration;
 using Builder.Desugaring;
+using Builder.Targeting;
 using SyntaxTree;
 using TypeModel.Enums;
 using TypeModel.Types;
@@ -40,11 +41,18 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     private string _currentRoutineName = "<unknown>";
     private string _currentRoutineModule = "";
 
+    // The build's target and mode: what target_os()/target_arch()/word_size()/page_size()/cache_line()/
+    // build_mode() fold to at their call sites.
+    private readonly TargetConfig _target;
+    private readonly RfBuildMode _buildMode;
+
     /// <summary>Creates a pass instance backed by a full <see cref="DesugaringContext"/>.</summary>
     internal BuilderQueryInliningPass(DesugaringContext ctx)
     {
         _ctx = ctx;
         _registry = ctx.Registry;
+        _target = ctx.Target;
+        _buildMode = ctx.BuildMode;
     }
 
     /// <summary>
@@ -52,10 +60,13 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     /// Supports <see cref="Run"/> and <see cref="RunOnVariantBodies"/> only.
     /// </summary>
     internal BuilderQueryInliningPass(TypeRegistry registry,
-        Dictionary<string, Statement>? variantBodies = null)
+        Dictionary<string, Statement>? variantBodies = null, TargetConfig? target = null,
+        RfBuildMode buildMode = RfBuildMode.Debug)
     {
         _registry = registry;
         _ownedVariantBodies = variantBodies;
+        _target = target ?? TargetConfig.ForCurrentHost();
+        _buildMode = buildMode;
     }
 
     private static readonly HashSet<string> _foldableRoutines =
@@ -252,6 +263,12 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             return slFolded;
         }
 
+        // Build-information call folding (target_os/build_mode/...): the builder writes no body for these.
+        if (TryFoldBuildInfoCall(call: e) is { } biFolded)
+        {
+            return biFolded;
+        }
+
         // BuilderQuery constant-call folding.
         if (TryFoldBuilderQueryCall(expr: e) is { } bqFolded)
         {
@@ -312,6 +329,89 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
         }
 
         return null;
+    }
+
+    // The standalone BuilderQuery routines that report the build itself. Each is a build-time constant, and the
+    // builder registers only their signature, so every call is folded here to the value (a call left standing
+    // would name a routine nothing defines).
+    private static readonly HashSet<string> _buildInfoRoutines =
+        new(comparer: StringComparer.Ordinal)
+        {
+            "target_os",
+            "target_arch",
+            "builder_version",
+            "build_timestamp",
+            "build_mode",
+            "page_size",
+            "cache_line",
+            "word_size"
+        };
+
+    // The one timestamp every build_timestamp() call of this build reports.
+    private static readonly string _buildTimestamp =
+        DateTime.UtcNow.ToString(format: "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            provider: System.Globalization.CultureInfo.InvariantCulture);
+
+    // Folds a zero-arg build-information call (target_os/build_mode/...) to its value, or null.
+    private Expression? TryFoldBuildInfoCall(CallExpression call)
+    {
+        if (call is not { Callee: IdentifierExpression { Name: var name }, Arguments.Count: 0 } ||
+            !_buildInfoRoutines.Contains(item: name) ||
+            call.ResolvedRoutine is { } resolved && resolved.Module != "BuilderQuery")
+        {
+            return null;
+        }
+
+        EnsureTypes();
+        SourceLocation loc = call.Location;
+        switch (name)
+        {
+            case "target_os" when _textType != null:
+                return MakeLiteralText(value: _target.TargetOS, type: _textType, loc: loc);
+            case "target_arch" when _textType != null:
+                return MakeLiteralText(value: _target.TargetArch, type: _textType, loc: loc);
+            case "builder_version" when _textType != null:
+                return MakeLiteralText(
+                    value: Builder.Frontends.Languages.For(language: _registry.Language).Version,
+                    type: _textType,
+                    loc: loc);
+            case "build_timestamp" when _textType != null:
+                return MakeLiteralText(value: _buildTimestamp, type: _textType, loc: loc);
+            case "page_size" or "cache_line" or "word_size" when _u64Type != null && _byteSizeType != null:
+            {
+                ulong bytes = name switch
+                {
+                    "page_size" => (ulong)_target.PageSize,
+                    "cache_line" => (ulong)_target.CacheLineSize,
+                    _ => (ulong)(_target.PointerBitWidth / 8)
+                };
+                return MakeByteSizeCreator(value: bytes,
+                    u64Type: _u64Type,
+                    byteSizeType: _byteSizeType,
+                    loc: loc);
+            }
+            case "build_mode":
+            {
+                if (_registry.LookupType(name: "BuilderQuery.BuildMode") is not ChoiceTypeSymbol modeChoice)
+                {
+                    return null;
+                }
+
+                string caseName = _buildMode switch
+                {
+                    RfBuildMode.Release => "RELEASE",
+                    RfBuildMode.ReleaseTime => "RELEASE_TIME",
+                    RfBuildMode.ReleaseSpace => "RELEASE_SPACE",
+                    _ => "DEBUG"
+                };
+                ChoiceCaseInfo? found = modeChoice.Cases.FirstOrDefault(predicate: c => c.Name == caseName);
+                return found == null
+                    ? null
+                    : MakeLiteralS64(value: found.ComputedValue, type: modeChoice, loc: loc);
+            }
+            default:
+                return null;
+        }
     }
 
     // Folds a zero-arg BuilderQuery constant memberRoutine call (data_size/type_id/...), or null.

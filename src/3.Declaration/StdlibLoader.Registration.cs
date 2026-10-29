@@ -426,8 +426,8 @@ public sealed partial class StdlibLoader
 
         // Standalone BuilderQuery routines (build_mode/target_os/source_*/page_size/…) are provided
         // by the builder: RegisterStandaloneRoutines/RegisterModuleRoutines register a single synthesized
-        // RoutineInfo (module BuilderQuery) whose body WiredRoutinePass folds to a build-time literal,
-        // and the source-location ones are folded at their call sites. The stdlib `@innate` decl is only
+        // RoutineInfo (module BuilderQuery) with no body, and BuilderQueryInliningPass folds every call to a
+        // build-time literal at its call site (the source location, the target, the mode). The stdlib `@innate` decl is only
         // the surface signature — registering it too would create a SECOND, bodiless routine under the
         // same BuilderQuery.<name> identity, and codegen would emit a call to the undefined one. So the
         // stdlib standalone decl is skipped; the synthesized routine is the sole definition.

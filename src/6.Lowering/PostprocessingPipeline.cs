@@ -62,7 +62,8 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         ctx.Registry.CompilationRules.LowerFirst(ctx: ctx, program: program);
         new VariantReturnLoweringPass(ctx: ctx).Run(program: program);
         new LiteralLoweringPass(ctx: ctx).Run(program: program);
-        new BuilderQueryInliningPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies).Run(
+        new BuilderQueryInliningPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies,
+            target: ctx.Target, buildMode: ctx.BuildMode).Run(
             program: program);
         new GenericCallLoweringPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies).Run(
             program: program);
@@ -137,7 +138,8 @@ public sealed class PostprocessingPipeline(PostprocessingContext ctx)
         ctx.Registry.CompilationRules.LowerFirstInVariantBodies(ctx: ctx);
         new VariantReturnLoweringPass(ctx: ctx).RunOnVariantBodies();
         new LiteralLoweringPass(ctx: ctx).RunOnVariantBodies();
-        new BuilderQueryInliningPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies)
+        new BuilderQueryInliningPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies,
+            target: ctx.Target, buildMode: ctx.BuildMode)
            .RunOnVariantBodies();
         new GenericCallLoweringPass(registry: ctx.Registry, variantBodies: ctx.VariantBodies)
            .RunOnVariantBodies();
