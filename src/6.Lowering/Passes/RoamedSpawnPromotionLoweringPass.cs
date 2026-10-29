@@ -123,6 +123,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
     private List<Statement> CollectPromotes(Statement stmt)
     {
         var promotes = new List<Statement>();
+        var spawns = new List<CallExpression>();
         foreach (Expression e in DirectExpressions(stmt: stmt))
         {
             AstWalker.WalkExpressions(root: e,
@@ -130,7 +131,7 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                 {
                     if (n is CallExpression call && IsSpawnCall(call: call))
                     {
-                        AppendPromotesFor(spawn: call, promotes: promotes);
+                        spawns.Add(item: call);
                     }
 
                     // A lambda that captures a handle can be called from any job it is handed to (a job's
@@ -148,6 +149,12 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
                             });
                     }
                 });
+        }
+
+        // The arguments are rewritten after the walk, which is still iterating over them while it visits.
+        foreach (CallExpression spawn in spawns)
+        {
+            AppendPromotesFor(spawn: spawn, promotes: promotes);
         }
 
         return promotes;
@@ -186,12 +193,60 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
         }
     }
 
+    // A promote names its argument a second time, before the spawn. An argument that is computed (a call such as
+    // `counter.make()`) would then run twice, so when one is, every computed argument of the spawn is first
+    // computed into a temp, in the order written, and both the promote and the spawn read the temp.
     private void AppendPromotesFor(CallExpression spawn, List<Statement> promotes)
     {
+        bool computedHandle = spawn.Arguments.Any(predicate: arg =>
+            Unwrap(arg: arg) is { ResolvedType: { } type } value && OwnsRoamed(type: type) && !IsStable(expr: value));
+        if (computedHandle)
+        {
+            for (int i = 0; i < spawn.Arguments.Count; i++)
+            {
+                Expression value = Unwrap(arg: spawn.Arguments[index: i]);
+                if (IsStable(expr: value) || value.ResolvedType is null)
+                {
+                    continue;
+                }
+
+                string tmp = $"__spawn_arg_{_spillCounter++}";
+                promotes.Add(item: new DeclarationStatement(
+                    Declaration: new VariableDeclaration(Name: tmp,
+                        Type: null,
+                        Initializer: value,
+                        Visibility: VisibilityModifier.Secret,
+                        Location: value.Location),
+                    Location: value.Location));
+                var read = new IdentifierExpression(Name: tmp, Location: value.Location)
+                {
+                    ResolvedType = value.ResolvedType
+                };
+                spawn.Arguments[index: i] = spawn.Arguments[index: i] is NamedArgumentExpression named
+                    ? named with { Value = read }
+                    : read;
+            }
+        }
+
         foreach (Expression arg in spawn.Arguments)
         {
             AppendPromotesForValue(root: Unwrap(arg: arg), promotes: promotes);
         }
+    }
+
+    private int _spillCounter;
+
+    /// <summary>Whether reading <paramref name="expr"/> again gives the same value without running anything: a
+    /// name, a member variable reached through names, a literal, or a handed-over name.</summary>
+    private static bool IsStable(Expression expr)
+    {
+        return expr switch
+        {
+            IdentifierExpression or LiteralExpression => true,
+            MemberExpression member => IsStable(expr: member.Object),
+            StealExpression steal => IsStable(expr: steal.Operand),
+            _ => false
+        };
     }
 
     // Emits a `promote()` for `root` if it is itself a Roamed[T], otherwise DESCENDS into its record
