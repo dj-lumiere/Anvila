@@ -223,7 +223,9 @@ public sealed partial class TypeRegistry
             // `WhereEmittable[Int, List[Int]]` is the same type.
             TypeSymbol lowered = PointsAtParameter(genericDef: genericDef, slot: slot)
                 ? PointedAtArgument(argument: arg)
-                : RoamEntitySlot(resolved: arg, roamedDef: roamedDef);
+                : IsEntityParameter(genericDef: genericDef, slot: slot)
+                    ? EntityItself(argument: arg)
+                    : RoamEntitySlot(resolved: arg, roamedDef: roamedDef);
             if (!ReferenceEquals(objA: lowered, objB: arg))
             {
                 changed = true;
@@ -271,6 +273,30 @@ public sealed partial class TypeRegistry
             WrapperShape.TryGet(type: v.Type, name: out string wrapper, inner: out TypeSymbol pointee) &&
             wrapper == RuntimeContract.Hijacked && pointee is GenericParameterTypeSymbol { Name: var named } &&
             named == parameter);
+    }
+
+    /// <summary>Whether <paramref name="genericDef"/>'s type parameter at <paramref name="slot"/> needs an entity
+    /// (<c>needs EntityType T</c>, as <c>Watched[T]</c> has). Such a parameter names the entity itself, never the
+    /// handle a program holds it by: <c>Watched[Session]</c> written in a file that shares entities watches the
+    /// <c>Session</c>, the same type <c>watch(target:)</c> gives back.</summary>
+    public static bool IsEntityParameter(TypeSymbol genericDef, int slot)
+    {
+        return genericDef.GenericParameters is { } parameters && slot < parameters.Count &&
+               genericDef.GenericConstraints is { } constraints &&
+               constraints.Any(predicate: c => c.ConstraintType == ConstraintKind.EntityType &&
+                                               c.ParameterName == parameters[index: slot]);
+    }
+
+    /// <summary>The entity a type argument for an entity parameter stands for: the entity inside a <c>Roamed[E]</c>
+    /// handle, anything else as it is.</summary>
+    public static TypeSymbol EntityItself(TypeSymbol argument)
+    {
+        return argument is RecordTypeSymbol
+        {
+            GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol held]
+        }
+            ? held
+            : argument;
     }
 
     private static bool IsRoamedSlot(TypeSymbol type)

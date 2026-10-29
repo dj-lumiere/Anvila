@@ -637,6 +637,15 @@ internal sealed class TypeResolver
         foreach (TypeExpression argExpr in typeExpr.GenericArguments!)
         {
             TypeSymbol argType = ResolveType(typeExpr: argExpr);
+            // A parameter that needs an entity (`Watched[T]`) names the entity itself. In a file that holds
+            // entities by their shared handle the argument resolved to that handle, so it is taken back to the
+            // entity it stands for.
+            if (TypeRegistry.IsEntityParameter(genericDef: genericDef, slot: typeArgs.Count) &&
+                _sa._registry.EntitiesAreShared && _sa._registry.EntitiesAreSharedIn(filePath: _sa._currentFilePath))
+            {
+                argType = TypeRegistry.EntityItself(argument: argType);
+            }
+
             typeArgs.Add(item: argType);
         }
 

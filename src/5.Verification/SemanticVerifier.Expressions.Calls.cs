@@ -2548,7 +2548,11 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            if (!IsAssignableTo(source: at, target: pt))
+            // A token parameter takes the value itself (`one(xs: xs)` for `xs: Viewing[List[S64]]`): the call writes
+            // the token, as the overload lookup already counts it. Read as a mismatch, it sent the call back to the
+            // overload search, which analyzes every argument without its parameter's type, so an argument that takes
+            // its type from there (`n: w.to()`) had none.
+            if (!IsAssignableTo(source: at, target: pt) && !Declaration.ImplicitToken.Accepts(source: at, parameter: pt))
             {
                 return true;
             }
@@ -4574,7 +4578,13 @@ public sealed partial class SemanticVerifier
             }
             else
             {
-                ReportUnknownMemberVariableArguments(call: call, type: type);
+                // A generic definition named without a creator for its arguments has no type arguments to take, so
+                // there is no type to go on with.
+                if (ReportUnknownMemberVariableArguments(call: call, type: type) && type.IsGenericDefinition)
+                {
+                    return ErrorTypeSymbol.Instance;
+                }
+
                 ValidateMemberwiseConstructionAccess(type: type, arguments: call.Arguments, location: call.Location);
             }
         }
@@ -4946,20 +4956,47 @@ public sealed partial class SemanticVerifier
     /// such name (RF-S505), since the memberwise construction cannot bind it either. A name that is a member
     /// variable must carry a value that member variable can hold.
     /// </summary>
-    private void ReportUnknownMemberVariableArguments(CallExpression call, TypeSymbol type)
+    /// <returns>Whether a name was reported as unknown.</returns>
+    private bool ReportUnknownMemberVariableArguments(CallExpression call, TypeSymbol type)
     {
         List<MemberVariableInfo>? fields = type switch
         {
             RecordTypeSymbol r => r.MemberVariables,
             _ => null
         };
-        if (fields is not { Count: > 0 } || type.IsGenericDefinition)
+        if (fields is not { Count: > 0 })
         {
-            return;
+            return false;
+        }
+
+        bool reported = false;
+
+        // A generic definition (`Watched(from: s)`, no type arguments written) may still be built by a creator the
+        // lookup by argument types could not match against its unbound parameters, so a name only counts as unknown
+        // when no creator has a parameter of that name either.
+        HashSet<string>? creatorParameterNames = null;
+        if (type.IsGenericDefinition)
+        {
+            var creators = new List<RoutineInfo>();
+            _registry.CollectCreatorCandidates(type: type, candidates: creators);
+            creatorParameterNames = creators.SelectMany(selector: c => c.Parameters)
+                                            .Select(selector: p => p.Name)
+                                            .ToHashSet(comparer: StringComparer.Ordinal);
         }
 
         foreach (NamedArgumentExpression named in call.Arguments.OfType<NamedArgumentExpression>())
         {
+            if (creatorParameterNames != null)
+            {
+                if (fields.All(predicate: f => f.Name != named.Name) && !creatorParameterNames.Contains(item: named.Name))
+                {
+                    ReportUnknownMemberVariableArgument(named: named, type: type, fields: fields);
+                    reported = true;
+                }
+
+                continue;
+            }
+
             if (fields.FirstOrDefault(predicate: f => f.Name == named.Name) is { } field)
             {
                 // No creator took the arguments, so this is the memberwise construction: each value must be one
@@ -4982,12 +5019,30 @@ public sealed partial class SemanticVerifier
                 continue;
             }
 
-            ReportError(code: SemanticDiagnosticCode.UnknownNamedArgument,
-                message: $"You name the argument '{named.Name}', but '{type.Name}' has no member variable or " +
-                         $"creator parameter called that. Its member variables are " +
-                         $"{string.Join(separator: ", ", values: fields.Select(selector: f => $"'{f.Name}'"))}.",
-                location: named.Location);
+            ReportUnknownMemberVariableArgument(named: named, type: type, fields: fields);
+            reported = true;
         }
+
+        return reported;
+    }
+
+    private void ReportUnknownMemberVariableArgument(NamedArgumentExpression named, TypeSymbol type,
+        List<MemberVariableInfo> fields)
+    {
+        // Member variables this module may not set are not named: the program cannot build the type from them.
+        bool sameModule = _isInCompilerGeneratedBody || IsAccessingFromSameModule(memberModule: type.Module);
+        List<string> settable = fields.Where(predicate: f => sameModule ||
+                                                             f.Visibility is not (VisibilityModifier.Secret or
+                                                                 VisibilityModifier.Posted))
+                                      .Select(selector: f => $"'{f.Name}'")
+                                      .ToList();
+        string known = settable.Count > 0
+            ? $" Its member variables are {string.Join(separator: ", ", values: settable)}."
+            : "";
+        ReportError(code: SemanticDiagnosticCode.UnknownNamedArgument,
+            message: $"You name the argument '{named.Name}', but '{type.Name}' has no member variable or " +
+                     $"creator parameter called that.{known}",
+            location: named.Location);
     }
 
     /// <summary>

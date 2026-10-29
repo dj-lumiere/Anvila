@@ -687,24 +687,14 @@ internal sealed class TypeBodyResolver
             });
         }
 
-        // Update the registered type with resolved members
-        if (LookupTypeInCurrentModule(name: variant.Name) is VariantTypeSymbol { CarrierKind: not CarrierKind.None } carrier)
+        // The registered type gets its arms in place. A type declared earlier in the file may already hold this
+        // variant (a record member variable `inner: AnyService` resolved before the variant's body), and that
+        // holder keeps the instance it resolved. A fresh instance put into the registry would leave the holder
+        // with an arm-less variant, so `when h.inner` with `is Slow` would report that the arm can never match.
+        if (LookupTypeInCurrentModule(name: variant.Name) is VariantTypeSymbol variantType)
         {
-            // Check / Lookup: the builder's own shell, which everything already holds, gets the arms in place.
-            carrier.Members = finalMembers;
-        }
-        else if (LookupTypeInCurrentModule(name: variant.Name) is VariantTypeSymbol variantType)
-        {
-            var updated = new VariantTypeSymbol(name: variant.Name)
-            {
-                Members = finalMembers,
-                GenericParameters = variant.GenericParameters,
-                GenericConstraints = variant.GenericConstraints,
-                Visibility = variantType.Visibility,
-                Location = variant.Location,
-                Module = variantType.Module
-            };
-            _sa._registry.UpdateType(oldType: variantType, newType: updated);
+            variantType.Members = finalMembers;
+            TypeShapeVersion.Bump();
         }
     }
 
