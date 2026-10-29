@@ -1414,8 +1414,10 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        if ((source.Category == TypeCategory.Entity || source.Category == TypeCategory.Record ||
-             source.Category == TypeCategory.Wrapper) && IsMaybeType(type: target) &&
+        // Every kind of value a `T?` holds wraps the same way: a variant, choice or flags value goes into its
+        // Optional like a record does.
+        if (source.Category is TypeCategory.Entity or TypeCategory.Record or TypeCategory.Wrapper
+                or TypeCategory.Variant or TypeCategory.Choice or TypeCategory.Flags && IsMaybeType(type: target) &&
             target.TypeArguments is { Count: 1 } &&
             IsAssignableToMaybeInner(source: source, maybeTarget: target))
         {
@@ -1427,7 +1429,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Handles the <c>Optional[T]</c> auto-wrap case of <see cref="IsAssignableTo"/>: an entity/record/
-    /// wrapper source is assignable to <c>Optional[SameType]</c>.
+    /// wrapper/variant/choice/flags source is assignable to <c>Optional[SameType]</c>.
     /// The caller has already verified the source category and that <paramref name="maybeTarget"/> is a
     /// single-arg Optional.
     /// </summary>
