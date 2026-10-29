@@ -520,7 +520,7 @@ public sealed partial class SemanticVerifier
         // reflexive marker-protocol rule) is decided by the single registry authority — no duplicate walk
         // here. A positive result covers e.g. `List[NonCopyable]` NOT satisfying `T obeys Copyable`
         // (RF-S150), and Viewing/Modifying/value types satisfying Accessing/Controlling.
-        if (_registry.TypeObeysProtocol(type: type, protocolName: protocolName))
+        if (_registry.TypeObeysProtocol(type: type, protocolName: protocolName, resolvedProtocol: protocol))
         {
             return true;
         }

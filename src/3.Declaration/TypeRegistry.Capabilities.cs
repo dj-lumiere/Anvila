@@ -634,18 +634,21 @@ public sealed partial class TypeRegistry
     /// exact name or the bare (bracket-stripped) name, so a parameterised <c>Controlling[List[S64]]</c> and the
     /// registered generic-def <c>Controlling</c> both resolve.
     /// </summary>
-    internal bool TypeObeysProtocol(TypeSymbol type, string protocolName)
+    /// <param name="resolvedProtocol">The protocol <paramref name="protocolName"/> names where the caller looked it up
+    /// (a protocol of the caller's own module), when the caller has it: a bare-name lookup misses a protocol a user
+    /// module declares, or finds a library protocol of the same name.</param>
+    internal bool TypeObeysProtocol(TypeSymbol type, string protocolName, TypeSymbol? resolvedProtocol = null)
     {
         // The handle library code holds an entity a program writes as (HandleTakenAsMe) stands for the entity, so it
         // obeys what the entity obeys: an adapter over it (`WhereEmittable[T, Roamed[Steps]]`) needs its source to be
         // emittable, and `==` on two handles compares the entities.
         if (EntityOfHandleTakenAsMe(type: type) is { } handled &&
-            TypeObeysOwnProtocol(type: handled, protocolName: protocolName))
+            TypeObeysOwnProtocol(type: handled, protocolName: protocolName, resolvedProtocol: resolvedProtocol))
         {
             return true;
         }
 
-        return TypeObeysOwnProtocol(type: type, protocolName: protocolName);
+        return TypeObeysOwnProtocol(type: type, protocolName: protocolName, resolvedProtocol: resolvedProtocol);
     }
 
     /// <summary>Whether <paramref name="type"/> writes its own <c>eq</c> (for <c>Equatable</c>) or its own keyed
@@ -724,7 +727,7 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary><see cref="TypeObeysProtocol(TypeSymbol, string)"/> for one type, a handle not looked through.</summary>
-    private bool TypeObeysOwnProtocol(TypeSymbol type, string protocolName)
+    private bool TypeObeysOwnProtocol(TypeSymbol type, string protocolName, TypeSymbol? resolvedProtocol = null)
     {
         List<TypeSymbol>? implemented = ImplementedProtocolsWithAmbientFold(type: type);
         if (implemented == null)
@@ -736,7 +739,7 @@ public sealed partial class TypeRegistry
         // protocol (+ its parent chain) by reference IDENTITY against it — no name-string equality anywhere.
         // Canonicalizing both sides through the registry (rather than trusting the object a type happened to
         // store at declaration time) is what makes identity reliable despite realm/registration duplication.
-        TypeSymbol? targetDef = CanonicalProtocolDef(t: LookupType(name: protocolName));
+        TypeSymbol? targetDef = CanonicalProtocolDef(t: resolvedProtocol ?? LookupType(name: protocolName));
         if (targetDef == null)
         {
             return false;
@@ -837,8 +840,9 @@ public sealed partial class TypeRegistry
             return t;
         }
 
+        // The full name first: a protocol a user module declares may share its bare name with a library one.
         TypeSymbol def = p.GenericDefinition ?? p;
-        return LookupType(name: def.Name) ?? def;
+        return LookupType(name: def.FullName) ?? LookupType(name: def.Name) ?? def;
     }
 
     /// <summary>
