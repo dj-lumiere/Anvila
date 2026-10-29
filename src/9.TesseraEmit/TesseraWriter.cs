@@ -614,13 +614,15 @@ internal sealed class TesseraWriter
     /// </summary>
     public string VariantRecord(VariantTypeSymbol variant)
     {
-        if (_variantRecords.TryGetValue(key: variant.FullName, value: out string? name))
+        // Suflae's own types share full names with the shared library's (SF `System.List` and RF `System.List`), so
+        // the realm-marked name keys and names each Tessera record.
+        if (_variantRecords.TryGetValue(key: variant.InstanceArgumentName, value: out string? name))
         {
             return name;
         }
 
-        name = VerbatimName(text: $"Variant.{variant.FullName}");
-        _variantRecords[key: variant.FullName] = name;
+        name = VerbatimName(text: $"Variant.{variant.InstanceArgumentName}");
+        _variantRecords[key: variant.InstanceArgumentName] = name;
         List<string> payloads = variant.Members
                                        .Where(predicate: m => m is { IsNone: false, Type: not null })
                                        .Select(selector: m => $"sizeof[{TypeText(type: m.Type)}]()")
@@ -888,13 +890,14 @@ internal sealed class TesseraWriter
     /// on first use. An entity value is the block's address; a field is read through this record.</summary>
     public string EntityRecord(EntityTypeSymbol entity)
     {
-        if (_entityRecords.TryGetValue(key: entity.FullName, value: out string? name))
+        // Realm-marked like the variant records: SF `System.List` and RF `System.List` have different fields.
+        if (_entityRecords.TryGetValue(key: entity.InstanceArgumentName, value: out string? name))
         {
             return name;
         }
 
-        name = VerbatimName(text: entity.FullName + " block");
-        _entityRecords[key: entity.FullName] = name;
+        name = VerbatimName(text: entity.InstanceArgumentName + " block");
+        _entityRecords[key: entity.InstanceArgumentName] = name;
         var text = new StringBuilder();
         text.Append(value: $"{Private}record {name}\n");
         foreach (MemberVariableInfo field in entity.MemberVariables)
@@ -1123,13 +1126,14 @@ internal sealed class TesseraWriter
     /// <summary>The Tessera record for a struct record, declared on first use with its fields in order.</summary>
     private string RecordName(RecordTypeSymbol record)
     {
-        if (_recordNames.TryGetValue(key: record.FullName, value: out string? name))
+        // Realm-marked like the variant records.
+        if (_recordNames.TryGetValue(key: record.InstanceArgumentName, value: out string? name))
         {
             return name;
         }
 
-        name = VerbatimName(text: record.FullName);
-        _recordNames[key: record.FullName] = name;
+        name = VerbatimName(text: record.InstanceArgumentName);
+        _recordNames[key: record.InstanceArgumentName] = name;
         var text = new StringBuilder();
         text.Append(value: $"{Private}record {name}\n");
 
