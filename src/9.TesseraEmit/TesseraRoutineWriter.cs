@@ -14,7 +14,7 @@ namespace Builder.TesseraEmit;
 /// <summary>
 /// Writes one routine as Tessera. Every local lives in a stack slot, as in the LLVM emitter's
 /// alloca-per-local output (LLVM promotes the slots to registers): a read is a <c>load</c>, a write a
-/// <c>store</c>. Each slot is local to the whole routine, declared in its head (<c>x: &amp;T &lt;- .hollow()</c>), so every block
+/// <c>store</c>. Each slot is local to the whole routine, declared in its head (<c>lateinit x: &amp;T</c>), so every block
 /// sees it without taking it as a parameter, and the local's first value is stored where it is declared
 /// (<c>x.store(value)</c>). A parameter's slot starts with the parameter in the head itself. Slot names are
 /// unique in the routine, so a local of an inner scope never meets another of its name. Each value a statement
@@ -207,7 +207,7 @@ internal sealed class TesseraRoutineWriter
             return local;
         }
 
-        _head.Add(item: $"{local.Place}: {slotType} <- .hollow()");
+        _head.Add(item: $"lateinit {local.Place}: {slotType}");
         if (initial is not null)
         {
             Emit(line: $"{local.Place}.poke({initial})");
@@ -699,13 +699,13 @@ internal sealed class TesseraRoutineWriter
             case "B16" or "BF16" or "B32" or "B64":
                 return "0.0";
             case "Addr":
-                return ".hollow()";
+                return "Addr.zero()";
             case ['@', ..]:
-                return ".hollow()";
+                return $"bitcast[Addr, {text}](Addr.zero())";
         }
 
         string slot = $"zero{_temps++}";
-        Emit(line: $"{slot}: &{text} <- .hollow()");
+        Emit(line: $"lateinit {slot}: &{text}");
         Emit(line: $"{slot}.zeroinit(1)");
         return $"{slot}.peek()";
     }
@@ -756,7 +756,7 @@ internal sealed class TesseraRoutineWriter
                     Type: _module.ConstantType(constant: constant), IsPlace: false);
             case IdentifierExpression { ResolvedRoutine: { } named }:
                 // A routine taken as a value: its code address, nothing bound.
-                return RoutineValue(routine: named, bound: ".hollow()");
+                return RoutineValue(routine: named, bound: "Addr.zero()");
             case ClosureValueExpression closure:
                 return RoutineValue(
                     routine: closure.Function.ResolvedRoutine ??
@@ -856,7 +856,7 @@ internal sealed class TesseraRoutineWriter
     {
         string record = _module.RoutineValueRecord;
         string name = $"t{_temps++}";
-        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: .hollow())");
+        Emit(line: $"{name}: {record} = {record}(fn: {_module.RoutineName(routine: routine)}.addr(), bound: {bound}, recover: Addr.zero())");
         return new Operand(Text: name, Type: null, IsPlace: false);
     }
 
@@ -1435,7 +1435,7 @@ internal sealed class TesseraRoutineWriter
 
         string tag = Value(operand: Evaluate(expression: tagged.Tag));
         string slot = $"carrier{_temps++}";
-        Emit(line: $"{slot}: &{TypeText(type: carrier)} <- .hollow()");
+        Emit(line: $"lateinit {slot}: &{TypeText(type: carrier)}");
         // Zeroed first, as in the LLVM emitter: a narrower payload leaves no undefined bytes behind.
         Emit(line: $"{slot}.zeroinit(1)");
         Emit(line: $"{slot}.{tagField}.poke({tag})");

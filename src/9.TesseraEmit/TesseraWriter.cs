@@ -767,13 +767,13 @@ internal sealed class TesseraWriter
     /// <summary>
     /// The read-only memory holding <paramref name="data"/>'s elements (a Tessera preset in memory, a private constant
     /// as in the LLVM emitter, so each module keeps its own), laid down once per distinct content; its name is the
-    /// address. Empty data is the hollow address, `.hollow()`.
+    /// address. Empty data is the zero address, `Addr.zero()`.
     /// </summary>
     public string ConstantData(ConstantDataExpression data)
     {
         if (data.Elements.Count == 0)
         {
-            return ".hollow()";
+            return "Addr.zero()";
         }
 
         string type = $"Items[{TypeText(type: data.ElementType)}, {data.Elements.Count}]";
@@ -1206,7 +1206,7 @@ internal sealed class TesseraWriter
                $"    c_tessera_set_library_folder({TesseraTrace.CString(text: _input.Registry.StdlibPath is { } stdlib ? Path.GetFullPath(path: stdlib) : "")})\n" +
                // The AccessManager's checks and the language its reports speak. The places in its reports come from
                // the LLVM emitter's crash trace, which this backend doesn't keep: they are left out.
-               $"    c_rf_access_configure({AccessCheckArguments()}, .hollow())\n" +
+               $"    c_rf_access_configure({AccessCheckArguments()}, Addr.zero())\n" +
                $"    {RoutineName(routine: start)}()\n" +
                "    Hosted/set_exit_code(c_rf_exit_code())\n" +
                "    return\n";

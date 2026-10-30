@@ -134,7 +134,7 @@ internal static class TesseraTrace
         routine rf_failure_get_frames(seq: U64) -> Addr
             when rf_failure_find(seq)
                 is @RfFailure as entry => return entry.frames.getview().to[@RfTraceFrame]()
-                is None => return .hollow()
+                is None => return Addr.zero()
 
         ### The depth of failure `seq`'s trace, under the name the LLVM emitter exports it by, or 0.
         @export("_rf_failure_get_depth_shared")
