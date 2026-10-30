@@ -527,7 +527,9 @@ internal sealed class TesseraRoutineWriter
         }
 
         string value = Temp(type: local.Type, expression: $"{local.Place}.peek()");
-        Emit(line: $"if not {value}.is_hollow()");
+        // An @T always points at a value in Tessera, so a slot that may be empty is asked through its address.
+        string address = TypeText(type: local.Type) == "Addr" ? value : $"{value}.to[Addr]()";
+        Emit(line: $"if not {address}.is_hollow()");
         Nested(body: new ExpressionStatement(Expression: call with { SkipsEmptyReceiver = false }, Location: location));
     }
 
@@ -622,7 +624,8 @@ internal sealed class TesseraRoutineWriter
             return from == to
                 ? inner with { Type = target }
                 : to is ['@', .. var pointee]
-                    ? new Operand(Text: Temp(type: target, expression: $"{Value(operand: inner)}.to[@{pointee}]()"),
+                    // A bitcast, not to[@T](): a RazorForge pointer may be null here, which the program checks itself.
+                    ? new Operand(Text: Temp(type: target, expression: $"bitcast[{from}, @{pointee}]({Value(operand: inner)})"),
                         Type: target, IsPlace: false)
                     : new Operand(Text: Temp(type: target, expression: $"bitcast[{from}, {to}]({Value(operand: inner)})"),
                         Type: target, IsPlace: false);
@@ -663,7 +666,7 @@ internal sealed class TesseraRoutineWriter
     private string Typed(string value, TypeSymbol? from, TypeSymbol? to)
     {
         return TypeText(type: from) == "Addr" && TypeText(type: to) is ['@', .. var pointee]
-            ? $"{value}.to[@{pointee}]()"
+            ? $"bitcast[Addr, @{pointee}]({value})"
             : value;
     }
 

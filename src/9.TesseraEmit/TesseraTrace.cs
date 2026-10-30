@@ -118,31 +118,30 @@ internal static class TesseraTrace
             entry.seq.poke_unbroken(seq)
             return seq
 
-        ### The entry of failure `seq`, or a hollow pointer when the thread doesn't remember it.
-        routine rf_failure_find(seq: U64) -> @RfFailure
+        ### The entry of failure `seq`, or None when the thread doesn't remember it.
+        routine rf_failure_find(seq: U64) -> @RfFailure?
             if ieq[U64](seq, 0)
-                return .hollow()
+                return None()
             for i in 0 til 64
                 entry: @RfFailure = RF_FAILURES.getview().to[@RfFailure]().stride(i)
                 if ieq[U64](entry.seq.peek_unbroken(), seq)
                     return entry
-            return .hollow()
+            return None()
 
-        ### The 32 frames of failure `seq`'s trace, under the name the LLVM emitter exports them by, or a hollow pointer.
+        ### The address of the 32 frames of failure `seq`'s trace, under the name the LLVM emitter exports them by, or
+        ### zero when the thread doesn't remember it.
         @export("_rf_failure_get_frames_shared")
-        routine rf_failure_get_frames(seq: U64) -> @RfTraceFrame
-            entry: @RfFailure = rf_failure_find(seq)
-            if entry.is_hollow()
-                return .hollow()
-            return entry.frames.getview().to[@RfTraceFrame]()
+        routine rf_failure_get_frames(seq: U64) -> Addr
+            when rf_failure_find(seq)
+                is @RfFailure as entry => return entry.frames.getview().to[@RfTraceFrame]()
+                is None => return .hollow()
 
         ### The depth of failure `seq`'s trace, under the name the LLVM emitter exports it by, or 0.
         @export("_rf_failure_get_depth_shared")
         routine rf_failure_get_depth(seq: U64) -> S32
-            entry: @RfFailure = rf_failure_find(seq)
-            if entry.is_hollow()
-                return 0
-            return entry.depth.peek()
+            when rf_failure_find(seq)
+                is @RfFailure as entry => return entry.depth.peek()
+                is None => return 0
 
 
         """;

@@ -135,7 +135,8 @@ internal sealed class TesseraIntrinsics
             // The trace a failure was first thrown with (TesseraTrace's ring of recent failures).
             "failure_trace_depth" => $"rf_failure_get_depth({Argument(index: 0)})",
             "failure_trace_frames" => _typeText(arg: _resultType) is ['@', .. var framePointee]
-                ? $"rf_failure_get_frames({Argument(index: 0)}).to[@{framePointee}]()"
+                // The address may be zero (no trace kept), which the program's own code checks, so it is not to[@T]().
+                ? $"bitcast[Addr, @{framePointee}](rf_failure_get_frames({Argument(index: 0)}))"
                 : $"rf_failure_get_frames({Argument(index: 0)})",
             "element_pointer" => ElementPointer(),
             // A signed byte count: Tessera's Addr moves only by a ByteSize, a pointer by a signed count.
@@ -193,7 +194,7 @@ internal sealed class TesseraIntrinsics
         {
             // A typed pointer @T is reached from another pointer by casting it, an untyped Addr takes any pointer.
             ('p', 'p') => to is ['@', .. var pointee] && from != to
-                ? $"{Argument(index: 0)}.to[@{pointee}]()"
+                ? $"bitcast[{from}, @{pointee}]({Argument(index: 0)})"
                 : Argument(index: 0),
             ('p', 'i') => $"ptrtoint[{from}, {to}]({Argument(index: 0)})",
             ('i', 'p') => $"inttoptr[{from}, {to}]({Argument(index: 0)})",
