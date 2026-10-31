@@ -658,6 +658,17 @@ internal sealed class TypeBodyResolver
 
         _sa._currentType = previousType;
 
+        // A variant has one way to be empty: a `T?` member already holds None, so it would overlap the `None` member.
+        if (hasNone && members.FirstOrDefault(predicate: m => m.Type is { } t && IsMaybeType(type: t)) is
+                { Type: { } maybe } maybeMember)
+        {
+            string held = maybe.TypeArguments?.FirstOrDefault()?.Name ?? "T";
+            _sa.ReportError(code: SemanticDiagnosticCode.VariantCaseContainsInvalidType,
+                message: $"Variant type '{variant.Name}' has the member '{held}?', which already holds None, and a " +
+                         $"'None' member as well. List '{held}' and 'None' as two members instead.",
+                location: maybeMember.Location ?? variant.Location);
+        }
+
         foreach (VariantMemberInfo m in members)
         {
             if (!m.IsNone)
@@ -735,17 +746,6 @@ internal sealed class TypeBodyResolver
             _sa.ReportError(code: SemanticDiagnosticCode.VariantCaseContainsInvalidType,
                 message:
                 $"Variant type '{variant.Name}' has duplicate member type '{memberTypeName}'.",
-                location: member.Location);
-            return;
-        }
-
-        // A `T?` member already holds None, so it would overlap the variant's own `None` member.
-        if (IsMaybeType(type: memberType))
-        {
-            string held = memberType.TypeArguments?.FirstOrDefault()?.Name ?? "T";
-            _sa.ReportError(code: SemanticDiagnosticCode.VariantCaseContainsInvalidType,
-                message: $"Variant type '{variant.Name}' has the member '{held}?', which already holds None. " +
-                         $"List '{held}' and 'None' as two members instead.",
                 location: member.Location);
             return;
         }
