@@ -210,6 +210,10 @@ public enum SemanticDiagnosticCode
     /// <summary>Cannot import non-open symbol from another module.</summary>
     ImportNonOpenSymbol = 115,
 
+    /// <summary>A file of a language with a standard library of its own imports a standard library module only the
+    /// RazorForge standard library has (a Suflae file importing BuilderQuery).</summary>
+    ModuleNotInLanguageStandardLibrary = 116,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // GENERIC AND CONSTRAINT ERRORS (RF-S150 - RF-S199)
     // ═══════════════════════════════════════════════════════════════════════════

@@ -2213,10 +2213,10 @@ internal static class GenericAstRewriter
 
     /// <summary>
     /// A call bound to a concrete routine only now (`me[i] == value` in <c>List[T].contains</c> becomes
-    /// <c>Text.eq(other: Viewing[Text])</c>) hands a record argument to a token parameter as the address of its
+    /// <c>Text.eq(you: Viewing[Text])</c>) hands a record argument to a token parameter as the address of its
     /// place, as the call would have been written for the concrete type. An entity is its own pointer, and an
     /// argument already a token stays. The other way round, a token handed to a parameter of its value's type
-    /// (`value: Viewing[T]` given to <c>Text.eq(other: Text)</c>) is read.
+    /// (`value: Viewing[T]` given to <c>Text.eq(you: Text)</c>) is read.
     /// </summary>
     private static void HandTokenArguments(CallExpression call, TypeRegistry? registry)
     {

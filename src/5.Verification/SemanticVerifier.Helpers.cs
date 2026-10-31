@@ -229,17 +229,22 @@ public sealed partial class SemanticVerifier
             arguments: arguments,
             parameters: parameters,
             totalParams: totalParams,
-            location: location);
+            location: location,
+            misnamed: out bool misnamed);
 
-        // Step 2: Check argument count against required parameters.
+        // Step 2: Check argument count against required parameters. A misnamed argument was reported with the name it
+        // should have, so the count it leaves short isn't reported again.
         int positionalCount = arguments.Count(predicate: a => a is not NamedArgumentExpression);
-        ValidateArgumentCount(routine: routine,
-            arguments: arguments,
-            parameters: parameters,
-            totalParams: totalParams,
-            boundParams: boundParams,
-            positionalCount: positionalCount,
-            location: location);
+        if (!misnamed)
+        {
+            ValidateArgumentCount(routine: routine,
+                arguments: arguments,
+                parameters: parameters,
+                totalParams: totalParams,
+                boundParams: boundParams,
+                positionalCount: positionalCount,
+                location: location);
+        }
 
         // Step 3: Type-check each bound argument against its parameter.
         TypeCheckBoundArguments(routine: routine,
@@ -258,7 +263,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private Dictionary<int, Expression> BuildArgumentBindings(RoutineInfo routine,
         List<Expression> arguments, List<ParamInfo> parameters, int totalParams,
-        SourceLocation location)
+        SourceLocation location, out bool misnamed)
     {
         int nonMeParamCount =
             parameters.Count(predicate: p => p.Name != "me" && !p.HasDefaultValue);
@@ -288,6 +293,7 @@ public sealed partial class SemanticVerifier
 
         bool seenNamed = false;
         var boundParams = new Dictionary<int, Expression>();
+        var unknownNames = new List<NamedArgumentExpression>();
         int positionalIndex = 0;
 
         foreach (Expression arg in arguments)
@@ -299,7 +305,8 @@ public sealed partial class SemanticVerifier
                     routine: routine,
                     parameters: parameters,
                     totalParams: totalParams,
-                    boundParams: boundParams);
+                    boundParams: boundParams,
+                    unknownNames: unknownNames);
             }
             else
             {
@@ -318,7 +325,37 @@ public sealed partial class SemanticVerifier
             }
         }
 
+        ReportUnknownNamedArguments(routine: routine, parameters: parameters, totalParams: totalParams,
+            boundParams: boundParams, unknownNames: unknownNames);
+        misnamed = unknownNames.Count > 0;
         return boundParams;
+    }
+
+    /// <summary>
+    /// Reports each named argument whose name no parameter has (S505), with the parameters the call leaves without a
+    /// value: <c>x.eq(other: y)</c> on <c>eq(you:)</c> names <c>you</c>, the name to write.
+    /// </summary>
+    private void ReportUnknownNamedArguments(RoutineInfo routine, List<ParamInfo> parameters, int totalParams,
+        Dictionary<int, Expression> boundParams, List<NamedArgumentExpression> unknownNames)
+    {
+        List<string> open = Enumerable.Range(start: 0, count: totalParams)
+                                      .Where(predicate: i => !boundParams.ContainsKey(key: i) &&
+                                                             parameters[index: i].Name != "me" &&
+                                                             !parameters[index: i].IsVariadicParam)
+                                      .Select(selector: i => parameters[index: i].Name)
+                                      .ToList();
+        foreach (NamedArgumentExpression named in unknownNames)
+        {
+            string hint = open.Count switch
+            {
+                0 => "",
+                1 => $": its parameter is '{open[index: 0]}', so write '{open[index: 0]}:' instead of '{named.Name}:'",
+                _ => $": the parameters left are {string.Join(separator: ", ", values: open.Select(selector: n => $"'{n}'"))}"
+            };
+            ReportError(code: SemanticDiagnosticCode.UnknownNamedArgument,
+                message: $"'{routine.Name}' has no parameter named '{named.Name}'{hint}.",
+                location: named.Location);
+        }
     }
 
     /// <summary>
@@ -327,7 +364,8 @@ public sealed partial class SemanticVerifier
     /// <see cref="BuildArgumentBindings"/>.
     /// </summary>
     private void ProcessNamedArg(NamedArgumentExpression named, RoutineInfo routine,
-        List<ParamInfo> parameters, int totalParams, Dictionary<int, Expression> boundParams)
+        List<ParamInfo> parameters, int totalParams, Dictionary<int, Expression> boundParams,
+        List<NamedArgumentExpression> unknownNames)
     {
         int paramIndex = -1;
         for (int j = 0; j < totalParams; j++)
@@ -341,9 +379,7 @@ public sealed partial class SemanticVerifier
 
         if (paramIndex == -1)
         {
-            ReportError(code: SemanticDiagnosticCode.UnknownNamedArgument,
-                message: $"'{routine.Name}' has no parameter named '{named.Name}'.",
-                location: named.Location);
+            unknownNames.Add(item: named);
             AnalyzeExpression(expression: named.Value);
         }
         else if (boundParams.ContainsKey(key: paramIndex))

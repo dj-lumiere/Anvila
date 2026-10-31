@@ -356,6 +356,15 @@ public sealed partial class SemanticVerifier
     {
         RoutineInfo? zeroCreate = _registry.LookupCreatorOverload(type: zeroArgType,
             argTypes: new List<TypeSymbol>());
+        // No creator takes nothing, and the member variables have no defaults to build from: name them, with the
+        // call written out, instead of leaving the call unbound for the emitter.
+        if (zeroCreate == null &&
+            MissingMemberwiseFields(callableType: zeroArgType, call: call) is { Count: > 0 } missing)
+        {
+            ReportMissingMemberwiseFields(call: call, type: zeroArgType, missing: missing);
+            return ErrorTypeSymbol.Instance;
+        }
+
         call.ConstructedType = zeroArgType;
         call.LoweringKind = ClassifyConstruction(type: zeroArgType);
         // A user-declared (non-synthesized) `create` has a real body/side-effects — route the
@@ -1710,16 +1719,7 @@ public sealed partial class SemanticVerifier
         // there: name what is missing instead of leaving the call unbound for the emitter.
         if (creator == null && MissingMemberwiseFields(callableType: callableType, call: call) is { Count: > 0 } missing)
         {
-            List<MemberVariableInfo> fields = callableType is EntityTypeSymbol e
-                ? e.MemberVariables
-                : ((RecordTypeSymbol)callableType).MemberVariables;
-            string all = string.Join(separator: ", ", values: fields.Select(selector: f => $"{f.Name}: ..."));
-            ReportError(code: SemanticDiagnosticCode.MissingRequiredMemberVariable,
-                message: $"'{callableType.Name}' is built from its member variables, and this leaves out " +
-                         $"'{string.Join(separator: "', '", values: missing)}', which " +
-                         (missing.Count == 1 ? "has" : "have") + " no default. Give each one a value: " +
-                         $"'{callableType.Name}({all})'.",
-                location: call.Location);
+            ReportMissingMemberwiseFields(call: call, type: callableType, missing: missing);
             return ErrorTypeSymbol.Instance;
         }
 
@@ -2106,6 +2106,22 @@ public sealed partial class SemanticVerifier
     /// argument names a member variable of a record or entity (<c>Size(width: 3)</c> for a <c>Size</c> with
     /// <c>width</c> and <c>height</c>). Null when the call is not such a construction.
     /// </summary>
+    /// <summary>Reports a field-by-field construction that leaves out <paramref name="missing"/>, member variables
+    /// with no written default, with the whole call written out.</summary>
+    private void ReportMissingMemberwiseFields(CallExpression call, TypeSymbol type, List<string> missing)
+    {
+        List<MemberVariableInfo> fields = type is EntityTypeSymbol e
+            ? e.MemberVariables
+            : ((RecordTypeSymbol)type).MemberVariables;
+        string all = string.Join(separator: ", ", values: fields.Select(selector: f => $"{f.Name}: ..."));
+        ReportError(code: SemanticDiagnosticCode.MissingRequiredMemberVariable,
+            message: $"'{type.Name}' is built from its member variables, and this leaves out " +
+                     $"'{string.Join(separator: "', '", values: missing)}', which " +
+                     (missing.Count == 1 ? "has" : "have") + " no default. Give each one a value: " +
+                     $"'{type.Name}({all})'.",
+            location: call.Location);
+    }
+
     private static List<string>? MissingMemberwiseFields(TypeSymbol callableType, CallExpression call)
     {
         List<MemberVariableInfo>? fields = callableType switch
@@ -3121,8 +3137,15 @@ public sealed partial class SemanticVerifier
             BuilderInfoProvider.IsBuilderQueryRoutine(name: memberRoutine.Name) &&
             !_importedModules.Contains(item: "BuilderQuery"))
         {
+            // A language with a standard library of its own has no BuilderQuery module to import (its import is
+            // the S116 error), so the message doesn't send the reader there.
+            Builder.Frontends.LanguageRules fileRules = Builder.Frontends.Languages.For(
+                language: Builder.Frontends.Languages.OfFile(fileName: _currentFilePath));
             ReportError(code: SemanticDiagnosticCode.BuilderQueryImportRequired,
-                message: $"'{memberRoutine.Name}()' requires 'import BuilderQuery'.",
+                message: fileRules.HasOwnStandardLibrary
+                    ? $"'{memberRoutine.Name}()' isn't a routine of a {fileRules.Name} value: the {fileRules.Name} " +
+                      "standard library has no module that gives it."
+                    : $"'{memberRoutine.Name}()' requires 'import BuilderQuery'.",
                 location: call.Location);
             return ErrorTypeSymbol.Instance;
         }

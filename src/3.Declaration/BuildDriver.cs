@@ -411,6 +411,17 @@ public sealed class BuildDriver
     {
         string? resolvedPath = _resolver.TryResolveImport(importPath: import.ModulePath);
 
+        if (resolvedPath != null && ImportsModuleMissingFromOwnStdlib(import: import, filePath: filePath,
+                resolvedPath: resolvedPath) is { } language)
+        {
+            string module = import.ModulePath.Split(separator: '.')[0];
+            _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.ModuleNotInLanguageStandardLibrary,
+                Message: $"'{module}' isn't a module of the {language} standard library, so a {language} file " +
+                         $"can't import it. Remove `import {import.ModulePath}`.",
+                Location: import.Location));
+            return;
+        }
+
         if (resolvedPath != null)
         {
             ProcessFile(filePath: resolvedPath,
@@ -446,6 +457,104 @@ public sealed class BuildDriver
                          ? folderMessage
                          : $"Cannot resolve import '{import.ModulePath}'. Module not found."),
             Location: import.Location));
+    }
+
+    /// <summary>
+    /// The name of the importing file's language when the import names a module of the RazorForge standard library
+    /// that the language's own standard library doesn't declare (a Suflae file's <c>import BuilderQuery</c>): such a
+    /// module hands out values the language doesn't have. Null when the import is fine: a RazorForge file, a language
+    /// without a standard library of its own, a module of the project or a library, or one the language's standard
+    /// library declares too.
+    /// </summary>
+    private string? ImportsModuleMissingFromOwnStdlib(ImportDeclaration import, string filePath, string resolvedPath)
+    {
+        Language language = Builder.Frontends.Languages.OfFile(fileName: filePath);
+        // The standard library's own files reach what they wrap (Suflae's List imports BuilderQuery).
+        bool fromStdlib = Path.GetFullPath(path: filePath).StartsWith(value: Path.GetFullPath(path: _stdlibRoot),
+            comparisonType: StringComparison.OrdinalIgnoreCase);
+        if (fromStdlib || language == Language.RazorForge || !Builder.Frontends.Languages.IsRegistered(language: language) ||
+            !Builder.Frontends.Languages.IsRegistered(language: Language.RazorForge))
+        {
+            return null;
+        }
+
+        Builder.Frontends.LanguageRules rules = Builder.Frontends.Languages.For(language: language);
+        string razorForgeStdlib = Path.GetFullPath(path: Path.Combine(path1: _stdlibRoot,
+            path2: Builder.Frontends.Languages.For(language: Language.RazorForge).Name)) + Path.DirectorySeparatorChar;
+        if (!rules.HasOwnStandardLibrary ||
+            !Path.GetFullPath(path: resolvedPath).StartsWith(value: razorForgeStdlib,
+                comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        string module = import.ModulePath.Split(separator: '.')[0];
+        IReadOnlySet<string> own = StandardLibraryModules(languageDir: Path.Combine(path1: _stdlibRoot, path2: rules.Name));
+        return own.Contains(item: module) ? null : rules.Name;
+    }
+
+    /// <summary>The modules the standard library files under <paramref name="languageDir"/> declare (their
+    /// <c>module</c> line, else their folder), read once per folder from the files' first lines.</summary>
+    private IReadOnlySet<string> StandardLibraryModules(string languageDir)
+    {
+        string key = Path.GetFullPath(path: languageDir);
+        lock (StdlibModulesByDir)
+        {
+            if (StdlibModulesByDir.TryGetValue(key: key, value: out HashSet<string>? cached))
+            {
+                return cached;
+            }
+        }
+
+        var modules = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        if (Directory.Exists(path: key))
+        {
+            foreach (string glob in Builder.Frontends.Languages.SourceGlobs)
+            {
+                foreach (string file in Directory.EnumerateFiles(path: key, searchPattern: glob,
+                             searchOption: SearchOption.AllDirectories))
+                {
+                    modules.Add(item: DeclaredModuleLine(filePath: file) ??
+                                      DeriveModuleNameFromPath(filePath: file,
+                                          languageSubdir: Path.GetRelativePath(relativeTo: _stdlibRoot, path: key)));
+                }
+            }
+        }
+
+        lock (StdlibModulesByDir)
+        {
+            StdlibModulesByDir[key: key] = modules;
+        }
+
+        return modules;
+    }
+
+    /// <summary>The modules of each language's standard library folder, by the folder's full path.</summary>
+    private static readonly Dictionary<string, HashSet<string>> StdlibModulesByDir = new(comparer: StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The module a file's <c>module</c> line names, read from the lines before its first declaration, or null.</summary>
+    private static string? DeclaredModuleLine(string filePath)
+    {
+        foreach (string raw in File.ReadLines(path: filePath))
+        {
+            string line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith(value: '#') || line.StartsWith(value: '@'))
+            {
+                continue;
+            }
+
+            if (line.StartsWith(value: "module ", comparisonType: StringComparison.Ordinal))
+            {
+                return line[7..].Split(separator: '#')[0].Trim();
+            }
+
+            if (!line.StartsWith(value: "import ", comparisonType: StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
