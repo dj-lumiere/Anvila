@@ -877,7 +877,9 @@ internal sealed class TesseraWriter
             }
 
             string global = UniqueName(wanted: $"RF_GLOBAL_{(string.IsNullOrEmpty(value: programModule) ? name : $"{programModule.Replace(oldChar: '/', newChar: '_')}_{name}")}");
-            _globals.Append(value: $"{Private}global {global}: &{TypeText(type: type)}\n\n");
+            // The global's value is written at the top of `start` before anything reads it, and a type that holds a
+            // pointer has no all-zero value to start from, so the cell is declared `lateinit`.
+            _globals.Append(value: $"lateinit {Private}global {global}: &{TypeText(type: type)}\n\n");
             _moduleGlobals[key: (declaredModule, name)] = (global, type);
             _moduleGlobals[key: (module, name)] = (global, type);
             return (global, type);
