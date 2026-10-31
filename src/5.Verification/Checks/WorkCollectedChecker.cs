@@ -4,8 +4,8 @@ using SyntaxTree;
 namespace Builder.Verification;
 
 /// <summary>
-/// Warns about a Work bound to a variable that is started and then only left to its scope's end (RF-W009): the
-/// end cancels it and waits for it to stop, so its work may be cut short, its value is lost, and a failure it came to
+/// Warns about a Work bound to a variable that nothing starts (RF-W008), and about one that is started and then only
+/// left to its scope's end (RF-W009): the end cancels it and waits for it to stop, so its work may be cut short, its value is lost, and a failure it came to
 /// crashes the program there. Taking its value (`retrieve`, `waitfor`), cancelling it on purpose (`job.cancel()`, which
 /// also throws away a failure), ending it (`drop job`), or handing it on (an argument, `steal`, `return`) is what a
 /// program that means it writes. Runs over the analyzed user bodies.
@@ -96,6 +96,16 @@ internal sealed class WorkCollectedChecker(Action<SemanticWarningCode, string, S
 
         foreach ((string name, VariableDeclaration declaration) in agents)
         {
+            // Nothing starts it and nothing takes or hands it on: its work never runs.
+            if (!started.Contains(item: name) && !collected.Contains(item: name))
+            {
+                warn(arg1: SemanticWarningCode.AsyncWorkNeverLaunched,
+                    arg2: $"'{name}' is a Work that nothing starts, so its work never runs. Start it with " +
+                          $"'{name}.start_now()' and take its value later with '{name}.retrieve()', or remove it.",
+                    arg3: declaration.Location);
+                continue;
+            }
+
             if (started.Contains(item: name) && !collected.Contains(item: name))
             {
                 warn(arg1: SemanticWarningCode.WorkNeverCollected,

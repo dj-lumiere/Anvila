@@ -978,12 +978,32 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private static string? GetPatternKey(Pattern pattern)
     {
+        return GetPatternKeys(pattern: pattern).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Every key an arm covers, so two arms that test the same thing share one (`1 =>` and `== 1 =>`, or `== 1, 2 =>`
+    /// and `== 2 =>`). A comparison arm with a literal value covers that value for `==`, and the whole comparison
+    /// (`&lt; 5`) for the other operators.
+    /// </summary>
+    private static List<string> GetPatternKeys(Pattern pattern)
+    {
         if (PatternFacts.IsConditional(pattern: pattern))
         {
-            return null;
+            return [];
         }
 
-        return pattern switch
+        if (pattern is ComparisonPattern comparison)
+        {
+            return comparison.AllValues
+                             .OfType<LiteralExpression>()
+                             .Select(selector: literal => comparison.Operator == TokenType.Equal
+                                 ? $"literal:{literal.Value}"
+                                 : $"compare:{comparison.Operator}:{literal.Value}")
+                             .ToList();
+        }
+
+        string? key = pattern switch
         {
             LiteralPattern lit => $"literal:{lit.Value}",
             TypePattern tp => $"type:{tp.Type.Name}",
@@ -993,6 +1013,7 @@ public sealed partial class SemanticVerifier
             // Identifier, wildcard, else, guard, expression patterns are not deduplicated
             _ => null
         };
+        return key is null ? [] : [key];
     }
 
     /// <summary>

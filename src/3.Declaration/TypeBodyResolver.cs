@@ -739,6 +739,17 @@ internal sealed class TypeBodyResolver
             return;
         }
 
+        // A `T?` member already holds None, so it would overlap the variant's own `None` member.
+        if (IsMaybeType(type: memberType))
+        {
+            string held = memberType.TypeArguments?.FirstOrDefault()?.Name ?? "T";
+            _sa.ReportError(code: SemanticDiagnosticCode.VariantCaseContainsInvalidType,
+                message: $"Variant type '{variant.Name}' has the member '{held}?', which already holds None. " +
+                         $"List '{held}' and 'None' as two members instead.",
+                location: member.Location);
+            return;
+        }
+
         // Validate that tokens cannot be used as variant members
         _sa.ValidateNotTokenVariantPayload(type: memberType,
             caseName: memberTypeName,

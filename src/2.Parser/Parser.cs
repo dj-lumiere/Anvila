@@ -753,8 +753,12 @@ public partial class Parser
     {
         RejectRetiredConcurrencyModifier();
 
-        if (CheckAndAdvance(type: TokenType.Routine))
+        if (Check(type: TokenType.Routine))
         {
+            RejectNoEffect(when: visibility == VisibilityModifier.Posted, at: CurrentToken,
+                message: "'posted' lets everyone read a member variable while only its module writes it, and has no " +
+                         "effect on a routine. Remove it, or write 'secret' to keep the routine to its module.");
+            Advance();
             return ParseRoutineOrForeignDeclaration(visibility: visibility,
                 annotations: annotations,
                 isCommon: isCommon,
@@ -1237,6 +1241,12 @@ public partial class Parser
     /// <c>while</c> is then read without an error.
     /// </summary>
     public static bool ReadsWhileLoops { get; set; }
+
+    /// <summary>
+    /// Set only by <c>migrate --step suffix</c> while it asks analysis about the numbers it rewrites: a membership test
+    /// written <c>x in xs</c> is then read as <c>xs.has(x)</c> without an error, so the rest of the file still types.
+    /// </summary>
+    public static bool ReadsMembershipIn { get; set; }
 
     /// <summary>Whether the statement starts <c>while c</c>: the name <c>while</c> followed on its line by the start
     /// of a value, which no statement that uses <c>while</c> as a name does.</summary>

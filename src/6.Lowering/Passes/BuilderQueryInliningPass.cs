@@ -802,7 +802,8 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             return type.Name;
         }
 
-        string baseName = string.IsNullOrEmpty(value: type.Module)
+        string baseName = string.IsNullOrEmpty(value: type.Module) ||
+                          _registry.Language == Language.Suflae && type.Module == "System"
             ? type.BareName
             : $"{type.Module}.{type.BareName}";
         if (type.TypeArguments is not { Count: > 0 } args)

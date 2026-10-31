@@ -203,24 +203,28 @@ public abstract class TypeSymbol
     /// Module-qualified name with generic args recursively qualified too
     /// (e.g. <c>System.List[System.S64]</c>, <c>System.Dict[System.Text, System.S64]</c>).
     /// </summary>
-    public string QualifiedTypeName
-    {
-        get
-        {
-            // A routine type has no module of its own: its signature is its name.
-            if (this is RoutineTypeSymbol)
-            {
-                return Name;
-            }
+    public string QualifiedTypeName => QualifiedTypeNameFor(omitBaseModule: false);
 
-            string qualified = string.IsNullOrEmpty(value: Module)
-                ? BareName
-                : $"{Module}.{BareName}";
-            return TypeArguments is { Count: > 0 } args
-                ? $"{qualified}[{string.Join(separator: ", ",
-                    values: args.Select(selector: t => t.QualifiedTypeName))}]"
-                : qualified;
+    /// <summary>
+    /// The module-qualified name, optionally without the auto-visible <c>System</c> module: a Suflae program
+    /// never writes <c>System</c>, so its type names are shown as <c>List[Int]</c>.
+    /// </summary>
+    /// <param name="omitBaseModule">Whether a type of the <c>System</c> module is shown without it.</param>
+    public string QualifiedTypeNameFor(bool omitBaseModule)
+    {
+        // A routine type has no module of its own: its signature is its name.
+        if (this is RoutineTypeSymbol)
+        {
+            return Name;
         }
+
+        string qualified = string.IsNullOrEmpty(value: Module) || omitBaseModule && Module == "System"
+            ? BareName
+            : $"{Module}.{BareName}";
+        return TypeArguments is { Count: > 0 } args
+            ? $"{qualified}[{string.Join(separator: ", ",
+                values: args.Select(selector: t => t.QualifiedTypeNameFor(omitBaseModule: omitBaseModule)))}]"
+            : qualified;
     }
 
     /// <summary>

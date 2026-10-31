@@ -1304,16 +1304,17 @@ public sealed partial class SemanticVerifier
     private void ReportSpecializationNotFound(string name, TypeSymbol owner, IReadOnlyList<TypeSymbol> typeArguments,
         SourceLocation location)
     {
-        string arguments = string.Join(separator: ", ", values: typeArguments.Select(selector: t => t.Name));
+        string arguments = string.Join(separator: ", ", values: typeArguments.Select(selector: WrittenTypeName));
+        string ownerName = WrittenTypeName(type: owner);
         string message = name != ToConversionName
-            ? $"'{owner.Name}' has no '{name}[{arguments}]'."
+            ? $"'{ownerName}' has no '{name}[{arguments}]'."
             : owner is GenericParameterTypeSymbol
-                ? $"'{owner.Name}' is a type parameter, and conversions are written for each concrete type " +
-                  $"('routine S64.to[{arguments}]()'), so a value of '{owner.Name}' has none. Take the " +
+                ? $"'{ownerName}' is a type parameter, and conversions are written for each concrete type " +
+                  $"('routine S64.to[{arguments}]()'), so a value of '{ownerName}' has none. Take the " +
                   $"parameter as '{arguments}', or convert where the type is known."
                 : typeArguments is [{ } only] && (only.FullName == owner.FullName || only.Name == owner.Name)
-                    ? $"The value is already {Article.For(name: owner.Name)} '{owner.Name}'. Use it as it is, without '.to[{arguments}]()'."
-                    : $"There is no conversion from '{owner.Name}' to '{arguments}'." +
+                    ? $"The value is already {Article.For(name: owner.Name)} '{ownerName}'. Use it as it is, without '.to[{arguments}]()'."
+                    : $"There is no conversion from '{ownerName}' to '{arguments}'." +
                       ByteCharConversionHint(owner: owner.Name, target: arguments);
         ReportError(code: SemanticDiagnosticCode.SpecializationNotFound, message: message, location: location);
     }
@@ -1387,7 +1388,7 @@ public sealed partial class SemanticVerifier
         }
 
         ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
-            message: $"No routine '{member.MemberName}()' is defined on '{objectType.Name}'. A conversion to " +
+            message: $"No routine '{member.MemberName}()' is defined on '{WrittenTypeName(type: objectType)}'. A conversion to " +
                      $"'{member.MemberName}' is written 'x.to[{member.MemberName}]()'.",
             location: call.Location);
         return ErrorTypeSymbol.Instance;
@@ -2995,7 +2996,7 @@ public sealed partial class SemanticVerifier
 
                 ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
                     message:
-                    $"No routine '{member.MemberName}()' is defined on '{objectType.Name}'.{hint}",
+                    $"No routine '{member.MemberName}()' is defined on '{WrittenTypeName(type: objectType)}'.{hint}",
                     location: call.Location);
                 return ErrorTypeSymbol.Instance;
             }

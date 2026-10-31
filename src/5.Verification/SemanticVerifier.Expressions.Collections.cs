@@ -1041,12 +1041,15 @@ public sealed partial class SemanticVerifier
         var seenPatterns = new HashSet<string>();
         foreach (Pattern pattern in when.Clauses.Select(selector: clause => clause.Pattern))
         {
-            string? patternKey = GetPatternKey(pattern: pattern);
-            if (patternKey != null && !seenPatterns.Add(item: patternKey))
+            foreach (string patternKey in GetPatternKeys(pattern: pattern))
             {
-                ReportError(code: SemanticDiagnosticCode.DuplicatePattern,
-                    message: $"Duplicate pattern: {patternKey}.",
-                    location: pattern.Location);
+                if (!seenPatterns.Add(item: patternKey))
+                {
+                    ReportError(code: SemanticDiagnosticCode.DuplicatePattern,
+                        message: $"Duplicate pattern: {patternKey}.",
+                        location: pattern.Location);
+                    break;
+                }
             }
         }
     }

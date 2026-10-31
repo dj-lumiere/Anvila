@@ -3,6 +3,7 @@ using Builder.Desugaring.Passes;
 using Builder.Lowering.Passes;
 using Builder.Declaration;
 using SyntaxTree;
+using TypeModel.Enums;
 using TypeModel.Symbols;
 using TypeModel.Types;
 
@@ -2599,7 +2600,7 @@ internal static class GenericAstRewriter
                 Location: location) { ResolvedType = textType },
 
             "full_type_name" when textType != null => new LiteralExpression(
-                Value: typeInfo.QualifiedTypeName,
+                Value: typeInfo.QualifiedTypeNameFor(omitBaseModule: ctx.Registry.Language == Language.Suflae),
                 LiteralType: TokenType.TextLiteral,
                 Location: location) { ResolvedType = textType },
 

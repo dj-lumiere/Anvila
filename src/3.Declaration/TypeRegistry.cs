@@ -650,6 +650,42 @@ public sealed partial class TypeRegistry
     private ModuleResolver? _moduleResolver;
 
     /// <summary>
+    /// The standard-library module that defines a member routine called <paramref name="routineName"/> and that this
+    /// build has not loaded, so the program has to import it (<c>where</c> lives in <c>IterTools</c>). Null when no
+    /// such module is found. Only used to word an error, so it reads the files it needs.
+    /// </summary>
+    internal string? UnimportedModuleWithMemberRoutine(string routineName)
+    {
+        if (_moduleResolver is null)
+        {
+            return null;
+        }
+
+        var declared = new System.Text.RegularExpressions.Regex(
+            pattern: $@"^[ \t]*(?:common[ \t]+|failable[ \t]+|dangerous[ \t]+)*routine[ \t]+\w+(?:\[[^\]\n]*\])?\.{System.Text.RegularExpressions.Regex.Escape(str: routineName)}\b",
+            options: System.Text.RegularExpressions.RegexOptions.Multiline);
+        var seen = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        foreach ((string key, string path) in _moduleResolver.IndexSnapshot().OrderBy(keySelector: e => e.Key,
+                     comparer: StringComparer.Ordinal))
+        {
+            string full = Path.GetFullPath(path: path);
+            if (key.StartsWith(value: "System", comparisonType: StringComparison.Ordinal) ||
+                _loadedFilePaths.ContainsKey(key: full) || !seen.Add(item: full) || !File.Exists(path: full))
+            {
+                continue;
+            }
+
+            if (declared.IsMatch(input: File.ReadAllText(path: full)))
+            {
+                int dot = key.LastIndexOf(value: '.');
+                return dot > 0 ? key[..dot] : key;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Injects a pre-built module resolver so SA-phase import loading shares the
     /// <see cref="Builder.Declaration.BuildDriver"/> index (stdlib pre-scan, project files,
     /// and manifest <c>[target] library</c> roots). Without this, <see cref="LoadModule"/>

@@ -237,7 +237,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.MemberNotFound,
                 message:
-                $"Type '{objectType.Name}' does not have a member '{member.MemberName}'.{Suggestions.ForMember(type: lookupType, name: member.MemberName)}",
+                $"Type '{WrittenTypeName(type: objectType)}' does not have a member '{member.MemberName}'.{Suggestions.ForMember(type: lookupType, name: member.MemberName)}",
                 location: member.Location);
         }
 

@@ -225,7 +225,14 @@ internal partial class Program
 
         if (expectedOutput != null && Normalize(text: stdout) != Normalize(text: expectedOutput))
         {
-            return FirstDifference(expected: Normalize(text: expectedOutput), actual: Normalize(text: stdout));
+            // A crash cuts the output short, so say how the program ended and what it printed on its way out.
+            string how = exit == expectedExit
+                ? ""
+                : $"\nthe program ended with exit code {exit}, expected {expectedExit}";
+            string crash = string.IsNullOrWhiteSpace(value: stderr)
+                ? ""
+                : $"\n{stderr.TrimEnd()}";
+            return FirstDifference(expected: Normalize(text: expectedOutput), actual: Normalize(text: stdout)) + how + crash;
         }
 
         return exit == expectedExit

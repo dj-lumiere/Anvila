@@ -164,9 +164,33 @@ public partial class Parser
     {
         TypeExpression baseType = ParseBaseType();
 
-        // Handle nullable suffix: T? Optional[T]
-        if (CheckAndAdvance(type: TokenType.Question))
+        // `S64??` lexes as the `??` operator right after the type.
+        Token last = PeekToken(offset: -1);
+        if (Check(type: TokenType.NoneCoalesce) && CurrentToken.Line == last.Line &&
+            CurrentToken.Column == last.Column + last.Text.Length)
         {
+            throw ThrowParseError(code: GrammarDiagnosticCode.UnexpectedToken,
+                message: $"A type takes one '?'. '{baseType.Name}?' already holds a value or nothing, so a " +
+                         $"second '?' adds nothing. Write '{baseType.Name}?'.",
+                token: CurrentToken);
+        }
+
+        // Handle nullable suffix: T? Optional[T]
+        if (Check(type: TokenType.Question))
+        {
+            Token question = CurrentToken;
+            Advance();
+            // `S64??` reads as one `??` token. A type takes one `?`: `S64?` already holds a value or nothing.
+            if (Check(type: TokenType.NoneCoalesce) && CurrentToken.Line == question.Line &&
+                CurrentToken.Column == question.Column + 1 ||
+                Check(type: TokenType.Question))
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.UnexpectedToken,
+                    message: $"A type takes one '?'. '{baseType.Name}?' already holds a value or nothing, so a " +
+                             $"second '?' adds nothing. Write '{baseType.Name}?'.",
+                    token: CurrentToken);
+            }
+
             return new TypeExpression(Name: "Optional",
                 GenericArguments: [baseType],
                 Location: baseType.Location);

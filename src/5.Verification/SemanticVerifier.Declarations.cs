@@ -1663,7 +1663,11 @@ public sealed partial class SemanticVerifier
                 message:
                 $"Protocol '{protocol.Name}' requires '{requiredMemberRoutine.Name}' to be " +
                 $"@{requiredMemberRoutine.Mutation.ToString().ToLowerInvariant()} (or less mutating), " +
-                $"but implementation on '{type.Name}' is @{typeMemberRoutine.MutationCategory.ToString().ToLowerInvariant()}.",
+                $"but implementation on '{type.Name}' is @{typeMemberRoutine.MutationCategory.ToString().ToLowerInvariant()}. " +
+                (requiredMemberRoutine.Mutation == Builder.Verification.Enums.MutationCategory.Readonly
+                    ? $"A routine without an annotation may change 'me', so write @readonly above '{type.Name}.{requiredMemberRoutine.Name}' " +
+                      "if it only reads, or make it stop changing 'me'."
+                    : $"Make '{type.Name}.{requiredMemberRoutine.Name}' change less, or give it the annotation the protocol names."),
                 location: typeMemberRoutine.Location ??
                           new SourceLocation(FileName: "",
                               Line: 0,

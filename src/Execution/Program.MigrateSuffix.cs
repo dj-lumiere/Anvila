@@ -633,6 +633,7 @@ internal partial class Program
         // What analysis observed, read at the next flush: a bare number's type is read then (analysis may set it more
         // than once), a comparison's operand types when it typed them.
         var observedNow = new List<(SourceLocation At, int Position, Func<string> Type)>();
+        Builder.Parser.Parser.ReadsMembershipIn = true;
         if (comparisons)
         {
             // The loops `until` replaces are read as they were written.
@@ -771,6 +772,7 @@ internal partial class Program
         BinaryExpression.OperandsTyped = null;
         SemanticVerifier.NumberBitReadSeen = null;
         Builder.Parser.Parser.ReadsWhileLoops = false;
+        Builder.Parser.Parser.ReadsMembershipIn = false;
         return 0;
     }
 

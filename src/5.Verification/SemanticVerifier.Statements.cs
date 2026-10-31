@@ -1253,7 +1253,11 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.VariableNeedsTypeOrInitializer,
                 message: $"Variable '{varDecl.Name}' has a type annotation but no initializer. " +
-                         "Use 'lateinit var' to defer initialization.",
+                         "Use 'lateinit var' to defer initialization." +
+                         (IsMaybeType(type: varType) || varType is VariantTypeSymbol { Members: var arms } &&
+                          arms.Any(predicate: m => m.IsNone)
+                             ? $" If '{varDecl.Name}' starts as nothing, write 'var {varDecl.Name}: {WrittenTypeName(type: varType)} = none'."
+                             : ""),
                 location: varDecl.Location);
         }
 

@@ -471,6 +471,18 @@ public partial class Parser
 
         // `x in coll` as a test: containment is written container-first. `in` only introduces a loop
         // source (`for x in xs`, `expand m in ...`), which those headers consume themselves.
+        if (!_inWhenPatternContext && !_inWhenClauseBody && Check(type: TokenType.In) && ReadsMembershipIn)
+        {
+            // Only migrate's analysis reads it: `x in xs` is typed as the call it was written for, `xs.has(x)`.
+            Token inToken = CurrentToken;
+            Advance();
+            Expression container = ParseInfix();
+            SourceLocation at = GetLocation(token: inToken);
+            expr = new CallExpression(Callee: new MemberExpression(Object: container, MemberName: "has", Location: at),
+                Arguments: [expr],
+                Location: at);
+        }
+
         if (!_inWhenPatternContext && !_inWhenClauseBody && Check(type: TokenType.In))
         {
             throw ThrowParseError(code: GrammarDiagnosticCode.InAsMembership,

@@ -2035,6 +2035,27 @@ internal partial class Program
         return BuildToIr(entryFile: resolved.EntryFile, ir: out ir, config: resolved);
     }
 
+    /// <summary>
+    /// The file with the same name in the other language's extension (<c>foo.sf</c> beside <c>foo.rf</c>), if there is
+    /// one: both would build the same executable and intermediate files.
+    /// </summary>
+    private static string? SameNameInOtherLanguage(string entryFile)
+    {
+        string other = Path.GetExtension(path: entryFile) switch
+        {
+            ".rf" => ".sf",
+            ".sf" => ".rf",
+            _ => ""
+        };
+        if (other.Length == 0)
+        {
+            return null;
+        }
+
+        string twin = Path.ChangeExtension(path: entryFile, extension: other);
+        return File.Exists(path: twin) ? twin : null;
+    }
+
     private static int BuildExecutable(string entryFile, out string exeFile, ResolvedEntry config,
         Func<Language, SemanticVerifier.CompiledStdlibState?>? warmProvider = null)
     {
@@ -2047,6 +2068,15 @@ internal partial class Program
         string llFile = Path.ChangeExtension(path: entryFile, extension: ".ll");
         string optFile = Path.ChangeExtension(path: llFile, extension: ".opt.ll");
         exeFile = Path.ChangeExtension(path: llFile, extension: ".exe");
+        if (SameNameInOtherLanguage(entryFile: entryFile) is { } twin)
+        {
+            Console.Error.WriteLine(value:
+                $"error: '{Path.GetFileName(path: entryFile)}' and '{Path.GetFileName(path: twin)}' are in the same " +
+                $"folder, and both build '{Path.GetFileName(path: exeFile)}' (and the same .ll files), so one build would " +
+                "overwrite the other. Rename one of the two files.");
+            return 1;
+        }
+
         NativeToolchain.CleanBuildAndRunOutputs(llFile: llFile,
             optFile: optFile,
             exeFile: exeFile);
