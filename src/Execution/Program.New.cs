@@ -27,14 +27,21 @@ internal partial class Program
                 mode = "debug"
 
                 """),
-            (main, """
-                import IO/Console
+            // Suflae brings IO/Console in every file and ends a routine without `return`.
+            (main, CliRules.FileExtension == ".sf"
+                ? """
+                  routine start()
+                      show("Hello, world!")
 
-                routine start()
-                    show("Hello, world!")
-                    return
+                  """
+                : """
+                  import IO/Console
 
-                """),
+                  routine start()
+                      show("Hello, world!")
+                      return
+
+                  """),
             (".gitignore", """
                 build/
                 *.exe
@@ -73,7 +80,9 @@ internal partial class Program
         };
 
         WriteNewProjectFiles(folder: folder, files: files);
-        Console.WriteLine(value: $"Run it with: {tool} run");
+        Console.WriteLine(value: args.Length > 1
+            ? $"Run it with: cd {args[1]} && {tool} run"
+            : $"Run it with: {tool} run");
         return 0;
     }
 

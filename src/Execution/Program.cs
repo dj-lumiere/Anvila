@@ -1472,7 +1472,7 @@ internal partial class Program
             Console.Error.WriteLine(value: $"=== ERRORS ({result.Errors.Count}) ===");
             DiagnosticRenderer.PrintAll(errors: result.Errors);
             Console.WriteLine();
-            Console.Error.WriteLine(value: "Code generation aborted due to errors.");
+            Console.Error.WriteLine(value: "Build aborted due to errors.");
             return 1;
         }
 
@@ -1822,8 +1822,7 @@ internal partial class Program
 
         Console.WriteLine(
             value:
-            $"Checking {entryFile} as {Builder.Frontends.Languages.For(language: language).Name} (multi-file)...");
-        Console.WriteLine();
+            $"Checking {entryFile}...");
 
         try
         {
@@ -1831,15 +1830,12 @@ internal partial class Program
             string stdlibRoot = StdlibLoader.GetDefaultStdlibPath();
 
             // Phase 1: Parse all files and resolve dependencies
-            Console.WriteLine(value: "=== BUILD DRIVER ===");
             var driver = new BuildDriver(projectRoot: projectRoot,
                 stdlibRoot: stdlibRoot,
                 language: language,
                 libraryRoots: libraryRoots);
             BuildResult buildResult =
                 driver.CompileFile(entryFile: Path.GetFullPath(path: entryFile));
-
-            Console.WriteLine(value: $"Parsed {buildResult.Units.Count} file(s)");
 
             if (buildResult.Errors.Count > 0)
             {
@@ -1870,17 +1866,12 @@ internal partial class Program
                     initializationOrder: buildResult.InitializationOrder);
 
             // Phase 2: Semantic analysis (multi-file) -> no codegen
-            Console.WriteLine();
-            Console.WriteLine(value: "=== SEMANTIC ANALYSIS ===");
 
             var analyzer = new SemanticVerifier(language: language);
             // Share the driver's fully-indexed resolver so SA-phase imports see the same
             // module set the build graph resolved (incl. [target] library directories).
             analyzer.Registry.UseModuleResolver(resolver: driver.Resolver);
             AnalysisResult result = analyzer.AnalyzeMultiple(files: orderedFiles);
-
-            Console.WriteLine(
-                value: $"Routines registered: {result.Registry.GetAllRoutines().Count()}");
 
             if (result.Errors.Count > 0)
             {

@@ -1786,12 +1786,20 @@ public sealed partial class SemanticVerifier
                 memberRoutineName: operatorMemberRoutine,
                 argTypes: [rightType]) == null)
         {
+            string uncheckedOp = binary.Operator.ToStringRepresentation();
+            string checkedOp = uncheckedOp.TrimEnd(trimChar: '!');
+            // A number type that has the unchecked family but not this operator with this right side (`**!` with
+            // another exponent type) is told so, not that the family is missing.
+            bool numberType = System.Text.RegularExpressions.Regex.IsMatch(input: leftType.BareName,
+                pattern: "^([SUBD][0-9]+|Byte)$");
             ReportError(code: SemanticDiagnosticCode.BinaryOperatorNotFound,
-                message:
-                $"Operator '{binary.Operator.ToStringRepresentation()}' is not defined for " +
-                $"'{leftType.Name}': unchecked arithmetic exists only on the integer types and on the " +
-                "binary and decimal floating-point types (B16 to B128, D32 to D128). Use the checked " +
-                $"'{binary.Operator.ToStringRepresentation().TrimEnd(trimChar: '!')}' here.",
+                message: numberType
+                    ? $"'{leftType.Name}' has no '{uncheckedOp}' that takes a '{rightType.Name}' on the right. " +
+                      $"Convert the right side to '{leftType.Name}', or use the checked '{checkedOp}'."
+                    : $"Operator '{uncheckedOp}' is not defined for " +
+                      $"'{leftType.Name}': unchecked arithmetic exists only on the integer types and on the " +
+                      "binary and decimal floating-point types (B16 to B128, D32 to D128). Use the checked " +
+                      $"'{checkedOp}' here.",
                 location: binary.Location);
             return true;
         }
