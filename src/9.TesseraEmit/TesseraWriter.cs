@@ -767,13 +767,14 @@ internal sealed class TesseraWriter
     /// <summary>
     /// The read-only memory holding <paramref name="data"/>'s elements (a Tessera preset in memory, a private constant
     /// as in the LLVM emitter, so each module keeps its own), laid down once per distinct content; its name is the
-    /// address. Empty data is the zero address, `Addr.zero()`.
+    /// address. Empty data is the zero address typed as the element pointer, since an `Addr` doesn't go where a
+    /// `@T` is expected.
     /// </summary>
     public string ConstantData(ConstantDataExpression data)
     {
         if (data.Elements.Count == 0)
         {
-            return "Addr.zero()";
+            return $"bitcast[Addr, @{TypeText(type: data.ElementType)}](Addr.zero())";
         }
 
         string type = $"Items[{TypeText(type: data.ElementType)}, {data.Elements.Count}]";

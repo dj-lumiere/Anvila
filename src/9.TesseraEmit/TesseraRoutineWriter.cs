@@ -783,6 +783,9 @@ internal sealed class TesseraRoutineWriter
                        throw Unsupported(what: $"a call to a routine with no value used as a value ({DescribeCall(call: call)})");
             case NamedArgumentExpression named:
                 return Evaluate(expression: named.Value);
+            case StealExpression steal:
+                // The hand-over itself is marked on the operand (a moved local empties its slot above).
+                return Evaluate(expression: steal.Operand);
             case CreatorExpression creator:
                 return EvaluateCreator(creator: creator);
             case CarrierPayloadExpression payload:
