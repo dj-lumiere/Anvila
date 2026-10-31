@@ -1264,6 +1264,27 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         };
     }
 
+    /// <summary>Whether <paramref name="e"/> calls a routine whose declared result names no type parameter, so what it
+    /// gives back was the same type in the generic definition.</summary>
+    private static bool ReturnsDeclaredConcrete(Expression e)
+    {
+        if (e is not CallExpression { ResolvedRoutine: { } routine })
+        {
+            return false;
+        }
+
+        RoutineInfo declared = routine.GenericDefinition ?? routine.RecoveryOf?.GenericDefinition ??
+                               routine.RecoveryOf ?? routine;
+        return declared.ReturnType is { } returned && !NamesGenericParameter(type: returned);
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a type parameter or has one among its type arguments.</summary>
+    private static bool NamesGenericParameter(TypeSymbol type)
+    {
+        return type is GenericParameterTypeSymbol ||
+               (type.TypeArguments?.Any(predicate: NamesGenericParameter) ?? false);
+    }
+
     /// <summary>True for a fresh owned heap producer worth tearing down: a call/creator whose result
     /// is an entity or RC-record with a real (non-borrow) <c>destruct</c>, excluding view-verb
     /// producers (which yield a borrow of a referent owned elsewhere).</summary>
@@ -1275,11 +1296,15 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         }
 
         // In a monomorphized body only a read that hands back a holder of its own is spilled: `a[i]` (getitem) and a
-        // token read out where the value is wanted (`v.access()`, which TokenReadLoweringPass writes once `T` is known).
+        // token read out where the value is wanted (`v.access()`, which TokenReadLoweringPass writes once `T` is known),
+        // and a call whose routine is declared to give back a type that names no type parameter. The definition's run
+        // left such a call alone only where what was made of it was typed `T` (`ask_line().to[T]()`: a `T` may hold
+        // its receiver), which the instance now knows. A `T` producer itself stays: a generic body reads elements in
+        // place (`peek()`, `get_raw`) without taking a holder.
         if (_instantiated && e is not CallExpression
             {
                 Callee: MemberExpression { MemberName: "getitem" or RuntimeContract.Access }
-            })
+            } && !ReturnsDeclaredConcrete(e: e))
         {
             return false;
         }
