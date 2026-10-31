@@ -434,9 +434,17 @@ public sealed class BuildDriver
         // An import never brings the modules under the one it names: `import A/B` doesn't bring `A/B/C`.
         // Truly unresolved — report it (TryResolveImport, unlike ResolveImport, records
         // no error of its own).
+        List<string> below = _resolver.ModulesUnder(modulePath: import.ModulePath);
+        string folderMessage = below.Count == 0
+            ? ""
+            : $"'{import.ModulePath}' is a folder of modules ({string.Join(separator: ", ", values: below.Take(count: 3))}" +
+              $"{(below.Count > 3 ? ", ..." : "")}), not a module itself, and an import brings only the module it names. " +
+              $"Import the module you use: `import {below[index: 0]}`.";
         _errors.Add(item: new SemanticError(Code: SemanticDiagnosticCode.ModuleNotFound,
             Message: StandardModules.GoneModuleMessage(module: import.ModulePath) ??
-                     $"Cannot resolve import '{import.ModulePath}'. Module not found.",
+                     (folderMessage.Length > 0
+                         ? folderMessage
+                         : $"Cannot resolve import '{import.ModulePath}'. Module not found."),
             Location: import.Location));
     }
 

@@ -1426,7 +1426,8 @@ public partial class Parser
         string name = Consume(type: TokenType.Identifier, errorMessage: "Expected the name of what 'steal' takes out")
            .Text;
         Expression? fresh = null;
-        if (CurrentToken.Type is TokenType.Identifier or TokenType.ReservedWord && CurrentToken.Text == "inject")
+        // `inject` is a keyword only here, after the name `steal` takes out. Anywhere else it is a plain name.
+        if (CurrentToken.Type is TokenType.Identifier && CurrentToken.Text == "inject")
         {
             Advance();
             fresh = ParseExpression();

@@ -2857,7 +2857,8 @@ public sealed partial class TypeRegistry
     {
         TypeSymbol? boolType = LookupType(name: "Bool");
         if (boolType != null && elementTypes.All(predicate: et =>
-                LookupMemberRoutine(type: et, memberRoutineName: "eq") != null))
+                LookupMemberRoutine(type: et, memberRoutineName: "eq") != null ||
+                TypeObeysProtocol(type: et, protocolName: "Equatable")))
         {
             var youParam = new ParamInfo(name: "you", type: newType);
             RegisterSynthesizedMemberRoutine(name: "eq",
@@ -2876,7 +2877,8 @@ public sealed partial class TypeRegistry
     {
         TypeSymbol? u64Type = LookupType(name: "U64");
         if (u64Type != null && elementTypes.All(predicate: et =>
-                LookupMemberRoutine(type: et, memberRoutineName: "hash") != null))
+                LookupMemberRoutine(type: et, memberRoutineName: "hash") != null ||
+                TypeObeysProtocol(type: et, protocolName: "Hashable")))
         {
             RegisterSynthesizedMemberRoutine(name: "hash", owner: newType, returnType: u64Type);
         }
@@ -2928,7 +2930,8 @@ public sealed partial class TypeRegistry
         TypeSymbol? boolType = LookupType(name: "Bool");
         TypeSymbol? comparisonSignType = LookupType(name: "ComparisonSign");
         if (boolType != null && comparisonSignType != null && elementTypes.All(predicate: et =>
-                LookupMemberRoutine(type: et, memberRoutineName: "compare") != null))
+                LookupMemberRoutine(type: et, memberRoutineName: "compare") != null ||
+                TypeObeysProtocol(type: et, protocolName: "Comparable")))
         {
             var youParam = new ParamInfo(name: "you", type: newType);
             RegisterSynthesizedMemberRoutine(name: "compare",

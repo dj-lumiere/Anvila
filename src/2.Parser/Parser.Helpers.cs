@@ -72,6 +72,13 @@ public partial class Parser
                 message: $"'{current.Text}' is reserved for a keyword, so it cannot name anything. Pick another name.");
         }
 
+        // A keyword written where a name goes: name the word the user wrote, not the token kind.
+        if (current.Text.Length > 0 && current.Text.All(predicate: char.IsLetter) && current.Type != TokenType.Identifier)
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
+                message: $"{errorMessage}. '{current.Text}' is a keyword, so it cannot name anything. Pick another name.");
+        }
+
         throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
             message: $"{errorMessage}. Expected Identifier, got {current.Type}.");
     }

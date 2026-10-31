@@ -81,7 +81,9 @@ internal sealed class WorkOneThreadChecker(DiagnosticReporter report)
                     allowed.Add(item: loweredReceiver);
                 }
 
-                if (verb == "start_here" && receiver is IdentifierExpression started)
+                // A start verb the Work may not use is reported there, so the collecting verb after it says nothing more.
+                if ((verb == "start_here" || OtherThreadVerbs.Contains(item: verb)) &&
+                    receiver is IdentifierExpression started)
                 {
                     startedHere.Add(item: started.Name);
                 }

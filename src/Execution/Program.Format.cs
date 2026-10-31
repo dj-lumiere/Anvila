@@ -176,6 +176,12 @@ internal partial class Program
         return own.Count;
     }
 
+    /// <summary>A line as the lint message shows it: a blank line says so instead of leaving a gap.</summary>
+    private static string ShownLine(string text)
+    {
+        return text.Trim().Length == 0 ? "(an empty line)" : text;
+    }
+
     private static int RunLintCommand(string[] args)
     {
         List<string> targets = args.Skip(count: 1).ToList();
@@ -240,8 +246,8 @@ internal partial class Program
                 line++;
             }
 
-            string should = line < want.Length ? want[line] : "(nothing)";
-            string actual = line < have.Length ? have[line] : "(nothing)";
+            string should = line < want.Length ? ShownLine(text: want[line]) : "(nothing)";
+            string actual = line < have.Length ? ShownLine(text: have[line]) : "(nothing)";
             Console.WriteLine(value: $"error[style]: {file}:{line + 1}: this is not in the canonical layout");
             Console.WriteLine(value: $"  it reads:       {actual}");
             Console.WriteLine(value: $"  it should read: {should}");

@@ -217,6 +217,14 @@ public partial class Parser
                              : "`var m: Optional[S64] = none`."));
         }
 
+        if (Check(type: TokenType.At))
+        {
+            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,
+                message: "An annotation (`@name`) goes before a routine, a type or a member variable, not before a " +
+                         "statement or a local variable. A local needs none: write the `var` or `lateinit var` line " +
+                         "on its own.");
+        }
+
         throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedExpression,
             message: $"Unexpected token: {CurrentToken.Type}");
     }

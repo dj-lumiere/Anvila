@@ -381,10 +381,14 @@ public sealed partial class SemanticVerifier
         int nonMeParamCount = ctx.NonMeParamCount;
         if (requiresNamedArgs && !isMixed)
         {
-            ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
-                message:
-                $"Routine '{routine.Name}' has {nonMeParamCount} parameters - all arguments must be named.",
-                location: arg.Location);
+            // Once per call, at the first positional argument.
+            if (positionalIndex == 0)
+            {
+                ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
+                    message:
+                    $"Routine '{routine.Name}' has {nonMeParamCount} parameters - all arguments must be named.",
+                    location: arg.Location);
+            }
         }
         else if (seenNamed && !isPositional && !isMixed)
         {

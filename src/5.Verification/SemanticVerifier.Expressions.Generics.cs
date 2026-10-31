@@ -1208,7 +1208,7 @@ public sealed partial class SemanticVerifier
         if (memberCount >= 2)
         {
             foreach (Expression arg in generic.Arguments.Where(predicate: a =>
-                         a is not NamedArgumentExpression))
+                         a is not NamedArgumentExpression).Take(count: 1))
             {
                 ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
                     message:

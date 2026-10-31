@@ -719,11 +719,13 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                         ? $"pass '{shown}' to a routine value"
                         : operand is IdentifierExpression or MemberExpression or IndexExpression &&
                           call.Callee is MemberExpression { Object: var r } && ReferenceEquals(objA: r, objB: operand)
-                            ? $"call '{shown}.{callee}()'"
+                            ? $"call '{ShownPath(path: ShapePath(expr: operand) ?? shown)}.{callee}()'"
                             : $"pass '{shown}' to '{callee}'";
                     string why = callee.Length == 0
                         ? "the builder cannot tell whether that routine adds to or removes from it"
-                        : $"'{callee}' can add to or remove from it";
+                        : rest.Length > 0
+                            ? $"'{callee}' can add to or remove from '{shown}'"
+                            : $"'{callee}' can add to or remove from it";
                     ReportShapeChange(guard: g, attempt: attempt, why: why, location: call.Location);
                 }
                 else if (path != null && MayBeSameContainer(operand: operand, path: path, guard: g))

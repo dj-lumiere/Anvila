@@ -74,6 +74,7 @@ public sealed partial class SemanticVerifier
             case VariableDeclaration varDecl:
                 // A bare `var` at module level. `var` is a routine-local binding; there is no module-level
                 // `var`. A language with module globals spells module-level mutable state `global`.
+                _rejectedModuleVarNames.Add(item: varDecl.Name);
                 ReportError(code: SemanticDiagnosticCode.ModuleLevelVarNotAllowed,
                     message:
                     $"'var {varDecl.Name}' is not allowed at module level. 'var' declares a routine-local " +

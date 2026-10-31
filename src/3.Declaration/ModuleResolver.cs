@@ -138,6 +138,21 @@ public sealed class ModuleResolver
     }
 
     /// <summary>
+    /// The modules directly or deeper under <paramref name="modulePath"/> (<c>Shop</c> gives <c>Shop/Cart</c>), sorted,
+    /// from the index and from the project's own files. Empty when the path is no folder of modules.
+    /// </summary>
+    public List<string> ModulesUnder(string modulePath)
+    {
+        string prefix = modulePath + "/";
+        return _index.Keys.Concat(second: DerivedModuleFiles().Keys)
+                     .Where(predicate: k => k.StartsWith(value: prefix, comparisonType: StringComparison.OrdinalIgnoreCase) &&
+                                            !k.Contains(value: '.'))
+                     .Distinct(comparer: StringComparer.OrdinalIgnoreCase)
+                     .Order(comparer: StringComparer.Ordinal)
+                     .ToList();
+    }
+
+    /// <summary>
     /// Resolves an import path to a single source file without recording a not-found error.
     /// Returns null when no single file matches — the caller decides whether to try a
     /// directory-as-module fallback (see <see cref="EnumerateProjectModuleDirectory"/>) before

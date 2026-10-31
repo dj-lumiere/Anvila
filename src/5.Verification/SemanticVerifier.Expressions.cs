@@ -249,6 +249,12 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
+        // A name whose module-level `var` was already rejected (RF-S435) is reported once, there.
+        if (_rejectedModuleVarNames.Contains(item: id.Name))
+        {
+            return ErrorTypeSymbol.Instance;
+        }
+
         ReportError(code: SemanticDiagnosticCode.UnknownIdentifier,
             message:
             $"Unknown identifier '{id.Name}'.{NarrowedImportHint(name: id.Name) ?? Suggestions.ForIdentifier(name: id.Name)}",
@@ -257,6 +263,9 @@ public sealed partial class SemanticVerifier
     }
 
     private readonly HashSet<(RoutineInfo Routine, string Name)> _reportedScriptVariables = [];
+
+    /// <summary>Names of module-level <c>var</c> declarations already rejected with RF-S435.</summary>
+    private readonly HashSet<string> _rejectedModuleVarNames = [];
 
     /// <summary>
     /// A top-level <c>var</c> of a script-mode file is a local of the implicit <c>start()</c>, so a

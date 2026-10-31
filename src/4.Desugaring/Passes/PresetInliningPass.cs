@@ -437,7 +437,9 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
     {
         if (expr is IdentifierExpression id)
         {
-            return LowerIdentifier(expr: expr, id: id);
+            Expression lowered = LowerIdentifier(expr: expr, id: id);
+            // The inlined value reads at the use, so an error about it points at the line that used the preset.
+            return ReferenceEquals(objA: lowered, objB: expr) ? lowered : lowered with { Location = id.Location };
         }
 
         return base.VisitExpression(expr: expr);

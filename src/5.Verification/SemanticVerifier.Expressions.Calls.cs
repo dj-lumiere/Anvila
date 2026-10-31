@@ -2936,6 +2936,16 @@ public sealed partial class SemanticVerifier
         }
     }
 
+    /// <summary>Whether the value a token holds has a routine of this name that changes it.</summary>
+    private bool HeldValueHasChangingRoutine(TypeSymbol held, string name)
+    {
+        TypeSymbol definition = held is RecordTypeSymbol { GenericDefinition: { } record } ? record
+            : held is EntityTypeSymbol { GenericDefinition: { } entity } ? entity
+            : held;
+        return _registry.GetMemberRoutinesForType(type: definition).Any(predicate: r =>
+            r.Name == name && !r.IsReadOnly && !r.IsCommon);
+    }
+
     private ErrorTypeSymbol? AnalyzeUnresolvedMemberFieldCall(CallExpression call,
         MemberExpression member, TypeSymbol objectType, string callLookupName)
     {
@@ -2983,6 +2993,21 @@ public sealed partial class SemanticVerifier
                         message: $"Walking with 'steal' takes the elements out of a 'List' or a 'Slots', and '{objectType.Name}' " +
                                  "can't be taken apart that way. Walk it without 'steal', or move its elements " +
                                  "into a 'List' first.",
+                        location: call.Location);
+                    return ErrorTypeSymbol.Instance;
+                }
+
+                // A Viewing token only reads: a routine of the held value that changes it is missing on the token.
+                if (objectType is RecordTypeSymbol { } viewToken &&
+                    (viewToken.GenericDefinition ?? viewToken).BareName == Declaration.RuntimeContract.Viewing &&
+                    WrapperShape.InnerOf(type: objectType) is { } viewed &&
+                    HeldValueHasChangingRoutine(held: viewed, name: callLookupName))
+                {
+                    string tokenName = member.Object is IdentifierExpression tokenId ? $"'{tokenId.Name}'" : "This token";
+                    ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
+                        message:
+                        $"{tokenName} is a Viewing token, which is read-only, and '{member.MemberName}' changes the " +
+                        $"'{WrittenTypeName(type: viewed)}'. Open the block with `modifying` instead of `viewing` to change it.",
                         location: call.Location);
                     return ErrorTypeSymbol.Instance;
                 }
@@ -5199,7 +5224,7 @@ public sealed partial class SemanticVerifier
         if (memberCount >= 3)
         {
             foreach (Expression arg in call.Arguments.Where(predicate: a =>
-                         a is not NamedArgumentExpression))
+                         a is not NamedArgumentExpression).Take(count: 1))
             {
                 ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
                     message:

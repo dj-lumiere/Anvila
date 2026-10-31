@@ -657,14 +657,33 @@ internal partial class Program
             }
             else
             {
-                Console.WriteLine(
-                    value:
-                    $"Error: unknown option '{args[i]}'. RazorForge takes no build flags — configure builds in config.toml ([target] executable, library, mode, ...).");
+                string? value = i + 1 < args.Length && !args[i + 1].StartsWith(value: '-') ? args[i + 1] : null;
+                Console.WriteLine(value: UnknownOptionMessage(flag: args[i], value: value));
                 return false;
             }
         }
 
         return true;
+    }
+
+    /// <summary>The error for a flag on a build, check or codegen command: the flag is not an option, and when
+    /// <c>config.toml</c> can say the same thing the message names the key to write.</summary>
+    private static string UnknownOptionMessage(string flag, string? value)
+    {
+        string v = value ?? "...";
+        string? key = flag switch
+        {
+            "--mode" => $"`mode = \"{v}\"` under [target]",
+            "--dump-ast" => $"`dump-ast = true` under [debug]",
+            "--dump-ir" => $"`dump-ir = true` under [debug]",
+            "--show-build-stages" => $"`show-build-stages = true` under [debug]",
+            "--trace-stdlib" => $"`trace-stdlib = true` under [debug]",
+            _ => null
+        };
+        return key is null
+            ? $"Error: '{flag}' isn't an option: {CliRules.ToolName} takes a command and a file only. Write the build " +
+              "settings in config.toml ([target] executable, library, mode, ...)."
+            : $"Error: '{flag}' isn't an option: write {key} in config.toml.";
     }
 
     /// <summary>Resolves an explicitly-given source-file entry: honors the nearest config.toml (or debug
