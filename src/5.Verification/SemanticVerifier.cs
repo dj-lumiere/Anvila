@@ -562,6 +562,7 @@ public sealed partial class SemanticVerifier
 
         RunPhase1Declarations(program: program);
         Mark(label: "Phase 1 Declarations");
+        NoteStampedTypes(filePaths: [_currentFilePath]);
         CaptureCurrentImportStateSnapshot(filePath: _currentFilePath);
         RunPhase2Resolution(program: program);
         Mark(label: "Phase 2 Resolution");
@@ -2678,6 +2679,8 @@ public sealed partial class SemanticVerifier
         }
 
         Mark(label: "Phase 1b -> re-resolve conformances");
+
+        NoteStampedTypes(filePaths: files.Select(selector: f => f.FilePath));
 
         // Phase 2: Resolve type bodies across ALL files (members can reference types from other files)
         _conformanceAnalyzer.ApplyKindMarkerConformanceEarly();

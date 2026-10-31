@@ -923,6 +923,10 @@ public enum SemanticDiagnosticCode
     /// goes where the type is expected, a value converts with <c>x.to[T]()</c>.</summary>
     NumberBuiltFromBits = 655,
 
+    /// <summary><c>e.stamp()</c> on an entity type with no stamp slot: the builder gives one to an entity type of the
+    /// program that its source writes as <c>Stamped[...]</c>'s argument.</summary>
+    StampOfTypeWithoutSlot = 656,
+
     /// <summary>A binding from outside an <c>if</c>, a <c>when</c> or a loop is taken with <c>steal</c> on some paths
     /// that go on past it and kept on others (or taken inside a loop, so it is gone on the next turn): what a scope
     /// holds is torn down at its end by one rule, with no hidden flag remembering which path ran.</summary>

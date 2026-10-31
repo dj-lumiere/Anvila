@@ -367,8 +367,10 @@ public sealed partial class SemanticVerifier
                 message:
                 $"You declare global '{global.Name}' as `{globalType.ShortTypeName}`, but a token lives in a routine's " +
                 $"variables and is never kept in a global: the global would still point at the `{target}` after the " +
-                $"place it is in is gone. Keep the `{target}` itself in the global (`global {global.Name}: {target}`), " +
-                $"or under a manager (`Guarded[{target}, MultiRead]`), and take the token where you use it.",
+                $"place it is in is gone. Keep a `Stamped[{target}]` in it (the entity's `stamp()`, read back with " +
+                $"`fetch()`, which fails once the entity has ended), the `{target}` itself " +
+                $"(`global {global.Name}: {target}`), or a manager's handle (`Guarded[{target}, MultiRead]`), and take " +
+                $"the token where you use it.",
                 location: global.Location);
         }
 

@@ -72,6 +72,10 @@ public sealed partial class SemanticVerifier
             location: location);
     }
 
+    /// <summary>The entity a token type is over, for a message: <c>Node</c> for <c>Viewing[Node]</c>.</summary>
+    private static string TokenTarget(TypeSymbol type) =>
+        type.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "E";
+
     /// <summary>
     /// Validates that a type is not an inline-only token when used as a member variable type.
     /// </summary>
@@ -87,7 +91,9 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.TokenMemberVariableNotAllowed,
                 message:
-                $"Cannot store {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. A token lives in a routine's locals and is never stored in a field.",
+                $"Cannot store {GetTokenKindDescription(type: type)} in member variable '{memberVariableName}'. A token lives in a routine's locals and is never stored in a field. " +
+                $"To keep a link to the entity, keep a `Stamped[{TokenTarget(type: type)}]` there (its `stamp()`, read back with `fetch()`, which fails once the entity has ended), " +
+                $"or keep the entity itself, or a manager's handle (`Retained[{TokenTarget(type: type)}]`).",
                 location: location);
             return;
         }
@@ -239,8 +245,9 @@ public sealed partial class SemanticVerifier
             message:
             $"You use `{type.ShortTypeName}` for {what}, but `{token.ShortTypeName}` in it is a token, and a token can't be a type " +
             $"argument: the token points at the place `{target}` is in, and what holds the token could still use it " +
-            $"after that place is gone. Keep each token in a variable of its own, or keep the `{target}` itself in " +
-            $"the container (`List[{target}]`), or under a manager (`Retained[{target}]`).",
+            $"after that place is gone. Keep a `Stamped[{target}]` there instead (the entity's `stamp()`, read back with " +
+            $"`fetch()`, which fails once the entity has ended), keep each token in a variable of its own, or keep the " +
+            $"`{target}` itself in the container (`List[{target}]`), or under a manager (`Retained[{target}]`).",
             location: location);
     }
 
@@ -1049,7 +1056,9 @@ public sealed partial class SemanticVerifier
         _callArgumentsInAnalysis.Push(item: call.Arguments);
         try
         {
-            return AnalyzeCallExpression(call: call, expectedType: expectedType);
+            TypeSymbol result = AnalyzeCallExpression(call: call, expectedType: expectedType);
+            CheckStampHasSlot(call: call);
+            return result;
         }
         finally
         {
@@ -1064,6 +1073,29 @@ public sealed partial class SemanticVerifier
     /// checked after all bodies are analyzed, see <c>CheckShapeEffects</c>.) Runs after the call is
     /// analyzed, when argument types are known.
     /// </summary>
+    /// <summary>
+    /// RF-S656 for <c>e.stamp()</c> in a program file on an entity type with no stamp slot: the builder gives one to a
+    /// type of the program that its source writes as <c>Stamped[...]</c>'s argument, so a stamp reached only through a
+    /// type parameter, or of a standard library entity, has none.
+    /// </summary>
+    private void CheckStampHasSlot(CallExpression call)
+    {
+        if (call is not { Callee: MemberExpression { MemberName: "stamp", Object.ResolvedType: EntityTypeSymbol entity } } ||
+            call.Arguments.Count != 0 || entity.KeepsStamp || entity.IsGenericDefinition ||
+            call.ResolvedRoutine is not { Name: "stamp", ReturnType.BareName: "Stamped" } routine ||
+            routine.Module?.StartsWith(value: "System", comparisonType: StringComparison.Ordinal) != true ||
+            !IsProgramFile(filePath: call.Location.FileName))
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.StampOfTypeWithoutSlot,
+            message: $"`{entity.ShortTypeName}` has no slot for stamps: the builder gives one to an entity type of your " +
+                     $"program that its source writes as `Stamped[{entity.BareName}]`. Write that type where the stamp " +
+                     $"is kept (`var s: Stamped[{entity.BareName}] = x.stamp()`).",
+            location: call.Location);
+    }
+
     /// <summary>Every expression inside <paramref name="expr"/>, itself included.</summary>
     private static List<Expression> CollectSubexpressions(Expression expr)
     {

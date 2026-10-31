@@ -181,6 +181,11 @@ public static class BuilderInfoProvider
                 returnType: types.S64Type,
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);
+            MaybeRegister(owner: type,
+                name: RuntimeContract.StampSlotOffset,
+                returnType: types.S64Type,
+                existingMemberRoutines: existingMemberRoutines,
+                registry: registry);
         }
 
         // type_kind returns the declared TypeKind choice only (module-qualified: TypeKind lives in
@@ -205,6 +210,11 @@ public static class BuilderInfoProvider
                 registry: registry);
             MaybeRegister(owner: type,
                 name: "is_in_flight",
+                returnType: types.BoolType,
+                existingMemberRoutines: existingMemberRoutines,
+                registry: registry);
+            MaybeRegister(owner: type,
+                name: RuntimeContract.KeepsStamp,
                 returnType: types.BoolType,
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);

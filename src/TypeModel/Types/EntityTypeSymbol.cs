@@ -66,6 +66,56 @@ public class EntityTypeSymbol : TypeSymbol
     /// </summary>
     public int HeapBlockSize(int pointerSize)
     {
+        int size = MemberBlockSize(pointerSize: pointerSize);
+        if (!KeepsStamp)
+        {
+            return size;
+        }
+
+        // The stamp slot: eight bytes after the member variables (the slot, then its generation), kept to the
+        // block's alignment.
+        int maxAlignment = MemberVariables.Count == 0
+            ? 4
+            : Math.Max(val1: 4, val2: MemberVariables.Max(selector: mv =>
+                Math.Max(val1: Math.Min(val1: mv.Type.SizeBytes(pointerSize: pointerSize), val2: 16), val2: 1)));
+        return AlignTo(size: StampSlotOffset(pointerSize: pointerSize) + 8, alignment: maxAlignment);
+    }
+
+    /// <summary>
+    /// The user entity types whose source writes <c>Stamped[Name]</c>, as <c>Module.BareName</c>: set at the start of
+    /// each build's analysis (<c>SemanticVerifier.NoteStampedTypes</c>). Only they keep a stamp slot, so every other
+    /// entity keeps its layout.
+    /// </summary>
+    public static HashSet<string> StampedTypes { get; set; } = new(comparer: StringComparer.Ordinal);
+
+    /// <summary>The target's pointer size in bytes, set with <see cref="StampedTypes"/>: the stamp slot's offset.</summary>
+    public static int StampPointerSize { get; set; } = 8;
+
+    /// <summary>
+    /// Whether this entity keeps a slot of the stamp table (<c>Stamped[T]</c>): eight bytes after its member variables
+    /// (the slot and the slot's generation, so a later <c>stamp()</c> reads only the entity), zero until its first
+    /// <c>stamp()</c>, ended by its <c>destruct</c>.
+    /// </summary>
+    public bool KeepsStamp => StampedTypes.Count > 0 && StampedTypes.Contains(item: $"{Module}.{BareName}");
+
+    /// <summary>The byte offset of the stamp slot in the entity's block: right after the member variables.</summary>
+    public int StampSlotOffset(int pointerSize)
+    {
+        int size = 0;
+        foreach (MemberVariableInfo mv in MemberVariables)
+        {
+            int memberSize = mv.Type.SizeBytes(pointerSize: pointerSize);
+            int alignment = Math.Max(val1: Math.Min(val1: memberSize, val2: 16), val2: 1);
+            size = AlignTo(size: size, alignment: alignment);
+            size += memberSize;
+        }
+
+        return AlignTo(size: size, alignment: 4);
+    }
+
+    /// <summary>The size of the member variables' block, without a stamp slot.</summary>
+    private int MemberBlockSize(int pointerSize)
+    {
         int size = 0;
         int maxAlignment = 1;
         foreach (MemberVariableInfo mv in MemberVariables)

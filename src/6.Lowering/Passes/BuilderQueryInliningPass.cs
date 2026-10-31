@@ -80,7 +80,9 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             "member_variable_count",
             "is_generic",
             "is_in_flight",
-            "type_kind"
+            "type_kind",
+            RuntimeContract.KeepsStamp,
+            RuntimeContract.StampSlotOffset
         };
 
     private static readonly HashSet<string> _sourceLocationRoutines =
@@ -615,6 +617,23 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
             case "type_kind":
                 return FoldTypeKind(type: type, loc: loc);
+
+            case RuntimeContract.KeepsStamp when _boolType != null:
+            {
+                bool keeps = type is EntityTypeSymbol { KeepsStamp: true };
+                return new LiteralExpression(Value: keeps,
+                    LiteralType: keeps
+                        ? TokenType.True
+                        : TokenType.False,
+                    Location: loc) { ResolvedType = _boolType };
+            }
+
+            case RuntimeContract.StampSlotOffset when _s64Type != null:
+                return MakeLiteralS64(value: type is EntityTypeSymbol { KeepsStamp: true } stamped
+                        ? stamped.StampSlotOffset(pointerSize: EntityTypeSymbol.StampPointerSize)
+                        : -1,
+                    type: _s64Type,
+                    loc: loc);
 
             default:
                 return null;

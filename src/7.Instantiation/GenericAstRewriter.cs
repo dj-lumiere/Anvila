@@ -2621,6 +2621,20 @@ internal static class GenericAstRewriter
                 LiteralType: TokenType.S64Literal,
                 Location: location) { ResolvedType = s64Type },
 
+            RuntimeContract.KeepsStamp when boolType != null => new LiteralExpression(
+                Value: typeInfo is EntityTypeSymbol { KeepsStamp: true },
+                LiteralType: typeInfo is EntityTypeSymbol { KeepsStamp: true }
+                    ? TokenType.True
+                    : TokenType.False,
+                Location: location) { ResolvedType = boolType },
+
+            RuntimeContract.StampSlotOffset when s64Type != null => new LiteralExpression(
+                Value: (long)(typeInfo is EntityTypeSymbol { KeepsStamp: true } stamped
+                    ? stamped.StampSlotOffset(pointerSize: EntityTypeSymbol.StampPointerSize)
+                    : -1),
+                LiteralType: TokenType.S64Literal,
+                Location: location) { ResolvedType = s64Type },
+
             "is_generic" when boolType != null => new LiteralExpression(
                 Value: typeInfo.IsGenericDefinition,
                 LiteralType: typeInfo.IsGenericDefinition

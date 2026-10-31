@@ -329,6 +329,12 @@ public static class RuntimeContract
     /// <remarks>Sites: BuilderInfoProvider, BuilderQueryInliningPass, GenericAstRewriter.</remarks>
     public const string DataSize = "data_size";
 
+    /// <summary>BuilderQuery: whether an entity type keeps a stamp slot (<c>Stamped[T]</c>).</summary>
+    public const string KeepsStamp = "keeps_stamp";
+
+    /// <summary>BuilderQuery: the byte offset of an entity's stamp slot in its block, -1 for none.</summary>
+    public const string StampSlotOffset = "stamp_slot_offset";
+
     /// <summary><c>crash_message()</c> on error types — extracts the diagnostic string on the throw path.</summary>
     /// <remarks>Sites: LlvmEmitter.Statements.Returns, WiredRoutinePass, RoutineReachabilityPass.</remarks>
     public const string CrashMessage = "crash_message";
@@ -671,6 +677,8 @@ public static class RuntimeContract
             "routine_info",
             "annotations",
             DataSize,
+            KeepsStamp,
+            StampSlotOffset,
             "full_type_name",
             "dependencies",
             "member_type_id"
