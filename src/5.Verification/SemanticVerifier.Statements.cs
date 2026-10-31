@@ -1167,6 +1167,15 @@ public sealed partial class SemanticVerifier
             block.Statements.AddRange(collection: expanded);
         }
 
+        // An `expand` over a concrete type stands for its unrolled copies (an empty block when the type has no parts).
+        for (int i = 0; i < block.Statements.Count; i++)
+        {
+            if (block.Statements[index: i] is ExpandStatement { Unrolled: { } unrolled })
+            {
+                block.Statements[index: i] = unrolled;
+            }
+        }
+
         _registry.ExitScope();
     }
 

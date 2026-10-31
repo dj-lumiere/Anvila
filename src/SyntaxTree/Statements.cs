@@ -677,6 +677,11 @@ public record ExpandStatement(
     /// </summary>
     public ExpandSourceKind SourceKind => ExpandSources.KindOf(name: SourceName);
 
+    /// <summary>The body once per part, when the source is a concrete type the analyzer knows (an <c>expand</c> in
+    /// a routine that is not generic): the analyzer unrolls it then, checks the copies, and puts them in place of the
+    /// statement. Null for a source that is a type parameter, unrolled at monomorphization.</summary>
+    public BlockStatement? Unrolled { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

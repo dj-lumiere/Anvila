@@ -1392,6 +1392,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
             BuildGenericInstanceIfNeeded(r: r, key: key);
             MaterializeDeriveTemplateBodyIfNeeded(r: r, key: key);
+            MaterializeNeFromEqIfNeeded(r: r, key: key);
             MaterializeFromSerialBodyIfNeeded(r: r, key: key);
             MaterializeVariantArmExtractorBodyIfNeeded(r: r, key: key);
             if (!_walked.Contains(item: key) && GetBody(key: key) is { } body)
@@ -1506,6 +1507,37 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 VariantInnerType: null,
                 IsSynthesized: false,
                 OwesScopeTeardown: !LifecycleDerives.Contains(item: r.Name));
+        }
+
+        /// <summary>
+        /// A reached <c>ne</c> the builder registered without a body: the one a tuple type gets when the type is made
+        /// (TypeRegistry.RegisterTupleEqualityRoutines), often during body analysis, after DerivedOperatorPass wrote
+        /// the <c>ne</c> bodies of the types there were then. Its body is the same <c>not me.eq(you)</c>, built here
+        /// for the owner's own <c>eq</c>, which the walk then reaches through it.
+        /// </summary>
+        private void MaterializeNeFromEqIfNeeded(RoutineInfo r, string key)
+        {
+            if (r is not { Name: "ne", IsSynthesized: true, Parameters: [var you], ReturnType: { } boolType } ||
+                r.OwnerType is not { IsGenericDefinition: false } owner || owner is GenericParameterTypeSymbol ||
+                _ctx.InstantiatedGenericBodies.ContainsKey(key: key) || _ctx.VariantBodies.ContainsKey(key: key) ||
+                programBodies.ContainsKey(key: key) || (synthesizedBodies?.ContainsKey(key: key) ?? false) ||
+                _ctx.Registry.LookupMemberRoutineOverload(type: owner, memberRoutineName: "eq", argTypes: [you.Type]) is
+                    not { } eq)
+            {
+                return;
+            }
+
+            BlockStatement body = DerivedOperatorPass.BuildNegatedDelegateBody(ownerType: owner,
+                delegateMemberRoutine: eq,
+                boolType: boolType,
+                paramName: you.Name);
+            _ctx.InstantiatedGenericBodies[key: key] = new MonomorphizedBody(
+                Ast: WrapInShellDecl(name: r.Name, body: body, info: r),
+                Info: r,
+                TypeSubs: new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal),
+                VariantStatus: null,
+                VariantInnerType: null,
+                IsSynthesized: true);
         }
 
         /// <summary>

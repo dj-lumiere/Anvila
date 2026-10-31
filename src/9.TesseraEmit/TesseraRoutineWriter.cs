@@ -1314,8 +1314,24 @@ internal sealed class TesseraRoutineWriter
             return null;
         }
 
-        return new Operand(Text: Temp(type: routine.ReturnType, expression: text), Type: routine.ReturnType,
-            IsPlace: false);
+        TypeSymbol resultType = ElementThroughToken(call: call, routine: routine) ?? routine.ReturnType;
+        return new Operand(Text: Temp(type: resultType, expression: text), Type: resultType, IsPlace: false);
+    }
+
+    /// <summary>
+    /// The entity a call that hands out a token on it stands for: <c>me[i]</c> on a list of entities is lowered to
+    /// <c>me.modify_at(i)</c> typed as the element (OperatorLoweringPass), since the token and the entity are the same
+    /// address. A field read or a call on it then reaches the entity, as it does in the LLVM emitter. Null for any
+    /// other call.
+    /// </summary>
+    private static TypeSymbol? ElementThroughToken(CallExpression call, RoutineInfo routine)
+    {
+        return call.ResolvedType is EntityTypeSymbol element &&
+               WrapperShape.TryGet(type: routine.ReturnType, name: out string token, inner: out TypeSymbol inner) &&
+               token is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+               inner.FullName == element.FullName
+            ? element
+            : null;
     }
 
     /// <summary>The call's arguments by parameter (<c>CallArgumentOrderPass</c> listed them in parameter order).

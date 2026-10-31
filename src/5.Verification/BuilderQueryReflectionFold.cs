@@ -664,9 +664,11 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
                              .ToList();
         var literal =
             new ListLiteralExpression(Elements: elements, ElementType: null, Location: loc);
-        // Analyze as a source `[...]` literal would be — sets ResolvedType (List[Text]) AND resolves
-        // the per-arity from_literal(Array[Text,N]) builder onto ResolvedLiteralBuilder so reachability seeds it.
-        analyzeList(arg1: literal, arg2: returnType);
+        // Analyze as a source `[...]` literal would be: it resolves the per-arity from_literal(Array[Text,N])
+        // builder onto ResolvedLiteralBuilder so reachability seeds it. The analysis returns the literal's type
+        // (List[Text]) and leaves storing it to its caller, as for a written literal, so a later pass that asks the
+        // receiver's type (the `represent` an f-string part becomes) finds it.
+        literal.ResolvedType = analyzeList(arg1: literal, arg2: returnType);
         return literal;
     }
 
@@ -725,8 +727,8 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
             new ListLiteralExpression(Elements: elements, ElementType: null, Location: loc);
         // Analyze as a source `[E(...), ...]` literal would be: recursively analyzes each creator (+ nested
         // list-of-Text and the bare Visibility identifier) and resolves ResolvedLiteralBuilder so reachability
-        // seeds List[E].from_literal / create / add_last.
-        analyzeList(arg1: literal, arg2: returnType);
+        // seeds List[E].from_literal / create / add_last. Its type is stored here, as for the List[Text] fold.
+        literal.ResolvedType = analyzeList(arg1: literal, arg2: returnType);
         return literal;
     }
 
@@ -791,7 +793,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
               .GetMemberRoutinesForType(type: owner)
               .Select(selector: r => new List<(string Name, Expression Value)>
                {
-                   ("name", MakeReflTextLit(value: r.Name, loc: loc)),
+                   ("name", MakeReflTextLit(value: ReflectedName(routine: r, owner: owner), loc: loc)),
                    ("param_types", MakeReflTextList(
                        values: r.Parameters.Select(selector: p => p.Type.ShortTypeName),
                        loc: loc)),
@@ -897,6 +899,14 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
         return new IdentifierExpression(Name: caseName, Location: loc);
     }
 
+    /// <summary>The name a routine of <paramref name="owner"/> is called by: a creator is written and called as the
+    /// type's own name (<c>routine Pair(...)</c>, <c>Pair(a: 1, b: 2)</c>), so it is listed as that, not as its empty
+    /// registry name.</summary>
+    private static string ReflectedName(RoutineInfo routine, TypeSymbol owner)
+    {
+        return routine.IsCreator ? owner.BareName : routine.Name;
+    }
+
     /// <summary>
     /// Recomputes the buildtime-constant string list a list-returning BuilderQuery reflection routine
     /// would return for <paramref name="owner"/>. MUST stay identical to the (now-removed) synthesized
@@ -918,7 +928,7 @@ internal sealed class BuilderQueryReflectionFold(TypeRegistry registry,
                 _ => new List<string>()
             },
             "routine_names" => registry.GetMemberRoutinesForType(type: owner)
-                                        .Select(selector: r => r.Name)
+                                        .Select(selector: r => ReflectedName(routine: r, owner: owner))
                                         .Distinct()
                                         .ToList(),
             "generic_args" => owner.TypeArguments

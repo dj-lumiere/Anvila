@@ -109,6 +109,18 @@ partial class TypeRegistry
     internal Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
         pessimistic)> DeferredVariantBases { get; private set; } = new();
 
+    /// <summary>The type symbols this registry took from a stdlib snapshot. Other registries restored from the same
+    /// snapshot hold the same objects, and analyses run in parallel (tests, the language server), so the builder
+    /// decided their protocols before the snapshot was taken and an analysis must not change them.</summary>
+    private readonly HashSet<TypeSymbol> _snapshotTypes = new(comparer: ReferenceEqualityComparer.Instance);
+
+    /// <summary>Whether <paramref name="type"/> came from the stdlib snapshot this registry was restored from, so
+    /// other analyses share it and its protocols are already settled.</summary>
+    internal bool IsSharedSnapshotType(TypeSymbol type)
+    {
+        return _snapshotTypes.Contains(item: type);
+    }
+
     /// <summary>
     /// Captures a snapshot of the current registry state.
     /// Call after stdlib loading and body analysis is complete.
@@ -200,16 +212,19 @@ partial class TypeRegistry
         foreach (KeyValuePair<string, TypeSymbol> kv in snapshot.Types)
         {
             _types[key: kv.Key] = kv.Value;
+            _snapshotTypes.Add(item: kv.Value);
         }
 
         foreach (KeyValuePair<string, TypeSymbol> kv in snapshot.Resolutions)
         {
             _resolutions[key: kv.Key] = kv.Value;
+            _snapshotTypes.Add(item: kv.Value);
         }
 
         foreach (KeyValuePair<string, TypeSymbol> kv in snapshot.EntitySpecializations)
         {
             _entitySpecializations[key: kv.Key] = kv.Value;
+            _snapshotTypes.Add(item: kv.Value);
         }
 
         foreach (KeyValuePair<string, TypeSymbol> kv in snapshot.TypesByShortName)

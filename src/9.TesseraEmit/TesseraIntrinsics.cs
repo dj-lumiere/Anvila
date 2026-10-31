@@ -121,6 +121,12 @@ internal sealed class TesseraIntrinsics
             "float_to_unsigned" => Conversion(operation: "fptoui"),
             "float_extend" => Conversion(operation: "fpext"),
             "float_narrow" => Conversion(operation: "fptrunc"),
+            // A value with no bytes (None) is read and written at any address, a hollow one too: a list of None
+            // keeps no storage, so its address can be zero (`allocate_storage` gives none for 0 bytes).
+            "load" when TesseraWriter.IsVoid(type: _resultType) =>
+                $"bitcast[Addr, @{_typeText(arg: _resultType)}]({Argument(index: 0)}).peek()",
+            "store" when TesseraWriter.IsVoid(type: _arguments[index: 1].Type) =>
+                $"bitcast[Addr, @{Type(index: 1)}]({Argument(index: 0)}).poke({Argument(index: 1)})",
             "load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek()",
             "load_unaligned" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_unaligned()",
             "store" => $"{Argument(index: 0)}.to[@{Type(index: 1)}]().poke({Argument(index: 1)})",
@@ -139,8 +145,9 @@ internal sealed class TesseraIntrinsics
                 ? $"bitcast[Addr, @{framePointee}](rf_failure_get_frames({Argument(index: 0)}))"
                 : $"rf_failure_get_frames({Argument(index: 0)})",
             "element_pointer" => ElementPointer(),
-            // A signed byte count: Tessera's Addr moves only by a ByteSize, a pointer by a signed count.
-            "byte_offset" => $"{Argument(index: 0)}.to[@Byte]().offset(bytes: {Argument(index: 1)}).to[Addr]()",
+            // A signed byte count, taken as the ByteSize with the same bits: moving by it wraps to the same address.
+            // The address itself may be zero (a hollow storage moved by nothing), so it is not made a view first.
+            "byte_offset" => $"{Argument(index: 0)}.add_wrap(offset: bitcast[{Type(index: 1)}, ByteSize]({Argument(index: 1)}))",
             "atomic_load" => $"{Argument(index: 0)}.to[@{_typeText(arg: _resultType)}]().peek_unbroken()",
             "atomic_store" => Unbroken(method: "poke_unbroken"),
             "atomic_add" => Unbroken(method: "fetch_add_unbroken"),

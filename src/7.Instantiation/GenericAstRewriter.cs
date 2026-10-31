@@ -1268,9 +1268,12 @@ internal static class GenericAstRewriter
                  Name: MemberExpandTemplateInfo.ColumnPlaceholderName
              }))
         {
+            // KnownType too: the column type may be one the stdlib module cannot name (a user record held by a
+            // `SplitList`), so a later resolution by name from inside that module would not find it.
             return TypeInfoToTypeExpr(type: ctx.ActiveMemberType, location: type.Location) with
             {
-                ResolvedType = ctx.ActiveMemberType
+                ResolvedType = ctx.ActiveMemberType,
+                KnownType = ctx.ActiveMemberType
             };
         }
 

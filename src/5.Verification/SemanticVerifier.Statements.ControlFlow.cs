@@ -336,11 +336,41 @@ public sealed partial class SemanticVerifier
                 location: expandStmt.Location);
         }
 
-        _registry.EnterScope(kind: ScopeKind.Loop, name: "expand");
-
         // Resolve the source type for early error surfacing (a bare generic param resolves fine).
-        // The result is intentionally unused — no member walk happens before monomorphization.
-        ResolveType(typeExpr: expandStmt.SourceType);
+        TypeSymbol source = ResolveType(typeExpr: expandStmt.SourceType);
+
+        // A concrete source (`allmemvarof(Pair)` in a routine that is not generic) has its parts now, so the body is
+        // unrolled here and each copy is checked with its member's real type: `before.$nameof(m) != after.$nameof(m)`
+        // is a `!=` on that member's type, with no `needs Equatable everywhere` to promise it. The enclosing block puts
+        // the copies in place of the statement.
+        if (IsConcreteExpandSource(source: source) && !_inExpandBody &&
+            _importedModules.Contains(item: "BuilderExpansion") && ExpandSources.IsSource(name: expandStmt.SourceName))
+        {
+            // The source is handed to the unroller under a key no written name can be, so the substitution binds
+            // the source alone and leaves every type the body names as written.
+            const string sourceKey = "expand source";
+            ExpandStatement keyed = expandStmt with
+            {
+                SourceType = expandStmt.SourceType with { Name = sourceKey, GenericArguments = null }
+            };
+            var unrolled = (BlockStatement)Instantiation.GenericAstRewriter.RewriteStatement(stmt: keyed,
+                subs: new Dictionary<string, string>(comparer: StringComparer.Ordinal),
+                typeSubs: new Dictionary<string, TypeSymbol>(comparer: StringComparer.Ordinal)
+                {
+                    [key: sourceKey] = source
+                },
+                registry: _registry,
+                enclosingRoutine: _currentRoutine);
+            expandStmt.Unrolled = unrolled;
+            if (unrolled.Statements.Count > 0)
+            {
+                AnalyzeBlockStatement(block: unrolled);
+            }
+
+            return;
+        }
+
+        _registry.EnterScope(kind: ScopeKind.Loop, name: "expand");
 
         // Register the per-part handle so `m`, `m.name`, `m.id` resolve leniently in the body.
         _registry.DeclareVariable(name: expandStmt.HandleName,
@@ -352,6 +382,14 @@ public sealed partial class SemanticVerifier
         _inExpandBody = prevInExpand;
 
         _registry.ExitScope();
+    }
+
+    /// <summary>Whether an <c>expand</c> source is a type whose parts are known before monomorphization: no type
+    /// parameter in it and not a generic definition.</summary>
+    private static bool IsConcreteExpandSource(TypeSymbol source)
+    {
+        return source is not (ErrorTypeSymbol or GenericParameterTypeSymbol) && !source.IsGenericDefinition &&
+               (source.TypeArguments ?? []).All(predicate: IsConcreteExpandSource);
     }
 
     private void AnalyzeForStatement(ForStatement forStmt)

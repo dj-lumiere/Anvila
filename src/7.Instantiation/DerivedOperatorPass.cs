@@ -230,7 +230,7 @@ internal sealed class DerivedOperatorPass
     /// <summary>
     /// Builds: return not me.{memberRoutineName}({paramName}: {paramName})
     /// </summary>
-    private static BlockStatement BuildNegatedDelegateBody(TypeSymbol ownerType,
+    internal static BlockStatement BuildNegatedDelegateBody(TypeSymbol ownerType,
         RoutineInfo delegateMemberRoutine, TypeSymbol boolType, string paramName)
     {
         var meRef = new IdentifierExpression(Name: "me", Location: _synthLoc)
@@ -244,7 +244,11 @@ internal sealed class DerivedOperatorPass
             Arguments:
             [
                 new NamedArgumentExpression(Name: paramName,
-                    Value: new IdentifierExpression(Name: paramName, Location: _synthLoc),
+                    // The parameter of the derived routine, which takes what the delegate takes.
+                    Value: new IdentifierExpression(Name: paramName, Location: _synthLoc)
+                    {
+                        ResolvedType = delegateMemberRoutine.Parameters.FirstOrDefault()?.Type
+                    },
                     Location: _synthLoc)
             ],
             Location: _synthLoc)

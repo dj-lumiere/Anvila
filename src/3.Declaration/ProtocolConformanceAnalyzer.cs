@@ -11,6 +11,7 @@ namespace Builder.Declaration;
 internal sealed class ProtocolConformanceAnalyzer
 {
     private const string CopyableProtocol = "Copyable";
+    private const string SplittableProtocol = "Splittable";
 
     private const string EquatableProtocol = "Equatable";
 
@@ -128,7 +129,7 @@ internal sealed class ProtocolConformanceAnalyzer
     /// and Hashable have their own pass (<see cref="ApplyAutoEquatableConformance"/>), and Comparable is opt-in.
     /// Keyed by bare protocol name.</summary>
     private static readonly HashSet<string> _autoConferredEverywhereProtocols =
-        new(comparer: StringComparer.Ordinal) { CopyableProtocol };
+        new(comparer: StringComparer.Ordinal) { CopyableProtocol, SplittableProtocol };
 
     /// <summary>
     /// Generic <c>needs P everywhere</c> gate (④ standard-impl eligibility): for every protocol that declares
@@ -147,7 +148,8 @@ internal sealed class ProtocolConformanceAnalyzer
         var everywhereProtocols = new List<ProtocolTypeSymbol>();
         foreach (TypeSymbol type in _sa._registry.GetAllTypes())
         {
-            // Only Copyable is conferred here. Equatable and Hashable have their own pass, and Comparable carries
+            // Only Copyable and Splittable are conferred here (a record whose member variables all split into flat
+            // columns splits too). Equatable and Hashable have their own pass, and Comparable carries
             // the same `needs P everywhere` self-constraint but is OPT-IN: its derive attaches only on an
             // explicit `obeys Comparable` (the everywhere-derive loop reads the declared conformance).
             if (type is ProtocolTypeSymbol proto &&
@@ -164,11 +166,18 @@ internal sealed class ProtocolConformanceAnalyzer
             return;
         }
 
+        // A member variable's type may be one that only gets the protocol in this pass (a record declared after the
+        // record holding it), so the walk repeats until no type gains it.
         foreach (ProtocolTypeSymbol proto in everywhereProtocols)
         {
-            foreach (TypeSymbol type in _sa._registry.GetTypesWithMemberRoutines())
+            bool gained = true;
+            while (gained)
             {
-                ApplyEverywhereConformanceForType(proto: proto, type: type);
+                gained = false;
+                foreach (TypeSymbol type in _sa._registry.GetTypesWithMemberRoutines())
+                {
+                    gained |= ApplyEverywhereConformanceForType(proto: proto, type: type);
+                }
             }
         }
     }
@@ -179,11 +188,11 @@ internal sealed class ProtocolConformanceAnalyzer
     /// generic definitions, entities (opt-in for Copyable), types already declaring the protocol, or
     /// types whose members do not all obey it.
     /// </summary>
-    private void ApplyEverywhereConformanceForType(ProtocolTypeSymbol proto, TypeSymbol type)
+    private bool ApplyEverywhereConformanceForType(ProtocolTypeSymbol proto, TypeSymbol type)
     {
         if (type.IsGenericDefinition)
         {
-            return;
+            return false;
         }
 
         // Entities stay OPT-IN for Copyable (STEP 4: "entity is NOT always copyable") — a simple
@@ -191,23 +200,25 @@ internal sealed class ProtocolConformanceAnalyzer
         // deliberate increment; this gate covers value composition (record/tuple/variant/…) only.
         if (type is EntityTypeSymbol)
         {
-            return;
+            return false;
         }
 
         List<TypeSymbol> existing = GetImplementedProtocols(type: type);
         if (existing.Any(predicate: p => p.Name == proto.Name))
         {
-            return;
+            return false;
         }
 
         if (!_sa._registry.EverywhereObeys(type: type, protocol: proto.Name))
         {
-            return;
+            return false;
         }
 
         var merged = new List<TypeSymbol>(collection: existing) { proto };
         _sa._implicitProtocolConformances.Add(item: (type.FullName, proto.Name));
         UpdateTypeProtocols(type: type, protocols: merged);
+        // A type the registry keeps no protocol list for under its key (a tuple type) takes no update, so it is no gain.
+        return GetImplementedProtocols(type: type).Any(predicate: p => p.Name == proto.Name);
     }
 
     /// <summary>
@@ -326,8 +337,12 @@ internal sealed class ProtocolConformanceAnalyzer
             return;
         }
 
+        // A type from the stdlib snapshot had this pass when the snapshot was built, and analyses running at the
+        // same time share it, so giving it the protocol and taking it back below would write one object from
+        // several threads.
         List<TypeSymbol> candidates = _sa._registry.GetTypesWithMemberRoutines()
-                                         .Where(predicate: t => IsValueProtocolCandidate(type: t) &&
+                                         .Where(predicate: t => !_sa._registry.IsSharedSnapshotType(type: t) &&
+                                                                IsValueProtocolCandidate(type: t) &&
                                                                 (entities || t is not EntityTypeSymbol))
                                          .Where(predicate: t =>
                                               !_sa._registry.TypeObeysProtocol(type: t, protocolName: protocolName))
