@@ -1427,7 +1427,9 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     value: out MonomorphizedBody? existing) &&
                 !(existing.IsSynthesized &&
                   existing.Ast.Body is BlockStatement { Statements.Count: 0 });
-            if (hasRealBody ||
+            // A recovery variant's body is built from its routine's body by the variant machinery, never cloned
+            // from the template of the routine's name (`Text.hash`'s `try` variant is not the derived hash).
+            if (hasRealBody || r.IsRecoveryVariant ||
                 _ctx.VariantBodies.ContainsKey(key: key) ||
                 programBodies.ContainsKey(key: key) ||
                 (synthesizedBodies?.ContainsKey(key: key) ?? false))
@@ -3089,7 +3091,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// </summary>
     private static bool IsProtocolVariantForImplementer(RoutineInfo variantDefinition, RoutineInfo concreteInfo)
     {
-        return variantDefinition.OwnerType is ProtocolTypeSymbol &&
+        return ProtocolDefaultImplLoweringPass.DefinedOnProtocol(routine: variantDefinition) &&
                concreteInfo.OwnerType is RecordTypeSymbol or EntityTypeSymbol;
     }
 

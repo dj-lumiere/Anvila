@@ -1890,6 +1890,39 @@ public sealed partial class TypeRegistry
         return _kindVariants.ContainsKey(key: RealmRoutineKey(routine: routine.GenericDefinition ?? routine));
     }
 
+    /// <summary>
+    /// Whether <paramref name="routine"/> is a universal routine (written on a bare type parameter) with one body per
+    /// kind of type (<c>T.changed_member</c> for any value and for an entity, <c>T.kept_unknown</c>). Its instances
+    /// get no recovery variant: a call of one stays plain, and a failure inside it stops there.
+    /// </summary>
+    public bool IsKindSplitUniversal(RoutineInfo routine)
+    {
+        return (routine.GenericDefinition ?? routine).OwnerType is GenericParameterTypeSymbol &&
+               HasKindVariants(routine: routine);
+    }
+
+    /// <summary>
+    /// Whether the variant <paramref name="definitionVariant"/> of a routine's definition was built from the body
+    /// <paramref name="recovered"/> takes. A routine written once per kind of type (<c>Modifying[T].access</c> for a
+    /// record and for an entity) has one key for all its bodies, so the variant kept under that key was built from
+    /// the body of one kind only: a routine of another kind has no variant, its call stays plain and a failure inside
+    /// it stops there.
+    /// </summary>
+    private bool VariantOfSameKind(RoutineInfo recovered, RoutineInfo definitionVariant)
+    {
+        // An iterator's step is the exception: its variants are built for each concrete emitter from that emitter's
+        // own body.
+        if (!HasKindVariants(routine: recovered) || recovered.Name == RuntimeContract.Emit)
+        {
+            return true;
+        }
+
+        // The body a concrete routine takes is its owner's kind's (the definition it was made from may name another).
+        RoutineInfo written = SelectKindVariant(routine: recovered.GenericDefinition ?? recovered, owner: recovered.OwnerType);
+        return DeriveGateKey(gates: DeriveKindGates(constraints: written.GenericConstraints)) ==
+               DeriveGateKey(gates: DeriveKindGates(constraints: definitionVariant.GenericConstraints));
+    }
+
     internal static List<GenericConstraintDeclaration> DeriveKindGates(
         List<GenericConstraintDeclaration>? constraints)
     {
@@ -2131,9 +2164,7 @@ public sealed partial class TypeRegistry
         // A universal routine made concrete for an owner that writes its own of the same shape (`T.hash(k0:, k1:)` for
         // `Text`, which has `Text.hash(k0:, k1:)`) recovers through the owner's own: that is the routine a plain call
         // of it reaches once the body is concrete.
-        if (recovered is { GenericDefinition.OwnerType: GenericParameterTypeSymbol, OwnerType: { } concreteOwner } &&
-            concreteOwner is not GenericParameterTypeSymbol && OwnShapedRoutine(owner: concreteOwner, like: recovered) is { } ownShaped &&
-            !ReferenceEquals(objA: ownShaped, objB: recovered))
+        if (UniversalWrittenByOwner(recovered: recovered) is { } ownShaped)
         {
             return LookupRecoveryVariant(recovered: ownShaped, kind: kind);
         }
@@ -2146,7 +2177,9 @@ public sealed partial class TypeRegistry
             EnsureRecoveryVariants?.Invoke(arg: recovered) == true &&
             _recoveryVariants.TryGetValue(key: (recoveredKey, kind), value: out own))
         {
-            return own;
+            return VariantOfSameKind(recovered: recovered, definitionVariant: own)
+                ? own
+                : null;
         }
 
         if (FindRecoveryVariant(recovered: recovered, kind: kind) is { } found)
@@ -2157,6 +2190,19 @@ public sealed partial class TypeRegistry
         return recovered.GenericDefinition is { } definition && !ReferenceEquals(objA: definition, objB: recovered) &&
                EnsureRecoveryVariants?.Invoke(arg: definition) == true
             ? FindRecoveryVariant(recovered: recovered, kind: kind)
+            : null;
+    }
+
+    /// <summary>The routine the concrete owner of <paramref name="recovered"/> writes itself, when
+    /// <paramref name="recovered"/> is a universal routine (<c>T.hash(k0:, k1:)</c>) made concrete for an owner that
+    /// writes its own of the same shape (<c>Text.hash(k0:, k1:)</c>), else null.</summary>
+    private RoutineInfo? UniversalWrittenByOwner(RoutineInfo recovered)
+    {
+        return recovered is { GenericDefinition.OwnerType: GenericParameterTypeSymbol, OwnerType: { } concreteOwner } &&
+               concreteOwner is not GenericParameterTypeSymbol &&
+               OwnShapedRoutine(owner: concreteOwner, like: recovered) is { } ownShaped &&
+               !ReferenceEquals(objA: ownShaped, objB: recovered)
+            ? ownShaped
             : null;
     }
 
@@ -2223,6 +2269,13 @@ public sealed partial class TypeRegistry
 
     public RoutineInfo? FindRecoveryVariant(RoutineInfo recovered, RecoveryKind kind)
     {
+        // A universal routine made concrete for an owner that writes its own of the same shape has that routine's
+        // key, so the template's variant substituted for the owner would take the place of the owner's own.
+        if (UniversalWrittenByOwner(recovered: recovered) is { } ownShaped)
+        {
+            return LookupRecoveryVariant(recovered: ownShaped, kind: kind);
+        }
+
         string recoveredKey = RealmRoutineKey(routine: recovered);
         if (_recoveryVariants.TryGetValue(key: (recoveredKey, kind), value: out RoutineInfo? variant))
         {
@@ -2232,7 +2285,8 @@ public sealed partial class TypeRegistry
         // A routine of a concrete owner, or a concrete instance of a generic routine: substitute the
         // definition's variant the same way and remember it.
         if (recovered.GenericDefinition is not { } definition || ReferenceEquals(objA: definition, objB: recovered) ||
-            FindRecoveryVariant(recovered: definition, kind: kind) is not { } definitionVariant)
+            FindRecoveryVariant(recovered: definition, kind: kind) is not { } definitionVariant ||
+            !VariantOfSameKind(recovered: recovered, definitionVariant: definitionVariant))
         {
             return null;
         }

@@ -433,10 +433,15 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// </summary>
     private static bool CanPassOn(CallExpression call, TypeRegistry registry)
     {
-        // A shared entity's construction (Suflae) stays as it is: the handle the plain construction gives is made at
-        // the call, which a recovery variant of the creator would not do. A failure inside it stops there.
-        if (call.ResolvedRoutine is { IsCreator: true, OwnerType: EntityTypeSymbol } &&
-            registry.Language == TypeModel.Enums.Language.Suflae)
+        if (call.ResolvedRoutine is { IsCreator: true } creator && !SameEntityModel(creator: creator,
+                callFile: call.Location.FileName, registry: registry))
+        {
+            return false;
+        }
+
+        // A universal routine written once per kind of type has no recovery variant
+        // (TypeRegistry.IsKindSplitUniversal): the call stays plain.
+        if (call.ResolvedRoutine is { } kindSplit && registry.IsKindSplitUniversal(routine: kindSplit))
         {
             return false;
         }
@@ -444,6 +449,19 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         return registry.CanFailUnderRecovery(routine: call.ResolvedRoutine) &&
                (!_passesOnValuesOnly || call.ResolvedRoutine is { IsFailable: false, HasThrow: false } ||
                 FailableValues.HandsFailableValue(call: call));
+    }
+
+    /// <summary>
+    /// Whether a construction written in <paramref name="callFile"/> takes what the recovery variant of
+    /// <paramref name="creator"/> gives: the variant of a creator written where entities are shared handles (Suflae)
+    /// gives the handle it makes, while a construction in a file of the other model (a RazorForge library file that
+    /// builds a Suflae list) takes the entity itself. Such a construction stays the plain call.
+    /// </summary>
+    private static bool SameEntityModel(RoutineInfo creator, string? callFile, TypeRegistry registry)
+    {
+        return creator.OwnerType is not EntityTypeSymbol ||
+               registry.EntitiesAreSharedIn(filePath: creator.Location?.FileName) ==
+               registry.EntitiesAreSharedIn(filePath: callFile);
     }
 
     /// <summary>Whether <paramref name="body"/> holds a buildtime <c>expand</c>.</summary>
@@ -480,7 +498,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     rewritten = BindToVariant(call: call, variant: variant, registry: registry);
                     return true;
                 case CreatorExpression { ResolvedCreatorRoutine: { IsFailable: true } creatorRoutine } creator
-                    when !(creatorRoutine.OwnerType is EntityTypeSymbol && registry.Language == TypeModel.Enums.Language.Suflae) &&
+                    when SameEntityModel(creator: creatorRoutine, callFile: creator.Location.FileName, registry: registry) &&
                          registry.LookupRecoveryVariant(recovered: creatorRoutine, kind: recovery) is { } variant:
                     rewritten = BindCreatorToVariant(creator: creator, variant: variant);
                     return true;
@@ -1277,7 +1295,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         }
 
         // Pass 2: hoist every call up to and including the last nested failable one (the kept root excepted).
-        var hoister = new NestedFailableHoister(propagates: Propagates, hoistUpTo: last, skipIndex: rootIndex);
+        var hoister = new NestedFailableHoister(propagates: Propagates, hoistUpTo: last, skipIndex: rootIndex,
+            stealsEntities: !registry!.EntitiesAreSharedIn(filePath: stmt.Location.FileName));
         Expression newRoot = hoister.VisitExpression(expr: root);
         hoisted = hoister.Hoisted;
         residual = stmt switch
@@ -1353,7 +1372,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     private sealed class NestedFailableHoister(Func<CallExpression, bool> propagates, int hoistUpTo,
-        int skipIndex) : AstRewriter
+        int skipIndex, bool stealsEntities = true) : AstRewriter
     {
         private int _index;
 
@@ -1400,8 +1419,10 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 ResolvedType = call.ResolvedType
             };
             // An entity the statement only calls a routine of (`me.transform(outer).to[List]()`) stays the temp's own,
-            // so the scope tears the temp down. One that is handed on, or moved into a handle, is stolen from it.
-            return call.ResolvedType?.Category == TypeCategory.Entity && !StaysWithTemp(call: e)
+            // so the scope tears the temp down. One that is handed on, or moved into a handle, is stolen from it. Where
+            // entities are shared handles (Suflae), the temp holds a handle and what it is handed to takes its own
+            // hold of it, so the temp is read as it is and torn down with the scope.
+            return stealsEntities && call.ResolvedType?.Category == TypeCategory.Entity && !StaysWithTemp(call: e)
                 ? new StealExpression(Operand: reference, Location: call.Location)
                 {
                     ResolvedType = call.ResolvedType

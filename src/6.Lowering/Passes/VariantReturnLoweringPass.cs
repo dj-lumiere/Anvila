@@ -81,6 +81,56 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     /// is once the carrier is concrete).</summary>
     internal const string SuccessArm = "T";
 
+    /// <summary>
+    /// The success a recovery variant of <paramref name="kind"/> gives for <paramref name="value"/> (null when the
+    /// routine gives nothing): <c>true</c> for the flag-only try carrier (<c>Bool</c>), a present <c>Optional</c>, or
+    /// the success arm of a <c>Check</c> (its <c>None</c> arm without a value). Null when <paramref name="carrier"/> is
+    /// not that kind's carrier.
+    /// </summary>
+    internal static Expression? SuccessCarrier(TypeSymbol carrier, RecoveryKind kind, Expression? value,
+        SourceLocation loc)
+    {
+        if (value == null && carrier is { Name: "Bool" })
+        {
+            return new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: loc)
+            {
+                ResolvedType = carrier
+            };
+        }
+
+        if (carrier is not RecordTypeSymbol { TypeArguments: [_] } record)
+        {
+            return null;
+        }
+
+        if (kind == RecoveryKind.Check)
+        {
+            return MakeCarrierReturn(carrier: record,
+                payload: value != null
+                    ? AsCarried(carrier: record, value: value)
+                    : null,
+                thrown: false,
+                loc: loc).Value;
+        }
+
+        var members = new List<(string Name, Expression Value)>
+        {
+            ("present", new LiteralExpression(Value: true, LiteralType: TokenType.True, Location: loc)
+            {
+                ResolvedType = record.MemberVariables.FirstOrDefault(predicate: m => m.Name == "present")?.Type
+            })
+        };
+        if (value != null)
+        {
+            members.Add(item: ("value", AsCarried(carrier: record, value: value)));
+        }
+
+        return new CreatorExpression(TypeName: record.Name,
+            TypeArguments: null,
+            MemberVariables: members,
+            Location: loc) { ResolvedType = record, ConstructedType = record };
+    }
+
     /// <summary>Lowers routine bodies in a single program (user file or stdlib file).</summary>
     public void Run(Program program)
     {

@@ -2074,6 +2074,32 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                     not VariantTypeSymbol:
                 HandleEntityFieldMove(creator: valueCreator, holder: holder);
                 break;
+            // A collection literal takes each bare entity it is written with, as a construction does: a recovery
+            // variant hoists an entity into a temp before a failable step (`[Crate(n: x), Crate(n: x + 1)]`), and
+            // the temp, read into the literal, is the collection's now.
+            case ListLiteralExpression list:
+                HandleLiteralElementsMove(elements: list.Elements);
+                break;
+            case SetLiteralExpression set:
+                HandleLiteralElementsMove(elements: set.Elements);
+                break;
+            case DictLiteralExpression dict:
+                HandleLiteralElementsMove(elements: dict.Pairs.SelectMany(selector: p => new[] { p.Key, p.Value }));
+                break;
+        }
+    }
+
+    /// <summary>Marks each bare-entity binding a collection literal is written with as moved into it (in a program
+    /// whose entities are not shared handles).</summary>
+    private void HandleLiteralElementsMove(IEnumerable<Expression> elements)
+    {
+        foreach (Expression element in elements)
+        {
+            if (Unwrap(e: element) is IdentifierExpression { ResolvedType: EntityTypeSymbol } moved &&
+                !ctx.Registry.EntitiesAreSharedIn(filePath: moved.Location?.FileName))
+            {
+                _movedNames.Add(item: moved.Name);
+            }
         }
     }
 

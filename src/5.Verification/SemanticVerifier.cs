@@ -3028,6 +3028,18 @@ public sealed partial class SemanticVerifier
         Dictionary<string, Statement> sources = SynthesizedBodySources();
         IReadOnlyDictionary<string, Statement> Current()
         {
+            // A recovery variant the walk reached for a routine whose file is analyzed already (`Text.hash`'s
+            // `try` variant, asked for by a monomorphized `Dict` body) is queued with no file analysis to finish
+            // it: its body is built here, between rounds, as an on-demand file's are.
+            if (_variantBodyGenQueue.Count > 0)
+            {
+                FinalizeLateVariantBodies();
+                foreach ((string key, Statement variantBody) in _variantBodies)
+                {
+                    sources.TryAdd(key: key, value: variantBody);
+                }
+            }
+
             foreach ((string key, (RoutineInfo routine, Statement body)) in _synthesizedBodies)
             {
                 if (routine.WrapperForwarderInnerMemberRoutine != null)
@@ -3175,6 +3187,10 @@ public sealed partial class SemanticVerifier
                 isNullable: param.IsNullable);
         }
 
+        // The body starts with every name alive, as a routine's own analysis does: the body may be analyzed while
+        // another routine is (a recovery variant made on demand), and what that routine stole is its own.
+        MoveState outerMoves = SaveAndClearMoveState();
+
         // Bind the owner type's generic parameters for this re-analysis. When re-analyzing a member body of a
         // concrete generic instance (e.g. `SplitList[Particle].getitem`, `SplitArray[Point, 4].count`), bare
         // parameter references must resolve to the concrete arguments, not be re-resolved from scratch.
@@ -3217,6 +3233,7 @@ public sealed partial class SemanticVerifier
         _isInCompilerGeneratedBody = prevIsInCompilerGeneratedBody;
         _preservePresetTypes = prevPreservePresetTypes;
         _compilerGeneratedTypeParamBindings = prevTypeParamBindings;
+        RestoreMoveState(saved: outerMoves);
 
         _registry.ExitScope();
         _registry.ResolutionRealm = prevResolutionRealm;
@@ -3236,6 +3253,49 @@ public sealed partial class SemanticVerifier
         foreach (string symbol in previousSymbols)
         {
             _importedSymbolNames.Add(item: symbol);
+        }
+    }
+
+    /// <summary>What a routine's analysis knows of the names it stole, dropped or moved (see
+    /// <see cref="SaveAndClearMoveState"/>).</summary>
+    private sealed record MoveState(HashSet<string> Dead, HashSet<string> EverStolen, HashSet<string> Dropped,
+        Dictionary<string, StealExpression> StealSites, Dictionary<StealExpression, string> StealDestinations);
+
+    /// <summary>Takes the move state of the routine being analyzed and leaves it empty for another body.</summary>
+    private MoveState SaveAndClearMoveState()
+    {
+        var saved = new MoveState(Dead: [.. _deadrefVariables], EverStolen: [.. _everStolenVariables],
+            Dropped: new HashSet<string>(collection: _droppedVariables, comparer: StringComparer.Ordinal),
+            StealSites: new Dictionary<string, StealExpression>(dictionary: _stealSites, comparer: StringComparer.Ordinal),
+            StealDestinations: new Dictionary<StealExpression, string>(dictionary: _stealDestinations,
+                comparer: ReferenceEqualityComparer.Instance));
+        _deadrefVariables.Clear();
+        _everStolenVariables.Clear();
+        _droppedVariables.Clear();
+        _stealSites.Clear();
+        _stealDestinations.Clear();
+        return saved;
+    }
+
+    /// <summary>Puts back the move state <see cref="SaveAndClearMoveState"/> took.</summary>
+    private void RestoreMoveState(MoveState saved)
+    {
+        _deadrefVariables.Clear();
+        _deadrefVariables.UnionWith(other: saved.Dead);
+        _everStolenVariables.Clear();
+        _everStolenVariables.UnionWith(other: saved.EverStolen);
+        _droppedVariables.Clear();
+        _droppedVariables.UnionWith(other: saved.Dropped);
+        _stealSites.Clear();
+        foreach ((string name, StealExpression site) in saved.StealSites)
+        {
+            _stealSites[key: name] = site;
+        }
+
+        _stealDestinations.Clear();
+        foreach ((StealExpression site, string destination) in saved.StealDestinations)
+        {
+            _stealDestinations[key: site] = destination;
         }
     }
 

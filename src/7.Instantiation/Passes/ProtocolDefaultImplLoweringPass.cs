@@ -137,7 +137,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         // implementer from the protocol's body, as the routine itself is below.
         if (rr0 is { IsRecoveryVariant: true })
         {
-            return SynthesizeRecoveryVariantBody(variant: rr0);
+            return SynthesizeRecoveryVariantBody(variant: rr0) ||
+                   SynthesizeImplementerVariant(variant: rr0, receiver: recvType0);
         }
 
         if (!TryResolveProtocolDefaultImpl(resolvedRoutine: rr0,
@@ -191,7 +192,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     private bool SynthesizeRecoveryVariantBody(RoutineInfo variant)
     {
         if (variant is not { RecoveryOf: { } recovered, OwnerType: RecordTypeSymbol or EntityTypeSymbol } ||
-            variant.GenericDefinition?.OwnerType is not ProtocolTypeSymbol ||
+            variant.GenericDefinition is not { } definition || !DefinedOnProtocol(routine: definition) ||
             ctx.InstantiatedGenericBodies.ContainsKey(key: variant.RegistryKey) ||
             !TryResolveProtocolDefaultImpl(resolvedRoutine: recovered,
                 receiverResolvedType: variant.OwnerType,
@@ -205,6 +206,97 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
             impl: impl,
             typeArguments: variant.TypeArguments,
             specialization: recovered.IsSpecialization || pr.IsSpecialization);
+        return AddVariantBody(variant: variant, recovered: recovered, pr: pr, impl: impl, subs: subs);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="routine"/> is a protocol's routine, or one made from it: the definitions it was made
+    /// from lead to a routine the protocol owns. A routine with type parameters of its own made concrete on an
+    /// implementer (<c>List[S64].select[S64]</c>) is two steps from the protocol's (<c>Emittable[T].select</c>).
+    /// </summary>
+    internal static bool DefinedOnProtocol(RoutineInfo routine)
+    {
+        for (RoutineInfo? current = routine; current != null; current = current.GenericDefinition)
+        {
+            if (current.OwnerType is ProtocolTypeSymbol)
+            {
+                return true;
+            }
+
+            if (ReferenceEquals(objA: current.GenericDefinition, objB: current))
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>(variant key, implementer) -> the recovery variant made on the implementer for a call bound to the
+    /// variant of a protocol's routine on the protocol itself (<c>w.select(...)</c> on a <c>Text</c> bound to the
+    /// <c>check</c> variant of <c>Emittable[Char].select</c>), as the plain call is rebound to the routine made for it.</summary>
+    private readonly Dictionary<(string VariantKey, string ImplKey), RoutineInfo> _variantsForCall = new();
+
+    /// <summary>
+    /// A call bound to the recovery variant of a protocol's routine that is still owned by the protocol (the routine
+    /// has type parameters of its own, so analysis left it on the protocol instance the receiver obeys): the variant is
+    /// made on the receiver's type, from the protocol's body as the plain routine is, and the call is rebound to it
+    /// (<see cref="RewriteCallSites"/>). Its carrier names the receiver where the protocol's names <c>Me</c>. Returns
+    /// true if a new body was added.
+    /// </summary>
+    private bool SynthesizeImplementerVariant(RoutineInfo variant, TypeSymbol? receiver)
+    {
+        if (variant is not { RecoveryOf: { } recovered, Recovery: { } kind, OwnerType: ProtocolTypeSymbol } ||
+            !TryResolveProtocolDefaultImpl(resolvedRoutine: recovered,
+                receiverResolvedType: receiver,
+                protoRoutine: out RoutineInfo? pr,
+                implementer: out TypeSymbol? impl) || pr == null || impl == null ||
+            _variantsForCall.ContainsKey(key: (variant.RegistryKey, impl.FullName)))
+        {
+            return false;
+        }
+
+        bool specialization = recovered.IsSpecialization || pr.IsSpecialization;
+        Dictionary<string, TypeSymbol> subs = BuildCallSubs(pr: pr,
+            impl: impl,
+            typeArguments: recovered.TypeArguments,
+            specialization: specialization);
+        RoutineInfo plain = SynthesizePerImplementer(protocolRoutine: pr,
+            implementer: impl,
+            protoSubs: subs,
+            typeArguments: recovered.TypeArguments);
+        var meSubs = new Dictionary<string, TypeSymbol>(dictionary: subs) { [key: "Me"] = MeFor(implementer: impl) };
+        RoutineInfo onImpl = new(name: plain.Name)
+        {
+            Kind = plain.Kind,
+            OwnerType = plain.OwnerType,
+            MeType = plain.MeType,
+            SurfaceRealm = plain.SurfaceRealm,
+            Parameters = plain.Parameters,
+            ReturnType = variant.ReturnType != null
+                ? SubstituteMe(t: variant.ReturnType, subs: meSubs)
+                : null,
+            IsFailable = false,
+            IsSynthesized = true,
+            TypeArguments = plain.TypeArguments,
+            Location = plain.Location,
+            FailableVariant = variant.FailableVariant,
+            RecoveryOf = plain,
+            Recovery = kind
+        };
+        _variantsForCall[key: (variant.RegistryKey, impl.FullName)] = onImpl;
+        return !ctx.InstantiatedGenericBodies.ContainsKey(key: onImpl.RegistryKey) &&
+               AddVariantBody(variant: onImpl, recovered: recovered, pr: pr, impl: impl, subs: subs);
+    }
+
+    /// <summary>
+    /// Builds the body of <paramref name="variant"/> for <paramref name="impl"/> from the protocol routine
+    /// <paramref name="pr"/>'s body (see <see cref="SynthesizeRecoveryVariantBody"/>) and stores it under the
+    /// variant's own key. Returns true if a body was added.
+    /// </summary>
+    private bool AddVariantBody(RoutineInfo variant, RoutineInfo recovered, RoutineInfo pr, TypeSymbol impl,
+        Dictionary<string, TypeSymbol> subs)
+    {
         Statement? cloned = CloneProtocolRoutineBody(protocolRoutine: pr,
             implementer: impl,
             synthesized: variant,
@@ -496,6 +588,23 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
                             receiverType: out TypeSymbol? recvType,
                             rebind: out Action<RoutineInfo> rebind))
                     {
+                        return;
+                    }
+
+                    // A call bound to a recovery variant keeps recovering: it is rebound only to the variant made on
+                    // the implementer for it, never to the plain routine made there.
+                    if (rr is { IsRecoveryVariant: true, RecoveryOf: { } recovered })
+                    {
+                        if (TryResolveProtocolDefaultImpl(resolvedRoutine: recovered,
+                                receiverResolvedType: recvType,
+                                protoRoutine: out _,
+                                implementer: out TypeSymbol? variantImpl) && variantImpl != null &&
+                            _variantsForCall.TryGetValue(key: (rr.RegistryKey, variantImpl.FullName),
+                                value: out RoutineInfo? variantOnImpl))
+                        {
+                            rebind(obj: variantOnImpl);
+                        }
+
                         return;
                     }
 

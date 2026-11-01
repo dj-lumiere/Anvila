@@ -539,7 +539,8 @@ internal static class GenericAstRewriter
                         argTypes: resolvedParamTypes,
                         isFailable: true)
                     : original.RecoveryOf is { } recovered
-                        ? ResolveFreeRoutine(original: recovered, resolvedParamTypes: resolvedParamTypes)
+                        ? ResolveFreeRoutine(original: recovered, resolvedParamTypes: resolvedParamTypes,
+                            typeArguments: original.TypeArguments)
                         : null;
                 return resolvedBase is { IsRecoveryVariant: false }
                     ? RecoveryVariantOrPlain(resolved: resolvedBase, kind: recovery)
@@ -692,10 +693,14 @@ internal static class GenericAstRewriter
         /// Resolves an owner-less (free) routine: instantiate it if generic, else look up a matching
         /// overload with the same failability. Returns null when neither strategy binds.
         /// </summary>
+        /// <param name="typeArguments">The type arguments of the call when <paramref name="original"/> does not carry
+        /// them: a recovery variant's routine may be its generic definition, while the variant is the instance the
+        /// call names (<c>hijacked_from[RetainManager[T]]</c>).</param>
         private RoutineInfo? ResolveFreeRoutine(RoutineInfo original,
-            List<TypeSymbol> resolvedParamTypes)
+            List<TypeSymbol> resolvedParamTypes, List<TypeSymbol>? typeArguments = null)
         {
-            RoutineInfo? instantiatedRoutine = TryInstantiateRoutine(routine: original);
+            RoutineInfo? instantiatedRoutine = TryInstantiateRoutine(routine: original,
+                typeArguments: original.TypeArguments is { Count: > 0 } ? null : typeArguments);
             if (instantiatedRoutine != null)
             {
                 return instantiatedRoutine;
@@ -779,8 +784,9 @@ internal static class GenericAstRewriter
             }
         }
 
-        private RoutineInfo? TryInstantiateRoutine(RoutineInfo routine)
+        private RoutineInfo? TryInstantiateRoutine(RoutineInfo routine, List<TypeSymbol>? typeArguments = null)
         {
+            List<TypeSymbol>? written = typeArguments ?? routine.TypeArguments;
             RoutineInfo genericDefinition = routine.GenericDefinition ?? routine;
             if (!genericDefinition.IsGenericDefinition ||
                 genericDefinition.GenericParameters == null)
@@ -793,9 +799,9 @@ internal static class GenericAstRewriter
             for (int i = 0; i < genericDefinition.GenericParameters.Count; i++)
             {
                 TypeSymbol? resolvedArg = null;
-                if (routine.TypeArguments is { Count: > 0 } && i < routine.TypeArguments.Count)
+                if (written is { Count: > 0 } && i < written.Count)
                 {
-                    resolvedArg = ResolveTypeForLookup(original: routine.TypeArguments[index: i]);
+                    resolvedArg = ResolveTypeForLookup(original: written[index: i]);
                 }
 
                 resolvedArg ??= TypeSubs != null && TypeSubs.TryGetValue(
@@ -888,13 +894,23 @@ internal static class GenericAstRewriter
         /// <summary>
         /// The variant of <paramref name="resolved"/> a call bound to a recovery variant takes once its target is
         /// concrete. A target that cannot fail (`T(from: x)` that became the widening `S64(from: S32)`) has no
-        /// variant: the call is the plain one, and the variant return around it wraps its value
-        /// (<see cref="RewriteVariantReturn"/>).
+        /// variant: the call is the plain one, and its value is wrapped as the success (<see cref="AsRecoveredSuccess"/>).
+        /// So is a routine written once per kind of type whose variant belongs to another kind.
         /// </summary>
         internal RoutineInfo? RecoveryVariantOrPlain(RoutineInfo resolved, RecoveryKind kind)
         {
-            RoutineInfo? variant = Registry!.LookupRecoveryVariant(recovered: resolved, kind: kind);
-            return variant ?? (Registry.CanFailUnderRecovery(routine: resolved) ? null : resolved);
+            // A routine written once per kind of type has no variant when it is universal
+            // (TypeRegistry.IsKindSplitUniversal) or the variant was built for another kind
+            // (TypeRegistry.FindRecoveryVariant): the call stays plain, and a failure inside it stops there.
+            if (Registry!.IsKindSplitUniversal(routine: resolved))
+            {
+                return resolved;
+            }
+
+            RoutineInfo? variant = Registry.LookupRecoveryVariant(recovered: resolved, kind: kind);
+            return variant ?? (Registry.CanFailUnderRecovery(routine: resolved) && !Registry.HasKindVariants(routine: resolved)
+                ? null
+                : resolved);
         }
 
         private RoutineInfo? ResolveMemberCallRoutine(MemberExpression member, RoutineInfo? original,
@@ -1459,9 +1475,89 @@ internal static class GenericAstRewriter
         if (!ReferenceEquals(objA: result, objB: expr))
         {
             AnnotateRewrittenExpression(result: result, expr: expr, ctx: ctx);
+            result = AsRecoveredSuccess(result: result, expr: expr, ctx: ctx);
         }
 
         return result;
+    }
+
+    /// <summary>The routine a call node is bound to, or null for any other node.</summary>
+    private static RoutineInfo? BoundRoutine(Expression expr)
+    {
+        return expr switch
+        {
+            CallExpression call => call.ResolvedRoutine,
+            GenericMemberRoutineCallExpression generic => generic.ResolvedRoutine,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// A call bound to a recovery variant whose target turned out not to have one once it is concrete
+    /// (<c>value.is_valid_cell()</c> in a <c>FileStorage[T]</c> body that became <c>Byte.is_valid_cell</c>, see
+    /// <c>RecoveryVariantOrPlain</c>) is the plain call: its value is wrapped as the success the variant would have
+    /// given, so whatever reads the carrier (a propagation's <c>present</c> test, a passthrough return, a
+    /// <c>when</c> over it) reads one. A plain call that gives nothing is left as it is, typed as nothing: the
+    /// statement around it gives the success (<see cref="RewriteBlockItem"/>, <see cref="RewriteVariantReturn"/>).
+    /// </summary>
+    private static Expression AsRecoveredSuccess(Expression result, Expression expr, RewriteContext ctx)
+    {
+        if (BoundRoutine(expr: expr) is not { Recovery: { } kind } ||
+            BoundRoutine(expr: result) is not { IsRecoveryVariant: false } plain)
+        {
+            return result;
+        }
+
+        TypeSymbol? carrier = ctx.ResolveType(original: expr.ResolvedType) ?? expr.ResolvedType;
+        if (plain.ReturnType is null or { IsNone: true })
+        {
+            result.ResolvedType = plain.ReturnType;
+            return result;
+        }
+
+        if (carrier is not RecordTypeSymbol { TypeArguments: [{ } payload] })
+        {
+            return result;
+        }
+
+        result.ResolvedType = plain.ReturnType is { IsGenericDefinition: false } plainReturn &&
+                              !TypeHasGenericParam(t: plainReturn)
+            ? plainReturn
+            : payload;
+        return VariantReturnLoweringPass.SuccessCarrier(carrier: carrier, kind: kind, value: result,
+                   loc: result.Location) ?? result;
+    }
+
+    /// <summary>
+    /// One statement of a block, as the statements it becomes: a declaration bound to a recovery variant whose
+    /// target turned out to give nothing and have no variant (see <see cref="AsRecoveredSuccess"/>) becomes the
+    /// plain call, then the declaration of the success the variant would have given.
+    /// </summary>
+    private static IEnumerable<Statement> RewriteBlockItem(Statement stmt, RewriteContext ctx)
+    {
+        Statement rewritten = RewriteStatement(stmt: stmt, ctx: ctx);
+        if (stmt is DeclarationStatement
+            {
+                Declaration: VariableDeclaration { Initializer: { } original }
+            } &&
+            BoundRoutine(expr: original) is { Recovery: { } kind } &&
+            rewritten is DeclarationStatement
+            {
+                Declaration: VariableDeclaration { Initializer: { } plainCall } declared
+            } ds &&
+            BoundRoutine(expr: plainCall) is { IsRecoveryVariant: false, ReturnType: null or { IsNone: true } } &&
+            (ctx.ResolveType(original: original.ResolvedType) ?? original.ResolvedType) is { } carrier &&
+            VariantReturnLoweringPass.SuccessCarrier(carrier: carrier, kind: kind, value: null,
+                loc: plainCall.Location) is { } success)
+        {
+            return
+            [
+                new ExpressionStatement(Expression: plainCall, Location: ds.Location),
+                ds with { Declaration = declared with { Initializer = success } }
+            ];
+        }
+
+        return [rewritten];
     }
 
     private static Expression? RewriteConstructionExpression(Expression expr, RewriteContext ctx)
@@ -2813,7 +2909,7 @@ internal static class GenericAstRewriter
             BlockStatement block => block with
             {
                 Statements = block.Statements
-                                  .Select(selector: s => RewriteStatement(stmt: s, ctx: ctx))
+                                  .SelectMany(selector: s => RewriteBlockItem(stmt: s, ctx: ctx))
                                   .ToList()
             },
 
