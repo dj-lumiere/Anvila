@@ -236,17 +236,10 @@ public class RecordTypeSymbol : TypeSymbol
         return StructAlignment(naturalMax: maxAlignment);
     }
 
-    /// <summary>RC wrapper base names that need retain-on-copy / release-on-drop.</summary>
-    private static readonly HashSet<string> RCWrapperBaseNames =
-    [
-        RuntimeContract.Retained, RuntimeContract.Guarded, RuntimeContract.Tracked,
-        RuntimeContract.Witnessed
-    ];
-
     /// <summary>Whether this record has RC wrapper fields needing retain-on-copy / release-on-drop.</summary>
     public bool HasRCMemberVariables => MemberVariables.Any(predicate: f =>
         WrapperShape.TryGet(type: f.Type, name: out string wrapper, inner: out _) &&
-        RCWrapperBaseNames.Contains(item: wrapper));
+        RuntimeContract.RcWrapperBaseNames.Contains(item: wrapper));
 
     /// <summary>
     /// Whether this is a builder-known error-handling carrier (Optional, Result, Lookup).

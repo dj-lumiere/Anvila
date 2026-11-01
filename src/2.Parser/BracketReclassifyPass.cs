@@ -117,6 +117,8 @@ internal static class BracketReclassifyPass
             BinaryExpression { Operator: BinaryOperator.TrueDivide } => true,
             // A nested generic instantiation used as a type argument (Array[U64, N]).
             GenericMemberExpression => true,
+            // `T?` written in the bracket (the parser built its TypeExpression).
+            TypeExpression => true,
             // NOT a GenericMemberRoutineCallExpression: that node always carries call parentheses
             // (`f[T](x)`), so it is a VALUE. `a[LLVM::reinterpret_bits[S64, U64](i)]` is an index whose
             // index is a generic call; treating it as a type argument turned the whole bracket into a

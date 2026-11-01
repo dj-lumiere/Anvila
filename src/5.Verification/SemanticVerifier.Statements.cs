@@ -977,7 +977,7 @@ public sealed partial class SemanticVerifier
             // analyzed, as any changing call through one is.
             if (_registry.LookupMemberRoutine(type: ContainerBehind(type: element.Object.ResolvedType) ?? placeType,
                     memberRoutineName: Declaration.RuntimeContract.Exchange, isFailable: true) is not
-                { Parameters: [.., { Name: var positionName }, _] })
+                { Parameters: [.., { Name: var positionName, Type: var positionType }, _] })
             {
                 ReportError(code: SemanticDiagnosticCode.StealNotAPlace,
                     message: $"'{element.Object.ResolvedType?.Name}' cannot swap an element in place, so " +
@@ -993,7 +993,10 @@ public sealed partial class SemanticVerifier
                     Location: location),
                 Arguments:
                 [
-                    new NamedArgumentExpression(Name: positionName, Value: ((IndexExpression)movedOut).Index,
+                    new NamedArgumentExpression(Name: positionName,
+                        Value: CountedStealIndex(index: ((IndexExpression)movedOut).Index,
+                            given: element.Index.ResolvedType,
+                            taken: positionType),
                         Location: location),
                     new NamedArgumentExpression(Name: "value", Value: putBack, Location: location)
                 ],
@@ -1049,6 +1052,32 @@ public sealed partial class SemanticVerifier
                    or Declaration.RuntimeContract.Roamed
             ? inner
             : type;
+    }
+
+    /// <summary>
+    /// The index of a stolen element as the container's exchange takes it. As in an ordinary subscript, an index may
+    /// be any integer: one of another type than the position parameter goes through its own <c>to_index()</c> (a
+    /// <c>U64</c>) or <c>to_integer_count()</c> (an <c>Int</c>).
+    /// </summary>
+    private Expression CountedStealIndex(Expression index, TypeSymbol? given, TypeSymbol taken)
+    {
+        if (given == null || given.FullName == taken.FullName || !IsIntegerType(type: given))
+        {
+            return index;
+        }
+
+        string? conversion = taken.Name switch
+        {
+            "U64" => "to_index",
+            "Int" => "to_integer_count",
+            _ => null
+        };
+        return conversion != null && HasCountConversion(type: given, memberRoutineName: conversion)
+            ? new CallExpression(
+                Callee: new MemberExpression(Object: index, MemberName: conversion, Location: index.Location),
+                Arguments: [],
+                Location: index.Location)
+            : index;
     }
 
     /// <summary>Numbers the temporaries <see cref="AnalyzeStealStatement"/> introduces.</summary>

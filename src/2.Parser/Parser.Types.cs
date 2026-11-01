@@ -611,7 +611,30 @@ public partial class Parser
             return new TupleLiteralExpression(Elements: [], Location: location);
         }
 
-        return ParseExpression();
+        Expression arg = ParseExpression();
+
+        // `T?` as a type argument (`List[Box?]()`): the suffix reads as it does in an annotation, `Optional[T]`.
+        // No value expression ends in a bare `?`, so a `?` here can only close a type.
+        if (Check(type: TokenType.Question) &&
+            arg is IdentifierExpression or MemberExpression or IndexExpression or GenericMemberExpression)
+        {
+            Token question = CurrentToken;
+            Advance();
+            if (Check(type: TokenType.Question) || Check(type: TokenType.NoneCoalesce) &&
+                CurrentToken.Line == question.Line && CurrentToken.Column == question.Column + 1)
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.UnexpectedToken,
+                    message: "A type takes one '?'. A type with '?' already holds a value or nothing, so a " +
+                             "second '?' adds nothing.",
+                    token: CurrentToken);
+            }
+
+            return new TypeExpression(Name: "Optional",
+                GenericArguments: [BracketReclassifyPass.ExpressionToTypeArg(expr: arg)],
+                Location: arg.Location);
+        }
+
+        return arg;
     }
 
     /// <summary>

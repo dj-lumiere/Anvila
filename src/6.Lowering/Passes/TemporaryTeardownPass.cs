@@ -806,7 +806,11 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
                 // own) reads the field out within the statement, so the value is torn down when the statement
                 // ends, unless the field's value may point into it.
                 // An entity made for the read (`pair(x: 3).items.count()`) is torn down the same way.
-                bool fieldMayAlias = ResultMayAliasReceiver(resultType: m.ResolvedType);
+                // A counted handle read out of the value (`links[0].keep.view().n`) is a copy of its own wherever it
+                // goes on (a kept one takes a share), so the value it was read from is torn down with the statement.
+                bool fieldMayAlias = ResultMayAliasReceiver(resultType: m.ResolvedType) &&
+                                     (m.ResolvedType is not { } fieldType ||
+                                      TypeRegistry.GetRcWrapperBaseName(type: fieldType) is null);
                 Expression newObj = VisitIn(e: m.Object,
                     objectPos: !fieldMayAlias,
                     spills: spills,
