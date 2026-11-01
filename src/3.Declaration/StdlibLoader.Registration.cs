@@ -2255,7 +2255,7 @@ public sealed partial class StdlibLoader
 
             ProtocolMemberRoutineInfo? protoMemberRoutine =
                 existing.MemberRoutines.FirstOrDefault(predicate: m =>
-                    m.Name == memberRoutineName && m.IsFailable == isFailable);
+                    m.Name == memberRoutineName);
 
             // A param whose type was a forward reference (e.g. a concrete `index: U64` before
             // U64 was registered) is silently dropped by FillProtocolMemberRoutines, leaving the proto

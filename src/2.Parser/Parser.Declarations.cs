@@ -389,26 +389,11 @@ public partial class Parser
         name = nameSb.ToString();
 
         // ===============================================================================
-        // PHASE 2c: Parse failable marker (!)
+        // PHASE 2c: `infallible` (read with the modifiers) and a stray `!` after the name
         // ===============================================================================
-        // Support ! suffix for failable routines (can appear after qualified name).
-        // The `!` is a separate Bang token — ConsumeIdentifier/ConsumeMemberRoutineName never fold it
-        // into the name, so the stored name is always bare and only this flag records failability.
-        bool isFailable = TakeFailable();
-
-        // A failable free routine writes the bang immediately after the base name, with its
-        // type-level generics following it: `race![T](...)`. (Member routines instead carry their
-        // generics on the receiver before the dot, e.g. `Work[T].retrieve!()`.) Parse those
-        // post-bang generics here so they bind exactly like the pre-name form.
-        if (isFailable && !hasGenericParams && CheckAndAdvance(type: TokenType.LeftBracket))
-        {
-            (List<string> genericParams, List<GenericConstraintDeclaration>? inlineConstraints)
-                result = ParseGenericParametersWithConstraints();
-            genericParams = result.genericParams;
-            inlineConstraints = result.inlineConstraints;
-            Consume(type: TokenType.RightBracket,
-                errorMessage: ExpectedRightBracketAfterGenericParameters);
-        }
+        // Every routine passes its failures to its caller except an `infallible` one and a `destruct`.
+        bool isInfallible = TakeInfallible();
+        bool isFailable = PassesFailuresOn(infallible: isInfallible, name: memberInfo.MemberRoutineName ?? name);
 
         // ===============================================================================
         // PHASE 3: PARAMETERS
@@ -451,6 +436,9 @@ public partial class Parser
         BlockStatement body = ParseRoutineBody(annotations: annotations, location: location);
         _routineBeingParsed = null;
         _routineBeingParsedIsFailable = false;
+        // A body with nothing that can fail (the builder writes it, or it only calls LLVM intrinsics) has no failure
+        // to pass on: no recovery variant is ever made for it.
+        isFailable = isFailable && !FailureFreeBodies.CannotFail(body: body);
 
         // Name is the BARE member for an extension-syntax member routine (owner lives in the structured
         // OwnerName/RenderedReceiver/ReceiverType fields); free routines and type-body members keep their
@@ -469,6 +457,7 @@ public partial class Parser
             IsDangerous: isDangerous,
             IsWiredMemberRoutine: _routineNameWired)
         {
+            IsInfallible = isInfallible,
             OwnerName = memberInfo.OwnerName,
             MemberRoutineName = memberInfo.MemberRoutineName,
             HasReceiverTypeArgs = memberInfo.HasReceiverTypeArgs,
@@ -774,7 +763,7 @@ public partial class Parser
     private (VisibilityModifier Visibility, bool IsCommon) ParseModifiers()
     {
         // A flag left by a declaration that failed to parse never reaches the next one.
-        _failable = false;
+        _infallible = false;
         _declarationStartToken = CurrentToken;
         VisibilityModifier visibility = VisibilityModifier.Open; // Default
         bool isCommon = false; // Default
@@ -795,12 +784,17 @@ public partial class Parser
                 visibility = VisibilityModifier.Secret;
                 hasVisibility = true;
             }
-            // `failable` — a routine that can fail, written first
-            else if (!_failable && Check(type: TokenType.Failable))
+            // `infallible`: a routine that promises not to fail, written first
+            else if (!_infallible && Check(type: TokenType.Infallible))
             {
-                _failableToken = CurrentToken;
+                _infallibleToken = CurrentToken;
                 Advance();
-                _failable = true;
+                _infallible = true;
+            }
+            // `failable` is gone: reported, then read past
+            else if (Check(type: TokenType.Failable))
+            {
+                RejectFailableKeyword();
             }
             // `common` — a type-level (static) member routine
             else if (!hasStorage && CheckAndAdvance(type: TokenType.Common))

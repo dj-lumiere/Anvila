@@ -1334,7 +1334,7 @@ public sealed partial class SemanticVerifier
                 string opStr = binary.Operator.ToStringRepresentation();
                 ReportWarning(code: SemanticWarningCode.UnhandledCrashableCall,
                     message: $"Operator '{opStr}' may throw. Either make the enclosing routine " +
-                             "failable (!), use 'when' to handle the error, or use the wrapping " +
+                             "pass it on, use 'when' to handle the error, or use the wrapping " +
                              $"variant '{opStr}%' for silent overflow.",
                     location: binary.Location);
             }

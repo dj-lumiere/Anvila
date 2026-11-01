@@ -1013,7 +1013,8 @@ public enum SemanticDiagnosticCode
     /// <summary>Error handling type (Check) cannot be used as member variable type.</summary>
     ErrorHandlingTypeAsMemberVariable = 755,
 
-    /// <summary>A routine declared <c>failable</c> never throws and calls nothing that can fail.</summary>
+    /// <summary>RETIRED: a routine declared <c>failable</c> that never throws. There is no <c>failable</c> any more
+    /// (every routine passes its failures on), so nothing reports it. The number is not reused.</summary>
     FailableWithoutThrow = 756,
 
     /// <summary>@crash_only annotation applied to a non-failable routine.</summary>
@@ -1026,12 +1027,12 @@ public enum SemanticDiagnosticCode
     /// may only be called bare.</summary>
     CrashOnlyRecovered = 759,
 
-    /// <summary>A <c>try</c>/<c>check</c> written over an expression that reaches no failable call: a failure inside a
-    /// routine that is not failable crashes there, so the keyword has nothing to receive.</summary>
+    /// <summary>RETIRED: a <c>try</c>/<c>check</c> over nothing failable. A keyword over a value that cannot fail now
+    /// gives the value, present. The number is not reused.</summary>
     NothingToRecover = 760,
 
-    /// <summary>A routine value that may fail (a lambda whose body can fail, a failable routine) handed to a parameter
-    /// or member variable whose routine type is not written <c>failable Callable[...]</c>.</summary>
+    /// <summary>RETIRED: a routine value that may fail handed to a plain <c>Callable</c>. Every routine value passes its
+    /// failure on now, and there is no <c>failable Callable[...]</c>. The number is not reused.</summary>
     FailableValueToPlainParameter = 761,
 
     /// <summary>Variant member cannot be Check[T], a token, or a duplicate type.</summary>
@@ -1111,8 +1112,8 @@ public enum SemanticDiagnosticCode
     /// so `dangerous` on it is the old spelling.</summary>
     DestroyNotDangerous = 807,
 
-    /// <summary>`destruct` is never failable: it runs at the scope's end, at `drop x`, or while a failure already
-    /// unwinds, with no caller to hand a failure to.</summary>
+    /// <summary>RETIRED: a <c>destruct</c> written <c>failable</c>. The word is gone, and a <c>destruct</c> is a wall
+    /// without a marker. The number is not reused.</summary>
     DestructNotFailable = 815,
 
     /// <summary>A program does not call `destruct` itself: a value is torn down at its scope's end, or now with

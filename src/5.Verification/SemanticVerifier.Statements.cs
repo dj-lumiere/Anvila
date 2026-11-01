@@ -496,21 +496,6 @@ public sealed partial class SemanticVerifier
     /// failable-without-failure, stores the body for error-handling variant generation, reports
     /// undismantled Lookup variables, and snapshots stolen variable names for teardown.
     /// </summary>
-    /// <summary>Whether <paramref name="routine"/> implements a failable requirement of a protocol its owner
-    /// obeys (<c>FileSource.enter!</c> for <c>Enterable</c>'s <c>enter!</c>).</summary>
-    private bool ImplementsFailableRequirement(RoutineInfo routine)
-    {
-        List<TypeSymbol>? protocols = routine.OwnerType switch
-        {
-            RecordTypeSymbol r => r.ImplementedProtocols,
-            EntityTypeSymbol e => e.ImplementedProtocols,
-            _ => null
-        };
-        return protocols?.Any(predicate: protocol =>
-            _registry.LookupMemberRoutine(type: protocol, memberRoutineName: routine.Name) is
-                { IsFailable: true }) == true;
-    }
-
     private void ValidateRoutineBodyPostAnalysis(RoutineDeclaration routine,
         RoutineInfo routineInfo)
     {
@@ -527,23 +512,6 @@ public sealed partial class SemanticVerifier
                 message: routineInfo.ReturnType is { IsNone: false }
                     ? $"Routine '{routine.Name}' has return type '{routineInfo.ReturnType.Name}' but not all code paths return a value."
                     : $"Routine '{routine.Name}' does not terminate on all paths. Add an explicit 'return' at the end.",
-                location: routine.Location);
-        }
-
-        // A routine value that may fail goes only to a `failable Callable[...]` (RF-S761).
-        CheckFailableValuesGoWhereMarked(body: routine.Body);
-
-        // Failable routine with no throw — error: a ! routine that can't fail is misleading. An
-        // implementation of a protocol's failable requirement (`Enterable.enter!`) keeps the `!` the protocol
-        // asks for even when this implementation never fails.
-        if (routineInfo is
-                { IsFailable: true, HasThrow: false, HasFailableCalls: false } &&
-            !ImplementsFailableRequirement(routine: routineInfo))
-        {
-            ReportError(code: SemanticDiagnosticCode.FailableWithoutThrow,
-                message:
-                $"'{routine.Name}' is declared failable, but it never throws and calls nothing that can fail. " +
-                "Remove 'failable' from its declaration, or add the failure path it is missing.",
                 location: routine.Location);
         }
 
@@ -2435,16 +2403,6 @@ public sealed partial class SemanticVerifier
                 message: $"You write `{routine.Name}` here, but a value here goes when its last holder lets go of it, or " +
                          "when the cycle collector frees it, at no point the program can name. For a resource that " +
                          "must be released at a known point, give the type `enter` and `exit` and use it with `using`.",
-                location: routine.Location);
-        }
-
-        if (isDestroyDecl && routine.IsFailable)
-        {
-            ReportError(code: SemanticDiagnosticCode.DestructNotFailable,
-                message: "You write `destruct` here with `failable`, but the builder calls it at the scope's end or at " +
-                         "`drop x`, where nothing could take a failure from it. Write it as a plain routine " +
-                         $"(`routine {routine.Name}()`), and recover a failing call inside it with `try` or `check` " +
-                         "and `when`.",
                 location: routine.Location);
         }
 

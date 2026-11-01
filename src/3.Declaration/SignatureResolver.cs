@@ -514,8 +514,7 @@ internal sealed class SignatureResolver
             string carrierShown = carrierName == "Check" ? $"Check[{held}]" : $"{held}?";
             _sa.ReportError(code: SemanticDiagnosticCode.ErrorHandlingTypeAsReturnType,
                 message: $"'{routine.Name}' returns '{carrierShown}', which only 'try' and 'check' make at a call. " +
-                         "Return the value itself and declare the routine failable ('failable routine " +
-                         $"{routine.Name}(...)'), with 'throw' where it fails: a caller then writes " +
+                         "Return the value itself, with 'throw' where it fails: a caller then writes " +
                          $"'{(carrierName == "Check" ? "check" : "try")} {routine.Name}(...)' to get the " +
                          $"'{carrierShown}'.",
                 location: routine.ReturnType?.Location ?? routine.Location);

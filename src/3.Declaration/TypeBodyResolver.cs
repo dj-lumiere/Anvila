@@ -760,7 +760,7 @@ internal sealed class TypeBodyResolver
         {
             _sa.ReportError(code: SemanticDiagnosticCode.VariantCaseContainsInvalidType,
                 message: $"Variant member '{memberTypeName}' cannot be '{memberType.Name}'. " +
-                         "Use failable routines (!) instead of storing Check in variants.",
+                         "Throw from the routine instead of storing a Check in a variant: a 'check' at the call takes the failure.",
                 location: member.Location);
         }
         // A bare entity T IS the bound/lvalue form (record-shaped

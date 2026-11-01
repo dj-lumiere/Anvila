@@ -339,9 +339,13 @@ public enum TokenType
     /// </summary>
     Common,
 
-    /// <summary>The routine modifier for a routine that can fail (`throw`): `failable routine parse(...)`. It goes
-    /// first, before `dangerous` or `common`.</summary>
+    /// <summary>The word `failable`, which is no modifier any more: the parser reports it (every routine passes its
+    /// failures to its caller).</summary>
     Failable,
+
+    /// <summary>The routine modifier for a routine that promises not to fail: `infallible routine close(...)`. A failure
+    /// inside it stops the program there, even under a `try`. It goes first, before `dangerous` or `common`.</summary>
+    Infallible,
 
     #endregion
 

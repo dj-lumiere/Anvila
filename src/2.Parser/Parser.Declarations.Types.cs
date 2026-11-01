@@ -746,13 +746,17 @@ public partial class Parser
         // Optional `common` storage-class qualifier — type-level (static) protocol memberRoutine,
         // e.g. `common routine Me.identity() -> V`. The `common` flag is propagated downstream so
         // TypeBodyResolver can set IsInstanceMemberRoutine = false.
-        _failable = false;
+        _infallible = false;
         _declarationStartToken = CurrentToken;
-        if (Check(type: TokenType.Failable))
+        if (Check(type: TokenType.Infallible))
         {
-            _failableToken = CurrentToken;
+            _infallibleToken = CurrentToken;
             Advance();
-            _failable = true;
+            _infallible = true;
+        }
+        else if (Check(type: TokenType.Failable))
+        {
+            RejectFailableKeyword();
         }
 
         bool memberRoutineIsCommon = CheckAndAdvance(type: TokenType.Common);
@@ -847,9 +851,9 @@ public partial class Parser
 
         string memberRoutineName = memberRoutineNameSb.ToString();
 
-        // Support failable member routines: "routine!". The `!` is a STRUCTURED flag on
-        // the RoutineSignature — the name stays bare.
-        bool memberRoutineIsFailable = TakeFailable();
+        // A protocol's routine passes its failures on unless it is written `infallible`.
+        bool memberRoutineIsInfallible = TakeInfallible();
+        bool memberRoutineIsFailable = PassesFailuresOn(infallible: memberRoutineIsInfallible, name: memberRoutineName);
 
         // Parameters
         Consume(type: TokenType.LeftParen, errorMessage: "Expected '(' after member routine name");
@@ -878,7 +882,7 @@ public partial class Parser
             Annotations: memberRoutineAnnotations.Count > 0
                 ? memberRoutineAnnotations
                 : null,
-            Location: GetLocation()) { IsFailable = memberRoutineIsFailable };
+            Location: GetLocation()) { IsFailable = memberRoutineIsFailable, IsInfallible = memberRoutineIsInfallible };
     }
 
     /// <summary>

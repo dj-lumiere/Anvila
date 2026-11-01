@@ -70,38 +70,6 @@ public sealed partial class SemanticVerifier
         return true;
     }
 
-    /// <summary>
-    /// Reports a <c>try</c>/<c>check</c> written over an expression that reaches no failable call (RF-S760). The
-    /// diagnostic points at the call when the expression is one, and names it.
-    /// </summary>
-    private void ReportNothingToRecover(RecoveryExpression recovery)
-    {
-        string keyword = RecoveryKeyword(kind: recovery.Kind);
-        Expression inner = recovery.Inner;
-        string? routineName = inner switch
-        {
-            CallExpression { ResolvedRoutine: { } routine } => routine.Name,
-            GenericMemberRoutineCallExpression { ResolvedRoutine: { } generic } => generic.Name,
-            _ => null
-        };
-        string what = routineName != null
-            ? $"'{routineName}' is not failable, so nothing under '{keyword}' can fail"
-            : $"nothing under '{keyword}' can fail: the expression calls no failable routine";
-        string fix = routineName != null
-            ? $"Remove '{keyword}', or declare '{routineName}' as 'failable routine {routineName}(...)' if it can fail."
-            : $"Remove '{keyword}', or call a failable routine under it.";
-        ReportError(code: SemanticDiagnosticCode.NothingToRecover,
-            message: $"You wrote '{keyword}', but {what}. A failure inside a routine that is not failable crashes " +
-                     $"there, and '{keyword}' only receives failures that rise through failable routines. {fix}",
-            location: inner.Location,
-            fix: new SuggestedFix(Title: $"Remove '{keyword}'",
-                Edits:
-                [
-                    new TextEdit(StartLine: recovery.Location.Line, StartColumn: recovery.Location.Column,
-                        EndLine: inner.Location.Line, EndColumn: inner.Location.Column, NewText: "")
-                ]));
-    }
-
     /// <summary>The payload type a <c>try</c> (<c>Optional[T]</c>) or <c>check</c> (<c>Check[T]</c>) carrier holds, or
     /// null when <paramref name="carrier"/> is not that keyword's carrier.</summary>
     private static TypeSymbol? CarrierPayload(TypeSymbol? carrier, RecoveryKind kind)
@@ -144,13 +112,8 @@ public sealed partial class SemanticVerifier
         var hoister = new RecoveryFailableHoister(seed: 0, registry: _registry);
         Expression residual = hoister.VisitExpression(expr: inner);
 
-        // A keyword over an expression that reaches no failable call has nothing to receive.
-        if (hoister.Hoisted.Count == 0 && !hoister.ReachesFailableValue && !recovery.IsSynthesized &&
-            !ContainsUnresolvedTypeParameter(type: innerType))
-        {
-            ReportNothingToRecover(recovery: recovery);
-            return ErrorTypeSymbol.Instance;
-        }
+        // A keyword over an expression that reaches nothing that can fail still gives its carrier: the routine built
+        // below from the expression returns the value, present, and never fails.
 
         // SINGLE failable call (the overwhelmingly common case): bind its recovery variant DIRECTLY by
         // reference (TypeRegistry.LookupRecoveryVariant) — the variant is the base routine's, never found by

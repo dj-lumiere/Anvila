@@ -433,6 +433,14 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// </summary>
     private static bool CanPassOn(CallExpression call, TypeRegistry registry)
     {
+        // A shared entity's construction (Suflae) stays as it is: the handle the plain construction gives is made at
+        // the call, which a recovery variant of the creator would not do. A failure inside it stops there.
+        if (call.ResolvedRoutine is { IsCreator: true, OwnerType: EntityTypeSymbol } &&
+            registry.Language == TypeModel.Enums.Language.Suflae)
+        {
+            return false;
+        }
+
         return registry.CanFailUnderRecovery(routine: call.ResolvedRoutine) &&
                (!_passesOnValuesOnly || call.ResolvedRoutine is { IsFailable: false, HasThrow: false } ||
                 FailableValues.HandsFailableValue(call: call));
@@ -472,7 +480,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     rewritten = BindToVariant(call: call, variant: variant, registry: registry);
                     return true;
                 case CreatorExpression { ResolvedCreatorRoutine: { IsFailable: true } creatorRoutine } creator
-                    when registry.LookupRecoveryVariant(recovered: creatorRoutine, kind: recovery) is { } variant:
+                    when !(creatorRoutine.OwnerType is EntityTypeSymbol && registry.Language == TypeModel.Enums.Language.Suflae) &&
+                         registry.LookupRecoveryVariant(recovered: creatorRoutine, kind: recovery) is { } variant:
                     rewritten = BindCreatorToVariant(creator: creator, variant: variant);
                     return true;
                 default:

@@ -491,6 +491,7 @@ public partial class Parser
             TokenType.Protocol => true,
             TokenType.Routine => true,
             TokenType.Failable => true,
+            TokenType.Infallible => true,
             TokenType.Var => true,
             TokenType.Preset => true,
             TokenType.If => true,
@@ -640,37 +641,66 @@ public partial class Parser
             language: _language) { Fix = fix };
     }
 
-    /// <summary>Whether the declaration being parsed was written `failable`, and the token that said so.</summary>
-    private bool _failable;
-    private Token? _failableToken;
+    /// <summary>Whether the declaration being parsed was written `infallible`, and the token that said so.</summary>
+    private bool _infallible;
+    private Token? _infallibleToken;
 
     /// <summary>
-    /// The failability of the routine whose name was just read: true when it was written `failable`. A `!` after the
-    /// name is a build error whose fix writes `failable` in front and drops the `!`.
+    /// Reads a `failable` written where a modifier goes: the word is gone (a routine passes its failures to its
+    /// caller unless it is `infallible`), so it is reported with a fix that removes it, and parsing goes on.
     /// </summary>
-    private bool TakeFailable()
+    private void RejectFailableKeyword()
     {
-        bool marked = _failable;
-        _failable = false;
+        Token failable = CurrentToken;
+        Advance();
+        RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.FailableRemoved,
+            message: "You wrote 'failable', but there is no such modifier: every routine passes its failures to its " +
+                     "caller, and a 'try' or 'check' above the call receives them at any depth. Remove 'failable'. " +
+                     "A routine that promises not to fail is written 'infallible routine' (run migrate --step failable " +
+                     "to update a file).",
+            fileName: FileName,
+            line: failable.Line,
+            column: failable.Column,
+            language: _language) { Fix = new SuggestedFix(Title: "Remove 'failable'",
+            Edits:
+            [
+                new TextEdit(StartLine: failable.Line, StartColumn: failable.Column, EndLine: CurrentToken.Line,
+                    EndColumn: CurrentToken.Line == failable.Line ? CurrentToken.Column : failable.Column + 8,
+                    NewText: "")
+            ]) });
+    }
+
+    /// <summary>
+    /// Whether the routine whose name was just read was written `infallible` (a wall: a failure inside it stops the
+    /// program there). A `!` after the name is a build error whose fix drops it.
+    /// </summary>
+    private bool TakeInfallible()
+    {
+        bool marked = _infallible;
+        _infallible = false;
         if (!Check(type: TokenType.Bang))
         {
             return marked;
         }
 
         Token bang = CurrentToken;
-        Token start = _declarationStartToken ?? bang;
         var edits = new List<TextEdit>
         {
             new(StartLine: bang.Line, StartColumn: bang.Column, EndLine: bang.Line, EndColumn: bang.Column + 1, NewText: "")
         };
-        if (!marked)
-        {
-            edits.Insert(index: 0, item: TextEdit.Insert(line: start.Line, column: start.Column, text: "failable "));
-        }
-
         throw ThrowParseError(code: GrammarDiagnosticCode.FailableBangOnName,
-            message: "A routine that can fail is declared `failable routine name(...)`: its name takes no '!'.",
-            fix: new SuggestedFix(Title: "Write 'failable routine'", Edits: edits));
+            message: "A routine's name takes no '!': every routine passes its failures to its caller, and a 'try' or " +
+                     "'check' above the call receives them. Remove the '!'.",
+            fix: new SuggestedFix(Title: "Remove '!'", Edits: edits));
+    }
+
+    /// <summary>
+    /// Whether a routine passes its failures on to its caller: every routine does, except one written
+    /// `infallible` and a `destruct` (it runs at a scope's end, where nothing takes a failure).
+    /// </summary>
+    private static bool PassesFailuresOn(bool infallible, string name)
+    {
+        return !infallible && name != "destruct" && !name.EndsWith(value: ".destruct", comparisonType: StringComparison.Ordinal);
     }
 
     /// <summary>The first token of the declaration being parsed (after its annotations), where a fix puts `failable`.</summary>

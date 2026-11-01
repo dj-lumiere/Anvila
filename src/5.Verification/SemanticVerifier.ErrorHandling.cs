@@ -1240,11 +1240,6 @@ public sealed partial class SemanticVerifier
     private static bool CandidateMatchesDeclaration(RoutineInfo candidate, RoutineDeclaration decl,
         string? moduleName, List<string> astParamTypeNames)
     {
-        if (candidate.IsFailable != decl.IsFailable)
-        {
-            return false;
-        }
-
         if (!string.IsNullOrEmpty(value: moduleName) && candidate.Module != null &&
             candidate.Module != moduleName)
         {

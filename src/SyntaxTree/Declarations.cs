@@ -277,7 +277,8 @@ public record ExpandMemberDeclaration(
 /// <param name="Location">Source location information</param>
 /// <param name="GenericParameters">Optional list of generic type parameter names</param>
 /// <param name="GenericConstraints">Optional generic constraints.</param>
-/// <param name="IsFailable">Whether the routine has a failable <c>!</c> suffix.</param>
+/// <param name="IsFailable">Whether the routine passes its failures to its caller: every routine but an
+/// <c>infallible</c> one and a <c>destruct</c>.</param>
 /// <param name="IsCommon">Whether the routine is a <c>common</c> (type-level static) member routine.</param>
 /// <param name="IsDangerous">Whether the routine requires a <c>danger</c> context.</param>
 /// <param name="IsWiredMemberRoutine">Whether the routine is a wired (builder-synthesized) member routine.</param>
@@ -306,6 +307,9 @@ public record RoutineDeclaration(
     bool IsDangerous = false,
     bool IsWiredMemberRoutine = false) : Declaration(Location: Location)
 {
+    /// <summary>Whether the routine was written <c>infallible</c>: a wall, a failure inside it stops the program.</summary>
+    public bool IsInfallible { get; init; }
+
     /// <summary>
     /// Generic parameter names. Settable so SignatureResolver can desugar a protocol-typed
     /// parameter (<c>r: Iterable[S64]</c>) into an implicit generic (<c>__T0 obeys Iterable[S64]</c>)
@@ -862,11 +866,11 @@ public record RoutineSignature(
     List<string>? Annotations,
     SourceLocation Location)
 {
-    /// <summary>
-    /// True when the signature was written with the failable `!` marker. The `!` is a STRUCTURED
-    /// attribute — <see cref="Name"/> stays bare.
-    /// </summary>
+    /// <summary>Whether the routine passes its failures to its caller: every one but an <c>infallible</c> one.</summary>
     public bool IsFailable { get; init; }
+
+    /// <summary>Whether the signature was written <c>infallible</c>.</summary>
+    public bool IsInfallible { get; init; }
 }
 
 #endregion

@@ -704,7 +704,7 @@ internal static class GenericAstRewriter
             RoutineInfo? resolvedRoutine =
                 Registry!.LookupRoutineOverload(baseName: original.BaseName,
                     argTypes: resolvedParamTypes);
-            if (resolvedRoutine != null && resolvedRoutine.IsFailable == original.IsFailable)
+            if (resolvedRoutine != null)
             {
                 return resolvedRoutine;
             }
@@ -824,6 +824,21 @@ internal static class GenericAstRewriter
             RoutineInfo? overload = Registry!.LookupMemberRoutineOverload(type: ownerType,
                 memberRoutineName: lookupMemberRoutineName,
                 argTypes: argTypes);
+            // The owner's own routine of the name and parameter count wins over a universal one (`Text.hash(k0:, k1:)`
+            // over the derived `T.hash(k0:, k1:)`): a name with several overloads has no single routine by name.
+            if (overload is null or { OwnerType: GenericParameterTypeSymbol or { IsGenericDefinition: true } })
+            {
+                var own = new List<RoutineInfo>();
+                Registry.CollectMemberRoutineCandidates(type: ownerType, memberRoutineName: lookupMemberRoutineName,
+                    candidates: own);
+                if (own.Where(predicate: r => ReferenceEquals(objA: r.OwnerType, objB: ownerType) &&
+                                              r.Parameters.Count(predicate: p => p.Name != "me") == argTypes.Count)
+                       .ToList() is [var single])
+                {
+                    return single;
+                }
+            }
+
             if (overload?.OwnerType is not { IsGenericDefinition: true })
             {
                 return overload ?? Registry.LookupMemberRoutine(type: ownerType,
@@ -991,7 +1006,7 @@ internal static class GenericAstRewriter
 
             RoutineInfo? routine = Registry!.LookupRoutineOverload(baseName: callName,
                 argTypes: callArgTypes);
-            if (routine != null && routine.IsFailable == isFailable)
+            if (routine != null)
             {
                 return InstantiateFreeRoutine(candidate: routine);
             }

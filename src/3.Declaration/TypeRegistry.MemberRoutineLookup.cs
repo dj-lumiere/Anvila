@@ -114,7 +114,7 @@ public sealed partial class TypeRegistry
     private static void BindEmittedItem(RoutineInfo routine)
     {
         const string itemSlot = "Item";
-        if (routine is not { Name: RuntimeContract.Emit, IsFailable: true, ReturnType: { } emitted } ||
+        if (routine is not { Name: RuntimeContract.Emit, ReturnType: { } emitted } ||
             emitted is ErrorTypeSymbol)
         {
             return;
@@ -164,7 +164,7 @@ public sealed partial class TypeRegistry
         const string iterSlot = "Emitter";
         // Only a concrete iterator of a concrete type: a generic one is written with `relates` (the library's), and
         // binding a type that still names parameters or projections could make a type that holds itself.
-        if (routine is not { Name: RuntimeContract.Iter, IsFailable: false, Parameters.Count: 0, ReturnType: { } iterator } ||
+        if (routine is not { Name: RuntimeContract.Iter, Parameters.Count: 0, ReturnType: { } iterator } ||
             routine.OwnerType is null or { IsGenericDefinition: true } || !IsClosedType(type: iterator) ||
             !IsClosedType(type: routine.OwnerType))
         {
@@ -292,7 +292,6 @@ public sealed partial class TypeRegistry
             // The body hashes are only computed here, on an actual collision.
             if (existingByKey is { IsSynthesized: false } &&
                 routine is { IsSynthesized: false } &&
-                existingByKey.IsFailable == routine.IsFailable &&
                 existingByKey.Location?.FileName is { } f1 &&
                 routine.Location?.FileName is { } f2 && !string.Equals(a: f1,
                     b: f2,
@@ -421,7 +420,7 @@ public sealed partial class TypeRegistry
             if (existing.IsSynthesized || existing.Location is not { } prior ||
                 ReferenceEquals(objA: existing, objB: routine) ||
                 RealmRoutineKey(routine: existing) != registryKey ||
-                existing.IsFailable != routine.IsFailable || existing.Kind != routine.Kind ||
+                existing.Kind != routine.Kind ||
                 !string.Equals(a: prior.FileName, b: incoming.FileName, comparisonType: StringComparison.OrdinalIgnoreCase) ||
                 prior.Line == incoming.Line && prior.Column == incoming.Column ||
                 !SameConstraintSet(a: existing, b: routine))
@@ -749,9 +748,7 @@ public sealed partial class TypeRegistry
         }
 
         routine = SurfaceStandIn(routine: routine);
-        return isFailable != null && routine.IsFailable != isFailable.Value
-            ? null
-            : routine;
+        return routine;
     }
 
     /// <summary>
@@ -791,21 +788,20 @@ public sealed partial class TypeRegistry
         // Fast path: the primary _routines index covers the common case; fall back to a System prefix
         // and finally a targeted linear scan for codegen short-name lookups.
         if (_routines.TryGetValue(key: name, value: out RoutineInfo? found) &&
-            found.OwnerType == null && (isFailable == null || found.IsFailable == isFailable))
+            found.OwnerType == null)
         {
             return found;
         }
 
         if (_routines.TryGetValue(key: $"System.{name}", value: out found) &&
-            found.OwnerType == null && (isFailable == null || found.IsFailable == isFailable))
+            found.OwnerType == null)
         {
             return found;
         }
 
         // Fallback: targeted linear scan (rare; used only by codegen short-name lookups)
         return _routines.Values.FirstOrDefault(predicate: routine =>
-            routine.Name == name && routine.OwnerType == null &&
-            (isFailable == null || routine.IsFailable == isFailable));
+            routine.Name == name && routine.OwnerType == null);
     }
 
     /// <summary>
@@ -2007,7 +2003,7 @@ public sealed partial class TypeRegistry
     {
         ProtocolMemberRoutineInfo? protoMemberRoutine =
             proto.MemberRoutines.FirstOrDefault(predicate: m =>
-                m.Name == memberRoutineName && (isFailable == null || m.IsFailable == isFailable));
+                m.Name == memberRoutineName);
         if (protoMemberRoutine == null)
         {
             return null;
@@ -2132,6 +2128,16 @@ public sealed partial class TypeRegistry
     /// </summary>
     public RoutineInfo? LookupRecoveryVariant(RoutineInfo recovered, RecoveryKind kind)
     {
+        // A universal routine made concrete for an owner that writes its own of the same shape (`T.hash(k0:, k1:)` for
+        // `Text`, which has `Text.hash(k0:, k1:)`) recovers through the owner's own: that is the routine a plain call
+        // of it reaches once the body is concrete.
+        if (recovered is { GenericDefinition.OwnerType: GenericParameterTypeSymbol, OwnerType: { } concreteOwner } &&
+            concreteOwner is not GenericParameterTypeSymbol && OwnShapedRoutine(owner: concreteOwner, like: recovered) is { } ownShaped &&
+            !ReferenceEquals(objA: ownShaped, objB: recovered))
+        {
+            return LookupRecoveryVariant(recovered: ownShaped, kind: kind);
+        }
+
         // The routine's own variant first (generated from its own body when it has one: a protocol
         // default re-homed onto an implementer has a concrete body of its own), then its definition's,
         // substituted.
@@ -2151,6 +2157,21 @@ public sealed partial class TypeRegistry
         return recovered.GenericDefinition is { } definition && !ReferenceEquals(objA: definition, objB: recovered) &&
                EnsureRecoveryVariants?.Invoke(arg: definition) == true
             ? FindRecoveryVariant(recovered: recovered, kind: kind)
+            : null;
+    }
+
+    /// <summary>The routine <paramref name="owner"/> itself writes with the name and call shape of
+    /// <paramref name="like"/>, when it writes exactly one.</summary>
+    private RoutineInfo? OwnShapedRoutine(TypeSymbol owner, RoutineInfo like)
+    {
+        var candidates = new List<RoutineInfo>();
+        CollectMemberRoutineCandidates(type: owner, memberRoutineName: like.Name, candidates: candidates);
+        string shape = CallShape(routine: like);
+        return candidates.Where(predicate: r => ReferenceEquals(objA: r.OwnerType, objB: owner) &&
+                                                r.GenericDefinition?.OwnerType is not GenericParameterTypeSymbol &&
+                                                CallShape(routine: r) == shape)
+                         .ToList() is [var single]
+            ? single
             : null;
     }
 
@@ -2360,7 +2381,7 @@ public sealed partial class TypeRegistry
                    value: out Dictionary<string, List<RoutineInfo>>? ownByName) &&
                ownByName.TryGetValue(key: memberRoutineName, value: out List<RoutineInfo>? memberRoutines) &&
                VisibleOverloads(overloads: memberRoutines)
-                  .Count(predicate: m => isFailable == null || m.IsFailable == isFailable) > 1;
+                  .Count() > 1;
     }
 
     private RoutineInfo? LookupOwnMemberRoutine(TypeSymbol type, string memberRoutineName,
@@ -2375,8 +2396,7 @@ public sealed partial class TypeRegistry
         }
 
         var nameMatches = VisibleOverloads(overloads: memberRoutines)
-                         .Where(predicate: m => isFailable == null || m.IsFailable == isFailable)
-                         .ToList();
+                                                  .ToList();
 
         // A routine's identity is (declaration-name, parameter-types). NAME ALONE cannot pin a
         // unique overload once >1 same-name routine is registered — so a name-only lookup here must
@@ -2533,8 +2553,7 @@ public sealed partial class TypeRegistry
         }
 
         ProtocolMemberRoutineInfo? own = proto.MemberRoutines.FirstOrDefault(predicate: m =>
-            (m.Name == memberRoutineName || memberRoutineName == RoutineInfo.CreatorName && m.IsCreatorRequirement) &&
-            (isFailable == null || m.IsFailable == isFailable));
+            m.Name == memberRoutineName || memberRoutineName == RoutineInfo.CreatorName && m.IsCreatorRequirement);
         if (own != null)
         {
             return (proto, own);
@@ -2931,10 +2950,10 @@ public sealed partial class TypeRegistry
                 : null;
         }
 
-        return LookupMemberRoutine(type: concreteInner,
-            memberRoutineName: innerGenMemberRoutine.Name,
-            isFailable: innerGenMemberRoutine.IsFailable) ?? ConcreteInnerOverload(concreteInner: concreteInner,
-            innerGenMemberRoutine: innerGenMemberRoutine);
+        // The overload with the forwarded routine's parameter names first: a name with several (`getitem` by index
+        // and by range) has no single routine by name.
+        return ConcreteInnerOverload(concreteInner: concreteInner, innerGenMemberRoutine: innerGenMemberRoutine) ??
+               LookupMemberRoutine(type: concreteInner, memberRoutineName: innerGenMemberRoutine.Name);
     }
 
     /// <summary>
@@ -2949,7 +2968,7 @@ public sealed partial class TypeRegistry
             candidates: overloads);
         string shape = CallShape(routine: innerGenMemberRoutine);
         return overloads.FirstOrDefault(predicate: o =>
-            o.IsFailable == innerGenMemberRoutine.IsFailable && o.OwnerType is not ProtocolTypeSymbol &&
+            o.OwnerType is not ProtocolTypeSymbol &&
             CallShape(routine: o) == shape);
     }
 
@@ -3899,7 +3918,6 @@ public sealed partial class TypeRegistry
         }
 
         var fitting = routines.Where(predicate: r => r.WrapperForwarderInnerGenericDef != null &&
-                                                     (isFailable == null || r.IsFailable == isFailable) &&
                                                      ForwardsTo(forwarder: r, wrapperType: wrapperType))
                               .ToList();
         return fitting.Count == 1

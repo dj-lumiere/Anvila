@@ -10,7 +10,7 @@ namespace Builder.Collection;
 /// (and calls nothing that can) never appears in one and needs no trace frame. Without this, every inlined
 /// operator routine (<c>U64.logical_shift_right</c>, <c>U128.bitand</c>, ...) kept its trace push/pop and per-call location
 /// stores in release builds, about 55 of the 80 ns of a B128 <c>exp</c>.
-/// <para>A routine can crash when it is failable or makes a failable call (checked arithmetic included), calls
+/// <para>A routine can crash when it throws or makes a call that can fail, calls
 /// a routine VALUE or a routine whose body is not in this build (a C function, a routine in the JIT base),
 /// uses an operator on a type that is not a plain number (its operator routine is not visible as a call
 /// here), or calls a routine that can crash. A <c>danger</c> block is not a crash source by itself: the trace
@@ -80,12 +80,12 @@ internal sealed class CrashReachability
     // Local crash sources of one body; each call to a routine with a body in this build becomes an edge.
     private bool CrashesLocally(RoutineInfo routine, Statement body, List<string> edges)
     {
-        // An instance of a generic routine is judged by its own body: `N.to[T]()` is failable as written, but
-        // `U32.to[U64]` calls a widening that cannot fail. Its throws and calls are in the body walked below. A
-        // failable callee that is such an instance with a body here is an edge, not a crash.
-        bool instance = routine.GenericDefinition is { } definition && !ReferenceEquals(objA: definition, objB: routine);
-        if (routine.IsFailable && !instance ||
-            routine.HasFailableCalls && routine.FailableCallees.Any(predicate: callee => !IsJudgedByBody(callee: callee)))
+        // Every routine but an `infallible` one passes its failures on, so whether it can crash is read from its
+        // body: its throws and calls are walked below, and a callee with a body here is an edge. A callee the walk
+        // cannot see as a call (recorded by the verifier) counts when it has no body here and can crash.
+        if (routine.HasFailableCalls && routine.FailableCallees.Any(predicate: callee =>
+                !_bodies.ContainsKey(key: callee.RegistryKey) && !IsJudgedByBody(callee: callee) &&
+                CalleeCanCrashWithoutBody(callee: callee)))
         {
             return true;
         }

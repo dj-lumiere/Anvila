@@ -215,21 +215,11 @@ public partial class Parser
     {
         SourceLocation location = GetLocation();
 
-        // `failable Callable[(T,), U]`: a routine type whose values may fail.
+        // `failable Callable[...]` is gone: every routine value passes its failures on. Reported, then read past.
         if (Check(type: TokenType.Failable))
         {
-            Token failableToken = CurrentToken;
-            Advance();
-            TypeExpression routineType = ParseBaseType();
-            if (routineType.Name != "Callable" || routineType.GenericArguments is not { Count: 2 })
-            {
-                throw ThrowParseError(code: GrammarDiagnosticCode.FailableNotARoutine,
-                    message: $"'failable' in a type marks a routine type, 'failable Callable[(T,), U]', and " +
-                             $"'{routineType.Name}' is not one. Remove 'failable', or write the routine type after it.",
-                    token: failableToken);
-            }
-
-            return routineType with { IsFailable = true };
+            RejectFailableKeyword();
+            return ParseBaseType();
         }
 
         // ═══════════════════════════════════════════════════════════════════════════

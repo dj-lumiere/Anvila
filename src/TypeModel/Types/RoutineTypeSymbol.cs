@@ -35,8 +35,9 @@ public sealed class RoutineTypeSymbol : TypeSymbol
     /// <summary>Return type for this function type. Null means no return (None).</summary>
     public TypeSymbol? ReturnType { get; }
 
-    /// <summary>Whether this function type is failable (can throw).</summary>
-    public bool IsFailable { get; init; }
+    /// <summary>Whether a call through a value of this type passes the value's failure on: every routine value does
+    /// (a value holding an <c>infallible</c> routine simply never fails).</summary>
+    public bool IsFailable { get; init; } = true;
 
     /// <summary>
     /// Creates a new routine type with the given parameter and return types.

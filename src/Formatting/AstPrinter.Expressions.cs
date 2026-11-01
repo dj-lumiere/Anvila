@@ -1225,11 +1225,6 @@ internal sealed partial class AstPrinter
 
     private string TypeText(TypeExpression type)
     {
-        if (type.IsFailable)
-        {
-            return "failable " + TypeText(type: type with { IsFailable = false });
-        }
-
         // A variant written in place keeps its types in the order they were written.
         if (type.UnionMembers is { } members)
         {

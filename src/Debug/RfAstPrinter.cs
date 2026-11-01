@@ -286,9 +286,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         // `!` is a structured attribute (IsFailable), never part of the Name — the name is canonically
         // bare, so it renders directly and the failable marker comes solely from IsFailable.
         string bareName = ri.Name;
-        string failable = ri.IsFailable
-            ? "!"
-            : "";
+        string failable = "";
         string paramStr = ri.Parameters.Count == 0
             ? ""
             : string.Join(separator: ", ",
@@ -1556,9 +1554,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     public string VisitFunctionDeclaration(RoutineDeclaration node)
     {
         var sb = new StringBuilder();
-        string failStr = node.IsFailable
-            ? "!"
-            : "";
+        string failStr = "";
         (string returnStr, string paramsStr) = BuildSignatureStrings(node: node);
         // Spell out the routine's own resolved generic args so monomorphized instantiations are distinct.
         string typeArgs = node.ResolvedInfo is
@@ -1874,9 +1870,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         string danger = node.IsDangerous
             ? "dangerous "
             : "";
-        string fail = node.IsFailable
-            ? "!"
-            : "";
+        string fail = "";
         string generics = node.GenericParameters is { Count: > 0 }
             ? $"[{string.Join(separator: ", ", values: node.GenericParameters)}]"
             : "";

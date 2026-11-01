@@ -2688,8 +2688,7 @@ public sealed partial class TypeRegistry
         {
             ProtocolMemberRoutineInfo? instMemberRoutine =
                 instance.MemberRoutines.FirstOrDefault(predicate: m =>
-                    m.Name == defMemberRoutine.Name &&
-                    m.IsFailable == defMemberRoutine.IsFailable);
+                    m.Name == defMemberRoutine.Name);
             if (instMemberRoutine == null || instMemberRoutine.ParameterTypes.Count !=
                 defMemberRoutine.ParameterTypes.Count)
             {
@@ -2706,19 +2705,16 @@ public sealed partial class TypeRegistry
     /// </summary>
     /// <param name="parameterTypes">The parameter types.</param>
     /// <param name="returnType">The return type (null for None/void).</param>
-    /// <param name="isFailable">Whether the function can throw.</param>
+    /// <param name="isFailable">Unused: every routine value passes its failures on (kept for the callers' shape).</param>
     /// <returns>The cached or newly created function type.</returns>
     public RoutineTypeSymbol GetOrCreateRoutineType(List<TypeSymbol> parameterTypes,
-        TypeSymbol? returnType, bool isFailable = false)
+        TypeSymbol? returnType, bool isFailable = true)
     {
         // Build the signature key
         string paramList = string.Join(separator: ", ",
             values: parameterTypes.Select(selector: p => p.Name));
         string returnName = returnType?.Name ?? "None";
-        string failableSuffix = isFailable
-            ? "!"
-            : "";
-        string key = $"({paramList}) -> {returnName}{failableSuffix}";
+        string key = $"({paramList}) -> {returnName}";
 
         // Check cache
         if (_resolutions.TryGetValue(key: key, value: out TypeSymbol? existing) &&
@@ -2728,11 +2724,7 @@ public sealed partial class TypeRegistry
         }
 
         // Create and cache
-        var newType =
-            new RoutineTypeSymbol(parameterTypes: parameterTypes, returnType: returnType)
-            {
-                IsFailable = isFailable
-            };
+        var newType = new RoutineTypeSymbol(parameterTypes: parameterTypes, returnType: returnType);
         _resolutions[key: key] = newType;
 
         // A routine VALUE is Serializable — like a tuple registers its memberRoutines at creation (structural

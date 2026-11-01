@@ -803,11 +803,6 @@ public partial class LlvmEmitter
             // it is not an overload/disambiguation axis, so two routines never differ only by it. Keeping
             // it out of the mangled name also makes the symbol independent of paths that disagree on the
             // flag (a fresh cold compile vs a .pbrf warm restore), so both produce identical defines.
-            if (r.IsFailable)
-            {
-                attrs.Add(item: "crashable");
-            }
-
             if (r.IsDangerous)
             {
                 attrs.Add(item: "dangerous");

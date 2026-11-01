@@ -12,7 +12,7 @@ public sealed partial class SemanticVerifier
     private const string StartRoutineName = "start";
 
     private const string UseWhenHint =
-        "Use 'when' to match the result, '??' to provide a default, or make the enclosing routine failable (!).";
+        "Use 'when' to match the result, or '??' to provide a default.";
 
     private const string NoneTypeName = "None";
     private const string ModifyMemberRoutineName = "modify";
@@ -3939,13 +3939,7 @@ public sealed partial class SemanticVerifier
                                                        .All(predicate: p => p.HasDefaultValue) && NamesFit(c: c))
                                                  .ToList();
                 }
-                var failMatches = arityMatches
-                                 .Where(predicate: c =>
-                                      c.IsFailable == isFailableMemberRoutineCall)
-                                 .ToList();
-                List<RoutineInfo> pick = failMatches.Count > 0
-                    ? failMatches
-                    : arityMatches;
+                List<RoutineInfo> pick = arityMatches;
                 if (pick.Count == 1)
                 {
                     memberRoutine = pick[index: 0];

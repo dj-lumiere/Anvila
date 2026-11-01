@@ -3996,44 +3996,10 @@ public static class LspServer
         }
 
         List<ISyntaxTreeNode> nodes = AllNodes(program: doc.Program);
-        // The calls a `try` / `check` takes the failure of: every node under the expression after the keyword.
-        var recovered = new HashSet<ISyntaxTreeNode>(comparer: ReferenceEqualityComparer.Instance);
-        foreach (RecoveryExpression recovery in nodes.OfType<RecoveryExpression>())
-        {
-            var under = new List<ISyntaxTreeNode>();
-            CollectAllNodes(node: recovery.Inner, acc: under,
-                seen: new HashSet<object>(comparer: ReferenceEqualityComparer.Instance));
-            recovered.UnionWith(other: under);
-        }
-
         foreach (ISyntaxTreeNode node in nodes)
         {
             switch (node)
             {
-                // A call of a failable routine that no `try` / `check` takes: a failure there stops the program on
-                // this line, which the hint after the call says.
-                case CallExpression { ResolvedRoutine: { IsFailable: true, IsRecoveryVariant: false } } call
-                    when !recovered.Contains(item: call) && call.Location.Line > 0:
-                {
-                    if (CallEnd(tokens: doc.Tokens, call: call) is { } end)
-                    {
-                        hints.Add(item: new Dictionary<string, object?>
-                        {
-                            [key: "position"] = new Dictionary<string, object?>
-                            {
-                                [key: "line"] = end.Line - 1, [key: PropCharacter] = end.Column
-                            },
-                            [key: PropLabel] = "may stop",
-                            [key: "kind"] = 2,
-                            [key: "paddingLeft"] = true,
-                            [key: "tooltip"] = "A failure of this call stops the program on this line. " +
-                                               "Recover it with try or check in front of the call."
-                        });
-                    }
-
-                    break;
-                }
-
                 // `var x = expr` with no written type → an inferred `: Type` hint after the name. Skip a
                 // failed inference (`<error>`, e.g. reading a dead value) — a bogus hint is worse than none.
                 case VariableDeclaration { Type: null, Initializer: { ResolvedType: { } vt } } vd
@@ -4308,9 +4274,7 @@ public static class LspServer
         string ret = r.ReturnType != null
             ? $" -> {TypeText(type: r.ReturnType)}"
             : "";
-        string failable = r.IsFailable
-            ? " (failable)"
-            : "";
+        const string failable = "";
         return $"({ps}){ret}{failable}";
     }
 

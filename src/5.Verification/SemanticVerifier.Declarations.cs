@@ -1110,12 +1110,12 @@ public sealed partial class SemanticVerifier
                 location: routine.Location);
         }
 
-        // @crash_only is only valid on failable routines (#76)
-        if (routine.Annotations.Contains(item: "crash_only") && !routine.IsFailable)
+        // @crash_only is only valid on a routine that passes its failures on (#76)
+        if (routine.Annotations.Contains(item: "crash_only") && routine.IsInfallible)
         {
             ReportError(code: SemanticDiagnosticCode.CrashOnlyOnNonFailable,
-                message: "'@crash_only' goes only on a routine that can fail. Declare it 'failable' " +
-                         "('failable routine name(...)'), or drop the annotation.",
+                message: "'@crash_only' goes only on a routine that can fail, and an 'infallible' routine promises " +
+                         "not to. Remove 'infallible', or drop the annotation.",
                 location: routine.Location);
         }
 
@@ -1227,8 +1227,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// A <c>@throws([A, B])</c> on a failable routine fixes what it may throw (an exported routine says so, and what it
     /// is built from may change): every crashable the builder collected for it (its own throws and those of the
-    /// failable routines it calls) must be in the list (RF-S712). On a routine that isn't failable, or naming
-    /// something that isn't a crashable, it is RF-S713.
+    /// routines it calls) must be in the list (RF-S712). On an <c>infallible</c> routine, or naming something that
+    /// isn't a crashable, it is RF-S713.
     /// </summary>
     private void ValidateThrowsLists()
     {
@@ -1244,8 +1244,8 @@ public sealed partial class SemanticVerifier
             if (!routine.IsFailable)
             {
                 ReportError(code: SemanticDiagnosticCode.ThrowsListMisplaced,
-                    message: $"'{routine.Name}' isn't failable, so it throws nothing for '@throws' to list. Declare it " +
-                             $"'failable routine {routine.Name}', or remove the annotation.",
+                    message: $"'{routine.Name}' passes no failure to its caller, so '@throws' has nothing to list. " +
+                             "Remove the annotation (or 'infallible', if the routine may fail).",
                     location: at);
                 continue;
             }
@@ -1482,7 +1482,7 @@ public sealed partial class SemanticVerifier
             ? $" -> {WrittenTypeName(type: _registry.ReplaceProtocolSelf(type: returned, owner: type))}"
             : "";
         string owner = required.IsInstanceMemberRoutine ? "routine" : "common routine";
-        string failable = required.IsFailable ? "failable " : "";
+        const string failable = "";
         return $"'{type.Name}' obeys '{protocol.Name}', which needs the routine '{required.Name}', and " +
                $"'{type.Name}' has none. Write `{failable}{owner} {type.Name}.{required.Name}({parameters}){result}`.";
     }
@@ -1535,7 +1535,7 @@ public sealed partial class SemanticVerifier
             values: requiredCreator.ParameterNames.Select(selector: (n, i) =>
                 $"{n}: {WrittenTypeName(type: _registry.ReplaceProtocolSelf(
                     type: requiredCreator.ParameterTypes[index: i], owner: type))}"));
-        string failable = requiredCreator.IsFailable ? "failable " : "";
+        const string failable = "";
         ReportError(code: SemanticDiagnosticCode.MissingProtocolMemberRoutine,
             message: $"'{type.Name}' obeys '{protocol.Name}', which requires a creator " +
                      $"`{failable}routine {type.Name}({parameters}) -> {type.Name}`, but '{type.Name}' has none that " +

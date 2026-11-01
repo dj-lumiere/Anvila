@@ -252,7 +252,7 @@ public partial class Parser
         TokenType.Module, TokenType.Import, TokenType.Define, TokenType.Preset, TokenType.Global,
         TokenType.LateInit, TokenType.Var, TokenType.Routine, TokenType.Record, TokenType.Bundle,
         TokenType.Entity, TokenType.Choice, TokenType.Variant, TokenType.Flags, TokenType.Protocol,
-        TokenType.Crashable, TokenType.Dangerous, TokenType.Failable, TokenType.Common, TokenType.Secret,
+        TokenType.Crashable, TokenType.Dangerous, TokenType.Failable, TokenType.Infallible, TokenType.Common, TokenType.Secret,
         TokenType.Posted, TokenType.Needs, TokenType.Relates
     };
 
@@ -569,9 +569,9 @@ public partial class Parser
             RejectNoEffect(when: isDangerous, at: beforeVarOrField,
                 message: "'dangerous' marks a routine whose signature exposes raw unsafety, and has no effect on a " +
                          "variable, a member variable or a preset. Remove it (an unsafe operation goes in a 'danger' block).");
-            RejectNoEffect(when: _failable, at: beforeVarOrField,
-                message: "'failable' marks a routine that can fail, and has no effect on a variable, a member " +
-                         "variable or a preset. Remove it.");
+            RejectNoEffect(when: _infallible, at: beforeVarOrField,
+                message: "'infallible' marks a routine that promises not to fail, and has no effect on a variable, a " +
+                         "member variable or a preset. Remove it.");
             RejectNoEffect(when: isCommon, at: beforeVarOrField,
                 message: "'common' marks a routine that belongs to its type, not to a value, and has no effect on a " +
                          "variable, a member variable or a preset. Remove it.");
@@ -582,13 +582,13 @@ public partial class Parser
             annotations: annotations,
             isCommon: isCommon,
             isDangerous: isDangerous);
-        if (_failable)
+        if (_infallible)
         {
-            // Nothing took the modifier: it stood before a type or another declaration that can't fail.
-            _failable = false;
+            // Nothing took the modifier: it stood before a type or another declaration that is not a routine.
+            _infallible = false;
             throw ThrowParseError(code: GrammarDiagnosticCode.FailableNotARoutine,
-                message: "'failable' marks a routine that can fail, and has no effect here. Remove it.",
-                token: _failableToken ?? CurrentToken);
+                message: "'infallible' marks a routine that promises not to fail, and has no effect here. Remove it.",
+                token: _infallibleToken ?? CurrentToken);
         }
 
         return declaration;

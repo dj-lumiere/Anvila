@@ -24,9 +24,10 @@ public partial class Parser
 
         string name = ParseExternalRoutineName();
 
-        // Support ! suffix for failable routines. The `!` is a STRUCTURED flag on the
-        // ExternalDeclaration — the name stays bare.
-        bool isFailable = TakeFailable();
+        // A foreign routine never fails (C sees no failures): `infallible` on it says nothing, and a stray `!` is
+        // reported.
+        TakeInfallible();
+        const bool isFailable = false;
 
         // Check for generic parameters with inline constraints
         List<string>? genericParams = null;

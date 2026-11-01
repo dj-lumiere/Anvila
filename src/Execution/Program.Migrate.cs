@@ -50,7 +50,8 @@ internal partial class Program
             return RunHaveStep(paths: paths, check: check);
         }
 
-        // `--step failable`: a routine that can fail is `failable routine name(...)`, not `routine name!(...)`.
+        // `--step failable`: there is no `failable` (every routine passes its failures on), and a routine's name takes
+        // no `!`.
         if (step == "failable")
         {
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteFailable);
@@ -1957,24 +1958,29 @@ internal partial class Program
     /// </summary>
     /// <summary>A routine declaration written with `!` after its name, its visibility and its other modifiers.</summary>
     private static readonly System.Text.RegularExpressions.Regex FailableDeclaration = new(
-        pattern: @"^(?<indent>[ \t]*)(?<visibility>(?:(?:posted|secret)\s+)?)(?<modifiers>(?:(?:common|dangerous)\s+)*)routine\s+(?<name>[^(!\n]*?)!(?=[\[(])",
+        pattern: @"^(?<head>[ \t]*(?:(?:posted|secret|failable|infallible|common|dangerous)\s+)*routine\s+[^(!\n]*?)!(?=[\[(])",
         options: System.Text.RegularExpressions.RegexOptions.Multiline);
 
-    /// <summary>The same in inline code: `` `routine parse!(...)` ``.</summary>
+    /// <summary>The word <c>failable</c> before a routine's other modifiers and <c>routine</c>, or before a
+    /// <c>Callable[...]</c> type.</summary>
+    private static readonly System.Text.RegularExpressions.Regex FailableWord = new(
+        pattern: @"\bfailable[ \t]+(?=(?:(?:common|dangerous)[ \t]+)*routine\b|Callable\b)");
+
+    /// <summary>The same in inline code: `` `failable routine parse(...)` ``.</summary>
     private static readonly System.Text.RegularExpressions.Regex FailableInline = new(
-        pattern: @"`(?<modifiers>(?:(?:common|dangerous)\s+)*)routine\s+(?<name>[^(!`\n]*?)!(?=[\[(])");
+        pattern: @"`failable[ \t]+(?=(?:(?:common|dangerous)[ \t]+)*routine\b|Callable\b)");
 
     /// <summary>
-    /// `--step failable`: `routine name!(...)` becomes `failable routine name(...)`. `failable` goes after the
-    /// visibility and before `dangerous` or `common`.
+    /// `--step failable`: every routine passes its failures to its caller, so the word <c>failable</c> goes (on a
+    /// routine and on a <c>Callable[...]</c> type), and a <c>!</c> after a routine's name goes too
+    /// (<c>routine parse!(...)</c> is <c>routine parse(...)</c>). Strings and comments stay as they are.
     /// </summary>
     private static string RewriteFailable(string file, string source, Language language, int lineOffset)
     {
-        string text = FailableDeclaration.Replace(input: source,
-            evaluator: m => $"{m.Groups[groupname: "indent"].Value}{m.Groups[groupname: "visibility"].Value}failable " +
-                            $"{m.Groups[groupname: "modifiers"].Value}routine {m.Groups[groupname: "name"].Value}");
-        return FailableInline.Replace(input: text,
-            evaluator: m => $"`failable {m.Groups[groupname: "modifiers"].Value}routine {m.Groups[groupname: "name"].Value}");
+        string text = ReplaceInCode(text: source, pattern: FailableDeclaration,
+            replacement: m => m.Groups[groupname: "head"].Value);
+        text = ReplaceInCode(text: text, pattern: FailableWord, replacement: _ => "");
+        return FailableInline.Replace(input: text, replacement: "`");
     }
 
     private static string RewriteHave(string file, string source, Language language, int lineOffset)

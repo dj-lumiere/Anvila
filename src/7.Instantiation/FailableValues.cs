@@ -36,9 +36,8 @@ internal static class FailableValues
     /// <summary>
     /// Whether <paramref name="call"/> can fail where it stands, as a recovery keyword above it sees it: a call of a
     /// failable routine, a call through a routine value that may fail, or a call that hands on, or works on, a routine
-    /// value that may fail. That is read from the call and the types alone: a routine value that may fail goes only to
-    /// a <c>failable Callable[...]</c> (RF-S761), so a routine it reaches passes its failure on
-    /// (<see cref="TypeRegistry.CanFailUnderRecovery"/> builds the variant that does).
+    /// value that may fail. That is read from the call and the types alone: every routine value passes its failure on,
+    /// so a routine it reaches does too (<see cref="TypeRegistry.CanFailUnderRecovery"/> builds the variant that does).
     /// </summary>
     public static bool CallMayFail(CallExpression call, TypeRegistry registry)
     {
@@ -54,35 +53,5 @@ internal static class FailableValues
 
         return routine.IsFailable || routine.HasThrow || HandsFailableValue(call: call) ||
                routine.IsLambda && registry.CanFailUnderRecovery(routine: routine);
-    }
-
-    /// <summary>
-    /// The first argument of <paramref name="call"/> that is a routine value that may fail given to a parameter whose
-    /// routine type is not written <c>failable</c>, with that parameter's name, or null.
-    /// </summary>
-    public static (Expression argument, string parameter)? FailableValueToPlainParameter(CallExpression call,
-        RoutineInfo routine)
-    {
-        IReadOnlyList<ParamInfo> parameters = routine.Parameters;
-        int position = 0;
-        foreach (Expression argument in call.Arguments)
-        {
-            ParamInfo? parameter = argument is NamedArgumentExpression named
-                ? parameters.FirstOrDefault(predicate: p => p.Name == named.Name)
-                : position < parameters.Count
-                    ? parameters[index: position]
-                    : null;
-            position++;
-            Expression value = argument is NamedArgumentExpression namedValue
-                ? namedValue.Value
-                : argument;
-            if (parameter is { Type: RoutineTypeSymbol { IsFailable: false } } &&
-                value.ResolvedType is RoutineTypeSymbol { IsFailable: true })
-            {
-                return (value, parameter.Name);
-            }
-        }
-
-        return null;
     }
 }

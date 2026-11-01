@@ -197,11 +197,15 @@ public enum GrammarDiagnosticCode
     /// <summary>An annotation the builder does not know (a misspelled one, or one it gives no effect).</summary>
     UnknownAnnotation = 221,
 
-    /// <summary>A routine declared with `!` after its name: a routine that can fail is `failable routine name(...)`.</summary>
+    /// <summary>A routine declared with `!` after its name: a routine's name takes no `!`.</summary>
     FailableBangOnName = 222,
 
-    /// <summary>`failable` before something that isn't a routine.</summary>
+    /// <summary>`infallible` before something that isn't a routine.</summary>
     FailableNotARoutine = 223,
+
+    /// <summary>`failable` written as a modifier: the word is gone, every routine passes its failures to its caller,
+    /// and a routine that promises not to fail is written `infallible`.</summary>
+    FailableRemoved = 230,
 
     /// <summary>A loop written <c>while c</c>: <c>while</c> is not a keyword. A loop is <c>until</c> with the condition
     /// that ends it, or <c>loop</c>.</summary>

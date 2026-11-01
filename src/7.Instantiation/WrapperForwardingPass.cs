@@ -209,50 +209,34 @@ internal sealed class WrapperForwardingPass
             return ctx.InnerMemberRoutine;
         }
 
-        if (IsReadOnlyWrapper(type: wrapperType) && !ctx.InnerMemberRoutine.IsReadOnly)
-        {
-            return null;
-        }
-
-        // Roamed failable forwarders: the when-re-propagation body IS built (see
-        // BuildWrapperForwarderBody's isFailable path) but is currently GATED OFF — the synthesized
-        // re-throw's crash_message gets reachability-pruned ("declared+called but never defined").
-        // Re-enable by fixing that seed (find the correct crash_message owner/lookup).
-        if (wrapperType.BareName == RuntimeContract.Roamed && ctx.InnerMemberRoutine.IsFailable)
-        {
-            return null;
-        }
-
-        RoutineInfo? forwarder = SynthesizeForwarder(wrapperType: wrapperType,
-            memberRoutineName: memberRoutineName,
-            isFailable: isFailable,
-            ctx: ctx);
-
-        // The inner type's other overloads of the name (`Text.find!(letter:)` and `Text.find!(other:)`, `getitem`
-        // by index and by range) get their forwarders too, so a call on the wrapper picks among them by its
-        // arguments, as it would on the inner value.
-        var overloads = new List<RoutineInfo>();
+        // The inner type's overloads of the name (`Text.find(letter:)` and `Text.find(other:)`, `getitem` by index
+        // and by range) each get their forwarder, so a call on the wrapper picks among them by its arguments, as it
+        // would on the inner value. A read-only wrapper forwards only the overloads that only read.
+        var overloads = new List<RoutineInfo> { ctx.InnerMemberRoutine };
+        var others = new List<RoutineInfo>();
         _registry.CollectMemberRoutineCandidates(type: ctx.InnerType,
             memberRoutineName: memberRoutineName,
-            candidates: overloads);
+            candidates: others);
+        overloads.AddRange(collection: others.Where(predicate: overload =>
+            wrapperType.BareName != RuntimeContract.Roamed &&
+            !ReferenceEquals(objA: overload, objB: ctx.InnerMemberRoutine) &&
+            overload.RegistryKey != ctx.InnerMemberRoutine.RegistryKey &&
+            overload.OwnerType is not (ProtocolTypeSymbol or GenericParameterTypeSymbol)));
+
+        RoutineInfo? forwarder = null;
         foreach (RoutineInfo overload in overloads)
         {
-            // Roamed's own rules above (a representation-unified routine, no failable forwarder) hold for
-            // every overload, so it takes none here.
-            if (wrapperType.BareName == RuntimeContract.Roamed ||
-                ReferenceEquals(objA: overload, objB: ctx.InnerMemberRoutine) ||
-                overload.RegistryKey == ctx.InnerMemberRoutine.RegistryKey ||
-                overload.OwnerType is ProtocolTypeSymbol or GenericParameterTypeSymbol ||
-                IsReadOnlyWrapper(type: wrapperType) && !overload.IsReadOnly)
+            if (IsReadOnlyWrapper(type: wrapperType) && !overload.IsReadOnly)
             {
                 continue;
             }
 
-            SynthesizeForwarder(wrapperType: wrapperType,
+            RoutineInfo? made = SynthesizeForwarder(wrapperType: wrapperType,
                 memberRoutineName: memberRoutineName,
                 isFailable: overload.IsFailable,
                 ctx: ctx with { InnerMemberRoutine = overload },
-                overloadOnly: true);
+                overloadOnly: forwarder != null);
+            forwarder ??= made;
         }
 
         return forwarder;
@@ -313,16 +297,24 @@ internal sealed class WrapperForwardingPass
                 isFailable: isFailable);
         }
 
-        // A name with several overloads (`Text.find!(letter:)` and `Text.find!(other:)`) has no single routine by
-        // name: any one of them seeds the forwarders, and TrySynthesize builds the rest.
-        if (innerMemberRoutine == null)
+        // A name with several overloads (`Text.find(letter:)` and `Text.find(other:)`, `getitem` by index and by range)
+        // has no single routine by name (a lookup by name then finds the protocol's requirement): any one of them
+        // seeds the forwarders, and TrySynthesize builds the rest.
+        if (innerMemberRoutine is null or { OwnerType: ProtocolTypeSymbol })
         {
             var overloads = new List<RoutineInfo>();
             _registry.CollectMemberRoutineCandidates(type: innerType,
                 memberRoutineName: memberRoutineName,
                 candidates: overloads);
+            if (overloads.Count == 0 && !ReferenceEquals(objA: innerLookupType, objB: innerType))
+            {
+                _registry.CollectMemberRoutineCandidates(type: innerLookupType,
+                    memberRoutineName: memberRoutineName,
+                    candidates: overloads);
+            }
+
             innerMemberRoutine = overloads.FirstOrDefault(predicate: o =>
-                o.IsFailable == isFailable && o.OwnerType is not (ProtocolTypeSymbol or GenericParameterTypeSymbol));
+                o.OwnerType is not (ProtocolTypeSymbol or GenericParameterTypeSymbol)) ?? innerMemberRoutine;
         }
 
         // No concrete inner impl → no forwarder. A resolution to the ABSTRACT protocol member does
@@ -398,7 +390,9 @@ internal sealed class WrapperForwardingPass
             OwnerType = wrapperDef,
             Parameters = forwarderParameters,
             ReturnType = forwarderReturnType,
-            IsFailable = innerMemberRoutine.IsFailable,
+            // A Roamed forwarder calls its inner routine plainly (the when-re-propagation body a failable one would
+            // need has its crash_message reachability-pruned), so a failure inside stops where it happens.
+            IsFailable = innerMemberRoutine.IsFailable && wrapperDef.BareName != RuntimeContract.Roamed,
             DeclaredMutation = innerMemberRoutine.DeclaredMutation,
             MutationCategory = innerMemberRoutine.MutationCategory,
             Visibility = innerMemberRoutine.Visibility,
@@ -521,7 +515,7 @@ internal sealed class WrapperForwardingPass
             memberRoutineName: memberRoutineName,
             candidates: overloads);
         overloads.RemoveAll(match: o => o.OwnerType is ProtocolTypeSymbol or GenericParameterTypeSymbol);
-        return overloads.FirstOrDefault(predicate: o => o.IsFailable == isFailable) ?? overloads.FirstOrDefault();
+        return overloads.FirstOrDefault();
     }
 
     /// <summary>
@@ -681,7 +675,7 @@ internal sealed class WrapperForwardingPass
                                       .ToList();
         var callCtx = new ForwarderCallContext(InnerMemberRoutine: innerMemberRoutine,
             CallPropertyName: innerMemberRoutine.Name,
-            IsFailable: innerMemberRoutine.IsFailable,
+            IsFailable: innerMemberRoutine.IsFailable && wrapperType.BareName != RuntimeContract.Roamed,
             HasReturnValue: innerMemberRoutine.ReturnType != null &&
                             innerMemberRoutine.ReturnType.Name != "None",
             InnerType: innerType,
