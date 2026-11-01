@@ -586,6 +586,11 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
             StealExpression steal => steal,
             CallExpression call => StripStealFromCall(call: call),
             CreatorExpression creator => StripStealFromCreator(creator: creator),
+            // The inline array a collection literal passes to its `from_literal` builder: the builder borrows each
+            // element and copies it into the collection, so a bare name stays as it is. A record or tuple built in
+            // place (`[Link(keep: b)]`, `[(b, 1)]`) is a destination for what it is built from and keeps the
+            // retaining copy of each of those, as it does anywhere else.
+            ListLiteralExpression literal => StripStealFromArrayLiteral(literal: literal),
             // The smaller variant is copied into the larger one: a named value is a copy position.
             VariantWidenExpression widen => widen with { Value = LowerOwnership(expr: widen.Value, isReturn: false) },
             GenericMemberRoutineCallExpression gmc => StripStealFromGenericMemberRoutineCall(
@@ -656,6 +661,46 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         return changed
             ? call with { Arguments = args, Callee = callee }
             : call;
+    }
+
+    private ListLiteralExpression StripStealFromArrayLiteral(ListLiteralExpression literal)
+    {
+        bool changed = false;
+        var elements = new List<Expression>(capacity: literal.Elements.Count);
+        foreach (Expression element in literal.Elements)
+        {
+            elements.Add(item: BuildInPlace(element: element));
+            if (!ReferenceEquals(objA: elements[^1], objB: element))
+            {
+                changed = true;
+            }
+        }
+
+        return changed
+            ? literal with { Elements = elements }
+            : literal;
+    }
+
+    /// <summary>An element of an inline array literal that builds a record or tuple in place (a construction call or a
+    /// creator): what it is built from is copied into it. Anything else, a bare name included, stays as it is. An
+    /// entity built in place (a shared handle in Suflae, a worker's job) is not copied from what it is built from,
+    /// and a variant boxes its payload.</summary>
+    private Expression BuildInPlace(Expression element)
+    {
+        return element switch
+        {
+            CreatorExpression creator when IsRecordConstruction(constructed: creator.ConstructedType ?? creator.ResolvedType) =>
+                StripStealFromCreator(creator: creator),
+            CallExpression call when IsRecordConstruction(constructed: call.ConstructedType) &&
+                                     RuntimeContract.IsMemberwiseConstruction(constructedType: call.ConstructedType,
+                                         resolved: call.ResolvedRoutine) => StripStealFromCall(call: call),
+            _ => element
+        };
+    }
+
+    private static bool IsRecordConstruction(TypeSymbol? constructed)
+    {
+        return constructed is not null and not (EntityTypeSymbol or VariantTypeSymbol);
     }
 
     private CreatorExpression StripStealFromCreator(CreatorExpression creator, bool membersAreReturned = false)
