@@ -384,6 +384,12 @@ public static class RuntimeContract
     /// <summary><c>control</c> — the <c>Controlling</c> marker-protocol coercion (yields a borrow view).</summary>
     public const string Control = "control";
 
+    /// <summary><c>read_in_place</c> — a token's value read where it is with no copy (<c>Viewing.rf</c>,
+    /// <c>Modifying.rf</c>), for a value that holds an entity, which is never copied.</summary>
+    /// <remarks>Sites: OperatorLoweringPass (an element read that holds an entity), PatternLoweringPass (a token
+    /// subject reaching one), ScopeTeardownLoweringPass.ViewVerbs.</remarks>
+    public const string ReadInPlace = "read_in_place";
+
     /// <summary>The routine-name contracts that MUST resolve to a real, declared stdlib routine —
     /// the rename-sensitive set that <c>validate-stdlib</c>'s <see cref="RuntimeContractCheck"/>
     /// asserts. Deliberately EXCLUDES builder-generated / intrinsic names that have no stdlib
@@ -464,7 +470,7 @@ public static class RuntimeContract
     public static readonly IReadOnlySet<string> ViewVerbs =
         new HashSet<string>(comparer: StringComparer.Ordinal)
         {
-            RawPointer.AsEntity, Access, Control, ShapeUse.ControlToReshape
+            RawPointer.AsEntity, Access, Control, ReadInPlace, ShapeUse.ControlToReshape
         };
 
     /// <summary>An emitter's step (`Emitter.emit`): what it returns is the emitter's `Item`.</summary>

@@ -186,6 +186,37 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     }
 
     /// <summary>
+    /// <c>container.view_at(i).read_in_place()</c> for an element that holds an entity: the element's value read in
+    /// its place with no copy. Null when the container has no <c>view_at</c> or the token has no such read.
+    /// </summary>
+    private CallExpression? ReadElementInPlace(IndexExpression element)
+    {
+        // The container's accessor for an entity element (`needs EntityType T`) reads the slot as an entity's address,
+        // so only one for any element reaches a value held in place.
+        if (MintElementToken(element: element, write: false) is not { ResolvedRoutine.ReturnType: { } tokenType } token ||
+            token.ResolvedRoutine.GenericConstraints?.Any(predicate: c => c.ConstraintType == ConstraintKind.EntityType) == true ||
+            ctx.Registry.LookupMemberRoutineOverload(type: tokenType,
+                memberRoutineName: Declaration.RuntimeContract.ReadInPlace,
+                argTypes: []) is not { } read)
+        {
+            return null;
+        }
+
+        token.ResolvedType = tokenType;
+        return new CallExpression(
+            Callee: new MemberExpression(Object: token,
+                MemberName: Declaration.RuntimeContract.ReadInPlace,
+                Location: element.Location),
+            Arguments: [],
+            Location: element.Location)
+        {
+            ResolvedRoutine = read,
+            ResolvedType = element.ResolvedType,
+            LoweringKind = ClassifyCallLoweringKind(routine: read, receiverType: tokenType)
+        };
+    }
+
+    /// <summary>
     /// The expression form of an assignment (<c>target = v</c> as a statement) gets the same
     /// write-back lowering as <see cref="VisitAssignment"/>.
     /// </summary>
@@ -916,6 +947,15 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
                 write: idx.ResolvedType is { BareName: Declaration.RuntimeContract.Modifying }) is { } elementToken)
         {
             return elementToken;
+        }
+
+        // An element that holds an entity (`Box?` in a `List[Box?]`, the subject of `when shelf.slots[i]`) is never
+        // copied by `=`, so `getitem`, which gives a holder of its own, has nothing to give. It is read where it is,
+        // through a read token on it, and the container keeps it.
+        if (idx.ResolvedType is RecordTypeSymbol held and not VariantTypeSymbol && !IsRangeIndex(index: idx.Index) &&
+            ctx.Registry.IsEntityKind(type: held) && ReadElementInPlace(element: idx) is { } inPlace)
+        {
+            return inPlace;
         }
 
         // An entity element read as a container (`grid[0][j]`) is reached through a read token on the

@@ -1057,7 +1057,7 @@ public sealed partial class SemanticVerifier
         try
         {
             TypeSymbol result = AnalyzeCallExpression(call: call, expectedType: expectedType);
-            CheckStampHasSlot(call: call);
+            CheckStampHasSlot(call: call, type: result);
             return result;
         }
         finally
@@ -1074,27 +1074,45 @@ public sealed partial class SemanticVerifier
     /// analyzed, when argument types are known.
     /// </summary>
     /// <summary>
-    /// RF-S656 for <c>e.stamp()</c> in a program file on an entity type with no stamp slot: the builder gives one to a
-    /// type of the program that its source writes as <c>Stamped[...]</c>'s argument, so a stamp reached only through a
-    /// type parameter, or of a standard library entity, has none.
+    /// The stamp slot a <c>stamp()</c> in a program file needs. The call's type, <c>Stamped[E]</c>, names the entity
+    /// type, whether the stamp's type is written (<c>var s: Stamped[Node] = n.stamp()</c>) or inferred
+    /// (<c>var s = n.stamp()</c>, <c>[n.stamp()]</c>), and whether the call is on the entity or on a token: an entity type
+    /// of the program gets its slot here (<see cref="EntityTypeSymbol.KeepsStamp"/>, read when the layout and the
+    /// <c>keeps_stamp</c> query are lowered, after analysis). RF-S656 for a type that can't have one: a standard
+    /// library entity, or a stamp reached only through a type parameter.
     /// </summary>
-    private void CheckStampHasSlot(CallExpression call)
+    private void CheckStampHasSlot(CallExpression call, TypeSymbol type)
     {
         // A language whose entities are shared handles has no `Stamped` (its library binds none, SF-S447 says so).
         if (_registry.Rules.EntitiesAreShared ||
-            call is not { Callee: MemberExpression { MemberName: "stamp", Object.ResolvedType: EntityTypeSymbol entity } } ||
-            call.Arguments.Count != 0 || entity.KeepsStamp || entity.IsGenericDefinition ||
+            call is not { Callee: MemberExpression { MemberName: "stamp" } } || call.Arguments.Count != 0 ||
             call.ResolvedRoutine is not { Name: "stamp", ReturnType.BareName: Builder.Declaration.RuntimeContract.StampedTypeName } routine ||
             routine.Module?.StartsWith(value: "System", comparisonType: StringComparison.Ordinal) != true ||
-            !IsProgramFile(filePath: call.Location.FileName))
+            type is not RecordTypeSymbol
+            {
+                BareName: Builder.Declaration.RuntimeContract.StampedTypeName, TypeArguments: [EntityTypeSymbol entity]
+            } || entity.IsGenericDefinition || !IsProgramFile(filePath: call.Location.FileName))
         {
             return;
         }
 
+        EntityTypeSymbol declared = entity.GenericDefinition as EntityTypeSymbol ?? entity;
+        if (declared.KeepsStamp)
+        {
+            return;
+        }
+
+        if (declared.Location?.FileName is { } declaredIn && IsProgramFile(filePath: declaredIn))
+        {
+            declared.KeepsStamp = true;
+            declared.StampPointerSize = _target.PointerBitWidth / 8;
+            return;
+        }
+
         ReportError(code: SemanticDiagnosticCode.StampOfTypeWithoutSlot,
-            message: $"`{entity.ShortTypeName}` has no slot for stamps: the builder gives one to an entity type of your " +
-                     $"program that its source writes as `Stamped[{entity.BareName}]`. Write that type where the stamp " +
-                     $"is kept (`var s: Stamped[{entity.BareName}] = x.stamp()`).",
+            message: $"`{entity.ShortTypeName}` has no slot for stamps: the builder gives one only to an entity type " +
+                     "your program declares, and this one comes from the standard library. Keep a link to it another " +
+                     $"way: the entity itself, or a manager's handle (`Retained[{entity.ShortTypeName}]`).",
             location: call.Location);
     }
 

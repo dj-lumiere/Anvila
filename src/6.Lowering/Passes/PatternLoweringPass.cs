@@ -154,9 +154,12 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         if (subjectType is { } tokenType && Declaration.RuntimeContract.AccessTokenTypes.Contains(item: tokenType.BareName) &&
             Verification.Wrappers.GetWrapperInnerType(wrapperType: tokenType) is { } reached)
         {
-            string reach = tokenType.BareName is Declaration.RuntimeContract.Viewing
-                ? Declaration.RuntimeContract.Access
-                : Declaration.RuntimeContract.Control;
+            // A value that holds an entity (`Box?` from a `List[Box?]`) is never copied, so it is read in its place.
+            string reach = reached is RecordTypeSymbol and not VariantTypeSymbol && ctx.Registry.IsEntityKind(type: reached)
+                ? Declaration.RuntimeContract.ReadInPlace
+                : tokenType.BareName is Declaration.RuntimeContract.Viewing
+                    ? Declaration.RuntimeContract.Access
+                    : Declaration.RuntimeContract.Control;
             RoutineInfo? reachRoutine = ctx.Registry.LookupMemberRoutine(type: tokenType, memberRoutineName: reach);
             var read = new CallExpression(
                 Callee: new MemberExpression(Object: s.Expression, MemberName: reach, Location: s.Location),

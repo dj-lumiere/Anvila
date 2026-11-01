@@ -309,8 +309,11 @@ public sealed partial class SemanticVerifier
             }
 
             // An entity the program stamps ends its slot right after the hollow check: every stamp of it fails from
-            // there on (the derived destruct does the same, Derivation.rf).
-            if (routineInfo is { Name: "destruct", OwnerType: EntityTypeSymbol { KeepsStamp: true } } &&
+            // there on (the derived destruct does the same, Derivation.rf). Every entity type of the program gets the
+            // call: whether it keeps a slot is known only once every body is analyzed (a `stamp()` whose type is
+            // inferred gives one), and `release_stamp` asks `keeps_stamp()`, which the builder answers after that.
+            if (routineInfo is { Name: "destruct", OwnerType: EntityTypeSymbol { Location.FileName: { } entityFile } } &&
+                !_registry.Rules.EntitiesAreShared && IsProgramFile(filePath: entityFile) &&
                 !destructBody.Statements.Any(predicate: IsStampRelease))
             {
                 destructBody.Statements.Insert(index: 1, item: StampRelease(location: destructBody.Location));

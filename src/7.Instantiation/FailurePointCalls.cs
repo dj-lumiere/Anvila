@@ -89,6 +89,11 @@ internal static class FailurePointCalls
     /// </summary>
     public static CallExpression? ForIndex(IndexExpression idx, TypeRegistry registry)
     {
+        if (ForElementToken(idx: idx, registry: registry) is { } token)
+        {
+            return token;
+        }
+
         if (idx.ResolvedGetItem is not { } getItem || !CanFail(routine: getItem) || idx.ReadsElementToken ||
             idx.ResolvedType is null or EntityTypeSymbol || idx.Object.ResolvedType is null ||
             idx.Index is RangeExpression or BackIndexExpression ||
@@ -116,6 +121,59 @@ internal static class FailurePointCalls
             ],
             routine: getItem,
             resultType: idx.ResolvedType,
+            location: idx.Location);
+    }
+
+    /// <summary>
+    /// <c>xs.modify_at(index: i)</c> / <c>d.view_at(key: k)</c> for an entity element, which is reached through a token
+    /// on it (<c>var b = me.boxes[key]</c>, <c>me.boxes[key].n</c>), the same call OperatorLoweringPass makes of it
+    /// outside a recovery. The accessor is failable (an index out of range, a missing key), so built here it passes
+    /// its failure on like any failable call in the body. A token read takes the token's own kind, a path through the
+    /// element a write token (analysis already checked what the path may do). Null for any other subscript, or a
+    /// container with no such accessor.
+    /// </summary>
+    private static CallExpression? ForElementToken(IndexExpression idx, TypeRegistry registry)
+    {
+        bool reachesEntity = idx.ReadsElementToken || idx.ResolvedType is EntityTypeSymbol;
+        if (!reachesEntity || idx.Object.ResolvedType is not { } containerType ||
+            idx.Index is RangeExpression or BackIndexExpression || idx.Index.ResolvedType is not { } indexType ||
+            indexType is RecordTypeSymbol { GenericDefinition.Name: "Range" })
+        {
+            return null;
+        }
+
+        // Through a token on the container the accessor is the container's own.
+        if (containerType.BareName is RuntimeContract.Viewing or RuntimeContract.Modifying &&
+            containerType.TypeArguments is [{ } tokenInner])
+        {
+            containerType = tokenInner;
+        }
+
+        string accessor = idx.ReadsElementToken && idx.ResolvedType?.BareName is RuntimeContract.Viewing
+            ? "view_at"
+            : "modify_at";
+        if (registry.LookupMemberRoutineOverload(type: containerType, memberRoutineName: accessor, argTypes: [indexType])
+            is not { } routine || !CanFail(routine: routine) || routine.Parameters.Count != 1)
+        {
+            return null;
+        }
+
+        TypeSymbol slot = routine.Parameters[index: 0].Type;
+        bool byToken = Declaration.ImplicitToken.IsTokenParameter(parameter: slot, tokenKind: out _, target: out _) &&
+                       indexType.BareName != slot.BareName && indexType is not EntityTypeSymbol;
+        Expression key = byToken
+            ? new AddressOfExpression(Target: idx.Index, Location: idx.Location) { ResolvedType = slot }
+            : CountedIndex(index: idx.Index, getItem: routine, registry: registry) ?? idx.Index;
+        return MemberCall(receiver: idx.Object,
+            memberName: accessor,
+            arguments:
+            [
+                new NamedArgumentExpression(Name: routine.Parameters[index: 0].Name,
+                    Value: key,
+                    Location: idx.Location) { ResolvedType = key.ResolvedType ?? indexType }
+            ],
+            routine: routine,
+            resultType: routine.ReturnType ?? idx.ResolvedType,
             location: idx.Location);
     }
 

@@ -888,8 +888,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
 
         TypeSymbol? t = v.Type?.ResolvedType ?? v.Initializer?.ResolvedType;
         if (t != null && !_movedNames.Contains(item: v.Name) && !IsUsingBinding(v: v) &&
-            !IsViewBinding(v: v) && TryResolveDestroy(type: t, destroy: out RoutineInfo? d) &&
-            d != null)
+            !IsViewBinding(v: v) && !IsLoopElementEntityPart(v: v, type: t) &&
+            TryResolveDestroy(type: t, destroy: out RoutineInfo? d) && d != null)
         {
             live.Add(item: new Owned(Name: v.Name, Type: t, Destroy: d,
                 MayBeEmpty: _refillable.Contains(item: v.Name)));
@@ -1518,6 +1518,20 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     /// holds an entity (<c>when try make_part()</c> holds a <c>Optional[Part]</c>). An entity, a plain value record,
     /// or a scalar is left alone, as <see cref="TemporaryTeardownPass"/> does for the temporaries it spills.
     /// </summary>
+    /// <summary>
+    /// True for a name a <c>for</c> loop's tuple pattern binds to an entity part of the round's element
+    /// (<c>for (k, v) in d</c> over a <c>Dict[S64, Box]</c> lowers to <c>var v = _lf_elem_N.item1</c>). An entity is
+    /// not copied, so the name reaches the same entity the element holds, and the container (or, in a walk that hands
+    /// its elements over, the element itself) still ends it. Tearing the name down too ended the entity once per round
+    /// and again with its container. A record part is copied (a share) and stays torn down as any local.
+    /// </summary>
+    private bool IsLoopElementEntityPart(VariableDeclaration v, TypeSymbol type)
+    {
+        return v is { IsLoopVariable: true, Initializer: MemberExpression { Object: IdentifierExpression } } &&
+               type is EntityTypeSymbol &&
+               !ctx.Registry.EntitiesAreSharedIn(filePath: v.Location?.FileName);
+    }
+
     private void RegisterLateDeclaration(VariableDeclaration v, List<Owned> live)
     {
         // What a source emitter gave an adapter is the adapter's own only when that emitter hands its items over.
@@ -1983,6 +1997,17 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                 Right: IdentifierExpression { IsSynthesizedTeardownTemp: true } rhs2
             }:
                 _movedNames.Add(item: rhs2.Name);
+                break;
+            // `left = steal node` in operator-expression form (the shape a recovery variant's body keeps once the
+            // `steal` is gone): an entity is never copied by `=`, so the source moves into the target whatever form the
+            // assignment takes.
+            case BinaryExpression
+            {
+                Operator: BinaryOperator.Assign,
+                Left: IdentifierExpression,
+                Right: IdentifierExpression { ResolvedType: EntityTypeSymbol } movedEntity
+            } entityAssign when !ctx.Registry.EntitiesAreSharedIn(filePath: entityAssign.Location?.FileName):
+                _movedNames.Add(item: movedEntity.Name);
                 break;
             // `me.storage = moved` into a counted-handle field in Suflae: the write takes no extra hold
             // (RecordCopyLoweringPass leaves an RC field's right-hand side as it is there, the entity lowering already

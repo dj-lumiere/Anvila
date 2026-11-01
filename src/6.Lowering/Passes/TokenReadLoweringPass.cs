@@ -188,6 +188,48 @@ internal sealed class TokenReadLoweringPass(PostprocessingContext ctx) : AstRewr
             : chain with { Operands = operands };
     }
 
+    /// <summary>
+    /// A construction takes each member variable's value as the member variable's type wants it: a token on a
+    /// record given for a member that is not a token (<c>Creature(parent: at)</c> with <c>at</c> a <c>for</c>
+    /// element over a <c>List[Stamped[Creature]]</c> and <c>parent: Stamped[Creature]?</c>) is read through, so the
+    /// member keeps the value and not the token's address.
+    /// </summary>
+    protected override Expression VisitCreator(CreatorExpression e)
+    {
+        Expression visited = base.VisitCreator(e: e);
+        if (visited is not CreatorExpression creator)
+        {
+            return visited;
+        }
+
+        List<MemberVariableInfo>? fields = (creator.ConstructedType ?? creator.ResolvedType) switch
+        {
+            RecordTypeSymbol record => record.MemberVariables,
+            EntityTypeSymbol entity => entity.MemberVariables,
+            _ => null
+        };
+        if (fields == null)
+        {
+            return visited;
+        }
+
+        bool changed = false;
+        var members = new List<(string Name, Expression Value)>(capacity: creator.MemberVariables.Count);
+        foreach ((string name, Expression value) in creator.MemberVariables)
+        {
+            TypeSymbol? fieldType = fields.FirstOrDefault(predicate: f => f.Name == name)?.Type;
+            Expression read = fieldType == null || fieldType is GenericParameterTypeSymbol
+                ? value
+                : ReadAs(expr: value, target: fieldType);
+            changed |= !ReferenceEquals(objA: read, objB: value);
+            members.Add(item: (name, read));
+        }
+
+        return changed
+            ? creator with { MemberVariables = members }
+            : visited;
+    }
+
     protected override Expression VisitIndex(IndexExpression e)
     {
         Expression visited = base.VisitIndex(e: e);
