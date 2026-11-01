@@ -334,6 +334,15 @@ public static class RuntimeContract
     /// <remarks>Sites: SemanticVerifier.Stamps (NoteStampedTypes), SemanticVerifier.Helpers.Access (CheckStampHasSlot).</remarks>
     public const string StampedTypeName = "Stamped";
 
+    /// <summary><c>Stamped[T].same_entity</c> (Stamped.rf): what <c>a === b</c> on two stamps runs, the same slot and
+    /// generation. A stamp is a value of eight bytes, so the builder compares both fields instead of one address.</summary>
+    /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
+    public const string StampSameEntity = "same_entity";
+
+    /// <summary><c>Stamped[T].other_entity</c> (Stamped.rf): what <c>a !== b</c> on two stamps runs.</summary>
+    /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
+    public const string StampOtherEntity = "other_entity";
+
     /// <summary>BuilderQuery: whether an entity type keeps a stamp slot (<c>Stamped[T]</c>).</summary>
     public const string KeepsStamp = "keeps_stamp";
 

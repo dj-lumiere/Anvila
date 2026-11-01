@@ -728,7 +728,17 @@ public sealed partial class SemanticVerifier
     private static bool IsIdentityComparable(TypeSymbol type)
     {
         return type is EntityTypeSymbol || type.BareName == Declaration.RuntimeContract.Addr ||
-               Declaration.RuntimeContract.IdentityComparableWrapperTypes.Contains(item: type.BareName);
+               Declaration.RuntimeContract.IdentityComparableWrapperTypes.Contains(item: type.BareName) ||
+               IsStampOperand(type: type);
+    }
+
+    /// <summary>Whether an identity operand is a <c>Stamped[E]</c>, or a token on one (a <c>for</c> element over a list of
+    /// stamps): a link to an entity, which <c>===</c> compares by the entity it names.</summary>
+    internal static bool IsStampOperand(TypeSymbol? type)
+    {
+        return type?.BareName == Declaration.RuntimeContract.StampedTypeName ||
+               type?.BareName is Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying &&
+               type.TypeArguments is [{ BareName: Declaration.RuntimeContract.StampedTypeName }];
     }
 
     /// <summary>Reports RF-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>

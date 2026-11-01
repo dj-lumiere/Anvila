@@ -1356,6 +1356,42 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     /// other LHS keeps its outer shape with only its interior lowered; for all others, lowers both
     /// operands normally. Extracted from <see cref="LowerBinaryExpression"/>.
     /// </summary>
+    /// <summary>
+    /// <c>a === b</c> on two stamps: <c>a.same_entity(you: b)</c>, and <c>a !== b</c>: <c>a.other_entity(you: b)</c>.
+    /// A stamp is a value (a slot and its generation), not an address, so its two fields are compared. A token on a
+    /// stamp (a <c>for</c> element) is read by TokenReadLoweringPass first. Null for any other operands.
+    /// </summary>
+    private Expression? LowerStampIdentity(BinaryExpression bin, Expression left, Expression right)
+    {
+        string routineName = bin.Operator == BinaryOperator.IdentityEqual
+            ? Declaration.RuntimeContract.StampSameEntity
+            : Declaration.RuntimeContract.StampOtherEntity;
+        if (left.ResolvedType is not { BareName: Declaration.RuntimeContract.StampedTypeName } stampType ||
+            ctx.Registry.LookupMemberRoutineOverload(type: stampType,
+                memberRoutineName: routineName,
+                argTypes: [right.ResolvedType ?? stampType]) is not { } compare)
+        {
+            return null;
+        }
+
+        string paramName = compare.Parameters.FirstOrDefault(predicate: p => p.Name != "me")?.Name ?? "you";
+        return new CallExpression(
+            Callee: new MemberExpression(Object: left, MemberName: routineName, Location: bin.Location),
+            Arguments:
+            [
+                new NamedArgumentExpression(Name: paramName, Value: right, Location: right.Location)
+                {
+                    ResolvedType = right.ResolvedType
+                }
+            ],
+            Location: bin.Location)
+        {
+            ResolvedRoutine = compare,
+            ResolvedType = bin.ResolvedType,
+            LoweringKind = ClassifyCallLoweringKind(routine: compare, receiverType: stampType)
+        };
+    }
+
     private Expression LowerNonOverloadableBinary(Expression expr, BinaryExpression bin)
     {
         if (bin.Operator == BinaryOperator.Assign)
@@ -1381,6 +1417,12 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
 
         Expression left0 = VisitExpression(expr: bin.Left);
         Expression right0 = VisitExpression(expr: bin.Right);
+        if (bin.Operator is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual &&
+            LowerStampIdentity(bin: bin, left: left0, right: right0) is { } sameEntity)
+        {
+            return sameEntity;
+        }
+
         return ReferenceEquals(objA: left0, objB: bin.Left) &&
                ReferenceEquals(objA: right0, objB: bin.Right)
             ? expr

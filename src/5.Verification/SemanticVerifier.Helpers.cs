@@ -2181,6 +2181,27 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
+    /// RF-S061 for <c>==</c> / <c>!=</c> on a <c>Stamped[E]</c>: a stamp names an entity, so two compare by identity
+    /// (<c>===</c> / <c>!==</c>, the same entity), and a stamp has no value equality and no hash. Returns whether it
+    /// reported one.
+    /// </summary>
+    private bool ReportStampEquality(TypeSymbol left, TypeSymbol right, BinaryOperator op, SourceLocation location)
+    {
+        if (op is not (BinaryOperator.Equal or BinaryOperator.NotEqual) ||
+            !IsStampOperand(type: left) && !IsStampOperand(type: right))
+        {
+            return false;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.OrderingNotSupported,
+            message: $"'{op.ToStringRepresentation()}' compares two values, and a 'Stamped' names an entity. Ask whether " +
+                     $"two stamps name the same entity with '{(op == BinaryOperator.Equal ? "===" : "!==")}'. To group " +
+                     "entities in a 'Set' or a 'Dict', key them on a number your program gives each one.",
+            location: location);
+        return true;
+    }
+
+    /// <summary>
     /// Reports an operator on an <c>Addr</c> operand that addresses don't have, pointing at what is written instead: an
     /// address names a place, so two are compared by identity (<c>===</c> / <c>!==</c>), it moves by a
     /// <c>ByteSize</c> with <c>+%</c> / <c>-%</c>, and <c>b -% a</c> is the distance from <c>a</c> to <c>b</c>. It has
@@ -2188,6 +2209,11 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private bool ReportAddressOperator(TypeSymbol left, TypeSymbol right, BinaryOperator op, SourceLocation location)
     {
+        if (ReportStampEquality(left: left, right: right, op: op, location: location))
+        {
+            return true;
+        }
+
         string addr = Declaration.RuntimeContract.Addr;
         if (left.BareName != addr && right.BareName != addr ||
             op is BinaryOperator.IdentityEqual or BinaryOperator.IdentityNotEqual or BinaryOperator.Assign or
