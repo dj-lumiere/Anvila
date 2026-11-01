@@ -183,6 +183,17 @@ public sealed partial class SemanticVerifier
         }
 
         TypeSymbol result = AnalyzeCallExpressionCore(call: call, expectedType: expectedType);
+        // Nothing that changes comes out of a `Viewing`: a write token a routine hands out on a viewed place
+        // (`links[0].target.fetch()`, a stamp read where it is in a view) is a read token of the same value.
+        if (result is { BareName: Declaration.RuntimeContract.Modifying, TypeArguments: [var reached] } &&
+            call.Callee is MemberExpression { Object: var viewedReceiver } && IsViewedHere(expression: viewedReceiver))
+        {
+            result = _registry.GetOrCreateWrapperType(wrapperName: Declaration.RuntimeContract.Viewing,
+                innerType: reached,
+                isReadOnly: true);
+            call.ResolvedType = result;
+        }
+
         EnforceUnsafeCallAllowed(resolved: call.ResolvedRoutine, builderWritten: call.IsSynthesizedLowering, location: call.Location);
         if (call is { IsInfix: true, Callee: MemberExpression infix, ResolvedRoutine: { } called } &&
             !DeclaredWith(routine: called, annotation: "infix"))

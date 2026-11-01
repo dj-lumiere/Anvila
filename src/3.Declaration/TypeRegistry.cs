@@ -2949,6 +2949,19 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
+    /// What a wrapper forwarder returns when the routine it forwards to returns <paramref name="innerReturn"/>. Nothing
+    /// that changes comes out of a <c>Viewing</c>: a write token the routine hands out (<c>Stamped[T].fetch()</c>
+    /// through a viewed stamp) is handed out as a read token of the same value.
+    /// </summary>
+    public TypeSymbol? ForwardedReturnType(TypeSymbol wrapper, TypeSymbol? innerReturn)
+    {
+        return wrapper.BareName == RuntimeContract.Viewing &&
+               innerReturn is { TypeArguments: [var reached] } && innerReturn.BareName == RuntimeContract.Modifying
+            ? GetOrCreateWrapperType(wrapperName: RuntimeContract.Viewing, innerType: reached, isReadOnly: true)
+            : innerReturn;
+    }
+
+    /// <summary>
     /// Gets or creates a synthesized wrapper type (Modifying, Viewing).
     /// These are builder-intrinsic types that don't need to be defined in the program.
     /// </summary>
@@ -3378,12 +3391,13 @@ public sealed partial class TypeRegistry
     public bool DeclareVariable(string name, TypeSymbol type, bool isPreset = false,
         Expression? presetValue = null, bool isNullable = false, bool isGlobal = false,
         SourceLocation? location = null, bool isParameter = false, bool isReadOnly = false, string? module = null,
-        bool isLoopVariable = false)
+        bool isLoopVariable = false, bool isViewedBinding = false)
     {
         var variable = new VariableInfo(name: name, type: type)
         {
             Module = module,
             IsLoopVariable = isLoopVariable,
+            IsViewedBinding = isViewedBinding,
             // A routine-local `preset` is read-only without being a module preset (no inlined value).
             IsModifiable = !isPreset && !isReadOnly,
             IsPreset = isPreset,

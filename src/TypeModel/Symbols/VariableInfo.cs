@@ -40,6 +40,10 @@ public sealed class VariableInfo
     /// <summary>Whether a <c>for</c> loop binds this name to each round's element: the body may not assign it.</summary>
     public bool IsLoopVariable { get; init; }
 
+    /// <summary>A name a <c>when</c> over a viewed place bound: it reads the value where it is in the view, so it is
+    /// viewed too (what is reached through it can't be changed).</summary>
+    public bool IsViewedBinding { get; init; }
+
     /// <summary>Whether the variable holds a routine value from a dangerous routine: a local given one, or a
     /// <c>Callable</c> parameter of a dangerous routine. Calling it is dangerous, and it goes only where a dangerous
     /// routine's value may (see SemanticVerifier.DangerousCallables).</summary>

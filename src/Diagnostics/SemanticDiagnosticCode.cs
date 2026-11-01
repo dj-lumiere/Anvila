@@ -927,6 +927,11 @@ public enum SemanticDiagnosticCode
     /// program that its source writes as <c>Stamped[...]</c>'s argument.</summary>
     StampOfTypeWithoutSlot = 656,
 
+    /// <summary>A value that holds a way to change an entity (a <c>Stamped</c>, a manager handle, a write token, or a
+    /// record, tuple or variant with such a member variable) copied out of a <c>Viewing</c>. A view promises that
+    /// nothing reachable from it can be changed, so such a value is read in place there.</summary>
+    ViewedValueHoldsWayToChange = 657,
+
     /// <summary>A binding from outside an <c>if</c>, a <c>when</c> or a loop is taken with <c>steal</c> on some paths
     /// that go on past it and kept on others (or taken inside a loop, so it is gone on the next turn): what a scope
     /// holds is torn down at its end by one rule, with no hidden flag remembering which path ran.</summary>

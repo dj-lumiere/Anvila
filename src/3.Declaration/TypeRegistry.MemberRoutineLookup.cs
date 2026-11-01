@@ -3045,7 +3045,7 @@ public sealed partial class TypeRegistry
                 Kind = memberRoutine.Kind,
                 OwnerType = resolvedOwner,
                 Parameters = fwdParams,
-                ReturnType = concreteInnerMemberRoutine.ReturnType,
+                ReturnType = ForwardedReturnType(wrapper: resolvedOwner, innerReturn: concreteInnerMemberRoutine.ReturnType),
                 IsFailable = memberRoutine.IsFailable,
                 DeclaredMutation = memberRoutine.DeclaredMutation,
                 MutationCategory = memberRoutine.MutationCategory,

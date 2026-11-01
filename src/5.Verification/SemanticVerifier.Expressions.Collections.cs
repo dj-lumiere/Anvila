@@ -957,9 +957,11 @@ public sealed partial class SemanticVerifier
         TypeSymbol? resultType = null;
         bool hasElse = false;
 
+        bool viewedSubject = IsViewedHere(expression: when.Expression);
         foreach (WhenClause clause in when.Clauses)
         {
             _registry.EnterScope(kind: ScopeKind.Block, name: "when_clause");
+            _viewedWhenSubject = viewedSubject;
 
             // Analyze the pattern. `else as name` gives the name the one type left after the earlier arms.
             if (clause.Pattern is ElsePattern { VariableName: { } elseName } elsePat)
@@ -976,6 +978,8 @@ public sealed partial class SemanticVerifier
             {
                 AnalyzePattern(pattern: clause.Pattern, matchedType: matchedType);
             }
+
+            _viewedWhenSubject = false;
 
             // Check for else clause
             if (clause.Pattern is WildcardPattern or ElsePattern)

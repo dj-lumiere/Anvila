@@ -389,7 +389,7 @@ internal sealed class WrapperForwardingPass
             Kind = RoutineKind.MemberRoutine,
             OwnerType = wrapperDef,
             Parameters = forwarderParameters,
-            ReturnType = forwarderReturnType,
+            ReturnType = _registry.ForwardedReturnType(wrapper: wrapperDef, innerReturn: forwarderReturnType),
             // A Roamed forwarder calls its inner routine plainly (the when-re-propagation body a failable one would
             // need has its crash_message reachability-pruned), so a failure inside stops where it happens.
             IsFailable = innerMemberRoutine.IsFailable && wrapperDef.BareName != RuntimeContract.Roamed,

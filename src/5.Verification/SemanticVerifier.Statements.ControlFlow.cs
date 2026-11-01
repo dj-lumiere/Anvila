@@ -559,6 +559,7 @@ public sealed partial class SemanticVerifier
         CheckWhenDuplicatePatterns(whenStmt: whenStmt);
         CheckWhenSharedEntityRef(whenStmt: whenStmt, matchedType: matchedType);
 
+        bool viewedSubject = IsViewedHere(expression: whenStmt.Expression);
         string? whenVarName = (whenStmt.Expression as IdentifierExpression)?.Name;
         VariantTypeSymbol? whenVariant =
             whenVarName != null && matchedType is VariantTypeSymbol wv &&
@@ -616,7 +617,8 @@ public sealed partial class SemanticVerifier
                     WhenVariant: whenVariant,
                     HandledArms: handledArms,
                     ViewingElement: viewingElement,
-                    ForStep: whenStmt.IsForStep),
+                    ForStep: whenStmt.IsForStep,
+                    ViewedSubject: viewedSubject),
                 handledNone: ref handledNone,
                 handledNoneValue: ref handledNoneValue,
                 handledCrashable: ref handledCrashable,
@@ -720,7 +722,8 @@ public sealed partial class SemanticVerifier
         VariantTypeSymbol? WhenVariant,
         List<string> HandledArms,
         bool ViewingElement = false,
-        bool ForStep = false);
+        bool ForStep = false,
+        bool ViewedSubject = false);
 
     private bool AnalyzeWhenClause(WhenClause clause, TypeSymbol matchedType,
         IEnumerable<WhenClause> priorClauses, WhenClauseContext ctx, ref bool handledNone, ref bool handledNoneValue,
@@ -736,6 +739,7 @@ public sealed partial class SemanticVerifier
             handledNoneValue: ref handledNoneValue,
             handledCrashable: ref handledCrashable);
 
+        _viewedWhenSubject = ctx.ViewedSubject;
         if (clause.Pattern is ElsePattern { VariableName: { } elseName } elsePat)
         {
             // The name has the one type left after the earlier arms. On a `Check`, when that is the caught error,
@@ -754,12 +758,14 @@ public sealed partial class SemanticVerifier
                         : rest,
                 location: elsePat.Location,
                 isLoopVariable: ctx.ForStep);
+            _viewedWhenSubject = false;
             AnalyzeStatement(statement: clause.Body);
             _registry.ExitScope();
             return true;
         }
 
         AnalyzePattern(pattern: clause.Pattern, matchedType: matchedType);
+        _viewedWhenSubject = false;
         if (IsCarrierValueArm(pattern: clause.Pattern, carrierType: matchedType))
         {
             handledValue = true;

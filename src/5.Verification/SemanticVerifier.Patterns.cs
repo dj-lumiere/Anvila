@@ -15,6 +15,17 @@ public sealed partial class SemanticVerifier
 {
     #region Pattern Analysis
 
+    /// <summary>Whether the <c>when</c> being analyzed matches a value read from a viewed place, so the names its
+    /// patterns bind read it there (see <see cref="ViewedValues"/>).</summary>
+    private bool _viewedWhenSubject;
+
+    /// <summary>Whether <paramref name="expression"/> is read from a viewed place, with the names viewed bindings give.</summary>
+    private bool IsViewedHere(Expression? expression)
+    {
+        return _registry.Rules.ChecksAccessTokens && ViewedValues.IsViewed(expression: expression,
+            isViewedName: name => _registry.CurrentScope.LookupVariable(name: name)?.IsViewedBinding == true);
+    }
+
     /// <summary>
     /// Declares a pattern binding variable, checking for shadowing of variables in outer scopes.
     /// </summary>
@@ -33,7 +44,8 @@ public sealed partial class SemanticVerifier
 
         // Still declare the variable even if shadowing, to avoid cascading errors. A new binding of a name holds a
         // value again, whatever an earlier `steal` did to a variable of that name.
-        _registry.DeclareVariable(name: name, type: type, location: location, isLoopVariable: isLoopVariable);
+        _registry.DeclareVariable(name: name, type: type, location: location, isLoopVariable: isLoopVariable,
+            isViewedBinding: _viewedWhenSubject);
         _deadrefVariables.Remove(item: name);
     }
 
