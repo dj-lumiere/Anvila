@@ -2630,7 +2630,7 @@ internal static class GenericAstRewriter
 
             RuntimeContract.StampSlotOffset when s64Type != null => new LiteralExpression(
                 Value: (long)(typeInfo is EntityTypeSymbol { KeepsStamp: true } stamped
-                    ? stamped.StampSlotOffset(pointerSize: EntityTypeSymbol.StampPointerSize)
+                    ? stamped.StampSlotOffset(pointerSize: stamped.StampPointerSize)
                     : -1),
                 LiteralType: TokenType.S64Literal,
                 Location: location) { ResolvedType = s64Type },

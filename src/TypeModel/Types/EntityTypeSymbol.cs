@@ -82,21 +82,28 @@ public class EntityTypeSymbol : TypeSymbol
     }
 
     /// <summary>
-    /// The user entity types whose source writes <c>Stamped[Name]</c>, as <c>Module.BareName</c>: set at the start of
-    /// each build's analysis (<c>SemanticVerifier.NoteStampedTypes</c>). Only they keep a stamp slot, so every other
-    /// entity keeps its layout.
-    /// </summary>
-    public static HashSet<string> StampedTypes { get; set; } = new(comparer: StringComparer.Ordinal);
-
-    /// <summary>The target's pointer size in bytes, set with <see cref="StampedTypes"/>: the stamp slot's offset.</summary>
-    public static int StampPointerSize { get; set; } = 8;
-
-    /// <summary>
     /// Whether this entity keeps a slot of the stamp table (<c>Stamped[T]</c>): eight bytes after its member variables
     /// (the slot and the slot's generation, so a later <c>stamp()</c> reads only the entity), zero until its first
-    /// <c>stamp()</c>, ended by its <c>destruct</c>.
+    /// <c>stamp()</c>, ended by its <c>destruct</c>. Set on a user entity type whose program writes it as
+    /// <c>Stamped[...]</c>'s argument (<c>SemanticVerifier.NoteStampedTypes</c>), and an instance of a generic entity
+    /// keeps its definition's. Every other entity keeps its layout.
     /// </summary>
-    public bool KeepsStamp => StampedTypes.Count > 0 && StampedTypes.Contains(item: $"{Module}.{BareName}");
+    public bool KeepsStamp
+    {
+        get => _keepsStamp || GenericDefinition is { KeepsStamp: true };
+        set => _keepsStamp = value;
+    }
+
+    private bool _keepsStamp;
+
+    /// <summary>The target's pointer size in bytes, set with <see cref="KeepsStamp"/>: the stamp slot's offset.</summary>
+    public int StampPointerSize
+    {
+        get => GenericDefinition is { _keepsStamp: true } definition ? definition._stampPointerSize : _stampPointerSize;
+        set => _stampPointerSize = value;
+    }
+
+    private int _stampPointerSize = 8;
 
     /// <summary>The byte offset of the stamp slot in the entity's block: right after the member variables.</summary>
     public int StampSlotOffset(int pointerSize)

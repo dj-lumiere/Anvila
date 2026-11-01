@@ -1084,7 +1084,7 @@ public sealed partial class SemanticVerifier
         if (_registry.Rules.EntitiesAreShared ||
             call is not { Callee: MemberExpression { MemberName: "stamp", Object.ResolvedType: EntityTypeSymbol entity } } ||
             call.Arguments.Count != 0 || entity.KeepsStamp || entity.IsGenericDefinition ||
-            call.ResolvedRoutine is not { Name: "stamp", ReturnType.BareName: "Stamped" } routine ||
+            call.ResolvedRoutine is not { Name: "stamp", ReturnType.BareName: Builder.Declaration.RuntimeContract.StampedTypeName } routine ||
             routine.Module?.StartsWith(value: "System", comparisonType: StringComparison.Ordinal) != true ||
             !IsProgramFile(filePath: call.Location.FileName))
         {

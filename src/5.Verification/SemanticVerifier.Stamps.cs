@@ -1,4 +1,5 @@
-using System.Text.RegularExpressions;
+using SyntaxTree;
+using Builder.Declaration;
 using TypeModel.Enums;
 using TypeModel.Types;
 
@@ -9,69 +10,52 @@ namespace Builder.Verification;
 // in the program's own files get them: every other entity keeps its layout.
 public sealed partial class SemanticVerifier
 {
-    private static readonly Regex StampedArgument = new(pattern: @"Stamped\[\s*([A-Za-z_][A-Za-z0-9_]*)",
-        options: RegexOptions.Compiled);
-
     /// <summary>
-    /// Finds the user entity types the program's files write as <c>Stamped[...]</c>'s first argument, after their
-    /// declarations are collected, and records them for <see cref="EntityTypeSymbol.KeepsStamp"/>. An analysis of
-    /// standard library files alone keeps the build's set. A name in a comment, or one that isn't a user entity, costs
-    /// nothing. Suflae has no stamps.
+    /// Finds the user entity types the program's files write as <c>Stamped[...]</c>'s first argument (any type written
+    /// in a declaration, a signature or a body), after their declarations are collected, and marks them
+    /// <see cref="EntityTypeSymbol.KeepsStamp"/>. The mark is on each analysis's own symbols, so builds running side by
+    /// side in one process (the daemon, the test harness) never see each other's. An analysis of standard library files
+    /// alone marks nothing. Suflae has no stamps.
     /// </summary>
-    private void NoteStampedTypes(IEnumerable<string> filePaths)
+    private void NoteStampedTypes(IEnumerable<(Program Program, string FilePath)> files)
     {
-        var user = new HashSet<string>(collection: filePaths.Where(predicate: f => !_registry.IsStandardLibraryFile(filePath: f)),
-            comparer: StringComparer.OrdinalIgnoreCase);
-        if (user.Count == 0)
+        var userFiles = files.Where(predicate: f => !_registry.IsStandardLibraryFile(filePath: f.FilePath)).ToList();
+        if (userFiles.Count == 0)
         {
             return;
         }
 
-        EntityTypeSymbol.StampPointerSize = _target.PointerBitWidth / 8;
+        var user = new HashSet<string>(collection: userFiles.Select(selector: f => f.FilePath),
+            comparer: StringComparer.OrdinalIgnoreCase);
         var names = new HashSet<string>(comparer: StringComparer.Ordinal);
         if (_registry.Language != Language.Suflae)
         {
-            foreach (string file in user)
+            foreach ((Program program, string _) in userFiles)
             {
-                string text;
-                try
-                {
-                    text = File.ReadAllText(path: file);
-                }
-                catch (IOException)
-                {
-                    continue;
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    continue;
-                }
-
-                if (!text.Contains(value: "Stamped[", comparisonType: StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                foreach (Match m in StampedArgument.Matches(input: text))
-                {
-                    names.Add(item: m.Groups[groupnum: 1].Value);
-                }
+                AstWalker.Walk(root: program,
+                    visit: node =>
+                    {
+                        if (node is TypeExpression
+                            {
+                                Name: RuntimeContract.StampedTypeName, GenericArguments: [var stampedOf, ..]
+                            })
+                        {
+                            names.Add(item: stampedOf.Name);
+                        }
+                    });
             }
         }
 
-        var stamped = new HashSet<string>(comparer: StringComparer.Ordinal);
-        if (names.Count > 0)
+        int pointerSize = _target.PointerBitWidth / 8;
+        foreach (TypeSymbol t in _registry.GetAllTypes())
         {
-            foreach (TypeSymbol t in _registry.GetAllTypes())
+            if (t is EntityTypeSymbol entity && entity.Location?.FileName is { } declaredIn &&
+                user.Contains(item: declaredIn))
             {
-                if (t is EntityTypeSymbol entity && names.Contains(item: entity.BareName) &&
-                    entity.Location?.FileName is { } declaredIn && user.Contains(item: declaredIn))
-                {
-                    stamped.Add(item: $"{entity.Module}.{entity.BareName}");
-                }
+                entity.KeepsStamp = names.Contains(item: entity.BareName) ||
+                                    names.Contains(item: $"{entity.Module}.{entity.BareName}");
+                entity.StampPointerSize = pointerSize;
             }
         }
-
-        EntityTypeSymbol.StampedTypes = stamped;
     }
 }

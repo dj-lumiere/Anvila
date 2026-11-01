@@ -630,7 +630,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
             case RuntimeContract.StampSlotOffset when _s64Type != null:
                 return MakeLiteralS64(value: type is EntityTypeSymbol { KeepsStamp: true } stamped
-                        ? stamped.StampSlotOffset(pointerSize: EntityTypeSymbol.StampPointerSize)
+                        ? stamped.StampSlotOffset(pointerSize: stamped.StampPointerSize)
                         : -1,
                     type: _s64Type,
                     loc: loc);

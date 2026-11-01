@@ -329,6 +329,11 @@ public static class RuntimeContract
     /// <remarks>Sites: BuilderInfoProvider, BuilderQueryInliningPass, GenericAstRewriter.</remarks>
     public const string DataSize = "data_size";
 
+    /// <summary>The standard library's <c>Stamped[T]</c> (System/Memory): an entity type written as its argument keeps a
+    /// stamp slot.</summary>
+    /// <remarks>Sites: SemanticVerifier.Stamps (NoteStampedTypes), SemanticVerifier.Helpers.Access (CheckStampHasSlot).</remarks>
+    public const string StampedTypeName = "Stamped";
+
     /// <summary>BuilderQuery: whether an entity type keeps a stamp slot (<c>Stamped[T]</c>).</summary>
     public const string KeepsStamp = "keeps_stamp";
 
