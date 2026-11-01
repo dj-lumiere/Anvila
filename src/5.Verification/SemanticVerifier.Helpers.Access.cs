@@ -1080,7 +1080,9 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckStampHasSlot(CallExpression call)
     {
-        if (call is not { Callee: MemberExpression { MemberName: "stamp", Object.ResolvedType: EntityTypeSymbol entity } } ||
+        // A language whose entities are shared handles has no `Stamped` (its library binds none, SF-S447 says so).
+        if (_registry.Rules.EntitiesAreShared ||
+            call is not { Callee: MemberExpression { MemberName: "stamp", Object.ResolvedType: EntityTypeSymbol entity } } ||
             call.Arguments.Count != 0 || entity.KeepsStamp || entity.IsGenericDefinition ||
             call.ResolvedRoutine is not { Name: "stamp", ReturnType.BareName: "Stamped" } routine ||
             routine.Module?.StartsWith(value: "System", comparisonType: StringComparison.Ordinal) != true ||
