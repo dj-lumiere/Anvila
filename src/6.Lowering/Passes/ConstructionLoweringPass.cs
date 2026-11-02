@@ -26,7 +26,7 @@ namespace Builder.Lowering.Passes;
 /// <para>A creator expression that names a <c>create</c> overload becomes the call of that overload, a
 /// creator expression that gives a backend-represented record its one value becomes a
 /// <see cref="BackendCastExpression"/>, and a creator of a variant (one arm and its value) or of a
-/// <c>Check</c>/<c>Lookup</c> carrier (its <c>type_id</c> and payload) becomes a
+/// <c>Check</c> carrier (its <c>type_id</c> and payload) becomes a
 /// <see cref="TaggedCreatorExpression"/>.</para>
 ///
 /// <para>Runs at Phase 9 over each body that reaches the emitter, after monomorphization, so every
@@ -161,7 +161,7 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
                          $"{creator.MemberVariables.Count} values, not one arm.");
         }
 
-        VariantMemberInfo arm = (variant.CarrierKind is CarrierKind.Result
+        VariantMemberInfo arm = (variant.CarrierKind is CarrierKind.Check
                                     ? CarrierArm(carrier: variant, armName: armName)
                                     : variant.Members.FirstOrDefault(predicate: m => m.Name == armName)) ??
                                 throw new InvalidOperationException(
@@ -179,9 +179,8 @@ internal sealed class ConstructionLoweringPass(TypeSymbol u64) : AstRewriter
     }
 
     /// <summary>
-    /// The arm of a <c>Check</c>/<c>Lookup</c> a carrier return names (<c>VariantReturnLoweringPass</c>), told apart by
-    /// type: <c>Crashables</c> is the error arm (a thrown crashable goes in it boxed, see the backends), a
-    /// <c>Lookup</c>'s <c>None</c> its absent arm, and the remaining one the success arm, whatever the carrier's
+    /// The arm of a <c>Check</c> a carrier return names (<c>VariantReturnLoweringPass</c>), told apart by
+    /// type: <c>Crashables</c> is the error arm (a thrown crashable goes in it boxed, see the backends), and the remaining one the success arm, whatever the carrier's
     /// <c>T</c> is (a <c>Check[None]</c>'s is a None, which is also what its <c>return none</c> names).
     /// </summary>
     private static VariantMemberInfo? CarrierArm(VariantTypeSymbol carrier, string armName)

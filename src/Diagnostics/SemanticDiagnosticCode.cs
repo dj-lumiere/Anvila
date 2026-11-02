@@ -1025,7 +1025,7 @@ public enum SemanticDiagnosticCode
     /// <summary>@crash_only annotation applied to a non-failable routine.</summary>
     CrashOnlyOnNonFailable = 757,
 
-    /// <summary>Result/Lookup stored in variable beyond immediate dismantling.</summary>
+    /// <summary>Check stored in variable beyond immediate dismantling.</summary>
     ErrorHandlingTypeStoredInVariable = 758,
 
     /// <summary>A <c>try</c>/<c>check</c> written over a call of a <c>@crash_only</c> routine, which
@@ -1152,7 +1152,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Suflae type inference falls back to Data.</summary>
     SuflaeDataFallback = 831,
 
-    /// <summary>Routine cannot directly return Optional&lt;T&gt;/Result&lt;T&gt;/Lookup&lt;T&gt; — use failable routines (!) instead.</summary>
+    /// <summary>Routine cannot directly return Optional/Check — use failable routines (!) instead.</summary>
     ErrorHandlingTypeAsReturnType = 806,
 
     ///<summary>Nested Optional types (Optional[Optional[T]] / T??) are not allowed.</summary>
@@ -1202,7 +1202,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Unknown <c>expand</c> source — not allmemvarof/openmemvarof/caseof/branchof.</summary>
     UnknownExpandSource = 953,
 
-    /// <summary>Bare entity type used as type argument to Optional/Result/Lookup. Wrap in Retained[T] or Guarded[T].</summary>
+    /// <summary>Bare entity type used as type argument to Optional/Check. Wrap in Retained[T] or Guarded[T].</summary>
     BareEntityInCarrierType = 961,
 
     /// <summary>Residual high-level AST node survived backend-entry lowering validation.</summary>

@@ -282,7 +282,20 @@ public static class RuntimeContract
     /// (<c>steal xs[i] as old inject fresh</c>).</summary>
     public const string Exchange = "exchange";
 
-    /// <summary>Carrier record field names on <c>Optional[T]</c>/<c>Result[T]</c>.</summary>
+    /// <summary>The value carrier that says only whether a value is there (<c>T?</c>).</summary>
+    public const string OptionalCarrier = "Optional";
+
+    /// <summary>The value carrier that gives one value or the reason it is absent (the error).</summary>
+    public const string CheckCarrier = "Check";
+
+    /// <summary>Whether <paramref name="bareName"/> names one of the two value carriers, <c>Optional</c> (a value is
+    /// there or not) and <c>Check</c> (one value or the reason it is absent).</summary>
+    public static bool IsValueCarrier(string? bareName)
+    {
+        return bareName is OptionalCarrier or CheckCarrier;
+    }
+
+    /// <summary>Carrier record field names on <c>Optional[T]</c>/<c>Check[T]</c>.</summary>
     /// <remarks>Sites: ExpressionLoweringPass (tuple synthesis), PatternLoweringPass, ErrorHandlingVariantPass,
     /// LlvmEmitter.Statements (field lookup).</remarks>
     public static class Carrier

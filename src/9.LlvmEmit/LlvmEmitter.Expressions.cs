@@ -602,7 +602,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Emits code for a <see cref="CarrierPayloadExpression"/>: loads the inline payload
-    /// (field 1 — a [P x i8] buffer where P = max(sizeof(T), 8)) from a Result/Lookup carrier
+    /// (field 1 — a [P x i8] buffer where P = max(sizeof(T), 8)) from a Check carrier
     /// as the concrete type.
     ///
     /// <list type="bullet">
@@ -614,7 +614,7 @@ public partial class LlvmEmitter
     /// </summary>
     /// <summary>
     /// A call, with the failure it gives kept: a call of a <c>check</c> variant (or anything that returns a
-    /// <c>Check</c>/<c>Lookup</c>) copies its failure out of the flow's mold into the carrier, except one the builder
+    /// <c>Check</c>) copies its failure out of the flow's mold into the carrier, except one the builder
     /// writes to pass the failure straight on (<see cref="CallExpression.IsFailurePassOn"/>).
     /// </summary>
     private string EmitCallKeepingFailure(StringBuilder sb, CallExpression call)
@@ -628,7 +628,7 @@ public partial class LlvmEmitter
         return EmitKeepFailure(sb: sb, value: value, carrier: call.ResolvedType!);
     }
 
-    /// <summary>Whether a call gives a <c>Check</c>/<c>Lookup</c> whose failure is copied out of the flow's mold where it
+    /// <summary>Whether a call gives a <c>Check</c> whose failure is copied out of the flow's mold where it
     /// lands: any call that returns one, except one the builder writes to pass the failure straight on.</summary>
     private static bool KeepsFailure(CallExpression call)
     {
@@ -669,7 +669,7 @@ public partial class LlvmEmitter
             return carrierVal;
         }
 
-        // Both a Result/Lookup/Optional carrier and a general user variant store their payload at field 1
+        // Both a Check/Optional carrier and a general user variant store their payload at field 1
         // ({ tag/flag, payload }); pick the right aggregate LLVM type for each.
         string carrierLlvmType =
             carrierType is VariantTypeSymbol variant && !IsCarrierType(type: carrierType)

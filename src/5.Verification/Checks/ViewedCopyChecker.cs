@@ -37,6 +37,20 @@ internal sealed class ViewedCopyChecker(DiagnosticReporter report)
     {
         switch (node)
         {
+            case RoutineDeclaration { ResolvedInfo: { } info } readOnly when ViewedValues.MeIsViewed(routine: info):
+                // The `me` of a `@readonly` routine is a viewed place like a `Viewing` parameter.
+                bool added = _viewedNames.Add(item: "me");
+                foreach (object child in AstWalker.EnumerateChildren(node: readOnly))
+                {
+                    Visit(node: child);
+                }
+
+                if (added)
+                {
+                    _viewedNames.Remove(item: "me");
+                }
+
+                return;
             case WhenStatement whenStatement:
                 Visit(node: whenStatement.Expression);
                 VisitClauses(subject: whenStatement.Expression, clauses: whenStatement.Clauses);
@@ -153,7 +167,11 @@ internal sealed class ViewedCopyChecker(DiagnosticReporter report)
         string root = ViewedValues.RootName(expression: value) ?? "the view";
         string what = name ?? Describe(value: value);
         bool bound = _viewedNames.Contains(item: root);
-        string message = bound
+        string message = root == "me"
+            ? $"'{what}' holds a way to change an entity ({way}), so it can't be copied out of 'me' in a '@readonly' " +
+              $"routine (nothing reachable from 'me' can be changed there). Read it where it is in '{Describe(value: value)}', " +
+              "or drop '@readonly' from the routine."
+            : bound
             ? $"'{what}' holds a way to change an entity ({way}), so it can't be copied: '{root}' reads a value inside " +
               "a 'Viewing' (nothing reachable from a view can be changed). Read it where it is, or take the " +
               "container the 'when' matches as 'Modifying'."

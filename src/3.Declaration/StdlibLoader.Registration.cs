@@ -2035,7 +2035,7 @@ public sealed partial class StdlibLoader
             : $"{moduleName}.{variant.Name}";
         if (registry.LookupType(name: qualifiedVariantName, realm: realm) is { } existing)
         {
-            // A shell registered ahead of the stdlib (Check, Lookup) gets its arms from the declaration.
+            // A shell registered ahead of the stdlib (Check) gets its arms from the declaration.
             if (existing is VariantTypeSymbol { Members.Count: 0 } shell)
             {
                 shell.Members = BuildVariantMembers(registry: registry, variant: variant, moduleName: moduleName);

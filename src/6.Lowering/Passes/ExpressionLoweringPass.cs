@@ -535,7 +535,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // `Outer` narrowed to `Inner` then to `Inner`'s arm `S32` yields Outer -> Inner -> S32
         // (each level a field-1 payload load).
         if (declared is VariantTypeSymbol variant && !IsMaybeRecord(type: declared) &&
-            !IsResultOrLookup(type: declared) &&
+            !IsCheck(type: declared) &&
             FindVariantArmPath(from: variant, target: target) is { } path)
         {
             Expression acc = rawRead();
@@ -547,7 +547,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return ([], acc);
         }
 
-        // Carrier (Optional/Result/Lookup): single-level payload extraction.
+        // Carrier (Optional/Check): single-level payload extraction.
         return ([], extractStep(carrier: rawRead(), step: target));
     }
 
@@ -1918,7 +1918,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         }
 
         string carrierName = LastNameSegment(name: varType.Name);
-        // Only Optional handled at this stage. Result/Lookup payloads need TypeLayoutPass
+        // Only Optional handled at this stage. Check payloads need TypeLayoutPass
         // to stamp byte sizes before their construction can be synthesized. The written `E?` of a
         // Suflae entity resolves to its nullable Roamed[E] handle, not to an Optional, so the resolved
         // type decides too: an entity handle is stored into an `E?` slot as it is.
@@ -2305,7 +2305,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 return (leftH, bin with { Left = loweredLeft });
             }
 
-            if (targetType is CrashableTypeSymbol crashable && IsResultOrLookup(type: loweredLeft.ResolvedType))
+            if (targetType is CrashableTypeSymbol crashable && IsCheck(type: loweredLeft.ResolvedType))
             {
                 return CaughtCrashableTest(carrier: loweredLeft, crashable: crashable, negated: isNot, loc: loc,
                     hoisted: leftH);
@@ -2522,8 +2522,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     /// <list type="bullet">
     ///   <item><c>Optional[T record] is None</c>  ->  <c>not x.present</c></item>
     ///   <item><c>Optional[T record] isnot None</c>  ->  <c>x.present</c></item>
-    ///   <item><c>Lookup[T] is None</c>  ->  <c>x.type_id == 0_u64</c></item>
-    ///   <item><c>Lookup[T] isnot None</c>  ->  <c>x.type_id != 0_u64</c></item>
+    ///   <item><c>Check[T] is None</c>  ->  <c>x.type_id == 0_u64</c></item>
+    ///   <item><c>Check[T] isnot None</c>  ->  <c>x.type_id != 0_u64</c></item>
     /// </list>
     /// <c>Optional[T entity]</c> absence checks are NOT lowered here (require Snatched null compare);
     /// they fall through unchanged for <c>EmitIsPattern</c> in codegen.
@@ -2616,8 +2616,8 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
                 hoisted: hoisted);
         }
 
-        // Result/Lookup: x is None -> x.type_id == 0_u64; x isnot None -> x.type_id != 0_u64
-        if (isNoneTypeCheck && IsResultOrLookup(type: operandType))
+        // Check: x is None -> x.type_id == 0_u64; x isnot None -> x.type_id != 0_u64
+        if (isNoneTypeCheck && IsCheck(type: operandType))
         {
             return (hoisted,
                 MakeTypeIdZeroCompare(loweredExpr: loweredExpr,
@@ -2809,7 +2809,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             return (true, (hoisted, cmp0));
         }
 
-        if (targetType is CrashableTypeSymbol crashable && IsResultOrLookup(type: loweredExpr.ResolvedType))
+        if (targetType is CrashableTypeSymbol crashable && IsCheck(type: loweredExpr.ResolvedType))
         {
             return (true, CaughtCrashableTest(carrier: loweredExpr, crashable: crashable, negated: ipe.IsNegated,
                 loc: ipe.Location, hoisted: hoisted));
@@ -3081,7 +3081,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
         ProducedWhenStatement = true;
         // The value arm is the only one that keeps the carrier's content: every other arm (`None`, a caught
-        // error, both for a `Lookup`) takes the fallback.
+        // error) takes the fallback.
         var whenStmt = new WhenStatement(Expression: carRef,
             Clauses:
             [
@@ -3122,7 +3122,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// <c>x is NopeError</c> on a <c>Check</c>/<c>Lookup</c>: x holds an error (its tag is the <c>Crashables</c> arm's),
+    /// <c>x is NopeError</c> on a <c>Check</c>: x holds an error (its tag is the <c>Crashables</c> arm's),
     /// and that error's type id, read from its <c>Crashables</c>, is <c>NopeError</c>'s. A carrier that is not a plain name is
     /// read once, into a temp.
     /// </summary>
@@ -3363,7 +3363,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>Returns true if the type is <c>Check[T]</c>.</summary>
-    private static bool IsResultOrLookup(TypeSymbol? type)
+    private static bool IsCheck(TypeSymbol? type)
     {
         if (type == null)
         {

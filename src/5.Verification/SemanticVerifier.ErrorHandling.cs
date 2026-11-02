@@ -17,8 +17,7 @@ namespace Builder.Verification;
 ///
 /// Variant generation rules:
 /// - Only absent: try (returns T? -> None on absent)
-/// - Only throw: try (returns T? -> None on throw) + check (returns Result&lt;T&gt;)
-/// - Both throw and absent: try + lookup (returns Lookup&lt;T&gt;)
+/// - Only throw: try (returns T? -> None on throw) + check (returns Check&lt;T&gt;)
 ///
 /// The actual variant generation is delegated to <see cref="ErrorHandlingVariantPass"/>
 /// which runs in Phase 6 (global desugaring) after body analysis populates <c>_routineBodies</c>.

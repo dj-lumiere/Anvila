@@ -410,8 +410,8 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     private Statement LowerDeclarationStatement(DeclarationStatement ds, VariableDeclaration vd,
         Statement stmt)
     {
-        // A carrier PAYLOAD EXTRACTION — `<Optional/Result/Lookup>.value` (a MemberExpression on a
-        // carrier), or the `CarrierPayloadExpression` the Result/Lookup path lowers to — is a VIEW
+        // A carrier PAYLOAD EXTRACTION — `<Optional/Check>.value` (a MemberExpression on a
+        // carrier), or the `CarrierPayloadExpression` the Check path lowers to — is a VIEW
         // into a payload the carrier still owns, NOT an owning copy. It is the shape every `when`/
         // `for` element binding takes (`else var v -> …` from `try it.emit()`'s `Optional`). Retaining it
         // makes the loop element a co-owner (+1) that never escapes the for scope and is never
@@ -563,7 +563,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // A recovery variant returns its value wrapped in its carrier (`return x` became `return Optional(present:
         // true, value: x)`). The wrapped value is still what the routine returns, so it moves out like a bare
         // return: copying a returned local here left one share nobody released.
-        if (isReturn && expr is CreatorExpression { ResolvedType.BareName: "Optional" or "Check" } carrier)
+        if (isReturn && expr is CreatorExpression carrier && RuntimeContract.IsValueCarrier(bareName: carrier.ResolvedType?.BareName))
         {
             return StripStealFromCreator(creator: carrier, membersAreReturned: true);
         }
@@ -916,8 +916,8 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
     /// </summary>
     /// <summary>
     /// True when <paramref name="init"/> extracts a carrier's inline payload — a <c>CarrierPayloadExpression</c>
-    /// (the Result/Lookup arm-binding form) or a member access <c>&lt;carrier&gt;.value</c> where the receiver
-    /// is a <c>Optional</c>/<c>Result</c>/<c>Lookup</c> carrier (the <c>Optional</c> arm-binding form, e.g. an
+    /// (the Check arm-binding form) or a member access <c>&lt;carrier&gt;.value</c> where the receiver
+    /// is a <c>Optional</c>/<c>Check</c> carrier (the <c>Optional</c> arm-binding form, e.g. an
     /// <c>for</c>/<c>when</c> element). Such a binding is a VIEW into a payload the carrier owns, so it must
     /// not be retained as an owning copy.
     /// </summary>

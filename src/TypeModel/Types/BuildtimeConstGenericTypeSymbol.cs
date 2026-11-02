@@ -6,7 +6,7 @@ namespace TypeModel.Types;
 /// <summary>
 /// A const-generic argument whose integer value is a COMPTIME expression over the enclosing type's
 /// generic parameters — e.g. the <c>${max(T.data_size().byte_size(), 8)}</c> in
-/// <c>Array[U8, ${…}]</c> used by the Result/Lookup carrier payload buffer.
+/// <c>Array[U8, ${…}]</c> used by the Check carrier payload buffer.
 ///
 /// While the enclosing type is still generic (<c>T</c> unbound) this stays symbolic — it reports as
 /// "contains a generic parameter" so the layout is not emitted. At monomorphization

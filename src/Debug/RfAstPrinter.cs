@@ -1364,7 +1364,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
     public string VisitVariantReturnStatement(VariantReturnStatement node)
     {
         // Synthetic — no surface syntax. Reads as: return the failable-variant carrier for this
-        // {Try|Check|Lookup} body, built from the {throw|absent|return|passthrough} site's value.
+        // {Try|Check} body, built from the {throw|absent|return|passthrough} site's value.
         string payload = node.Value != null
             ? node.Value.Accept(visitor: this)
             : "";

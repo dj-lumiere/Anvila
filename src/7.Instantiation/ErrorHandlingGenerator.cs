@@ -11,8 +11,7 @@ namespace Builder.Instantiation;
 ///
 /// Generation rules based on throw usage:
 /// - Only absent: try (returns T?)
-/// - Only throw: try (returns T?) + check (returns Result&lt;T&gt;)
-/// - Both: try (returns T?) + lookup (returns Lookup&lt;T&gt;)
+/// - Only throw: try (returns T?) + check (returns Check&lt;T&gt;)
 ///
 /// Phase 1: Keyword Detection - scan for throw in body
 /// Phase 2: Variant Generation - determine which variants to create
@@ -377,7 +376,7 @@ public sealed class ErrorHandlingGenerator
     }
 
     /// <summary>
-    /// Generates the check variant (returns Result&lt;T&gt;).
+    /// Generates the check variant (returns Check&lt;T&gt;).
     /// throw -> return error
     /// </summary>
     /// <param name="original">The original routine.</param>

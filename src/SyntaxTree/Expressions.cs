@@ -299,8 +299,8 @@ public record IdentifierExpression(string Name, SourceLocation Location, string?
 
     /// <summary>
     /// For a routine-value reference (<see cref="ResolvedRoutine"/> set): the routine the value carries as its
-    /// recovering entry, the lookup-shaped recovery variant of <see cref="ResolvedRoutine"/> (same parameters,
-    /// returns <c>Lookup[T]</c>, or <c>Check[None]</c> for a routine that returns nothing). A call of the value
+    /// recovering entry, the check-shaped recovery variant of <see cref="ResolvedRoutine"/> (same parameters,
+    /// returns <c>Check[T]</c>, or <c>Check[None]</c> for a routine that returns nothing). A call of the value
     /// made beneath <c>try</c>/<c>check</c> goes through it, so a failure inside the routine is
     /// recovered. Null when the routine cannot fail beneath its call.
     /// </summary>
@@ -571,7 +571,7 @@ public record CallExpression(
     /// <summary>
     /// True for a call through a routine VALUE made beneath a recovery keyword: it calls the value's recovering
     /// entry instead of its routine and yields that entry's carrier (<see cref="Expression.ResolvedType"/>,
-    /// <c>Lookup[T]</c> or <c>Check[None]</c>). A value with no recovering entry (its routine cannot fail beneath
+    /// <c>Check[T]</c>). A value with no recovering entry (its routine cannot fail beneath
     /// its call) runs its routine and its result becomes the carrier's value.
     /// </summary>
     public bool RecoversThroughValue { get; set; }
@@ -1282,11 +1282,11 @@ public record TypeIdExpression(TypeExpression Type, SourceLocation Location)
 }
 
 /// <summary>
-/// Expression that extracts the payload from a Result/Lookup carrier and reinterprets it
+/// Expression that extracts the payload from a Check carrier and reinterprets it
 /// as a specific concrete type.
 /// Codegen emits: GEP field 1 -> load i64 -> inttoptr to ConcreteType*.
 /// </summary>
-/// <param name="Carrier">The Result/Lookup carrier expression</param>
+/// <param name="Carrier">The Check carrier expression</param>
 /// <param name="ConcreteType">The concrete type to cast the payload to</param>
 /// <param name="Location">Source location information</param>
 public record CarrierPayloadExpression(
@@ -1319,7 +1319,7 @@ public record VariantWidenExpression(Expression Value, SourceLocation Location) 
 }
 
 /// <summary>
-/// Builds a tagged value: a variant, or a <c>Check</c>/<c>Lookup</c> carrier. Produced by lowering (never parsed):
+/// Builds a tagged value: a variant, or a <c>Check</c> carrier. Produced by lowering (never parsed):
 /// <c>ConstructionLoweringPass</c> writes a creator of such a type as this, so a backend only zeroes the storage,
 /// stores the tag in field 0 and stores the payload, at the payload's own type, into the bytes of field 1. The
 /// reader is <see cref="CarrierPayloadExpression"/>. Its resolved type is the variant or carrier.
@@ -1486,7 +1486,7 @@ public record BitPackExpression(List<Expression> Bits, SourceLocation Location) 
 /// from field 1, switches on <c>type_id</c> to the concrete crashable's mangled member, and yields its
 /// <c>Text</c> result. The carrier-set independence is what makes the enclosing carrier body freeze-safe.</para>
 /// </summary>
-/// <param name="Carrier">The Result/Lookup carrier expression holding the erased error.</param>
+/// <param name="Carrier">The Check carrier expression holding the erased error.</param>
 /// <param name="MemberName">The Crashable member to dispatch (represent/diagnose/crash_message/crash_title).</param>
 /// <param name="Location">Source location information.</param>
 public record CrashableDispatchExpression(

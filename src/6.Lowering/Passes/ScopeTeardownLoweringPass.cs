@@ -984,7 +984,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // failure thrown and received inside a `destruct` the teardown runs cannot overwrite it.
         if (retVal is CreatorExpression
             {
-                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result },
+                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Check },
                 MemberVariables: [(var arm, { ResolvedType: CrashableTypeSymbol } thrown)]
             } carrier)
         {
@@ -1333,7 +1333,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             {
                 Value: CreatorExpression
                 {
-                    ResolvedType.BareName: "Optional" or "Check",
+                    ResolvedType.BareName: RuntimeContract.OptionalCarrier or RuntimeContract.CheckCarrier,
                     MemberVariables: var members
                 }
             } => members.Select(selector: m => m.Value)

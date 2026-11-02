@@ -543,7 +543,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         bool nextOnlyPropagation = false)
     {
         // Every variant kind propagates its non-tail failable calls: Try (the flat Optional {present,value}
-        // unwrap), TryBool (the same unwrap, its failure branch returning false) and Check/Lookup (the
+        // unwrap), TryBool (the same unwrap, its failure branch returning false) and Check (the
         // tag-based `when` over the inner's variant, TryBuildCarrierSafeCall/BuildCarrierPropagationWhen).
         // A kind left without the registry keeps its inner failable calls raw, and their failure then
         // crashes through the recovery the caller asked for.
@@ -1035,7 +1035,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// pattern/operator lowering, so this works in BOTH the global variant path (which has
     /// downstream lowering) and the monomorphized fallback path (which does not). Scoped to the
     /// <c>Try</c> kind: only the <c>Optional</c> carrier has the flat <c>{present,value}</c> layout this
-    /// unwrap relies on; Check/Lookup carriers keep the existing tail-position behavior.
+    /// unwrap relies on; Check carriers keep the existing tail-position behavior.
     /// </summary>
     private static List<Statement> TransformBlockStatements(List<Statement> stmts, int start,
         ErrorHandlingVariantKind kind, VariantCallRewriter? rewriter, TypeRegistry? registry,
@@ -1853,7 +1853,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Like <see cref="TryBuildTryPropagation"/> but for Check/Lookup variants: retargets a non-tail
+    /// Like <see cref="TryBuildTryPropagation"/> but for Check variants: retargets a non-tail
     /// failable call to the BEST available inner safe variant and reports what that carrier can fail
     /// with. The inner routine may not have the outer's exact kind — variant generation produces
     /// try only (absent-only), try+check (throw-only), or try+lookup (both). So fall back:
@@ -1946,12 +1946,12 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// Builds the <c>when</c> that short-circuits a Check/Lookup variant on the inner carrier's
+    /// Builds the <c>when</c> that short-circuits a Check variant on the inner carrier's
     /// failure and otherwise binds the unwrapped success value before running the remainder:
     /// <code>
     /// when inner.&lt;safe&gt;_x()
     ///   is None -&gt; &lt;return None&gt;          # inner can None AND outer is Lookup
-    ///   is Crashable e -&gt; &lt;return error e&gt; # inner can error (Check/Lookup outer)
+    ///   is Crashable e -&gt; &lt;return error e&gt; # inner can error (Check outer)
     ///   else var x -&gt; &lt;remainder&gt;
     /// </code>
     /// Arms are emitted only for failures the chosen inner carrier can produce AND the outer can

@@ -19,11 +19,15 @@ public sealed partial class SemanticVerifier
     /// patterns bind read it there (see <see cref="ViewedValues"/>).</summary>
     private bool _viewedWhenSubject;
 
-    /// <summary>Whether <paramref name="expression"/> is read from a viewed place, with the names viewed bindings give.</summary>
+    /// <summary>Whether <paramref name="expression"/> is read from a viewed place, with the names viewed bindings give.
+    /// The <c>me</c> of a <c>@readonly</c> routine is a viewed place too: that routine promises to change nothing
+    /// reachable from <c>me</c>, as a <c>Viewing</c> does.</summary>
     private bool IsViewedHere(Expression? expression)
     {
         return _registry.Rules.ChecksAccessTokens && ViewedValues.IsViewed(expression: expression,
-            isViewedName: name => _registry.CurrentScope.LookupVariable(name: name)?.IsViewedBinding == true);
+            isViewedName: name => name == "me"
+                ? ViewedValues.MeIsViewed(routine: _currentRoutine)
+                : _registry.CurrentScope.LookupVariable(name: name)?.IsViewedBinding == true);
     }
 
     /// <summary>
@@ -574,7 +578,7 @@ public sealed partial class SemanticVerifier
             return true;
         }
 
-        // Carrier types (Optional<T>, Result<T>, Lookup<T>) can be matched against any type/protocol
+        // Carrier types (Optional<T>, Check<T>) can be matched against any type/protocol
         if (IsCarrierType(type: matchedType))
         {
             return true;
@@ -848,7 +852,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Checks whether Optional/Result/Lookup error handling types are exhaustively matched.
+    /// Checks whether Optional/Check error handling types are exhaustively matched.
     /// </summary>
     private static ExhaustivenessResult CheckErrorHandlingExhaustiveness(List<WhenClause> clauses,
         TypeSymbol carrierType)
@@ -912,7 +916,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Computes the missing arms for a carrier type given which arm kinds were seen: Optional needs
-    /// None + value, Result needs Crashable + value, Lookup needs None + Crashable + value.
+    /// None + value, Check needs Crashable + value.
     /// </summary>
     private static List<string> CollectCarrierMissingCases(string? carrierBaseName, bool hasAbsent,
         bool hasCrashableCatchAll, bool hasValue)

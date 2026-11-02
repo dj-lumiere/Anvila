@@ -11,6 +11,6 @@ public enum ErrorHandlingVariantKind
     /// <summary>try variant for None-returning routines - returns Bool (true=success, false=error/absent).</summary>
     TryBool,
 
-    /// <summary>check variant - returns Result&lt;T&gt;, preserves error info.</summary>
+    /// <summary>check variant - returns Check&lt;T&gt;, preserves error info.</summary>
     Check
 }

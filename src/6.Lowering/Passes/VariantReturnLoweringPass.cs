@@ -15,7 +15,7 @@ namespace Builder.Lowering.Passes;
 /// <c>FromThrow</c>/<c>FromAbsent</c> site becomes <c>return false</c>. The thrown error is discarded
 /// in a TryBool context (the routine returns Bool, never the error) — matching codegen's
 /// <c>EmitTryBoolVariantReturn</c>, which drops it — so it is simply never constructed: nothing to
-/// clean up, no leak. Try (Optional) / Check (Result) / Lookup carriers still lower in codegen and are
+/// clean up, no leak. Try (Optional) / Check carriers still lower in codegen and are
 /// handled by later stages.
 /// </summary>
 internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : AstRewriter
@@ -48,7 +48,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             Location: loc) { ResolvedType = BoolType };
     }
 
-    /// <summary>Builds `return Carrier(arm: value)` for a Check/Lookup carrier: no value is the absent arm, a thrown
+    /// <summary>Builds `return Carrier(arm: value)` for a Check carrier: no value is the absent arm, a thrown
     /// error (a crashable, or a caught <c>Crashables</c> thrown again) the error arm, anything else the success arm
     /// (<see cref="ConstructionLoweringPass"/> finds each in the carrier).</summary>
     private static ReturnStatement MakeCarrierReturn(RecordTypeSymbol carrier, Expression? payload, bool thrown,
@@ -227,7 +227,7 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
             Location: vr.Location);
     }
 
-    // Check / Lookup: build the variant from the arm the value goes in. Absent (and a `none` return) is the
+    // Check: build the variant from the arm the value goes in. Absent (and a `none` return) is the
     // None arm, a thrown crashable or a rethrown Crashables the error arm, a returned value the success arm.
     private Statement LowerCheckLookupVariant(Statement statement, VariantReturnStatement vr,
         RecordTypeSymbol carrier)

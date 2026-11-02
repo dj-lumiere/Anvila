@@ -1371,11 +1371,11 @@ public sealed partial class TypeRegistry
     }
 
     /// <summary>
-    /// Registers all well-known error handling types (Optional, Result, Lookup) as ordinary generic records.
+    /// Registers all well-known error handling types (Optional, Check) as ordinary generic records.
     /// </summary>
     private void RegisterErrorHandlingTypes()
     {
-        // Register Optional, Result, Lookup as type shells (name + GenericParameters only).
+        // Register Optional, Check as type shells (name + GenericParameters only).
         // MemberVariables reference System types (Bool, U64, Addr) that aren't available yet
         // because LoadCoreModule hasn't run.  ResolveProgramMemberVariables (pass 1c inside
         // LoadCoreModule) fills in the members from the stdlib source once all System types exist.
@@ -1391,7 +1391,7 @@ public sealed partial class TypeRegistry
         // declarations the same way.
         RegisterType(type: new VariantTypeSymbol(name: "Check")
         {
-            GenericParameters = ["T"], Module = "System", CarrierKind = CarrierKind.Result
+            GenericParameters = ["T"], Module = "System", CarrierKind = CarrierKind.Check
         });
     }
 

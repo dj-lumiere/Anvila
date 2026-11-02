@@ -1485,12 +1485,12 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>
-    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot holds
+    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>), whose error slot holds
     /// a <c>Crashables</c>: the caught crashable's type id, its failure number, and the crashable itself.
     /// </summary>
     private static bool IsRecoveryCarrier(TypeSymbol? carrier)
     {
-        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result };
+        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Check };
     }
 
     /// <summary>The value a carrier (or variant) holds in its payload, read at the type the arm matched.</summary>
@@ -1519,7 +1519,7 @@ internal sealed class TesseraRoutineWriter
     }
 
     /// <summary>
-    /// A Crashable member (<c>represent</c>, <c>diagnose</c>, …) called on the error a Check/Lookup carrier holds:
+    /// A Crashable member (<c>represent</c>, <c>diagnose</c>, …) called on the error a Check carrier holds:
     /// a call to the module's dispatch routine for that member (<c>TesseraWriter.CrashableDispatch</c>) with the
     /// error's type id and the address of the crashable in its <c>Crashables</c>.
     /// </summary>

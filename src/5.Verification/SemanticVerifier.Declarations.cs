@@ -318,7 +318,7 @@ public sealed partial class SemanticVerifier
         // Copyability is gated separately by the Assignable derivation rule (a variant
         // is Assignable iff every member is).
 
-        // Validate that Result<T> and Lookup<T> are not used as member variable types
+        // Validate that Check<T> are not used as member variable types
         if (IsCarrierType(type: memberVariableType) && !IsMaybeType(type: memberVariableType))
         {
             string carrierName = GetCarrierBaseName(type: memberVariableType)!;

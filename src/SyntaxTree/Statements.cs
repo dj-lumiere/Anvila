@@ -1085,19 +1085,19 @@ public record GuardPattern(Pattern InnerPattern, Expression Guard, SourceLocatio
     : Pattern(Location: Location);
 
 /// <summary>
-/// Pattern for matching the None/absent value in Optional, Result, or Lookup types.
+/// Pattern for matching the None/absent value in Optional or Check types.
 /// </summary>
 /// <param name="Location">Source location information</param>
 /// <remarks>
 /// Examples:
 /// <list type="bullet">
-/// <item>is None => ... (matches Optional.None or Lookup.None)</item>
+/// <item>is None => ... (matches Optional.None)</item>
 /// </list>
 /// </remarks>
 public record NonePattern(SourceLocation Location) : Pattern(Location: Location);
 
 /// <summary>
-/// Pattern for matching Crashable errors in Result or Lookup types.
+/// Pattern for matching Crashable errors in Check types.
 /// Optionally binds the error to a variable for inspection.
 /// </summary>
 /// <param name="ErrorType">Optional specific error type to match (null matches any Crashable)</param>
@@ -1133,8 +1133,8 @@ public record ElsePattern(string? VariableName, SourceLocation Location)
     : Pattern(Location: Location)
 {
     /// <summary>
-    /// Set by semantic analysis when the subject is a <c>Check</c>/<c>Lookup</c> carrier and every
-    /// earlier arm already covers the value (and <c>None</c> for a Lookup), so the only case left is the
+    /// Set by semantic analysis when the subject is a <c>Check</c> carrier and every
+    /// earlier arm already covers the value, so the only case left is the
     /// caught error. The binding then holds that error (typed <c>Crashable</c>), exactly like
     /// <c>is Crashable e</c>, and lowering treats the clause as that arm.
     /// </summary>
@@ -1148,7 +1148,7 @@ public record ElsePattern(string? VariableName, SourceLocation Location)
     public TypeModel.Types.TypeSymbol? RemainingType { get; set; }
 
     /// <summary>
-    /// Set by the builder on the value arm of a <c>Check</c>/<c>Lookup</c> carrier whose payload cannot be shared
+    /// Set by the builder on the value arm of a <c>Check</c> carrier whose payload cannot be shared
     /// (an entity): the binding takes the payload and the carrier forgets it (its tag cleared), so only the
     /// binding tears it down.
     /// </summary>
@@ -1293,7 +1293,7 @@ public enum VariantSiteKind
 /// <see cref="ReturnStatement"/> so that codegen can emit carrier construction via
 /// <c>EmitVariantReturn</c> without relying on mutable flags.
 /// </summary>
-/// <param name="VariantKind">Which variant body this belongs to (Try, TryBool, Check, Lookup).</param>
+/// <param name="VariantKind">Which variant body this belongs to (Try, TryBool, Check).</param>
 /// <param name="SiteKind">Which original statement was replaced.</param>
 /// <param name="Value">Original expression (error for FromThrow, value for FromReturn; null for FromAbsent).</param>
 /// <param name="Location">Source location for diagnostics.</param>

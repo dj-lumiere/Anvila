@@ -190,11 +190,10 @@ public sealed partial class SemanticVerifier
         // directly (only its recovery variant is), so it is never collected/emitted on its own.
         // The carrier the KEYWORD selects drives which variant the base must expose:
         //  - try    → try    (Optional): pessimistic (throw+absent) generates try.
-        //  - lookup → lookup (Lookup): pessimistic (throw+absent) generates lookup.
         //  - check   → check  (Check): check collapses the WHOLE crashable set (and, per the design, promotes
         //    a sub-call's absent to AbsentValueError) into Check's single Crashable arm. The variant rules
         //    only mint check for a THROW-ONLY shape, so mark check's base throw-only (HasThrow,
-        //    non-pessimistic) — otherwise the both-shape yields lookup and no check exists.
+        //    non-pessimistic) — otherwise the both-shape mints no check.
         bool check = recovery.Kind == RecoveryKind.Check;
         string baseName = $"__recover_{_recoveryCompositionSeq++}";
         // In a generic routine the captured values and the result may name its type parameters (`T` of
@@ -221,7 +220,7 @@ public sealed partial class SemanticVerifier
         };
         _registry.RegisterRoutine(routine: baseRoutine);
 
-        // Index the base for on-demand variant synthesis. try/lookup use the pessimistic (throw+absent)
+        // Index the base for on-demand variant synthesis. try uses the pessimistic (throw+absent)
         // shape; check uses the throw-only shape stamped above (so check is generated).
         _registry.DeferredVariantBases[key: baseRoutine.RegistryKey] = (baseRoutine, baseBody, !check);
 
@@ -229,7 +228,7 @@ public sealed partial class SemanticVerifier
         if (variant == null)
         {
             // The requested carrier variant is not (yet) synthesizable for this base shape (e.g. `check`'s
-            // check before the Check/Lookup propagation generalization). Surface as a generation error
+            // check before the Check propagation generalization). Surface as a generation error
             // rather than silently miscompiling.
             ReportError(code: SemanticDiagnosticCode.VariantGenerationError,
                 message:

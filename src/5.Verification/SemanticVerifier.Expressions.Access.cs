@@ -690,6 +690,10 @@ public sealed partial class SemanticVerifier
             lookupType: lookupType);
         TypeSymbol indexType = AnalyzeExpression(expression: index.Index, expectedType: indexExpectedType);
 
+        // A value's token (`for x in xs` over values gives `Modifying[S64]`) is read where a value is wanted
+        // (TokenReadLoweringPass reads the index), so the index is the value it reads.
+        indexType = ValueTokenTarget(type: indexType) ?? indexType;
+
         // The index is getitem's argument, so it has to fit the parameter like any other: an S64 variable is not
         // a U64 index (variables keep their width; convert it).
         if (indexExpectedType != null && indexType is not ErrorTypeSymbol &&

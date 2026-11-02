@@ -712,7 +712,7 @@ internal sealed class TypeBodyResolver
     /// <summary>
     /// Resolves a single variant member into the accumulating <paramref name="members"/> list: handles
     /// the zero-sized None case (dedup + tag-0 insert), rejects duplicate payload types, validates that
-    /// tokens and Result/Lookup carriers are not used as payloads.
+    /// tokens and Check carriers are not used as payloads.
     /// </summary>
     private void ResolveVariantMember(VariantDeclaration variant, VariantMember member,
         List<VariantMemberInfo> members, HashSet<string> seenTypeNames, ref bool hasNone)
@@ -1127,7 +1127,7 @@ internal sealed class TypeBodyResolver
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is "Optional" or "Check"
+        return RuntimeContract.IsValueCarrier(bareName: baseName)
             ? baseName
             : null;
     }

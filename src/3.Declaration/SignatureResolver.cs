@@ -232,7 +232,7 @@ internal sealed class SignatureResolver
             ? _typeResolver.ResolveType(typeExpr: routine.ReturnType)
             : null;
 
-        // Validate that Optional<T>/Result<T>/Lookup<T> are not used as return types
+        // Validate that Optional<T>/Check<T> are not used as return types
         // These are builder-generated wrapper types for failable routines (!)
         ValidateReturnTypeNotCarrier(returnType: returnType, routine: routine);
 
@@ -1478,7 +1478,7 @@ internal sealed class SignatureResolver
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is "Optional" or "Check"
+        return RuntimeContract.IsValueCarrier(bareName: baseName)
             ? baseName
             : null;
     }

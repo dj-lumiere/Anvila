@@ -37,12 +37,12 @@ namespace Builder.Lowering.Passes;
 /// type check is always true when SA validated the subject type.</item>
 /// </list>
 ///
-/// <para>Lowerable patterns (Result/Lookup and user variant subjects):</para>
+/// <para>Lowerable patterns (Check and user variant subjects):</para>
 /// <list type="bullet">
 /// <item><see cref="TypePattern"/> <c>None</c> -> <c>subject.type_id == 0</c>.</item>
 /// <item><see cref="TypePattern"/> T -> <c>subject.type_id == FNV-1a(T.FullName)</c>,
 /// optional binding -> <see cref="CarrierPayloadExpression"/>.</item>
-/// <item><see cref="ElsePattern"/> with binding on Result/Lookup -> <see cref="CarrierPayloadExpression"/>.</item>
+/// <item><see cref="ElsePattern"/> with binding on Check -> <see cref="CarrierPayloadExpression"/>.</item>
 /// </list>
 ///
 /// <para>Lowerable patterns (Optional[T entity] subjects):</para>
@@ -246,7 +246,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             };
         }
 
-        if (IsResultOrLookup(type: subjectType))
+        if (IsCheck(type: subjectType))
         {
             for (int i = 0; i < loweredClauses.Count; i++)
             {
@@ -283,25 +283,14 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     /// <summary>
     /// Determines whether a carrier's <c>else</c> arm is narrowed to the inner type — i.e. ALL non-T
     /// alternatives are covered by prior clauses: the error arm (<c>is Crashables</c>, a
-    /// <see cref="CrashablePattern"/> by now) and, on a Lookup, <c>is None</c>.
+    /// <see cref="CrashablePattern"/> by now) .
     /// </summary>
     private static bool DetermineElseNarrowed(List<WhenClause> loweredClauses, TypeSymbol? subjectType)
     {
-        if (IsResultOrLookup(type: subjectType) && subjectType!.TypeArguments?.Count > 0)
+        if (IsCheck(type: subjectType) && subjectType!.TypeArguments?.Count > 0)
         {
-            bool crashableCovered = loweredClauses.Any(predicate: c => c.Pattern is CrashablePattern);
-            // Lookup has a None state; Result does not. Result narrows on crashable coverage
-            // alone; Lookup additionally requires the None arm.
-            if (IsResultType(type: subjectType))
-            {
-                return crashableCovered;
-            }
-
-            // Lookup's absent state is matched by `is None` only
-            // (NonePattern from `??`/`?.` desugar OR parser-emitted TypePattern("None")).
-            bool seenAbsent = loweredClauses.Any(predicate: c =>
-                c.Pattern is TypePattern { Type.Name: "None" } || c.Pattern is NonePattern);
-            return seenAbsent && crashableCovered;
+            // A Check is its value or the reason it is absent, so the error arm covers every other case.
+            return loweredClauses.Any(predicate: c => c.Pattern is CrashablePattern);
         }
 
         if (IsMaybeRecord(type: subjectType) || IsMaybeEntity(type: subjectType))
@@ -459,13 +448,13 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             ExpressionPattern => true,
             ComparisonPattern => true,
 
-            // ElsePattern with binding on Result/Lookup, Optional[T entity], or Optional[T record]: lowerable.
-            ElsePattern ep => !ep.VariableName.HasValue() || IsResultOrLookup(type: subjectType) ||
+            // ElsePattern with binding on Check, Optional[T entity], or Optional[T record]: lowerable.
+            ElsePattern ep => !ep.VariableName.HasValue() || IsCheck(type: subjectType) ||
                               IsMaybeEntity(type: subjectType) || IsMaybeRecord(type: subjectType) ||
                               ep.RemainingType != null,
 
             NonePattern => IsMaybeRecord(type: subjectType) || IsMaybeEntity(type: subjectType) ||
-                           IsResultOrLookup(type: subjectType),
+                           IsCheck(type: subjectType),
 
             // Optional[T record] TypePattern: lowerable (uses bool present field, if/else is optimal)
             TypePattern when IsMaybeRecord(type: subjectType) => true,
@@ -473,8 +462,8 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             // Optional[T entity] TypePattern: lowerable (null-ptr check via is_none())
             TypePattern when IsMaybeEntity(type: subjectType) => true,
 
-            // Result/Lookup and user variant TypePatterns: lowerable -> condition is type_id == constant.
-            TypePattern when IsResultOrLookup(type: subjectType) || subjectType is VariantTypeSymbol
+            // Check and user variant TypePatterns: lowerable -> condition is type_id == constant.
+            TypePattern when IsCheck(type: subjectType) || subjectType is VariantTypeSymbol
                 => true,
 
             // User choice `is CASE`: lowerable to a discriminant identity compare (subject `is` case value),
@@ -490,7 +479,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
             // The single un-fanned `is Crashable` arm on a carrier (CrashableExpansionPass no longer fans it
             // per-type; it rewrites the arm body to CrashableDispatchExpression and keeps ONE CrashablePattern).
             // Lowerable -> condition is `type_id != 0 && type_id != <T>.type_id()` (i.e. "holds an error").
-            CrashablePattern when IsResultOrLookup(type: subjectType) => true,
+            CrashablePattern when IsCheck(type: subjectType) => true,
 
             // `isnot T`: lowerable wherever `is T` is (the condition is its negation).
             NegatedTypePattern neg => IsLowerablePattern(pattern: AsTypePattern(negated: neg), subjectType: subjectType),
@@ -582,7 +571,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     subjectType: subjectType,
                     isElseNarrowed: isElseNarrowed,
                     loc: loc);
-                if (ep.MovesPayloadOut && elseBinding != null && IsResultOrLookup(type: subjectType))
+                if (ep.MovesPayloadOut && elseBinding != null && IsCheck(type: subjectType))
                 {
                     TypeSymbol? u64 = ctx.Registry.LookupType(name: "U64");
                     var clearTag = new AssignmentStatement(
@@ -618,8 +607,8 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
             // -----------------------------------------------------------------------------
 
-            case NonePattern when IsResultOrLookup(type: subjectType):
-                // Lookup/Check carrier: absent is `type_id == 0` (mirrors the TypePattern("None")
+            case NonePattern when IsCheck(type: subjectType):
+                // Check carrier: absent is `type_id == 0` (mirrors the TypePattern("None")
                 // path in GetResultLookupTypePatternCondition). A check/lookup composition's
                 // BuildCarrierPropagationWhen emits a raw NonePattern (not TypePattern) for an
                 // inner call whose best-available variant is lookup, so this arm must lower too.
@@ -666,7 +655,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     "VariantPattern reached PatternLoweringPass -> this pattern type is no longer " +
                     "generated by the parser (use TypePattern / NegatedTypePattern instead).");
 
-            case CrashablePattern cp when IsResultOrLookup(type: subjectType):
+            case CrashablePattern cp when IsCheck(type: subjectType):
                 return GetCrashableArmCondition(subject: subject,
                     bindName: cp.VariableName,
                     loc: loc,
@@ -676,10 +665,10 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 throw new InvalidOperationException(
                     message:
                     "CrashablePattern reached PatternLoweringPass on a non-carrier subject -> only a " +
-                    "Result/Lookup carrier's `is Crashable` arm is expected here.");
+                    "Check carrier's `is Crashable` arm is expected here.");
 
             case TypePattern tp
-                when IsResultOrLookup(type: subjectType) || subjectType is VariantTypeSymbol:
+                when IsCheck(type: subjectType) || subjectType is VariantTypeSymbol:
                 return GetResultLookupTypePatternCondition(tp: tp,
                     subject: subject,
                     loc: loc,
@@ -762,7 +751,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         }
 
         if (ep.VariableName != null && !restIsSubject && subjectType is VariantTypeSymbol &&
-            !IsResultOrLookup(type: subjectType))
+            !IsCheck(type: subjectType))
         {
             // A variant with one member type left: the name holds that member.
             binding = MakeBinding(name: ep.VariableName,
@@ -785,11 +774,11 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     fieldType: subjectType!.TypeArguments![index: 0],
                     loc: loc);
             }
-            else if (IsResultOrLookup(type: subjectType) &&
+            else if (IsCheck(type: subjectType) &&
                      subjectType!.TypeArguments?.Count > 0 &&
                      (isElseNarrowed || rest?.FullName == subjectType.TypeArguments[index: 0].FullName))
             {
-                // Result/Lookup: truly narrowed-to-T else arm -> extract payload.
+                // Check: truly narrowed-to-T else arm -> extract payload.
                 // Only when all non-T arms (None + all Crashable types) are handled.
                 TypeSymbol innerType = subjectType.TypeArguments[index: 0];
                 bindValue = MakeCarrierPayload(subject: subject, innerType: innerType, loc: loc);
@@ -936,7 +925,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Lowers a <c>TypePattern</c> over a Result/Lookup/Variant carrier to a <c>type_id ==</c> test
+    /// Lowers a <c>TypePattern</c> over a Check/Variant carrier to a <c>type_id ==</c> test
     /// (plus the payload binding, if the pattern binds a name). Extracted from
     /// <see cref="GetPatternCondition"/>.
     /// </summary>
@@ -947,14 +936,14 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         TypeSymbol? u64Type = ctx.Registry.LookupType(name: "U64");
         TypeSymbol? targetType = tp.Type.ResolvedType ?? ctx.Registry.LookupType(name: tp.Type.Name);
 
-        // `is NopeError e` on a Check/Lookup: the error arm, then the caught error's own type.
-        if (targetType is CrashableTypeSymbol crashable && IsResultOrLookup(type: subject.ResolvedType))
+        // `is NopeError e` on a Check: the error arm, then the caught error's own type.
+        if (targetType is CrashableTypeSymbol crashable && IsCheck(type: subject.ResolvedType))
         {
             return GetCaughtCrashableCondition(subject: subject, crashable: crashable, bindName: tp.VariableName,
                 loc: loc, boolType: boolType);
         }
 
-        // `is None`  on Lookup/Variant carriers tests type_id == 0.
+        // `is None`  on Variant carriers tests type_id == 0.
         if (tp.Type.Name is "None")
         {
             return (MakeTypeIdIsZero(subject: subject,
@@ -1134,7 +1123,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// <c>is NopeError e</c> straight on a <c>Check</c>/<c>Lookup</c>: the carrier holds an error, and the error's type
+    /// <c>is NopeError e</c> straight on a <c>Check</c>: the carrier holds an error, and the error's type
     /// id (its <c>Crashables</c>' first field) is <c>NopeError</c>'s. <c>e</c> is the crashable the <c>Crashables</c> holds.
     /// </summary>
     private (Expression? Cond, Statement? Binding) GetCaughtCrashableCondition(Expression subject,
@@ -1168,7 +1157,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
         ctx.Registry.LookupType(name: Builder.Declaration.RuntimeContract.Crashables) ??
         throw new InvalidOperationException(message: "System.Crashables is not registered.");
 
-    /// <summary>Builds <c>subject.type_id == 0_u64</c> for a None/absent check on Result/Lookup.</summary>
+    /// <summary>Builds <c>subject.type_id == 0_u64</c> for a None/absent check on Check.</summary>
     private static BinaryExpression MakeTypeIdIsZero(Expression subject, SourceLocation loc,
         TypeSymbol? boolType, TypeSymbol? u64Type)
     {
@@ -1356,7 +1345,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>Returns true if the type is <c>Check[T]</c>.</summary>
-    private static bool IsResultOrLookup(TypeSymbol? type)
+    private static bool IsCheck(TypeSymbol? type)
     {
         if (type == null)
         {
@@ -1365,19 +1354,6 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
         string baseName = GetCarrierBaseName(type: type);
         return baseName is "Check";
-    }
-
-    /// <summary>
-    /// Returns whether is result type applies in the current builder context.
-    /// </summary>
-    private static bool IsResultType(TypeSymbol? type)
-    {
-        if (type == null)
-        {
-            return false;
-        }
-
-        return GetCarrierBaseName(type: type) == "Check";
     }
 
     /// <summary>
@@ -1656,7 +1632,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                     {
                         ResolvedType: RecordTypeSymbol
                         {
-                            CarrierKind: TypeModel.Enums.CarrierKind.Result
+                            CarrierKind: TypeModel.Enums.CarrierKind.Check
                         },
                         MemberVariables: [(Builder.Declaration.RuntimeContract.Crashables, IdentifierExpression id)]
                     } creator

@@ -137,7 +137,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Computes the LLVM return type string for a routine declaration, applying failable-variant
-    /// carrier forms (Lookup / Check / TryBool), the same form the definition returns.
+    /// carrier forms (Check / TryBool), the same form the definition returns.
     /// </summary>
     private string ComputeDeclarationReturnType(RoutineInfo routine)
     {

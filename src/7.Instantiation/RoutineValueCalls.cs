@@ -10,8 +10,8 @@ namespace Builder.Instantiation;
 /// Calls through a routine VALUE (a lambda or routine held in a local, a parameter or a routine-typed field) and
 /// the iterator steps that may reach one, as recovery sees them. The routine a value holds has a recovering entry
 /// (<see cref="IdentifierExpression.RecoverRoutine"/>), which the module's recovery table maps the routine's address to,
-/// so the value itself stays C's two-word (callback, userdata) pair: the lookup-shaped recovery variant of the
-/// routine, which returns <c>Lookup[T]</c> (<c>Check[None]</c> for a routine that returns nothing). A call of the
+/// so the value itself stays C's two-word (callback, userdata) pair: the check-shaped recovery variant of the
+/// routine, which returns <c>Check[T]</c> (<c>Check[None]</c> for a routine that returns nothing). A call of the
 /// value made beneath <c>try</c>/<c>check</c> goes through that entry
 /// (<see cref="CallExpression.RecoversThroughValue"/>), and its carrier is propagated like the carrier of any other
 /// failable call, so a failure inside the lambda is recovered by the keyword above it. A call of the value made

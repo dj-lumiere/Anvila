@@ -253,7 +253,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// <returns>Result of visiting the type-id expression</returns>
     T VisitTypeIdExpression(TypeIdExpression node);
 
-    /// <summary>Visits a carrier-payload expression node (extracts and reinterprets Result/Lookup payload)</summary>
+    /// <summary>Visits a carrier-payload expression node (extracts and reinterprets Check payload)</summary>
     /// <param name="node">The carrier-payload expression to visit</param>
     /// <returns>Result of visiting the carrier-payload expression</returns>
     T VisitCarrierPayloadExpression(CarrierPayloadExpression node);
@@ -408,7 +408,7 @@ public interface ISyntaxTreeVisitor<out T>
     /// <summary>Visits a cancellation shadow-stack pop of an owned local</summary>
     T VisitCancellationPopStatement(CancellationPopStatement node);
 
-    /// <summary>Visits a throw statement node (error throw, triggers Result&lt;T&gt; or Lookup&lt;T&gt;)</summary>
+    /// <summary>Visits a throw statement node (error throw, triggers Check&lt;T&gt;)</summary>
     /// <param name="node">The throw statement to visit</param>
     /// <returns>Result of visiting the throw statement</returns>
     T VisitThrowStatement(ThrowStatement node);

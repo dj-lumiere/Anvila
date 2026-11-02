@@ -493,7 +493,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     }
 
     /// <summary>
-    /// The crashable a recovery carrier is built around (a <c>Check</c> or <c>Lookup</c> whose payload is a caught
+    /// The crashable a recovery carrier is built around (a <c>Check</c> whose payload is a caught
     /// crashable), before or after the carrier's construction is lowered to a tagged creator. Null for anything else.
     /// </summary>
     internal static CrashableTypeSymbol? CaughtCrashable(Expression expr)
@@ -503,7 +503,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             TaggedCreatorExpression { Payload: { } tagged } => tagged,
             CreatorExpression
             {
-                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Result },
+                ResolvedType: RecordTypeSymbol { CarrierKind: CarrierKind.Check },
                 MemberVariables: [(_, var arm)]
             } => arm,
             _ => null
@@ -3176,7 +3176,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // The fallback body is the original failable AST (ReturnStatement nodes, not
         // VariantReturnStatement). Transform it so codegen emits carrier construction.
         //
-        // Check/Lookup/TryBool are driven by variantStatus. The try (Optional) variant leaves
+        // Check/TryBool are driven by variantStatus. The try (Optional) variant leaves
         // variantStatus null — codegen natively wraps top-level `return`->Some and `absent`->None
         // — but an Optional variant whose source uses a failable call in NON-tail position (e.g.
         // `var item = src.emit!()` in EnumerateEmitter) needs that inner call routed through its

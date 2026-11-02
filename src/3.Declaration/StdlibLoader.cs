@@ -1127,7 +1127,7 @@ public sealed partial class StdlibLoader
         // size `Array[U8, ${max(T.data_size().byte_size(), 8)}]`. Resolve to a symbolic
         // BuildtimeConstGenericTypeSymbol; RoutineInfo/RecordTypeSymbol.SubstituteType fold it at
         // monomorphization. Without this the stdlib registration path returns null and the whole field
-        // (Result/Lookup `payload`) is silently dropped from the record's member list.
+        // (Check `payload`) is silently dropped from the record's member list.
         if (typeExpr.BuildtimeValue != null)
         {
             return new BuildtimeConstGenericTypeSymbol(buildtimeExpr: typeExpr.BuildtimeValue);

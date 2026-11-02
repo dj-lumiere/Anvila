@@ -3676,8 +3676,8 @@ public static class LspServer
         };
     }
 
-    /// <summary>A record whose kind follows its type arguments: a carrier (<c>Optional</c>, <c>Check</c>,
-    /// <c>Lookup</c>), which is a variant of its value type and <c>None</c> or an error.</summary>
+    /// <summary>A record whose kind follows its type arguments: a carrier (<c>Optional</c>, <c>Check</c>),
+    /// which is a variant of its value type and <c>None</c> or an error.</summary>
     private static bool IsMemberKindCarrier(RecordTypeSymbol record)
     {
         return record.CarrierKind != TypeModel.Enums.CarrierKind.None;

@@ -85,8 +85,8 @@ public partial class LlvmEmitter
         // otherwise capture it. A crashable is a record.
         return type switch
         {
-            // A variant or Check/Lookup carrier is a TaggedCreatorExpression (ConstructionLoweringPass).
-            VariantTypeSymbol or RecordTypeSymbol { CarrierKind: CarrierKind.Result } =>
+            // A variant or Check carrier is a TaggedCreatorExpression (ConstructionLoweringPass).
+            VariantTypeSymbol or RecordTypeSymbol { CarrierKind: CarrierKind.Check } =>
                 throw new InvalidOperationException(
                     message: $"A creator of '{type.FullName}' reached the LLVM emitter in [{_currentRoutineDiagName}]."),
             EntityTypeSymbol entity => EmitEntityConstruction(sb: sb, entity: entity, expr: expr),
@@ -97,7 +97,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Emits a <see cref="TaggedCreatorExpression"/>: a variant or Check/Lookup carrier, built through memory so
+    /// Emits a <see cref="TaggedCreatorExpression"/>: a variant or Check carrier, built through memory so
     /// the payload is stored at its own width into the <c>[N x i8]</c> buffer (field 1). The whole value is
     /// zeroed first: a payload narrower than the buffer would otherwise leave undefined bytes, which become
     /// poison once the value is copied and let the optimizer fold every later tag comparison away.
@@ -159,12 +159,12 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>, <c>Lookup</c>), whose error slot holds a
+    /// True when <paramref name="carrier"/> is a recovery carrier (<c>Check</c>), whose error slot holds a
     /// <c>Crashables</c>: the caught crashable's type id, its failure number, and the crashable itself.
     /// </summary>
     private static bool IsRecoveryCarrier(TypeSymbol carrier)
     {
-        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Result };
+        return carrier is RecordTypeSymbol { CarrierKind: CarrierKind.Check };
     }
 
     /// <summary>The LLVM type of System's <c>Crashables</c>: <c>{ type id, failure number, [N x i64] room }</c>, the room

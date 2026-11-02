@@ -8,7 +8,7 @@ namespace Builder.Lowering.Passes;
 /// <summary>
 /// Lowers the language's view of a caught error, <c>Crashables</c>:
 /// <list type="bullet">
-/// <item>the error arm of a <c>when</c> on a <c>Check</c>/<c>Lookup</c> carrier (<c>is Crashables e</c>, or an
+/// <item>the error arm of a <c>when</c> on a <c>Check</c> carrier (<c>is Crashables e</c>, or an
 /// <c>else e</c> only the error reaches) becomes one <see cref="CrashablePattern"/>, which
 /// <see cref="PatternLoweringPass"/> turns into the error-arm test and the binding of <c>e</c>;</item>
 /// <item>a call of a <c>Crashables</c> routine the builder supplies (<c>@innate</c>: crash_title, crash_message,
@@ -105,7 +105,7 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
         protected override Statement VisitWhen(WhenStatement s)
         {
             var lowered = (WhenStatement)base.VisitWhen(s: s);
-            if (!IsCheckOrLookup(type: lowered.Expression?.ResolvedType))
+            if (!IsCheck(type: lowered.Expression?.ResolvedType))
             {
                 return lowered;
             }
@@ -180,11 +180,11 @@ internal sealed class CrashableExpansionPass(PostprocessingContext ctx)
             };
         }
 
-        private static bool IsCheckOrLookup(TypeSymbol? type)
+        private static bool IsCheck(TypeSymbol? type)
         {
             return type is RecordTypeSymbol
             {
-                CarrierKind: TypeModel.Enums.CarrierKind.Result
+                CarrierKind: TypeModel.Enums.CarrierKind.Check
             };
         }
     }

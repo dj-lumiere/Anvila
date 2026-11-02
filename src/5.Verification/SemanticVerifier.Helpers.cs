@@ -63,13 +63,13 @@ public sealed partial class SemanticVerifier
         }
 
         string baseName = r.GenericDefinition?.Name ?? r.Name;
-        return baseName is MaybeTypeName or "Check"
+        return Declaration.RuntimeContract.IsValueCarrier(bareName: baseName)
             ? baseName
             : null;
     }
 
     /// <summary>
-    /// Returns true if the type is a carrier type (Optional, Result, or Lookup).
+    /// Returns true if the type is a carrier type (Optional or Check).
     /// </summary>
     private static bool IsCarrierType(TypeSymbol type)
     {

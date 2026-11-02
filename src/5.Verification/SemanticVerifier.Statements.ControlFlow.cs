@@ -666,7 +666,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// A <c>when</c> on a <c>Check</c>/<c>Lookup</c> that does not handle the caught error passes it on: it gets the
+    /// A <c>when</c> on a <c>Check</c> that does not handle the caught error passes it on: it gets the
     /// arm <c>is Crashables e => throw e</c> (propagating, in a failable routine) or <c>is Crashables e => throw e</c>
     /// that crashes where it stands (anywhere else). An arm for one crashable (<c>is NopeError e</c>) handles only that one.
     /// </summary>
@@ -956,7 +956,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Checks exhaustiveness of a `when` over an enumerable type: a catch-all clause is always
-    /// exhaustive, otherwise a missing 'Crashable' arm on Result/Lookup is a hard error and any
+    /// exhaustive, otherwise a missing 'Crashable' arm on Check is a hard error and any
     /// other gap is a non-exhaustive warning.
     /// </summary>
     private void CheckWhenExhaustiveness(WhenStatement whenStmt, TypeSymbol matchedType)
@@ -984,7 +984,7 @@ public sealed partial class SemanticVerifier
             ? $" Missing cases: {string.Join(separator: ", ", values: exhaustiveness.MissingCases)}."
             : "";
 
-        // A `when` on a Check/Lookup must take the success value (the error arm is added when it is left out).
+        // A `when` on a Check must take the success value (the error arm is added when it is left out).
         if (IsCarrierType(type: matchedType) && !IsMaybeType(type: matchedType) &&
             exhaustiveness.MissingCases.Any(predicate: m => m != "None"))
         {

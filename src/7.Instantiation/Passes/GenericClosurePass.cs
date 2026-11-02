@@ -229,7 +229,7 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
             variantBodies: ctx.VariantBodies,
             target: ctx.Target,
             buildMode: ctx.BuildMode);
-        // Lower synthesized VariantReturnStatement carriers (Try/Check/Lookup `return`s of a composed
+        // Lower synthesized VariantReturnStatement carriers (Try/Check `return`s of a composed
         // iterator's path-2 emit's try variant body) to ordinary record construction. The main pipeline does this
         // via VariantReturnLoweringPass.RunOnMonomorphizedBodies at Phase 8, but the collector's
         // freshly-built variant bodies are not in that map — without this they reach codegen as raw
@@ -270,7 +270,7 @@ internal sealed class GenericClosurePass(InstantiationContext ctx)
         // ExpressionLoweringPass: handles RangeExpression, UnaryExpression(Not), pattern lowering
         // etc. Must run before OperatorLoweringPass — operator lowering folds the BinaryExpressions
         // ExpressionLowering produces (e.g. `1 til n` -> a range record with `+ 1` / `< n` checks).
-        // Mirror the per-file PLP → ELP → PLP → ELP cycle: the first PLP folds Optional/Result/Lookup
+        // Mirror the per-file PLP → ELP → PLP → ELP cycle: the first PLP folds Optional/Check
         // when-chains (introducing UnaryExpression(Not)); ELP lowers those Not nodes; a second
         // PLP catches the WhenStatements that ELP synthesized for `??` / `?.`; final ELP lowers
         // any Not nodes the second PLP added. Without PLP here, `when subj is None => … else x =>`

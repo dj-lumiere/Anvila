@@ -288,7 +288,7 @@ public sealed partial class SemanticVerifier
             // Optional<T>: eliminate None -> T
             "Optional" when eliminateNone => valueType,
 
-            // Result<T>: eliminate Crashable -> T
+            // Check<T>: eliminate Crashable -> T
             "Check" when eliminateCrashable => valueType,
 
             _ => null

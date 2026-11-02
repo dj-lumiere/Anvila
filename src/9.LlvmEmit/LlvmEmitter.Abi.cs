@@ -92,7 +92,7 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// A value type that crosses a call boundary BY VALUE and is therefore in scope for ABI
-    /// coercion: a struct record with no <c>@llvm</c> backend and no carrier kind (Result/Lookup/
+    /// coercion: a struct record with no <c>@llvm</c> backend and no carrier kind (Check/
     /// Optional are codegen-owned and handled by their own paths). Tuples qualify — they are
     /// <c>RecordTypeSymbol</c> with item0..itemN fields. Excludes <c>@llvm</c> scalar/aggregate
     /// records, entities, wrappers, protocols, and generic definitions.

@@ -1,5 +1,6 @@
 using Builder.Declaration;
 using SyntaxTree;
+using TypeModel.Symbols;
 using TypeModel.Types;
 
 namespace Builder.Verification;
@@ -81,6 +82,18 @@ internal static class ViewedValues
     {
         return type is { BareName: RuntimeContract.Guarded or RuntimeContract.Witnessed, TypeArguments: [_, var policy] } &&
                policy.BareName == "ReadOnly";
+    }
+
+    /// <summary>
+    /// Whether the <c>me</c> of <paramref name="routine"/> is a viewed place: a <c>@readonly</c> member routine
+    /// promises to change nothing reachable from <c>me</c>, as a <c>Viewing</c> does. The routines of a handle type
+    /// itself (<c>Retained.share</c>, <c>Stamped.fetch</c>) are the verbs that give a handle out, so their <c>me</c> is
+    /// the handle and not a place a handle is reached through.
+    /// </summary>
+    internal static bool MeIsViewed(RoutineInfo? routine)
+    {
+        return routine is { IsReadOnly: true, IsCommon: false } &&
+               !(routine.OwnerType?.BareName is { } owner && WayNames.Contains(item: owner));
     }
 
     /// <summary>Whether <paramref name="type"/> is a read token (<c>Viewing[T]</c>).</summary>

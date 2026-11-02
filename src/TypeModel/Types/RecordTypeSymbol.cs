@@ -159,7 +159,7 @@ public class RecordTypeSymbol : TypeSymbol
 
         // Result[T]: 8-byte type-id tag + max(payload, 8). Optional is handled by
         // the member-sum path since its layout is just {i1, T}.
-        if (CarrierKind is CarrierKind.Result &&
+        if (CarrierKind is CarrierKind.Check &&
             TypeArguments is { Count: 1 } args)
         {
             return 8 + Math.Max(val1: args[index: 0]
@@ -203,7 +203,7 @@ public class RecordTypeSymbol : TypeSymbol
     /// <remarks>
     /// A record's natural alignment is the MAX of its members' alignments — NOT its total size. An
     /// <c>@llvm</c>-annotated record uses the alignment of its backend type (array → element alignment,
-    /// struct literal → max field alignment); a Result/Lookup carrier is <c>{i64 tag, payload}</c> so its
+    /// struct literal → max field alignment); a Check carrier is <c>{i64 tag, payload}</c> so its
     /// alignment is <c>max(8, payload alignment)</c>. This keeps <see cref="SizeBytes"/> and every
     /// offset/ABI computation consistent with the C/LLVM layout codegen emits.
     /// </remarks>
@@ -214,7 +214,7 @@ public class RecordTypeSymbol : TypeSymbol
             return AlignOfLlvmType(llvmType: be, pointerSize: pointerSize);
         }
 
-        if (CarrierKind is CarrierKind.Result &&
+        if (CarrierKind is CarrierKind.Check &&
             TypeArguments is { Count: 1 } args)
         {
             return Math.Max(val1: 8,
@@ -242,7 +242,7 @@ public class RecordTypeSymbol : TypeSymbol
         RuntimeContract.RcWrapperBaseNames.Contains(item: wrapper));
 
     /// <summary>
-    /// Whether this is a builder-known error-handling carrier (Optional, Result, Lookup).
+    /// Whether this is a builder-known error-handling carrier (Optional, Check).
     /// Set on the generic definition shells registered by TypeRegistry before stdlib loads.
     /// Propagated to all resolved instances via <see cref="CreateInstance"/>.
     /// </summary>

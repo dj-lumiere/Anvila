@@ -494,7 +494,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Validates a routine body after analysis: infers return type, checks termination, validates
     /// failable-without-failure, stores the body for error-handling variant generation, reports
-    /// undismantled Lookup variables, and snapshots stolen variable names for teardown.
+    /// undismantled Check variables, and snapshots stolen variable names for teardown.
     /// </summary>
     private void ValidateRoutineBodyPostAnalysis(RoutineDeclaration routine,
         RoutineInfo routineInfo)
@@ -1090,8 +1090,8 @@ public sealed partial class SemanticVerifier
             // A value the routine returns goes into the carrier the variant gives back (`Optional[S64]` for `-> S64`): a
             // bare number takes the routine's result type, as in the routine it was written in.
             TypeSymbol? returned = variantReturn.SiteKind == VariantSiteKind.FromReturn &&
-                                   _currentRoutine?.ReturnType is
-                                       { BareName: "Optional" or "Check" or "Lookup", TypeArguments: [{ } value] }
+                                   _currentRoutine?.ReturnType is { TypeArguments: [{ } value] } carrierType &&
+                                   Declaration.RuntimeContract.IsValueCarrier(bareName: carrierType.BareName)
                 ? value
                 : null;
             AnalyzeExpression(expression: variantReturn.Value, expectedType: returned);
@@ -1614,7 +1614,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Registers post-declaration side-effects for variables with special tracking needs:
-    /// Guarded/Witnessed handle identity (RF-S630) and Lookup dismantlement tracking (#161).
+    /// Guarded/Witnessed handle identity (RF-S630) and Check dismantlement tracking (#161).
     /// </summary>
     private void TrackSpecialVariableRegistrations(VariableDeclaration varDecl, TypeSymbol varType)
     {
@@ -1632,7 +1632,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Enforces the copy/aliasing restrictions on a variable declaration's initializer: single-owner
-    /// entities cannot be viewed, variants / Result / Lookup cannot be copied variable-to-variable,
+    /// entities cannot be viewed, variants / Check cannot be copied variable-to-variable,
     /// scoped access tokens cannot bind at all, and other non-trivially-copyable wrappers require an
     /// explicit copy verb.
     /// </summary>
@@ -1674,7 +1674,7 @@ public sealed partial class SemanticVerifier
         // A variant is copied like the values it holds: one holding only values copies (decided 2026-10-14), one that
         // may hold an entity is the kept-entity case above (RF-S413).
 
-        // #81: Result/Lookup cannot be copied from variable to variable
+        // #81: Check cannot be copied from variable to variable
         // `var r = check parse(data)` then `when r` is allowed (call result)
         // `var r2 = r1` where r1: Result[T] is not allowed (variable copy)
         if (varDecl.Initializer is IdentifierExpression && IsCarrierType(type: varType) &&
@@ -1986,7 +1986,7 @@ public sealed partial class SemanticVerifier
             CheckIndexWriteReshape(index: element, location: assign.Location);
         }
 
-        // #81: Result/Lookup cannot be copied from variable to variable via assignment
+        // #81: Check cannot be copied from variable to variable via assignment
         if (assign.Value is IdentifierExpression && IsCarrierType(type: valueType) &&
             !IsMaybeType(type: valueType))
         {

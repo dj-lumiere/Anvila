@@ -520,7 +520,7 @@ public sealed class RoutineInfo
     public string? SurfaceRealm { get; init; }
 
     /// <summary>The recovery keyword this variant serves: <c>try</c> (Optional[T] or Bool), <c>check</c>
-    /// (Check[T]) or <c>lookup</c> (Lookup[T]). Null for every other routine.</summary>
+    /// (Check[T]). Null for every other routine.</summary>
     public RecoveryKind? Recovery { get; init; }
 
     /// <summary>True for a builder-generated recovery variant (see <see cref="RecoveryOf"/>).</summary>

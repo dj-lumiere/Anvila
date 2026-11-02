@@ -151,11 +151,11 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>Whether <paramref name="type"/> is a recovery carrier of a token (<c>Optional[Viewing[T]]</c>, and the
-    /// <c>Check</c> / <c>Lookup</c> that <c>grab</c> / <c>lookup</c> give on a routine returning a token): what an
+    /// <c>Check</c> that <c>check</c> gives on a routine returning a token): what an
     /// iterator's <c>emit</c> gives under <c>try</c>, unpacked with <c>when</c> where it is made.</summary>
     private static bool IsTokenCarrier(TypeSymbol type)
     {
-        return type.BareName is "Optional" or "Check" or "Lookup" && type.TypeArguments is [{ } carried] &&
+        return Declaration.RuntimeContract.IsValueCarrier(bareName: type.BareName) && type.TypeArguments is [{ } carried] &&
                (IsInlineOnlyTokenType(type: carried) || IsTokenTuple(type: carried));
     }
 
@@ -720,7 +720,7 @@ public sealed partial class SemanticVerifier
     private void ValidateMemberVariableAccess(MemberVariableInfo memberVariable, bool isWrite,
         SourceLocation accessLocation)
     {
-        // A recovery carrier's layout (`Optional.present`/`value`, `Check`/`Lookup` `type_id`/`payload`) is what the
+        // A recovery carrier's layout (`Optional.present`/`value`, `Check` `type_id`/`payload`) is what the
         // builder builds and reads when it lowers `try`/`check`. Its own bodies reach those secret fields
         // by construction, whichever module they land in.
         if (_isInCompilerGeneratedBody && IsCarrierLayoutField(memberVariable: memberVariable))
@@ -913,7 +913,7 @@ public sealed partial class SemanticVerifier
     private static bool IsCarrierLayoutField(MemberVariableInfo memberVariable)
     {
         string? carrier = memberVariable.Owner?.BareName;
-        return carrier is "Optional" or "Check" &&
+        return Declaration.RuntimeContract.IsValueCarrier(bareName: carrier) &&
                memberVariable.Name is Declaration.RuntimeContract.Carrier.PresentField
                    or Declaration.RuntimeContract.Carrier.ValueField
                    or Declaration.RuntimeContract.Carrier.TypeIdField
