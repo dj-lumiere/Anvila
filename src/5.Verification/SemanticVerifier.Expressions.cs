@@ -841,6 +841,7 @@ public sealed partial class SemanticVerifier
 
         // The value is read before the name takes it, so it still sees the name as checked (`cur = cur.next`).
         TypeSymbol? narrowedBefore = null;
+        List<(string Key, TypeSymbol Type)> pathsBefore = [];
         if (binary.Operator == BinaryOperator.Assign)
         {
             NoteAssignedPlace(target: binary.Left);
@@ -849,6 +850,7 @@ public sealed partial class SemanticVerifier
                 ? _registry.GetNarrowedType(name: narrowedTarget.Name)
                 : null;
             ForgetNarrowing(target: binary.Left);
+            pathsBefore = ForgetPathNarrowings(target: binary.Left);
         }
 
         if (binary.Operator == BinaryOperator.Assign && PlaceName(place: binary.Left) is { } assignedPlace)
@@ -903,6 +905,8 @@ public sealed partial class SemanticVerifier
                 _registry.NarrowVariable(name: ((IdentifierExpression)binary.Left).Name, narrowedType: narrowedBefore);
             }
 
+            RestoreNarrowings(narrowings: pathsBefore);
+
             // Pass leftType as expected for assignments so RHS literals like `none`
             // see the target's carrier-slot type as their contextual expected type.
             // `marks == none` compares with the flags value that has no member on: the flags side gives `none` its type.
@@ -923,6 +927,11 @@ public sealed partial class SemanticVerifier
             if (narrowedBefore != null)
             {
                 ForgetNarrowing(target: binary.Left);
+            }
+
+            if (pathsBefore.Count > 0)
+            {
+                ForgetPathNarrowings(target: binary.Left);
             }
         }
         // An operand that is a value's token (an iterated element, an element read into a variable) is its value

@@ -717,6 +717,13 @@ public record MemberExpression(Expression Object, string MemberName, SourceLocat
     /// </summary>
     public bool UnwrapsOptionalReceiver { get; set; }
 
+    /// <summary>
+    /// Set by analysis on a field read a check narrowed from a carrier (<c>info.returns</c> after
+    /// <c>if info.returns is None</c> leaves): the declared carrier type. <see cref="Expression.ResolvedType"/> is the
+    /// payload, and lowering reads the payload out of the field.
+    /// </summary>
+    public TypeSymbol? NarrowedFrom { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {

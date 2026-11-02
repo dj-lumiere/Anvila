@@ -13,6 +13,36 @@ public sealed partial class SemanticVerifier
     {
     }
 
+    /// <summary>A place a check can narrow, as it reads in the source: a name or a field path off one
+    /// (<c>info</c>, <c>info.returns</c>, <c>a.b.c</c>), or null for anything else (a call, an index).</summary>
+    private static string? NarrowPlace(Expression place)
+    {
+        return place switch
+        {
+            IdentifierExpression id => id.Name,
+            MemberExpression member when NarrowPlace(place: member.Object) is { } owner =>
+                $"{owner}.{member.MemberName}",
+            _ => null
+        };
+    }
+
+    /// <summary>An assignment to a place ends the narrowing of the field paths under it (and of the path itself when
+    /// that is a field path). Returns what was narrowed, so the value read before the assignment still sees it.</summary>
+    private List<(string Key, TypeSymbol Type)> ForgetPathNarrowings(Expression target)
+    {
+        return NarrowPlace(place: target) is { } place
+            ? _registry.ForgetMemberNarrowings(path: place, includeSelf: target is MemberExpression)
+            : [];
+    }
+
+    private void RestoreNarrowings(List<(string Key, TypeSymbol Type)> narrowings)
+    {
+        foreach ((string key, TypeSymbol type) in narrowings)
+        {
+            _registry.NarrowVariable(name: key, narrowedType: type);
+        }
+    }
+
     /// <summary>A general-variant `x is A` / `x isnot A` test on a variant variable — the seed for
     /// arm-exclusion narrowing (`if x is A {} elseif x is B {} else { /* x is C */ }`).</summary>
     private sealed record VariantIsNarrowing(
@@ -167,6 +197,12 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private NarrowingInfo? ExtractFromIsPattern(IsPatternExpression isPat)
     {
+        if (isPat.Expression is MemberExpression { ResolvedType: { } memberType } memberPath &&
+            NarrowPlace(place: memberPath) is { } pathKey)
+        {
+            return ExtractFromPlace(isPat: isPat, key: pathKey, varType: _registry.GetNarrowedType(name: pathKey) ?? memberType);
+        }
+
         // The expression must be a simple identifier
         if (isPat.Expression is not IdentifierExpression id)
         {
@@ -182,7 +218,11 @@ public sealed partial class SemanticVerifier
 
         // Check for existing narrowing
         TypeSymbol varType = _registry.GetNarrowedType(name: id.Name) ?? varInfo.Type;
+        return ExtractFromPlace(isPat: isPat, key: id.Name, varType: varType);
+    }
 
+    private NarrowingInfo? ExtractFromPlace(IsPatternExpression isPat, string key, TypeSymbol varType)
+    {
         string? carrierBase = GetCarrierBaseName(type: varType);
         bool carrierUsesNoneForAbsent = carrierBase is "Optional";
         bool eliminateNone = carrierUsesNoneForAbsent && IsNonePattern(pattern: isPat.Pattern);
@@ -207,13 +247,13 @@ public sealed partial class SemanticVerifier
         if (isPat.IsNegated)
         {
             // "x isnot None" -> then branch gets the narrowed type
-            return new NarrowingInfo(VariableName: id.Name,
+            return new NarrowingInfo(VariableName: key,
                 ThenBranchType: narrowedType,
                 ElseBranchType: null);
         }
 
         // "x is None" -> else branch gets the narrowed type
-        return new NarrowingInfo(VariableName: id.Name,
+        return new NarrowingInfo(VariableName: key,
             ThenBranchType: null,
             ElseBranchType: narrowedType);
     }

@@ -1061,6 +1061,18 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             }
         }
 
+        // A field path a check narrowed from a carrier reads as the carrier's payload.
+        if (mem.NarrowedFrom is { } declared)
+        {
+            MemberExpression whole = mem with { NarrowedFrom = null, ResolvedType = declared };
+            (List<Statement> wholeH, Expression wholeRead) = LowerMemberExpr(mem: whole, expr: whole);
+            TypeSymbol payload = mem.ResolvedType!;
+            return (wholeH,
+                new CarrierPayloadExpression(Carrier: wholeRead,
+                    ConcreteType: TypeInfoToExpr(type: payload, loc: mem.Location),
+                    Location: mem.Location) { ResolvedType = payload });
+        }
+
         (List<Statement> h, Expression lowered) = LowerExpr(expr: mem.Object);
         if (h.Count == 0 && ReferenceEquals(objA: lowered, objB: mem.Object))
         {

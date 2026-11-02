@@ -23,7 +23,7 @@ public sealed class Scope
     private readonly Dictionary<string, VariableInfo> _variables = new();
 
     /// <summary>Type narrowings applied in this scope (e.g., after null checks).</summary>
-    private readonly Dictionary<string, TypeSymbol> _typeNarrowings = new();
+    private readonly Dictionary<string, TypeSymbol?> _typeNarrowings = new();
 
     /// <summary>Variant arms proven EXCLUDED for a variable in this scope (by full type name), e.g.
     /// inside the else of `if x is A` on a variant. Accumulates down an if/elseif chain: once every
@@ -111,6 +111,40 @@ public sealed class Scope
         return _typeNarrowings.TryGetValue(key: name, value: out TypeSymbol? type)
             ? type
             : Parent?.GetNarrowedType(name: name);
+    }
+
+    /// <summary>
+    /// Ends the narrowing of every member path under <paramref name="path"/> (<c>a.b</c>, <c>a.b.c</c> for
+    /// <c>a</c>), and of <paramref name="path"/> itself when <paramref name="includeSelf"/> is set, in this scope
+    /// and the ones it sits in. Returns what was narrowed, so a value read before the assignment still sees it.
+    /// </summary>
+    public List<(string Key, TypeSymbol Type)> ForgetMemberNarrowings(string path, bool includeSelf)
+    {
+        var forgotten = new List<(string Key, TypeSymbol Type)>();
+        var seen = new HashSet<string>();
+        for (Scope? scope = this; scope != null; scope = scope.Parent)
+        {
+            foreach (string key in scope._typeNarrowings.Keys.ToList())
+            {
+                if (!(key.StartsWith(value: path + ".", comparisonType: StringComparison.Ordinal) ||
+                      includeSelf && key == path) || !seen.Add(item: key))
+                {
+                    continue;
+                }
+
+                if (GetNarrowedType(name: key) is { } type)
+                {
+                    forgotten.Add(item: (key, type));
+                }
+            }
+        }
+
+        foreach ((string key, _) in forgotten)
+        {
+            _typeNarrowings[key: key] = null;
+        }
+
+        return forgotten;
     }
 
     /// <summary>

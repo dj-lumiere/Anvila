@@ -1904,6 +1904,7 @@ public sealed partial class SemanticVerifier
             ? _registry.GetNarrowedType(name: narrowedTarget.Name)
             : null;
         ForgetNarrowing(target: assign.Target);
+        List<(string Key, TypeSymbol Type)> pathsBefore = ForgetPathNarrowings(target: assign.Target);
         // A global's initialization at the top of start() names the global of its own file's module, which is not
         // the entry file's when two modules have a global of that name.
         TypeSymbol targetType = assign.IsGlobalInit
@@ -1923,6 +1924,8 @@ public sealed partial class SemanticVerifier
             _registry.NarrowVariable(name: ((IdentifierExpression)assign.Target).Name, narrowedType: narrowedBefore);
         }
 
+        RestoreNarrowings(narrowings: pathsBefore);
+
         TypeSymbol valueType = assign.IsGlobalInit
             ? InImportStateOf(file: assign.Location.FileName,
                 analyze: () => AnalyzeExpression(expression: assign.Value, expectedType: targetType))
@@ -1931,6 +1934,12 @@ public sealed partial class SemanticVerifier
         {
             ForgetNarrowing(target: assign.Target);
         }
+
+        if (pathsBefore.Count > 0)
+        {
+            ForgetPathNarrowings(target: assign.Target);
+        }
+
         if (assign.Target is IdentifierExpression localTarget)
         {
             TakeDangerousCallableIntoLocal(name: localTarget.Name, value: assign.Value);

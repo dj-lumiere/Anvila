@@ -643,7 +643,7 @@ public sealed partial class SemanticVerifier
 
         // A `when` whose `is None` arm leaves goes on with the value: the rest of the scope is its value arm, so a
         // `when` with only that arm is not missing one.
-        bool valueGoesOn = ApplyNoneArmExitNarrowing(whenStmt: whenStmt, whenVarName: whenVarName,
+        bool valueGoesOn = ApplyNoneArmExitNarrowing(whenStmt: whenStmt, whenVarName: NarrowPlace(place: whenStmt.Expression),
                                matchedType: matchedType) &&
                            whenStmt.Clauses.All(predicate: clause => IsNonePattern(pattern: clause.Pattern));
         if (!valueGoesOn && (matchedType is ChoiceTypeSymbol or VariantTypeSymbol || IsCarrierType(type: matchedType) ||

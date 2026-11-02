@@ -577,6 +577,7 @@ public abstract class AstRewriter
             GenericMemberRoutineCallExpression e => VisitGenericMemberRoutineCall(e: e),
             GenericMemberExpression e => VisitGenericMember(e: e),
             WrapperProjectionExpression e => VisitWrapperProjection(e: e),
+            CarrierPayloadExpression e => VisitCarrierPayload(e: e),
             BackendCastExpression e => VisitBackendCast(e: e),
             AddressOfExpression e => VisitAddressOf(e: e),
             TaggedCreatorExpression e => VisitTaggedCreator(e: e),
@@ -690,6 +691,20 @@ public abstract class AstRewriter
         return ReferenceEquals(objA: bound, objB: e.Bound)
             ? e
             : e with { Bound = bound };
+    }
+
+    /// <summary>
+    /// Rewrites a <see cref="CarrierPayloadExpression"/> by visiting the carrier it reads the payload of.
+    /// Returns the original node when the carrier is unchanged.
+    /// </summary>
+    /// <param name="e">The payload read to rewrite.</param>
+    /// <returns>The rewritten read, or the original reference if nothing changed.</returns>
+    protected virtual Expression VisitCarrierPayload(CarrierPayloadExpression e)
+    {
+        Expression carrier = VisitExpression(expr: e.Carrier);
+        return ReferenceEquals(objA: carrier, objB: e.Carrier)
+            ? e
+            : e with { Carrier = carrier };
     }
 
     /// <summary>

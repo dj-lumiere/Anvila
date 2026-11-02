@@ -3571,6 +3571,12 @@ public sealed partial class TypeRegistry
         _currentScope.NarrowVariable(name: name, narrowedType: narrowedType);
     }
 
+    /// <summary>Ends the narrowing of the member paths under a path (see Scope).</summary>
+    public List<(string Key, TypeSymbol Type)> ForgetMemberNarrowings(string path, bool includeSelf)
+    {
+        return _currentScope.ForgetMemberNarrowings(path: path, includeSelf: includeSelf);
+    }
+
     /// <summary>
     /// Gets the narrowed type for a variable in the current scope chain.
     /// </summary>

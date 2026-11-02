@@ -141,6 +141,22 @@ public sealed partial class SemanticVerifier
 
     private TypeSymbol AnalyzeMemberExpression(MemberExpression member)
     {
+        TypeSymbol declared = AnalyzeMemberExpressionCore(member: member);
+        // A field path a check narrowed (`if info.returns is None` leaving, then `info.returns.name`) reads as its
+        // payload until the path or a part of it is assigned.
+        member.NarrowedFrom = null;
+        if (IsCarrierType(type: declared) && NarrowPlace(place: member) is { } place &&
+            _registry.GetNarrowedType(name: place) is { } narrowed && narrowed.FullName != declared.FullName)
+        {
+            member.NarrowedFrom = declared;
+            return narrowed;
+        }
+
+        return declared;
+    }
+
+    private TypeSymbol AnalyzeMemberExpressionCore(MemberExpression member)
+    {
         TypeSymbol objectType = AnalyzeExpression(expression: member.Object);
 
         // A buildtime `expand` handle has no member projections — its metadata is read via the
@@ -158,7 +174,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Suflae: reading through an `E?` (`Optional[Roamed[E]]`) before checking it. A checked local is
-        // narrowed to the handle, a member variable is never narrowed, so it is bound to a local and checked there.
+        // narrowed to the handle, a field read this way is narrowed by a check on the same path (`if a.b is None`), else it is bound to a local and checked there.
         if (SharedEntities.IsOptionalEntityRef(type: objectType) && !IsStdlibFile(filePath: member.Location.FileName))
         {
             ReportNullableEntityDeref(member: member);
