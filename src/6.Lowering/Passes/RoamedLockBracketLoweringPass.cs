@@ -197,7 +197,8 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             ReleaseBeforeLeaving(block: block, handles: handles);
         }
 
-        AddBracketed(into: into, handles: handles, stmt: block);
+        // The block now carries its own enter and exits, so a later run of this pass must not add them again.
+        AddBracketed(into: into, handles: handles, stmt: block with { HoldsAccessLock = false });
     }
 
     /// <summary>

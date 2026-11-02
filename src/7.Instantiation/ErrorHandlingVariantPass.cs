@@ -1324,6 +1324,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
             AssignmentStatement assign => assign.Target,
             ExpressionStatement { Expression: BinaryExpression { Operator: BinaryOperator.Assign } assign } =>
                 assign.Left,
+            // A lambda `() => c.n = c.n + 1` returns its assignment, which is the same write
+            ReturnStatement { Value: BinaryExpression { Operator: BinaryOperator.Assign } assign } => assign.Left,
             _ => null
         };
         return target is MemberExpression or IndexExpression or IdentifierExpression { IsModuleGlobal: true };
