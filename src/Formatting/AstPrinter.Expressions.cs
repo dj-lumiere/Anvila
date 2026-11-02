@@ -271,7 +271,7 @@ internal sealed partial class AstPrinter
     }
 
     /// <summary>
-    /// A chain of at least two member calls (<c>xs.where(...).select(...)</c>). With three calls or more it always
+    /// A chain of at least two member calls (<c>xs.where(...).select(...)</c>). With more than three calls it always
     /// breaks before each <c>.</c> after its head, one level in, and with two only when it does not fit (the lexers
     /// read a line that starts with <c>.</c> as the continuation of the one before). The head is the receiver and
     /// the plain member accesses before the first call (<c>me.items</c>). Null when the expression is not such a
@@ -360,9 +360,9 @@ internal sealed partial class AstPrinter
             tail.Add(item: segment);
         }
 
-        // Three calls or more are always one call per line, fitting or not.
+        // More than three calls are always one call per line, fitting or not.
         Doc chain = Doc.Concat(Doc.Concat(parts: head), Doc.Nest(indent: IndentWidth, content: Doc.Concat(parts: tail)));
-        return calls >= 3
+        return calls > 3
             ? Doc.BrokenGroup(content: chain)
             : Doc.Group(content: chain);
     }
