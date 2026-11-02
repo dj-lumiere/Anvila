@@ -29,6 +29,26 @@ public sealed partial class SemanticVerifier
     /// <summary>Monotonic sequence for uniquely naming synthesized recovery base routines per compile.</summary>
     private int _recoveryCompositionSeq;
 
+    /// <summary>How many <c>try</c>/<c>check</c> expressions the analysis is inside (their inner expression).</summary>
+    private int _recoveryDepth;
+
+    /// <summary>
+    /// The <c>T</c> of a <c>T?</c> receiver under <c>try</c>/<c>check</c> when the call <paramref name="name"/> is not
+    /// a routine of the optional itself, else null. The call is then made on the <c>T</c>, and an absent receiver is
+    /// an <c>AbsentValueError</c> the same keyword receives.
+    /// </summary>
+    private TypeSymbol? OptionalReceiverPayloadUnderRecovery(TypeSymbol objectType, string name)
+    {
+        if (_recoveryDepth == 0 ||
+            objectType is not RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [{ } payload] } ||
+            _registry.GetOwnMemberRoutinesResolved(type: objectType).Any(predicate: r => r.Name == name))
+        {
+            return null;
+        }
+
+        return payload;
+    }
+
     /// <summary>Prefix for hoisted per-sub-call temporaries in a composition base body.</summary>
     private const string RecoveryTempPrefix = "__rc_t";
 
@@ -90,8 +110,18 @@ public sealed partial class SemanticVerifier
         // Analyze the inner expression first so every sub-call carries its ResolvedRoutine and ResolvedType.
         // The decomposition below keys failable-ness off the ResolvedRoutine IsFailable flag. The inner expression
         // expects the carrier's payload: `var n: S64? = try count.to()` converts to `S64`.
-        TypeSymbol innerType = AnalyzeExpression(expression: recovery.Inner,
-            expectedType: CarrierPayload(carrier: expectedType, kind: recovery.Kind));
+        _recoveryDepth++;
+        TypeSymbol innerType;
+        try
+        {
+            innerType = AnalyzeExpression(expression: recovery.Inner,
+                expectedType: CarrierPayload(carrier: expectedType, kind: recovery.Kind));
+        }
+        finally
+        {
+            _recoveryDepth--;
+        }
+
         if (innerType is ErrorTypeSymbol)
         {
             return ErrorTypeSymbol.Instance;
@@ -545,6 +575,24 @@ public sealed partial class SemanticVerifier
         {
             // Rewrite children first (post-order) so any inner failable calls are already hoisted + replaced.
             Expression rewritten = base.VisitCall(e: e);
+            // A call on a `T?` receiver reaches the `T` through its `reach()`, which fails with AbsentValueError
+            // when the receiver is none: hoisted first, so the keyword receives it like any other failure.
+            if (rewritten is CallExpression { Callee: MemberExpression { UnwrapsOptionalReceiver: true } viaOptional } reached &&
+                viaOptional.Object.ResolvedType is { } optionalType &&
+                registry.LookupMemberRoutineOverload(type: optionalType, memberRoutineName: RuntimeContract.ReachThroughOptional, argTypes: []) is
+                    { } unwrap &&
+                optionalType.TypeArguments is [{ } held])
+            {
+                Expression value = HoistFailable(call: FailurePointCalls.MemberCall(receiver: viaOptional.Object,
+                    memberName: RuntimeContract.ReachThroughOptional,
+                    arguments: [],
+                    routine: unwrap,
+                    resultType: held,
+                    location: viaOptional.Location));
+                MemberExpression onValue = viaOptional with { Object = value, UnwrapsOptionalReceiver = false };
+                rewritten = reached with { Callee = onValue };
+            }
+
             // A sub-call is failable when its resolved routine is failable. A routine that is not failable is a
             // wall: its call is hoisted only when it hands on or works on a routine value that may fail, whose
             // failure it passes on (FailableValues.CallMayFail). A call through such a routine value is hoisted

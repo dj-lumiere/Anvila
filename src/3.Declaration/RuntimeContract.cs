@@ -501,6 +501,10 @@ public static class RuntimeContract
     /// <summary>The <c>Emittable[T]</c> routine that gives a fresh emitter; what it returns is the type's <c>Emitter</c>.</summary>
     public const string Iter = "emitter";
 
+    /// <summary>The <c>Optional[T]</c> routine a <c>try</c>/<c>check</c> call on a <c>T?</c> receiver goes through: the held
+    /// value, failing with <c>AbsentValueError</c> when the optional is none.</summary>
+    public const string ReachThroughOptional = "reach";
+
     /// <summary>The routine that hands a collection's elements over to a walk, for <c>for x in steal xs</c>.</summary>
     public const string TakeEach = "take_each";
 

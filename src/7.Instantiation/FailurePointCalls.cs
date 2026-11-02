@@ -217,7 +217,7 @@ internal static class FailurePointCalls
         return routine is { IsFailable: true } or { HasThrow: true };
     }
 
-    private static CallExpression MemberCall(Expression receiver, string memberName, List<Expression> arguments,
+    internal static CallExpression MemberCall(Expression receiver, string memberName, List<Expression> arguments,
         RoutineInfo routine, TypeSymbol? resultType, SourceLocation location)
     {
         // A bare literal on the left (`10` in `try 10 // n`) took the other operand's type, but as the receiver of the

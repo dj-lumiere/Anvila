@@ -1622,6 +1622,20 @@ public sealed partial class SemanticVerifier
             return type;
         }
 
+        // A stamp is never empty: `Stamped[Node](slot: 0, generation: 0)` would make one, and its member variables are
+        // secret, so only its module builds a stamp. (Other generic types built with type arguments and member-wise
+        // values are not checked yet: the library and its tests build several that way.)
+        if (type.BareName == "Stamped")
+        {
+            ValidateMemberwiseConstructionAccess(type: type,
+                arguments: creator.MemberVariables
+                                  .Select(selector: mv => (Expression)new NamedArgumentExpression(Name: mv.Name,
+                                      Value: mv.Value,
+                                      Location: creator.Location))
+                                  .ToList(),
+                location: creator.Location);
+        }
+
         // Validate member variable initializers
         ValidateCreatorMemberVariables(type: type,
             memberVariables: creator.MemberVariables,

@@ -710,6 +710,13 @@ public record MemberExpression(Expression Object, string MemberName, SourceLocat
     /// </summary>
     public bool IsFailable { get; init; }
 
+    /// <summary>
+    /// Set by analysis on a member call under <c>try</c>/<c>check</c> whose receiver is a <c>T?</c> that has no such
+    /// routine itself: the call is bound on the <c>T</c>, and recovery hoists a <c>reach()</c> of the receiver in
+    /// front, so an absent receiver is an <c>AbsentValueError</c> the same keyword receives.
+    /// </summary>
+    public bool UnwrapsOptionalReceiver { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
