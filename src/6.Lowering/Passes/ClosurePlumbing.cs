@@ -50,10 +50,12 @@ internal sealed class ClosurePlumbing
         return new ParamInfo(name: BoundParameterName, type: _cptr);
     }
 
-    /// <summary><c>var name = closure_get[type](bound: __bound, slot: slot)</c>.</summary>
-    internal Statement CaptureLocal(string name, TypeSymbol type, int slot)
+    /// <summary><c>var name = closure_get[type](bound: __bound, slot: slot)</c>. A token or entity the lambda is bound
+    /// to is read back as it is (<c>closure_get_bound</c>), with nothing copied.</summary>
+    internal Statement CaptureLocal(string name, TypeSymbol type, int slot, bool isBound = false)
     {
-        CallExpression get = Call(routine: Instance(name: "closure_get", typeArgument: type),
+        CallExpression get = Call(
+            routine: Instance(name: isBound ? "closure_get_bound" : "closure_get", typeArgument: type),
             arguments:
             [
                 ("bound", new IdentifierExpression(Name: BoundParameterName, Location: _location)
@@ -70,7 +72,7 @@ internal sealed class ClosurePlumbing
                 },
                 Initializer: get,
                 Visibility: VisibilityModifier.Open,
-                Location: _location),
+                Location: _location) { IsBoundCapture = isBound },
             Location: _location);
     }
 

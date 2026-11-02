@@ -14,7 +14,7 @@ internal partial class Program
     /// <summary>
     /// Checks <paramref name="entryFile"/> like <c>check</c> and writes every diagnostic of the user's files as a JSON
     /// array: file, line, column, severity (<c>error</c>, <c>warning</c> or <c>note</c>), code, message, the last line
-    /// when it covers several, and the fix it proposes (a title and edits with 1-based lines and columns), so a tool
+    /// when it covers several, the names a lambda is bound to (<c>boundTo</c>) when the error keeps or returns one, and the fix it proposes (a title and edits with 1-based lines and columns), so a tool
     /// applies a fix without reading the message. Returns 1 when there is an error.
     /// </summary>
     private static int CheckJson(string entryFile, string? projectRoot, IReadOnlyList<string>? libraryRoots)
@@ -67,8 +67,15 @@ internal partial class Program
 
     private static Dictionary<string, object?> Entry(SemanticError diagnostic)
     {
-        return Entry(location: diagnostic.Location, severity: "error", code: diagnostic.CodeString,
-            message: diagnostic.SurfaceMessage, endLine: diagnostic.EndLine, fix: diagnostic.Fix);
+        Dictionary<string, object?> entry = Entry(location: diagnostic.Location, severity: "error",
+            code: diagnostic.CodeString, message: diagnostic.SurfaceMessage, endLine: diagnostic.EndLine,
+            fix: diagnostic.Fix);
+        if (diagnostic.BoundTo != null)
+        {
+            entry[key: "boundTo"] = diagnostic.BoundTo;
+        }
+
+        return entry;
     }
 
     private static Dictionary<string, object?> Entry(SemanticWarning diagnostic)

@@ -925,7 +925,8 @@ internal sealed class LambdaLiftingPass(PostprocessingContext ctx)
             {
                 liftedStatements.Add(item: closure.CaptureLocal(name: CapturedLocalName(name: closureCaptures[index: i].Name),
                     type: closureCaptures[index: i].Type,
-                    slot: i));
+                    slot: i,
+                    isBound: lambda.BoundTo?.Any(predicate: b => b.Name == closureCaptures[index: i].Name) == true));
             }
         }
 

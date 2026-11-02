@@ -1408,6 +1408,8 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
                // Any other name a pattern binds (a `Optional`'s `.value`, as a `for` loop in a recovery variant
                // binds its item) is a view too: the matched carrier is torn down and frees it.
                || v.IsPatternBinding
+               // A token or entity a lambda is bound to, read back out of its payload.
+               || v.IsBoundCapture
                // A member variable read into a temp ahead of a call: the entity still holds the value.
                || v.ReadsHeldValue;
     }

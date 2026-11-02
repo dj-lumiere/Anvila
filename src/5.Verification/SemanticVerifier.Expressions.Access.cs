@@ -997,7 +997,8 @@ public sealed partial class SemanticVerifier
 
         foreach (IdentifierExpression id in identifiers)
         {
-            ValidateLambdaCaptureIdentifier(id: id,
+            ValidateLambdaCaptureIdentifier(lambda: lambda,
+                id: id,
                 enclosingScopeVariables: enclosingScopeVariables,
                 localScopeVariables: localScopeVariables,
                 parameterNames: parameterNames,
@@ -1010,7 +1011,7 @@ public sealed partial class SemanticVerifier
     /// and special identifiers, validates the captured type, and enforces the 'given' clause for local
     /// captures (RazorForge only).
     /// </summary>
-    private void ValidateLambdaCaptureIdentifier(IdentifierExpression id,
+    private void ValidateLambdaCaptureIdentifier(LambdaExpression lambda, IdentifierExpression id,
         IReadOnlyDictionary<string, VariableInfo> enclosingScopeVariables,
         IReadOnlyDictionary<string, VariableInfo> localScopeVariables,
         HashSet<string> parameterNames, HashSet<string>? givenNames)
@@ -1028,15 +1029,8 @@ public sealed partial class SemanticVerifier
             if (!_registry.EntitiesAreShared && id.ResolvedType is { } meType &&
                 (IsRawEntityType(type: meType) || IsMemoryToken(type: meType)))
             {
-                string entity = (meType.TypeArguments is [{ } inner] && IsMemoryToken(type: meType)
-                    ? inner
-                    : meType).Name;
-                ReportError(code: SemanticDiagnosticCode.LambdaCaptureToken,
-                    message: $"You capture 'me' in this lambda, but 'me' is the '{entity}' this routine was called " +
-                             "on, reached for this call only, and the lambda can be called after the call ends. Copy " +
-                             $"what the lambda needs out of 'me' first (`var n = me.n`, then capture 'n'), or capture " +
-                             $"a handle that keeps the entity (`Retained[{entity}]`).",
-                    location: id.Location);
+                NoteBoundCapture(lambda: lambda, name: "me", kind: IsMemoryToken(type: meType) ? "token" : "entity",
+                    madeAt: _currentRoutine?.Location);
             }
 
             return;
@@ -1054,7 +1048,7 @@ public sealed partial class SemanticVerifier
         }
 
         // Validate that the captured type is allowed
-        ValidateCapturedType(varName: id.Name, varType: varInfo.Type, location: id.Location);
+        ValidateCapturedType(lambda: lambda, varName: id.Name, varInfo: varInfo);
 
         // Check 'given' clause enforcement for local captures
         if (ChecksOwnershipHere &&
@@ -1081,43 +1075,34 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Validates that a captured variable's type is allowed in lambda captures.
+    /// Notes what a captured variable's type means for the lambda. Where entities are shared handles there is no
+    /// token and no single holder: a lambda keeps one more handle like any other name does. A token or an entity
+    /// of this routine binds the lambda to it (<see cref="LambdaExpression.BoundTo"/>), which the bound-lambda check
+    /// holds to where the lambda may go.
     /// </summary>
-    /// <param name="varName">Name of the captured variable.</param>
-    /// <param name="varType">Type of the captured variable.</param>
-    /// <param name="location">Source location for error reporting.</param>
-    private void ValidateCapturedType(string varName, TypeSymbol varType, SourceLocation location)
+    private void ValidateCapturedType(LambdaExpression lambda, string varName, VariableInfo varInfo)
     {
-        // Where entities are shared handles there is no token and no single holder: a lambda keeps one more
-        // handle like any other name does.
         if (_registry.EntitiesAreShared)
         {
             return;
         }
 
-        // Check for memory tokens (scope-bound, cannot be captured)
-        if (IsMemoryToken(type: varType))
+        if (IsMemoryToken(type: varInfo.Type))
         {
-            string target = varType.TypeArguments is [{ } viewed] ? viewed.ShortTypeName : "T";
-            ReportError(code: SemanticDiagnosticCode.LambdaCaptureToken,
-                message: $"You capture '{varName}' in this lambda, but '{varName}' is a token " +
-                         $"(`{varType.ShortTypeName}`), and the lambda can be called after the place `{target}` is in " +
-                         $"is gone. Pass the token to the lambda as an argument where you call it, or capture a " +
-                         $"handle that keeps the entity (`Retained[{target}]`, or `Guarded[{target}]` across jobs).",
-                location: location);
-            return;
+            NoteBoundCapture(lambda: lambda, name: varName, kind: "token", madeAt: varInfo.Location);
         }
-
-        // Check for raw entities (must use handles for capture)
-        if (IsRawEntityType(type: varType))
+        else if (IsRawEntityType(type: varInfo.Type))
         {
-            ReportError(code: SemanticDiagnosticCode.LambdaCaptureRawEntity,
-                message:
-                $"Cannot capture raw entity '{varName}' of type '{varType.Name}' in lambda - " +
-                $"raw entities cannot be captured. " +
-                $"Put it under a manager that can share it first (Retained[T], or Guarded[T] across jobs) and " +
-                $"capture that.",
-                location: location);
+            NoteBoundCapture(lambda: lambda, name: varName, kind: "entity", madeAt: varInfo.Location);
+        }
+    }
+
+    private static void NoteBoundCapture(LambdaExpression lambda, string name, string kind, SourceLocation? madeAt)
+    {
+        lambda.BoundTo ??= [];
+        if (lambda.BoundTo.All(predicate: b => b.Name != name))
+        {
+            lambda.BoundTo.Add(item: new BoundCapture(Name: name, Kind: kind, MadeAt: madeAt));
         }
     }
 

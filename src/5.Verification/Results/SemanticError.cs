@@ -21,6 +21,10 @@ public sealed record SemanticError(
     /// <summary>Whether the code it covers never runs: an editor shows that code faded.</summary>
     public bool NeverRuns { get; init; }
 
+    /// <summary>The names of the tokens and entities a lambda is bound to, when the error is about keeping or returning
+    /// such a lambda, or null.</summary>
+    public IReadOnlyList<string>? BoundTo { get; init; }
+
     /// <summary>The change it proposes, offered as a quick fix, or null.</summary>
     public SuggestedFix? Fix { get; init; }
 

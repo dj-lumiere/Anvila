@@ -152,6 +152,13 @@ public record VariableDeclaration(
     public bool IsPatternBinding { get; init; }
 
     /// <summary>
+    /// The local a lifted lambda starts with for each token or entity it is bound to (`BoundTo`): it reads where the
+    /// token or entity is, and the routine that made the lambda still has it, so ending this local as well would end
+    /// it twice.
+    /// </summary>
+    public bool IsBoundCapture { get; init; }
+
+    /// <summary>
     /// The local a <c>for x in steal xs</c> loop moves <c>xs</c> into before it takes the elements apart. A use of
     /// <c>xs</c> after the loop names the loop, not this local.
     /// </summary>

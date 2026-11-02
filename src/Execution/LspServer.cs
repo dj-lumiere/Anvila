@@ -631,6 +631,12 @@ public static class LspServer
             hoverValue += $"\n\n{Surface(text: notes)}";
         }
 
+        if (BoundNames(nodes: AllNodes(program: doc.Program), tokens: doc.Tokens)
+           .TryGetValue(key: (hit.Line, hit.Column), value: out IReadOnlyList<BoundCapture>? bound))
+        {
+            hoverValue += $"\n\n{Surface(text: BoundNote(bound: bound))}";
+        }
+
         WriteResult(stdout: stdout,
             id: id,
             result: new Dictionary<string, object?>
@@ -1963,9 +1969,11 @@ public static class LspServer
     // Token modifiers. `deprecated` (bit 0) marks a DEAD use — a variable read after its ownership was
     // moved out by `steal` — which editors render struck-through / faded (the ownership grey-out). `retired`
     // (bit 1) marks a keyword the next version drops or renames (the profile's RetiredKeywords).
-    private static readonly List<object?> SemanticTokenModifiers = new() { "deprecated", "retired" };
+    // `bound` (bit 2) marks a name that holds a lambda bound to a token or an entity (it can't be kept or returned).
+    private static readonly List<object?> SemanticTokenModifiers = new() { "deprecated", "retired", "bound" };
     private const int ModDeprecated = 1; // 1 << 0
     private const int ModRetired = 2; // 1 << 1
+    private const int ModBound = 4; // 1 << 2
 
     /// <summary>
     /// <c>textDocument/references</c>: all occurrences of the symbol under the cursor, in this file.
@@ -2749,10 +2757,17 @@ public static class LspServer
         HashSet<(int, int)> Function,
         HashSet<(int, int)> Variable,
         HashSet<(int, int)> Constant,
+        HashSet<(int, int)> Property,
+        HashSet<(int, int)> Parameter,
         HashSet<(int, int)> Dead,
         Dictionary<(int, int), string> Types,
         Dictionary<(int, int), TypeSymbol> Symbols,
-        Dictionary<(int, int), (TypeSymbol Owner, string Case)> Cases);
+        Dictionary<(int, int), (TypeSymbol Owner, string Case)> Cases)
+    {
+        /// <summary>The names that hold a lambda bound to a token or an entity, by position (the declaration and each
+        /// use), with what it is bound to.</summary>
+        public Dictionary<(int, int), IReadOnlyList<BoundCapture>> Bound { get; } = [];
+    }
 
     /// <summary>Colors a position as the type resolved there, and keeps the type for hover.</summary>
     private static void AddType(SemanticRoles roles, (int, int) key, TypeSymbol type, bool replace = false)
@@ -2790,7 +2805,7 @@ public static class LspServer
     private static SemanticRoles BuildSemanticRoles(List<ISyntaxTreeNode> nodes, List<Token> tokens,
         TypeRegistry registry)
     {
-        var roles = new SemanticRoles(Function: [], Variable: [], Constant: [], Dead: [], Types: [], Symbols: [],
+        var roles = new SemanticRoles(Function: [], Variable: [], Constant: [], Property: [], Parameter: [], Dead: [], Types: [], Symbols: [],
             Cases: []);
 
         // The analysis keeps some resolutions on the symbol it built rather than on the syntax: a stdlib
@@ -2893,6 +2908,10 @@ public static class LspServer
             {
                 roles.Constant.Add(item: key);
             }
+            else if (ide.ResolvedVariable is { IsParameter: true })
+            {
+                roles.Parameter.Add(item: key);
+            }
             else if (ide.ResolvedVariable != null)
             {
                 roles.Variable.Add(item: key);
@@ -2953,7 +2972,284 @@ public static class LspServer
                 roles: roles);
         }
 
+        AddNamedElementRoles(nodes: nodes, tokens: tokens, roles: roles);
+
+        foreach (KeyValuePair<(int, int), IReadOnlyList<BoundCapture>> bound in BoundNames(nodes: nodes, tokens: tokens))
+        {
+            roles.Bound[key: bound.Key] = bound.Value;
+        }
+
         return roles;
+    }
+
+    /// <summary>
+    /// The names a program gives to its parts, where they are written: a field where it is declared, read
+    /// (<c>p.x</c>) and named in a construction (<c>Point(x: 1)</c>), a parameter where it is declared and where
+    /// a call names it (<c>gcd(a: x)</c>), and a variable where it is declared (<c>var p</c>, <c>for p in ps</c>).
+    /// </summary>
+    private static void AddNamedElementRoles(List<ISyntaxTreeNode> nodes, List<Token> tokens, SemanticRoles roles)
+    {
+        // Fields, where a record, an entity or a crashable declares them.
+        var declaredFields = new HashSet<VariableDeclaration>(comparer: ReferenceEqualityComparer.Instance);
+        foreach (List<SyntaxTree.Declaration> members in nodes.Select(selector: n => n switch
+                 {
+                     EntityDeclaration e => e.Members,
+                     RecordDeclaration r => r.Members,
+                     CrashableDeclaration c => c.Members,
+                     _ => null
+                 }).OfType<List<SyntaxTree.Declaration>>())
+        {
+            foreach (VariableDeclaration field in members.OfType<VariableDeclaration>())
+            {
+                if (NameTokenOf(tokens: tokens, location: field.Location, name: field.Name) is { } at)
+                {
+                    roles.Property.Add(item: (at.Line, at.Column));
+                    declaredFields.Add(item: field);
+                }
+            }
+        }
+
+        // A field read or written through its holder (`p.x`).
+        foreach (MemberExpression member in nodes.OfType<MemberExpression>())
+        {
+            if (member.Object.ResolvedType is { } receiver && FieldsOf(type: receiver).Contains(value: member.MemberName) &&
+                MemberNameToken(tokens: tokens, member: member) is { } name &&
+                !roles.Constant.Contains(item: (name.Line, name.Column)))
+            {
+                roles.Property.Add(item: (name.Line, name.Column));
+            }
+        }
+
+        // Parameters, where a routine or a lambda declares them.
+        foreach (Parameter parameter in nodes.OfType<RoutineDeclaration>().SelectMany(selector: r => r.Parameters)
+                                              .Concat(second: nodes.OfType<LambdaExpression>().SelectMany(selector: l => l.Parameters)))
+        {
+            // A parameter's location is where its type starts: the name is the last one spelled before it.
+            if (tokens.Where(predicate: t => t.Line == parameter.Location.Line && t.Type == TokenType.Identifier &&
+                                             t.Text == parameter.Name && t.Column <= parameter.Location.Column)
+                      .MaxBy(keySelector: t => t.Column) is { } at)
+            {
+                roles.Parameter.Add(item: (at.Line, at.Column));
+            }
+        }
+
+        // Variables, where they are declared.
+        foreach (VariableDeclaration local in nodes.OfType<VariableDeclaration>()
+                                                  .Where(predicate: v => !declaredFields.Contains(item: v) && !v.IsPreset && !v.IsGlobal))
+        {
+            if (NameTokenOf(tokens: tokens, location: local.Location, name: local.Name) is { } at &&
+                !roles.Constant.Contains(item: (at.Line, at.Column)) && !roles.Property.Contains(item: (at.Line, at.Column)) &&
+                !roles.Parameter.Contains(item: (at.Line, at.Column)) && tokens.FirstOrDefault(predicate: t => t.Line == at.Line && t.Column < at.Column && t.Type is TokenType.Preset or TokenType.Global) == null)
+            {
+                roles.Variable.Add(item: (at.Line, at.Column));
+            }
+        }
+
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            if (tokens[index: i - 1].Type == TokenType.For && tokens[index: i].Type == TokenType.Identifier)
+            {
+                roles.Variable.Add(item: (tokens[index: i].Line, tokens[index: i].Column));
+            }
+
+            // `given (low, high) =>`: the names a lambda keeps from around it.
+            if (tokens[index: i].Type == TokenType.Given)
+            {
+                for (int j = i + 1; j < tokens.Count && tokens[index: j].Type != TokenType.FatArrow &&
+                                    tokens[index: j].Line == tokens[index: i].Line; j++)
+                {
+                    if (tokens[index: j].Type == TokenType.Identifier)
+                    {
+                        roles.Variable.Add(item: (tokens[index: j].Line, tokens[index: j].Column));
+                    }
+                }
+            }
+        }
+
+        // The labels of a call's arguments: a field of what a construction builds, else a parameter of the routine.
+        foreach (CallExpression call in nodes.OfType<CallExpression>())
+        {
+            Token? callee = call.Callee switch
+            {
+                IdentifierExpression id => tokens.FirstOrDefault(predicate: t => t.Line == id.Location.Line &&
+                                                                                 t.Column == id.Location.Column),
+                MemberExpression member => MemberNameToken(tokens: tokens, member: member),
+                _ => null
+            };
+            if (callee == null)
+            {
+                continue;
+            }
+
+            bool builds = call.ResolvedRoutine == null || call.ResolvedRoutine is { Kind: RoutineKind.Creator, IsSynthesized: true };
+            foreach (Token label in ArgumentLabels(tokens: tokens, callee: callee))
+            {
+                bool field = builds && call.ResolvedType is { } made && FieldsOf(type: made).Contains(value: label.Text);
+                (field ? roles.Property : roles.Parameter).Add(item: (label.Line, label.Column));
+            }
+        }
+
+        foreach (CreatorExpression creator in nodes.OfType<CreatorExpression>())
+        {
+            Token? callee = tokens.FirstOrDefault(predicate: t => t.Line == creator.Location.Line &&
+                                                                  t.Column == creator.Location.Column);
+            if (callee == null)
+            {
+                continue;
+            }
+
+            foreach (Token label in ArgumentLabels(tokens: tokens, callee: callee))
+            {
+                (creator.ResolvedType is { } made && FieldsOf(type: made).Contains(value: label.Text)
+                    ? roles.Property
+                    : roles.Parameter).Add(item: (label.Line, label.Column));
+            }
+        }
+    }
+
+    /// <summary>The names of the fields a record, an entity or a tuple holds.</summary>
+    private static HashSet<string> FieldsOf(TypeSymbol type)
+    {
+        return Rules.SurfaceType(type: type) switch
+        {
+            TupleTypeSymbol tuple => Enumerable.Range(start: 0, count: tuple.ElementTypes.Count)
+                                               .Select(selector: i => $"item{i}")
+                                               .ToHashSet(),
+            EntityTypeSymbol entity => entity.MemberVariables.Select(selector: f => f.Name).ToHashSet(),
+            RecordTypeSymbol record => record.MemberVariables.Select(selector: f => f.Name).ToHashSet(),
+            _ => []
+        };
+    }
+
+    /// <summary>The identifier token that spells <paramref name="name"/> on the line of <paramref name="location"/>, at
+    /// or after its column.</summary>
+    private static Token? NameTokenOf(List<Token> tokens, SourceLocation location, string name)
+    {
+        return tokens.Where(predicate: t => t.Line == location.Line && t.Type == TokenType.Identifier &&
+                                            t.Text == name && t.Column >= location.Column)
+                     .MinBy(keySelector: t => t.Column);
+    }
+
+    /// <summary>The names written before a colon in the argument list that follows the call's name at
+    /// <paramref name="callee"/> (<c>f(a: 1, b: 2)</c> gives <c>a</c> and <c>b</c>), at the list's own level.</summary>
+    private static IEnumerable<Token> ArgumentLabels(List<Token> tokens, Token callee)
+    {
+        int at = tokens.IndexOf(item: callee);
+        if (at < 0)
+        {
+            yield break;
+        }
+
+        int next = at + 1;
+        if (next < tokens.Count && tokens[index: next].Type == TokenType.LeftBracket)
+        {
+            int bracketDepth = 0;
+            for (; next < tokens.Count; next++)
+            {
+                if (tokens[index: next].Type == TokenType.LeftBracket)
+                {
+                    bracketDepth++;
+                }
+                else if (tokens[index: next].Type == TokenType.RightBracket && --bracketDepth == 0)
+                {
+                    next++;
+                    break;
+                }
+            }
+        }
+
+        if (next >= tokens.Count || tokens[index: next].Type != TokenType.LeftParen)
+        {
+            yield break;
+        }
+
+        int depth = 0;
+        for (int i = next; i < tokens.Count; i++)
+        {
+            Token t = tokens[index: i];
+            if (t.Type is TokenType.LeftParen or TokenType.LeftBracket or TokenType.LeftBrace)
+            {
+                depth++;
+            }
+            else if (t.Type is TokenType.RightParen or TokenType.RightBracket or TokenType.RightBrace)
+            {
+                if (--depth == 0)
+                {
+                    yield break;
+                }
+            }
+            else if (depth == 1 && t.Type == TokenType.Identifier && i + 1 < tokens.Count &&
+                     tokens[index: i + 1].Type == TokenType.Colon)
+            {
+                int before = i - 1;
+                while (before > next && tokens[index: before].Type is TokenType.Newline or TokenType.Indent or TokenType.Dedent)
+                {
+                    before--;
+                }
+
+                if (before == next || tokens[index: before].Type == TokenType.Comma)
+                {
+                    yield return t;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The positions of the names that hold a lambda bound to a token or an entity (C161): the declaration
+    /// (<c>var f = x =&gt; ...</c> with <c>x</c> reaching a token) and each use of it, with what it is bound to.
+    /// A name given another bound name is bound the same way.
+    /// </summary>
+    private static Dictionary<(int, int), IReadOnlyList<BoundCapture>> BoundNames(List<ISyntaxTreeNode> nodes,
+        List<Token> tokens)
+    {
+        var positions = new Dictionary<(int, int), IReadOnlyList<BoundCapture>>();
+        var byDeclaration = new Dictionary<(string File, int Line, int Column), IReadOnlyList<BoundCapture>>();
+        foreach (VariableDeclaration declaration in nodes.OfType<VariableDeclaration>()
+                                                         .OrderBy(keySelector: d => d.Location.Line)
+                                                         .ThenBy(keySelector: d => d.Location.Column))
+        {
+            IReadOnlyList<BoundCapture>? held = declaration.Initializer switch
+            {
+                LambdaExpression { BoundTo.Count: > 0 } lambda => lambda.BoundTo,
+                IdentifierExpression { ResolvedVariable.Location: { } made } other => byDeclaration.GetValueOrDefault(
+                    key: (made.FileName, made.Line, made.Column)),
+                _ => null
+            };
+            if (held == null)
+            {
+                continue;
+            }
+
+            byDeclaration[key: (declaration.Location.FileName, declaration.Location.Line, declaration.Location.Column)] = held;
+            Token? name = tokens.Where(predicate: t => t.Line == declaration.Location.Line &&
+                                                       t.Type == TokenType.Identifier && t.Text == declaration.Name &&
+                                                       t.Column >= declaration.Location.Column)
+                                .MinBy(keySelector: t => t.Column);
+            if (name != null)
+            {
+                positions[key: (name.Line, name.Column)] = held;
+            }
+        }
+
+        foreach (IdentifierExpression use in nodes.OfType<IdentifierExpression>())
+        {
+            if (use.ResolvedVariable?.Location is { } at &&
+                byDeclaration.TryGetValue(key: (at.FileName, at.Line, at.Column), value: out IReadOnlyList<BoundCapture>? held))
+            {
+                positions[key: (use.Location.Line, use.Location.Column)] = held;
+            }
+        }
+
+        return positions;
+    }
+
+    /// <summary>The hover line for a name that holds a lambda bound to a token or an entity.</summary>
+    private static string BoundNote(IReadOnlyList<BoundCapture> bound)
+    {
+        string names = string.Join(separator: ", ", values: bound.Select(selector: b => $"`{b.Name}`"));
+        return Ko(english: $"bound to {names}: can't be kept in a member variable or returned",
+            korean: $"{names}에 묶임: 필드에 넣거나 돌려줄 수 없음");
     }
 
     /// <summary>
@@ -3487,6 +3783,11 @@ public static class LspServer
             int mods = roles.Dead.Contains(item: (t.Line, t.Column))
                 ? ModDeprecated
                 : 0;
+            if (roles.Bound.ContainsKey(key: (t.Line, t.Column)))
+            {
+                mods |= ModBound;
+            }
+
             if (t.Type != TokenType.Identifier && _profile.RetiredKeywords.Contains(value: t.Text))
             {
                 mods |= ModRetired;
@@ -3590,6 +3891,16 @@ public static class LspServer
             at > 0 && toks[index: at - 1].Type is TokenType.Preset or TokenType.Global)
         {
             return SemTok(name: "constant");
+        }
+
+        if (roles.Parameter.Contains(item: key))
+        {
+            return SemTok(name: "parameter");
+        }
+
+        if (roles.Property.Contains(item: key))
+        {
+            return SemTok(name: "property");
         }
 
         if (roles.Variable.Contains(item: key))

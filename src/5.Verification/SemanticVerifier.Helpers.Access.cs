@@ -508,6 +508,9 @@ public sealed partial class SemanticVerifier
     {
         switch (value)
         {
+            // A lambda bound to a token or an entity is one only this thread may use, as the token is.
+            case LambdaExpression { BoundTo: [{ } first, ..] }:
+                return $"`{first.Name}` (a {first.Kind})";
             case LambdaExpression { Captures: { } captures }:
                 foreach (string name in captures)
                 {

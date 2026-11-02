@@ -977,12 +977,26 @@ public record LambdaExpression(
     List<string>? Captures,
     SourceLocation Location) : Expression(Location: Location)
 {
+    /// <summary>
+    /// The tokens and entities this lambda reaches (`me`, a `view()`/`modify()` token, a local collection, a `for`
+    /// element), set by analysis, or null when it reaches none. A lambda that does is a token itself, bound to
+    /// these: it lives as long as the shortest of them, so it may be used where it is made and handed to a
+    /// routine, but not kept in a member variable or returned.
+    /// </summary>
+    public List<BoundCapture>? BoundTo { get; set; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
         return visitor.VisitLambdaExpression(node: this);
     }
 }
+
+/// <summary>A token or entity a lambda reaches, which binds the lambda to it.</summary>
+/// <param name="Name">What the lambda calls it (`me`, `board`).</param>
+/// <param name="Kind">What it is: <c>token</c> (a `Viewing` / `Modifying`) or <c>entity</c>.</param>
+/// <param name="MadeAt">Where the name was made (its declaration, a parameter, the routine for `me`), or null.</param>
+public sealed record BoundCapture(string Name, string Kind, SourceLocation? MadeAt);
 
 #endregion
 
