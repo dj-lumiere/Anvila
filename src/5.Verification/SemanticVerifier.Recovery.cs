@@ -132,17 +132,26 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // A chain that ends in a `T?` of a record gives `T?`, not `T??`: the end is read through `reach()`, so a none
-        // end is the one absence the keyword receives (a `None` under `try`, an `AbsentValueError` under `check`).
+        // A chain that ends in a `T?` gives `T?`, not `T??`: the end is read through `reach()`, so a none end is the one
+        // absence the keyword receives (a `None` under `try`, an `AbsentValueError` under `check`). A record is copied
+        // out. An entity or a variant has one original: the end is a value the call made, and `reach_out_entity()` or `reach_out_variant()` moves it
+        // out of that value into the keyword's `T?`.
         // A recovery the builder wrote itself (the step of a `for`, where `None` means the end) keeps its carrier: an
         // element that is `none` must not end the walk.
         Expression innerExpression = recovery.Inner;
-        if (!recovery.IsSynthesized && innerType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [RecordTypeSymbol endsIn] } ending &&
+        if (!recovery.IsSynthesized && innerType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [{ } endsIn] } ending &&
+            (endsIn is RecordTypeSymbol
+                ? RuntimeContract.ReachThroughOptional
+                : endsIn is EntityTypeSymbol
+                    ? RuntimeContract.MoveEntityOutThroughOptional
+                    : endsIn is VariantTypeSymbol
+                        ? RuntimeContract.MoveVariantOutThroughOptional
+                        : null) is { } flattenName &&
             _registry.LookupMemberRoutineOverload(type: innerType,
-                memberRoutineName: RuntimeContract.ReachThroughOptional, argTypes: []) is { } flattenReach)
+                memberRoutineName: flattenName, argTypes: []) is { } flattenReach)
         {
             innerExpression = FailurePointCalls.MemberCall(receiver: AsPlainCall(expr: recovery.Inner),
-                memberName: RuntimeContract.ReachThroughOptional,
+                memberName: flattenName,
                 arguments: [],
                 routine: flattenReach,
                 resultType: endsIn,

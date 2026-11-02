@@ -505,6 +505,13 @@ public static class RuntimeContract
     /// value, failing with <c>AbsentValueError</c> when the optional is none.</summary>
     public const string ReachThroughOptional = "reach";
 
+    /// <summary>The <c>Optional[T]</c> routine that moves an entity or a variant out of the optional a chain ends in, so
+    /// the keyword's <c>T?</c> holds it (the end is a value the call made, nothing else keeps it).</summary>
+    public const string MoveEntityOutThroughOptional = "reach_out_entity";
+
+    /// <summary>The same for a variant.</summary>
+    public const string MoveVariantOutThroughOptional = "reach_out_variant";
+
     /// <summary>The same for an entity or variant payload: a write token on the original where the optional keeps it,
     /// not a copy, so a call that changes it acts on the original.</summary>
     public const string ReachInPlaceThroughOptional = "reach_in_place";
