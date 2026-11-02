@@ -119,7 +119,16 @@ public static class LspServer
         SyntaxTree.Program Program,
         List<Token> Tokens,
         Language Lang,
-        TypeRegistry Registry);
+        TypeRegistry Registry,
+        string Text);
+
+    /// <summary>Whether the analysis a document keeps is of the text the editor holds now. When the current text did
+    /// not analyze (it does not parse yet, or the analysis stopped), the kept analysis is of an older text, and what it
+    /// says sits at positions the text has moved off: hints and colors made from it would land in the middle of words.</summary>
+    private static bool IsCurrentAnalysis(string uri, DocState doc)
+    {
+        return Texts.TryGetValue(key: uri, value: out string? held) && string.Equals(a: held, b: doc.Text, comparisonType: StringComparison.Ordinal);
+    }
 
     /// <summary>Whether hover text is written in Korean: the editor's language, which the Rider plugin passes as
     /// LSP_LOCALE, else the <c>locale</c> the client sends with <c>initialize</c>.</summary>
@@ -2730,7 +2739,8 @@ public static class LspServer
         if (!root.TryGetProperty(propertyName: PropParams, value: out JsonElement p) ||
             !p.TryGetProperty(propertyName: PropTextDocument, value: out JsonElement td) ||
             !td.TryGetProperty(propertyName: "uri", value: out JsonElement uriEl) ||
-            !Docs.TryGetValue(key: uriEl.GetString() ?? "", value: out DocState? doc))
+            !Docs.TryGetValue(key: uriEl.GetString() ?? "", value: out DocState? doc) ||
+            !IsCurrentAnalysis(uri: uriEl.GetString() ?? "", doc: doc))
         {
             WriteResult(stdout: stdout,
                 id: id,
@@ -4283,7 +4293,8 @@ public static class LspServer
         if (!root.TryGetProperty(propertyName: PropParams, value: out JsonElement p) ||
             !p.TryGetProperty(propertyName: PropTextDocument, value: out JsonElement td) ||
             !td.TryGetProperty(propertyName: "uri", value: out JsonElement uriEl) ||
-            !Docs.TryGetValue(key: uriEl.GetString() ?? "", value: out DocState? doc))
+            !Docs.TryGetValue(key: uriEl.GetString() ?? "", value: out DocState? doc) ||
+            !IsCurrentAnalysis(uri: uriEl.GetString() ?? "", doc: doc))
         {
             WriteResult(stdout: stdout, id: id, result: new List<object?>());
             return;
@@ -5121,7 +5132,7 @@ public static class LspServer
                                                { } analyzed
                     ? analyzed
                     : program;
-                Docs[key: uri] = new DocState(Program: shown, Tokens: tokens, Lang: lang, Registry: verifier.Registry);
+                Docs[key: uri] = new DocState(Program: shown, Tokens: tokens, Lang: lang, Registry: verifier.Registry, Text: text);
                 return diagnostics;
             }
 
@@ -5159,7 +5170,7 @@ public static class LspServer
             if (build.Errors.Count > 0 || unit == null)
             {
                 // Like check, a project that doesn't build is not analyzed: its build errors are the ones to fix.
-                Docs[key: uri] = new DocState(Program: program, Tokens: tokens, Lang: lang, Registry: verifier.Registry);
+                Docs[key: uri] = new DocState(Program: program, Tokens: tokens, Lang: lang, Registry: verifier.Registry, Text: text);
                 return diagnostics;
             }
 
@@ -5216,7 +5227,8 @@ public static class LspServer
             Docs[key: uri] = new DocState(Program: unit.Ast,
                 Tokens: tokens,
                 Lang: lang,
-                Registry: verifier.Registry);
+                Registry: verifier.Registry,
+                Text: text);
         }
         catch (GrammarException ex)
         {
