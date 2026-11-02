@@ -536,6 +536,10 @@ public record CallExpression(
     /// </summary>
     public bool IsSynthesizedLowering { get; set; }
 
+    /// <summary>True for <c>S32(3)</c>: a number type called with one number written out. The call is that number read
+    /// as the type (checked against its range), not a conversion, so it is replaced by its literal after analysis.</summary>
+    public bool IsNumberLiteralOfType { get; set; }
+
     /// <summary>For the call that builds a Work (a <c>to[Work]</c> conversion once analyzed): why the Work may only run on the
     /// thread that made it (<see cref="WorkExpression.OneThreadArgument"/>), or null.</summary>
     public string? WorkOneThreadArgument { get; init; }

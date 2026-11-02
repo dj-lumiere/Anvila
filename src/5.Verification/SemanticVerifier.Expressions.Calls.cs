@@ -4611,6 +4611,25 @@ public sealed partial class SemanticVerifier
         call.ConstructedType = type;
         call.LoweringKind = ClassifyConstruction(type: type);
 
+        // `S32(3)`: a number type called with one number written out reads that number as the type. The number is
+        // checked against the type's range as it is anywhere a number goes where the type is expected. A variable
+        // (`S32(n)`) is a conversion, which the error below says.
+        if (IsNumberType(type: type) && call.Arguments is [var written and (LiteralExpression or
+            UnaryExpression { Operator: UnaryOperator.Minus, Operand: LiteralExpression })])
+        {
+            TypeSymbol literalType = AnalyzeExpression(expression: written, expectedType: type);
+            if (literalType is ErrorTypeSymbol)
+            {
+                return ErrorTypeSymbol.Instance;
+            }
+
+            if (literalType.FullName == type.FullName)
+            {
+                call.IsNumberLiteralOfType = true;
+                return type;
+            }
+        }
+
         List<TypeSymbol> argTypes = AnalyzeNamedTypeConstructionArgs(call: call, type: type);
 
         // C95: Try create overload match first

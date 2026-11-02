@@ -128,6 +128,9 @@ internal sealed class LiteralLoweringPass : AstRewriter
     {
         switch (expr)
         {
+            // `S32(3)` is the number 3 read as an S32 (analysis checked its range): the literal stands in its place.
+            case CallExpression { IsNumberLiteralOfType: true, Arguments: [var written] }:
+                return VisitExpression(expr: written);
             case LiteralExpression literal:
             {
                 // Complex literals FIRST: an imaginary `4i`, or a bare int/float literal SA promoted to
