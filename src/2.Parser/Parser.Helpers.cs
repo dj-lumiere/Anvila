@@ -65,21 +65,31 @@ public partial class Parser
             return text;
         }
 
+        throw NotANameError(errorMessage: errorMessage);
+    }
+
+    /// <summary>
+    /// The grammar error for a token that stands where a name goes: a keyword is named as one, so the
+    /// message says why the word cannot be used instead of only that a name was missing.
+    /// </summary>
+    /// <param name="errorMessage">What the parser expected, without the reason.</param>
+    private GrammarException NotANameError(string errorMessage)
+    {
         Token current = CurrentToken;
         if (current.Type == TokenType.ReservedWord)
         {
-            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
+            return ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
                 message: $"'{current.Text}' is reserved for a keyword, so it cannot name anything. Pick another name.");
         }
 
         // A keyword written where a name goes: name the word the user wrote, not the token kind.
         if (current.Text.Length > 0 && current.Text.All(predicate: char.IsLetter) && current.Type != TokenType.Identifier)
         {
-            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
+            return ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
                 message: $"{errorMessage}. '{current.Text}' is a keyword, so it cannot name anything. Pick another name.");
         }
 
-        throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
+        return ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
             message: $"{errorMessage}. Expected Identifier, got {current.Type}.");
     }
 
@@ -114,8 +124,7 @@ public partial class Parser
         if (!Check(type: TokenType.Identifier) &&
             !IsKeywordValidAsMemberRoutineName(type: CurrentToken.Type))
         {
-            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
-                message: errorMessage);
+            throw NotANameError(errorMessage: errorMessage);
         }
 
         string name = CurrentToken.Text;

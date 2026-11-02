@@ -667,7 +667,11 @@ public sealed partial class SemanticVerifier
                 argType = viewed.ResolvedType ?? argType;
             }
 
-            if (!param.IsNullable && SharedEntities.IsEntityRef(type: paramType) &&
+            // A parameter typed by the owner's type parameter (`List[T].add_last(value: T)`) takes what the slot
+            // holds, and the slot's type argument (`Box?` or `Box`) is the same handle type either way, so
+            // whether none may go in is not known here.
+            if (!param.IsNullable && !DeclaredByTypeParameter(routine: routine, param: param) &&
+                SharedEntities.IsEntityRef(type: paramType) &&
                 SharedEntities.IsNullableRead(expr: argExpr))
             {
                 SharedEntities.ReportIntoNonNull(target: $"parameter '{param.Name}' of '{routine.Name}'",
@@ -789,6 +793,15 @@ public sealed partial class SemanticVerifier
         }
 
         return paramType;
+    }
+
+    /// <summary>Whether the parameter is written with a type parameter (<c>value: T</c> of <c>List[T].add_last</c>) in the
+    /// routine's own declaration, whatever type the call binds it to.</summary>
+    private static bool DeclaredByTypeParameter(RoutineInfo routine, ParamInfo param)
+    {
+        return routine.GenericDefinition is { } declared &&
+               param.Index < declared.Parameters.Count &&
+               declared.Parameters[index: param.Index].Type is GenericParameterTypeSymbol;
     }
 
     /// <summary>

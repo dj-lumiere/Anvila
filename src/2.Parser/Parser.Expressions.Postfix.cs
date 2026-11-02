@@ -265,8 +265,7 @@ public partial class Parser
         if (!Check(type: TokenType.Identifier) &&
             !IsKeywordValidAsMemberRoutineName(type: CurrentToken.Type))
         {
-            throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedIdentifier,
-                message: "Expected member name after '.'");
+            throw NotANameError(errorMessage: "Expected member name after '.'");
         }
 
         string member = CurrentToken.Text;
