@@ -1043,6 +1043,38 @@ public sealed partial class SemanticVerifier
         generic.LoweringKind = ClassifyConstruction(type: resolvedType);
         ZeroFillCheck.Check(rules: _registry.CompilationRules, constructed: resolvedType, argumentCount: generic.Arguments.Count, location: generic.Location, report: ReportError);
 
+        // Positional values of a type with no creator for them fill its member variables in order: they are the
+        // field-init written with the names left out.
+        List<MemberVariableInfo>? orderedFields = resolvedType switch
+        {
+            EntityTypeSymbol e => e.MemberVariables,
+            RecordTypeSymbol { BackendType: null } r => r.MemberVariables,
+            _ => null
+        };
+        if (orderedFields is { Count: >= 2 } && generic.Arguments.Count == orderedFields.Count &&
+            !_registry.GetMemberRoutinesForType(type: resolvedType)
+                      .Any(predicate: r => r.IsCreator && r.Parameters.Count == generic.Arguments.Count) &&
+            generic.Arguments.All(predicate: a => a is not NamedArgumentExpression))
+        {
+            for (int i = 0; i < generic.Arguments.Count; i++)
+            {
+                Expression value = generic.Arguments[index: i];
+                if (value is IdentifierExpression named && named.Name != orderedFields[index: i].Name &&
+                    orderedFields.Any(predicate: f => f.Name == named.Name))
+                {
+                    ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
+                        message: $"'{named.Name}' is the name of another member variable of '{resolvedType.Name}', and this argument sits " +
+                                 $"in the place of '{orderedFields[index: i].Name}': label it so the call says which it is, " +
+                                 $"{orderedFields[index: i].Name}: {named.Name}.",
+                        location: value.Location);
+                }
+
+                generic.Arguments[index: i] = new NamedArgumentExpression(Name: orderedFields[index: i].Name,
+                    Value: value,
+                    Location: value.Location);
+            }
+        }
+
         // Named arguments see the type they will land in as their expected type, so a literal adapts: the
         // parameters of a written creator called by exactly these names (`List[Text](count: 2, fill_value:
         // "ab")` takes an `Int` count even though the list's `count` field is a `U64`), else the fields
@@ -1197,24 +1229,6 @@ public sealed partial class SemanticVerifier
                          $"a variable of that type: `var bits: {resolvedType.Name} = [...]`.",
                 location: generic.Location);
             return ErrorTypeSymbol.Instance;
-        }
-
-        int memberCount = resolvedType switch
-        {
-            EntityTypeSymbol e => e.MemberVariables.Count,
-            RecordTypeSymbol r => r.MemberVariables.Count,
-            _ => 0
-        };
-        if (memberCount >= 2)
-        {
-            foreach (Expression arg in generic.Arguments.Where(predicate: a =>
-                         a is not NamedArgumentExpression).Take(count: 1))
-            {
-                ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
-                    message:
-                    $"Type '{resolvedType.Name}' has {memberCount} fields - all constructor arguments must be named.",
-                    location: arg.Location);
-            }
         }
 
         // A field-init construction (every argument named): the same checks as a non-generic one, so a

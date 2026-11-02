@@ -4556,6 +4556,17 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void CheckCreatorArgumentNames(List<Expression> arguments, RoutineInfo creator, TypeSymbol type)
     {
+        // Arguments without a label fill the creator's parameters in order, up to the first label.
+        for (int i = 0; i < arguments.Count && i < creator.Parameters.Count &&
+                        arguments[index: i] is not NamedArgumentExpression; i++)
+        {
+            ReportArgumentInAnotherParametersPlace(arg: arguments[index: i],
+                routine: creator,
+                parameters: creator.Parameters,
+                index: i,
+                calledName: type.Name);
+        }
+
         // Naming every member variable is the memberwise field-init: no written creator takes the same types
         // (S511), so the names are the fields'.
         List<MemberVariableInfo>? fields = type switch
@@ -5230,28 +5241,38 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Enforces the named-argument rule for type constructors: RF-S510 (3+ fields → all named, error). Two fields may
-    /// go positional.
+    /// A type construction fills its member variables in order from the arguments without a label. A bare name of
+    /// another member variable in a place that is not its own (<c>Point(y, x)</c>) needs a label: RF-S510.
     /// </summary>
     private void ValidateConstructorArgumentNaming(CallExpression call, IdentifierExpression id,
         TypeSymbol type)
     {
-        // S510: Type creators with 3+ fields require all named arguments.
-        int memberCount = type switch
+        List<MemberVariableInfo>? fields = type switch
         {
-            EntityTypeSymbol e => e.MemberVariables.Count,
-            RecordTypeSymbol r => r.MemberVariables.Count,
-            _ => 0
+            EntityTypeSymbol e => e.MemberVariables,
+            RecordTypeSymbol r => r.MemberVariables,
+            _ => null
         };
-        if (memberCount >= 3)
+        if (fields == null)
         {
-            foreach (Expression arg in call.Arguments.Where(predicate: a =>
-                         a is not NamedArgumentExpression).Take(count: 1))
+            return;
+        }
+
+        for (int i = 0; i < call.Arguments.Count && i < fields.Count; i++)
+        {
+            if (call.Arguments[index: i] is IdentifierExpression arg && arg.Name != fields[index: i].Name &&
+                fields.Any(predicate: f => f.Name == arg.Name))
             {
                 ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
-                    message:
-                    $"Type '{id.Name}' has {memberCount} fields - all constructor arguments must be named.",
+                    message: $"'{arg.Name}' is the name of another member variable of '{id.Name}', and this argument sits " +
+                             $"in the place of '{fields[index: i].Name}': label it so the call says which it is, " +
+                             $"{fields[index: i].Name}: {arg.Name}.",
                     location: arg.Location);
+            }
+
+            if (call.Arguments[index: i] is NamedArgumentExpression)
+            {
+                break;
             }
         }
     }

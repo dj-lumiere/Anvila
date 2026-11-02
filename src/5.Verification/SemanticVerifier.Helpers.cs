@@ -151,7 +151,10 @@ public sealed partial class SemanticVerifier
     private static void PunMatchingNamedArgs(List<Expression> arguments,
         IReadOnlyList<string> targetNames)
     {
-        if (arguments.Count == 0)
+        // Arguments before the first label are positional: they fill the parameters in order. Only the ones after a
+        // label would otherwise be an error, so only those can be puns.
+        int firstLabel = arguments.FindIndex(match: a => a is NamedArgumentExpression { IsDefaultArgument: false });
+        if (firstLabel < 0)
         {
             return;
         }
@@ -161,8 +164,9 @@ public sealed partial class SemanticVerifier
             collection: arguments.OfType<NamedArgumentExpression>().Select(selector: n => n.Name),
             comparer: StringComparer.Ordinal);
         bool any = false;
-        foreach (Expression arg in arguments)
+        for (int i = firstLabel; i < arguments.Count; i++)
         {
+            Expression arg = arguments[index: i];
             if (arg is NamedArgumentExpression)
             {
                 continue;
@@ -181,7 +185,7 @@ public sealed partial class SemanticVerifier
             return;
         }
 
-        for (int i = 0; i < arguments.Count; i++)
+        for (int i = firstLabel; i < arguments.Count; i++)
         {
             if (arguments[index: i] is IdentifierExpression id)
             {
@@ -267,28 +271,20 @@ public sealed partial class SemanticVerifier
     {
         int nonMeParamCount =
             parameters.Count(predicate: p => p.Name != "me" && !p.HasDefaultValue);
-        bool requiresNamedArgs = nonMeParamCount >= 3 && !routine.IsVariadic;
-        bool recommendsNamedArgs = nonMeParamCount == 2 && !routine.IsVariadic;
-
-        // @positional / Foreign routines relax naming requirements.
         bool isPositional = routine.Annotations.Contains(value: "positional") || routine.IsForeign;
-        if (isPositional)
-        {
-            requiresNamedArgs = false;
-            recommendsNamedArgs = false;
-        }
 
-        // S512: a call must be all-named OR all-positional — mixing is always an error.
-        bool hasNamedArg = arguments.Any(predicate: a => a is NamedArgumentExpression { IsDefaultArgument: false });
-        bool hasPositionalArg = arguments.Any(predicate: a => a is not NamedArgumentExpression);
-        bool isMixed = hasNamedArg && hasPositionalArg;
+        // S512: arguments without a label come first and fill the parameters in order, the labeled ones follow. An
+        // argument without a label after a labeled one has no place the call says.
+        int firstLabel = arguments.FindIndex(match: a => a is NamedArgumentExpression { IsDefaultArgument: false });
+        bool isMixed = firstLabel >= 0 &&
+                       arguments.Skip(count: firstLabel).Any(predicate: a => a is not NamedArgumentExpression);
         if (isMixed)
         {
             ReportError(code: SemanticDiagnosticCode.MixedPositionalAndNamedArguments,
                 message:
-                $"Call to '{routine.Name}' mixes positional and named arguments — a call must be " +
-                "either all positional or all named.",
-                location: location);
+                $"Call to '{routine.Name}' writes an argument without a label after a labeled one — " +
+                "the arguments without a label come first, in the order of the parameters, then the labeled ones.",
+                location: arguments.Skip(count: firstLabel).First(predicate: a => a is not NamedArgumentExpression).Location);
         }
 
         bool seenNamed = false;
@@ -315,9 +311,7 @@ public sealed partial class SemanticVerifier
                     parameters: parameters,
                     totalParams: totalParams,
                     boundParams: boundParams,
-                    ctx: new PositionalArgContext(RequiresNamedArgs: requiresNamedArgs,
-                        RecommendsNamedArgs: recommendsNamedArgs,
-                        IsPositional: isPositional,
+                    ctx: new PositionalArgContext(IsPositional: isPositional,
                         IsMixed: isMixed,
                         SeenNamed: seenNamed,
                         NonMeParamCount: nonMeParamCount),
@@ -327,7 +321,7 @@ public sealed partial class SemanticVerifier
 
         ReportUnknownNamedArguments(routine: routine, parameters: parameters, totalParams: totalParams,
             boundParams: boundParams, unknownNames: unknownNames);
-        misnamed = unknownNames.Count > 0;
+        misnamed = unknownNames.Count > 0 || isMixed;
         return boundParams;
     }
 
@@ -396,15 +390,39 @@ public sealed partial class SemanticVerifier
     }
 
     private readonly record struct PositionalArgContext(
-        bool RequiresNamedArgs,
-        bool RecommendsNamedArgs,
         bool IsPositional,
         bool IsMixed,
         bool SeenNamed,
         int NonMeParamCount);
 
     /// <summary>
-    /// Processes a single positional argument: validates naming rules (S510/S507), determines
+    /// An argument without a label that is a bare name of ANOTHER parameter of the routine, in a place that is not that
+    /// parameter's (<c>f(n - 1, from, to, tmp)</c> where <c>to</c> sits in the place of <c>tmp</c>): the call would mean
+    /// the order and the names at once, so it says which with a label (RF-S510).
+    /// </summary>
+    private void ReportArgumentInAnotherParametersPlace(Expression arg, RoutineInfo routine,
+        List<ParamInfo> parameters, int index, string? calledName = null)
+    {
+        if (arg is not IdentifierExpression id || routine.IsVariadic)
+        {
+            return;
+        }
+
+        string slot = parameters[index: index].Name;
+        if (id.Name == slot || slot == "me" ||
+            !parameters.Any(predicate: p => p.Name != "me" && p.Name == id.Name))
+        {
+            return;
+        }
+
+        ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
+            message: $"'{id.Name}' is the name of another parameter of '{calledName ?? routine.Name}', and this argument sits in the " +
+                     $"place of '{slot}': label it so the call says which it is, {slot}: {id.Name}.",
+            location: arg.Location);
+    }
+
+    /// <summary>
+    /// Processes a single positional argument: validates the order of the arguments (S510/S507), determines
     /// whether the argument falls in a variadic slot, records the binding, and advances the positional
     /// index. Extracted from <see cref="BuildArgumentBindings"/>.
     /// </summary>
@@ -412,21 +430,23 @@ public sealed partial class SemanticVerifier
         List<ParamInfo> parameters, int totalParams, Dictionary<int, Expression> boundParams,
         PositionalArgContext ctx, ref int positionalIndex)
     {
-        bool requiresNamedArgs = ctx.RequiresNamedArgs;
         bool isPositional = ctx.IsPositional, isMixed = ctx.IsMixed, seenNamed = ctx.SeenNamed;
-        int nonMeParamCount = ctx.NonMeParamCount;
-        if (requiresNamedArgs && !isMixed)
+        if (!isPositional && positionalIndex < totalParams)
         {
-            // Once per call, at the first positional argument.
-            if (positionalIndex == 0)
-            {
-                ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
-                    message:
-                    $"Routine '{routine.Name}' has {nonMeParamCount} parameters - all arguments must be named.",
-                    location: arg.Location);
-            }
+            ReportArgumentInAnotherParametersPlace(arg: arg,
+                routine: routine,
+                parameters: parameters,
+                index: positionalIndex);
         }
-        else if (seenNamed && !isPositional && !isMixed)
+
+        if (seenNamed && isMixed)
+        {
+            // Reported once for the call: this argument has no place, so it binds to no parameter.
+            AnalyzeExpression(expression: arg);
+            return;
+        }
+
+        if (seenNamed && !isPositional && !isMixed)
         {
             ReportError(code: SemanticDiagnosticCode.PositionalAfterNamed,
                 message:

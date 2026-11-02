@@ -1852,7 +1852,7 @@ public sealed partial class SemanticVerifier
                                          !RoutineCanAcceptArgCount(routine: m, argCount: argCount));
         if (candidates.Count == 0)
         {
-            return false;
+            return NamePositionalArgumentsByFieldOrder(type: type, creator: creator);
         }
 
         var argTypes = new List<TypeSymbol>(capacity: argCount);
@@ -1869,13 +1869,49 @@ public sealed partial class SemanticVerifier
 
         if (_registry.LookupCreatorOverload(type: type, argTypes: argTypes) is not { } resolved)
         {
-            return false;
+            return NamePositionalArgumentsByFieldOrder(type: type, creator: creator);
         }
 
         for (int i = 0; i < argCount; i++)
         {
             creator.MemberVariables[index: i] = (resolved.Parameters[index: i].Name,
                 creator.MemberVariables[index: i].Value);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The values of a construction no creator takes fill the member variables in order (<c>Pair[S32, S32](1, 2)</c> is
+    /// <c>Pair[S32, S32](first: 1, second: 2)</c>), one for each. A value that is the bare name of another member
+    /// variable needs a label (RF-S510). Returns false when the count differs.
+    /// </summary>
+    private bool NamePositionalArgumentsByFieldOrder(TypeSymbol type, CreatorExpression creator)
+    {
+        List<MemberVariableInfo>? fields = type switch
+        {
+            RecordTypeSymbol { BackendType: null } record => (record.GenericDefinition ?? record).MemberVariables,
+            EntityTypeSymbol entity => (entity.GenericDefinition ?? entity).MemberVariables,
+            _ => null
+        };
+        if (fields is null || fields.Count != creator.MemberVariables.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < fields.Count; i++)
+        {
+            Expression value = creator.MemberVariables[index: i].Value;
+            if (value is IdentifierExpression named && named.Name != fields[index: i].Name &&
+                fields.Any(predicate: f => f.Name == named.Name))
+            {
+                ReportError(code: SemanticDiagnosticCode.NamedArgumentRequired,
+                    message: $"'{named.Name}' is the name of another member variable of '{type.Name}', and this argument sits in the " +
+                             $"place of '{fields[index: i].Name}': label it so the call says which it is, {fields[index: i].Name}: {named.Name}.",
+                    location: value.Location);
+            }
+
+            creator.MemberVariables[index: i] = (fields[index: i].Name, value);
         }
 
         return true;
