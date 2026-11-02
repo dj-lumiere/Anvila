@@ -1488,7 +1488,7 @@ internal sealed class TesseraRoutineWriter
                        $".poke({value})");
         }
 
-        return new Operand(Text: slot, Type: carrier, IsPlace: true);
+        return new Operand(Text: slot, Type: carrier, IsPlace: true, IsSlot: true);
     }
 
     /// <summary>
