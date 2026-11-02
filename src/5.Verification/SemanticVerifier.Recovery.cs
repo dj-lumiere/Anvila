@@ -132,13 +132,29 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
+        // A chain that ends in a `T?` of a record gives `T?`, not `T??`: the end is read through `reach()`, so a none
+        // end is the one absence the keyword receives (a `None` under `try`, an `AbsentValueError` under `check`).
+        Expression innerExpression = recovery.Inner;
+        if (innerType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [RecordTypeSymbol endsIn] } ending &&
+            _registry.LookupMemberRoutineOverload(type: innerType,
+                memberRoutineName: RuntimeContract.ReachThroughOptional, argTypes: []) is { } flattenReach)
+        {
+            innerExpression = FailurePointCalls.MemberCall(receiver: AsPlainCall(expr: recovery.Inner),
+                memberName: RuntimeContract.ReachThroughOptional,
+                arguments: [],
+                routine: flattenReach,
+                resultType: endsIn,
+                location: recovery.Location);
+            innerType = endsIn;
+        }
+
         // Decompose the inner expression into A-normal form: hoist each failable sub-call (post-order =
         // evaluation order) into `var __rc_tN = <call>`, replacing the call with a reference to the temp.
         // Referenced identifiers are collected in the SAME walk so we can pass the outer locals the body
         // reads as parameters of the synthesized routine.
         // A call written with explicit type arguments (`f[T](x)`, `o.m[T](x)`) is still its generic-call node
         // here (it becomes a plain call in a later lowering): take it as the plain call it is bound to.
-        Expression inner = AsPlainCall(expr: recovery.Inner);
+        Expression inner = AsPlainCall(expr: innerExpression);
         var hoister = new RecoveryFailableHoister(seed: 0, registry: _registry);
         Expression residual = hoister.VisitExpression(expr: inner);
 
@@ -578,19 +594,32 @@ public sealed partial class SemanticVerifier
             // A call on a `T?` receiver reaches the `T` through its `reach()`, which fails with AbsentValueError
             // when the receiver is none: hoisted first, so the keyword receives it like any other failure.
             if (rewritten is CallExpression { Callee: MemberExpression { UnwrapsOptionalReceiver: true } viaOptional } reached &&
-                viaOptional.Object.ResolvedType is { } optionalType &&
-                registry.LookupMemberRoutineOverload(type: optionalType, memberRoutineName: RuntimeContract.ReachThroughOptional, argTypes: []) is
-                    { } unwrap &&
-                optionalType.TypeArguments is [{ } held])
+                viaOptional.Object.ResolvedType is { TypeArguments: [{ } held] } optionalType)
             {
-                Expression value = HoistFailable(call: FailurePointCalls.MemberCall(receiver: viaOptional.Object,
-                    memberName: RuntimeContract.ReachThroughOptional,
-                    arguments: [],
-                    routine: unwrap,
-                    resultType: held,
-                    location: viaOptional.Location));
-                MemberExpression onValue = viaOptional with { Object = value, UnwrapsOptionalReceiver = false };
-                rewritten = reached with { Callee = onValue };
+                // A record is copied out. An entity or a variant is reached where it is kept, so a call that
+                // changes it acts on the original.
+                string reach = held is RecordTypeSymbol
+                    ? RuntimeContract.ReachThroughOptional
+                    : RuntimeContract.ReachInPlaceThroughOptional;
+                if (registry.LookupMemberRoutineOverload(type: optionalType, memberRoutineName: reach, argTypes: []) is
+                    { } unwrap)
+                {
+                    TypeSymbol reachedType = held;
+                    if (held is not RecordTypeSymbol && unwrap.ReturnType is { TypeArguments: [{ } reachedOf] } token &&
+                        reachedOf.FullName == held.FullName)
+                    {
+                        reachedType = token;
+                    }
+
+                    Expression value = HoistFailable(call: FailurePointCalls.MemberCall(receiver: viaOptional.Object,
+                        memberName: reach,
+                        arguments: [],
+                        routine: unwrap,
+                        resultType: reachedType,
+                        location: viaOptional.Location));
+                    MemberExpression onValue = viaOptional with { Object = value, UnwrapsOptionalReceiver = false };
+                    rewritten = reached with { Callee = onValue };
+                }
             }
 
             // A sub-call is failable when its resolved routine is failable. A routine that is not failable is a

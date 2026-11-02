@@ -2656,6 +2656,15 @@ public sealed partial class SemanticVerifier
             operandType = declared;
         }
 
+        // The same for a field path a check narrowed (`me.root!!` after `if me.root is None` left).
+        if (unary.Operand is MemberExpression { NarrowedFrom: { } declaredField } narrowedField &&
+            IsCarrierType(type: declaredField))
+        {
+            narrowedField.NarrowedFrom = null;
+            narrowedField.ResolvedType = declaredField;
+            operandType = declaredField;
+        }
+
         if (IsCarrierType(type: operandType) && operandType.TypeArguments is { Count: > 0 })
         {
             return operandType.TypeArguments[index: 0];

@@ -892,16 +892,6 @@ public sealed partial class SemanticVerifier
         // Under `try`/`check` a call on a `T?` receiver is made on the `T`.
         if (OptionalReceiverPayloadUnderRecovery(objectType: objectType, name: member.MemberName) is { } optionalPayload)
         {
-            if (optionalPayload is not RecordTypeSymbol)
-            {
-                ReportError(code: SemanticDiagnosticCode.MemberRoutineNotFound,
-                    message: $"'{member.MemberName}()' is called on a '{WrittenTypeName(type: objectType)}' under a recovery keyword, " +
-                             $"but a '{WrittenTypeName(type: optionalPayload)}' is not a record, and reaching it through the " +
-                             "optional would work on a copy. Check the optional with 'when' and call on the bound name.",
-                    location: call.Location);
-                return ErrorTypeSymbol.Instance;
-            }
-
             member.UnwrapsOptionalReceiver = true;
             objectType = optionalPayload;
         }

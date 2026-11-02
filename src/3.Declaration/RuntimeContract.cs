@@ -505,6 +505,10 @@ public static class RuntimeContract
     /// value, failing with <c>AbsentValueError</c> when the optional is none.</summary>
     public const string ReachThroughOptional = "reach";
 
+    /// <summary>The same for an entity or variant payload: a write token on the original where the optional keeps it,
+    /// not a copy, so a call that changes it acts on the original.</summary>
+    public const string ReachInPlaceThroughOptional = "reach_in_place";
+
     /// <summary>The routine that hands a collection's elements over to a walk, for <c>for x in steal xs</c>.</summary>
     public const string TakeEach = "take_each";
 
