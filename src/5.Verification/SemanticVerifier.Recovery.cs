@@ -134,8 +134,10 @@ public sealed partial class SemanticVerifier
 
         // A chain that ends in a `T?` of a record gives `T?`, not `T??`: the end is read through `reach()`, so a none
         // end is the one absence the keyword receives (a `None` under `try`, an `AbsentValueError` under `check`).
+        // A recovery the builder wrote itself (the step of a `for`, where `None` means the end) keeps its carrier: an
+        // element that is `none` must not end the walk.
         Expression innerExpression = recovery.Inner;
-        if (innerType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [RecordTypeSymbol endsIn] } ending &&
+        if (!recovery.IsSynthesized && innerType is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [RecordTypeSymbol endsIn] } ending &&
             _registry.LookupMemberRoutineOverload(type: innerType,
                 memberRoutineName: RuntimeContract.ReachThroughOptional, argTypes: []) is { } flattenReach)
         {
