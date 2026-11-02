@@ -658,7 +658,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The standard-library module that defines a member routine called <paramref name="routineName"/> and that this
-    /// build has not loaded, so the program has to import it (<c>where</c> lives in <c>IterTools</c>). Null when no
+    /// build has not loaded, so the program has to import it (<c>where</c> lives in <c>EmitterTools</c>). Null when no
     /// such module is found. Only used to word an error, so it reads the files it needs.
     /// </summary>
     internal string? UnimportedModuleWithMemberRoutine(string routineName)

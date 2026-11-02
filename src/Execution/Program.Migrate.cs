@@ -136,6 +136,12 @@ internal partial class Program
             return RunRewriteStep(paths: paths, check: check, rewrite: RewriteTypeNames);
         }
 
+        // `--step emitter-tools`: the module `IterTools` is `EmitterTools` (its import and every name it qualifies).
+        if (step == "emitter-tools")
+        {
+            return RunRewriteStep(paths: paths, check: check, rewrite: RewriteEmitterTools);
+        }
+
         // `--step pierce`: `pierce X` in a routine that is not failable is `throw X`, which crashes there. One in a
         // failable routine is listed for a rewrite by hand.
         if (step == "pierce")
@@ -540,7 +546,8 @@ internal partial class Program
     private static readonly string[] MigrationSteps =
     [
         "indent", "have", "suffix", "failable", "names", "modules", "access", "cpu-events", "addr", "files", "until",
-        "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random", "for"
+        "verbs", "nothing", "bytes", "return-steal", "work", "type-names", "pierce", "numbers", "bundle", "random", "for",
+        "emitter-tools"
     ];
 
     /// <summary>The named steps as a list for a message: <c>indent, have, ... or random</c>.</summary>

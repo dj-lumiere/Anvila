@@ -847,7 +847,7 @@ public sealed partial class SemanticVerifier
 
         // Generic overload disambiguation by arity for an import-resolved routine: several
         // generic free routines can share one name (e.g. `zip(a,b)` / `zip(a,b,c)` /
-        // `zip(a,b,c,d)` in IterTools). The import lookup returns a single arbitrary-arity
+        // `zip(a,b,c,d)` in EmitterTools). The import lookup returns a single arbitrary-arity
         // instance; when its parameter count doesn't match the call, re-resolve to the
         // same-name generic overload with the matching arity so inference below runs against
         // the right template.

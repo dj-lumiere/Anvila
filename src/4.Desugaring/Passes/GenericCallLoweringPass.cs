@@ -369,7 +369,7 @@ internal sealed class GenericCallLoweringPass : AstRewriter
         }
 
         // Prefer the import-aware short-name lookup; on a cold-materialized stdlib body the constructing
-        // type (`WhereIterable`) lives in another module (IterTools) and is NOT in this pass's ambient
+        // type (`WhereIterable`) lives in another module (EmitterTools) and is NOT in this pass's ambient
         // import scope, so the short-name lookup honestly fails. Fall back to a scan for the matching
         // generic DEFINITION by bare name — the type args below still fully pin the concrete instance.
         TypeSymbol? baseType = _registry.LookupType(name: gmc.MemberRoutineName)

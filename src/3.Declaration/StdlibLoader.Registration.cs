@@ -1841,7 +1841,7 @@ public sealed partial class StdlibLoader
     internal static void ResolveAssociatedTypeBindings(TypeRegistry registry, Program program)
     {
         // Find THIS program's types by their module-qualified name. A bare `LookupType(name)` depended on
-        // the cross-module short-name scan; with it gone a module type (e.g. `IterTools.WhereIterable`)
+        // the cross-module short-name scan; with it gone a module type (e.g. `EmitterTools.WhereIterable`)
         // misses, the `when ... is EntityTypeSymbol` guard fails, and the type is SKIPPED — leaving its
         // `relates X as Iter` associated binding empty, so a later `S/Iter` projection never resolves
         // (`WhereIterable[..]/Iter` reaches codegen as an unemittable TypeParameter).

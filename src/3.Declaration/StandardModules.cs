@@ -77,6 +77,12 @@ internal static class StandardModules
                    "the import out and call them on CpuEventManager (migrate --step cpu-events does both).";
         }
 
+        if (path == "IterTools" || path.StartsWith(value: "IterTools/", comparisonType: StringComparison.Ordinal))
+        {
+            return $"Module '{module}' is now EmitterTools: write 'import EmitterTools' (migrate --step emitter-tools " +
+                   "does it).";
+        }
+
         if (path == "IO/FileSystem")
         {
             return $"Module '{module}' is gone: 'FileManager' does every file system task now " +
