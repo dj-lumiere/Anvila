@@ -315,6 +315,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                     subs: new Dictionary<string, string>());
                 // The try variant is every `for` loop's step: a lambda the iterator calls stays a plain call there.
                 _valueCallsStayPlain = kind is ErrorHandlingVariantKind.Try or ErrorHandlingVariantKind.TryBool;
+                _givenType = variant.Routine.RecoveryOf?.ReturnType;
                 Statement variantBody;
                 try
                 {
@@ -326,6 +327,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 finally
                 {
                     _valueCallsStayPlain = false;
+                    _givenType = null;
                 }
                 // A variant body already built is kept: a warm-restored one is lowered and analyzed, and one built
                 // earlier in this build may be analyzed by now (this pass runs again for every stdlib file reached on
@@ -368,7 +370,8 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         return GenerateVariantBody(baseBody: baseBody,
             kind: DetermineVariantKind(variant: variant),
             registry: registry,
-            resolveFailurePoints: resolveFailurePoints);
+            resolveFailurePoints: resolveFailurePoints,
+            givenType: variant.Routine.RecoveryOf?.ReturnType);
     }
 
     /// <summary>
@@ -389,10 +392,11 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
     /// Builds a variant body of <paramref name="kind"/> from <paramref name="baseBody"/>, as
     /// <see cref="GenerateVariantBody(Statement, GeneratedVariant, TypeRegistry, bool)"/> does for a registered
     /// variant. <paramref name="resolveFailurePoints"/> is false for the variant of a routine that is not
-    /// failable, which passes on only the failures of the routine values it reaches.
+    /// failable, which passes on only the failures of the routine values it reaches. <paramref name="givenType"/> is
+    /// what the recovered routine gives (see <see cref="_givenType"/>).
     /// </summary>
     public static Statement GenerateVariantBody(Statement baseBody, ErrorHandlingVariantKind kind,
-        TypeRegistry registry, bool resolveFailurePoints)
+        TypeRegistry registry, bool resolveFailurePoints, TypeSymbol? givenType = null)
     {
         // Checked operators and subscripts in the body are failable calls too: spell them out before the
         // propagation below, so their failures become this variant's carrier instead of a crash. A library
@@ -407,7 +411,9 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         // A routine that is not failable is a wall: its variant passes on only what fails through the routine
         // values it reaches, and a bare call of a failable routine in it still crashes there.
         bool outer = _passesOnValuesOnly;
+        TypeSymbol? outerGiven = _givenType;
         _passesOnValuesOnly = !resolveFailurePoints;
+        _givenType = givenType;
         try
         {
             return TransformBody(body: variantSourceBody,
@@ -419,7 +425,22 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
         finally
         {
             _passesOnValuesOnly = outer;
+            _givenType = outerGiven;
         }
+    }
+
+    /// <summary>What the routine whose variant is being built gives, when known. A tail call hands its variant's
+    /// carrier on as it is only when the call gives the same type: <c>return info_from(...)</c> in a routine that
+    /// gives <c>TypeInfo?</c> gets a <c>Check[TypeInfo]</c> back, which is not the <c>Check[TypeInfo?]</c> it gives, so
+    /// the call is split out and its value wrapped instead.</summary>
+    [ThreadStatic] private static TypeSymbol? _givenType;
+
+    /// <summary>Whether <paramref name="value"/>, a tail-returned call, gives what the routine gives (see
+    /// <see cref="_givenType"/>).</summary>
+    private static bool GivesRoutineType(Expression? value)
+    {
+        return _givenType is not { } given || value?.ResolvedType is not { } valueType ||
+               valueType.FullName == given.FullName;
     }
 
     /// <summary>Set while the variant of a routine that is not failable is built (see <see cref="CanPassOn"/>).</summary>
@@ -611,7 +632,7 @@ internal sealed class ErrorHandlingVariantPass(DesugaringContext ctx)
                 Value: ts.Error,
                 Location: ts.Location),
 
-            ReturnStatement ret when rewriter != null && rewriter(value: ret.Value,
+            ReturnStatement ret when rewriter != null && GivesRoutineType(value: ret.Value) && rewriter(value: ret.Value,
                 kind: kind,
                 rewritten: out Expression? vcall) => new VariantReturnStatement(VariantKind: kind,
                 SiteKind: VariantSiteKind.FromVariantPassthrough,

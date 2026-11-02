@@ -185,14 +185,14 @@ public static class RuntimeContract
         /// <summary>Whether the handle holds nothing: Suflae's <c>x is None</c> on an optional entity reference.</summary>
         public const string IsHollow = "is_hollow";
 
-        /// <summary>`==` between two handles either of which may hold nothing (a Suflae `E?`), the call `==` on two
+        /// <summary>`==` between two handles either of which may hold nothing (a hollow handle), the call `==` on two
         /// handles becomes.</summary>
         public const string HandleEq = "handle_eq";
 
         /// <summary>`!=` between two handles either of which may hold nothing.</summary>
         public const string HandleNe = "handle_ne";
 
-        /// <summary>The text of a handle that may hold nothing (a Suflae `E?`): `none`, or the entity's `represent`. The
+        /// <summary>The text of a handle that may hold nothing (a hollow handle): `none`, or the entity's `represent`. The
         /// call a display of a handle (`f"{e.next}"`, a member variable in the builder's `represent`) becomes.</summary>
         public const string HandleRepresent = "handle_represent";
 

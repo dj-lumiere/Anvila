@@ -128,7 +128,7 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
                                      Registry.LookupMemberRoutine(type: receiverType,
                                          memberRoutineName: member.MemberName);
 
-        // `==` / `!=` on two handles: either may hold nothing (a Suflae `E?` member variable, read in the `eq` the
+        // `==` / `!=` on two handles: either may hold nothing (a hollow handle, read in the `eq` the
         // builder writes), so the call goes to the handle's own null-safe comparison instead of reaching into both.
         if (HandleEqualityCall(call: call, member: member, receiverType: receiverType) is { } handleCall)
         {

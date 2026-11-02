@@ -660,11 +660,7 @@ internal sealed class SignatureResolver
                 // caller's cell (a copy would be a second, silent cell, and a job's work would count
                 // into it alone).
                 IsByReference = param.IsByReference ||
-                                paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Unbroken },
-                // A Suflae `E?` parameter resolves to a bare Roamed[E] handle (the null handle is none), so
-                // the `?` survives only in the written type, as for an entity field (TypeBodyResolver).
-                IsNullable = _sa._registry.EntitiesAreShared && param.Type is { Name: "Optional" } &&
-                             paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed }
+                                paramType is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Unbroken }
             });
         }
     }

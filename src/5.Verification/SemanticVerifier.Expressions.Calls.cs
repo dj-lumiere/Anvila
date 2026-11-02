@@ -1834,32 +1834,7 @@ public sealed partial class SemanticVerifier
                     argCount: call.Arguments.Count,
                     callableType: callableType,
                     ctorMemberVariables: ctorMemberVariables);
-                Expression argVal = arg is NamedArgumentExpression nav
-                    ? nav.Value
-                    : arg;
-                TypeSymbol argAnalyzed =
-                    AnalyzeExpression(expression: arg, expectedType: argExpected);
-                MemberVariableInfo? field = ResolveCtorField(arg: arg,
-                    posIdx: creatorPosIdx,
-                    ctorMemberVariables: ctorMemberVariables);
-                // Suflae: a NON-NULLABLE entity field (`x: E`) rejects a possibly-none value —
-                // literal `none` or an unchecked `E?` read. Only an optional field (`x: E?`)
-                // may hold a null Roamed handle.
-                if (field is
-                    {
-                        IsNullable: false,
-                        Type: RecordTypeSymbol
-                        {
-                            GenericDefinition.Name: Declaration.RuntimeContract.Roamed
-                        }
-                    } && SharedEntities.IsNullableRead(expr: argVal))
-                {
-                    SharedEntities.ReportIntoNonNull(target: $"field '{field.Name}'",
-                        value: argVal,
-                        optionalHint: $"{field.Name}: <Type>?");
-                }
-
-                creatorArgTypes.Add(item: argAnalyzed);
+                creatorArgTypes.Add(item: AnalyzeExpression(expression: arg, expectedType: argExpected));
                 creatorPosIdx++;
                 continue;
             }
@@ -3036,6 +3011,13 @@ public sealed partial class SemanticVerifier
                         $"{tokenName} is a Viewing token, which is read-only, and '{member.MemberName}' changes the " +
                         $"'{WrittenTypeName(type: viewed)}'. Open the block with `modifying` instead of `viewing` to change it.",
                         location: call.Location);
+                    return ErrorTypeSymbol.Instance;
+                }
+
+                // An `E?` is read through only after it is checked.
+                if (SharedEntities.IsOptionalEntityRef(type: objectType))
+                {
+                    ReportNullableEntityDeref(member: member);
                     return ErrorTypeSymbol.Instance;
                 }
 

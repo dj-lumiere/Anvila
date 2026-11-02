@@ -445,7 +445,7 @@ public sealed partial class SemanticVerifier
                 ? routine.Parameters[index: pi].Location
                 : null;
             _registry.DeclareVariable(name: param.Name, type: param.Type, location: paramLoc,
-                isParameter: true, isNullable: param.IsNullable);
+                isParameter: true);
             ReportProtocolValueType(type: param.Type, location: paramLoc ?? routine.Location,
                 what: $"parameter '{param.Name}'");
             ValidateNoTokenTypeArgument(type: param.Type, what: $"parameter '{param.Name}'",
@@ -1217,21 +1217,13 @@ public sealed partial class SemanticVerifier
 
         TypeSymbol varType;
 
-        // Suflae: an entity-reference annotation (`x: E` / `x: E?`) stores a `Roamed[E]` handle. Track
-        // whether the annotation made this a nullable slot and whether it is a non-null entity slot.
-        bool annotatedNullable = false;
-        bool annotatedNonNullEntity = false;
-
         if (varDecl.Type != null)
         {
             // Explicit type annotation
             varType = ResolveType(typeExpr: varDecl.Type);
 
-            (TypeSymbol resolved, bool isNullable, bool isEntitySlot) =
-                SharedEntities.ResolveAnnotation(annotated: varType, typeExpr: varDecl.Type);
-            varType = resolved;
-            annotatedNullable = isNullable;
-            annotatedNonNullEntity = isEntitySlot && !isNullable;
+            // Suflae: an entity-reference annotation (`x: E` / `x: E?`) stores a `Roamed[E]` handle.
+            varType = SharedEntities.ResolveAnnotation(annotated: varType, typeExpr: varDecl.Type);
         }
         else if (varDecl.Initializer != null)
         {
@@ -1300,23 +1292,6 @@ public sealed partial class SemanticVerifier
                 ? $"the 'for' loop on line {varDecl.Location.Line}"
                 : $"'{varDecl.Name}'");
 
-        // Suflae flow typing: a local is nullable when it was annotated `E?`, or (with no annotation)
-        // inferred from a nullable entity read (`var n = a.optField`) or a `none` literal — so member
-        // access on it is gated until a null-check.
-        bool varIsNullable = annotatedNullable ||
-                             varDecl is { Type: null, Initializer: not null } &&
-                             SharedEntities.IsNullableRead(expr: varDecl.Initializer);
-
-        // Suflae: assigning a possibly-none value into a NON-NULL entity variable (`var x: E = <nullable>`
-        // or `var x: E = none`) is rejected — declare the variable optional (`x: E?`) to allow none.
-        if (annotatedNonNullEntity && varDecl.Initializer != null &&
-            SharedEntities.IsNullableRead(expr: varDecl.Initializer))
-        {
-            SharedEntities.ReportIntoNonNull(target: $"variable '{varDecl.Name}'",
-                value: varDecl.Initializer,
-                optionalHint: $"{varDecl.Name}: <Type>?");
-        }
-
         // A local may not hide a parameter or a local of an enclosing block: one name is one variable within a
         // routine (as for pattern bindings), and the backend keeps one slot per name.
         if (!_registry.CurrentScope.IsDeclaredLocally(name: varDecl.Name) &&
@@ -1332,7 +1307,6 @@ public sealed partial class SemanticVerifier
 
         bool declared = _registry.DeclareVariable(name: varDecl.Name,
             type: varType,
-            isNullable: varIsNullable,
             location: varDecl.Location,
             isReadOnly: varDecl.IsPreset,
             isLoopVariable: varDecl.IsLoopVariable);
@@ -1924,6 +1898,11 @@ public sealed partial class SemanticVerifier
         }
 
         ReportAssignWhileMatched(target: assign.Target);
+        // The value is read before the name takes it, so it still sees the name as checked (`cur = cur.next` with
+        // `cur` narrowed from `Node?` to `Node`), and the name holds its declared type from the assignment on.
+        TypeSymbol? narrowedBefore = assign.Target is IdentifierExpression narrowedTarget
+            ? _registry.GetNarrowedType(name: narrowedTarget.Name)
+            : null;
         ForgetNarrowing(target: assign.Target);
         // A global's initialization at the top of start() names the global of its own file's module, which is not
         // the entry file's when two modules have a global of that name.
@@ -1939,10 +1918,19 @@ public sealed partial class SemanticVerifier
 
         // A global's initializer stands at the top of start() but was written in the global's own file: its names
         // resolve there (that file's imports and module), not in the entry file.
+        if (narrowedBefore != null)
+        {
+            _registry.NarrowVariable(name: ((IdentifierExpression)assign.Target).Name, narrowedType: narrowedBefore);
+        }
+
         TypeSymbol valueType = assign.IsGlobalInit
             ? InImportStateOf(file: assign.Location.FileName,
                 analyze: () => AnalyzeExpression(expression: assign.Value, expectedType: targetType))
             : AnalyzeExpression(expression: assign.Value, expectedType: targetType);
+        if (narrowedBefore != null)
+        {
+            ForgetNarrowing(target: assign.Target);
+        }
         if (assign.Target is IdentifierExpression localTarget)
         {
             TakeDangerousCallableIntoLocal(name: localTarget.Name, value: assign.Value);

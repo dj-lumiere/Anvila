@@ -157,14 +157,12 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // Suflae flow typing: dereferencing (member access / memberRoutine call) a possibly-none entity
-        // reference is rejected until it has been null-checked. Covers both a nullable local/param
-        // (`x.field` on an unchecked `x: E?`) and a nullable field-chain (`a.b.c` where `b: E?`) — a
-        // field read is never flow-narrowed (Kotlin doesn't smart-cast mutable fields either), so it
-        // must always be bound to a local and checked there.
-        if (_registry.EntitiesAreShared && SharedEntities.IsNullableRead(expr: member.Object))
+        // Suflae: reading through an `E?` (`Optional[Roamed[E]]`) before checking it. A checked local is
+        // narrowed to the handle, a member variable is never narrowed, so it is bound to a local and checked there.
+        if (SharedEntities.IsOptionalEntityRef(type: objectType) && !IsStdlibFile(filePath: member.Location.FileName))
         {
             ReportNullableEntityDeref(member: member);
+            return ErrorTypeSymbol.Instance;
         }
 
         TryUnwrapMarkerReceiver(type: objectType, innerType: out TypeSymbol lookupType);

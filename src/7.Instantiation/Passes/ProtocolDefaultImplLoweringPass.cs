@@ -314,7 +314,8 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
         Statement body = ErrorHandlingVariantPass.GenerateVariantBody(baseBody: source,
             kind: ErrorHandlingVariantPass.KindOf(variant: variant),
             registry: ctx.Registry,
-            resolveFailurePoints: recovered.IsFailable || recovered.HasThrow);
+            resolveFailurePoints: recovered.IsFailable || recovered.HasThrow,
+            givenType: recovered.ReturnType);
         if (ctx.AnalyzeMaterializedDeriveBody is { } analyze)
         {
             body = analyze(arg1: variant, arg2: body);

@@ -39,10 +39,6 @@ public sealed class MemberVariableInfo
     /// construction that leaves the member variable out gets an analyzed copy of it.</summary>
     public Expression? DefaultValue { get; init; }
 
-    /// <summary>Suflae: true when this entity-reference field was declared OPTIONAL (`x: E?`), so it may
-    /// hold a null Roamed handle (none). A non-nullable entity field (`x: E`) must never be none.</summary>
-    public bool IsNullable { get; init; }
-
     /// <summary>Source location where this member variable is defined.</summary>
     public SourceLocation? Location { get; init; }
 
@@ -73,7 +69,6 @@ public sealed class MemberVariableInfo
             Index = Index,
             HasDefaultValue = HasDefaultValue,
             DefaultValue = DefaultValue,
-            IsNullable = IsNullable,
             Location = Location,
             Owner = Owner
         };

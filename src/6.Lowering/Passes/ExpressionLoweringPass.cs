@@ -1919,9 +1919,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
 
         string carrierName = LastNameSegment(name: varType.Name);
         // Only Optional handled at this stage. Check payloads need TypeLayoutPass
-        // to stamp byte sizes before their construction can be synthesized. The written `E?` of a
-        // Suflae entity resolves to its nullable Roamed[E] handle, not to an Optional, so the resolved
-        // type decides too: an entity handle is stored into an `E?` slot as it is.
+        // to stamp byte sizes before their construction can be synthesized.
         if (carrierName != MaybeTypeName ||
             targetType != null && CarrierBaseName(type: targetType) != MaybeTypeName)
         {

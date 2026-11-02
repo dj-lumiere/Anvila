@@ -130,19 +130,13 @@ public sealed partial class SemanticVerifier
     private void AnalyzeIfThenBranch(IfStatement ifStmt, NarrowingInfo? narrowing,
         VariantIsNarrowing? variantNarrowing)
     {
-        if (narrowing?.ThenBranchType != null || narrowing is { ThenNonNull: true } ||
-            variantNarrowing != null)
+        if (narrowing?.ThenBranchType != null || variantNarrowing != null)
         {
             _registry.EnterScope(kind: ScopeKind.Block, name: "if_then");
             if (narrowing?.ThenBranchType != null)
             {
                 _registry.NarrowVariable(name: narrowing.VariableName,
                     narrowedType: narrowing.ThenBranchType);
-            }
-
-            if (narrowing is { ThenNonNull: true })
-            {
-                _registry.MarkVariableNonNull(name: narrowing.VariableName);
             }
 
             if (variantNarrowing != null)
@@ -166,19 +160,13 @@ public sealed partial class SemanticVerifier
     private void AnalyzeIfElseBranch(IfStatement ifStmt, NarrowingInfo? narrowing,
         VariantIsNarrowing? variantNarrowing)
     {
-        if (narrowing?.ElseBranchType != null || narrowing is { ElseNonNull: true } ||
-            variantNarrowing != null)
+        if (narrowing?.ElseBranchType != null || variantNarrowing != null)
         {
             _registry.EnterScope(kind: ScopeKind.Block, name: "if_else");
             if (narrowing?.ElseBranchType != null)
             {
                 _registry.NarrowVariable(name: narrowing.VariableName,
                     narrowedType: narrowing.ElseBranchType);
-            }
-
-            if (narrowing is { ElseNonNull: true })
-            {
-                _registry.MarkVariableNonNull(name: narrowing.VariableName);
             }
 
             if (variantNarrowing != null)
@@ -206,11 +194,6 @@ public sealed partial class SemanticVerifier
         {
             _registry.NarrowVariable(name: narrowing.VariableName,
                 narrowedType: narrowing.ElseBranchType);
-        }
-
-        if (narrowing is { ElseNonNull: true })
-        {
-            _registry.MarkVariableNonNull(name: narrowing.VariableName);
         }
 
         if (variantNarrowing != null)
@@ -658,11 +641,54 @@ public sealed partial class SemanticVerifier
             _deadrefVariables.UnionWith(other: dead);
         }
 
-        if (matchedType is ChoiceTypeSymbol or VariantTypeSymbol || IsCarrierType(type: matchedType) ||
-            IsBoolType(type: matchedType))
+        // A `when` whose `is None` arm leaves goes on with the value: the rest of the scope is its value arm, so a
+        // `when` with only that arm is not missing one.
+        bool valueGoesOn = ApplyNoneArmExitNarrowing(whenStmt: whenStmt, whenVarName: whenVarName,
+                               matchedType: matchedType) &&
+                           whenStmt.Clauses.All(predicate: clause => IsNonePattern(pattern: clause.Pattern));
+        if (!valueGoesOn && (matchedType is ChoiceTypeSymbol or VariantTypeSymbol || IsCarrierType(type: matchedType) ||
+                             IsBoolType(type: matchedType)))
         {
             CheckWhenExhaustiveness(whenStmt: whenStmt, matchedType: matchedType);
         }
+    }
+
+    /// <summary>
+    /// After a <c>when</c> on a <c>T?</c> name whose <c>is None</c> arm leaves (returns, throws, breaks), the name
+    /// holds a value for the rest of the scope, as after <c>if x is None</c> with a block that leaves.
+    /// </summary>
+    /// <returns>Whether the name was narrowed.</returns>
+    private bool ApplyNoneArmExitNarrowing(WhenStatement whenStmt, string? whenVarName, TypeSymbol matchedType)
+    {
+        if (whenVarName == null || GetCarrierBaseName(type: matchedType) != "Optional")
+        {
+            return false;
+        }
+
+        foreach (WhenClause clause in whenStmt.Clauses)
+        {
+            if (clause.Pattern is ElsePattern)
+            {
+                return false;
+            }
+
+            if (!IsNonePattern(pattern: clause.Pattern))
+            {
+                continue;
+            }
+
+            if (!ControlFlowExits.HasDefiniteExit(statement: clause.Body) ||
+                ComputeNarrowedType(type: matchedType, eliminateNone: true, eliminateCrashable: false) is not
+                    { } narrowed)
+            {
+                return false;
+            }
+
+            _registry.NarrowVariable(name: whenVarName, narrowedType: narrowed);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -696,8 +722,8 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// In Suflae, rejects a <c>when</c> whose subject is an entity reference — entity refs have
-    /// only two flow states (none / present) and should use <c>if x is None</c> instead.
+    /// In Suflae, rejects a <c>when</c> whose subject is an entity reference: an <c>E</c> always holds its
+    /// entity, so there is nothing to match (an <c>E?</c> is an <c>Optional</c> and is matched as one).
     /// </summary>
     private void CheckWhenSharedEntityRef(WhenStatement whenStmt, TypeSymbol matchedType)
     {
@@ -705,8 +731,8 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.NullableEntityDeref,
                 message:
-                "Cannot use 'when' on an entity reference. Check its none-state with " +
-                "'if x is None' / 'if x isnot None' instead.",
+                "You match on an entity with 'when', and an entity always holds itself, so there is nothing to " +
+                "match. Test its member variables with 'if' instead.",
                 location: whenStmt.Expression.Location);
         }
     }

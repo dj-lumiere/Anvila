@@ -1101,12 +1101,12 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
     }
 
     /// <summary>
-    /// Rewrites <c>me.f = EXPR</c> on an owned <c>Roamed[T]</c> field to
+    /// Rewrites <c>me.f = EXPR</c> on an owned <c>Roamed[T]</c> or <c>Optional[Roamed[T]]</c> field to
     /// <c>var __li_N = EXPR ; me.f.destruct() ; me.f = __li_N</c> so the overwritten (old) handle drops
     /// its co-owned count exactly once. The RHS is spilled BEFORE the destroy so it may still read the
     /// old field value and so a self-assignment (<c>me.f = me.f.share()</c>) bumps before it drops and
-    /// never transiently reaches zero. Only fires for a Roamed field (the exact scope of the deleted
-    /// <c>RcRetainLoweringPass.ReassignRelease</c>); any other member write passes through unchanged.
+    /// never transiently reaches zero. Only fires for a Roamed field or an optional one; any other member write
+    /// passes through unchanged.
     /// </summary>
     private Statement LowerRoamedFieldReassign(Statement original, MemberExpression target,
         Expression rhs, Func<Expression, Statement> rebuild)
@@ -1115,7 +1115,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // field of `me` then takes its declared type from the routine's owner.
         TypeSymbol? fieldType = target.ResolvedType ?? DeclaredFieldOfMe(target: target);
         if (fieldType is null ||
-            !(TypeRegistry.GetRcWrapperBaseName(type: fieldType) == RuntimeContract.Roamed ||
+            !(IsHandleOrOptionalHandle(type: fieldType) ||
               OwnsReplacedEntity(fieldType: fieldType, location: original.Location)) ||
             !TryResolveDestroy(type: fieldType, destroy: out RoutineInfo? destroy) ||
             destroy is null)
@@ -1148,6 +1148,15 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             loc: original.Location));
         stmts.Add(item: rebuild(arg: finalRhs));
         return new BlockStatement(Statements: stmts, Location: original.Location);
+    }
+
+    /// <summary>Whether <paramref name="type"/> is a Suflae entity handle (<c>Roamed[E]</c>) or an optional one
+    /// (<c>E?</c>, <c>Optional[Roamed[E]]</c>): writing over a member variable of it drops the old handle's count.</summary>
+    private static bool IsHandleOrOptionalHandle(TypeSymbol type)
+    {
+        return TypeRegistry.GetRcWrapperBaseName(type: type) == RuntimeContract.Roamed ||
+               type is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [{ } held] } &&
+               TypeRegistry.GetRcWrapperBaseName(type: held) == RuntimeContract.Roamed;
     }
 
     /// <summary>

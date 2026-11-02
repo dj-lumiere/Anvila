@@ -225,8 +225,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Validates an 'is None' type pattern against the matched type — legal only on carrier/variant/
-    /// nullable-entity types.
+    /// Validates an 'is None' type pattern against the matched type — legal only on carrier/variant types.
     /// </summary>
     private void HandleNoneTypePattern(TypePattern typePat, TypeSymbol matchedType)
     {
@@ -239,13 +238,7 @@ public sealed partial class SemanticVerifier
                           // success arm is S32, so `is None` there is still a mismatch.
                           || matchedType is CrashableTypeSymbol ||
                           GetCarrierBaseName(type: matchedType) == "Check" &&
-                          matchedType is RecordTypeSymbol { TypeArguments: [{ Name: "None" }, ..] }
-                          // Suflae: a nullable entity reference (`E?`) is a Roamed[E] handle that may be a
-                          // null/none handle, so `is None` / `isnot None` is a legal none-check on it.
-                          || _registry.EntitiesAreShared && matchedType is RecordTypeSymbol
-                          {
-                              GenericDefinition.Name: Declaration.RuntimeContract.Roamed
-                          };
+                          matchedType is RecordTypeSymbol { TypeArguments: [{ Name: "None" }, ..] };
         if (!allowsNone)
         {
             ReportError(code: SemanticDiagnosticCode.PatternTypeMismatch,

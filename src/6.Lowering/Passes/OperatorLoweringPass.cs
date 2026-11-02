@@ -801,13 +801,6 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     {
         Expression operand = VisitExpression(expr: forceUnwrap.Operand);
         TypeSymbol? operandType = operand.ResolvedType;
-        // Where entities are shared handles an `E?` is its handle, and `!!` is the handle's own unwrap.
-        if (operandType is EntityTypeSymbol && ctx.Registry.EntitiesAreShared &&
-            ctx.Registry.LookupType(name: RuntimeContract.Roamed) is { } roamedDef)
-        {
-            operandType = ctx.Registry.RoamEntitySlot(resolved: operandType, roamedDef: roamedDef);
-        }
-
         RoutineInfo? unwrapMemberRoutine = operandType != null
             ? ctx.Registry.LookupMemberRoutine(type: operandType, memberRoutineName: "unwrap")
             : null;
@@ -820,9 +813,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             Arguments: [],
             Location: forceUnwrap.Location)
         {
-            ResolvedType = operandType is { } && TypeRegistry.GetRcWrapperBaseName(type: operandType) == RuntimeContract.Roamed
-                ? operandType
-                : forceUnwrap.ResolvedType,
+            ResolvedType = forceUnwrap.ResolvedType,
             ResolvedRoutine = unwrapMemberRoutine,
             LoweringKind = unwrapKind
         };

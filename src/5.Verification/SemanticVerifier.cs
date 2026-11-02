@@ -720,10 +720,8 @@ public sealed partial class SemanticVerifier
 
     private SharedEntities? _sharedEntities;
 
-    /// <summary>Nullability of shared entity references (see <see cref="Verification.SharedEntities"/>).</summary>
-    private SharedEntities SharedEntities => _sharedEntities ??=
-        new SharedEntities(registry: _registry, report: ReportError,
-            analyze: expression => AnalyzeExpression(expression: expression));
+    /// <summary>Shared entity references (see <see cref="Verification.SharedEntities"/>).</summary>
+    private SharedEntities SharedEntities => _sharedEntities ??= new SharedEntities(registry: _registry);
 
     private NameSuggestions? _suggestions;
 
@@ -3187,8 +3185,7 @@ public sealed partial class SemanticVerifier
 
         foreach (ParamInfo param in routineInfo.Parameters)
         {
-            _registry.DeclareVariable(name: param.Name, type: param.Type, isParameter: true,
-                isNullable: param.IsNullable);
+            _registry.DeclareVariable(name: param.Name, type: param.Type, isParameter: true);
         }
 
         // The body starts with every name alive, as a routine's own analysis does: the body may be analyzed while

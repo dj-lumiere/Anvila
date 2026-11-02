@@ -72,9 +72,44 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
     /// wrap in <see cref="ExpressionLoweringPass"/> sees only the carrier as the return type, so it never does this.</summary>
     private static Expression AsCarried(RecordTypeSymbol carrier, Expression value)
     {
-        return carrier.TypeArguments is [{ } carried]
-            ? ExpressionLoweringPass.TryWrapVariantArm(targetType: carried, init: value) ?? value
-            : value;
+        if (carrier.TypeArguments is not [{ } carried])
+        {
+            return value;
+        }
+
+        // A routine that gives a `T?` gives its `T` as a present optional (`return info` from `-> TypeInfo?`).
+        if (carried is RecordTypeSymbol { GenericDefinition.Name: "Optional", TypeArguments: [{ } held] } optional &&
+            value.ResolvedType is { } valueType && valueType.FullName != optional.FullName &&
+            valueType.FullName == held.FullName)
+        {
+            return OptionalOf(optional: optional, value: value, loc: value.Location);
+        }
+
+        return ExpressionLoweringPass.TryWrapVariantArm(targetType: carried, init: value) ?? value;
+    }
+
+    /// <summary><c>Optional[T](present: true, value: v)</c>, or the absent one when <paramref name="value"/> is
+    /// null.</summary>
+    private static CreatorExpression OptionalOf(RecordTypeSymbol optional, Expression? value, SourceLocation loc)
+    {
+        var present = new LiteralExpression(Value: value != null,
+            LiteralType: value != null
+                ? TokenType.True
+                : TokenType.False,
+            Location: loc)
+        {
+            ResolvedType = optional.MemberVariables.FirstOrDefault(predicate: m => m.Name == "present")?.Type
+        };
+        var members = new List<(string Name, Expression Value)> { ("present", present) };
+        if (value != null)
+        {
+            members.Add(item: ("value", value));
+        }
+
+        return new CreatorExpression(TypeName: optional.Name,
+            TypeArguments: null,
+            MemberVariables: members,
+            Location: loc) { ResolvedType = optional, ConstructedType = optional };
     }
 
     /// <summary>The arm name a carrier return gives its success value (the arm is the carrier's <c>T</c>, whatever it
@@ -235,6 +270,14 @@ internal sealed class VariantReturnLoweringPass(PostprocessingContext ctx) : Ast
         if (vr.SiteKind == VariantSiteKind.FromVariantPassthrough && vr.Value != null)
         {
             return new ReturnStatement(Value: vr.Value, Location: vr.Location);
+        }
+
+        // `return none` from a routine that gives a `T?` succeeds with the absent optional.
+        if (vr is { SiteKind: VariantSiteKind.FromReturn, Value: null or IdentifierExpression { Name: "None" } } &&
+            carrier.TypeArguments is [RecordTypeSymbol { GenericDefinition.Name: "Optional" } givenOptional])
+        {
+            return MakeCarrierReturn(carrier: carrier, payload: OptionalOf(optional: givenOptional, value: null,
+                loc: vr.Location), thrown: false, loc: vr.Location);
         }
 
         if (vr.SiteKind == VariantSiteKind.FromAbsent ||

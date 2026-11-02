@@ -233,10 +233,9 @@ internal sealed class TypeResolver
     /// (fields, parameters, returns, local annotations, container element types — every slot) is
     /// substituted to <c>Roamed[E]</c> at this single choke point instead of per-site gates.
     /// <para>Carve-outs: the stdlib is excluded (borrowed RazorForge source keeps bare single-owner
-    /// entities); an already-<c>Roamed[...]</c> type is idempotent (no <c>Roamed[Roamed[E]]</c>); and
-    /// <c>Optional[E]</c> / <c>Optional[Roamed[E]]</c> (from the <c>E?</c> desugaring) COLLAPSES to a nullable
-    /// bare <c>Roamed[E]</c> — an entity reference carries its own none via a null handle, so it needs no
-    /// <c>Optional</c> wrapper (value types still use <c>Optional[T]</c> for <c>T?</c>).</para>
+    /// entities), and an already-<c>Roamed[...]</c> type is idempotent (no <c>Roamed[Roamed[E]]</c>). An
+    /// <c>E?</c> (<c>Optional[E]</c>) is <c>Optional[Roamed[E]]</c>, the optional of the handle, as any other
+    /// <c>T?</c> is <c>Optional[T]</c>.</para>
     /// </summary>
     /// <summary>
     /// The same Suflae substitution for a slot type that was INFERRED rather than written: a collection

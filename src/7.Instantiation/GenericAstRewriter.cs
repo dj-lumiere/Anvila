@@ -2704,7 +2704,7 @@ internal static class GenericAstRewriter
                 Location: location) { ResolvedType = u64Type },
 
             "type_name" when textType != null => new LiteralExpression(
-                Value: typeInfo.ShortTypeName,
+                Value: ctx.Registry.ReflectedShortName(type: typeInfo),
                 LiteralType: TokenType.TextLiteral,
                 Location: location) { ResolvedType = textType },
 
@@ -2714,7 +2714,8 @@ internal static class GenericAstRewriter
                 Location: location) { ResolvedType = textType },
 
             "full_type_name" when textType != null => new LiteralExpression(
-                Value: typeInfo.QualifiedTypeNameFor(omitBaseModule: ctx.Registry.Language == Language.Suflae),
+                Value: ctx.Registry.ReflectedQualifiedName(type: typeInfo,
+                    omitBaseModule: ctx.Registry.Language == Language.Suflae),
                 LiteralType: TokenType.TextLiteral,
                 Location: location) { ResolvedType = textType },
 

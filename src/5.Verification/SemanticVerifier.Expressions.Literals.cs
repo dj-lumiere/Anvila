@@ -362,15 +362,15 @@ public sealed partial class SemanticVerifier
             return presetFlags;
         }
 
-        // Suflae: `none` against a `Roamed[E]` slot (an OPTIONAL entity reference `x: E?`) is a null
-        // Roamed handle (Roamed[E].hollow()). Entity references carry their own none via a null pointer, so
-        // no Optional carrier is needed.
-        if (_registry.EntitiesAreShared && expectedType is RecordTypeSymbol
-            {
-                GenericDefinition.Name: Declaration.RuntimeContract.Roamed
-            })
+        // Suflae: `none` against an entity slot that is not optional (`x: E`, not `x: E?`).
+        if (SharedEntities.IsEntityRef(type: expectedType ?? ErrorTypeSymbol.Instance))
         {
-            return expectedType;
+            string entityName = expectedType is { TypeArguments: [{ } held] } ? held.Name : expectedType!.Name;
+            ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
+                message: $"You put 'none' where a '{entityName}' goes, and a '{entityName}' always holds one. " +
+                         $"Declare the slot '{entityName}?' to let it hold none.",
+                location: literal.Location);
+            return ErrorTypeSymbol.Instance;
         }
 
         // A slot whose type already failed to resolve has had its error.

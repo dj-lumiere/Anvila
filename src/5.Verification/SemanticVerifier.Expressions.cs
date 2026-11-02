@@ -839,10 +839,15 @@ public sealed partial class SemanticVerifier
             _deadrefVariables.Remove(item: rebindId.Name);
         }
 
+        // The value is read before the name takes it, so it still sees the name as checked (`cur = cur.next`).
+        TypeSymbol? narrowedBefore = null;
         if (binary.Operator == BinaryOperator.Assign)
         {
             NoteAssignedPlace(target: binary.Left);
             ReportAssignWhileMatched(target: binary.Left);
+            narrowedBefore = binary.Left is IdentifierExpression narrowedTarget
+                ? _registry.GetNarrowedType(name: narrowedTarget.Name)
+                : null;
             ForgetNarrowing(target: binary.Left);
         }
 
@@ -893,6 +898,11 @@ public sealed partial class SemanticVerifier
             // Logical negation should eventually lower through member routines rather than a not operator.
             leftType = AnalyzeExpression(expression: binary.Left, expectedType: literalCtx);
             TypeSymbol peer = ConstGenericValueType(type: leftType) ?? leftType;
+            if (narrowedBefore != null)
+            {
+                _registry.NarrowVariable(name: ((IdentifierExpression)binary.Left).Name, narrowedType: narrowedBefore);
+            }
+
             // Pass leftType as expected for assignments so RHS literals like `none`
             // see the target's carrier-slot type as their contextual expected type.
             // `marks == none` compares with the flags value that has no member on: the flags side gives `none` its type.
@@ -910,6 +920,10 @@ public sealed partial class SemanticVerifier
                                   ConformsToPeer(literal: leadingRight, peer: peer)
                         ? peer
                         : rightCtx);
+            if (narrowedBefore != null)
+            {
+                ForgetNarrowing(target: binary.Left);
+            }
         }
         // An operand that is a value's token (an iterated element, an element read into a variable) is its value
         // here: `x + 1` with `x: Viewing[S64]` adds S64s (TokenReadLoweringPass reads it through the token).
@@ -1993,36 +2007,6 @@ public sealed partial class SemanticVerifier
                 message: ImmutableBindingMessage(name: id.Name, what: "it can't be assigned"),
                 location: location);
         }
-
-
-        // Suflae flow typing: reassigning an entity reference re-derives its nullability.
-        if (!_registry.EntitiesAreShared || varInfo == null ||
-            !SharedEntities.IsEntityRef(type: varInfo.Type))
-        {
-            return;
-        }
-
-        bool valueNullable = SharedEntities.IsNullableRead(expr: value);
-        if (varInfo.IsNullable)
-        {
-            // A nullable local: a possibly-none RHS re-nullifies it (shadowing any prior
-            // null-check); a non-null RHS proves it non-none for the rest of this flow.
-            if (valueNullable)
-            {
-                _registry.MarkVariableNullableAgain(name: id.Name);
-            }
-            else
-            {
-                _registry.MarkVariableNonNull(name: id.Name);
-            }
-        }
-        else if (valueNullable)
-        {
-            // A non-null local cannot take a possibly-none value.
-            SharedEntities.ReportIntoNonNull(target: $"variable '{id.Name}'",
-                value: value,
-                optionalHint: $"{id.Name}: <Type>?");
-        }
     }
 
     /// <summary>
@@ -2065,21 +2049,6 @@ public sealed partial class SemanticVerifier
             location: location);
 
         ReportWriteIntoReadOnlyBinding(member: member, location: location);
-
-        // Suflae: a NON-NULLABLE entity field (`x: E`) rejects `o.x = <possibly-none>` — literal
-        // `none` or an unchecked `E?` read. Only an optional field (`x: E?`) may hold a null Roamed
-        // handle. Mirrors the construction check; the field's IsNullable is set in TypeBodyResolver.
-        if (_registry.EntitiesAreShared && objectType is EntityTypeSymbol writeEntity &&
-            writeEntity.LookupMemberVariable(memberVariableName: member.MemberName) is
-            {
-                IsNullable: false,
-                Type: RecordTypeSymbol { GenericDefinition.Name: Declaration.RuntimeContract.Roamed }
-            } writeField && SharedEntities.IsNullableRead(expr: value))
-        {
-            SharedEntities.ReportIntoNonNull(target: $"field '{writeField.Name}'",
-                value: value,
-                optionalHint: $"{writeField.Name}: <Type>?");
-        }
 
         // Check if we're in a @readonly member routine trying to modify 'me'.
         if (_registry.CompilationRules.ChecksReadonly &&
@@ -2670,22 +2639,17 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private TypeSymbol AnalyzeForceUnwrap(UnaryExpression unary, TypeSymbol operandType)
     {
+        // `x!!` on a name a check narrowed (`cur!!.up` inside `until cur is None`) unwraps the name's own `T?`.
+        if (unary.Operand is IdentifierExpression { NarrowedFrom: { } declared } narrowedId && IsCarrierType(type: declared))
+        {
+            narrowedId.NarrowedFrom = null;
+            narrowedId.ResolvedType = declared;
+            operandType = declared;
+        }
+
         if (IsCarrierType(type: operandType) && operandType.TypeArguments is { Count: > 0 })
         {
             return operandType.TypeArguments[index: 0];
-        }
-
-        // Where entities are shared handles, `E?` is the handle itself (hollow for none), and `!!` on it crashes when
-        // it holds nothing, as `Optional[T].unwrap()` does for any other `T?`: the handle's own unwrap (Roamed).
-        bool nullableSlot = unary.Operand switch
-        {
-            IdentifierExpression id => _registry.LookupVariable(name: id.Name) is { IsNullable: true },
-            MemberExpression => SharedEntities.IsNullableRead(expr: unary.Operand),
-            _ => false
-        };
-        if (_registry.EntitiesAreShared && SharedEntities.IsEntityRef(type: operandType) && nullableSlot)
-        {
-            return operandType;
         }
 
         // User type — look up unwrap memberRoutine

@@ -777,6 +777,9 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                 : gp.Name;
         }
 
+        // A shared entity's handle is named as the entity, a type argument too (`List[Node]`, `Optional[Node]`).
+        type = _registry.ReflectedType(type: type);
+
         // A routine type's signature is its name (`Callable[(S32,), S32]`), not type arguments.
         if (type is RoutineTypeSymbol)
         {
@@ -816,6 +819,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                 : gp.Name;
         }
 
+        type = _registry.ReflectedType(type: type);
         if (type is RoutineTypeSymbol)
         {
             return type.Name;

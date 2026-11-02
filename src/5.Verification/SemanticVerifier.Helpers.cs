@@ -667,18 +667,6 @@ public sealed partial class SemanticVerifier
                 argType = viewed.ResolvedType ?? argType;
             }
 
-            // A parameter typed by the owner's type parameter (`List[T].add_last(value: T)`) takes what the slot
-            // holds, and the slot's type argument (`Box?` or `Box`) is the same handle type either way, so
-            // whether none may go in is not known here.
-            if (!param.IsNullable && !DeclaredByTypeParameter(routine: routine, param: param) &&
-                SharedEntities.IsEntityRef(type: paramType) &&
-                SharedEntities.IsNullableRead(expr: argExpr))
-            {
-                SharedEntities.ReportIntoNonNull(target: $"parameter '{param.Name}' of '{routine.Name}'",
-                    value: argExpr,
-                    optionalHint: $"{param.Name}: <Type>?");
-            }
-
             if (argType.Category == TypeCategory.Error || paramType.Category == TypeCategory.Error)
             {
                 continue;
@@ -793,15 +781,6 @@ public sealed partial class SemanticVerifier
         }
 
         return paramType;
-    }
-
-    /// <summary>Whether the parameter is written with a type parameter (<c>value: T</c> of <c>List[T].add_last</c>) in the
-    /// routine's own declaration, whatever type the call binds it to.</summary>
-    private static bool DeclaredByTypeParameter(RoutineInfo routine, ParamInfo param)
-    {
-        return routine.GenericDefinition is { } declared &&
-               param.Index < declared.Parameters.Count &&
-               declared.Parameters[index: param.Index].Type is GenericParameterTypeSymbol;
     }
 
     /// <summary>
@@ -1288,6 +1267,13 @@ public sealed partial class SemanticVerifier
         // A routine value (a named routine or a lambda) goes where a `Callable[...]?` is wanted as a present one.
         if (source is RoutineTypeSymbol && IsMaybeType(type: target) &&
             target.TypeArguments is [RoutineTypeSymbol inner] && IsAssignableTo(source: source, target: inner))
+        {
+            return true;
+        }
+
+        // An entity goes into an `E?` (`Optional[Roamed[E]]`) as a present one, its handle wrapped.
+        if (SharedEntities.IsOptionalEntityRef(type: target) &&
+            IsEntityRoamedAssignable(source: source, target: target.TypeArguments![index: 0]))
         {
             return true;
         }
@@ -2162,7 +2148,7 @@ public sealed partial class SemanticVerifier
         {
             return field.Type is { BareName: "Optional", TypeArguments: [{ } inner] }
                 ? MemberTypeName(type: inner) + "?"
-                : MemberTypeName(type: field.Type) + (field.IsNullable ? "?" : "");
+                : MemberTypeName(type: field.Type);
         }
     }
 

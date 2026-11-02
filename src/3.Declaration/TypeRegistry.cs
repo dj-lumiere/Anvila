@@ -169,27 +169,14 @@ public sealed partial class TypeRegistry
         // Lower entity type ARGUMENTS first (List[Box] → List[Roamed[Box]]), then wrap the top level.
         resolved = RoamTypeArguments(resolved: resolved, roamedDef: roamedDef);
 
-        return resolved switch
-        {
-            EntityTypeSymbol entity => GetOrCreateResolution(genericDef: roamedDef,
-                typeArguments: [entity]),
-            RecordTypeSymbol
-            {
-                GenericDefinition.Name: "Optional",
-                TypeArguments: [EntityTypeSymbol innerEntity]
-            } => GetOrCreateResolution(genericDef: roamedDef,
-                typeArguments: [innerEntity]),
-            RecordTypeSymbol
-            {
-                GenericDefinition.Name: "Optional", TypeArguments: [{ } innerRoamed]
-            } when IsRoamedSlot(type: innerRoamed) => innerRoamed,
-            _ => resolved
-        };
+        return resolved is EntityTypeSymbol entity
+            ? GetOrCreateResolution(genericDef: roamedDef, typeArguments: [entity])
+            : resolved;
     }
 
     /// <summary>
     /// Recursively lowers each entity generic type argument to <c>Roamed[E]</c> and rebuilds the generic
-    /// resolution. <c>Optional[...]</c> is skipped (the caller's switch collapses it); an already-<c>Roamed</c>
+    /// resolution (<c>Optional[E]</c>, an <c>E?</c>, is <c>Optional[Roamed[E]]</c>). An already-<c>Roamed</c>
     /// argument is left untouched by <see cref="RoamEntitySlot"/>'s idempotency guard.
     /// </summary>
     private TypeSymbol RoamTypeArguments(TypeSymbol resolved, TypeSymbol roamedDef)
@@ -207,12 +194,6 @@ public sealed partial class TypeRegistry
             _ => (null, null)
         };
         if (genericDef == null || args == null || args.Count == 0)
-        {
-            return resolved;
-        }
-
-        // Optional[E] is collapsed to a nullable bare Roamed[E] by RoamEntitySlot's switch, not element-substituted.
-        if (genericDef.Name == "Optional")
         {
             return resolved;
         }
@@ -342,6 +323,32 @@ public sealed partial class TypeRegistry
                type is RecordTypeSymbol { GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [EntityTypeSymbol entity] }
             ? entity
             : type;
+    }
+
+    /// <summary>The name a reflection question gives <paramref name="type"/>: a shared entity's handle is named as the
+    /// entity, in a type argument too (<c>List[Node]</c>, <c>Optional[Node]</c>).</summary>
+    public string ReflectedShortName(TypeSymbol type)
+    {
+        type = ReflectedType(type: type);
+        return type is RoutineTypeSymbol || type.TypeArguments is not { Count: > 0 } args
+            ? type.ShortTypeName
+            : $"{type.BareName}[{string.Join(separator: ", ", values: args.Select(selector: ReflectedShortName))}]";
+    }
+
+    /// <summary>The module-qualified name a reflection question gives <paramref name="type"/> (see
+    /// <see cref="ReflectedShortName"/>).</summary>
+    public string ReflectedQualifiedName(TypeSymbol type, bool omitBaseModule)
+    {
+        type = ReflectedType(type: type);
+        if (type is RoutineTypeSymbol || type.TypeArguments is not { Count: > 0 } args)
+        {
+            return type.QualifiedTypeNameFor(omitBaseModule: omitBaseModule);
+        }
+
+        string qualified = string.IsNullOrEmpty(value: type.Module) || omitBaseModule && type.Module == "System"
+            ? type.BareName
+            : $"{type.Module}.{type.BareName}";
+        return $"{qualified}[{string.Join(separator: ", ", values: args.Select(selector: a => ReflectedQualifiedName(type: a, omitBaseModule: omitBaseModule)))}]";
     }
 
     /// <summary>Whether the code in <paramref name="filePath"/> holds entities as shared handles (see
@@ -3381,7 +3388,6 @@ public sealed partial class TypeRegistry
     /// <param name="type">The type of the variable.</param>
     /// <param name="isPreset">Whether this is a preset (build-time constant).</param>
     /// <param name="presetValue">The preset value.</param>
-    /// <param name="isNullable">Whether the variable is nullable.</param>
     /// <param name="isGlobal">Whether this is a Suflae module-level <c>global</c> variable (mutable,
     /// session-lifetime). When true the declared variable carries <see cref="VariableInfo.IsGlobal"/>
     /// so identifier resolution can stamp references with <c>IsModuleGlobal</c>.</param>
@@ -3389,7 +3395,7 @@ public sealed partial class TypeRegistry
     /// diagnostics that need to point back to the declaration site.</param>
     /// <returns>True if successful, false if already declared in this scope.</returns>
     public bool DeclareVariable(string name, TypeSymbol type, bool isPreset = false,
-        Expression? presetValue = null, bool isNullable = false, bool isGlobal = false,
+        Expression? presetValue = null, bool isGlobal = false,
         SourceLocation? location = null, bool isParameter = false, bool isReadOnly = false, string? module = null,
         bool isLoopVariable = false, bool isViewedBinding = false)
     {
@@ -3402,7 +3408,6 @@ public sealed partial class TypeRegistry
             IsModifiable = !isPreset && !isReadOnly,
             IsPreset = isPreset,
             PresetValue = presetValue,
-            IsNullable = isNullable,
             IsGlobal = isGlobal,
             IsParameter = isParameter,
             Location = location
@@ -3587,25 +3592,6 @@ public sealed partial class TypeRegistry
     public IReadOnlyCollection<string> GetExcludedVariantArms(string name)
     {
         return _currentScope.GetExcludedArms(name: name);
-    }
-
-    /// <summary>Suflae flow typing: marks a nullable entity reference proven non-none in the current scope.</summary>
-    public void MarkVariableNonNull(string name)
-    {
-        _currentScope.MarkNonNull(name: name);
-    }
-
-    /// <summary>Suflae flow typing: records a variable as known-nullable-again in the current scope
-    /// (shadows an outer proven-non-none fact — e.g. after reassigning a possibly-none value).</summary>
-    public void MarkVariableNullableAgain(string name)
-    {
-        _currentScope.MarkNullableAgain(name: name);
-    }
-
-    /// <summary>Suflae flow typing: true if the variable was proven non-none in the current scope chain.</summary>
-    public bool IsVariableProvenNonNull(string name)
-    {
-        return _currentScope.IsProvenNonNull(name: name);
     }
 
     /// <summary>
