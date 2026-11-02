@@ -2675,6 +2675,19 @@ public sealed partial class SemanticVerifier
             return operandType.TypeArguments[index: 0];
         }
 
+        // Where entities are shared handles, `E?` is the handle itself (hollow for none), and `!!` on it crashes when
+        // it holds nothing, as `Optional[T].unwrap()` does for any other `T?`: the handle's own unwrap (Roamed).
+        bool nullableSlot = unary.Operand switch
+        {
+            IdentifierExpression id => _registry.LookupVariable(name: id.Name) is { IsNullable: true },
+            MemberExpression => SharedEntities.IsNullableRead(expr: unary.Operand),
+            _ => false
+        };
+        if (_registry.EntitiesAreShared && SharedEntities.IsEntityRef(type: operandType) && nullableSlot)
+        {
+            return operandType;
+        }
+
         // User type — look up unwrap memberRoutine
         RoutineInfo? unwrapMemberRoutine =
             _registry.LookupMemberRoutine(type: operandType, memberRoutineName: "unwrap");

@@ -801,6 +801,13 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
     {
         Expression operand = VisitExpression(expr: forceUnwrap.Operand);
         TypeSymbol? operandType = operand.ResolvedType;
+        // Where entities are shared handles an `E?` is its handle, and `!!` is the handle's own unwrap.
+        if (operandType is EntityTypeSymbol && ctx.Registry.EntitiesAreShared &&
+            ctx.Registry.LookupType(name: RuntimeContract.Roamed) is { } roamedDef)
+        {
+            operandType = ctx.Registry.RoamEntitySlot(resolved: operandType, roamedDef: roamedDef);
+        }
+
         RoutineInfo? unwrapMemberRoutine = operandType != null
             ? ctx.Registry.LookupMemberRoutine(type: operandType, memberRoutineName: "unwrap")
             : null;
@@ -813,7 +820,9 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
             Arguments: [],
             Location: forceUnwrap.Location)
         {
-            ResolvedType = forceUnwrap.ResolvedType,
+            ResolvedType = operandType is { } && TypeRegistry.GetRcWrapperBaseName(type: operandType) == RuntimeContract.Roamed
+                ? operandType
+                : forceUnwrap.ResolvedType,
             ResolvedRoutine = unwrapMemberRoutine,
             LoweringKind = unwrapKind
         };
@@ -1192,7 +1201,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // A map answers membership for its keys: `d have k` is `d.has_key(k)`, `d lack k` is `d.lacks_key(k)`.
         TypeSymbol? membershipOwner = receiverType is RecordTypeSymbol
         {
-            GenericDefinition.Name: Declaration.RuntimeContract.Roamed, TypeArguments: [{ } shared]
+            GenericDefinition.Name: RuntimeContract.Roamed, TypeArguments: [{ } shared]
         }
             ? shared
             : receiverType;
