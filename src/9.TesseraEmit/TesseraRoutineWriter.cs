@@ -50,10 +50,17 @@ internal sealed class TesseraRoutineWriter
     private int _temps;
 
     /// <summary>A local: the place (pointer) that holds it, and its type.</summary>
-    private sealed record Local(string Place, TypeSymbol Type);
+    private sealed record Local(string Place, TypeSymbol Type, bool IsSlot = true)
+    {
+        /// <summary>The call that reads the value: a <c>&amp;T</c> slot is loaded, a by-reference parameter (<c>@T</c>) is peeked.</summary>
+        public string Read => IsSlot ? "load" : "peek";
+
+        /// <summary>The call that writes a value.</summary>
+        public string Write => IsSlot ? "store" : "poke";
+    }
 
     /// <summary>A computed operand: a value, or a place to read it from.</summary>
-    private sealed record Operand(string Text, TypeSymbol? Type, bool IsPlace);
+    private sealed record Operand(string Text, TypeSymbol? Type, bool IsPlace, bool IsSlot = false);
 
     /// <summary>The routine's lines, each already indented for the body it is in, and whether the lines being
     /// written have left (returned, broken out, gone on with the next round).</summary>
@@ -93,7 +100,7 @@ internal sealed class TesseraRoutineWriter
             TypeSymbol owner = _routine.OwnerType!;
             parameters.Add(item: MeParameter());
             scope[key: "me"] = MeByReference
-                ? new Local(Place: "arg_me", Type: owner)
+                ? new Local(Place: "arg_me", Type: owner, IsSlot: false)
                 : ClaimLocal(name: "me", type: owner, initial: "arg_me", inHead: true);
         }
 
@@ -101,7 +108,7 @@ internal sealed class TesseraRoutineWriter
         {
             parameters.Add(item: ParameterText(param: param));
             scope[key: param.Name] = param.IsByReference
-                ? new Local(Place: $"arg_{param.Name}", Type: param.Type)
+                ? new Local(Place: $"arg_{param.Name}", Type: param.Type, IsSlot: false)
                 : ClaimLocal(name: param.Name, type: param.Type, initial: $"arg_{param.Name}", inHead: true);
         }
 
@@ -210,7 +217,7 @@ internal sealed class TesseraRoutineWriter
         _head.Add(item: $"lateinit {local.Place}: {slotType}");
         if (initial is not null)
         {
-            Emit(line: $"{local.Place}.poke({initial})");
+            Emit(line: $"{local.Place}.store({initial})");
         }
 
         return local;
@@ -344,7 +351,7 @@ internal sealed class TesseraRoutineWriter
                 var values = places.Select(selector: p => Value(operand: p)).ToList();
                 for (int i = 0; i < places.Count; i++)
                 {
-                    Emit(line: $"{places[index: i].Text}.poke({values[index: swap.Sources[index: i]]})");
+                    Emit(line: $"{places[index: i].Text}.{(places[index: i].IsSlot ? "store" : "poke")}({values[index: swap.Sources[index: i]]})");
                 }
 
                 break;
@@ -389,7 +396,7 @@ internal sealed class TesseraRoutineWriter
         Local local = Lookup(name: push.Local);
         string value = push.PassesAddress
             ? local.Place
-            : Temp(type: local.Type, expression: $"{local.Place}.peek()");
+            : Temp(type: local.Type, expression: $"{local.Place}.{local.Read}()");
         Local node = ClaimLocal(name: CancellationNodeName(local: push.Local), type: _module.CancellationNodeType,
             initial: null);
         _scopes[^1][key: CancellationNodeName(local: push.Local)] = node;
@@ -487,7 +494,7 @@ internal sealed class TesseraRoutineWriter
             throw Unsupported(what: $"an assignment to {target.GetType().Name}");
         }
 
-        Emit(line: $"{place.Text}.poke({computed})");
+        Emit(line: $"{place.Text}.{(place.IsSlot ? "store" : "poke")}({computed})");
         return computed;
     }
 
@@ -526,7 +533,7 @@ internal sealed class TesseraRoutineWriter
             return;
         }
 
-        string value = Temp(type: local.Type, expression: $"{local.Place}.peek()");
+        string value = Temp(type: local.Type, expression: $"{local.Place}.{local.Read}()");
         // An @T always points at a value in Tessera, so a slot that may be empty is asked through its address.
         string address = TypeText(type: local.Type) == "Addr" ? value : $"{value}.to[Addr]()";
         Emit(line: $"if not {address}.is_hollow()");
@@ -655,7 +662,7 @@ internal sealed class TesseraRoutineWriter
     private string Value(Operand operand)
     {
         return operand.IsPlace
-            ? Temp(type: operand.Type, expression: $"{operand.Text}.peek()")
+            ? Temp(type: operand.Type, expression: $"{operand.Text}.{(operand.IsSlot ? "load" : "peek")}()")
             : operand.Text;
     }
 
@@ -707,7 +714,7 @@ internal sealed class TesseraRoutineWriter
         string slot = $"zero{_temps++}";
         Emit(line: $"lateinit {slot}: &{text}");
         Emit(line: $"{slot}.zeroinit(1)");
-        return $"{slot}.peek()";
+        return $"{slot}.load()";
     }
 
     /// <summary>A value usable as a method receiver: a bare literal is bound to a typed temporary first.</summary>
@@ -767,14 +774,14 @@ internal sealed class TesseraRoutineWriter
                 // A value handed over (`steal a`, an entity passed on): it is read, and the slot is emptied, so the
                 // local's teardown at the end of its scope finds nothing to tear down unless `=` fills it again.
                 Local local = Lookup(name: moved.Name, variable: moved.ResolvedVariable);
-                string value = Temp(type: local.Type, expression: $"{local.Place}.peek()");
-                Emit(line: $"{local.Place}.poke({ZeroValue(type: local.Type)})");
+                string value = Temp(type: local.Type, expression: $"{local.Place}.{local.Read}()");
+                Emit(line: $"{local.Place}.{local.Write}({ZeroValue(type: local.Type)})");
                 return new Operand(Text: value, Type: local.Type, IsPlace: false);
             }
             case IdentifierExpression identifier:
             {
                 Local local = Lookup(name: identifier.Name, variable: identifier.ResolvedVariable);
-                return new Operand(Text: local.Place, Type: local.Type, IsPlace: true);
+                return new Operand(Text: local.Place, Type: local.Type, IsPlace: true, IsSlot: local.IsSlot);
             }
             case MemberExpression member:
                 return EvaluateField(member: member);
@@ -871,7 +878,7 @@ internal sealed class TesseraRoutineWriter
     {
         if (call.Callee is IdentifierExpression id && TryLookup(name: id.Name) is { Type: RoutineTypeSymbol localType } local)
         {
-            return (new Operand(Text: local.Place, Type: localType, IsPlace: true), localType);
+            return (new Operand(Text: local.Place, Type: localType, IsPlace: true, IsSlot: local.IsSlot), localType);
         }
 
         if (call.LoweringKind == CallLoweringKind.DynamicCall &&

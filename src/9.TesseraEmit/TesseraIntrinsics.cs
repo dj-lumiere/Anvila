@@ -134,7 +134,7 @@ internal sealed class TesseraIntrinsics
             "zeroed" or "zero_value" => _zero(arg: _resultType),
             "ptr_same" => $"({Argument(index: 0)} === {Argument(index: 1)})",
             // The crash trace the routines keep (TesseraTrace), read by System's crash_report.
-            "trace_depth" => "RF_TRACE_DEPTH.peek()",
+            "trace_depth" => "RF_TRACE_DEPTH.load()",
             "trace_frames" => _typeText(arg: _resultType) is ['@', .. var pointee]
                 ? $"RF_TRACE_STACK.to[@{pointee}]()"
                 : "RF_TRACE_STACK",
@@ -242,7 +242,7 @@ internal sealed class TesseraIntrinsics
         string previous = _spill(arg1: Argument(index: 1), arg2: _arguments[index: 1].Type);
         _emit(obj: $"{previous}_swapped: Bool = {Argument(index: 0)}.to[@{type}]()" +
                    $".compare_exchange_unbroken_raw(expected: {Argument(index: 1)}, new: {Argument(index: 2)}, previous: {previous})");
-        _emit(obj: $"{previous}_held: {type} = {previous}.peek()");
+        _emit(obj: $"{previous}_held: {type} = {previous}.load()");
         return $"{_typeText(arg: _resultType)}(item0: {previous}_held, item1: {previous}_swapped)";
     }
 
@@ -269,7 +269,7 @@ internal sealed class TesseraIntrinsics
     {
         string slot = _spill(arg1: Argument(index: 0), arg2: _arguments[index: 0].Type);
         _emit(obj: $"{slot}.to[@{Type(index: 2)}]().stride({Index(index: 1)}).poke({Argument(index: 2)})");
-        return $"{slot}.peek()";
+        return $"{slot}.load()";
     }
 
     private string Argument(int index)
