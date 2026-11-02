@@ -915,6 +915,13 @@ public partial class LlvmEmitter
         int n = 0;
         foreach ((string fnSymbol, string recoverSymbol) in _recoverEntries)
         {
+            // A lifted lambda is emitted whether or not anything reaches it, but its recovery variant only when something
+            // does (a lambda inside a lambda, in a build that starts from one entry): a symbol nobody defines has no entry.
+            if (!_generatedRoutineDefs.Contains(item: recoverSymbol[1..]))
+            {
+                continue;
+            }
+
             output.AppendLine(value: $"  %is{n} = icmp eq ptr %fn, {fnSymbol}");
             output.AppendLine(value: $"  %r{n} = select i1 %is{n}, ptr {recoverSymbol}, ptr {last}");
             last = $"%r{n}";

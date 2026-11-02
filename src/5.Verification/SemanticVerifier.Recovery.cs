@@ -132,10 +132,11 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // A chain that ends in a `T?` gives `T?`, not `T??`: the end is read through `reach()`, so a none end is the one
-        // absence the keyword receives (a `None` under `try`, an `AbsentValueError` under `check`). A record is copied
-        // out. An entity or a variant has one original: the end is a value the call made, and `reach_out_entity()` or `reach_out_variant()` moves it
-        // out of that value into the keyword's `T?`.
+        // A chain that ends in a `T?` gives `T?`, not `T??`: the end is read through `reach()` (a record is
+        // copied out) or moved out of the value the call made (an entity or a variant has one original, and nothing else
+        // keeps this one) by `reach_out_entity()` or `reach_out_variant()`. Each fails with `AbsentValueError` when the
+        // end is none: a none end is the one absence the keyword receives (a `None` under `try`, an `AbsentValueError`
+        // under `check`).
         // A recovery the builder wrote itself (the step of a `for`, where `None` means the end) keeps its carrier: an
         // element that is `none` must not end the walk.
         Expression innerExpression = recovery.Inner;
