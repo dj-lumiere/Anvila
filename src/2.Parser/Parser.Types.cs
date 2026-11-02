@@ -385,6 +385,13 @@ public partial class Parser
     {
         if (!CheckAndAdvance(type: TokenType.Identifier))
         {
+            // `x is not None` reads as "is, then a type", and `not` is no type: the word is one token, `isnot`.
+            if (CurrentToken.Type == TokenType.Not && PeekToken(offset: -1).Type == TokenType.Is)
+            {
+                throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedType,
+                    message: "'is not' is not a test. Write `isnot` as one word: `x isnot None`.");
+            }
+
             throw ThrowParseError(code: GrammarDiagnosticCode.ExpectedType,
                 message: $"Expected type, got {CurrentToken.Type} ('{CurrentToken.Text}')");
         }
