@@ -4207,7 +4207,12 @@ public sealed partial class SemanticVerifier
         // Realm gate: a foreign routine (C extern / LLVM intrinsic) must be called via its
         // `C::`/`LLVM::` qualifier, and a `C::`/`LLVM::` qualifier must name a matching realm.
         CheckCallRealm(callee: id, routine: routine, location: call.Location);
-        CheckAmbiguousImportedRoutine(call: call, id: id, routine: routine);
+        // An ambiguous name stops here, as the module-qualified path does: checking the arguments against the
+        // routine found first would add errors that depend on which import came first.
+        if (CheckAmbiguousImportedRoutine(call: call, id: id, routine: routine))
+        {
+            return ErrorTypeSymbol.Instance;
+        }
 
         if (CheckUnresolvableGenericRoutine(call: call, routine: routine))
         {
@@ -5317,15 +5322,15 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// A bare call to a routine of an imported module, when another imported module has a routine of the same name,
-    /// could mean either: the module goes in front (`Prices.label(...)`). Reports RF-S513 instead of picking one. The
+    /// could mean either: the module goes in front (`Prices.label(...)`). Reports RF-S513 instead of picking one and returns true. The
     /// current module's own routine is not ambiguous: it comes first.
     /// </summary>
-    private void CheckAmbiguousImportedRoutine(CallExpression call, IdentifierExpression id, RoutineInfo routine)
+    private bool CheckAmbiguousImportedRoutine(CallExpression call, IdentifierExpression id, RoutineInfo routine)
     {
         if (call.IsSynthesizedLowering || id.Name.Contains(value: '.') || routine.IsForeign ||
             routine.IsSynthesized || routine.Module is not { } home || home == _currentModuleName)
         {
-            return;
+            return false;
         }
 
         List<string> others = _importedModules
@@ -5337,20 +5342,24 @@ public sealed partial class SemanticVerifier
                              .ToList();
         if (others.Count == 0)
         {
-            return;
+            return false;
         }
 
-        List<string> all = others.Prepend(element: home)
-                                 .Order(comparer: StringComparer.Ordinal)
-                                 .Select(selector: m => $"'{m}'")
-                                 .ToList();
+        // Sorted, and the example names the first module in that order: the message does not depend on which
+        // import came first.
+        List<string> modulePaths = others.Prepend(element: home)
+                                         .Order(comparer: StringComparer.Ordinal)
+                                         .ToList();
+        List<string> all = modulePaths.Select(selector: m => $"'{m}'").ToList();
         string modules = string.Join(separator: ", ", values: all.SkipLast(count: 1)) + " and " + all[^1];
-        string leaf = home[(home.LastIndexOfAny(anyOf: ['/', '.']) + 1)..];
+        string first = modulePaths[0];
+        string leaf = first[(first.LastIndexOfAny(anyOf: ['/', '.']) + 1)..];
         ReportError(code: SemanticDiagnosticCode.AmbiguousModuleQualifiedCall,
             message: $"'{routine.Name}' is in {modules}, and this file imports each of them, so a bare " +
                      $"'{routine.Name}(...)' could mean {(all.Count == 2 ? "either" : "any of them")}. Put the module in front, as in " +
                      $"'{leaf}.{routine.Name}(...)'.",
             location: call.Location);
+        return true;
     }
 
     private TypeSymbol? AnalyzeResolvedFreeRoutine(CallExpression call, IdentifierExpression id,
