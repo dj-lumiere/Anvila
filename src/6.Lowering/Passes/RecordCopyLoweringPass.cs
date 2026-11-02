@@ -213,8 +213,21 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
                 _inRcCopyVerb = ctx.Registry.GetRoutineByExactKey(registryKey: key) is { } variantRoutine
                     ? OwnerTypeIsRcWrapper(owner: variantRoutine.OwnerType)
                     : OwnerNameIsRcWrapper(nameOrKey: key);
-                SetBorrowParams(
-                    parameters: null); // variant/synthesized bodies carry no parameter list here
+                // A recovery variant (`try`/`check` of a routine) has the routine's parameters: one it returns inside its
+                // carrier is the caller's still, so it is retained like the same return in the routine itself. Other
+                // synthesized bodies carry no parameter list here.
+                SetBorrowParams(parameters: null);
+                if (ctx.Registry.GetRoutineByExactKey(registryKey: key) is { IsRecoveryVariant: true } recovery)
+                {
+                    foreach (ParamInfo p in recovery.Parameters.Where(predicate: p => p.Name != "me"))
+                    {
+                        if (NeedsRetainingCopy(type: p.Type, copyMemberRoutine: out _))
+                        {
+                            _borrowParamNames.Add(item: p.Name);
+                        }
+                    }
+                }
+
                 return LowerStatement(stmt: body);
             });
     }
@@ -238,6 +251,15 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
                 _inCopyRoutine = IsCopyVerbRoutine(nameOrKey: key);
                 _inRcCopyVerb = OwnerTypeIsRcWrapper(owner: entry.Info.OwnerType);
                 SetBorrowParams(parameters: entry.Ast.Parameters);
+                // A parameter written with a type parameter (`x: T`) is of the concrete type the instance was made for.
+                foreach (ParamInfo p in entry.Info.Parameters.Where(predicate: p => p.Name != "me"))
+                {
+                    if (NeedsRetainingCopy(type: p.Type, copyMemberRoutine: out _))
+                    {
+                        _borrowParamNames.Add(item: p.Name);
+                    }
+                }
+
                 return LowerStatement(stmt: entry.Ast.Body);
             });
     }
@@ -549,7 +571,9 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
             return expr;
         }
 
-        if (!_inRcCopyVerb && expr is IdentifierExpression or MemberExpression &&
+        // A narrowed `E?` read (`stack.add_last((step, node.next))` under `node.next isnot None`) is the carrier's payload:
+        // still a borrowed reference to what the carrier holds, so a new holder takes its own share.
+        if (!_inRcCopyVerb && expr is IdentifierExpression or MemberExpression or CarrierPayloadExpression &&
             NeedsRetainingCopy(type: expr.ResolvedType,
                 copyMemberRoutine: out RoutineInfo? copyMemberRoutine))
         {

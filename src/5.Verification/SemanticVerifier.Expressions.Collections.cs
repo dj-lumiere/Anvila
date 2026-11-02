@@ -786,7 +786,11 @@ public sealed partial class SemanticVerifier
             AnalyzeExpression(expression: dictEntry.Value, expectedType: expectedValueType);
 
         // A `key: value` pair is the tuple `(K, V)`.
-        return _registry.GetOrCreateTupleType(elementTypes: [keyType, valueType]);
+        return _registry.GetOrCreateTupleType(elementTypes:
+        [
+            expectedKeyType != null ? keyType : _typeResolver.RoamInferredSlot(inferred: keyType),
+            expectedValueType != null ? valueType : _typeResolver.RoamInferredSlot(inferred: valueType)
+        ]);
     }
 
     private TypeSymbol AnalyzeTupleLiteralExpression(TupleLiteralExpression tuple,
@@ -807,7 +811,15 @@ public sealed partial class SemanticVerifier
             TypeSymbol? elemExpected = expectedElementTypes?[i];
             TypeSymbol elementType = AnalyzeExpression(expression: tuple.Elements[i],
                 expectedType: elemExpected);
-            elementTypes.Add(item: elementType);
+            // An entity item inferred from its value is a shared handle slot in Suflae, as one written in the type is.
+            // A bare entity written where the type says a handle (`Roamed[E]`) is that handle: the tuple has the type it is
+            // expected to have.
+            elementTypes.Add(item: elemExpected == null
+                ? _typeResolver.RoamInferredSlot(inferred: elementType)
+                : elementType.FullName != elemExpected.FullName && _registry.EntitiesAreShared &&
+                  IsEntityRoamedAssignable(source: elementType, target: elemExpected)
+                    ? elemExpected
+                    : elementType);
 
             // RF-S413: a tuple owns its items, so a variable, field or container element placed in one
             // without `steal` would have two owners (both tear it down).

@@ -1776,7 +1776,7 @@ public sealed partial class SemanticVerifier
             {
                 ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                     message:
-                    $"Argument '{argName}' of '{type.ShortTypeName}': cannot convert '{argType.ShortTypeName}' to '{expected.ShortTypeName}'.",
+                    $"Argument '{argName}' of '{type.ShortTypeName}': cannot convert '{ShownTypeName(type: argType, other: expected)}' to '{ShownTypeName(type: expected, other: argType)}'.",
                     location: val.Location);
             }
         }

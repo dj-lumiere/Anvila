@@ -1453,7 +1453,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                 message:
-                $"Operator '{binary.Operator.ToStringRepresentation()}': cannot convert '{rightType.ShortTypeName}' to '{paramType.ShortTypeName}'.",
+                $"Operator '{binary.Operator.ToStringRepresentation()}': cannot convert '{ShownTypeName(type: rightType, other: paramType)}' to '{ShownTypeName(type: paramType, other: rightType)}'.",
                 location: binary.Location);
             return ErrorTypeSymbol.Instance;
         }
@@ -2214,7 +2214,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
                 message:
-                $"Cannot assign value of type '{valueType.Name}' to target of type '{targetType.Name}'.",
+                $"Cannot assign value of type '{ShownTypeName(type: valueType, other: targetType)}' to target of type '{ShownTypeName(type: targetType, other: valueType)}'.",
                 location: location);
         }
 
@@ -2453,7 +2453,7 @@ public sealed partial class SemanticVerifier
         }
 
         ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
-            message: $"Operator '{opSymbol}': cannot convert '{valueType.ShortTypeName}' to '{targetType.ShortTypeName}'.",
+            message: $"Operator '{opSymbol}': cannot convert '{ShownTypeName(type: valueType, other: targetType)}' to '{ShownTypeName(type: targetType, other: valueType)}'.",
             location: compound.Location);
         return true;
     }

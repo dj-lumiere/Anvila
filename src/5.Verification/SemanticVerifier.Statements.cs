@@ -2000,7 +2000,7 @@ public sealed partial class SemanticVerifier
         {
             ReportError(code: SemanticDiagnosticCode.AssignmentTypeMismatch,
                 message:
-                $"Cannot assign value of type '{valueType.Name}' to target of type '{targetType.Name}'.",
+                $"Cannot assign value of type '{ShownTypeName(type: valueType, other: targetType)}' to target of type '{ShownTypeName(type: targetType, other: valueType)}'.",
                 location: assign.Location);
         }
     }
@@ -2468,7 +2468,7 @@ public sealed partial class SemanticVerifier
 
                 ReportError(code: SemanticDiagnosticCode.VariableInitializerTypeMismatch,
                     message:
-                    $"Cannot assign value of type '{initType.Name}' to variable of type '{varType.Name}'.",
+                    $"Cannot assign value of type '{ShownTypeName(type: initType, other: varType)}' to variable of type '{ShownTypeName(type: varType, other: initType)}'.",
                     location: varDecl.Location);
             }
         }

@@ -723,7 +723,7 @@ public sealed partial class SemanticVerifier
                 {
                     ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                         message:
-                        $"Argument '{param.Name}' of '{routine.Name}': cannot convert '{argType.ShortTypeName}' to '{paramType.ShortTypeName}'.",
+                        $"Argument '{param.Name}' of '{routine.Name}': cannot convert '{ShownTypeName(type: argType, other: paramType)}' to '{ShownTypeName(type: paramType, other: argType)}'.",
                         location: argExpr.Location);
                 }
             }
@@ -1222,6 +1222,23 @@ public sealed partial class SemanticVerifier
                 ? inner
                 : type;
         }
+    }
+
+    /// <summary>
+    /// A type's name as a mismatch message shows it. Two different types can read alike (<c>Tuple[Int, Node]</c> of two
+    /// shapes of the same entity slot): then each is shown by its qualified name, and by its language too when even that
+    /// is the same, so a message never says that a type cannot be converted to itself.
+    /// </summary>
+    private static string ShownTypeName(TypeSymbol type, TypeSymbol other)
+    {
+        if (type.ShortTypeName != other.ShortTypeName)
+        {
+            return type.ShortTypeName;
+        }
+
+        return type.FullName != other.FullName
+            ? type.FullName
+            : $"{type.Realm}::{type.FullName}";
     }
 
     private bool IsAssignableTo(TypeSymbol source, TypeSymbol target)
