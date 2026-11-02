@@ -1346,6 +1346,14 @@ internal static class GenericAstRewriter
             }
         }
 
+        // A name replaced by its binding's spelling is that bound type wherever it is analyzed again: the spelling
+        // alone cannot say it for a type whose name no module resolves (a tuple's `Tuple[S64, S64]`).
+        if (name != type.Name && knownType == null && resolvedType != null && args == null &&
+            resolvedType is not GenericParameterTypeSymbol)
+        {
+            knownType = resolvedType;
+        }
+
         if (name == type.Name && args == null && type.GenericArguments == null &&
             ReferenceEquals(objA: resolvedType, objB: type.ResolvedType) &&
             ReferenceEquals(objA: knownType, objB: type.KnownType))

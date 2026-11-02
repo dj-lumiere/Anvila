@@ -109,6 +109,9 @@ public sealed partial class SemanticVerifier
             StealExpression steal => AnalyzeStealExpression(steal: steal),
             BackIndexExpression back => AnalyzeBackIndexExpression(back: back, expectedType: expectedType),
             TypeExpression typeExpr => ResolveType(typeExpr: typeExpr),
+            // A lambda inside a lambda is lifted before the outer one's recovery body is recorded and analyzed:
+            // it is a closure value by then, typed as the lambda it came from.
+            ClosureValueExpression closure => closure.ResolvedType ?? ErrorTypeSymbol.Instance,
             WhenExpression whenExpr => AnalyzeWhenExpression(when: whenExpr, expectedType: expectedType),
             InsertedTextExpression insertedText => AnalyzeInsertedTextExpression(
                 insertedText: insertedText),

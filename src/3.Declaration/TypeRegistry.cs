@@ -2871,7 +2871,8 @@ public sealed partial class TypeRegistry
         }
     }
 
-    /// <summary>Auto-registers <c>hash</c> if ALL element types support hash.</summary>
+    /// <summary>Auto-registers the keyed <c>hash(k0: U64, k1: U64)</c> (what <c>Hashable</c> requires and a Set or Dict
+    /// keys on) if ALL element types support hash.</summary>
     private void RegisterTupleHashRoutine(TupleTypeSymbol newType, List<TypeSymbol> elementTypes)
     {
         TypeSymbol? u64Type = LookupType(name: "U64");
@@ -2879,7 +2880,10 @@ public sealed partial class TypeRegistry
                 LookupMemberRoutine(type: et, memberRoutineName: "hash") != null ||
                 TypeObeysProtocol(type: et, protocolName: "Hashable")))
         {
-            RegisterSynthesizedMemberRoutine(name: "hash", owner: newType, returnType: u64Type);
+            RegisterSynthesizedMemberRoutine(name: "hash",
+                owner: newType,
+                returnType: u64Type,
+                parameters: [new ParamInfo(name: "k0", type: u64Type), new ParamInfo(name: "k1", type: u64Type)]);
         }
     }
 
