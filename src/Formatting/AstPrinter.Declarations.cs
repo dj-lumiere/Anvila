@@ -79,14 +79,14 @@ internal sealed partial class AstPrinter
 
     /// <summary>
     /// Whether <paramref name="node"/> follows <paramref name="previous"/> with no blank line between: imports
-    /// form one group with what follows them, and consecutive presets, like consecutive globals or consecutive
+    /// form one group (one blank line sets it off from the module line and from what follows), and consecutive presets, like consecutive globals or consecutive
     /// top-level `var`s, form a group.
     /// </summary>
     private static bool GroupsWith(ISyntaxTreeNode previous, ISyntaxTreeNode node)
     {
         return previous switch
         {
-            ImportDeclaration => true,
+            ImportDeclaration => node is ImportDeclaration,
             PresetDeclaration => node is PresetDeclaration,
             VariableDeclaration { IsGlobal: true } => node is VariableDeclaration { IsGlobal: true },
             // Top-level `var`s of a script of declarations read as consecutive statements.
