@@ -1768,21 +1768,15 @@ public sealed partial class SemanticVerifier
                 return null;
             }
 
-            // A global is only read (every job reaches it), and a block on an entity takes no access of its own, so
-            // `modifying` it would change it with no lock. A Guarded global has the pair and takes its access above.
-            if (target.IsWrite && target.Target is IdentifierExpression { Name: var globalName } &&
-                _registry.LookupVariable(name: globalName) is { IsGlobal: true, IsModifiable: false })
+            if (target.Target is IdentifierExpression { ResolvedVariable: null } opened &&
+                _registry.LookupVariable(name: opened.Name) is { } openedVariable)
             {
-                ReportError(code: SemanticDiagnosticCode.ModifyingCallOnImmutable,
-                    message: $"You open the global '{shown}' with 'modifying', but a global is only read: every job " +
-                             $"reaches it, and a block on a plain entity takes no access that would keep the others " +
-                             $"out. Open it with 'viewing' to read it, or declare it as a Guarded " +
-                             $"(`global {shown}: Guarded[{type.ShortTypeName}, Exclusive]`) and change it inside " +
-                             "'modifying'.",
-                    location: target.Location);
-                return null;
+                opened.ResolvedVariable = openedVariable;
             }
 
+            // A global is a place the program changes: `modifying` it is a change, which a routine a Work reaches on
+            // another thread may not make of a plain global (GlobalThreadChecker). A Guarded global has the pair and
+            // takes its access above.
             if (isTry)
             {
                 ReportTryOnUntryable(target: target, shown: shown,

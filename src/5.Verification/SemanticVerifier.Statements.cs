@@ -1959,6 +1959,8 @@ public sealed partial class SemanticVerifier
         if (assign.Target is IdentifierExpression id)
         {
             VariableInfo? varInfo = id.ResolvedVariable ?? _registry.LookupVariable(name: id.Name);
+            // The binding the target names, for the checks that look at which globals a routine changes.
+            id.ResolvedVariable ??= varInfo;
             if (ReportLoopVariableAssignment(id: id, location: assign.Location))
             {
                 return;

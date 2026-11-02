@@ -780,6 +780,12 @@ public sealed partial class SemanticVerifier
         CheckSharedDeclarationsAreBound(program: program);
         CheckShapeEffects(programs: [program]);
         AnalyzeSynthesizedBodies();
+        // The routines written for `to[Work]` conversions are analyzed by now, so the routines a Work reaches are known.
+        if (_registry.Rules.ChecksOwnership)
+        {
+            new GlobalThreadChecker(report: ReportError).Check(programs: [program]);
+        }
+
         // M-0: Annotate stdlib expression types so desugaring passes can lower stdlib bodies
         // uniformly (OperatorLoweringPass, ExpressionLoweringPass, etc.).
         // Stdlib errors and warnings are suppressed from user-visible output -> use 'validate-stdlib' to surface them.
@@ -2856,6 +2862,11 @@ public sealed partial class SemanticVerifier
         // Phase 5 global: synthesized body analysis, modification inference
         AnalyzeSynthesizedBodies();
         Mark(label: $"Phase 5 global -> {nameof(AnalyzeSynthesizedBodies)}");
+        if (_registry.Rules.ChecksOwnership)
+        {
+            new GlobalThreadChecker(report: ReportError).Check(programs: files.Select(selector: f => f.Program));
+        }
+
         // M-0: Annotate stdlib expression types so desugaring passes can lower stdlib bodies
         // uniformly (OperatorLoweringPass, ExpressionLoweringPass, etc.).
         // Stdlib errors are suppressed from user-visible output -> use 'validate-stdlib' to surface them.

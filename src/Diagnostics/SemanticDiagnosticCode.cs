@@ -481,6 +481,10 @@ public enum SemanticDiagnosticCode
     /// <c>@rf</c> declaration binds it).</summary>
     UnsharedRazorForgeDeclaration = 447,
 
+    /// <summary>A routine that a Work (or another thread) reaches reads or changes a plain <c>global</c> that is changed
+    /// somewhere in the program: another thread may change it while this one reads it.</summary>
+    GlobalChangedAcrossThreads = 448,
+
     /// <summary>Record member variable has a type that is not a value type (entities, wrappers, tokens cannot be stored in records).</summary>
     RecordContainsNonValueType = 412,
 
@@ -668,15 +672,15 @@ public enum SemanticDiagnosticCode
     /// <summary>Type does not support indexing.</summary>
     TypeNotIndexable = 509,
 
-    /// <summary>Routine with 2+ parameters requires named arguments at call site.</summary>
+    /// <summary>An argument without a label is the name of another parameter, in a place that is not its own: it needs a label.</summary>
     NamedArgumentRequired = 510,
 
     /// <summary>A user `create` may not take exactly the type's field-name set — that signature
     /// is the built-in memberwise constructor and cannot be overridden.</summary>
     AllMemberVariablesCreatorReserved = 511,
 
-    /// <summary>A call to a `@positional` routine mixes positional and named arguments — a call
-    /// must be either all positional or all named.</summary>
+    /// <summary>A call writes an argument without a label after a labeled one: the arguments without
+    /// a label come first, in the order of the parameters.</summary>
     MixedPositionalAndNamedArguments = 512,
 
     /// <summary>A module-qualified call (`Leaf.routine(...)`) matches module-level routines in more

@@ -394,9 +394,9 @@ public sealed partial class SemanticVerifier
                 location: global.Location);
         }
 
-        // A RazorForge global is reached from every thread, so its binding is never assigned again (only its
-        // initialization, at the top of start()): an Unbroken or a Guarded changes what it holds through its own
-        // routines, any other value is only read.
+        // A RazorForge global is a place the program changes. Only a routine a Work reaches on another thread may not
+        // use a plain global that is changed somewhere (GlobalThreadChecker): an Unbroken or a Guarded changes what it
+        // holds through its own routines.
         // Two modules may each have a global of one name: each is registered under its module, and a lookup from
         // either module finds its own.
         string? module = GetCurrentModuleName();
@@ -404,7 +404,7 @@ public sealed partial class SemanticVerifier
             type: globalType,
             module: module,
             isSecret: global.Visibility == VisibilityModifier.Secret,
-            isReadOnly: !_registry.EntitiesAreShared);
+            isReadOnly: false);
         _registry.DeclareGlobalInScope(global: registered);
     }
 
