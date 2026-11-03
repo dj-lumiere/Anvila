@@ -1501,8 +1501,8 @@ public sealed partial class SemanticVerifier
             return (startType, endType);
         }
 
-        bool startIsLiteral = range.Start is LiteralExpression;
-        bool endIsLiteral = range.End is LiteralExpression;
+        bool startIsLiteral = IsBareNumberExpression(expression: range.Start);
+        bool endIsLiteral = IsBareNumberExpression(expression: range.End);
         // A const generic endpoint (`0 til COUNT` under `needs COUNT is U64`) gives its value type.
         TypeSymbol endValue = ConstGenericValueType(type: endType) ?? endType;
         TypeSymbol startValue = ConstGenericValueType(type: startType) ?? startType;
@@ -1518,6 +1518,28 @@ public sealed partial class SemanticVerifier
         }
 
         return (startType, endType);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="expression"/> is made of bare numbers alone (<c>1000</c>, <c>10 ** 10</c>,
+    /// <c>-(2 * 3)</c>), so it takes the type of the place it goes like a single bare number does.
+    /// </summary>
+    private static bool IsBareNumberExpression(Expression expression)
+    {
+        return expression switch
+        {
+            LiteralExpression { LiteralType: TokenType.UndecidedInteger or TokenType.UndecidedDecimal } => true,
+            UnaryExpression { Operator: UnaryOperator.Minus, Operand: var operand } =>
+                IsBareNumberExpression(expression: operand),
+            BinaryExpression
+            {
+                Operator: BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply or
+                BinaryOperator.FloorDivide or BinaryOperator.Modulo or BinaryOperator.Power,
+                Left: var left, Right: var right
+            } =>
+                IsBareNumberExpression(expression: left) && IsBareNumberExpression(expression: right),
+            _ => false
+        };
     }
 
     /// <summary>
@@ -1562,6 +1584,18 @@ public sealed partial class SemanticVerifier
                       "make each back into a character with `Char.from_codepoint(n:)`."
                     : $"A range counts by adding its step to a number, and its bounds here are '{startType?.Name}' and " +
                       $"'{endType?.Name}'. Give it numbers as bounds.",
+                location: range.Location);
+        }
+        // Both bounds are numbers, of two types: the range walks one type, so it can't hold both.
+        else if (!boundFailed && !inSubscript && !startIsBack && !endIsBack &&
+                 (ConstGenericValueType(type: startType) ?? startType).FullName !=
+                 (ConstGenericValueType(type: endType) ?? endType).FullName &&
+                 !IsNumericGenericParam(type: startType) && !IsNumericGenericParam(type: endType))
+        {
+            ReportError(code: SemanticDiagnosticCode.RangeBoundsNotNumeric,
+                message: $"A range walks one type, and its bounds here are '{startType.Name}' and '{endType.Name}'. " +
+                         $"Convert one bound to the other's type (`x.to[{startType.Name}]()`), or name the type " +
+                         $"after the loop's name: `for i: {startType.Name} in ...`.",
                 location: range.Location);
         }
     }
