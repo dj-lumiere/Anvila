@@ -119,7 +119,7 @@ internal static class TesseraTrace
             return seq
 
         ### The entry of failure `seq`, or None when the thread doesn't remember it.
-        routine rf_failure_find(seq: U64) -> @RfFailure?
+        infallible routine rf_failure_find(seq: U64) -> @RfFailure?
             if ieq[U64](seq, 0)
                 return None()
             for i in 0 til 64
