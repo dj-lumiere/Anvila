@@ -1351,10 +1351,18 @@ public sealed partial class SemanticVerifier
     /// receiver's type or a protocol it obeys (`(0 til n).to[List]()` is in `EmitterTools`), or an empty text.</summary>
     private string UnimportedConversionHint(string name, TypeSymbol owner, IReadOnlyList<TypeSymbol> typeArguments)
     {
-        return typeArguments is [{ } only] &&
-               _registry.UnimportedModuleWithMemberRoutine(routineName: name, receiver: owner,
-                   typeArgument: only.BareName) is { } module
-            ? $" '{name}[{only.BareName}]' comes from the module '{module}', which this file does not import. " +
+        if (typeArguments is not [{ } only])
+        {
+            return "";
+        }
+
+        // A Suflae entity type argument is its shared handle (`Roamed[List]`): the routine names the type itself.
+        string written = only.BareName == Declaration.RuntimeContract.Roamed && only.TypeArguments is [{ } inner]
+            ? inner.BareName
+            : only.BareName;
+        return _registry.UnimportedModuleWithMemberRoutine(routineName: name, receiver: owner,
+                   typeArgument: written) is { } module
+            ? $" '{name}[{written}]' comes from the module '{module}', which this file does not import. " +
               $"Add `import {module}`."
             : "";
     }
