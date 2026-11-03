@@ -122,9 +122,9 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
     private bool SynthesizeForCallExpression(Expression expr)
     {
         // Handle both the lowered call form and the still-generic memberRoutine-call form: explicit
-        // memberRoutine type args (e.g. `select_many[S64](…)`) reach PDIL as a
+        // memberRoutine type args (e.g. `select_chained[S64](…)`) reach PDIL as a
         // GenericMemberRoutineCallExpression because GenericCallLoweringPass runs AFTER PDIL. Without
-        // this its per-implementer body (List[S64].select_many) is never synthesized.
+        // this its per-implementer body (List[S64].select_chained) is never synthesized.
         if (!TryGetProtocolDefaultCallParts(expr: expr,
                 resolvedRoutine: out RoutineInfo? rr0,
                 receiverType: out TypeSymbol? recvType0,
@@ -182,7 +182,7 @@ internal sealed class ProtocolDefaultImplLoweringPass(InstantiationContext ctx)
 
     /// <summary>
     /// Builds the body of <paramref name="variant"/>, the recovery variant of a protocol's own routine made concrete
-    /// for an implementer (<c>Emittable[T].to[List[T]]</c>'s <c>try</c> variant on a <c>SelectManyEmittable</c>),
+    /// for an implementer (<c>Emittable[T].to[List[T]]</c>'s <c>try</c> variant on a <c>SelectChainedEmittable</c>),
     /// from the protocol's analyzed body: cloned for the implementer with the protocol's parameters bound by the
     /// conformance (the protocol's <c>T</c> is what the implementer emits, not the implementer's own <c>T</c>), then
     /// turned into the variant. The variant built once from the definition keeps the protocol's abstract types, so

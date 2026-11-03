@@ -199,6 +199,10 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         {
             "Iterable" => "Emittable",
             "Iterator" => "Emitter",
+            "SelectManyEmittable" => "SelectChainedEmittable",
+            "SelectManyEmitter" => "SelectChainedEmitter",
+            "ExtendEmittable" => "ChainEmittable",
+            "ExtendEmitter" => "ChainEmitter",
             _ when typeName.EndsWith(value: "Iterables", comparisonType: StringComparison.Ordinal) =>
                 typeName[..^"Iterables".Length] + "Emittables",
             _ when typeName.EndsWith(value: "Iterable", comparisonType: StringComparison.Ordinal) =>
@@ -269,6 +273,10 @@ internal sealed class NameSuggestions(TypeRegistry registry)
                 return " It is called 'items' now: a list of (key, value) tuples.";
             case "destroy" when MemberSuggestionCandidates(type: type).Contains(value: "destruct"):
                 return " It is called 'destruct' now (written 'drop x' outside the standard library).";
+            case "select_many":
+                return " It is called 'select_chained' now (migrate --step emitter-tools rewrites it).";
+            case "extend":
+                return " Joining two emittables is 'a.chain(b)' now (migrate --step emitter-tools rewrites it).";
             case "assign":
                 return " 'assign' is gone: '=' copies a value ('var b = a').";
             case "iter" when MemberSuggestionCandidates(type: type).Contains(value: RuntimeContract.Iter):

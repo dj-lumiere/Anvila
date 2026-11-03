@@ -572,7 +572,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Analyzes a generic MEMBER-routine call on a receiver (<c>obj.select_many[U](...)</c>): aligns
+    /// Analyzes a generic MEMBER-routine call on a receiver (<c>obj.select_chained[U](...)</c>): aligns
     /// owner-level and member-level type arguments, monomorphizes <paramref name="memberRoutine"/>,
     /// analyzes the arguments, and returns the return type with <c>Me</c> / member-generic substitution
     /// applied.
@@ -585,7 +585,7 @@ public sealed partial class SemanticVerifier
 
         // Resolve the memberRoutine's generics from the explicit type arguments BEFORE analyzing the
         // arguments, so a lambda argument whose parameter binds a memberRoutine-level generic receives a
-        // concrete expected type (e.g. `select_many[S64](transform: x => …)` types `x` as S64
+        // concrete expected type (e.g. `select_chained[S64](transform: x => …)` types `x` as S64
         // instead of the unbound generic, which would collapse to <error> and cascade S503/S450/S505).
         if (memberRoutine.IsGenericDefinition)
         {
@@ -633,7 +633,7 @@ public sealed partial class SemanticVerifier
         TypeSymbol returnType = memberRoutine.ReturnType;
 
         // Bind ProtocolSelf (`Me`) in the return type to the receiver. A protocol-extension memberRoutine
-        // like `select_many[U] -> ?SelectManyIterator[T, U, Me]` leaves `Me` in its return; left
+        // like `select_chained[U] -> ?SelectManyIterator[T, U, Me]` leaves `Me` in its return; left
         // unbound it leaks into the per-implementer collector symbol (SelectManyIterator[.., Me].List)
         // and never resolves. Rebuild the resolution explicitly — a ProtocolSelf argument suppresses
         // the IsGenericResolution flag, so the generic substitution helpers below skip it.

@@ -227,9 +227,9 @@ internal sealed class GenericCallLoweringPass : AstRewriter
     /// </summary>
     private static readonly HashSet<string> TakenWalkRoutines =
     [
-        "accumulate", "all", "any", "distinct", "distinct_by", "enumerate", "exclude", "extend", "first_or_default",
+        "accumulate", "all", "any", "chain", "distinct", "distinct_by", "enumerate", "exclude", "first_or_default",
         "get_count", "intersect", "join", "last_or_default", "max", "max_by", "min", "min_by", "reverse", "select",
-        "select_many", "skip", "skip_while", "sum", "take", "take_while", "to", "union", "where", "where_not"
+        "select_chained", "skip", "skip_while", "sum", "take", "take_while", "to", "union", "where", "where_not"
     ];
 
     /// <summary>

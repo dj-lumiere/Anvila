@@ -195,7 +195,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
 
     /// <summary>
     /// Whether the step of a <c>for</c> loop walks an emitter that hands its items over (<c>select</c>,
-    /// <c>select_many</c>, see <see cref="Declaration.EmitterWalk"/>): the step then owns its item and tears it down
+    /// <c>select_chained</c>, see <see cref="Declaration.EmitterWalk"/>): the step then owns its item and tears it down
     /// when it ends, unless the step moves it on.
     /// </summary>
     private bool StepHandsOver(WhenStatement step)
