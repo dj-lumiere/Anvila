@@ -11,7 +11,7 @@ namespace Builder.Verification;
 /// Phase 5: Error handling variant support.
 ///
 /// RazorForge/Suflae error handling model:
-/// - Failable functions end with ! suffix (e.g., parse!, connect!)
+/// - Recovering forms are named by base routine and kind (try, check), never by a suffix
 /// - throw statement: signals a failure with an error value
 /// - absent statement: signals "not found" without error
 ///

@@ -745,7 +745,7 @@ public sealed partial class SemanticVerifier
                 ReportError(code: SemanticDiagnosticCode.ForeignCallbackMustBeNonCapturing,
                     message:
                     $"Argument '{param.Name}' of C routine '{routine.Name}' is a CAPTURING lambda, which cannot " +
-                    "cross the C boundary — a routine handed to C becomes a raw function pointer with no " +
+                    "cross the C boundary — a routine handed to C becomes a bare routine address with no " +
                     "environment, and a capture is an extra bound argument with no C slot. Pass a captureless " +
                     "callback and thread any state through an explicit userdata parameter.",
                     location: argExpr.Location);

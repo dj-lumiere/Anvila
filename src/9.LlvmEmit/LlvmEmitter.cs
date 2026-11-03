@@ -1103,7 +1103,7 @@ public partial class LlvmEmitter
             message: $"Codegen bug: declare/define signature mismatch for @{name}.\n" +
                      $"  declare: {declSig}  ({declLine.Trim()})\n" +
                      $"  define : {defSig}  ({defHeader.Trim()})\n" +
-                     "The forward declaration and the emitted body disagree on the function type. " +
+                     "The forward declaration and the emitted body disagree on the routine type. " +
                      "This is an internal builder error — the conversion/mangling path that built " +
                      "the declare differs from the one that built the define.");
     }

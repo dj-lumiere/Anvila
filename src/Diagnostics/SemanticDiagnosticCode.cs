@@ -366,7 +366,7 @@ public enum SemanticDiagnosticCode
     // CONTROL FLOW AND RETURN ERRORS (RF-S300 - RF-S349)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Return statement outside of function context.</summary>
+    /// <summary>Return statement outside of a routine.</summary>
     ReturnOutsideFunction = 300,
 
     /// <summary>Return type does not match function's declared return type.</summary>

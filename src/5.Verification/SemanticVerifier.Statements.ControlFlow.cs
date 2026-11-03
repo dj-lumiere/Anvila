@@ -1039,7 +1039,7 @@ public sealed partial class SemanticVerifier
         if (_currentRoutine == null)
         {
             ReportError(code: SemanticDiagnosticCode.ReturnOutsideFunction,
-                message: "Return statement outside of function.",
+                message: "Return statement outside of a routine.",
                 location: ret.Location);
             return;
         }
@@ -1117,7 +1117,7 @@ public sealed partial class SemanticVerifier
                           "else owns (an element read into a variable, `var b = boxes[0]`, holds one). Return a copy " +
                           "with '.duplicate()', take the element out of its container (`remove_at`), or return the token " +
                           $"by declaring the routine '-> {returnType.Name}'."
-                        : $"Cannot return value of type '{WrittenTypeName(type: returnType)}' from function expecting " +
+                        : $"Cannot return a value of type '{WrittenTypeName(type: returnType)}' from a routine that returns " +
                           $"'{WrittenTypeName(type: _currentRoutine.ReturnType)}'.",
                     location: ret.Location);
             }

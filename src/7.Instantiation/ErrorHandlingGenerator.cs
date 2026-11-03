@@ -105,7 +105,7 @@ public sealed class ErrorHandlingGenerator
         {
             return new ErrorHandlingResult
             {
-                Error = $"Failable function '{routine.Name}!' must throw or call a routine that can fail",
+                Error = $"Routine '{routine.Name}' must throw or call a routine that can fail",
                 HasThrow = false
             };
         }

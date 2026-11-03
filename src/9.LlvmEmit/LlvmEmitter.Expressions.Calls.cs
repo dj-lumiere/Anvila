@@ -174,7 +174,7 @@ public partial class LlvmEmitter
         {
             throw new InvalidOperationException(
                 message:
-                $"Cannot determine type for argument in function call to '{functionName}'");
+                $"Cannot determine type for argument in routine call to '{functionName}'");
         }
 
         (string coercedValue, string coercedType) = CoerceCallArgumentToParameter(sb: sb,
