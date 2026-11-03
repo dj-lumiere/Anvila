@@ -615,6 +615,10 @@ public record ForStatement(
     /// or <c>continue to</c> inside it can name, or null.</summary>
     public string? Name { get; init; }
 
+    /// <summary>The type written after the loop's name (<c>for i: S64 in 1 to 10**10</c>), which a range literal's
+    /// bounds take, or null.</summary>
+    public TypeExpression? VariableType { get; init; }
+
     /// <summary>The values the loop carries (<c>with a: T = init, …</c>), or null.</summary>
     public List<CarriedValue>? With { get; init; }
 

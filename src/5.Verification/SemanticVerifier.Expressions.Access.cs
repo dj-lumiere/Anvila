@@ -1550,7 +1550,9 @@ public sealed partial class SemanticVerifier
                        IsNumericGenericParam(type: startType);
         bool endOk = endIsBack || IsNumericType(type: endType) ||
                      IsNumericGenericParam(type: endType);
-        if (!startOk || !endOk)
+        // A bound that already failed (a literal out of its type's range) has its own error.
+        bool boundFailed = startType is ErrorTypeSymbol || endType is ErrorTypeSymbol;
+        if ((!startOk || !endOk) && !boundFailed)
         {
             bool charBound = startType is { Name: "Char" } || endType is { Name: "Char" };
             ReportError(code: SemanticDiagnosticCode.RangeBoundsNotNumeric,

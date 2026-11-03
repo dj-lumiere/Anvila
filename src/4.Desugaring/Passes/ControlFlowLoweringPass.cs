@@ -706,6 +706,18 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
             // `for x in steal xs`: the loop takes `xs` and hands each element over (`take_each`), not a token on it.
             bool takes = source is StealExpression;
             DeclarationStatement sourceDecl = SourceDeclaration(name: sourceName, value: source);
+            // `for i: S64 in 1 to n`: the range local is a `Range[S64]`, so its bare literal bounds take that type.
+            if (forStmt.VariableType is { } elementType && source is RangeExpression)
+            {
+                sourceDecl = sourceDecl with
+                {
+                    Declaration = ((VariableDeclaration)sourceDecl.Declaration) with
+                    {
+                        Type = new TypeExpression(Name: "Range", GenericArguments: [elementType], Location: elementType.Location)
+                    }
+                };
+            }
+
             if (takes)
             {
                 sourceDecl = sourceDecl with

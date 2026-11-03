@@ -399,6 +399,7 @@ public partial class Parser
 
         string? variable = null;
         DestructuringPattern? variablePattern = null;
+        TypeExpression? variableType = null;
 
         // Check for tuple destructuring: for (index, item) in items.enumerate()
         if (Check(type: TokenType.LeftParen))
@@ -415,10 +416,24 @@ public partial class Parser
                     $"Several names after 'for' go in parentheses, as a tuple: 'for ({variable}, ...) in ...'. A " +
                     "dictionary's pairs are 'for (key, value) in d.items()'.");
             }
+
+            // `for i: S64 in 1 to 10**10`: the type the range literal's bounds take.
+            if (Check(type: TokenType.Colon))
+            {
+                Advance();
+                variableType = ParseType();
+            }
         }
 
         Consume(type: TokenType.In, errorMessage: "Expected 'in' in for loop");
         Expression sequenceable = ParseExpression();
+        if (variableType != null && sequenceable is not RangeExpression)
+        {
+            throw ThrowParseError(message:
+                $"The type after '{variable}' gives the bounds of a range written in the loop their type, as in " +
+                $"'for {variable}: {variableType.Name} in 1 to n'. This loop walks something else, whose elements " +
+                $"already have their type: write 'for {variable} in ...'.");
+        }
         (string? name, Token? nameToken) = ParseLoopName();
         List<CarriedValue>? with = ParseCarriedValues();
         Statement body = ParseCarryingBody(with: with, location: location, name: name, nameToken: nameToken);
@@ -428,7 +443,10 @@ public partial class Parser
             VariablePattern: variablePattern,
             Iterable: sequenceable,
             Body: body,
-            Location: location) with { ThenBranch = ParseLoopThen(), With = with, Name = name };
+            Location: location) with
+        {
+            ThenBranch = ParseLoopThen(), With = with, Name = name, VariableType = variableType
+        };
     }
 
     /// <summary>
