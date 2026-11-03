@@ -249,6 +249,13 @@ internal static class PresetEvaluation
             File.Copy(sourceFileName: manifest, destFileName: manifestTarget);
         }
 
+        // When the entry holds no computed preset and every file that does names its module, the evaluator gets an
+        // entry of its own that imports only those modules: the program's entry (a bundle importing a whole folder of
+        // programs) and what only it reaches are not analyzed a second time.
+        bool ownEntry = computed.All(predicate: c =>
+            !string.Equals(a: Path.GetFullPath(path: c.File), b: fullEntry, comparisonType: StringComparison.Ordinal) &&
+            c.Program.Declarations.OfType<ModuleDeclaration>().Any());
+
         string? evaluatorEntry = null;
         var dumps = new List<(string Routine, string? Module, bool InEntry)>();
         foreach ((SyntaxTree.Program program, string file) in orderedFiles)
@@ -259,7 +266,7 @@ internal static class PresetEvaluation
             string target = Path.Combine(path1: root, path2: relative);
             Directory.CreateDirectory(path: Path.GetDirectoryName(path: target)!);
             var lines = File.ReadAllLines(path: full).ToList();
-            bool isEntry = string.Equals(a: full, b: fullEntry, comparisonType: StringComparison.Ordinal);
+            bool isEntry = !ownEntry && string.Equals(a: full, b: fullEntry, comparisonType: StringComparison.Ordinal);
 
             List<Computed> here = computed.Where(predicate: c => ReferenceEquals(objA: c.Program, objB: program)).ToList();
             if (isEntry && !RemoveStart(program: program, lines: lines))
@@ -290,6 +297,15 @@ internal static class PresetEvaluation
             }
 
             File.WriteAllLines(path: target, contents: lines);
+        }
+
+        if (ownEntry)
+        {
+            string entryTarget = Path.Combine(path1: root,
+                path2: Path.GetRelativePath(relativeTo: baseDir, path: fullEntry));
+            evaluatorEntry = Path.Combine(path1: Path.GetDirectoryName(path: entryTarget)!,
+                path2: "preset_evaluator" + Path.GetExtension(path: fullEntry));
+            File.WriteAllLines(path: evaluatorEntry, contents: ["module PresetEvaluator", "", "import IO/Console"]);
         }
 
         if (evaluatorEntry == null)
