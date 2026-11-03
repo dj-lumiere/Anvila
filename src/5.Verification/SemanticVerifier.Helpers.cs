@@ -547,6 +547,14 @@ public sealed partial class SemanticVerifier
             return null;
         }
 
+        // A token on a type parameter the call has not bound yet (`other: Viewing[TOther]` of a member routine's own
+        // `[TOther]`) is on whatever the argument is: the parameter is bound to it right after.
+        if (tokenTarget is GenericParameterTypeSymbol && argType is not EntityTypeSymbol &&
+            argType.BareName is not (Declaration.RuntimeContract.Viewing or Declaration.RuntimeContract.Modifying))
+        {
+            tokenTarget = argType;
+        }
+
         string verb = tokenKind == Declaration.RuntimeContract.Viewing
             ? "view"
             : ModifyMemberRoutineName;
