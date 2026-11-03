@@ -117,7 +117,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 continue;
             }
 
-            Statement current = ReadFieldsBeforeCalls(stmt: stmt, into: rewritten);
+            Statement current = ReadFieldsBeforeCalls(stmt: PromoteStoredHandle(stmt: stmt), into: rewritten);
             // One bracket per entity: a statement that reads and writes the same member variable (`c.n = c.n + 1`)
             // names the handle twice, and the lock is reentrant, so a second enter and exit only cost calls.
             var seenPlaces = new HashSet<string>(comparer: StringComparer.Ordinal);
@@ -149,6 +149,91 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
 
         block.Statements.Clear();
         block.Statements.AddRange(collection: rewritten);
+    }
+
+    /// <summary>
+    /// A handle stored into a member variable of an entity that has escaped makes the stored entity reachable from
+    /// another task, so it escapes first: the value is wrapped as <c>value.promote_into(holder: holder.controller_address())</c>,
+    /// which escapes it when the holder has, and gives the same handle back. A value that is not a handle itself (a
+    /// record holding one) is left as it is.
+    /// </summary>
+    private Statement PromoteStoredHandle(Statement stmt)
+    {
+        (Expression target, Expression value)? parts = stmt switch
+        {
+            AssignmentStatement a => (a.Target, a.Value),
+            ExpressionStatement { Expression: BinaryExpression { Operator: BinaryOperator.Assign } b } => (b.Left, b.Right),
+            _ => null
+        };
+        if (parts is not ({ } targetExpr, { } value) || targetExpr is not MemberExpression target)
+        {
+            return stmt;
+        }
+
+        if (
+            RoamedFieldReceiver(member: target) is not { } holder || !IsHeldPlace(handle: holder) ||
+            RoamedInnerEntity(t: holder.ResolvedType)?.MemberVariables
+                .FirstOrDefault(predicate: mv => mv.Name == target.MemberName)?.Type is not { } fieldType ||
+            HandleTypeOf(fieldType: fieldType, valueType: value.ResolvedType) is not { } valueType ||
+            holder.ResolvedType is not { } holderType ||
+            Registry.LookupMemberRoutine(type: holderType,
+                memberRoutineName: RuntimeContract.RoamedMemberRoutine.ControllerAddress) is not { } address ||
+            Registry.LookupMemberRoutine(type: valueType,
+                memberRoutineName: RuntimeContract.RoamedMemberRoutine.PromoteInto) is not { } promote)
+        {
+            return stmt;
+        }
+
+        // A name the teardown spilled the new value into carries no type of its own yet: it is the member variable's.
+        value = value with { ResolvedType = valueType };
+
+        var addressCall = new CallExpression(
+            Callee: new MemberExpression(Object: holder,
+                MemberName: RuntimeContract.RoamedMemberRoutine.ControllerAddress,
+                Location: holder.Location) { ResolvedType = holderType },
+            Arguments: new List<Expression>(),
+            Location: holder.Location)
+        {
+            ResolvedRoutine = address,
+            ResolvedType = address.ReturnType,
+            LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: address)
+        };
+        var wrapped = new CallExpression(
+            Callee: new MemberExpression(Object: value,
+                MemberName: RuntimeContract.RoamedMemberRoutine.PromoteInto,
+                Location: value.Location) { ResolvedType = valueType },
+            Arguments: [addressCall],
+            Location: value.Location)
+        {
+            ResolvedRoutine = promote,
+            ResolvedType = promote.ReturnType,
+            LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: promote)
+        };
+        return stmt switch
+        {
+            AssignmentStatement a => a with { Value = wrapped },
+            ExpressionStatement { Expression: BinaryExpression b } e => e with { Expression = b with { Right = wrapped } },
+            _ => stmt
+        };
+    }
+
+    /// <summary>The <c>Roamed[E]</c> a value stored into a member variable of type <paramref name="fieldType"/> has,
+    /// or null when the member variable holds no entity handle.</summary>
+    private TypeSymbol? HandleTypeOf(TypeSymbol fieldType, TypeSymbol? valueType)
+    {
+        if (valueType is not null && TypeRegistry.GetRcWrapperBaseName(type: valueType) == RuntimeContract.Roamed)
+        {
+            return valueType;
+        }
+
+        if (TypeRegistry.GetRcWrapperBaseName(type: fieldType) == RuntimeContract.Roamed)
+        {
+            return fieldType;
+        }
+
+        return fieldType is EntityTypeSymbol && Registry.LookupType(name: RuntimeContract.Roamed) is { } roamedDef
+            ? Registry.GetOrCreateResolution(genericDef: roamedDef, typeArguments: [fieldType])
+            : null;
     }
 
     /// <summary>

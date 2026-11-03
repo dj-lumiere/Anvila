@@ -50,6 +50,8 @@ internal static class ImplicitCallContract
         // receiver deref (Roamed obeys Controlling; RoamedProjectionLoweringPass coerces a Roamed
         // receiver to its inner via control) — all on the Roamed handle itself.
         yield return (liveType, RuntimeContract.RoamedMemberRoutine.Promote);
+        yield return (liveType, RuntimeContract.RoamedMemberRoutine.PromoteInto);
+        yield return (liveType, RuntimeContract.RoamedMemberRoutine.ControllerAddress);
         yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockEnter);
         yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockExit);
         yield return (liveType, RuntimeContract.RoamedMemberRoutine.RawInner);

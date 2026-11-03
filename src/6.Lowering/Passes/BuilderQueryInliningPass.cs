@@ -82,6 +82,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             "is_in_flight",
             "type_kind",
             RuntimeContract.KeepsStamp,
+            RuntimeContract.ReachesEntity,
             RuntimeContract.StampSlotOffset
         };
 
@@ -623,6 +624,16 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
                 bool keeps = type is EntityTypeSymbol { KeepsStamp: true };
                 return new LiteralExpression(Value: keeps,
                     LiteralType: keeps
+                        ? TokenType.True
+                        : TokenType.False,
+                    Location: loc) { ResolvedType = _boolType };
+            }
+
+            case RuntimeContract.ReachesEntity when _boolType != null:
+            {
+                bool reaches = HandleReach.Reaches(type: type);
+                return new LiteralExpression(Value: reaches,
+                    LiteralType: reaches
                         ? TokenType.True
                         : TokenType.False,
                     Location: loc) { ResolvedType = _boolType };

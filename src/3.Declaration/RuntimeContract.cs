@@ -170,6 +170,12 @@ public static class RuntimeContract
         /// <summary>Spawn-boundary promotion of a single-thread handle to a shareable one.</summary>
         public const string Promote = "promote";
 
+        /// <summary>Promotion of a handle stored into an entity that has escaped (the holder's header is the argument).</summary>
+        public const string PromoteInto = "promote_into";
+
+        /// <summary>The address of the handle's header, the holder argument of <see cref="PromoteInto"/>.</summary>
+        public const string ControllerAddress = "controller_address";
+
         /// <summary>Acquire the roam lock before a direct member-variable read.</summary>
         public const string LockEnter = "lock_enter";
 
@@ -358,6 +364,9 @@ public static class RuntimeContract
 
     /// <summary>BuilderQuery: whether an entity type keeps a stamp slot (<c>Stamped[T]</c>).</summary>
     public const string KeepsStamp = "keeps_stamp";
+
+    /// <summary>BuilderQuery: whether a value of the type holds a handle to a shared entity (<c>Roamed[E]</c>).</summary>
+    public const string ReachesEntity = "reaches_entity";
 
     /// <summary>BuilderQuery: the byte offset of an entity's stamp slot in its block, -1 for none.</summary>
     public const string StampSlotOffset = "stamp_slot_offset";
@@ -726,6 +735,7 @@ public static class RuntimeContract
             "annotations",
             DataSize,
             KeepsStamp,
+            ReachesEntity,
             StampSlotOffset,
             "full_type_name",
             "dependencies",
