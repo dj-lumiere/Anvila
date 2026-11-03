@@ -216,8 +216,7 @@ public sealed partial class SemanticVerifier
     private void ValidateModuleDeclaration(ModuleDeclaration ns)
     {
         // Module "System" is reserved for stdlib only
-        if (StandardModules.IsSystem(module: ns.Path) && !StandardModules.BuildingLibraryExport &&
-            !IsStdlibFile(filePath: _currentFilePath))
+        if (StandardModules.IsSystem(module: ns.Path) && !IsStdlibFile(filePath: _currentFilePath))
         {
             ReportError(code: SemanticDiagnosticCode.ReservedModuleCore,
                 message:

@@ -17,10 +17,6 @@ internal static class StandardModules
     /// folders mirror RazorForge's, so a file there is the module of its folder below it.</summary>
     public const string SharedFolder = "Shared";
 
-    /// <summary>Set while <c>export-ingrid</c> builds an export file: such a file is part of the standard library, so it
-    /// may declare a module under <c>System</c> and reach its secrets.</summary>
-    public static bool BuildingLibraryExport { get; set; }
-
     /// <summary>Whether <paramref name="module"/> is <c>System</c> or a module under it, written with <c>/</c> or
     /// with <c>.</c>.</summary>
     public static bool IsSystem(string? module) =>

@@ -70,7 +70,7 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "new" or "migrate" or "parse" or "tokenize" or "codegen" or BuildCommand
-            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "export-ingrid" or "help" or "fmt" or "docs" or "rf-stubs";
+            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "rf-stubs";
 
         if (!isCommand)
         {
@@ -205,9 +205,6 @@ internal partial class Program
 
             case "emit-ingrid":
                 return EmitIngrid();
-
-            case "export-ingrid":
-                return ExportIngrid(args: args);
 
             case "fmt":
                 return RunFormatCommand(args: args);
