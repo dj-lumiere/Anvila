@@ -165,12 +165,85 @@ public partial class Parser
 
     private WhileStatement ParseWhileTail(Expression condition, SourceLocation location)
     {
+        (string? name, Token? nameToken) = ParseLoopName();
         List<CarriedValue>? with = ParseCarriedValues();
-        Statement body = ParseCarryingBody(with: with, location: location);
+        Statement body = ParseCarryingBody(with: with, location: location, name: name, nameToken: nameToken);
         RejectLoopElse();
         return new WhileStatement(Condition: condition,
             Body: body,
-            Location: location) { ThenBranch = ParseLoopThen(), With = with };
+            Location: location) { ThenBranch = ParseLoopThen(), With = with, Name = name };
+    }
+
+    /// <summary>One loop being parsed: the name it was given with <c>as</c>, the values it carries, and whether a
+    /// <c>break to</c> or <c>continue to</c> named it.</summary>
+    private sealed class LoopFrame(string? name, List<string>? carried)
+    {
+        public string? Name { get; } = name;
+
+        public List<string>? Carried { get; } = carried;
+
+        public bool Used { get; set; }
+    }
+
+    /// <summary>The loops around the statement being parsed, innermost on top.</summary>
+    private readonly Stack<LoopFrame> _loopFrames = new();
+
+    /// <summary>
+    /// The <c>as rows</c> after a loop's header: the name a <c>break to</c> or <c>continue to</c> inside the loop
+    /// can use to leave or go on with this loop. A name an enclosing loop already has is an error.
+    /// </summary>
+    private (string? Name, Token? Token) ParseLoopName()
+    {
+        if (!CheckAndAdvance(type: TokenType.As))
+        {
+            return (null, null);
+        }
+
+        Token token = Consume(type: TokenType.Identifier, errorMessage: "Expected the loop's name after 'as': for y in 0 til h as rows");
+        if (_loopFrames.Any(predicate: f => f.Name == token.Text))
+        {
+            RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.UnknownLoopName,
+                message: $"A loop around this one is already named '{token.Text}': give this loop another name.",
+                fileName: FileName,
+                line: token.Line,
+                column: token.Column,
+                language: _language));
+        }
+
+        return (token.Text, token);
+    }
+
+    /// <summary>
+    /// The target of <c>break to rows</c> or <c>continue to rows</c> after the keyword, or null when the statement
+    /// names none. A name that no loop around the statement has is an error, and a name found marks its loop as used.
+    /// </summary>
+    private (string? Name, LoopFrame? Frame) ParseJumpTarget(string verb)
+    {
+        if (!Check(type: TokenType.To))
+        {
+            return (null, null);
+        }
+
+        Advance();
+        Token token = Consume(type: TokenType.Identifier, errorMessage: $"Expected the name of a loop after '{verb} to'");
+        LoopFrame? frame = _loopFrames.FirstOrDefault(predicate: f => f.Name == token.Text);
+        if (frame == null)
+        {
+            string known = string.Join(separator: ", ",
+                values: _loopFrames.Where(predicate: f => f.Name != null).Select(selector: f => $"'{f.Name}'").Distinct());
+            RecordError(ex: new GrammarException(code: GrammarDiagnosticCode.UnknownLoopName,
+                message: known.Length == 0
+                    ? $"'{verb} to {token.Text}' names no loop: no loop around it is given a name. Name a loop with 'as {token.Text}' after its header."
+                    : $"'{verb} to {token.Text}' names no loop around it. The loops named here are {known}.",
+                fileName: FileName,
+                line: token.Line,
+                column: token.Column,
+                language: _language));
+            return (null, null);
+        }
+
+        frame.Used = true;
+        return (token.Text, frame);
     }
 
     /// <summary>The carried values of a loop: a loop without `with` carries none (null). Innermost last.</summary>
@@ -206,9 +279,13 @@ public partial class Parser
     /// A loop's body, with its carried values known to the <c>continue</c> statements in it. A body that carries
     /// values must not run off its end: it continues with the next values, breaks, or leaves the routine.
     /// </summary>
-    private BlockStatement ParseCarryingBody(List<CarriedValue>? with, SourceLocation location)
+    private BlockStatement ParseCarryingBody(List<CarriedValue>? with, SourceLocation location, string? name = null,
+        Token? nameToken = null)
     {
-        _carriedLoops.Push(item: with?.Select(selector: c => c.Name).ToList());
+        List<string>? carriedNames = with?.Select(selector: c => c.Name).ToList();
+        _carriedLoops.Push(item: carriedNames);
+        var frame = new LoopFrame(name: name, carried: carriedNames);
+        _loopFrames.Push(item: frame);
         BlockStatement body;
         try
         {
@@ -217,6 +294,15 @@ public partial class Parser
         finally
         {
             _carriedLoops.Pop();
+            _loopFrames.Pop();
+        }
+
+        if (name != null && nameToken != null && !frame.Used)
+        {
+            AddWarning(message: $"The loop is named '{name}', and no 'break to {name}' or 'continue to {name}' uses the name. " +
+                                "Take 'as " + name + "' off the loop.",
+                token: nameToken,
+                warningCode: SemanticWarningCode.UnusedLoopName.ToCodeString(language: _language));
         }
 
         if (with != null && !LeavesRound(statement: body))
@@ -294,10 +380,11 @@ public partial class Parser
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
 
+        (string? name, Token? nameToken) = ParseLoopName();
         List<CarriedValue>? with = ParseCarriedValues();
-        Statement body = ParseCarryingBody(with: with, location: location);
+        Statement body = ParseCarryingBody(with: with, location: location, name: name, nameToken: nameToken);
         RejectLoopElse();
-        return new LoopStatement(Body: body, Location: location) { ThenBranch = ParseLoopThen(), With = with };
+        return new LoopStatement(Body: body, Location: location) { ThenBranch = ParseLoopThen(), With = with, Name = name };
     }
 
     /// <summary>
@@ -332,15 +419,16 @@ public partial class Parser
 
         Consume(type: TokenType.In, errorMessage: "Expected 'in' in for loop");
         Expression sequenceable = ParseExpression();
+        (string? name, Token? nameToken) = ParseLoopName();
         List<CarriedValue>? with = ParseCarriedValues();
-        Statement body = ParseCarryingBody(with: with, location: location);
+        Statement body = ParseCarryingBody(with: with, location: location, name: name, nameToken: nameToken);
         RejectLoopElse();
 
         return new ForStatement(Variable: variable,
             VariablePattern: variablePattern,
             Iterable: sequenceable,
             Body: body,
-            Location: location) with { ThenBranch = ParseLoopThen(), With = with };
+            Location: location) with { ThenBranch = ParseLoopThen(), With = with, Name = name };
     }
 
     /// <summary>
@@ -1319,14 +1407,15 @@ public partial class Parser
 
     /// <summary>
     /// Parses a break statement for exiting loops.
-    /// Syntax: <c>break</c>
+    /// Syntax: <c>break</c>, or <c>break to rows</c> to leave the loop named <c>rows</c>.
     /// </summary>
     /// <returns>A <see cref="BreakStatement"/> AST node.</returns>
     private BreakStatement ParseBreakStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
+        (string? target, _) = ParseJumpTarget(verb: "break");
         ConsumeStatementTerminator();
-        return new BreakStatement(Location: location);
+        return new BreakStatement(Location: location) { TargetName = target };
     }
 
     /// <summary>
@@ -1337,6 +1426,7 @@ public partial class Parser
     private ContinueStatement ParseContinueStatement()
     {
         SourceLocation location = GetLocation(token: PeekToken(offset: -1));
+        (string? target, LoopFrame? targetFrame) = ParseJumpTarget(verb: "continue");
         List<(string Name, Expression Value, SourceLocation Location)>? with = null;
         if (CheckAndAdvance(type: TokenType.With))
         {
@@ -1351,7 +1441,9 @@ public partial class Parser
         }
 
         ConsumeStatementTerminator();
-        List<string>? carried = _carriedLoops.Count > 0 ? _carriedLoops.Peek() : null;
+        List<string>? carried = targetFrame != null
+            ? targetFrame.Carried
+            : _carriedLoops.Count > 0 ? _carriedLoops.Peek() : null;
         string? mismatch = carried == null
             ? with == null ? null : "This loop carries no values (no `with` on it), so `continue` passes none: write a bare 'continue'."
             : with == null
@@ -1369,7 +1461,7 @@ public partial class Parser
                 language: _language));
         }
 
-        return new ContinueStatement(Location: location) { With = with };
+        return new ContinueStatement(Location: location) { With = with, TargetName = target };
     }
 
     /// <summary>

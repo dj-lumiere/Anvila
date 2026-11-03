@@ -3886,6 +3886,40 @@ public static class LspServer
     /// callee or declaration, or a name followed by its argument list, which covers member calls). A name the
     /// analysis resolved to nothing is left to the TextMate grammar.
     /// </summary>
+    /// <summary>Whether the identifier at <paramref name="at"/> is a loop's name: the word after <c>as</c> in a loop's
+    /// header (<c>for y in 0 til h as rows</c>) or after <c>break to</c> / <c>continue to</c>.</summary>
+    private static bool IsLoopName(List<Token> toks, int at)
+    {
+        if (at < 1)
+        {
+            return false;
+        }
+
+        TokenType before = toks[index: at - 1].Type;
+        if (before == TokenType.To)
+        {
+            return at >= 2 && toks[index: at - 2].Type is TokenType.Break or TokenType.Continue;
+        }
+
+        if (before != TokenType.As)
+        {
+            return false;
+        }
+
+        int first = at - 1;
+        while (first > 0 && toks[index: first - 1].Line == toks[index: at].Line)
+        {
+            first--;
+        }
+
+        while (first < at && toks[index: first].Type is TokenType.Indent or TokenType.Dedent or TokenType.Newline)
+        {
+            first++;
+        }
+
+        return toks[index: first].Type is TokenType.For or TokenType.Until or TokenType.Loop;
+    }
+
     private static int ClassifyIdentifierToken(DocState doc, List<Token> toks, int at, SemanticRoles roles,
         int modulePathLine)
     {
@@ -3901,6 +3935,11 @@ public static class LspServer
             at > 0 && toks[index: at - 1].Type is TokenType.Preset or TokenType.Global)
         {
             return SemTok(name: "constant");
+        }
+
+        if (IsLoopName(toks: toks, at: at))
+        {
+            return SemTok(name: "variable");
         }
 
         if (roles.Parameter.Contains(item: key))

@@ -114,6 +114,9 @@ internal sealed class ControlFlowLoweringPass(DesugaringContext ctx)
     {
         return stmt switch
         {
+            // A loop given a name with `as`: its `break to` and `continue to` become plain jumps and flags first.
+            _ when NamedLoopLowering.IsNamed(loop: stmt) => LowerStatement(stmt: NamedLoopLowering.Lower(loop: stmt)),
+
             // A loop with carried values is a block: the values as variables, then the loop, whose `continue with`
             // stores the next values. The `then` block, inside the same block, still sees them.
             WhileStatement { With.Count: > 0 } w => LowerCarried(loop: w with { With = null }, carried: w.With, body: w.Body,

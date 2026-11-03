@@ -112,13 +112,20 @@ internal sealed partial class AstPrinter
                         Expr(expression: stolen.Place, context: ExprContext.Statement),
                         Doc.Text(text: $" as {stolen.Name}")));
                 break;
+            case BreakStatement { TargetName: { } target }:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "break to " + target)));
+                break;
             case BreakStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "break")));
                 break;
-            case ContinueStatement { With: { } carried }:
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "continue with "),
+            case ContinueStatement { With: { } carried } toNamed:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix,
+                    Doc.Text(text: toNamed.TargetName == null ? "continue with " : $"continue to {toNamed.TargetName} with "),
                     Doc.Join(separator: Doc.Text(text: ", "), items: carried.Select(selector: c =>
                         Doc.Concat(Doc.Text(text: c.Name + ": "), Expr(expression: c.Value, context: ExprContext.ListItem))))));
+                break;
+            case ContinueStatement { TargetName: { } target }:
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "continue to " + target)));
                 break;
             case ContinueStatement:
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "continue")));
@@ -136,7 +143,8 @@ internal sealed partial class AstPrinter
                 }
 
                 EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "until "),
-                    Expr(expression: written.Operand, context: ExprContext.Statement), With(carried: whileStatement.With)));
+                    Expr(expression: written.Operand, context: ExprContext.Statement), LoopName(name: whileStatement.Name),
+                    With(carried: whileStatement.With)));
                 PrintBody(body: whileStatement.Body, depth: depth + 1, at: whileStatement.Location);
                 PrintThenBranch(thenBranch: whileStatement.ThenBranch, depth: depth, at: whileStatement.Location);
                 break;
@@ -146,7 +154,8 @@ internal sealed partial class AstPrinter
                     throw Unsupported(node: loop, at: loop.Location);
                 }
 
-                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "loop"), With(carried: loop.With)));
+                EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "loop"), LoopName(name: loop.Name),
+                    With(carried: loop.With)));
                 PrintBody(body: loop.Body, depth: depth + 1, at: loop.Location);
                 PrintThenBranch(thenBranch: loop.ThenBranch, depth: depth, at: loop.Location);
                 break;
@@ -277,6 +286,12 @@ internal sealed partial class AstPrinter
         PrintBlock(statements: block.Statements, depth: depth + 1, at: at);
     }
 
+    /// <summary>` as rows` on a named loop's head, or nothing.</summary>
+    private static Doc LoopName(string? name)
+    {
+        return name == null ? Doc.Empty : Doc.Text(text: " as " + name);
+    }
+
     /// <summary>` with a: T = init, …` on a loop's head, or nothing.</summary>
     private Doc With(List<CarriedValue>? carried)
     {
@@ -293,7 +308,8 @@ internal sealed partial class AstPrinter
             ? BindingsText(bindings: each.VariablePattern.Bindings)
             : each.Variable ?? throw Refuse(at: each.Location, reason: "a for loop without a variable");
         EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "for " + variable + " in "),
-            Expr(expression: each.Iterable, context: ExprContext.Statement), With(carried: each.With)));
+            Expr(expression: each.Iterable, context: ExprContext.Statement), LoopName(name: each.Name),
+            With(carried: each.With)));
         PrintBody(body: each.Body, depth: depth + 1, at: each.Location);
         PrintThenBranch(thenBranch: each.ThenBranch, depth: depth, at: each.Location);
     }

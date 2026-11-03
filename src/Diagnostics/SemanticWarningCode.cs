@@ -48,6 +48,9 @@ public enum SemanticWarningCode
     /// (<c>start_now</c>/<c>retrieve</c>/<c>gather</c>/<c>race</c>) starts it, so its work never runs.</summary>
     AsyncWorkNeverLaunched = 8,
 
+    /// <summary>A loop is given a name (<c>as rows</c>) that no <c>break to</c> or <c>continue to</c> uses.</summary>
+    UnusedLoopName = 10,
+
     /// <summary>A <c>Work[T]</c> bound to a variable is started but nothing takes what it came to (no
     /// <c>retrieve</c>, no <c>drop</c>, never handed on): its scope's end cancels it and waits for it.</summary>
     WorkNeverCollected = 9,

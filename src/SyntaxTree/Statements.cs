@@ -471,6 +471,10 @@ public record WhileStatement(
     Statement Body,
     SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The name the loop was given with <c>as</c> (<c>for y in 0 til h as rows</c>), which a <c>break to</c>
+    /// or <c>continue to</c> inside it can name, or null.</summary>
+    public string? Name { get; init; }
+
     /// <summary>The values the loop carries (<c>with a: T = init, …</c>), or null.</summary>
     public List<CarriedValue>? With { get; init; }
 
@@ -504,6 +508,10 @@ public record WhileStatement(
 public record LoopStatement(Statement Body, SourceLocation Location)
     : Statement(Location: Location)
 {
+    /// <summary>The name the loop was given with <c>as</c> (<c>for y in 0 til h as rows</c>), which a <c>break to</c>
+    /// or <c>continue to</c> inside it can name, or null.</summary>
+    public string? Name { get; init; }
+
     /// <summary>The <c>then</c> block of a written <c>loop</c>: it runs once the loop is left by a <c>break</c>.
     /// Lowered away before analysis, so only the parser and the formatter see it.</summary>
     public Statement? ThenBranch { get; init; }
@@ -603,6 +611,10 @@ public record ForStatement(
     Statement Body,
     SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The name the loop was given with <c>as</c> (<c>for y in 0 til h as rows</c>), which a <c>break to</c>
+    /// or <c>continue to</c> inside it can name, or null.</summary>
+    public string? Name { get; init; }
+
     /// <summary>The values the loop carries (<c>with a: T = init, …</c>), or null.</summary>
     public List<CarriedValue>? With { get; init; }
 
@@ -850,6 +862,10 @@ public record WhenArmExpansion(string HandleName, TypeExpression SourceType, Whe
 /// </remarks>
 public record BreakStatement(SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The loop named by <c>break to rows</c>, or null for a plain <c>break</c> that leaves the innermost
+    /// loop. Removed by the control-flow lowering before analysis.</summary>
+    public string? TargetName { get; init; }
+
     /// <summary>Accepts a visitor for AST traversal and transformation</summary>
     public override T Accept<T>(ISyntaxTreeVisitor<T> visitor)
     {
@@ -873,6 +889,10 @@ public record BreakStatement(SourceLocation Location) : Statement(Location: Loca
 /// </remarks>
 public record ContinueStatement(SourceLocation Location) : Statement(Location: Location)
 {
+    /// <summary>The loop named by <c>continue to rows</c>, or null for a plain <c>continue</c> that goes on with the
+    /// innermost loop. Removed by the control-flow lowering before analysis.</summary>
+    public string? TargetName { get; init; }
+
     /// <summary>What the next round's carried values are (<c>continue with a: v, b: w</c>), or null for a loop that
     /// carries nothing.</summary>
     public List<(string Name, Expression Value, SourceLocation Location)>? With { get; init; }

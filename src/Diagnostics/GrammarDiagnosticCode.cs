@@ -230,6 +230,10 @@ public enum GrammarDiagnosticCode
     /// collection is <c>for x in xs</c>. <c>migrate --step for</c> rewrites each one.</summary>
     EachKeyword = 229,
 
+    /// <summary>A <c>break to</c> or <c>continue to</c> that names no loop around it, or a loop given a name an
+    /// enclosing loop already has.</summary>
+    UnknownLoopName = 231,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PATTERN ERRORS (250 - 299)
     // ═══════════════════════════════════════════════════════════════════════════

@@ -228,11 +228,14 @@ public partial class Parser
             bool patternArm = token.Type is TokenType.Is or TokenType.IsNot &&
                               before is TokenType.Newline or TokenType.Indent or TokenType.Dedent;
             bool elseBinding = token.Type == TokenType.As && before == TokenType.Else;
+            // `loop as rows` names a loop, and `break to rows` / `continue to rows` leave or go on with a named one.
+            bool loopName = token.Type == TokenType.As && before == TokenType.Loop ||
+                            token.Type == TokenType.To && before is TokenType.Break or TokenType.Continue;
             // A member variable of a record pattern is observed or named after its colon: `item: is Weapon as w`,
             // `y: as y`.
             bool fieldPattern = token.Type is TokenType.Is or TokenType.IsNot or TokenType.As &&
                                 before == TokenType.Colon;
-            if (!afterExpression && !patternArm && !elseBinding && !fieldPattern)
+            if (!afterExpression && !patternArm && !elseBinding && !fieldPattern && !loopName)
             {
                 tokens[index: i] = token with { Type = TokenType.Identifier };
             }
