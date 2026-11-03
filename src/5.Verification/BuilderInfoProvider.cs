@@ -223,6 +223,11 @@ public static class BuilderInfoProvider
                 returnType: types.BoolType,
                 existingMemberRoutines: existingMemberRoutines,
                 registry: registry);
+            MaybeRegister(owner: type,
+                name: RuntimeContract.SharesEntityAcrossTasks,
+                returnType: types.BoolType,
+                existingMemberRoutines: existingMemberRoutines,
+                registry: registry);
         }
     }
 

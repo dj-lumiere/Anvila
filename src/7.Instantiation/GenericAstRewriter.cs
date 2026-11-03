@@ -2806,8 +2806,15 @@ internal static class GenericAstRewriter
                 Location: location) { ResolvedType = boolType },
 
             RuntimeContract.ReachesEntity when boolType != null => new LiteralExpression(
-                Value: HandleReach.Reaches(type: typeInfo, registry: ctx.Registry),
-                LiteralType: HandleReach.Reaches(type: typeInfo, registry: ctx.Registry)
+                Value: HandleReach.Reaches(type: typeInfo),
+                LiteralType: HandleReach.Reaches(type: typeInfo)
+                    ? TokenType.True
+                    : TokenType.False,
+                Location: location) { ResolvedType = boolType },
+
+            RuntimeContract.SharesEntityAcrossTasks when boolType != null => new LiteralExpression(
+                Value: ctx.Registry.TasksCross && HandleReach.Reaches(type: typeInfo),
+                LiteralType: ctx.Registry.TasksCross && HandleReach.Reaches(type: typeInfo)
                     ? TokenType.True
                     : TokenType.False,
                 Location: location) { ResolvedType = boolType },

@@ -368,6 +368,10 @@ public static class RuntimeContract
     /// <summary>BuilderQuery: whether a value of the type holds a handle to a shared entity (<c>Roamed[E]</c>).</summary>
     public const string ReachesEntity = "reaches_entity";
 
+    /// <summary>BuilderQuery: whether a value of the type holds an entity handle and the program being built can
+    /// hand a handle to another task (<c>reaches_entity</c> and <c>TypeRegistry.TasksCross</c>).</summary>
+    public const string SharesEntityAcrossTasks = "shares_entity_across_tasks";
+
     /// <summary>BuilderQuery: the byte offset of an entity's stamp slot in its block, -1 for none.</summary>
     public const string StampSlotOffset = "stamp_slot_offset";
 
@@ -736,6 +740,7 @@ public static class RuntimeContract
             DataSize,
             KeepsStamp,
             ReachesEntity,
+            SharesEntityAcrossTasks,
             StampSlotOffset,
             "full_type_name",
             "dependencies",

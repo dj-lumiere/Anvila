@@ -83,6 +83,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
             "type_kind",
             RuntimeContract.KeepsStamp,
             RuntimeContract.ReachesEntity,
+            RuntimeContract.SharesEntityAcrossTasks,
             RuntimeContract.StampSlotOffset
         };
 
@@ -631,9 +632,19 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
             case RuntimeContract.ReachesEntity when _boolType != null:
             {
-                bool reaches = HandleReach.Reaches(type: type, registry: _registry);
+                bool reaches = HandleReach.Reaches(type: type);
                 return new LiteralExpression(Value: reaches,
                     LiteralType: reaches
+                        ? TokenType.True
+                        : TokenType.False,
+                    Location: loc) { ResolvedType = _boolType };
+            }
+
+            case RuntimeContract.SharesEntityAcrossTasks when _boolType != null:
+            {
+                bool shares = _registry.TasksCross && HandleReach.Reaches(type: type);
+                return new LiteralExpression(Value: shares,
+                    LiteralType: shares
                         ? TokenType.True
                         : TokenType.False,
                     Location: loc) { ResolvedType = _boolType };
