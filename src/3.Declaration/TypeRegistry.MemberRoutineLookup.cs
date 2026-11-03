@@ -1514,24 +1514,43 @@ public sealed partial class TypeRegistry
 
         string wantKey = string.Join(separator: ",",
             values: argTypes.Select(selector: RoutineInfo.GetTypeIdentity));
+        RoutineInfo? withDefaults = null;
         foreach (RoutineInfo routine in OwnerMemberRoutines(byName: byName))
         {
             if (routine.Name != bareName || routine.IsGenericDefinition ||
-                routine.Parameters.Count != argTypes.Count)
+                !TakesLeadingArguments(routine: routine, count: argTypes.Count))
             {
                 continue;
             }
 
             string haveKey = string.Join(separator: ",",
-                values: routine.Parameters.Select(selector: p =>
-                    RoutineInfo.GetTypeIdentity(type: p.Type)));
-            if (haveKey == wantKey)
+                values: routine.Parameters.Take(count: argTypes.Count)
+                               .Select(selector: p => RoutineInfo.GetTypeIdentity(type: p.Type)));
+            if (haveKey != wantKey)
+            {
+                continue;
+            }
+
+            // An overload with exactly this many parameters is the one meant. One whose later parameters have
+            // defaults (`show(value: Bytes, end: Text = "\n")` for `show(bytes)`) takes the call otherwise,
+            // before a routine of its own generic parameters (`show[T]`) does.
+            if (routine.Parameters.Count == argTypes.Count)
             {
                 return routine;
             }
+
+            withDefaults ??= routine;
         }
 
-        return null;
+        return withDefaults;
+    }
+
+    /// <summary>Whether <paramref name="routine"/> has at least <paramref name="count"/> parameters and every one
+    /// after the first <paramref name="count"/> has a default value.</summary>
+    private static bool TakesLeadingArguments(RoutineInfo routine, int count)
+    {
+        return routine.Parameters.Count >= count &&
+               routine.Parameters.Skip(count: count).All(predicate: p => p.HasDefaultValue);
     }
 
     private List<RoutineInfo> GenericFreeFunctions(string name)
