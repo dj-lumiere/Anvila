@@ -244,7 +244,7 @@ internal sealed class NameSuggestions(TypeRegistry registry)
         }
 
         // A member the standard library defines in a module this file does not import.
-        if (registry.UnimportedModuleWithMemberRoutine(routineName: name) is { } module)
+        if (registry.UnimportedModuleWithMemberRoutine(routineName: name, receiver: type) is { } module)
         {
             return $" '{name}' comes from the module '{module}', which this file does not import. " +
                    $"Add `import {module}`.";

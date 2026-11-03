@@ -661,7 +661,7 @@ public sealed partial class TypeRegistry
     /// build has not loaded, so the program has to import it (<c>where</c> lives in <c>EmitterTools</c>). Null when no
     /// such module is found. Only used to word an error, so it reads the files it needs.
     /// </summary>
-    internal string? UnimportedModuleWithMemberRoutine(string routineName)
+    internal string? UnimportedModuleWithMemberRoutine(string routineName, TypeSymbol? receiver = null)
     {
         if (_moduleResolver is null)
         {
@@ -669,9 +669,10 @@ public sealed partial class TypeRegistry
         }
 
         var declared = new System.Text.RegularExpressions.Regex(
-            pattern: $@"^[ \t]*(?:common[ \t]+|failable[ \t]+|dangerous[ \t]+)*routine[ \t]+\w+(?:\[[^\]\n]*\])?\.{System.Text.RegularExpressions.Regex.Escape(str: routineName)}\b",
+            pattern: $@"^[ \t]*(?:common[ \t]+|failable[ \t]+|dangerous[ \t]+)*routine[ \t]+(?<owner>\w+)(?:\[[^\]\n]*\])?\.{System.Text.RegularExpressions.Regex.Escape(str: routineName)}\b",
             options: System.Text.RegularExpressions.RegexOptions.Multiline);
         var seen = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
+        string? fallback = null;
         foreach ((string key, string path) in _moduleResolver.IndexSnapshot().OrderBy(keySelector: e => e.Key,
                      comparer: StringComparer.Ordinal))
         {
@@ -682,14 +683,28 @@ public sealed partial class TypeRegistry
                 continue;
             }
 
-            if (declared.IsMatch(input: File.ReadAllText(path: full)))
+            // The module whose routine is declared on the receiver's own type, or on a protocol it obeys, is the one to
+            // import: another module may declare a routine of the same name on some other type.
+            System.Text.RegularExpressions.MatchCollection matches = declared.Matches(input: File.ReadAllText(path: full));
+            if (matches.Count == 0)
             {
-                int dot = key.LastIndexOf(value: '.');
-                return dot > 0 ? key[..dot] : key;
+                continue;
+            }
+
+            int dot = key.LastIndexOf(value: '.');
+            string module = dot > 0 ? key[..dot] : key;
+            fallback ??= module;
+            if (receiver == null || matches.Any(predicate: m =>
+                {
+                    string owner = m.Groups[groupname: "owner"].Value;
+                    return owner == receiver.BareName || TypeObeysProtocol(type: receiver, protocolName: owner);
+                }))
+            {
+                return module;
             }
         }
 
-        return null;
+        return fallback;
     }
 
     /// <summary>
