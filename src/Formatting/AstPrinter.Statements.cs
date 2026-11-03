@@ -307,8 +307,11 @@ internal sealed partial class AstPrinter
         string variable = each.VariablePattern != null
             ? BindingsText(bindings: each.VariablePattern.Bindings)
             : each.Variable ?? throw Refuse(at: each.Location, reason: "a for loop without a variable");
-        EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "for " + variable + " in "),
-            Expr(expression: each.Iterable, context: ExprContext.Statement), LoopName(name: each.Name),
+        Doc typed = each.VariableType is { } type
+            ? Doc.Concat(Doc.Text(text: ": "), TypeDoc(type: type))
+            : Doc.Empty;
+        EmitHead(start: start, depth: depth, head: Doc.Concat(prefix, Doc.Text(text: "for " + variable), typed,
+            Doc.Text(text: " in "), Expr(expression: each.Iterable, context: ExprContext.Statement), LoopName(name: each.Name),
             With(carried: each.With)));
         PrintBody(body: each.Body, depth: depth + 1, at: each.Location);
         PrintThenBranch(thenBranch: each.ThenBranch, depth: depth, at: each.Location);
