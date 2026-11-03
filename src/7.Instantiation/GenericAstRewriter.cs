@@ -1066,6 +1066,60 @@ internal static class GenericAstRewriter
         /// TypeInfos and materialize the concrete routine. Returns null when the routine is not a
         /// memberRoutine-generic definition or the args can't be fully resolved.
         /// </summary>
+        /// <summary>
+        /// Binds the member routine's own generic parameters from the call's argument types when the call wrote none
+        /// (`me.chain(you)` with `you: Viewing[Range[S64]]` binds `chain[TOther]` to `Range[S64]`). Each parameter whose
+        /// type mentions a generic parameter of the routine is matched against its argument piece by piece, so the
+        /// binding follows the position in the routine's own parameter list, whatever the caller's parameters are called.
+        /// </summary>
+        public RoutineInfo? ResolveMemberRoutineGenericFromCallArguments(RoutineInfo? routine, CallExpression call)
+        {
+            if (Registry == null || routine == null)
+            {
+                return null;
+            }
+
+            RoutineInfo? ownerBound = routine.OwnerType is { IsGenericDefinition: false } concreteOwner
+                ? Registry.LookupMemberRoutine(type: concreteOwner,
+                    memberRoutineName: routine.Name,
+                    isFailable: routine.IsFailable)
+                : null;
+            RoutineInfo target = ownerBound ?? routine.GenericDefinition ?? routine;
+            if (!target.IsGenericDefinition || target.GenericParameters is not { Count: > 0 } genParams)
+            {
+                return null;
+            }
+
+            var bound = new Dictionary<string, TypeSymbol>();
+            List<ParamInfo> parameters = target.Parameters.Where(predicate: p => p.Name != "me").ToList();
+            for (int i = 0; i < call.Arguments.Count && i < parameters.Count; i++)
+            {
+                Expression arg = call.Arguments[index: i];
+                int paramIndex = arg is NamedArgumentExpression named
+                    ? parameters.FindIndex(match: p => p.Name == named.Name)
+                    : i;
+                TypeSymbol? argType = (arg is NamedArgumentExpression nae ? nae.Value : arg).ResolvedType;
+                if (paramIndex < 0 || argType == null || argType is GenericParameterTypeSymbol)
+                {
+                    continue;
+                }
+
+                TypeRegistry.UnifyReceiverGenerics(pattern: parameters[index: paramIndex].Type,
+                    concrete: argType,
+                    genericParams: genParams,
+                    into: bound);
+            }
+
+            if (genParams.Any(predicate: g => !bound.TryGetValue(key: g, value: out TypeSymbol? v) || HasGenericParam(t: v)))
+            {
+                return null;
+            }
+
+            return Registry.GetOrCreateRoutineResolution(genericDef: target,
+                typeArguments: genParams.Select(selector: g => bound[key: g])
+                                        .ToList());
+        }
+
         public RoutineInfo? ResolveMemberRoutineGenericFromTypeArgs(RoutineInfo? routine,
             IReadOnlyList<TypeExpression>? typeArgExprs)
         {
@@ -2522,8 +2576,11 @@ internal static class GenericAstRewriter
             _ => call.TypeArguments
         };
         RoutineInfo? instance = ctx.ResolveMemberRoutineGenericFromTypeArgs(
-            routine: resolved ?? call.ResolvedRoutine,
-            typeArgExprs: typeArgs);
+                                    routine: resolved ?? call.ResolvedRoutine,
+                                    typeArgExprs: typeArgs) ??
+                                ctx.ResolveMemberRoutineGenericFromCallArguments(
+                                    routine: resolved ?? call.ResolvedRoutine,
+                                    call: call);
         // A call bound to a recovery variant (`check total.to[U64]()` inside a recovery body) keeps recovering:
         // the instance is the failable routine, and the call takes its variant.
         if (instance is { IsRecoveryVariant: false } &&
