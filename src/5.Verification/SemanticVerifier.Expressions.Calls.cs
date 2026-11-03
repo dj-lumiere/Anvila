@@ -3767,10 +3767,43 @@ public sealed partial class SemanticVerifier
             dispatchType: dispatchType,
             argTypes: resolvedArgTypes);
 
+        // No overload with written parameter types takes the arguments: a member routine of its own generic
+        // parameters (`write[T](value: T)` next to `write(value: Text)`) takes them, and the call infers `T`.
+        if (betterMemberRoutine == null && (arityMismatch || firstArgMismatch))
+        {
+            betterMemberRoutine = GenericMemberOverloadForCall(call: call,
+                callLookupName: callLookupName,
+                dispatchType: dispatchType);
+        }
+
         if (betterMemberRoutine != null)
         {
             memberRoutine = betterMemberRoutine;
         }
+    }
+
+    /// <summary>
+    /// The one member routine with generic parameters of its own named <paramref name="callLookupName"/> on
+    /// <paramref name="dispatchType"/> whose parameters fit the call's shape: as many arguments as parameters, or fewer
+    /// with the rest defaulted, and every named argument a parameter of it. Null when there is none or more than one.
+    /// </summary>
+    private RoutineInfo? GenericMemberOverloadForCall(CallExpression call, string callLookupName,
+        TypeSymbol dispatchType)
+    {
+        var candidates = new List<RoutineInfo>();
+        _registry.CollectMemberRoutineCandidates(type: dispatchType,
+            memberRoutineName: callLookupName,
+            candidates: candidates);
+        var names = call.Arguments.OfType<NamedArgumentExpression>().Select(selector: n => n.Name).ToList();
+        int count = call.Arguments.Count;
+        List<RoutineInfo> fits = candidates.Where(predicate: c =>
+                                               c.IsGenericDefinition && c.Parameters.Count >= count &&
+                                               c.Parameters.Skip(count: count).All(predicate: p => p.HasDefaultValue) &&
+                                               names.All(predicate: n => c.Parameters.Any(predicate: p => p.Name == n)))
+                                           .ToList();
+        return fits.Count == 1
+            ? fits[index: 0]
+            : null;
     }
 
     /// <summary>
