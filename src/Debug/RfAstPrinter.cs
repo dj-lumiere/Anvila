@@ -1453,6 +1453,7 @@ public sealed class RfSyntaxTreePrinter : ISyntaxTreeVisitor<string>
         {
             ExpandSourceKind.OpenMemberVariables => "openmemvarof",
             ExpandSourceKind.AllMemberVariables => "allmemvarof",
+            ExpandSourceKind.SelfMemberVariables => "selfmemvarof",
             ExpandSourceKind.Arms => "branchof",
             ExpandSourceKind.Cases => "caseof",
             ExpandSourceKind.Protocols => "protocolof",

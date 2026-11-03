@@ -3170,6 +3170,12 @@ internal static class GenericAstRewriter
                              .ToList();
         }
 
+        // selfmemvarof(T) yields the entity's members that hold an entity of its own type (`T?`).
+        if (members != null && expand.SourceKind == ExpandSourceKind.SelfMemberVariables)
+        {
+            members = members.Where(predicate: mv => HoldsOwnType(member: mv.Type, owner: source)).ToList();
+        }
+
         var outStmts = new List<Statement>();
         if (members != null)
         {
@@ -3212,6 +3218,24 @@ internal static class GenericAstRewriter
         }
 
         return new BlockStatement(Statements: outStmts, Location: expand.Location);
+    }
+
+    /// <summary>Whether a member of type <paramref name="member"/> is the owner's own type or an optional of it
+    /// (the link of a chain or the child of a tree).</summary>
+    private static bool HoldsOwnType(TypeSymbol? member, TypeSymbol? owner)
+    {
+        if (member is null || owner is null)
+        {
+            return false;
+        }
+
+        if (member.FullName == owner.FullName)
+        {
+            return true;
+        }
+
+        return member.BareName == RuntimeContract.OptionalCarrier && member.TypeArguments is [{ } inner] &&
+               inner.FullName == owner.FullName;
     }
 
     /// <summary>Byte size of a member/type for repr-C layout, guarded: a non-concrete <c>@llvm</c>

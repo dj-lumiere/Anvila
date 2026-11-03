@@ -647,6 +647,11 @@ public enum ExpandSourceKind
     /// Use for full-state internal derives (hash/compare/represent/diagnose/destroy).</summary>
     AllMemberVariables,
 
+    /// <summary><c>selfmemvarof(T)</c> — the member variables of an entity that hold an entity of the same type
+    /// (<c>next: Node?</c> of <c>Node</c>), declaration order. Lets a derive end a chain of nodes in a loop instead
+    /// of by one nested call per node.</summary>
+    SelfMemberVariables,
+
     /// <summary><c>branchof(T)</c> — the arms of a variant, tag order. Used inside a <c>when</c> to
     /// generate one type-dispatch clause per arm.</summary>
     Arms,
@@ -714,7 +719,7 @@ public static class ExpandSources
     public static readonly IReadOnlySet<string> Names =
         new HashSet<string>(comparer: StringComparer.Ordinal)
         {
-            "openmemvarof", "allmemvarof", "caseof", "branchof", "protocolof"
+            "openmemvarof", "allmemvarof", "selfmemvarof", "caseof", "branchof", "protocolof"
         };
 
     /// <summary>True if <paramref name="name"/> is a recognized reflection-source intrinsic.</summary>
@@ -730,6 +735,7 @@ public static class ExpandSources
         {
             "openmemvarof" => ExpandSourceKind.OpenMemberVariables,
             "allmemvarof" => ExpandSourceKind.AllMemberVariables,
+            "selfmemvarof" => ExpandSourceKind.SelfMemberVariables,
             "caseof" => ExpandSourceKind.Cases,
             "branchof" => ExpandSourceKind.Arms,
             "protocolof" => ExpandSourceKind.Protocols,
