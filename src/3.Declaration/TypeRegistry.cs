@@ -661,15 +661,20 @@ public sealed partial class TypeRegistry
     /// build has not loaded, so the program has to import it (<c>where</c> lives in <c>EmitterTools</c>). Null when no
     /// such module is found. Only used to word an error, so it reads the files it needs.
     /// </summary>
-    internal string? UnimportedModuleWithMemberRoutine(string routineName, TypeSymbol? receiver = null)
+    internal string? UnimportedModuleWithMemberRoutine(string routineName, TypeSymbol? receiver = null,
+        string? typeArgument = null)
     {
         if (_moduleResolver is null)
         {
             return null;
         }
 
+        // A specialization (`to[List]`) names its type argument too: every module has some `to`.
+        string specialization = typeArgument == null
+            ? @"\b"
+            : $@"\[{System.Text.RegularExpressions.Regex.Escape(str: typeArgument)}\b";
         var declared = new System.Text.RegularExpressions.Regex(
-            pattern: $@"^[ \t]*(?:common[ \t]+|failable[ \t]+|dangerous[ \t]+)*routine[ \t]+(?<owner>\w+)(?:\[[^\]\n]*\])?\.{System.Text.RegularExpressions.Regex.Escape(str: routineName)}\b",
+            pattern: $@"^[ \t]*(?:common[ \t]+|failable[ \t]+|dangerous[ \t]+)*routine[ \t]+(?<owner>\w+)(?:\[[^\]\n]*\])?\.{System.Text.RegularExpressions.Regex.Escape(str: routineName)}{specialization}",
             options: System.Text.RegularExpressions.RegexOptions.Multiline);
         var seen = new HashSet<string>(comparer: StringComparer.OrdinalIgnoreCase);
         string? fallback = null;

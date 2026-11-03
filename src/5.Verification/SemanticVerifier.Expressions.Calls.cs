@@ -1342,8 +1342,21 @@ public sealed partial class SemanticVerifier
                 : typeArguments is [{ } only] && (only.FullName == owner.FullName || only.Name == owner.Name)
                     ? $"The value is already {Article.For(name: owner.Name)} '{ownerName}'. Use it as it is, without '.to[{arguments}]()'."
                     : $"There is no conversion from '{ownerName}' to '{arguments}'." +
+                      UnimportedConversionHint(name: name, owner: owner, typeArguments: typeArguments) +
                       ByteCharConversionHint(owner: owner.Name, target: arguments);
         ReportError(code: SemanticDiagnosticCode.SpecializationNotFound, message: message, location: location);
+    }
+
+    /// <summary>The import a missing specialization needs when a module this file doesn't import declares it for the
+    /// receiver's type or a protocol it obeys (`(0 til n).to[List]()` is in `EmitterTools`), or an empty text.</summary>
+    private string UnimportedConversionHint(string name, TypeSymbol owner, IReadOnlyList<TypeSymbol> typeArguments)
+    {
+        return typeArguments is [{ } only] &&
+               _registry.UnimportedModuleWithMemberRoutine(routineName: name, receiver: owner,
+                   typeArgument: only.BareName) is { } module
+            ? $" '{name}[{only.BareName}]' comes from the module '{module}', which this file does not import. " +
+              $"Add `import {module}`."
+            : "";
     }
 
     /// <summary>What is written instead of a conversion between a byte or a character and a number, which are named
