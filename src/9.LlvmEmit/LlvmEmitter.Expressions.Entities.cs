@@ -528,7 +528,7 @@ public partial class LlvmEmitter
         // Multi-member-variable record: build the struct value. The CreatorExpression carries member
         // values POSITIONALLY (already field-ordered by the SA/lowering that produced it), so field i
         // takes MemberVariables[i] when present.
-        return EmitMemberwiseRecordStruct(sb: sb,
+        string built = EmitMemberwiseRecordStruct(sb: sb,
             record: record,
             valueForField: (i, field) =>
             {
@@ -539,6 +539,17 @@ public partial class LlvmEmitter
 
                 return EmitExpression(sb: sb, expr: expr.MemberVariables[index: i].Value);
             });
+        // An `E?` made from an entity local (`left: steal chain`) holds the entity from now on: the local's slot is
+        // emptied, as it is when the entity goes into a field directly.
+        if (record.IsEntityOptional)
+        {
+            foreach ((string _, Expression memberValue) in expr.MemberVariables)
+            {
+                NullStampStolenLocal(sb: sb, expr: memberValue);
+            }
+        }
+
+        return built;
     }
 
     /// <summary>

@@ -2274,9 +2274,11 @@ public sealed partial class SemanticVerifier
                 cParam = ci < creator.Parameters.Count ? creator.Parameters[index: ci] : null;
             }
 
-            if (cParam is { Type: EntityTypeSymbol } &&
+            // A parameter that takes an entity, or an `E?` (an entity that may be absent: the same original).
+            if (cParam is { Type: var cParamType } && IsEntityOrOptionalEntity(type: cParamType) &&
                 ReadsKeptEntity(value: cArgValue, includeVariables: true) &&
-                creatorArgTypes[index: ci] is EntityTypeSymbol cArgEntity && ChecksHolderOf(type: cArgEntity))
+                creatorArgTypes[index: ci] is { } cArgEntity && IsEntityOrOptionalEntity(type: cArgEntity) &&
+                ChecksHolderOf(type: cArgEntity))
             {
                 string creatorName = string.IsNullOrEmpty(value: creator.Name)
                     ? creator.OwnerType?.Name ?? "the creator"
@@ -2288,6 +2290,12 @@ public sealed partial class SemanticVerifier
                     location: cArgValue.Location);
             }
         }
+    }
+
+    private static bool IsEntityOrOptionalEntity(TypeSymbol type)
+    {
+        return type is EntityTypeSymbol ||
+               type is { BareName: "Optional", TypeArguments: [EntityTypeSymbol] };
     }
 
     /// <summary>

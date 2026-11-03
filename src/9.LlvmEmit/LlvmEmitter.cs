@@ -1028,7 +1028,7 @@ public partial class LlvmEmitter
         // TBAA first (tags loads/stores), then line-tables debug info (tags instructions + define
         // headers). Both are text post-passes that append their own metadata block; DI numbers itself
         // above TBAA's fixed !0..!22. ApplyDebugInfo is a no-op outside debug builds.
-        return ApplyDebugInfo(ir: ApplyTbaa(ir: normalized));
+        return ApplyLargeAggregateFieldReads(ir: ApplyLargeAggregateBuilds(ir: ApplyLargeAggregateCopies(ir: ApplyDebugInfo(ir: ApplyTbaa(ir: normalized)))));
     }
 
     /// <summary>
