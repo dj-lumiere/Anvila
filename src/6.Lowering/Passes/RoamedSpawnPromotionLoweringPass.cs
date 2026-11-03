@@ -36,6 +36,11 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
     /// <summary>Inserts spawn-boundary promote calls across a whole program.</summary>
     public void Run(Program program)
     {
+        if (!Registry.TasksCross)
+        {
+            return;
+        }
+
         foreach (SyntaxTree.Declaration decl in
                  program.Declarations.OfType<SyntaxTree.Declaration>())
         {
@@ -46,6 +51,11 @@ internal sealed class RoamedSpawnPromotionLoweringPass(PostprocessingContext ctx
     /// <summary>Inserts spawn-boundary promote calls in synthesized variant bodies.</summary>
     public void RunOnVariantBodies()
     {
+        if (!Registry.TasksCross)
+        {
+            return;
+        }
+
         foreach (string key in ctx.VariantBodies.Keys.ToList())
         {
             LowerBody(body: ctx.VariantBodies[key: key]);

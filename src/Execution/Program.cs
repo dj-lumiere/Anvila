@@ -1457,6 +1457,9 @@ internal partial class Program
             swBuild.Restart();
         }
 
+        // A build that compiles the program on its own can leave out what only matters between tasks when the program
+        // has no Work; one that shares compiled library parts with other programs keeps it (SemanticVerifier.PrunesTaskChecks).
+        analyzer.PrunesTaskChecks = warmState == null && ctx.ResidentInstanceKeys == null && ctx.InstanceCheckSkip == null;
         analyzer.Registry.UseModuleResolver(resolver: driver.Resolver);
         // Incremental JIT only: skip Phase-9 backend-repr+validate for instances whose IR is already cached
         // (they will be M2b codegen-cache hits, never re-emitted this run). Null on every other path.

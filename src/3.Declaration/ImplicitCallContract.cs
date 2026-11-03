@@ -25,7 +25,7 @@ internal static class ImplicitCallContract
     /// synthesized) AST call are walked normally and must NOT be listed.
     /// </summary>
     public static IEnumerable<(TypeSymbol owner, string memberRoutineName)> ForLiveType(
-        TypeSymbol liveType)
+        TypeSymbol liveType, bool tasksCross = true)
     {
         // Structured base-name classification (canonical helper — prefers the generic definition's
         // BareName, no ad-hoc bracket parsing). Returns null for anything that isn't an RC wrapper.
@@ -49,11 +49,16 @@ internal static class ImplicitCallContract
         // raw_inner for argument projection (Roamed arg → bare param), control for the memberRoutine-dispatch
         // receiver deref (Roamed obeys Controlling; RoamedProjectionLoweringPass coerces a Roamed
         // receiver to its inner via control) — all on the Roamed handle itself.
-        yield return (liveType, RuntimeContract.RoamedMemberRoutine.Promote);
-        yield return (liveType, RuntimeContract.RoamedMemberRoutine.PromoteInto);
-        yield return (liveType, RuntimeContract.RoamedMemberRoutine.ControllerAddress);
-        yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockEnter);
-        yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockExit);
+        // Only a program whose entities can reach another task promotes a handle or takes an access lock.
+        if (tasksCross)
+        {
+            yield return (liveType, RuntimeContract.RoamedMemberRoutine.Promote);
+            yield return (liveType, RuntimeContract.RoamedMemberRoutine.PromoteInto);
+            yield return (liveType, RuntimeContract.RoamedMemberRoutine.ControllerAddress);
+            yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockEnter);
+            yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockExit);
+        }
+
         yield return (liveType, RuntimeContract.RoamedMemberRoutine.RawInner);
         yield return (liveType, RuntimeContract.Control);
 

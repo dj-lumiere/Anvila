@@ -103,6 +103,13 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         {
             if (stmt is BlockStatement { HoldsAccessLock: true } held)
             {
+                if (!Registry.TasksCross)
+                {
+                    LowerBlock(block: held);
+                    rewritten.Add(item: held with { HoldsAccessLock = false });
+                    continue;
+                }
+
                 LowerHeldBlock(block: held, into: rewritten);
                 continue;
             }
@@ -114,6 +121,22 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
             if (TryLowerAtomicGlobalRmw(stmt: stmt) is { } atomic)
             {
                 rewritten.Add(item: atomic);
+                continue;
+            }
+
+            if (!Registry.TasksCross)
+            {
+                // One task reaches every entity, so no access lock is needed. The shape-use check still applies.
+                if (Registry.CompilationRules.ChecksShapeAtRunTime && WrittenFieldHandle(stmt: stmt) is { } writtenHere &&
+                    IsHeldPlace(handle: writtenHere))
+                {
+                    AddBracket(into: rewritten,
+                        handle: writtenHere,
+                        memberRoutine: RuntimeContract.ShapeUse.RequireFree,
+                        isFailable: true);
+                }
+
+                rewritten.Add(item: stmt);
                 continue;
             }
 

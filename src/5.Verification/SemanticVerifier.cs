@@ -825,6 +825,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void RunPhase6GlobalDesugaring()
     {
+        DecideTasksCross();
         Stopwatch? swSub = SaTiming
             ? Stopwatch.StartNew()
             : null;

@@ -764,6 +764,13 @@ public sealed partial class TypeRegistry
     /// stay demand-analyzed every build (correct); the far more common no-repair files still cache.</summary>
     public bool StdlibSignatureRepairOccurred { get; set; }
 
+    /// <summary>
+    /// Whether a handle to a shared entity can reach another task in the program being built. True until the build
+    /// has looked at the program and found no Work, mailbox or other way across, so a program without Work gets no
+    /// access locks, escaped checks or promotions (see <c>SemanticVerifier.DecideTasksCross</c>).
+    /// </summary>
+    public bool TasksCross { get; set; } = true;
+
     /// <summary>All registered routines by their full name. Written only through <see cref="SetRoutineEntry"/>,
     /// which keeps <see cref="_routineKeysByBaseName"/> in step.</summary>
     private readonly Dictionary<string, RoutineInfo> _routines = new();

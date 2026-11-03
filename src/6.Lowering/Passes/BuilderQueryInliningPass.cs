@@ -631,7 +631,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
             case RuntimeContract.ReachesEntity when _boolType != null:
             {
-                bool reaches = HandleReach.Reaches(type: type);
+                bool reaches = HandleReach.Reaches(type: type, registry: _registry);
                 return new LiteralExpression(Value: reaches,
                     LiteralType: reaches
                         ? TokenType.True

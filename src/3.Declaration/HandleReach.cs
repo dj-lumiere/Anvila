@@ -12,9 +12,9 @@ namespace Builder.Declaration;
 internal static class HandleReach
 {
     /// <summary>Whether a value of <paramref name="type"/> holds a <c>Roamed</c> handle.</summary>
-    public static bool Reaches(TypeSymbol type)
+    public static bool Reaches(TypeSymbol type, TypeRegistry registry)
     {
-        return Reaches(type: type, depth: 0);
+        return registry.TasksCross && Reaches(type: type, depth: 0);
     }
 
     private static bool Reaches(TypeSymbol type, int depth)
