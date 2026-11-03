@@ -3126,9 +3126,20 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // Pre-built variant body from ErrorHandlingVariantPass (keyed by generic memberRoutine RegistryKey). A
         // kind-split routine has one body per kind under that one key, so its variant is built from the body
         // that applies to this owner instead (the fallback below).
-        if (!ctx.Registry.HasKindVariants(routine: genMemberRoutine) &&
-            ctx.VariantBodies.TryGetValue(key: genMemberRoutine.RegistryKey,
-                value: out Statement? prebuiltVariant))
+        // A method-generic routine of a generic type that was specialized for its owner (`Box[S64].gen[U]`) has the
+        // variant the pass built under the owner's own generic definition (`Box[T].gen[U]`): follow the definition chain.
+        Statement? prebuiltVariant = null;
+        if (!ctx.Registry.HasKindVariants(routine: genMemberRoutine))
+        {
+            for (RoutineInfo? definition = genMemberRoutine;
+                 definition != null && prebuiltVariant == null;
+                 definition = ReferenceEquals(definition.GenericDefinition, definition) ? null : definition.GenericDefinition)
+            {
+                ctx.VariantBodies.TryGetValue(key: definition.RegistryKey, value: out prebuiltVariant);
+            }
+        }
+
+        if (prebuiltVariant != null)
         {
             Statement rewritten = GenericAstRewriter.RewriteStatement(stmt: prebuiltVariant,
                 subs: stringSubs,
