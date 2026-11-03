@@ -179,6 +179,14 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     /// another task, so it escapes first: the value is wrapped as <c>value.promote_into(holder: holder.controller_address())</c>,
     /// which escapes it when the holder has, and gives the same handle back. A value that is not a handle itself (a
     /// record holding one) is left as it is.
+    /// <para>
+    /// A library entity's own routine has a bare <c>me</c> with no header to ask, so a store <c>me.f = handle</c> there is
+    /// not covered. That is safe because of an invariant: an entity the library keeps to itself (a tree node, a block
+    /// of places) is touched only inside the routines of the container that holds it, which run under the access lock
+    /// the user's statement took, and no library routine hands one to its caller
+    /// (<c>LibraryEntityLeakTests</c> scans the library for one). What a container stores for the user goes through
+    /// <c>admit_stored</c> (places) or <c>admit_entry</c> (a sorted tree), which ask a handle the container keeps.
+    /// </para>
     /// </summary>
     private Statement PromoteStoredHandle(Statement stmt)
     {
