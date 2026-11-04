@@ -287,8 +287,9 @@ internal partial class Program
     /// <summary>
     /// Handles the <c>build</c> verb: compiles all the way to a native executable for the HOST OS
     /// (codegen -> opt -> link -> stage runtime DLLs) but does NOT run it. The intermediate
-    /// <c>&lt;entry&gt;.ll</c> / <c>.opt.ll</c> are kept as byproducts for inspection; <c>codegen</c> remains
-    /// the IR-only verb. (All-OS artifacts come from the release CI.)
+    /// <c>&lt;entry&gt;.ll</c> is kept as a byproduct for inspection (and with <c>[debug] dump-ir</c> the merged
+    /// <c>.ingrid.ll</c> and the optimized <c>.opt.ll</c> too, which a build otherwise passes between the tools as
+    /// bitcode); <c>codegen</c> remains the IR-only verb. (All-OS artifacts come from the release CI.)
     /// </summary>
     private static int RunBuildCommand(string[] args)
     {
@@ -2276,13 +2277,25 @@ internal partial class Program
         // in first (its routines are not in the runtime DLL: the allocators, the divide primitives, the
         // math), and optimized builds (anything but -O0 debug) internalize during opt, so those inline
         // across the RF / runtime seam.
+        // The tools pass bitcode to each other: the module's text is parsed once, by llvm-link, and everything after
+        // reads bitcode. Text stays where a reader needs it: `[debug] dump-ir` keeps `.ingrid.ll` and `.opt.ll` to read,
+        // ThreadSanitizer marks routines in the text, and the crash trace table annotates the optimized text.
+        bool textIntermediates = DiagnosticFlags.DumpIr || DiagnosticFlags.Sanitize != null;
+        bool traceTable = !textIntermediates && Tessera.TraceTable.Wanted(ir: File.ReadAllText(path: llFile));
+        bool bitcodeOptimized = !textIntermediates && !traceTable;
         if (!NativeToolchain.TryLinkIngridTessera(exeDir: exeDir,
                 llFile: llFile,
                 linkedFile: out string withIngrid,
-                error: out string ingridError))
+                error: out string ingridError,
+                bitcodeOutput: !textIntermediates))
         {
             Console.WriteLine(value: ingridError);
             return 1;
+        }
+
+        if (bitcodeOptimized)
+        {
+            optFile = Path.ChangeExtension(path: llFile, extension: ".opt.bc");
         }
 
         int optResult = NativeToolchain.OptimizeIr(llFile: withIngrid,
@@ -2311,6 +2324,17 @@ internal partial class Program
         }
 
         NativeToolchain.PromoteLinkStaging(stagingDir: stagingDir, exeFile: exeFile);
+        if (!textIntermediates)
+        {
+            // Bitcode between the tools is a step of the build, not a byproduct to keep.
+            foreach (string step in new[] { withIngrid, Path.ChangeExtension(path: llFile, extension: ".opt.bc") })
+            {
+                if (step.EndsWith(value: ".bc", comparisonType: StringComparison.OrdinalIgnoreCase) && File.Exists(path: step))
+                {
+                    File.Delete(path: step);
+                }
+            }
+        }
 
         // Copy the runtime DLL (and its shared-library dependencies) next to the
         // output .exe so the loader can find them at runtime.

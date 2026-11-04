@@ -733,8 +733,12 @@ internal static class NativeToolchain
         string internalizeArgs = internalizeForLto
             ? " -internalize-public-api-list=main"
             : "";
+        // A `.bc` output stays bitcode (the next tool reads it several times faster than text), any other is text.
+        string textFlag = optFile.EndsWith(value: ".bc", comparisonType: StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : "-S ";
         string optArgs =
-            $"-S -passes={optPipeline}{internalizeArgs}{(threadSanitizer ? " -tsan-instrument-func-entry-exit=0" : "")} \"{llFile}\" -o \"{optFile}\"";
+            $"{textFlag}-passes={optPipeline}{internalizeArgs}{(threadSanitizer ? " -tsan-instrument-func-entry-exit=0" : "")} \"{llFile}\" -o \"{optFile}\"";
         var optPsi = new ProcessStartInfo
         {
             FileName = OptTool.Value,
@@ -835,7 +839,8 @@ internal static class NativeToolchain
     /// -O0 code generation). Returns false, with the reason in <paramref name="error"/>, when the library can't be
     /// built or linked.
     /// </summary>
-    internal static bool TryLinkIngridTessera(string exeDir, string llFile, out string linkedFile, out string error)
+    internal static bool TryLinkIngridTessera(string exeDir, string llFile, out string linkedFile, out string error,
+        bool bitcodeOutput = false)
     {
         linkedFile = "";
         string ingrid;
@@ -860,13 +865,15 @@ internal static class NativeToolchain
             // A folder that can't be written to keeps the IR.
         }
 
-        string linked = Path.ChangeExtension(path: llFile, extension: ".ingrid.ll");
+        // Bitcode out when the next tool reads it, text when someone asks to read the file (`dump-ir`).
+        string linked = Path.ChangeExtension(path: llFile, extension: bitcodeOutput ? ".ingrid.bc" : ".ingrid.ll");
+        string textFlag = bitcodeOutput ? "" : "-S ";
         int rc = -1;
         string err = "";
         if (bitcode != null)
         {
             rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-                args: $"-S \"{llFile}\" --only-needed \"{bitcode}\" -o \"{linked}\"",
+                args: $"{textFlag}\"{llFile}\" --only-needed \"{bitcode}\" -o \"{linked}\"",
                 stderr: out err);
         }
 
@@ -874,7 +881,7 @@ internal static class NativeToolchain
         if (rc != 0)
         {
             rc = RunToolCapture(toolPath: LlvmLinkTool.Value,
-                args: $"-S \"{llFile}\" --only-needed \"{ingrid}\" -o \"{linked}\"",
+                args: $"{textFlag}\"{llFile}\" --only-needed \"{ingrid}\" -o \"{linked}\"",
                 stderr: out err);
         }
 
@@ -1131,6 +1138,12 @@ internal static class NativeToolchain
     /// </summary>
     private static string? WriteTraceTableAssembly(string optFile, string clangOptLevel)
     {
+        // Bitcode is never annotated: a build that wants the table keeps the optimized IR as text.
+        if (optFile.EndsWith(value: ".bc", comparisonType: StringComparison.OrdinalIgnoreCase))
+        {
+            return optFile;
+        }
+
         string ir = File.ReadAllText(path: optFile);
         if (!Tessera.TraceTable.Wanted(ir: ir))
         {
@@ -1543,6 +1556,11 @@ internal static class NativeToolchain
 
         TryRemoveBuildArtifact(path: llFile);
         TryRemoveBuildArtifact(path: optFile);
+        // The merged and optimized modules, in either form an earlier build may have left.
+        foreach (string leftover in new[] { ".ingrid.ll", ".ingrid.bc", ".opt.ll", ".opt.bc" })
+        {
+            TryRemoveBuildArtifact(path: Path.ChangeExtension(path: llFile, extension: leftover));
+        }
         // A staging folder a killed build left behind.
         DiscardLinkStaging(stagingDir: LinkStagingDirectory(exeFile: exeFile));
     }
