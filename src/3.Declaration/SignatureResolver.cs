@@ -499,24 +499,20 @@ internal sealed class SignatureResolver
     }
 
     /// <summary>
-    /// Reports <c>ErrorHandlingTypeAsReturnType</c> when a routine written in a program returns a carrier type
-    /// (Optional/Check, builder-generated wrappers for failable routines). A routine the builder writes (the work
-    /// routine of <c>try job f()</c> returns the carrier) is exempt.
+    /// Reports <c>ErrorHandlingTypeAsReturnType</c> when a routine written in a program returns <c>Check[T]</c>, which
+    /// only <c>check</c> makes. A routine may return <c>T?</c> (recommended only when having nothing is a normal result).
+    /// A routine the builder writes (the work routine of <c>check job f()</c> returns the carrier) is exempt.
     /// </summary>
     private void ValidateReturnTypeNotCarrier(TypeSymbol? returnType, RoutineDeclaration routine)
     {
-        if (returnType != null && IsCarrierType(type: returnType) && !routine.IsBuilderWritten &&
-            !_sa.IsStdlibFile(filePath: _sa._currentFilePath))
+        if (returnType != null && IsCarrierType(type: returnType) && !IsMaybeType(type: returnType) &&
+            !routine.IsBuilderWritten && !_sa.IsStdlibFile(filePath: _sa._currentFilePath))
         {
-            string carrierName = GetCarrierBaseName(type: returnType)!;
-            // The optional is written `T?`, so the message names it that way.
             string held = returnType.TypeArguments is [{ } argument] ? argument.Name : "T";
-            string carrierShown = carrierName == "Check" ? $"Check[{held}]" : $"{held}?";
             _sa.ReportError(code: SemanticDiagnosticCode.ErrorHandlingTypeAsReturnType,
-                message: $"'{routine.Name}' returns '{carrierShown}', which only 'try' and 'check' make at a call. " +
+                message: $"'{routine.Name}' returns 'Check[{held}]', which only 'check' makes at a call. " +
                          "Return the value itself, with 'throw' where it fails: a caller then writes " +
-                         $"'{(carrierName == "Check" ? "check" : "try")} {routine.Name}(...)' to get the " +
-                         $"'{carrierShown}'.",
+                         $"'check {routine.Name}(...)' to get the 'Check[{held}]'.",
                 location: routine.ReturnType?.Location ?? routine.Location);
         }
     }

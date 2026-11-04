@@ -1156,7 +1156,7 @@ public enum SemanticDiagnosticCode
     /// <summary>Suflae type inference falls back to Data.</summary>
     SuflaeDataFallback = 831,
 
-    /// <summary>Routine cannot directly return Optional/Check — use failable routines (!) instead.</summary>
+    /// <summary>Routine cannot directly return Check[T], which only `check` makes. A routine may return T?.</summary>
     ErrorHandlingTypeAsReturnType = 806,
 
     ///<summary>Nested Optional types (Optional[Optional[T]] / T??) are not allowed.</summary>
