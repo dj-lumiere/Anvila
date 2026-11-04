@@ -87,8 +87,9 @@ internal partial class Program
         }
 
         // A file that has its language's extension already can still hold the short name from before (RA::).
-        foreach (string file in FilesUnder(paths: paths, accept: f => Languages.All.Any(predicate: rules =>
-                     f.EndsWith(value: rules.FileExtension, comparisonType: StringComparison.OrdinalIgnoreCase))))
+        foreach (string file in FilesUnder(paths: paths, accept: f =>
+                     f.EndsWith(value: SourceExtensions.Revare, comparisonType: StringComparison.OrdinalIgnoreCase) ||
+                     f.EndsWith(value: SourceExtensions.Mielia, comparisonType: StringComparison.OrdinalIgnoreCase)))
         {
             string source = File.ReadAllText(path: file);
             string rewritten = RewriteOldLanguageNames(source: source);
