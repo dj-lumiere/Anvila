@@ -30,7 +30,7 @@ public sealed record SemanticError(
 
     /// <summary>
     /// The code as the user sees it, spelled in the language of the file the error points at
-    /// (RA-S### for a .rr file, MI-S### for a .mi file).
+    /// (RA-S### for a .rr file, MI-S### for a .mie file).
     /// </summary>
     public string CodeString => GrammarCode ?? Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
 

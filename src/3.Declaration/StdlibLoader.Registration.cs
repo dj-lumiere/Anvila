@@ -260,7 +260,7 @@ public sealed partial class StdlibLoader
         // module's `obeys` to the OTHER module's type (cross-module protocol contamination →
         // spurious RA-S702). The program's own module scopes the lookup to its own declaration.
         // Scope the lookup to the program's realm (`realm`, passed by the caller): with an RA `.rr` type and
-        // its MI `.mi` wrapper both bearing the same module-qualified name, a realm-blind lookup would attach
+        // its MI `.mie` wrapper both bearing the same module-qualified name, a realm-blind lookup would attach
         // this program's `obeys` to the OTHER realm's shell.
         string? module = program.Declarations
                                 .OfType<ModuleDeclaration>()

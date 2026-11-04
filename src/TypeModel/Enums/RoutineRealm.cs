@@ -12,7 +12,7 @@ public enum RoutineRealm
     /// <summary>Native Revare routine (a body defined in a <c>.rr</c> source file).</summary>
     RA,
 
-    /// <summary>Native Mielia routine (a body defined in a <c>.mi</c> source file).</summary>
+    /// <summary>Native Mielia routine (a body defined in a <c>.mie</c> source file).</summary>
     MI,
 
     /// <summary>Foreign C function, declared <c>routine C::name(...)</c> — no body, C ABI linkage.</summary>

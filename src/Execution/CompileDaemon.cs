@@ -1430,7 +1430,7 @@ internal partial class Program
             }
 
             // Fold the stdlib source tree's NEWEST mtime into the stamp. A `dotnet build` that only recopied
-            // stdlib `.rr`/`.mi` (no C# change) leaves the DLL mtime untouched, so a DLL-mtime-only stamp
+            // stdlib `.rr`/`.mie` (no C# change) leaves the DLL mtime untouched, so a DLL-mtime-only stamp
             // would let a running daemon keep serving a STALE stdlib snapshot (the phantom "routine X not
             // defined" after editing stdlib). Bumping the stamp on any stdlib edit makes the existing
             // stale-daemon restart path (TryPing mismatch -> ShutdownStaleDaemonIfPresent -> respawn) fire.

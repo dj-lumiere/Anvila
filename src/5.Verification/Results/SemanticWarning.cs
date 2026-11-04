@@ -29,7 +29,7 @@ public sealed record SemanticWarning(
 
     /// <summary>
     /// The code as the user sees it, spelled in the language of the file the warning points at
-    /// (RA-W### for a .rr file, MI-W### for a .mi file).
+    /// (RA-W### for a .rr file, MI-W### for a .mie file).
     /// </summary>
     public string CodeString => Code.ToCodeString(language: DiagnosticLanguage.OfFile(fileName: Location.FileName));
 

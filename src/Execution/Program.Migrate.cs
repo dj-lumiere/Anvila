@@ -187,7 +187,7 @@ internal partial class Program
             return RunBundleStep(paths: paths, check: check);
         }
 
-        // `--step extensions`: a source from before 0.5 gets its language's new extension (`.rf` is `.rr`, `.sf` is `.mi`),
+        // `--step extensions`: a source from before 0.5 gets its language's new extension (`.rf` is `.rr`, `.sf` is `.mie`),
         // with `RF::` as `RA::`, `@rf` as `@ra`, and old diagnostic codes in comments renamed in it.
         if (step == "extensions")
         {
@@ -1863,7 +1863,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// The containment step: every <c>have</c>/<c>lack</c> in the .rr/.mi files and in the revare/mielia code
+    /// The containment step: every <c>have</c>/<c>lack</c> in the .rr/.mie files and in the revare/mielia code
     /// blocks of the .md pages under <paramref name="paths"/> is rewritten as a call.
     /// </summary>
     private static int RunHaveStep(List<string> paths, bool check)
@@ -1874,7 +1874,7 @@ internal partial class Program
     /// <summary>A rewrite of one source, its lines numbered from <c>lineOffset</c> in what it reports.</summary>
     private delegate string SourceRewrite(string file, string source, Language language, int lineOffset);
 
-    /// <summary>Runs <paramref name="rewrite"/> over every .rr and .mi file of <paramref name="paths"/>, and over the
+    /// <summary>Runs <paramref name="rewrite"/> over every .rr and .mie file of <paramref name="paths"/>, and over the
     /// revare and mielia code blocks of their .md pages.</summary>
     private static int RunRewriteStep(List<string> paths, bool check, SourceRewrite rewrite)
     {
@@ -1889,8 +1889,8 @@ internal partial class Program
             else if (Directory.Exists(path: path))
             {
                 files.AddRange(collection: Directory.EnumerateFiles(path: path, searchPattern: "*", searchOption: SearchOption.AllDirectories)
-                    .Where(predicate: f => f.EndsWith(value: ".rr", comparisonType: StringComparison.Ordinal) ||
-                                           f.EndsWith(value: ".mi", comparisonType: StringComparison.Ordinal) ||
+                    .Where(predicate: f => f.EndsWith(value: Builder.Frontends.SourceExtensions.Revare, comparisonType: StringComparison.Ordinal) ||
+                                           f.EndsWith(value: Builder.Frontends.SourceExtensions.Mielia, comparisonType: StringComparison.Ordinal) ||
                                            f.EndsWith(value: ".md", comparisonType: StringComparison.Ordinal))
                     .Where(predicate: f => !f.Contains(value: $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
                                            !f.Contains(value: $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))

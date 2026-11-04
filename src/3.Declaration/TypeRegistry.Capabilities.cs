@@ -817,7 +817,7 @@ public sealed partial class TypeRegistry
         }
 
         // A generic INSTANCE (e.g. `Dict[S64, S64]`) — or a REALM-BRIDGED copy of a type (the MI-realm `System.Dict`
-        // an `.mi` file resolves to) — can carry an EMPTY own ImplementedProtocols: the declared conformances
+        // an `.mie` file resolves to) — can carry an EMPTY own ImplementedProtocols: the declared conformances
         // (`obeys Container, Iterable, …`) are populated by the eager Phase-3 conformance pass onto the AMBIENT
         // (RA-realm) generic DEFINITION only. Without inheriting them, `x in dict` in an MI file false-fires
         // RA-S065. Fold in the ambient definition's protocols (realm-blind lookup by bare name reaches the

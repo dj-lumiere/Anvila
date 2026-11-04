@@ -204,7 +204,7 @@ internal sealed class RaStubWriter
             }
 
             string file = System.IO.Path.Combine(path1: outputRoot,
-                path2: System.IO.Path.ChangeExtension(path: source.Path, extension: ".mi"));
+                path2: System.IO.Path.ChangeExtension(path: source.Path, extension: Builder.Frontends.SourceExtensions.Mielia));
             if (File.Exists(path: file))
             {
                 _problems.Add(item: $"{file}: already there, not overwritten");

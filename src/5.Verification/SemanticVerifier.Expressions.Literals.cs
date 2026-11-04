@@ -488,13 +488,13 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// The unsuffixed-literal default (Int/Decimal vs S64/B64) follows the literal's SOURCE-FILE
-    /// LANGUAGE, not the compile's language and not stdlib-ness: a <c>.mi</c> file uses Mielia defaults,
+    /// LANGUAGE, not the compile's language and not stdlib-ness: a <c>.mie</c> file uses Mielia defaults,
     /// a <c>.rr</c> file uses RA defaults. This is correct for every mix — RA/MI user code, the shared RA
     /// stdlib (<c>.rr</c>) borrowed by an MI compile (must keep S64/B64 so `int_eq[U256](b: 0)` stays a
-    /// coercible scalar, not a heap Int record), AND a future dedicated Mielia stdlib (<c>.mi</c>),
+    /// coercible scalar, not a heap Int record), AND a future dedicated Mielia stdlib (<c>.mie</c>),
     /// which SHOULD get Mielia defaults. (Keying on <c>_registry.Language</c> wrongly gave RA stdlib bodies
     /// the MI default when re-analyzed under an MI compile; keying on stdlib-directory membership would
-    /// wrongly force RA defaults onto a future <c>.mi</c> stdlib.) Uses the literal's OWN file (its
+    /// wrongly force RA defaults onto a future <c>.mie</c> stdlib.) Uses the literal's OWN file (its
     /// Location) — <c>_currentFilePath</c> is the user entry when a cross-module stdlib body is
     /// (re-)analyzed during monomorphization, so it is unreliable here.
     /// </summary>

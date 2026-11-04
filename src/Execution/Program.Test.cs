@@ -15,7 +15,7 @@ internal partial class Program
 
     /// <summary>
     /// Runs <c>test &lt;dir-or-file&gt;...</c>: every source of the running language in each directory (and each file
-    /// named) is built and run as its own program. Next to <c>&lt;name&gt;.rr</c> (or <c>.mi</c>):
+    /// named) is built and run as its own program. Next to <c>&lt;name&gt;.rr</c> (or <c>.mie</c>):
     /// <c>&lt;name&gt;.expected</c> is what its standard output must be, <c>&lt;name&gt;.exit</c> the exit code it must
     /// end with (0 when there is none), <c>&lt;name&gt;.error</c> a text the build must fail with, and
     /// <c>&lt;name&gt;.input</c> its standard input (an empty one when there is none). Returns 1 when any test fails.

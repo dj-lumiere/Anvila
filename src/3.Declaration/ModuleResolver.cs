@@ -301,7 +301,7 @@ public sealed class ModuleResolver
                                        .Order(comparer: StringComparer.Ordinal);
             foreach (string file in files)
             {
-                // A `module` line names the file's module wherever the file lives (`geometry/shapes.mi` with
+                // A `module` line names the file's module wherever the file lives (`geometry/shapes.mie` with
                 // `module Geometry/Shapes`), so the path it was imported by need not match the folders' case.
                 _derivedModuleFiles.TryAdd(
                     key: ModulePathDerivation.ReadDeclaredModule(filePath: file) ??

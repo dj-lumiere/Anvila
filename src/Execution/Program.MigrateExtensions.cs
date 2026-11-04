@@ -31,7 +31,7 @@ internal partial class Program
 
     /// <summary>
     /// <c>--step extensions</c>: the sources of a program written before 0.5 get their language's new extension
-    /// (<c>.rf</c> is <c>.rr</c>, <c>.sf</c> is <c>.mi</c>), and a manifest's <c>executable</c> names the renamed file
+    /// (<c>.rf</c> is <c>.rr</c>, <c>.sf</c> is <c>.mie</c>), and a manifest's <c>executable</c> names the renamed file
     /// (its <c>razorforge-version</c> and <c>suflae-version</c> are <c>revare-version</c> and <c>mielia-version</c>).
     /// In each renamed file the shared library's qualifier <c>RF::</c> is <c>RA::</c> and the binding annotation
     /// <c>@rf("...")</c> is <c>@ra("...")</c> (in code only), and a diagnostic code written with the old short name
@@ -93,7 +93,7 @@ internal partial class Program
                 ? OldFenceLanguage.Replace(input: text,
                     evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "razorforge" ? "revare" : "mielia"))
                 : OldVersionKey.Replace(input: OldExecutableFile.Replace(input: text,
-                        evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "rf" ? ".rr" : ".mi") + m.Groups[3].Value),
+                        evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "rf" ? Builder.Frontends.SourceExtensions.Revare : Builder.Frontends.SourceExtensions.Mielia) + m.Groups[3].Value),
                     evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "razorforge" ? "revare" : "mielia") + "-version");
             if (rewritten == text)
             {

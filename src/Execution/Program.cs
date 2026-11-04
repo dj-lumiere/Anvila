@@ -2129,15 +2129,15 @@ internal partial class Program
     }
 
     /// <summary>
-    /// The file with the same name in the other language's extension (<c>foo.mi</c> beside <c>foo.rr</c>), if there is
+    /// The file with the same name in the other language's extension (<c>foo.mie</c> beside <c>foo.rr</c>), if there is
     /// one: both would build the same executable and intermediate files.
     /// </summary>
     private static string? SameNameInOtherLanguage(string entryFile)
     {
         string other = Path.GetExtension(path: entryFile) switch
         {
-            ".rr" => ".mi",
-            ".mi" => ".rr",
+            Builder.Frontends.SourceExtensions.Revare => Builder.Frontends.SourceExtensions.Mielia,
+            Builder.Frontends.SourceExtensions.Mielia => Builder.Frontends.SourceExtensions.Revare,
             _ => ""
         };
         if (other.Length == 0)

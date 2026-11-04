@@ -568,7 +568,7 @@ public static class ManifestLoader
         target.Executable = resolvedFile;
     }
 
-    /// <summary>True when the manifest <c>executable</c> value names a source FILE (.rr/.mi) rather
+    /// <summary>True when the manifest <c>executable</c> value names a source FILE (.rr/.mie) rather
     /// than a module — file-based single-file execution is the standard entry form.</summary>
     private static bool LooksLikeSourceFile(string name)
     {
@@ -594,7 +594,7 @@ public static class ManifestLoader
     }
 
     /// <summary>
-    /// Scans all .rr and .mi files under <paramref name="projectDir"/> and builds a
+    /// Scans all .rr and .mie files under <paramref name="projectDir"/> and builds a
     /// map of module name -> file path by reading module declarations.
     /// </summary>
     /// <remarks>

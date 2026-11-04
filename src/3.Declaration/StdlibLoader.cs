@@ -9,14 +9,14 @@ namespace Builder.Declaration;
 /// Loads the standard library based on module declarations.
 /// Files declaring "module System" are loaded eagerly (auto-imported).
 /// Other modules are loaded on-demand when imported.
-/// Supports both Revare (.rr) and Mielia (.mi) stdlib files.
+/// Supports both Revare (.rr) and Mielia (.mie) stdlib files.
 /// </summary>
 public sealed partial class StdlibLoader
 {
     /// <summary>
     /// The stdlib scan roots — each a (directory, glob) pair scanned in order. Revare is always
     /// present (the RA-realm System, and — for a Mielia compile — the bridged delegation backend reached via
-    /// <c>RA::</c>). A Mielia compile ALSO scans <c>Standard/Mielia/*.mi</c> (the MI-realm System surface).
+    /// <c>RA::</c>). A Mielia compile ALSO scans <c>Standard/Mielia/*.mie</c> (the MI-realm System surface).
     /// Realm is stamped per file from its extension at registration (see StdlibLoader.Registration).
     /// </summary>
     private readonly List<(string Dir, string Glob)> _scanRoots;
@@ -128,9 +128,9 @@ public sealed partial class StdlibLoader
         _parsedStdlib = parsedStdlib;
         // Revare is always scanned: it is the RA-realm System, and — under a Mielia compile — the bridged
         // delegation backend an MI wrapper reaches via `RA::System.X`. A Mielia compile ALSO scans
-        // Standard/Mielia/*.mi, the MI-realm System surface (types there declare `module System` too; they are
+        // Standard/Mielia/*.mie, the MI-realm System surface (types there declare `module System` too; they are
         // stamped Realm="MI" at registration, so they key distinctly from the RA-realm `System.*`). Each file's
-        // realm is derived from its extension (`.mi`→MI, `.rr`→RA) — see StdlibLoader.Registration.RealmOf.
+        // realm is derived from its extension (`.mie`→MI, `.rr`→RA) — see StdlibLoader.Registration.RealmOf.
         _scanRoots = Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: stdlibRoot, language: language);
         _revareRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),
             path2: Builder.Frontends.Languages.For(language: Language.Revare).Name) + Path.DirectorySeparatorChar;
@@ -934,7 +934,7 @@ public sealed partial class StdlibLoader
     private static void InstallProgramImports(TypeRegistry registry, Program program)
     {
         registry.ActiveRegistrationImports = ImportScopeOf(program: program);
-        // Names in the program prefer the types of its own realm: `DictEmittable` in Mielia's `Dict.mi` is
+        // Names in the program prefer the types of its own realm: `DictEmittable` in Mielia's `Dict.mie` is
         // Mielia's iterator, not Revare's.
         if (Builder.Frontends.Languages.HasSourceExtension(fileName: program.Location.FileName))
         {

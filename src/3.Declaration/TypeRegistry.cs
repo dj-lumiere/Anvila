@@ -446,7 +446,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The realm whose types a bare (unqualified) name should PREFER during the CURRENT file's analysis —
-    /// set per-file (a <c>.mi</c> file ⇒ <c>"MI"</c>, a <c>.rr</c> file ⇒ <c>"RA"</c>). When it differs
+    /// set per-file (a <c>.mie</c> file ⇒ <c>"MI"</c>, a <c>.rr</c> file ⇒ <c>"RA"</c>). When it differs
     /// from <see cref="AmbientRealm"/> (i.e. analyzing an MI file while RA stays the ambient/bare realm),
     /// <see cref="LookupType(string)"/> first tries the <c>{ResolutionRealm}::</c>-keyed type before the
     /// bare ambient one, so a bare <c>List</c> in a Mielia file resolves to the MI-realm <c>System.List</c>
@@ -1052,7 +1052,7 @@ public sealed partial class TypeRegistry
         RegisterErrorHandlingTypes();
 
         // Load System module eagerly - System types are fundamental to every program.
-        // NOTE: user-code bare names still resolve to the RA-realm System (world-line) — a `.mi` file's bare
+        // NOTE: user-code bare names still resolve to the RA-realm System (world-line) — a `.mie` file's bare
         // `List` is the RA `System.List` roamed, which WORKS end-to-end. Flipping the user resolution realm to
         // MI (so bare `List` → the MI wrapper) is DEFERRED: it triggers a pipeline-wide realm cascade
         // (construction create-binding, reachability create-seeding, codegen emission) not yet complete —

@@ -66,7 +66,7 @@ public abstract class TypeSymbol
     /// to <c>Roamed</c>, cycle-collected). A structured attribute (like <c>IsFailable</c> /
     /// <c>TypeArguments</c>), never string-parsed off the name. The SAME stdlib source instantiates under
     /// BOTH realms as DISTINCT identities: <c>RA::System.List</c> ≠ <c>MI::System.List</c>. The ambient realm
-    /// comes from the source file (.rr ⇒ RA, .mi ⇒ MI); an explicit <c>RA::</c>/<c>MI::</c> qualifier
+    /// comes from the source file (.rr ⇒ RA, .mie ⇒ MI); an explicit <c>RA::</c>/<c>MI::</c> qualifier
     /// overrides it. Both realms are rendered explicitly in <see cref="FullName"/> (and therefore in LLVM
     /// symbols) so the two world-lines never collide when they coexist in one binary.
     /// </summary>

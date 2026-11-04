@@ -601,7 +601,7 @@ public sealed class BuildDriver
 
     /// <summary>
     /// Discovers and processes the other files of <paramref name="filePath"/>'s own module: sibling
-    /// <c>.rr</c>/<c>.mi</c> files in the same directory that declare the same
+    /// <c>.rr</c>/<c>.mie</c> files in the same directory that declare the same
     /// <paramref name="modulePath"/>. This makes a module's files mutually visible without an explicit
     /// import, including when one of them is the compilation entry and nothing imports the module.
     /// Only same-directory siblings are gathered, matching the one-module-per-directory convention
@@ -653,7 +653,7 @@ public sealed class BuildDriver
             }
 
             // A program has one entry. A sibling that writes a `routine start()` of its own is another program
-            // that happens to share the module name (`main.mi` next to a draft `main.next.mi`), not a part of this
+            // that happens to share the module name (`main.mie` next to a draft `main.next.mie`), not a part of this
             // one: it stays out of the build, so its errors, a parse error included, are not this build's. Also a
             // line scan, so it answers for a file that does not parse. A sibling that only looks like a script is
             // built: the parser decides whether it is one, and a script that is not an entry file is RA-S443
@@ -1042,7 +1042,7 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Scans one <c>module_paths</c> folder for <c>*.rr</c> and <c>*.mi</c> sources and registers each into the resolver
+    /// Scans one <c>module_paths</c> folder for <c>*.rr</c> and <c>*.mie</c> sources and registers each into the resolver
     /// index.
     /// </summary>
     private void PreRegisterLibraryRoot(string libraryRoot)

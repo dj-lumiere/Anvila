@@ -421,7 +421,7 @@ public sealed class RoutineInfo
         _ => NativeRealm
     };
 
-    /// <summary>Native realm for a non-foreign routine (RA for a <c>.rr</c> body, MI for a <c>.mi</c> body).
+    /// <summary>Native realm for a non-foreign routine (RA for a <c>.rr</c> body, MI for a <c>.mie</c> body).
     /// Defaults to RA; ignored when the routine is C/LLVM foreign.</summary>
     public RoutineRealm NativeRealm { get; init; } = RoutineRealm.RA;
 

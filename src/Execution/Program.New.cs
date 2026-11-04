@@ -28,7 +28,7 @@ internal partial class Program
 
                 """),
             // Mielia brings IO/Console in every file and ends a routine without `return`.
-            (main, CliRules.FileExtension == ".mi"
+            (main, CliRules.FileExtension == Builder.Frontends.SourceExtensions.Mielia
                 ? """
                   routine start()
                       show("Hello, world!")

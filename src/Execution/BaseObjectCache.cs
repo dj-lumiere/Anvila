@@ -102,7 +102,7 @@ public sealed class BaseObjectCache
     public static (string Source, string FileName) SeedFor(TypeModel.Enums.Language language)
     {
         return language == TypeModel.Enums.Language.Mielia
-            ? (MieliaSeedProgramSource, "base.mi")
+            ? (MieliaSeedProgramSource, "base" + Builder.Frontends.SourceExtensions.Mielia)
             : (SeedProgramSource, "base.rr");
     }
 

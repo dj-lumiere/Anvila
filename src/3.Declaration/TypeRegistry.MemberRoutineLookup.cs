@@ -1621,7 +1621,7 @@ public sealed partial class TypeRegistry
 
     /// <summary>
     /// The realm whose derives a type takes: the language of the file that declares it (a choice written in a
-    /// <c>.mi</c> file takes Mielia's <c>all_cases</c>, even in a build whose ambient realm is Revare's), else
+    /// <c>.mie</c> file takes Mielia's <c>all_cases</c>, even in a build whose ambient realm is Revare's), else
     /// the type's own realm.
     /// </summary>
     public string DeriveRealmOf(TypeSymbol type)

@@ -14,7 +14,7 @@ namespace Builder.Targeting;
 /// whitespace. Platform-specific code is split into separate files (<c>foo_windows.rr</c> /
 /// <c>foo_linux.rr</c>) each guarded by its own directive.</para>
 ///
-/// <para>Revare-only: <c>.mi</c> files are never gated (Mielia targets a REPL, not AOT
+/// <para>Revare-only: <c>.mie</c> files are never gated (Mielia targets a REPL, not AOT
 /// cross-builds). The directive must appear BEFORE any real code (before <c>module</c>) — the scan
 /// skips leading blank/comment lines and stops at the first real line.</para>
 ///

@@ -1902,7 +1902,7 @@ public sealed partial class SemanticVerifier
     {
         _currentFilePath = filePath;
         _currentModuleName = module;
-        // Prefer this file's own realm when resolving its bare type names: an MI-realm (`.mi`) stdlib
+        // Prefer this file's own realm when resolving its bare type names: an MI-realm (`.mie`) stdlib
         // file's bare `List` resolves to the MI-realm `System.List` (bridged) it declares, while an RA file
         // keeps the ambient RA resolution. Zero effect on RA (resolution realm == ambient there).
         _registry.ResolutionRealm = Builder.Frontends.Languages.RealmOf(fileName: filePath);
@@ -3461,7 +3461,7 @@ public sealed partial class SemanticVerifier
         _importedForeignAliases.Clear();
         _currentModuleName = null;
 
-        // Prefer this file's own realm when resolving its bare type names. A user `.mi` file's bare
+        // Prefer this file's own realm when resolving its bare type names. A user `.mie` file's bare
         // `List` resolves to the MI-realm (bridged) `System.List` — the approachable MI wrapper — while an
         // `.rr` file keeps ambient RA resolution. Mirrors the stdlib-body loop; zero effect on RA
         // (resolution realm == ambient there). Restored to AmbientRealm by the caller after the phase.

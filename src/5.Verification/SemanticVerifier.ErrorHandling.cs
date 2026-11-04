@@ -1150,7 +1150,7 @@ public sealed partial class SemanticVerifier
 
         // Own-module + own-REALM FIRST: a member decl `routine List[T].add_last` in an MI-realm
         // `Standard/Mielia/…` file owns the MI-realm `System.List`, not the Revare-realm one that
-        // shares the bare key. The decl's source-file extension (.mi → MI) gives its realm; a realm-
+        // shares the bare key. The decl's source-file extension (.mie → MI) gives its realm; a realm-
         // blind lookup would type `me` as the RA list (which lacks the MI wrapper's `inner`) → RA-S450.
         string declRealm = Builder.Frontends.Languages.RealmOf(fileName: decl.Location?.FileName);
         TypeSymbol? bareOwner = LookupBareOwner(moduleName: moduleName,

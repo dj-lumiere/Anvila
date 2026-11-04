@@ -272,7 +272,7 @@ public partial class LlvmEmitter
     /// non-ambient realm (the MI wrapper world-line) gets a <c>{Realm}::</c> prefix so an MI
     /// <c>System.List[S32]</c> (layout <c>{ inner }</c>) never collides with the RA <c>System.List[S32]</c>
     /// (real element storage) — they are DISTINCT LLVM structs/symbols in a mixed binary (bare `List`
-    /// in a `.mi` file → MI wrapper delegating to an RA inner, both live at once). Generic args stay in
+    /// in a `.mie` file → MI wrapper delegating to an RA inner, both live at once). Generic args stay in
     /// FullName (ambient/bare) — only the owner's own realm is marked.
     /// </summary>
     private static string RealmMangleBase(TypeSymbol t)
