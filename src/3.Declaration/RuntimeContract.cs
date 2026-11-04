@@ -372,6 +372,10 @@ public static class RuntimeContract
     /// hand a handle to another task (<c>reaches_entity</c> and <c>TypeRegistry.TasksCross</c>).</summary>
     public const string SharesEntityAcrossTasks = "shares_entity_across_tasks";
 
+    /// <summary>The routine the builder calls before it stores a record or tuple holding entity handles into a member
+    /// variable of an entity that may have escaped.</summary>
+    public const string AdmitStoredInto = "admit_stored_into";
+
     /// <summary>BuilderQuery: the byte offset of an entity's stamp slot in its block, -1 for none.</summary>
     public const string StampSlotOffset = "stamp_slot_offset";
 

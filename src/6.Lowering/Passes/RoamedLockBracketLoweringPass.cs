@@ -140,7 +140,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
                 continue;
             }
 
-            Statement current = ReadFieldsBeforeCalls(stmt: PromoteStoredHandle(stmt: stmt), into: rewritten);
+            Statement current = ReadFieldsBeforeCalls(stmt: PromoteStoredHandle(stmt: stmt, into: rewritten), into: rewritten);
             // One bracket per entity: a statement that reads and writes the same member variable (`c.n = c.n + 1`)
             // names the handle twice, and the lock is reentrant, so a second enter and exit only cost calls.
             var seenPlaces = new HashSet<string>(comparer: StringComparer.Ordinal);
@@ -188,7 +188,7 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
     /// <c>admit_stored</c> (places) or <c>admit_entry</c> (a sorted tree), which ask a handle the container keeps.
     /// </para>
     /// </summary>
-    private Statement PromoteStoredHandle(Statement stmt)
+    private Statement PromoteStoredHandle(Statement stmt, List<Statement> into)
     {
         (Expression target, Expression value)? parts = stmt switch
         {
@@ -199,6 +199,16 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         if (parts is not ({ } targetExpr, { } value) || targetExpr is not MemberExpression target)
         {
             return stmt;
+        }
+
+        if (RoamedFieldReceiver(member: target) is { } valueHolder && IsHeldPlace(handle: valueHolder) &&
+            RoamedInnerEntity(t: valueHolder.ResolvedType)?.MemberVariables
+                .FirstOrDefault(predicate: mv => mv.Name == target.MemberName)?.Type is { } storedType &&
+            HandleTypeOf(fieldType: storedType, valueType: value.ResolvedType) is null &&
+            AdmitStoredValue(stmt: stmt, value: value, holder: valueHolder, fieldType: storedType, into: into) is
+                { } admitted)
+        {
+            return admitted;
         }
 
         if (
@@ -244,6 +254,75 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         {
             AssignmentStatement a => a with { Value = wrapped },
             ExpressionStatement { Expression: BinaryExpression b } e => e with { Expression = b with { Right = wrapped } },
+            _ => stmt
+        };
+    }
+
+    /// <summary>
+    /// A record, tuple or variant holding entity handles, stored into a member variable of an entity that has escaped,
+    /// makes those entities reachable from another task as well. The value is computed into a name first (unless it
+    /// is one already), <c>admit_stored_into(value, holder.controller_address())</c> escapes the entities it holds when
+    /// the holder has, and the store then reads the name. Returns the statement to store with, or null when the value
+    /// holds no handle.
+    /// </summary>
+    private Statement? AdmitStoredValue(Statement stmt, Expression value, Expression holder, TypeSymbol fieldType,
+        List<Statement> into)
+    {
+        TypeSymbol? valueType = value.ResolvedType ?? fieldType;
+        if (!HandleReach.Reaches(type: valueType) || holder.ResolvedType is not { } holderType ||
+            Registry.LookupMemberRoutine(type: holderType,
+                memberRoutineName: RuntimeContract.RoamedMemberRoutine.ControllerAddress) is not { } address ||
+            (Registry.LookupRoutine(fullName: $"System.{RuntimeContract.AdmitStoredInto}") ??
+             Registry.LookupRoutine(fullName: RuntimeContract.AdmitStoredInto)) is not { } admitDef)
+        {
+            return null;
+        }
+
+        RoutineInfo admit = admitDef.IsGenericDefinition
+            ? Registry.GetOrCreateRoutineResolution(genericDef: admitDef, typeArguments: [valueType])
+            : admitDef;
+        Expression stored = value;
+        if (value is not IdentifierExpression)
+        {
+            string tmp = $"__lk_{_spillCounter++}";
+            into.Add(item: new DeclarationStatement(
+                Declaration: new VariableDeclaration(Name: tmp,
+                    Type: null,
+                    Initializer: value,
+                    Visibility: VisibilityModifier.Secret,
+                    Location: value.Location),
+                Location: value.Location));
+            stored = new IdentifierExpression(Name: tmp, Location: value.Location) { ResolvedType = valueType };
+        }
+
+        var addressCall = new CallExpression(
+            Callee: new MemberExpression(Object: holder,
+                MemberName: RuntimeContract.RoamedMemberRoutine.ControllerAddress,
+                Location: holder.Location) { ResolvedType = holderType },
+            Arguments: new List<Expression>(),
+            Location: holder.Location)
+        {
+            ResolvedRoutine = address,
+            ResolvedType = address.ReturnType,
+            LoweringKind = Verification.CallClassifier.ClassifyMemberRoutineCall(memberRoutine: address)
+        };
+        var call = new CallExpression(
+            Callee: new IdentifierExpression(Name: RuntimeContract.AdmitStoredInto, Location: value.Location)
+            {
+                ResolvedType = admit.ReturnType
+            },
+            Arguments: [stored, addressCall],
+            Location: value.Location)
+        {
+            ResolvedRoutine = admit,
+            ResolvedType = admit.ReturnType,
+            LoweringKind = CallLoweringKind.DirectRoutine
+        };
+        into.Add(item: new ExpressionStatement(Expression: call, Location: value.Location));
+        return stmt switch
+        {
+            AssignmentStatement a => a with { Value = stored },
+            ExpressionStatement { Expression: BinaryExpression b } e => e with { Expression = b with { Right = stored } },
             _ => stmt
         };
     }

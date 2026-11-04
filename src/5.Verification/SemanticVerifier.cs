@@ -2280,13 +2280,16 @@ public sealed partial class SemanticVerifier
             // An unknown identifier or a missing operator is the exception: neither is a user-code rule
             // false-firing on stdlib (the operator protocol gate, which does false-fire there, is off), each
             // leaves an error type in a body that is about to be emitted, and dropping it turned a plain
-            // "unknown identifier" into an LLVM-emitter crash. Keep those.
+            // "unknown identifier" into an LLVM-emitter crash. Keep those. A secret type of another module is the
+            // same case: the name stays unresolved, and the call built a memberwise creator with wrongly typed fields.
             if (_errors.Count > errorsBeforeStdlib)
             {
                 List<SemanticError> unresolvedNames = _errors.Skip(count: errorsBeforeStdlib)
                                                              .Where(predicate: e =>
                                                                   e.Code is SemanticDiagnosticCode
                                                                          .UnknownIdentifier
+                                                                      or SemanticDiagnosticCode
+                                                                         .SecretTypeAccess
                                                                       or SemanticDiagnosticCode
                                                                          .BinaryOperatorNotFound)
                                                              .ToList();
