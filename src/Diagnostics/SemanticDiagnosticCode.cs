@@ -27,6 +27,10 @@ namespace Builder.Diagnostics;
 /// - RA-S800-RA-S849: Language Restriction Errors
 /// - RA-S850-RA-S899: Intrinsic and Native Call Errors
 /// - RA-S900-RA-S949: Concurrency and Task Dependency Errors
+///
+/// Numbers from 1000 up are not used here. Lapila numbers its own semantic diagnostics from 1000 in the same space, so a
+/// number below 1000 names one diagnostic in all three languages, and Lapila's tests/RevareMieliaCodes.txt lists the
+/// numbers in this file.
 /// </summary>
 public enum SemanticDiagnosticCode
 {

@@ -5,6 +5,10 @@ namespace Builder.Diagnostics;
 /// <summary>
 /// Unified grammar diagnostic codes for both Revare (RA-G) and Mielia (MI-G).
 /// Covers lexer, parser, and indentation errors.
+///
+/// Numbers from 1000 up are not used here. Lapila numbers its own grammar diagnostics from 1000 in the same space, so a
+/// number below 1000 names one diagnostic in all three languages, and Lapila's tests/RevareMieliaCodes.txt lists the
+/// numbers in this file.
 /// </summary>
 public enum GrammarDiagnosticCode
 {

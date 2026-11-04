@@ -16,6 +16,10 @@ namespace Builder.Diagnostics;
 /// - RA-W300-RA-W349: Style Warnings
 /// - RA-W350-RA-W399: Performance Warnings
 /// - RA-W400-RA-W449: Internal/Debug Warnings
+///
+/// Numbers from 1000 up are not used here. Lapila numbers its own warning diagnostics from 1000 in the same space, so a
+/// number below 1000 names one diagnostic in all three languages, and Lapila's tests/RevareMieliaCodes.txt lists the
+/// numbers in this file.
 /// </summary>
 public enum SemanticWarningCode
 {
