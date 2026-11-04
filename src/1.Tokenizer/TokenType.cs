@@ -252,7 +252,7 @@ public enum TokenType
 
     /// <summary>
     /// The word <c>bundle</c>: not a declaration keyword (a named type is a <c>record</c> or an <c>entity</c>). It
-    /// stays a token so the parser can say so (RA-G228) and <c>migrate --step bundle</c> can find it.
+    /// stays a token so the parser can say so (RV-G228) and <c>migrate --step bundle</c> can find it.
     /// </summary>
     Bundle,
 
@@ -405,7 +405,7 @@ public enum TokenType
     For,
 
     /// <summary>The word <c>each</c>: reserved, it cannot name anything. A loop over a range or a collection is written
-    /// <c>for</c> (RA-G229).</summary>
+    /// <c>for</c> (RV-G229).</summary>
     Each,
 
     /// <summary>Buildtime member-expansion loop keyword (`expand m in allmemvarof(T)`)</summary>
@@ -860,8 +860,8 @@ public enum TokenType
     /// <summary>Type annotation colon (:)</summary>
     Colon,
 
-    /// <summary>Realm-qualifier separator (::) — e.g. <c>RA::System.List</c> references the Revare
-    /// (RA-mode, bare) realm from a Mielia file. Only meaningful immediately after a realm tag (RA/MI).</summary>
+    /// <summary>Realm-qualifier separator (::) — e.g. <c>RV::System.List</c> references the Revare
+    /// (RV-mode, bare) realm from a Mielia file. Only meaningful immediately after a realm tag (RV/MI).</summary>
     DoubleColon,
 
     /// <summary>Vararg declaration operator (...) (ex, routine foo(values...: S32) -> S32</summary>

@@ -286,7 +286,7 @@ public static class StdlibSnapshotCache
     }
 
     /// <summary>Appends each stdlib source file's path+size+mtime to <paramref name="sb"/>, in Ordinal path
-    /// order. Same scan roots as StdlibLoader: Revare/*.rr always; Mielia/*.mie under an MI build.</summary>
+    /// order. Same scan roots as StdlibLoader: Revare/*.rvr always; Mielia/*.mie under an MI build.</summary>
     private static void AppendSourceFileMetadata(StringBuilder sb, string root, Language language)
     {
         List<(string Dir, string Glob)> roots =

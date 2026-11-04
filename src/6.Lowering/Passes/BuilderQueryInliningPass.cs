@@ -44,7 +44,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     // The build's target and mode: what target_os()/target_arch()/word_size()/page_size()/cache_line()/
     // build_mode() fold to at their call sites.
     private readonly TargetConfig _target;
-    private readonly RaBuildMode _buildMode;
+    private readonly RvBuildMode _buildMode;
 
     /// <summary>Creates a pass instance backed by a full <see cref="DesugaringContext"/>.</summary>
     internal BuilderQueryInliningPass(DesugaringContext ctx)
@@ -61,7 +61,7 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
     /// </summary>
     internal BuilderQueryInliningPass(TypeRegistry registry,
         Dictionary<string, Statement>? variantBodies = null, TargetConfig? target = null,
-        RaBuildMode buildMode = RaBuildMode.Debug)
+        RvBuildMode buildMode = RvBuildMode.Debug)
     {
         _registry = registry;
         _ownedVariantBodies = variantBodies;
@@ -403,9 +403,9 @@ internal sealed class BuilderQueryInliningPass : AstRewriter
 
                 string caseName = _buildMode switch
                 {
-                    RaBuildMode.Release => "RELEASE",
-                    RaBuildMode.ReleaseTime => "RELEASE_TIME",
-                    RaBuildMode.ReleaseSpace => "RELEASE_SPACE",
+                    RvBuildMode.Release => "RELEASE",
+                    RvBuildMode.ReleaseTime => "RELEASE_TIME",
+                    RvBuildMode.ReleaseSpace => "RELEASE_SPACE",
                     _ => "DEBUG"
                 };
                 ChoiceCaseInfo? found = modeChoice.Cases.FirstOrDefault(predicate: c => c.Name == caseName);

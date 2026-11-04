@@ -22,7 +22,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void DecideTasksCross()
     {
-        _registry.SharingCheck = _buildMode == RaBuildMode.Debug;
+        _registry.SharingCheck = _buildMode == RvBuildMode.Debug;
         if (!PrunesTaskChecks || !_registry.CompilationRules.EntitiesAreShared)
         {
             return;

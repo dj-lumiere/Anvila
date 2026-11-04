@@ -14,7 +14,7 @@ public sealed class LapilaBackend : IBuilderBackend
     public const string BackendName = "lapila";
 
     /// <summary>The file name the generated module is parsed (and its errors reported) under.</summary>
-    private const string ModuleFileName = "revare_module.li";
+    private const string ModuleFileName = "revare_module.lpa";
 
     /// <inheritdoc/>
     public string Name => BackendName;
@@ -155,7 +155,7 @@ public sealed class LapilaBackend : IBuilderBackend
         {
             throw new InvalidOperationException(
                 message: $"The Lapila builder rejected the generated module: {ex.Message}" +
-                         " (set [debug] dump-lapila = true in config.toml to keep the module as <entry>.li).",
+                         " (set [debug] dump-lapila = true in config.toml to keep the module as <entry>.lpa).",
                 innerException: ex);
         }
 

@@ -4,8 +4,8 @@ using SyntaxTree;
 namespace Builder.Verification;
 
 /// <summary>
-/// Warns about a Work bound to a variable that nothing starts (RA-W008), and about one that is started and then only
-/// left to its scope's end (RA-W009): the end cancels it and waits for it to stop, so its work may be cut short, its value is lost, and a failure it came to
+/// Warns about a Work bound to a variable that nothing starts (RV-W008), and about one that is started and then only
+/// left to its scope's end (RV-W009): the end cancels it and waits for it to stop, so its work may be cut short, its value is lost, and a failure it came to
 /// crashes the program there. Taking its value (`retrieve`, `waitfor`), cancelling it on purpose (`job.cancel()`, which
 /// also throws away a failure), ending it (`drop job`), or handing it on (an argument, `steal`, `return`) is what a
 /// program that means it writes. Runs over the analyzed user bodies.

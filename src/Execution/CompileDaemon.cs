@@ -310,7 +310,7 @@ internal partial class Program
         /// </summary>
         private static (string ObjPath, IReadOnlyCollection<string> Syms,
             IReadOnlySet<string> InstanceKeys)? EnsureBaseArtifact(
-            Language language, RaBuildMode buildMode, Builder.Backends.IBuilderBackend backend,
+            Language language, RvBuildMode buildMode, Builder.Backends.IBuilderBackend backend,
             int crashablesRoom = SemanticVerifier.CrashableRoomBytes)
         {
             // The room of `Crashables` is part of the base's layout (a `Check`, the failure molds): a base is built
@@ -673,7 +673,7 @@ internal partial class Program
                     config: new ResolvedEntry
                     {
                         ProjectRoot = req.ProjectRoot,
-                        BuildMode = (RaBuildMode)req.BuildMode,
+                        BuildMode = (RvBuildMode)req.BuildMode,
                         DumpAst = req.DumpAst,
                         SaTiming = req.SaTiming,
                         RequireStartRoutine = req.RequireStart,
@@ -760,7 +760,7 @@ internal partial class Program
                     Language lang = CliLanguage;
                     (string ObjPath, IReadOnlyCollection<string> Syms,
                         IReadOnlySet<string> InstanceKeys)? baseArtifact =
-                            EnsureBaseArtifact(language: lang, buildMode: (RaBuildMode)req.BuildMode,
+                            EnsureBaseArtifact(language: lang, buildMode: (RvBuildMode)req.BuildMode,
                                 backend: backend, crashablesRoom: room);
                     // The resident layers are LLVM emitter modules: another backend links its delta to the base
                     // alone.
@@ -772,7 +772,7 @@ internal partial class Program
                     }
                     else if (baseArtifact is { } ba)
                     {
-                        layer = LayerFor(language: lang, buildMode: (RaBuildMode)req.BuildMode, room: room);
+                        layer = LayerFor(language: lang, buildMode: (RvBuildMode)req.BuildMode, room: room);
                         layer.AdoptFinished();
                         residentSymbols = layer.Symbols.Count > 0
                             ? new HashSet<string>(collection: ba.Syms.Concat(second: layer.Symbols),
@@ -797,7 +797,7 @@ internal partial class Program
                         config: new ResolvedEntry
                         {
                             ProjectRoot = req.ProjectRoot,
-                            BuildMode = (RaBuildMode)req.BuildMode,
+                            BuildMode = (RvBuildMode)req.BuildMode,
                             RequireStartRoutine = req.RequireStart,
                             LibraryRoots = req.LibraryRoots,
                             Backend = req.Backend
@@ -1068,7 +1068,7 @@ internal partial class Program
             // Resident-JIT (A) split-at-IR: prefer the WARM DAEMON. It holds the analyzed stdlib snapshot in
             // RAM (captured once at startup), so routing the analysis THERE removes the ~840 ms per-run prebuilt
             // reload the in-process path below pays in this disposable client. The daemon compiles warm and
-            // ships IR; THIS throwaway client only JITs+runs it, so a user crash (rf_crash_text → exit(RA_EXIT_CRASH)) kills only
+            // ships IR; THIS throwaway client only JITs+runs it, so a user crash (rf_crash_text → exit(RV_EXIT_CRASH)) kills only
             // the client and never the warm daemon (§3 crash isolation preserved). Falls through to the
             // in-process lazy path when no daemon is reachable.
             if (resolved.UseDaemon &&
@@ -1373,7 +1373,7 @@ internal partial class Program
 
         private static DaemonResponse? SendRequest(DaemonRequest request, int timeoutMs)
         {
-            bool trace = Environment.GetEnvironmentVariable(variable: "RA_DAEMON_TRACE") is { Length: > 0 };
+            bool trace = Environment.GetEnvironmentVariable(variable: "RV_DAEMON_TRACE") is { Length: > 0 };
             void T(string m)
             {
                 if (trace) { Console.Error.WriteLine(value: $"[daemon-client] {m}"); }
@@ -1430,7 +1430,7 @@ internal partial class Program
             }
 
             // Fold the stdlib source tree's NEWEST mtime into the stamp. A `dotnet build` that only recopied
-            // stdlib `.rr`/`.mie` (no C# change) leaves the DLL mtime untouched, so a DLL-mtime-only stamp
+            // stdlib `.rvr`/`.mie` (no C# change) leaves the DLL mtime untouched, so a DLL-mtime-only stamp
             // would let a running daemon keep serving a STALE stdlib snapshot (the phantom "routine X not
             // defined" after editing stdlib). Bumping the stamp on any stdlib edit makes the existing
             // stale-daemon restart path (TryPing mismatch -> ShutdownStaleDaemonIfPresent -> respawn) fire.

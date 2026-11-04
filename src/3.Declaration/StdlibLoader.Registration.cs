@@ -53,12 +53,12 @@ public sealed partial class StdlibLoader
     /// The realm a registration runs under when no stdlib pass names one (a user program's conformance
     /// re-resolution, a single stdlib file loaded on its own): the Revare realm. Every registration
     /// helper takes its realm as a parameter, stamped onto the type-definition shells it builds and used to
-    /// scope its lookups, so an RA program's lookups never reach a coexisting MI wrapper's shell.
+    /// scope its lookups, so an RV program's lookups never reach a coexisting MI wrapper's shell.
     /// </summary>
     internal const string UnstampedRealm = TypeModel.Realms.Shared;
 
     /// <summary>The realm a stdlib file belongs to: the short name of the language it is written in
-    /// (<c>"MI"</c> for a Mielia source, <c>"RA"</c> for a Revare one).</summary>
+    /// (<c>"MI"</c> for a Mielia source, <c>"RV"</c> for a Revare one).</summary>
     internal static string RealmOf(string filePath)
     {
         return Builder.Frontends.Languages.RealmOf(fileName: filePath);
@@ -258,8 +258,8 @@ public sealed partial class StdlibLoader
         // Resolve type lookups MODULE-QUALIFIED. `LookupType(bareName)` resolves via the first-wins
         // short-name index, so with two modules each declaring `record Point` it would attach one
         // module's `obeys` to the OTHER module's type (cross-module protocol contamination →
-        // spurious RA-S702). The program's own module scopes the lookup to its own declaration.
-        // Scope the lookup to the program's realm (`realm`, passed by the caller): with an RA `.rr` type and
+        // spurious RV-S702). The program's own module scopes the lookup to its own declaration.
+        // Scope the lookup to the program's realm (`realm`, passed by the caller): with an RV `.rvr` type and
         // its MI `.mie` wrapper both bearing the same module-qualified name, a realm-blind lookup would attach
         // this program's `obeys` to the OTHER realm's shell.
         string? module = program.Declarations
@@ -397,7 +397,7 @@ public sealed partial class StdlibLoader
     /// <summary>
     /// BuilderQuery per-type routines whose stdlib decls return
     /// <c>List[FieldInfo|ProtocolInfo|RoutineInfo]</c> or <c>Dict[Text, Data]</c>.
-    /// Registering these as universal <c>T.x()</c> routines from BuilderQuery.rr forces GMP to
+    /// Registering these as universal <c>T.x()</c> routines from BuilderQuery.rvr forces GMP to
     /// monomorphize the heavy carrier closure (BTreeListNode/Array/ArrayIterator) for every
     /// type even when the user program never imports BuilderQuery.
     /// AutoWiredRegistrationPass re-registers these per-type when (and only when) the user actually
@@ -530,7 +530,7 @@ public sealed partial class StdlibLoader
     }
 
     /// <summary>
-    /// Registers an external("C") declaration from stdlib (e.g., NativeDeclarations.rr).
+    /// Registers an external("C") declaration from stdlib (e.g., NativeDeclarations.rvr).
     /// </summary>
     private static void RegisterExternalDeclaration(TypeRegistry registry,
         ExternalDeclaration external, string moduleName, string realm)
@@ -750,11 +750,11 @@ public sealed partial class StdlibLoader
         // Own-module FIRST: a constructor `routine List(...)` in `module Mielia` owns `Mielia.List`,
         // NOT the first-registered context-free `List` (System.List, loaded earlier). Resolving bare
         // first bound the Mielia overlay's `List()` creator to System.List → same RegistryKey as
-        // System's own `List()` → a spurious divergent-duplicate-constructor error (RA-S406). This
+        // System's own `List()` → a spurious divergent-duplicate-constructor error (RV-S406). This
         // mirrors LookupTypeWithImports's own-module-shadows rule for the stdlib registration path.
         // Own-REALM-first: MI-realm `System.List`'s `List()` constructor must own the MI-realm List, not
         // the Revare-realm `System.List` (same bare key, both `module System`) — else both `List()`
-        // creators share one RegistryKey and trip the divergent-duplicate-constructor check (RA-S406).
+        // creators share one RegistryKey and trip the divergent-duplicate-constructor check (RV-S406).
         TypeSymbol? ctorOwner =
             registry.LookupType(name: $"{moduleName}.{bareName}",
                 realm: realm) ??
@@ -790,7 +790,7 @@ public sealed partial class StdlibLoader
         // Own-module FIRST: `routine List[T].add_last` in `module Mielia` owns `Mielia.List`,
         // not the earlier-registered context-free `System.List`. Bare-first bound the Mielia
         // overlay's List memberRoutines to System.List, so dispatch on `Roamed[Mielia.List]` found no
-        // such memberRoutine (RA-S458). Falls back to bare for a System type used from another module.
+        // such memberRoutine (RV-S458). Falls back to bare for a System type used from another module.
         // Own-REALM-first (like the non-bracketed owner path): an MI-realm `System.List[T]` member
         // owns the MI-realm List, not the Revare-realm one that shares the bare key.
         TypeSymbol? baseDef =
@@ -1005,7 +1005,7 @@ public sealed partial class StdlibLoader
             // StdlibLoader is a PARALLEL routine-registration path to SignatureResolver; it derives the
             // mutation category from @readonly/@reshaping through the SAME shared helper so the two paths
             // stay in lockstep. (Omitting it silently left every stdlib member routine at the RoutineInfo
-            // default — e.g. a plainly-@readonly `List.count` looked Reshaping and tripped the RA-S625
+            // default — e.g. a plainly-@readonly `List.count` looked Reshaping and tripped the RV-S625
             // iteration ban.)
             MutationCategory =
                 Verification.Enums.MutationCategoryExtensions.FromAnnotations(
@@ -1308,8 +1308,8 @@ public sealed partial class StdlibLoader
         }
 
         // `ResolveSimpleType` is realm-blind and yields the ambient-realm receiver; keep `me`
-        // in the OWNER's realm so an MI-realm `System.List` method's `me` isn't the RA-realm List
-        // (which lacks the MI wrapper's `inner` field → spurious RA-S450).
+        // in the OWNER's realm so an MI-realm `System.List` method's `me` isn't the RV-realm List
+        // (which lacks the MI wrapper's `inner` field → spurious RV-S450).
         // The receiver's elements are slots like any other (`List[Work[T]]` in Mielia is a list of Work
         // handles); `me` itself stays the bare value.
         resolvedRecv = registry.RoamEntityArgumentsIn(filePath: routine.Location.FileName, resolved: resolvedRecv);
@@ -1407,7 +1407,7 @@ public sealed partial class StdlibLoader
     /// </summary>
     private static bool IsEntityTypeSpecialization(RecordDeclaration record)
     {
-        // In stdlib .rr files, `needs T is EntityType` is parsed as a ConstGeneric constraint
+        // In stdlib .rvr files, `needs T is EntityType` is parsed as a ConstGeneric constraint
         // with ConstraintTypes[0].Name == "EntityType". These create a second layout specialization
         // (e.g. Optional[Text] uses { Hijacked[T] } instead of { Bool, T }) and must be stored
         // separately so GetOrCreateResolution can select the right definition.
@@ -1722,7 +1722,7 @@ public sealed partial class StdlibLoader
         // module-qualified: a bare-name check would skip a Mielia-realm overlay `entity List` merely
         // because the Revare-realm `System.List` (loaded earlier) shares the bare name, leaving
         // `Mielia.List` unregistered — its constructor/memberRoutines then mis-bind to `System.List` (spurious
-        // RA-S406). Different modules own distinct same-named types.
+        // RV-S406). Different modules own distinct same-named types.
         string qualifiedName = string.IsNullOrEmpty(value: moduleName)
             ? entity.Name
             : $"{moduleName}.{entity.Name}";

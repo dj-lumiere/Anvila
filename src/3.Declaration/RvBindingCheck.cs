@@ -5,25 +5,25 @@ using TypeModel.Types;
 namespace Builder.Declaration;
 
 /// <summary>
-/// Checks every <c>@ra("...")</c> declaration of the standard library against the Revare declaration it names. Such
+/// Checks every <c>@rv("...")</c> declaration of the standard library against the Revare declaration it names. Such
 /// a declaration is how Mielia's library shows a shared type or routine in Mielia's own words: it creates nothing and
 /// binds to the shared declaration, so the documentation, hover and go-to-definition show Mielia's view of it. A name
 /// that resolves to nothing, to another kind of declaration, or to a routine with other parameters means the two
 /// libraries have drifted apart, which <c>validate-stdlib</c> reports.
 /// </summary>
-internal static class RaBindingCheck
+internal static class RvBindingCheck
 {
     /// <summary>The annotation that binds a declaration to a Revare one, as the parser stores it.</summary>
-    private const string Prefix = "ra(";
+    private const string Prefix = "rv(";
 
-    /// <summary>Whether the declaration is an <c>@ra("...")</c> binding.</summary>
+    /// <summary>Whether the declaration is an <c>@rv("...")</c> binding.</summary>
     internal static bool IsBinding(SyntaxTree.Declaration declaration)
     {
         return AnnotationsOf(declaration: declaration)
                   ?.Any(predicate: a => a.StartsWith(value: Prefix, comparisonType: StringComparison.Ordinal)) == true;
     }
 
-    /// <summary>The Revare name an <c>@ra("...")</c> declaration binds to, or null when it is written without one.</summary>
+    /// <summary>The Revare name an <c>@rv("...")</c> declaration binds to, or null when it is written without one.</summary>
     internal static string? TargetOf(SyntaxTree.Declaration declaration)
     {
         string? annotation = AnnotationsOf(declaration: declaration)
@@ -48,7 +48,7 @@ internal static class RaBindingCheck
     /// </summary>
     internal static void LoadModules(TypeRegistry registry)
     {
-        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RaBindings
+        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RvBindings
                     .GroupBy(keySelector: b => b.Module)
                     .Select(selector: g => g.First())
                     .ToList())
@@ -61,16 +61,16 @@ internal static class RaBindingCheck
         }
     }
 
-    /// <summary>The problems found, one line each with the file and line of the <c>@ra</c> declaration.</summary>
+    /// <summary>The problems found, one line each with the file and line of the <c>@rv</c> declaration.</summary>
     internal static List<string> Check(TypeRegistry registry)
     {
         var errors = new List<string>();
-        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RaBindings.ToList())
+        foreach ((SyntaxTree.Declaration declaration, string file, string module) in registry.RvBindings.ToList())
         {
             string at = $"{file}:{declaration.Location.Line}";
             if (TargetOf(declaration: declaration) is not { } target)
             {
-                errors.Add(item: $"{at}: @ra needs the Revare name in quotes, like @ra(\"S64\").");
+                errors.Add(item: $"{at}: @rv needs the Revare name in quotes, like @rv(\"S64\").");
                 continue;
             }
 
@@ -97,7 +97,7 @@ internal static class RaBindingCheck
     internal static HashSet<string> BoundNames(TypeRegistry registry, bool openOnly = false)
     {
         var bound = new HashSet<string>(comparer: StringComparer.Ordinal);
-        foreach ((SyntaxTree.Declaration declaration, _, _) in registry.RaBindings)
+        foreach ((SyntaxTree.Declaration declaration, _, _) in registry.RvBindings)
         {
             if (TargetOf(declaration: declaration) is not { } target ||
                 openOnly && VisibilityOf(declaration: declaration) == VisibilityModifier.Secret)
@@ -204,7 +204,7 @@ internal static class RaBindingCheck
     {
         if (FindType(registry: registry, name: target, module: module) is not { } type)
         {
-            return $"@ra(\"{target}\") names no Revare type.";
+            return $"@rv(\"{target}\") names no Revare type.";
         }
 
         (string Kind, bool Same) kind = declaration switch
@@ -221,7 +221,7 @@ internal static class RaBindingCheck
         };
         if (!kind.Same)
         {
-            return $"@ra(\"{target}\") on a {kind.Kind} names a {type.Category} in Revare.";
+            return $"@rv(\"{target}\") on a {kind.Kind} names a {type.Category} in Revare.";
         }
 
         List<SyntaxTree.Declaration>? members = declaration switch

@@ -553,11 +553,11 @@ internal sealed class ApiDocGenerator
 
     private void AppendSignature(StringBuilder sb, string signature)
     {
-        // `@ra("...")` says which Revare declaration this one shows: how the library is built, not what the
+        // `@rv("...")` says which Revare declaration this one shows: how the library is built, not what the
         // reader calls.
         signature = string.Join(separator: "\n", values: signature.Split(separator: '\n')
                                                               .Where(predicate: line => !line.TrimStart()
-                                                                  .StartsWith(value: "@ra(",
+                                                                  .StartsWith(value: "@rv(",
                                                                       comparisonType: StringComparison.Ordinal)));
         sb.Append(value: $"```{_codeTag}\n{signature}\n```\n\n");
     }

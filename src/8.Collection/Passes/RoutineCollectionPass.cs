@@ -272,7 +272,7 @@ internal sealed class RoutineCollectionPass(InstantiationContext ctx)
         // are already lowered (copied from the rebuilt, on-demand-lowered programBodies), so they need no
         // LowerFreshBodies; they land in `before` next round and are not re-processed.
         // Re-read programBodies AFTER the walk: THIS round's walk triggered on-demand SA+lowering of newly
-        // reached stdlib files (U64.rr etc.), which reassigned their decl.Body to lowered form. The
+        // reached stdlib files (U64.rvr etc.), which reassigned their decl.Body to lowered form. The
         // top-of-round index predates that, so materializing from it would emit an UN-lowered body (a raw
         // `me == 0u64` in U64.represent). Rebuild so materialization copies the lowered decls.
         Dictionary<string, Statement> idx2 = null!;

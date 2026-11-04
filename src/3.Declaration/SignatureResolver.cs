@@ -102,8 +102,8 @@ internal sealed class SignatureResolver
         // same object — no behaviour change there.
         // Realm-aware refresh: keep the owner in ITS OWN realm. A realm-blind lookup by FullName would
         // rebind an MI-realm `System.List` routine's owner to the Revare-realm `System.List` (same bare
-        // key) → the routine keys bare → collides with / shadows the RA routine (RA-S406). For ambient-realm
-        // owners `LookupType(name, realm)` reduces to the plain lookup, so RA is unaffected.
+        // key) → the routine keys bare → collides with / shadows the RV routine (RV-S406). For ambient-realm
+        // owners `LookupType(name, realm)` reduces to the plain lookup, so RV is unaffected.
         TypeSymbol? refreshedOwnerType = pending.OwnerType != null
             ? _sa._registry.LookupType(name: pending.OwnerType.FullName,
                 realm: pending.OwnerType.Realm) ?? pending.OwnerType
@@ -112,7 +112,7 @@ internal sealed class SignatureResolver
         // Mielia representation unification: in a Mielia file (Mielia's own library files included), an
         // `entity` is a `Roamed[E]` handle, so entity types in its routine SIGNATURES (params + return + `me`)
         // are substituted to `Roamed[E]` — the same rule TypeBodyResolver applies to entity FIELDS. The
-        // borrowed RA stdlib is Revare source (bare single-owner entities), and its concrete entity
+        // borrowed RV stdlib is Revare source (bare single-owner entities), and its concrete entity
         // signatures must NOT be rewritten even though it's loaded under an MI compile.
         bool miUserEntity = _sa._registry.EntitiesAreSharedIn(filePath: pending.FilePath);
 
@@ -145,7 +145,7 @@ internal sealed class SignatureResolver
         // A param that is NOT receiver-derived — a free routine's own `[T]`, or a member routine's
         // memberRoutine-generic `[U]` — is an EXPLICIT declaration. It must NEVER be dropped just because a
         // user type shares its name (`record T` + `identity[T]`, `record U` + `Holder[A].mapped[U]`):
-        // its identity is its slot, not the label. Filtering it here was the RA-S502 half of the
+        // its identity is its slot, not the label. Filtering it here was the RV-S502 half of the
         // name-as-identity collision (the resolver-side half is TypeResolver's slot-first shadowing).
         HashSet<string> receiverLeaves =
             CollectReceiverLeafParamNames(receiver: routine.ReceiverType);
@@ -237,7 +237,7 @@ internal sealed class SignatureResolver
         ValidateReturnTypeNotCarrier(returnType: returnType, routine: routine);
 
         // Entity / generic-param returns are ALWAYS rvalue (in-flight) — INFERRED, not required
-        // (RA-S803 relaxed 2026-07-13). A return produces a value, and single ownership means an
+        // (RV-S803 relaxed 2026-07-13). A return produces a value, and single ownership means an
         // entity leaves a routine only by MOVE (implicit return-move) — there is no bound-lvalue-copy
         // mode for entities. The move-vs-link distinction that actually matters is already carried by
         // the type shape (bare `T` = move, borrow-wrapper = link) plus `steal` at use sites, so the
@@ -933,7 +933,7 @@ internal sealed class SignatureResolver
         }
 
         // Re-lookup the owner type to get the updated version with protocols (realm-aware: keep the
-        // owner in its own world-line so an MI-realm owner isn't rebound to the RA-realm same-name type).
+        // owner in its own world-line so an MI-realm owner isn't rebound to the RV-realm same-name type).
         TypeSymbol? currentOwnerType =
             _sa._registry.LookupType(name: routineInfo.OwnerType.FullName,
                 realm: routineInfo.OwnerType.Realm);
@@ -1343,7 +1343,7 @@ internal sealed class SignatureResolver
         }
 
         // Re-lookup the owner type to get the updated version with protocols (realm-aware: keep the
-        // owner in its own world-line so an MI-realm owner isn't rebound to the RA-realm same-name type).
+        // owner in its own world-line so an MI-realm owner isn't rebound to the RV-realm same-name type).
         TypeSymbol? currentOwnerType =
             _sa._registry.LookupType(name: routineInfo.OwnerType.FullName,
                 realm: routineInfo.OwnerType.Realm);

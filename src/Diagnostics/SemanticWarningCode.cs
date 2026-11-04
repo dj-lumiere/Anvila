@@ -3,19 +3,19 @@ using TypeModel.Enums;
 namespace Builder.Diagnostics;
 
 /// <summary>
-/// Semantic warning codes for Revare (RA-W prefix) and Mielia (MI-W prefix, same numbers).
+/// Semantic warning codes for Revare (RV-W prefix) and Mielia (MI-W prefix, same numbers).
 /// Covers non-fatal issues that may indicate problems but allow building.
 ///
 /// Code ranges:
-/// - RA-W001-RA-W049: Unused Code Warnings
-/// - RA-W050-RA-W099: Unreachable Code Warnings
-/// - RA-W100-RA-W149: Deprecated Feature Warnings
-/// - RA-W150-RA-W199: Redundant Code Warnings
-/// - RA-W200-RA-W249: Mutation Warnings
-/// - RA-W250-RA-W299: Pattern Matching Warnings
-/// - RA-W300-RA-W349: Style Warnings
-/// - RA-W350-RA-W399: Performance Warnings
-/// - RA-W400-RA-W449: Internal/Debug Warnings
+/// - RV-W001-RV-W049: Unused Code Warnings
+/// - RV-W050-RV-W099: Unreachable Code Warnings
+/// - RV-W100-RV-W149: Deprecated Feature Warnings
+/// - RV-W150-RV-W199: Redundant Code Warnings
+/// - RV-W200-RV-W249: Mutation Warnings
+/// - RV-W250-RV-W299: Pattern Matching Warnings
+/// - RV-W300-RV-W349: Style Warnings
+/// - RV-W350-RV-W399: Performance Warnings
+/// - RV-W400-RV-W449: Internal/Debug Warnings
 ///
 /// Numbers from 1000 up are not used here. Lapila numbers its own warning diagnostics from 1000 in the same space, so a
 /// number below 1000 names one diagnostic in all three languages, and Lapila's tests/RevareMieliaCodes.txt lists the
@@ -24,7 +24,7 @@ namespace Builder.Diagnostics;
 public enum SemanticWarningCode
 {
     // ═══════════════════════════════════════════════════════════════════════════
-    // UNUSED CODE WARNINGS (RA-W001 - RA-W049)
+    // UNUSED CODE WARNINGS (RV-W001 - RV-W049)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Variable is declared but never used.</summary>
@@ -60,7 +60,7 @@ public enum SemanticWarningCode
     WorkNeverCollected = 9,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // UNREACHABLE CODE WARNINGS (RA-W050 - RA-W099)
+    // UNREACHABLE CODE WARNINGS (RV-W050 - RV-W099)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Code after return statement is unreachable.</summary>
@@ -88,7 +88,7 @@ public enum SemanticWarningCode
     UnreachableLoopBody = 57,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // DEPRECATED FEATURE WARNINGS (RA-W100 - RA-W149)
+    // DEPRECATED FEATURE WARNINGS (RV-W100 - RV-W149)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Using a deprecated type.</summary>
@@ -108,7 +108,7 @@ public enum SemanticWarningCode
     CreateIsNotConstructor = 104,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // REDUNDANT CODE WARNINGS (RA-W150 - RA-W199)
+    // REDUNDANT CODE WARNINGS (RV-W150 - RV-W199)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Redundant type annotation matches inferred type.</summary>
@@ -127,7 +127,7 @@ public enum SemanticWarningCode
     UnusedExpressionResult = 155,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MODIFICATION WARNINGS (RA-W200 - RA-W249)
+    // MODIFICATION WARNINGS (RV-W200 - RV-W249)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Variable marked modifiable but never modified.</summary>
@@ -140,7 +140,7 @@ public enum SemanticWarningCode
     HijackOnInitOnly = 210,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PATTERN MATCHING WARNINGS (RA-W250 - RA-W299)
+    // PATTERN MATCHING WARNINGS (RV-W250 - RV-W299)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>When expression may not cover all cases.</summary>
@@ -172,7 +172,7 @@ public enum SemanticWarningCode
     StealInReturn = 259,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // STYLE WARNINGS (RA-W300 - RA-W349)
+    // STYLE WARNINGS (RV-W300 - RV-W349)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Type name does not follow PascalCase convention.</summary>
@@ -204,7 +204,7 @@ public enum SemanticWarningCode
     DocCommentLacksReturns = 308,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // PERFORMANCE WARNINGS (RA-W350 - RA-W399)
+    // PERFORMANCE WARNINGS (RV-W350 - RV-W399)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Large struct being passed by value; consider using a reference.</summary>
@@ -224,7 +224,7 @@ public enum SemanticWarningCode
     ImplicitWrapperCopy = 361,
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // INTERNAL/DEBUG WARNINGS (RA-W400 - RA-W449)
+    // INTERNAL/DEBUG WARNINGS (RV-W400 - RV-W449)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>Unknown statement type encountered during analysis.</summary>
@@ -245,7 +245,7 @@ public static class SemanticWarningCodeExtensions
     extension(SemanticWarningCode code)
     {
         /// <summary>
-        /// Formats code as RA-Wnnn or MI-Wnnn depending on language (e.g., RA-W007, MI-W007),
+        /// Formats code as RV-Wnnn or MI-Wnnn depending on language (e.g., RV-W007, MI-W007),
         /// matching the S and G code families.
         /// </summary>
         public string ToCodeString(Language language)

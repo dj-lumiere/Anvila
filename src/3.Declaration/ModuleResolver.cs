@@ -206,7 +206,7 @@ public sealed class ModuleResolver
                     searchPattern: glob,
                     searchOption: SearchOption.TopDirectoryOnly));
             }
-            // File-granularity conditional compilation: drop `.rr` files whose leading
+            // File-granularity conditional compilation: drop `.rvr` files whose leading
             // `#@target(...)` directive doesn't match the build target (Revare-only).
             files.RemoveAll(match: f => !Targeting.TargetGate.ShouldCompile(filePath: f));
             files.Sort(comparer: StringComparer.Ordinal);
@@ -273,7 +273,7 @@ public sealed class ModuleResolver
     private Dictionary<string, string>? _derivedModuleFiles;
 
     /// <summary>
-    /// A file without a <c>module</c> header is named after its location (<c>tools/text utils.rr</c> is
+    /// A file without a <c>module</c> header is named after its location (<c>tools/text utils.rvr</c> is
     /// <c>Tools/TextUtils</c>). That name cannot be turned back into a path — the PascalCasing drops
     /// spaces and changes letter case, which a case-sensitive file system will not match — so such
     /// imports are found by deriving the name of every header-less file instead.
@@ -316,13 +316,13 @@ public sealed class ModuleResolver
 
     /// <summary>
     /// Probes one search root for the import's module/symbol under every file-layout convention
-    /// (module file, type-per-file symbol, index.rr, same-name-as-directory). Returns the first
+    /// (module file, type-per-file symbol, index.rvr, same-name-as-directory). Returns the first
     /// existing file, or null if none match under this root.
     /// </summary>
     private static string? TryFilesystemRoot(string root, string relPath, string? symbolPart)
     {
         // Each convention is tried in every registered language, Revare first.
-        // root/module.rr
+        // root/module.rvr
         foreach (string ext in Builder.Frontends.Languages.FileExtensions)
         {
             string module = Path.Combine(path1: root, path2: relPath + ext);
@@ -332,7 +332,7 @@ public sealed class ModuleResolver
             }
         }
 
-        // root/module/symbol.rr (type-per-file convention)
+        // root/module/symbol.rvr (type-per-file convention)
         if (symbolPart is not null)
         {
             foreach (string ext in Builder.Frontends.Languages.FileExtensions)
@@ -345,14 +345,14 @@ public sealed class ModuleResolver
             }
         }
 
-        // root/module/index.rr
-        string idxRa = Path.Combine(path1: root, path2: relPath, path3: "index.rr");
+        // root/module/index.rvr
+        string idxRa = Path.Combine(path1: root, path2: relPath, path3: "index.rvr");
         if (File.Exists(path: idxRa))
         {
             return idxRa;
         }
 
-        // root/module/module.rr (same-name-as-directory convention, e.g., BuilderQuery/BuilderQuery.rr)
+        // root/module/module.rvr (same-name-as-directory convention, e.g., BuilderQuery/BuilderQuery.rvr)
         string dirName = Path.GetFileName(path: relPath);
         if (!string.IsNullOrEmpty(value: dirName))
         {

@@ -447,7 +447,7 @@ internal sealed class RecordCopyLoweringPass(PostprocessingContext ctx)
         // which hands the payload's SINGLE reference to the caller and empties the carrier
         // (`present = false`), the model a `Optional[Entity]` requires (an entity cannot be co-owned).
         // NOTE: `unwrap`/`!!` does NOT reach here — it returns `me.value.copy()` (an explicit
-        // co-owning duplicate in Optional.rr; `copy` is the unified record/variant/managed-leaf
+        // co-owning duplicate in Optional.rvr; `copy` is the unified record/variant/managed-leaf
         // duplication verb, so a Copyable variant like SerialValue resolves via its arm-walk copy),
         // a CallExpression, so the carrier stays a co-owner and the caller gets an independent
         // reference (correct for record/value/managed payloads).

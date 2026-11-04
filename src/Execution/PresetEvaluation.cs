@@ -20,7 +20,7 @@ namespace Builder.Execution;
 internal static class PresetEvaluation
 {
     /// <summary>Set for the child build, whose presets are computed at run time as before (it is the evaluator).</summary>
-    private const string ChildMarker = "RA_PRESET_EVALUATION";
+    private const string ChildMarker = "RV_PRESET_EVALUATION";
 
     /// <summary>The line that comes before each printed preset value.</summary>
     private const string ValueMarker = "@@PRESET";
@@ -433,7 +433,7 @@ internal static class PresetEvaluation
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(path: evaluatorEntry)!,
             // The marker names the evaluator's entry file: only its start() runs there (EvaluatorEntry).
-            Environment = { [key: ChildMarker] = Path.GetFullPath(path: evaluatorEntry), [key: "RA_NO_DAEMON"] = "1" }
+            Environment = { [key: ChildMarker] = Path.GetFullPath(path: evaluatorEntry), [key: "RV_NO_DAEMON"] = "1" }
         };
         using Process child = Process.Start(startInfo: psi) ??
                               throw new InvalidOperationException(message: "The preset evaluator could not start.");

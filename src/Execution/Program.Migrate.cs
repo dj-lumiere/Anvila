@@ -187,8 +187,8 @@ internal partial class Program
             return RunBundleStep(paths: paths, check: check);
         }
 
-        // `--step extensions`: a source from before 0.5 gets its language's new extension (`.rf` is `.rr`, `.sf` is `.mie`),
-        // with `RF::` as `RA::`, `@rf` as `@ra`, and old diagnostic codes in comments renamed in it.
+        // `--step extensions`: a source from before 0.5 gets its language's new extension (`.rf` is `.rvr`, `.sf` is `.mie`),
+        // with `RF::` as `RV::`, `@rf` as `@rv`, and old diagnostic codes in comments renamed in it.
         if (step == "extensions")
         {
             return RunExtensionsStep(paths: paths, check: check);
@@ -328,7 +328,7 @@ internal partial class Program
                     namesToRename++;
                 }
 
-                // A Mielia program has no memory-unsafe code of its own: C goes through a `.rr` module it imports.
+                // A Mielia program has no memory-unsafe code of its own: C goes through a `.rvr` module it imports.
                 for (int i = 0; i + 1 < tokens.Count; i++)
                 {
                     bool unsafeWord = tokens[index: i].Text is "danger" or "dangerous";
@@ -339,7 +339,7 @@ internal partial class Program
                             ? $"{tokens[index: i].Text}::"
                             : tokens[index: i].Text;
                         Console.WriteLine(value: $"{file}:{tokens[index: i].Line}: '{what}' is not available in a " +
-                                                 "Mielia program, move this code into a .rr module the program " +
+                                                 "Mielia program, move this code into a .rvr module the program " +
                                                  "imports by hand");
                         namesToRename++;
                     }
@@ -1399,7 +1399,7 @@ internal partial class Program
 
     /// <summary>
     /// The name a pattern binds the old way, written straight after the type of <c>is</c> (<c>is Weapon w</c>,
-    /// <c>is RA::System.List[S64] xs</c>, <c>is $typeof(m) v</c>) or straight after <c>else</c> (<c>else p =></c>), or
+    /// <c>is RV::System.List[S64] xs</c>, <c>is $typeof(m) v</c>) or straight after <c>else</c> (<c>else p =></c>), or
     /// null. The type is skipped over: names joined by <c>.</c> or <c>::</c>, a <c>$</c> splice with its
     /// parentheses, and a bracketed argument list.
     /// </summary>
@@ -1863,7 +1863,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// The containment step: every <c>have</c>/<c>lack</c> in the .rr/.mie files and in the revare/mielia code
+    /// The containment step: every <c>have</c>/<c>lack</c> in the .rvr/.mie files and in the revare/mielia code
     /// blocks of the .md pages under <paramref name="paths"/> is rewritten as a call.
     /// </summary>
     private static int RunHaveStep(List<string> paths, bool check)
@@ -1874,7 +1874,7 @@ internal partial class Program
     /// <summary>A rewrite of one source, its lines numbered from <c>lineOffset</c> in what it reports.</summary>
     private delegate string SourceRewrite(string file, string source, Language language, int lineOffset);
 
-    /// <summary>Runs <paramref name="rewrite"/> over every .rr and .mie file of <paramref name="paths"/>, and over the
+    /// <summary>Runs <paramref name="rewrite"/> over every .rvr and .mie file of <paramref name="paths"/>, and over the
     /// revare and mielia code blocks of their .md pages.</summary>
     private static int RunRewriteStep(List<string> paths, bool check, SourceRewrite rewrite)
     {

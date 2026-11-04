@@ -8,7 +8,7 @@ namespace TypeModel;
 /// </summary>
 public static class Realms
 {
-    /// <summary>The shared standard library's realm, Revare's (<c>RA</c>): what a source writes as <c>RA::</c>
+    /// <summary>The shared standard library's realm, Revare's (<c>RV</c>): what a source writes as <c>RV::</c>
     /// to reach it from another realm.</summary>
-    public const string Shared = "RA";
+    public const string Shared = "RV";
 }

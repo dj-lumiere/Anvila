@@ -323,7 +323,7 @@ public partial class Parser
             catch (GrammarException ex)
             {
                 // GrammarException.Message already contains formatted error:
-                // error[RA-G150]: filename.rr:9:14: message
+                // error[RV-G150]: filename.rvr:9:14: message
                 // error[MI-G150]: filename.mie:9:14: message
                 RecordError(ex: ex);
                 Synchronize();
@@ -502,7 +502,7 @@ public partial class Parser
     ///   visibility   - secret, posted, open, external
     ///   storage      - common, global
     ///
-    /// RA-ONLY MODIFIERS:
+    /// RV-ONLY MODIFIERS:
     ///   dangerous    - Marks routine as unsafe (Revare only)
     ///
     /// TYPE/VALUE DECLARATIONS:
@@ -771,11 +771,11 @@ public partial class Parser
         RejectCommonOnTypeDeclaration(isCommon: isCommon);
         RejectNoEffectOnTypeDeclaration(annotations: annotations, visibility: visibility, isDangerous: isDangerous);
 
-        // An `@ra("...")` binding may sit on any type declaration: it is kept on the node for the standard library
-        // loader, which takes the declaration out (see RaBindingCheck).
+        // An `@rv("...")` binding may sit on any type declaration: it is kept on the node for the standard library
+        // loader, which takes the declaration out (see RvBindingCheck).
         // The standard library's `@self_locking` on an entity is kept the same way (the type registration reads it).
         // `@reflectable` and a program's own annotations (`@Tagged`) are kept the same way for ObjectHacker.
-        List<string> bindings = annotations.Where(predicate: a => a.StartsWith(value: "ra(",
+        List<string> bindings = annotations.Where(predicate: a => a.StartsWith(value: "rv(",
                                                      comparisonType: StringComparison.Ordinal) ||
                                                  a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation ||
                                                  a == "reflectable" ||
@@ -1026,7 +1026,7 @@ public partial class Parser
             return;
         }
 
-        List<string> ineffective = annotations.Where(predicate: a => !a.StartsWith(value: "ra(",
+        List<string> ineffective = annotations.Where(predicate: a => !a.StartsWith(value: "rv(",
                                                       comparisonType: StringComparison.Ordinal) &&
                                                   !(a == RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation &&
                                                     CurrentToken.Type == TokenType.Entity) &&
@@ -1189,7 +1189,7 @@ public partial class Parser
         }
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // RA-ONLY: MEMORY/SCOPE BLOCKS
+        // RV-ONLY: MEMORY/SCOPE BLOCKS
         // ═══════════════════════════════════════════════════════════════════════════
 
         // Danger block (unsafe operations)
@@ -1274,7 +1274,7 @@ public partial class Parser
 
     /// <summary>
     /// <c>while c</c>: a loop is written <c>until</c> with the condition that ends it, or <c>loop</c>, so this is
-    /// RA-G224. The loop is read as written, so the rest of the file is still checked.
+    /// RV-G224. The loop is read as written, so the rest of the file is still checked.
     /// </summary>
     private Statement ParseWrittenWhile()
     {
@@ -1324,7 +1324,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Takes a <c>nothing</c> line. The old <c>pass</c> is taken too, after RA-G225 with the quick fix
+    /// Takes a <c>nothing</c> line. The old <c>pass</c> is taken too, after RV-G225 with the quick fix
     /// <c>nothing</c>, so the rest of the file is still checked.
     /// </summary>
     private bool AcceptNothing()

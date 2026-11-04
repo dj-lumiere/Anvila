@@ -204,10 +204,10 @@ internal sealed class TypeResolver
         }
 
         TypeSymbol resolved = ResolveTypeCore(typeExpr: typeExpr);
-        // Effective realm = the explicit `RA::`/`MI::` qualifier, else the realm of the file being analyzed:
+        // Effective realm = the explicit `RV::`/`MI::` qualifier, else the realm of the file being analyzed:
         // a bare `List` in a `.mie` file is Mielia's own list when Mielia declares one. Name resolution above
         // prefers that realm already; this swap also covers a generic instance resolved through the other
-        // realm's definition, and turns `RA::System.List` in a `.mie` into the Revare list. Null-safe when
+        // realm's definition, and turns `RV::System.List` in a `.mie` into the Revare list. Null-safe when
         // the realm declares no such type (the other realm's type stays).
         string effectiveRealm = typeExpr.Realm ?? _sa._registry.ResolutionRealm;
         if (resolved is TypeSymbol ti && effectiveRealm != ti.Realm &&
@@ -216,9 +216,9 @@ internal sealed class TypeResolver
             resolved = bridged;
         }
 
-        // An `RA::Name` qualifier is an explicit Revare/bare-realm reference — it deliberately opts OUT
+        // An `RV::Name` qualifier is an explicit Revare/bare-realm reference — it deliberately opts OUT
         // of Mielia's `entity -> Roamed[entity]` lowering (that is the whole point: an MI wrapper entity
-        // holds a BARE `RA::System.List` inside, without re-roaming it into an infinite `Roamed[List]`). Any
+        // holds a BARE `RV::System.List` inside, without re-roaming it into an infinite `Roamed[List]`). Any
         // other realm (null = ambient) gets the normal Mielia lowering.
         if (typeExpr.Realm != TypeModel.Realms.Shared)
         {
@@ -387,7 +387,7 @@ internal sealed class TypeResolver
         // label; its identity is its positional SLOT in the enclosing scope. So resolve an in-scope
         // parameter BEFORE any global lookup — otherwise a user type whose name matches a stdlib
         // generic's parameter (e.g. `record T` vs `List[T]`) hijacks that parameter during the
-        // generic's body/signature resolution (the RA-S954 monomorphization collision). Checking the
+        // generic's body/signature resolution (the RV-S954 monomorphization collision). Checking the
         // slot here, not a collision-proof renamed string, keeps the label genuinely irrelevant.
         //
         // The shadow is granted ONLY when the name is a GENUINE parameter of a generic-DEFINITION

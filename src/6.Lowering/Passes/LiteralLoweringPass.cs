@@ -242,7 +242,7 @@ internal sealed class LiteralLoweringPass : AstRewriter
             return null;
         }
 
-        // Mielia: an integer literal that SA resolved to `Int` (the MI default, RA defaults to S64) is still
+        // Mielia: an integer literal that SA resolved to `Int` (the MI default, RV defaults to S64) is still
         // `UndecidedInteger` at this pass, since ExpressionLoweringPass only rewrites the token to IntegerLiteral
         // later. So match the resolved type too.
         bool integer = literal.LiteralType == TokenType.IntegerLiteral ||

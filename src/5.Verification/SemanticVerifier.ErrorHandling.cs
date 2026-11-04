@@ -931,7 +931,7 @@ public sealed partial class SemanticVerifier
         // Gate-aware: only a collision if THIS type actually RECEIVES a derive of this name+arity —
         // i.e. it satisfies the template's `needs T is <kind>` gate. A name-only HasDeriveTemplate
         // check wrongly flagged a collection's own `count()` against the choice/flags-gated `count`
-        // derive (RA-S164), which no non-choice/flags type receives. count/all_cases are ChoiceType/
+        // derive (RV-S164), which no non-choice/flags type receives. count/all_cases are ChoiceType/
         // FlagsType-gated buildtime derives; represent/diagnose keep the universal (`T is TypeName`)
         // template, so they still require @override on every concrete override.
         if (_registry.GetDeriveTemplate(name: routine.Name,
@@ -1096,7 +1096,7 @@ public sealed partial class SemanticVerifier
         // Resolve the decl's parameter types to match the creator overload. This runs at PRE-REGISTRATION
         // (Phase 3), where a param type may not yet resolve in scope (a forward-declared / not-yet-imported
         // type like `Int` in a numeric conversion `routine S64!(from: Int)`); ResolveType would
-        // otherwise EMIT an RA-S100 as a side effect. Suppress those — an unresolvable param simply means
+        // otherwise EMIT an RV-S100 as a side effect. Suppress those — an unresolvable param simply means
         // this creator can't be matched here, so it is skipped (no deferred base), not a user-facing error.
         int errorsBefore = _errors.Count;
         var argTypes = new List<TypeSymbol>(capacity: decl.Parameters.Count);
@@ -1151,7 +1151,7 @@ public sealed partial class SemanticVerifier
         // Own-module + own-REALM FIRST: a member decl `routine List[T].add_last` in an MI-realm
         // `Standard/Mielia/…` file owns the MI-realm `System.List`, not the Revare-realm one that
         // shares the bare key. The decl's source-file extension (.mie → MI) gives its realm; a realm-
-        // blind lookup would type `me` as the RA list (which lacks the MI wrapper's `inner`) → RA-S450.
+        // blind lookup would type `me` as the RV list (which lacks the MI wrapper's `inner`) → RV-S450.
         string declRealm = Builder.Frontends.Languages.RealmOf(fileName: decl.Location?.FileName);
         TypeSymbol? bareOwner = LookupBareOwner(moduleName: moduleName,
             bareLookupName: bareLookupName,

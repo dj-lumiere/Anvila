@@ -19,7 +19,7 @@ public partial class SemanticVerifier
     /// </summary>
     public sealed class CompiledStdlibState
     {
-        /// <summary>The language mode (RA or MI) the stdlib was compiled under.</summary>
+        /// <summary>The language mode (RV or MI) the stdlib was compiled under.</summary>
         public required Language Language { get; init; }
 
         /// <summary>The post-SA type registry snapshot (all stdlib types and routines).</summary>
@@ -281,7 +281,7 @@ public partial class SemanticVerifier
     /// <param name="target">Optional target configuration; null uses the host default.</param>
     /// <param name="buildMode">The Revare build mode (optimization level).</param>
     public SemanticVerifier(Language language, CompiledStdlibState warm,
-        TargetConfig? target = null, RaBuildMode buildMode = RaBuildMode.Debug)
+        TargetConfig? target = null, RvBuildMode buildMode = RvBuildMode.Debug)
     {
         _warmState = warm;
         _registry = new TypeRegistry(language: language, snapshot: warm.Registry);

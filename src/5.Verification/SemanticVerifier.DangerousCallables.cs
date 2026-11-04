@@ -15,7 +15,7 @@ namespace Builder.Verification;
 /// <item>It is called only inside <c>danger</c> or a dangerous routine.</item>
 /// </list>
 /// Any other place (a plain routine's argument, a member variable, a collection, a result, a lambda's value) is a plain
-/// routine value that can be called anywhere, so putting it there is RA-S609.
+/// routine value that can be called anywhere, so putting it there is RV-S609.
 /// <para>Each use is noted when its name is read and let go when the statement around it puts it in one of the places
 /// above. A use still noted when its statement ends went somewhere else.</para>
 /// </summary>

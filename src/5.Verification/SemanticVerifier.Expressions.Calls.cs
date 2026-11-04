@@ -20,7 +20,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Enforces the realm gate at a free-routine call site: a FOREIGN routine (C extern / LLVM intrinsic)
     /// must be called with its realm qualifier (`C::name(...)` / `LLVM::name(...)`), and a `C::`/`LLVM::`
-    /// qualifier must resolve to a routine of that realm. `RA::`/`MI::` qualifiers (native cross-realm
+    /// qualifier must resolve to a routine of that realm. `RV::`/`MI::` qualifiers (native cross-realm
     /// references) are allowed through. Reports a diagnostic when the call is illegal.
     /// </summary>
     private void CheckCallRealm(IdentifierExpression callee, RoutineInfo routine,
@@ -34,7 +34,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.MieliaNoCInterop,
                 message:
                 $"You call the foreign routine '{realm}::{routine.Name}' here, but a {_registry.Rules.Name} program " +
-                "cannot reach it directly. Call it from a `.rr` module and import that module from this program.",
+                "cannot reach it directly. Call it from a `.rvr` module and import that module from this program.",
                 location: location);
             return;
         }
@@ -209,7 +209,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>True while analyzing a program's own file in a language whose programs may not use the
     /// memory-unsafe surface (<c>LanguageRules.AllowsUnsafeCode</c> false). The standard library always may, and so
-    /// does a module of another language the program imports (a `.rr` module of a Mielia program).</summary>
+    /// does a module of another language the program imports (a `.rvr` module of a Mielia program).</summary>
     private bool UnsafeSurfaceIsBarred()
     {
         return UnsafeSurfaceIsBarredIn(filePath: _currentFilePath);
@@ -236,7 +236,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FeatureNotInMielia,
                 message:
                 $"You call '{dangerousRoutine.Name}' here, but it handles memory directly (`dangerous`), and a " +
-                $"{_registry.Rules.Name} program never does. Code that must goes in a `.rr` module this program imports.",
+                $"{_registry.Rules.Name} program never does. Code that must goes in a `.rvr` module this program imports.",
                 location: location);
         }
     }
@@ -390,7 +390,7 @@ public sealed partial class SemanticVerifier
         // Return the BARE entity type (NOT create's declared return, which for a Mielia entity is
         // `Roamed[E]`): the MI entity-lowering pass keys on `ResolvedType is EntityTypeSymbol` to
         // wrap a construction in `.roam()`, so a Roamed return type would divert it to the
-        // arg-carrying-create path and drop the wrap. For an RA entity the two coincide.
+        // arg-carrying-create path and drop the wrap. For an RV entity the two coincide.
         return zeroArgType;
     }
 
@@ -635,10 +635,10 @@ public sealed partial class SemanticVerifier
             callableType = new GenericParameterTypeSymbol(name: callName,
                 slot: _typeResolver.GenericParameterSlot(name: callName));
         }
-        // Honor an explicit `RA::`/`MI::` realm on a constructor call (`RA::System.List[T]()`): the
+        // Honor an explicit `RV::`/`MI::` realm on a constructor call (`RV::System.List[T]()`): the
         // lookup above is realm-blind (prefers the file's resolution realm), so inside an MI file
-        // `RA::System.List[T]()` would resolve to the MI-realm list and the MI wrapper's constructor
-        // `return List[T](inner: RA::System.List[T]())` would self-recurse. Swap to the qualified realm.
+        // `RV::System.List[T]()` would resolve to the MI-realm list and the MI wrapper's constructor
+        // `return List[T](inner: RV::System.List[T]())` would self-recurse. Swap to the qualified realm.
         if (id.Realm is { } calleeRealm && callableType is TypeSymbol calleeDef &&
             calleeDef.Realm != calleeRealm &&
             _registry.ReResolveInRealm(type: calleeDef, realm: calleeRealm) is { } realmDef)
@@ -677,7 +677,7 @@ public sealed partial class SemanticVerifier
         // routine via its realm-qualified index, NOT the bare-name slot (which an ambient same-named
         // free routine may now own — e.g. the free `atan2(y, x)` vs the `LLVM::atan2` intrinsic). Only
         // the realm-qualified lookup reaches the intrinsic; without it the qualified call would bind the
-        // ambient routine and then trip the RA-S460 realm gate.
+        // ambient routine and then trip the RV-S460 realm gate.
         if (calleeRealm is "LLVM" or "C" && !callName.Contains(value: '.'))
         {
             RoutineInfo? foreignRoutine = _registry.LookupRoutine(
@@ -816,7 +816,7 @@ public sealed partial class SemanticVerifier
     /// and no more args than parameters unless the tail is variadic.</summary>
     private static bool RoutineCanAcceptArgCount(RoutineInfo routine, int argCount)
     {
-        // A variadic tail absorbs any number of extra args (its position in the list — RA puts it FIRST —
+        // A variadic tail absorbs any number of extra args (its position in the list — RV puts it FIRST —
         // does not matter to arity acceptance: it only lifts the upper bound). Required = the non-default,
         // non-variadic parameters that MUST be supplied.
         bool hasVariadic = routine.Parameters.Any(predicate: p => p.IsVariadicParam);
@@ -856,7 +856,7 @@ public sealed partial class SemanticVerifier
         // Import-resolved generic routine with matching arity but no explicit type args:
         // infer type arguments so the resolved routine is concrete (mirrors the
         // module-local inference path above). Without this, an import-resolved `zip(a,b)`
-        // keeps its generic definition and RA-S161 fires downstream.
+        // keeps its generic definition and RV-S161 fires downstream.
         InferFallbackFreeTypeArguments(call: call,
             expectedType: expectedType,
             routine: ref routine);
@@ -880,7 +880,7 @@ public sealed partial class SemanticVerifier
         // LEAF of a hierarchical module path (`JsonEncodeApi` for `Tests/Stdlib/JsonEncodeApi`),
         // since a `/`-path can't be written in expression position (`/` is division). This MUST
         // run before AnalyzeExpression(member.Object), which would otherwise report the module
-        // name as an unknown identifier (RA-S007).
+        // name as an unknown identifier (RV-S007).
         if (AnalyzeImportedModuleCall(call: call, member: member) is
             { } resultAnalyzeImportedModuleCall)
         {
@@ -961,7 +961,7 @@ public sealed partial class SemanticVerifier
 
         // Clean-diagnostic gate, on the overload the arguments picked: a member routine whose owner-level
         // `needs param obeys P` constraint is unmet by the concrete receiver (e.g. `List[Widget].duplicate()` with
-        // `needs T obeys Copyable`, Widget not Copyable) is RA-S150 here, not an over-prune crash. A kind-split
+        // `needs T obeys Copyable`, Widget not Copyable) is RV-S150 here, not an over-prune crash. A kind-split
         // routine (`Optional[T].unwrap_or` for value / entity / variant T) is checked against the implementation that
         // applies to this owner.
         if (memberRoutine != null)
@@ -1903,7 +1903,7 @@ public sealed partial class SemanticVerifier
     {
         // Field-init constructor `T(field: value)` — the arg's expected type is the target
         // field's type, so a bare integer literal adapts to it (S64/…) instead of stalling
-        // at the Mielia `Int` default (RA escapes this only because its default IS S64).
+        // at the Mielia `Int` default (RV escapes this only because its default IS S64).
         // BOTH entity and record targets do inline field-init construction, so both need
         // this — gating on EntityTypeSymbol alone left RECORD constructors (`Point(x: 1)`)
         // with a null expected type → `1` stayed Int → codegen `Int`-into-`i64` /
@@ -2036,7 +2036,7 @@ public sealed partial class SemanticVerifier
             return defCreators.Count == 1 ? defCreators[index: 0] : null;
         }
 
-        // Several creators take the same names (`List(from: Set[T])`, `List(from: RA::List[T])`). Bind the
+        // Several creators take the same names (`List(from: Set[T])`, `List(from: RV::List[T])`). Bind the
         // type arguments through each and ask the concrete type for a creator taking these arguments: the call
         // means the one creator they all lead to.
         var reached = new List<(RoutineInfo Candidate, RoutineInfo Concrete)>();
@@ -2264,16 +2264,16 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RA-S413 for constructor calls: reports an error when a bare entity is passed to a
+    /// RV-S413 for constructor calls: reports an error when a bare entity is passed to a
     /// consuming entity parameter without an explicit <c>steal</c>. Verb-wrapped args
     /// (<c>steal x</c>, <c>x.copy()</c>) are <c>StealExpression</c>/<c>CallExpression</c>
     /// nodes, not <c>IdentifierExpression</c>/<c>MemberExpression</c>, so they pass freely.
-    /// No-op in Mielia mode (Mielia does not use the RA ownership transfer model).
+    /// No-op in Mielia mode (Mielia does not use the RV ownership transfer model).
     /// </summary>
     private void ValidateCreatorEntityOwnershipArgs(CallExpression call, RoutineInfo creator,
         List<TypeSymbol> creatorArgTypes)
     {
-        // RA-S413 for CONSTRUCTOR/creator calls: a bare entity passed to a consuming
+        // RV-S413 for CONSTRUCTOR/creator calls: a bare entity passed to a consuming
         // entity parameter needs an explicit `steal` — same rule AnalyzeCallArguments
         // enforces for ordinary calls, but the creator path analyzes args separately and
         // used to bypass it. Without this, `Bytes(from_list: raw)` (raw a bare List entity)
@@ -2418,7 +2418,7 @@ public sealed partial class SemanticVerifier
         // by-argType lookup when an argument is itself a bare generic parameter whose NAME
         // collides with the overload's own parameter name (e.g. arg `value: T` at a call
         // inside `wrap[T]`, matching `tag[T](value: T)`'s registry key `tag#T`). Taking it
-        // raw would leave `routine` an un-inferred generic def → RA-S161. Fall through to
+        // raw would leave `routine` an un-inferred generic def → RV-S161. Fall through to
         // the generic-overload + inference path below instead.
         if (better is { IsGenericDefinition: false } && better != routine)
         {
@@ -2927,7 +2927,7 @@ public sealed partial class SemanticVerifier
             }
 
             // Enforce the routine's `needs <param> obeys P` constraints against the explicit type
-            // args as a CLEAN semantic error (RA-S150) — before monomorphization prunes the body
+            // args as a CLEAN semantic error (RV-S150) — before monomorphization prunes the body
             // and codegen would instead trip an "over-prune / undefined symbol" crash.
             ValidateRoutineGenericConstraints(routine: routine,
                 typeArgs: resolvedTypeArguments,
@@ -3101,7 +3101,7 @@ public sealed partial class SemanticVerifier
     ];
 
     /// <summary>
-    /// RA-S413 at a terminal that would keep entities a walk only lends (<c>xs.where(...).to[List]()</c> over a
+    /// RV-S413 at a terminal that would keep entities a walk only lends (<c>xs.where(...).to[List]()</c> over a
     /// <c>List[Crate]</c>): the walk reaches each entity where the container keeps it, so a new collection of them, or
     /// one of them given back, would keep the same entity in a second place, and both places would end it.
     /// </summary>
@@ -3399,7 +3399,7 @@ public sealed partial class SemanticVerifier
 
         // @readonly enforcement: cannot call mutating memberRoutines on 'me'. Revare-only —
         // Mielia hides @readonly/@reshaping, so a Mielia build never enforces it (even on the
-        // borrowed RA stdlib, whose readonly discipline is Revare's own concern). A builder-written body is
+        // borrowed RV stdlib, whose readonly discipline is Revare's own concern). A builder-written body is
         // left out: its `@readonly` is the builder's own claim, and it calls routines (a user's `crash_message`,
         // `eq`, `destruct`) nobody is required to mark.
         if (_registry.CompilationRules.ChecksReadonly && !_isInCompilerGeneratedBody &&
@@ -3456,7 +3456,7 @@ public sealed partial class SemanticVerifier
             objectType: objectType,
             memberRoutine: memberRoutine);
 
-        // #22: Reject reshaping operations on the collection being iterated (RA-S625). Keyed on
+        // #22: Reject reshaping operations on the collection being iterated (RV-S625). Keyed on
         // the @reshaping marker (via IsReshaping) — the definitional signal, and robust to
         // member-routine registration paths that leave MutationCategory at its default. Mielia reports the
         // direct call here too and leaves the hidden ones (inside a called routine) to its run-time check.
@@ -3551,8 +3551,8 @@ public sealed partial class SemanticVerifier
         }
 
         // `view` and `modify` on a Guarded are ordinary member routines: their policy legality (`modify` not on
-        // ReadOnly, `view` not on Exclusive) is enforced by the type-equality constraint (RA-S160), and where the
-        // access may be held (a call argument, held for that call) by GuardAccessArgumentChecker (RA-S652).
+        // ReadOnly, `view` not on Exclusive) is enforced by the type-equality constraint (RV-S160), and where the
+        // access may be held (a call argument, held for that call) by GuardAccessArgumentChecker (RV-S652).
 
         // Enforce a memberRoutine's `needs P in [...]` (TypeEquality) constraint when the
         // constrained parameter is INHERITED FROM THE RECEIVER (e.g.
@@ -4614,7 +4614,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// A creator is chosen by the types of its arguments, so a named argument may still name a parameter the
     /// chosen creator does not have (`Set(from: xs)` reaching `Set(key: SecureHashKey)`). Reports each such
-    /// name (RA-S505).
+    /// name (RV-S505).
     /// </summary>
     private void CheckCreatorArgumentNames(List<Expression> arguments, RoutineInfo creator, TypeSymbol type)
     {
@@ -4864,7 +4864,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Reports <c>Char(n)</c> in a program file when it binds the library's own creator of a character from a
     /// codepoint (the one a character literal uses), which takes the bits as they are, unchecked, like any
-    /// <c>T(x)</c> that reads bits (RA-S655).
+    /// <c>T(x)</c> that reads bits (RV-S655).
     /// </summary>
     private bool ReportsCharFromCodepointBits(CallExpression call, RoutineInfo creator)
     {
@@ -4880,7 +4880,7 @@ public sealed partial class SemanticVerifier
         return true;
     }
 
-    /// <summary>A type whose <c>T(x)</c> from another value reads that value's bits (RA-S655): a number type, a
+    /// <summary>A type whose <c>T(x)</c> from another value reads that value's bits (RV-S655): a number type, a
     /// <c>Char</c> (the bits are taken as a codepoint, unchecked) and a <c>Bool</c> (only the lowest bit is
     /// kept, so <c>Bool(2)</c> is <c>false</c>).</summary>
     private bool IsBitReadGuardedType(TypeSymbol type)
@@ -4901,7 +4901,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports a number built from one value with <c>T(x)</c> in a program file (RA-S655). That construction reads
+    /// Reports a number built from one value with <c>T(x)</c> in a program file (RV-S655). That construction reads
     /// the value's bits as the new type, so the number changes (<c>U8(300)</c> is 44, <c>Decimal(2)</c> is not 2).
     /// The message points to the spelling that keeps the number: a literal written where the type is expected, or
     /// the conversion <c>x.to[T]()</c>, which fails when the value does not fit.
@@ -4922,7 +4922,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The RA-S655 message for <c>written(value)</c> building a <paramref name="type"/> from a value of
+    /// The RV-S655 message for <c>written(value)</c> building a <paramref name="type"/> from a value of
     /// <paramref name="source"/>: what the bits become and the spelling that keeps the value. <paramref name="written"/>
     /// is the type as the call names it (<c>T</c> in a generic routine), <paramref name="instance"/> the
     /// monomorphized routine the check is about (<c>make[U8]</c>), or null for a call checked as written.
@@ -4973,7 +4973,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RA-S655 for one monomorphized copy of a generic routine a program wrote. A <c>T(x)</c> there is checked when
+    /// RV-S655 for one monomorphized copy of a generic routine a program wrote. A <c>T(x)</c> there is checked when
     /// the routine is analyzed, where <c>T</c> is no number type yet, so a copy whose <c>T</c> is a number, a
     /// <c>Char</c> or a <c>Bool</c> built from a value of another type (<c>make[U8](x: 300)</c> gives 44) is
     /// reported here, naming the copy and pointing to <c>x.to[T]()</c>. <paramref name="definition"/> is the body as
@@ -5150,7 +5150,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// A construction no creator takes, naming an argument after no member variable of the type
     /// (`InvalidValueError(message: m)` where the member variables are `input` and `target`): reports each
-    /// such name (RA-S505), since the memberwise construction cannot bind it either. A name that is a member
+    /// such name (RV-S505), since the memberwise construction cannot bind it either. A name that is a member
     /// variable must carry a value that member variable can hold.
     /// </summary>
     /// <returns>Whether a name was reported as unknown.</returns>
@@ -5323,7 +5323,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// A type construction fills its member variables in order from the arguments without a label. A bare name of
-    /// another member variable in a place that is not its own (<c>Point(y, x)</c>) needs a label: RA-S510.
+    /// another member variable in a place that is not its own (<c>Point(y, x)</c>) needs a label: RV-S510.
     /// </summary>
     private void ValidateConstructorArgumentNaming(CallExpression call, IdentifierExpression id,
         TypeSymbol type)
@@ -5413,7 +5413,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// A bare call to a routine of an imported module, when another imported module has a routine of the same name,
-    /// could mean either: the module goes in front (`Prices.label(...)`). Reports RA-S513 instead of picking one and returns true. The
+    /// could mean either: the module goes in front (`Prices.label(...)`). Reports RV-S513 instead of picking one and returns true. The
     /// current module's own routine is not ambiguous: it comes first.
     /// </summary>
     private bool CheckAmbiguousImportedRoutine(CallExpression call, IdentifierExpression id, RoutineInfo routine)
@@ -5499,7 +5499,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Returns true (and reports RA-S161) when a generic routine could not be instantiated:
+    /// Returns true (and reports RV-S161) when a generic routine could not be instantiated:
     /// no explicit type args were supplied, arity matches, but inference left a type parameter
     /// unbound (e.g. a return-only <c>To</c> with no expected-type context).
     /// </summary>

@@ -103,7 +103,7 @@ public sealed class BaseObjectCache
     {
         return language == TypeModel.Enums.Language.Mielia
             ? (MieliaSeedProgramSource, "base" + Builder.Frontends.SourceExtensions.Mielia)
-            : (SeedProgramSource, "base.rr");
+            : (SeedProgramSource, "base.rvr");
     }
 
     private readonly string _dir;
@@ -136,7 +136,7 @@ public sealed class BaseObjectCache
     /// (opt → <c>clang -c</c>). Returns null if the AOT compile fails. Sets <paramref name="wasCached"/> to
     /// whether the object already existed — a hit skips all compilation.
     /// </summary>
-    public string? GetOrBuild(string fingerprint, string baseIr, RaBuildMode buildMode,
+    public string? GetOrBuild(string fingerprint, string baseIr, RvBuildMode buildMode,
         out bool wasCached)
     {
         string objPath = ObjectPath(fingerprint: fingerprint);

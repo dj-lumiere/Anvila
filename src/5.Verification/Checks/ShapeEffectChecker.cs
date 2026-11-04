@@ -12,7 +12,7 @@ namespace Builder.Verification;
 /// <c>@reshaping</c> routine can change it. While a <c>for</c> loop goes through a container, or a statement
 /// works on one of its entity elements in place, the shape must not change: the loop could no longer trust
 /// its next element, and the element access could be left pointing at a moved or freed element.
-/// <para>The direct case (<c>xs.add_last(...)</c> inside <c>for x in xs</c>) is RA-S625 at the call. This
+/// <para>The direct case (<c>xs.add_last(...)</c> inside <c>for x in xs</c>) is RV-S625 at the call. This
 /// check also sees the INDIRECT cases, because every routine gets a RESHAPE EFFECT: the set of its
 /// parameters (and <c>me</c>) whose shape it may change. A <c>@reshaping</c> routine changes <c>me</c>; a
 /// routine that hands one of its parameters to a slot that is changed changes that parameter too,
@@ -103,11 +103,11 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
     /// <summary>
     /// One call handed the same container as a write token and as another token (<c>merge(into: s, from: s)</c>,
     /// or <c>s.add_all(other: s)</c> whose receiver is written): the two are the same container, so a change through
-    /// the write token moves what the other reads, RA-S623.
+    /// the write token moves what the other reads, RV-S623.
     /// </summary>
     private void CheckSameContainerTwice(CallExpression call)
     {
-        // Passing a Guarded's write token twice was reported with the lock named (RA-S603).
+        // Passing a Guarded's write token twice was reported with the lock named (RV-S603).
         if (call.ResolvedRoutine is not { } routine || reportedCalls.Contains(item: call.Arguments))
         {
             return;
@@ -641,7 +641,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                                                   ShapePath(expr: written) is { } writtenPath:
                             foreach (ShapeGuard g in active)
                             {
-                                // `d[k] = v` on the loop's own variable is RA-S625 where it is written.
+                                // `d[k] = v` on the loop's own variable is RV-S625 where it is written.
                                 bool direct = g.IsLoop && written is IdentifierExpression { Name: var name } &&
                                               name == g.Path;
                                 if (!direct && AccessPaths.IsPrefixOrEqual(prefix: writtenPath, path: g.Path))
@@ -706,7 +706,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
                 : "";
             foreach (ShapeGuard g in guards)
             {
-                // The direct `@reshaping` call on the loop variable itself is RA-S625 at the call site.
+                // The direct `@reshaping` call on the loop variable itself is RV-S625 at the call site.
                 if (g.IsLoop && operand is IdentifierExpression { Name: var direct } && direct == g.Path &&
                     call.ResolvedRoutine?.IsReshaping == true && call.Callee is MemberExpression)
                 {
@@ -775,7 +775,7 @@ internal sealed class ShapeEffectChecker(DiagnosticReporter report, IReadOnlySet
     }
 
     /// <summary>
-    /// RA-S625 for a lambda handed to a member routine of a container that can add to or remove from that same
+    /// RV-S625 for a lambda handed to a member routine of a container that can add to or remove from that same
     /// container (<c>r.sort_by(compare: (a, b) given (alias) => grow(xs: alias, ...))</c> with <c>alias</c> a copy of the
     /// <c>Retained</c> <c>r</c>): the routine is still working on the container's elements when it calls the lambda,
     /// so a change of its shape there moves or frees the elements under it.

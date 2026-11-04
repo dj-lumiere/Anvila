@@ -148,7 +148,7 @@ public sealed partial class TypeRegistry
         }
 
         // No backend-type shortcut: scalar primitives still define `eq`/`hash` explicitly
-        // (see System/Numerics/*.rr) and will be picked up by the LookupMemberRoutine fallback below.
+        // (see System/Numerics/*.rvr) and will be picked up by the LookupMemberRoutine fallback below.
         // The shortcut used to fire on every `@llvm("…")`-backed record — including aggregate-
         // backed records like `Array[T, N]` (`@llvm("[{N} x {T}]")`) — which masked the
         // generic-constraint check we need for correctness.
@@ -819,9 +819,9 @@ public sealed partial class TypeRegistry
         // A generic INSTANCE (e.g. `Dict[S64, S64]`) — or a REALM-BRIDGED copy of a type (the MI-realm `System.Dict`
         // an `.mie` file resolves to) — can carry an EMPTY own ImplementedProtocols: the declared conformances
         // (`obeys Container, Iterable, …`) are populated by the eager Phase-3 conformance pass onto the AMBIENT
-        // (RA-realm) generic DEFINITION only. Without inheriting them, `x in dict` in an MI file false-fires
-        // RA-S065. Fold in the ambient definition's protocols (realm-blind lookup by bare name reaches the
-        // populated RA-realm def even under an MI ResolutionRealm); conditional (`when`) conformances stay
+        // (RV-realm) generic DEFINITION only. Without inheriting them, `x in dict` in an MI file false-fires
+        // RV-S065. Fold in the ambient definition's protocols (realm-blind lookup by bare name reaches the
+        // populated RV-realm def even under an MI ResolutionRealm); conditional (`when`) conformances stay
         // gated per-instance by ConditionalConformanceHolds (checked against THIS instance's type args).
         if (implemented.Count == 0 || type.IsGenericResolution)
         {

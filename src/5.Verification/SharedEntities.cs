@@ -59,10 +59,10 @@ internal sealed class SharedEntities(TypeRegistry registry)
     /// </summary>
     internal TypeSymbol ResolveAnnotation(TypeSymbol annotated, TypeExpression? typeExpr = null)
     {
-        // An `RA::`-qualified annotation opts OUT of the entity->Roamed lowering: ResolveType already
-        // honored the realm and left it BARE (a wrapper's `inner: RA::System.List[T]` holds a bare RA
+        // An `RV::`-qualified annotation opts OUT of the entity->Roamed lowering: ResolveType already
+        // honored the realm and left it BARE (a wrapper's `inner: RV::System.List[T]` holds a bare RV
         // entity, not a re-roamed `Roamed[List]`). Do NOT re-roam it here — this is the SA twin of
-        // TypeResolver.ResolveType's `Realm != "RA"` gate. The realm tag lives on the TypeExpression,
+        // TypeResolver.ResolveType's `Realm != "RV"` gate. The realm tag lives on the TypeExpression,
         // not on the already-resolved TypeSymbol, so it must be threaded in explicitly.
         if (typeExpr?.Realm == TypeModel.Realms.Shared || !registry.EntitiesAreShared ||
             registry.LookupType(name: Declaration.RuntimeContract.Roamed) is not { } roamedDef)

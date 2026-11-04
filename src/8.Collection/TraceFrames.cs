@@ -15,9 +15,9 @@ internal static class TraceFrames
 {
     /// <summary>True when a build of <paramref name="mode"/> keeps a crash trace (debug and release; the size and
     /// time builds leave it out).</summary>
-    public static bool Enabled(RaBuildMode mode)
+    public static bool Enabled(RvBuildMode mode)
     {
-        return mode is RaBuildMode.Debug or RaBuildMode.Release;
+        return mode is RvBuildMode.Debug or RvBuildMode.Release;
     }
 
     /// <summary>
@@ -108,12 +108,12 @@ internal static class TraceFrames
 /// <see cref="TraceFrames.Pushes"/>), where entities are shared (Mielia), which standard library routines push a
 /// frame: the ones a program can name. A
 /// routine of Mielia's library is one when neither it nor its type is <c>secret</c>, and a routine of Revare's
-/// library when an open <c>@ra</c> declaration binds it and its type. The library's own helpers push none, so a crash
+/// library when an open <c>@rv</c> declaration binds it and its type. The library's own helpers push none, so a crash
 /// trace shows the program's routines and the library routines it called, never what those called inside the library.
 /// </summary>
 internal sealed class LibraryFrames(TypeRegistry registry)
 {
-    private readonly HashSet<string> _open = RaBindingCheck.BoundNames(registry: registry, openOnly: true);
+    private readonly HashSet<string> _open = RvBindingCheck.BoundNames(registry: registry, openOnly: true);
 
     /// <summary>True when <paramref name="routine"/> is a library routine no program can name.</summary>
     public bool Hides(RoutineInfo routine)
@@ -131,16 +131,16 @@ internal sealed class LibraryFrames(TypeRegistry registry)
             return false;
         }
 
-        bool bound = _open.Contains(item: RaBindingCheck.ShapeOf(routine: routine)) ||
+        bool bound = _open.Contains(item: RvBindingCheck.ShapeOf(routine: routine)) ||
                      definition.OwnerType is { } owner &&
                      Verification.SemanticVerifier.ProtocolsOf(type: owner)
                                  .Any(predicate: p => _open.Contains(
-                                      item: RaBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)));
+                                      item: RvBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)));
         return !bound || definition.OwnerType is { } type && !Open(type: type);
     }
 
     /// <summary>Whether a program can name <paramref name="type"/>: a type of Mielia's library that is not
-    /// <c>secret</c>, a Revare library type an open <c>@ra</c> declaration binds, or a type of the
+    /// <c>secret</c>, a Revare library type an open <c>@rv</c> declaration binds, or a type of the
     /// program.</summary>
     private bool Open(TypeModel.Types.TypeSymbol type)
     {

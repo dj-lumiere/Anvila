@@ -11,8 +11,8 @@ namespace Builder.Lowering.Passes;
 /// <c>closure_put[V1](bound: closure_put[V0](bound: closure_new(slots: 2), slot: 0, value: a), slot: 1, value: b)</c>
 /// at the lambda, and in the lifted routine a trailing <c>__bound: Addr</c> parameter plus
 /// <c>var a = closure_get[V0](bound: __bound, slot: 0)</c> per captured value. The helpers live in System
-/// (<c>System/Memory/Closure.rr</c>), so the payload's layout and the copy of each captured value are ordinary
-/// RA code, and the emitter only pairs the lifted routine with the payload.
+/// (<c>System/Memory/Closure.rvr</c>), so the payload's layout and the copy of each captured value are ordinary
+/// RV code, and the emitter only pairs the lifted routine with the payload.
 /// </summary>
 internal sealed class ClosurePlumbing
 {

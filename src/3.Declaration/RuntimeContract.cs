@@ -65,7 +65,7 @@ public static class RuntimeContract
     /// <summary>Reference-counting controller surface (<c>RetainManager[T]</c> and the RC wrappers).</summary>
     /// <remarks>The controllers' count primitives are the canonical vocabulary <c>hold</c>/<c>unhold</c>
     /// (strong ±1) and <c>observe</c>/<c>unobserve</c> (weak ±1) — plain stdlib memberRoutine names, called only
-    /// from wrapper <c>.rr</c> bodies, so they need no constants here.</remarks>
+    /// from wrapper <c>.rvr</c> bodies, so they need no constants here.</remarks>
     public static class RefCount
     {
         /// <summary><c>RetainManager[T].raw_data()</c> — read the controlled payload.</summary>
@@ -364,12 +364,12 @@ public static class RuntimeContract
     /// <remarks>Sites: SemanticVerifier.Stamps (NoteStampedTypes), SemanticVerifier.Helpers.Access (CheckStampHasSlot).</remarks>
     public const string StampedTypeName = "Stamped";
 
-    /// <summary><c>Stamped[T].same_entity</c> (Stamped.rr): what <c>a === b</c> on two stamps runs, the same slot and
+    /// <summary><c>Stamped[T].same_entity</c> (Stamped.rvr): what <c>a === b</c> on two stamps runs, the same slot and
     /// generation. A stamp is a value of eight bytes, so the builder compares both fields instead of one address.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
     public const string StampSameEntity = "same_entity";
 
-    /// <summary><c>Stamped[T].other_entity</c> (Stamped.rr): what <c>a !== b</c> on two stamps runs.</summary>
+    /// <summary><c>Stamped[T].other_entity</c> (Stamped.rvr): what <c>a !== b</c> on two stamps runs.</summary>
     /// <remarks>Sites: OperatorLoweringPass (LowerNonOverloadableBinary).</remarks>
     public const string StampOtherEntity = "other_entity";
 
@@ -434,8 +434,8 @@ public static class RuntimeContract
     /// <summary><c>control</c> — the <c>Controlling</c> marker-protocol coercion (yields a borrow view).</summary>
     public const string Control = "control";
 
-    /// <summary><c>read_in_place</c> — a token's value read where it is with no copy (<c>Viewing.rr</c>,
-    /// <c>Modifying.rr</c>), for a value that holds an entity, which is never copied.</summary>
+    /// <summary><c>read_in_place</c> — a token's value read where it is with no copy (<c>Viewing.rvr</c>,
+    /// <c>Modifying.rvr</c>), for a value that holds an entity, which is never copied.</summary>
     /// <remarks>Sites: OperatorLoweringPass (an element read that holds an entity), PatternLoweringPass (a token
     /// subject reaching one), ScopeTeardownLoweringPass.ViewVerbs.</remarks>
     public const string ReadInPlace = "read_in_place";
@@ -788,7 +788,7 @@ public static class RuntimeContract
     // =====================================================================================
     // Native runtime externs — C-ABI symbols emitted directly into the module by codegen.
     // These are matched against Ingrid (its Lapila code: runtime-lapila in the runtime library,
-    // lapila/ linked into every module), NOT stdlib .rr, so they are a DIFFERENT contract (a rename
+    // lapila/ linked into every module), NOT stdlib .rvr, so they are a DIFFERENT contract (a rename
     // here means editing Ingrid too, and validate-stdlib cannot check them). Collected here so codegen has one name table.
     // Sites: LlvmEmitter.Expressions (declarations + call sites).
     // =====================================================================================

@@ -872,13 +872,13 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Mielia: a bare <c>RA::</c> Revare entity may NOT be a routine parameter or (non-constructor)
-    /// return. An RA entity has no reference count, so passing it by value across an MI routine boundary
+    /// Mielia: a bare <c>RV::</c> Revare entity may NOT be a routine parameter or (non-constructor)
+    /// return. An RV entity has no reference count, so passing it by value across an MI routine boundary
     /// lets MI's scope-exit teardown destroy the same object multiple times (caller + callee + return)
     /// → heap corruption. It is fine as a LOCAL or as a FIELD of an MI entity (the container owns it);
-    /// only the by-value boundary crossing is unsafe. Reports RA-S439 with the safe alternatives. The
+    /// only the by-value boundary crossing is unsafe. Reports RV-S439 with the safe alternatives. The
     /// build-time invariant <c>AssertNoBareEntityInSignature</c> still guards the OTHER bare-entity case
-    /// (an MI entity that slipped roaming — a builder bug, no <c>RA::</c> tag).
+    /// (an MI entity that slipped roaming — a builder bug, no <c>RV::</c> tag).
     /// </summary>
     internal void CheckSignatureHasNoForeignBareEntity(RoutineDeclaration routine,
         RoutineKind kind, IReadOnlyList<ParamInfo> parameters, TypeSymbol? returnType)
@@ -892,18 +892,18 @@ public sealed partial class SemanticVerifier
         }
 
         const string advice =
-            " A Revare entity written with `RA::` is not shared and has no reference count, so handing it " +
+            " A Revare entity written with `RV::` is not shared and has no reference count, so handing it " +
             "across a routine here would release the same object more than once. Keep it as a member variable of " +
-            "an entity of this program and pass that entity, or do the work on it inside a `.rr` module.";
+            "an entity of this program and pass that entity, or do the work on it inside a `.rvr` module.";
 
-        // The resolved type decides: an entity of an imported `.rr` module resolves to a shared handle here, and
-        // only one written with `RA::` stays bare.
+        // The resolved type decides: an entity of an imported `.rvr` module resolves to a shared handle here, and
+        // only one written with `RV::` stays bare.
         foreach (ParamInfo p in parameters)
         {
             if (p.Type is EntityTypeSymbol pe && IsRevareEntity(type: pe))
             {
                 Parameter? declared = routine.Parameters.FirstOrDefault(predicate: d => d.Name == p.Name);
-                ReportError(code: SemanticDiagnosticCode.MieliaBareRaEntityInSignature,
+                ReportError(code: SemanticDiagnosticCode.MieliaBareRvEntityInSignature,
                     message:
                     $"You declare parameter '{p.Name}' as '{pe.Name}', a Revare entity." +
                     advice,
@@ -915,7 +915,7 @@ public sealed partial class SemanticVerifier
         // by-value hand-off of an already-live object, so it is exempt (mirrors the invariant's carve-out).
         if (kind != RoutineKind.Creator && returnType is EntityTypeSymbol re && IsRevareEntity(type: re))
         {
-            ReportError(code: SemanticDiagnosticCode.MieliaBareRaEntityInSignature,
+            ReportError(code: SemanticDiagnosticCode.MieliaBareRvEntityInSignature,
                 message: $"You declare the return type as '{re.Name}', a Revare entity." +
                          advice,
                 location: routine.ReturnType?.Location ?? routine.Location);
@@ -1121,7 +1121,7 @@ public sealed partial class SemanticVerifier
         // Index operators (getitem/setitem) are governed by PROTOCOL conformance, not type KIND:
         // any type that follows ViewingIndexable/ModifyingIndexable may define them (records like
         // Array[T,N]/BitArray[N], entities like List/Dict, and user containers alike). The
-        // conformance requirement is enforced by RA-S411 (OperatorWithoutProtocol) via the
+        // conformance requirement is enforced by RV-S411 (OperatorWithoutProtocol) via the
         // wired-routine→protocol catalog, so no type-kind restriction is applied here.
 
         // @writable is removed — emit error before the conflict check
@@ -1226,8 +1226,8 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// A <c>@throws([A, B])</c> on a failable routine fixes what it may throw (an exported routine says so, and what it
     /// is built from may change): every crashable the builder collected for it (its own throws and those of the
-    /// routines it calls) must be in the list (RA-S712). On an <c>infallible</c> routine, or naming something that
-    /// isn't a crashable, it is RA-S713.
+    /// routines it calls) must be in the list (RV-S712). On an <c>infallible</c> routine, or naming something that
+    /// isn't a crashable, it is RV-S713.
     /// </summary>
     private void ValidateThrowsLists()
     {
@@ -1352,7 +1352,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// A crashable says what went wrong in its own words: it must declare <c>crash_message</c> (RA-S704). Its
+    /// A crashable says what went wrong in its own words: it must declare <c>crash_message</c> (RV-S704). Its
     /// <c>crash_title</c> comes from its name.
     /// </summary>
     private void ValidateCrashMessage(TypeSymbol type)

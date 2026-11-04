@@ -1403,7 +1403,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
         // A reached derive member (lt/le/gt/ge from compare, or ANY capability-conferred derive — compare/eq/hash/
         // represent — on a concrete owner that does not hand-write it) whose per-type body lives ONLY in the
-        // derive-template store (DeriveText.rr `T.lt() -> me.compare(you) is ME_SMALL`, etc.). NOTHING else
+        // derive-template store (DeriveText.rvr `T.lt() -> me.compare(you) is ME_SMALL`, etc.). NOTHING else
         // materializes these: they are not hand-written (programBodies), not synthesized by DerivedOperatorPass
         // (synthesizedBodies holds only ne/notcontains/crash_title/wrapper-forwarders), and not a generic
         // INSTANCE (BuildGenericInstanceIfNeeded). Clone the template for this concrete owner (T → owner) so the
@@ -1568,7 +1568,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         ///   <item>choice / flags: <c>return choice_from_serial[T](value: value)</c> / <c>flags_from_serial</c></item>
         ///   <item>variant: <c>variant_from_serial[T]</c>, behind an <c>is None => return none</c> clause when it has a <c>None</c> arm</item>
         /// </list>
-        /// The helpers live in <c>System/Serialization/FromSerial.rr</c>.
+        /// The helpers live in <c>System/Serialization/FromSerial.rvr</c>.
         /// </summary>
         private void MaterializeFromSerialBodyIfNeeded(RoutineInfo r, string key)
         {
@@ -2638,10 +2638,10 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
             expectedOwnerModule: resolvedRoutine.OwnerType?.FullName is { } ownerFn
                 ? TypeSymbol.StripTypeArgs(name: ownerFn)
                 : null,
-            // Realm-scoped: an MI overlay (`MI::System.Dict[K,V]`) and the RA type it wraps
+            // Realm-scoped: an MI overlay (`MI::System.Dict[K,V]`) and the RV type it wraps
             // (`System.Dict[K,V]`) share the same bare AST name AND owner module (`System.Dict`), so a
-            // module-only match binds the MI overlay's forwarder instance to the RA body — e.g. the MI
-            // `Dict.add` forwarder (`me.inner.add`) gets the RA `Dict.add` body (`me.keys`), which then
+            // module-only match binds the MI overlay's forwarder instance to the RV body — e.g. the MI
+            // `Dict.add` forwarder (`me.inner.add`) gets the RV `Dict.add` body (`me.keys`), which then
             // reaches codegen calling `me.keys` on the fieldless overlay. Pass the owner realm so the MI
             // instance resolves to the MI forwarder decl (mirrors the genDef-realm path above).
             expectedOwnerRealm: resolvedRoutine.OwnerType?.Realm,
@@ -3047,7 +3047,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         // Wrapper forwarder bodies call as_entity()/extract() on the inner type, which requires
         // T is EntityType (entity layout). For wrapper types (Hijacked, Retained, etc.)
         // with a non-entity concrete T, skip the variant body (which may be a forwarder) and
-        // fall through to the stdlib AST lookup below — the RA source handles all T without
+        // fall through to the stdlib AST lookup below — the RV source handles all T without
         // requiring entity layout.
         // NOTE: both the synthesized forwarder RoutineInfo and the stdlib RoutineInfo for
         // the same wrapper memberRoutine share the same RegistryKey, so we check by wrapper type
@@ -3815,7 +3815,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
     /// <summary>
     /// Narrows a candidate list by module and realm, preferring exact matches while falling back to
-    /// the full set when no match exists (non-overlay types or RA-only compiles).
+    /// the full set when no match exists (non-overlay types or RV-only compiles).
     /// </summary>
     private static List<RoutineDeclaration> NarrowCandidatesByModuleAndRealm(
         List<RoutineDeclaration> candidates, string? expectedOwnerModule,
@@ -4029,7 +4029,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
     /// and the AST's bare <c>SortedSet</c> compare equal.</summary>
     private static string MatchableBaseName(string typeName)
     {
-        // A qualified spelling (`RA::System.List[T]` is written `System.List`) matches by its last segment.
+        // A qualified spelling (`RV::System.List[T]` is written `System.List`) matches by its last segment.
         string baseName = StripGenericSuffix(typeName: typeName);
         baseName = baseName[(baseName.LastIndexOf(value: '.') + 1)..];
         if (BorrowWrapperNames.Contains(item: baseName) &&

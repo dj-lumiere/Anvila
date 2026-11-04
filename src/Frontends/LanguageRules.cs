@@ -30,14 +30,14 @@ public abstract class LanguageRules
     /// <summary>The version line the tool reports.</summary>
     public abstract string Version { get; }
 
-    /// <summary>The source file extension, with its dot (<c>.rr</c>).</summary>
+    /// <summary>The source file extension, with its dot (<c>.rvr</c>).</summary>
     public abstract string FileExtension { get; }
 
-    /// <summary>The extension the language's sources had before 0.5 (<c>.rf</c>), or null. A file that still has it
-    /// is a build error that names the new extension and the <c>migrate</c> step that renames it.</summary>
-    public virtual string? PreviousFileExtension => null;
+    /// <summary>The extensions the language's sources had before (<c>.rf</c>, <c>.rr</c>), oldest first. A file that
+    /// still has one is a build error that names the new extension and the <c>migrate</c> step that renames it.</summary>
+    public virtual IReadOnlyList<string> PreviousFileExtensions => [];
 
-    /// <summary>The language's short name (<c>RA</c>): the prefix its diagnostic codes are spelled with,
+    /// <summary>The language's short name (<c>RV</c>): the prefix its diagnostic codes are spelled with,
     /// and the realm its standard library types are registered under.</summary>
     public abstract string ShortName { get; }
 

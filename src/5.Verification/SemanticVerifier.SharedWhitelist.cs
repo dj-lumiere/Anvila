@@ -10,7 +10,7 @@ namespace Builder.Verification;
 
 /// <summary>
 /// Mielia's programs see Revare's library only through Mielia's own: a type or routine of a Revare library
-/// file is usable from a Mielia program when an <c>@ra</c> declaration of Mielia's library binds it. Everything else
+/// file is usable from a Mielia program when an <c>@rv</c> declaration of Mielia's library binds it. Everything else
 /// the two languages share in the build (tokens, wrappers, the builder's helpers) stays out of reach.
 /// </summary>
 public sealed partial class SemanticVerifier
@@ -20,12 +20,12 @@ public sealed partial class SemanticVerifier
 
     private int _rfBoundNamesFrom = -1;
 
-    private HashSet<string> RaBoundNames()
+    private HashSet<string> RvBoundNames()
     {
-        int count = _registry.RaBindings.Count;
+        int count = _registry.RvBindings.Count;
         if (_rfBoundNames == null || _rfBoundNamesFrom != count)
         {
-            _rfBoundNames = RaBindingCheck.BoundNames(registry: _registry);
+            _rfBoundNames = RvBindingCheck.BoundNames(registry: _registry);
             _rfBoundNamesFrom = count;
         }
 
@@ -50,7 +50,7 @@ public sealed partial class SemanticVerifier
                                   .Where(predicate: r =>
                                        _registry.IsLanguageLibraryFile(filePath: r.Location?.FileName,
                                            language: Language.Mielia))
-                                  .Select(selector: r => RaBindingCheck.ShapeOf(routine: r))
+                                  .Select(selector: r => RvBindingCheck.ShapeOf(routine: r))
                                   .ToHashSet(comparer: StringComparer.Ordinal);
             _mieliaLibraryShapesFrom = routines.Count;
         }
@@ -76,7 +76,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Whether a Mielia program may not name <paramref name="type"/>: it is declared in Revare's library and no
-    /// <c>@ra</c> declaration binds it.
+    /// <c>@rv</c> declaration binds it.
     /// </summary>
     private bool IsUnsharedRevareType(TypeSymbol type)
     {
@@ -91,12 +91,12 @@ public sealed partial class SemanticVerifier
         // A Mielia library type of the same name (Mielia's own `List`) is stamped with Mielia's realm.
         return definition.Realm == Realms.Shared &&
                _registry.RevareLibraryTypes.Contains(item: $"{definition.Module}.{definition.BareName}") &&
-               !RaBoundNames().Contains(item: definition.BareName);
+               !RvBoundNames().Contains(item: definition.BareName);
     }
 
     /// <summary>
     /// Reports every type name a Mielia program writes and every routine it calls that belongs to Revare's
-    /// library without an <c>@ra</c> declaration binding it. The builder's own routines (synthesized ones) are not the
+    /// library without an <c>@rv</c> declaration binding it. The builder's own routines (synthesized ones) are not the
     /// program's to name, so they pass. Runs right after the program's bodies are analyzed, while its imports are
     /// still the ones type names resolve against.
     /// </summary>
@@ -183,11 +183,11 @@ public sealed partial class SemanticVerifier
                 return;
             }
 
-            string shape = RaBindingCheck.ShapeOf(routine: routine);
-            HashSet<string> bound = RaBoundNames();
+            string shape = RvBindingCheck.ShapeOf(routine: routine);
+            HashSet<string> bound = RvBoundNames();
             if (!bound.Contains(item: shape) && !(definition.OwnerType is { } owner &&
                     ProtocolsOf(type: owner).Any(predicate: p =>
-                        bound.Contains(item: RaBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)))) &&
+                        bound.Contains(item: RvBindingCheck.ShapeOf(routine: routine, ownerName: p.BareName)))) &&
                 !MieliaLibraryShapes().Contains(item: shape))
             {
                 ReportUnshared(name: shape, location: expression.Location);

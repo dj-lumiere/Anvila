@@ -2,23 +2,23 @@ using Builder.Documentation;
 
 namespace Builder.Execution;
 
-/// <summary>The <c>ra-stubs</c> command: drafts the Mielia library's <c>@ra</c> declarations.</summary>
+/// <summary>The <c>rv-stubs</c> command: drafts the Mielia library's <c>@rv</c> declarations.</summary>
 internal partial class Program
 {
     /// <summary>
-    /// Runs <c>ra-stubs &lt;revare-library&gt; &lt;mielia-library&gt; &lt;output-dir&gt;</c>: writes an
-    /// <c>@ra("...")</c> stub file for every Revare source whose shared declarations a Mielia program sees and the
+    /// Runs <c>rv-stubs &lt;revare-library&gt; &lt;mielia-library&gt; &lt;output-dir&gt;</c>: writes an
+    /// <c>@rv("...")</c> stub file for every Revare source whose shared declarations a Mielia program sees and the
     /// Mielia library does not show yet. Existing files are kept. Returns 1 when a source could not be read.
     /// </summary>
-    private static int RunRaStubsCommand(string[] args)
+    private static int RunRvStubsCommand(string[] args)
     {
         if (args.Length < 4)
         {
-            Console.WriteLine(value: "Error: ra-stubs needs the Revare library, the Mielia library and an output directory");
+            Console.WriteLine(value: "Error: rv-stubs needs the Revare library, the Mielia library and an output directory");
             return 1;
         }
 
-        RaStubResult result = new RaStubWriter(sharedRoot: args[1], ownRoot: args[2]).Write(outputRoot: args[3]);
+        RvStubResult result = new RvStubWriter(sharedRoot: args[1], ownRoot: args[2]).Write(outputRoot: args[3]);
         foreach (string problem in result.Problems)
         {
             Console.WriteLine(value: $"skipped: {problem}");

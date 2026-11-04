@@ -10,8 +10,8 @@ namespace Builder.Verification;
 /// Where a lambda bound to a token or an entity may not go. A lambda that reaches `me`, a `view()` / `modify()` token,
 /// a local collection or a `for` element (<see cref="LambdaExpression.BoundTo"/>) is a token itself, bound to those:
 /// it may sit in a local, be handed to a routine and be called where it is made, but it may not be kept in a member
-/// variable or returned, since it would then outlive what it reaches (RA-S606 for a token, RA-S607 for an entity).
-/// A lambda handed on to a Work is the one-thread rule's (RA-S632). Runs over the analyzed user bodies.
+/// variable or returned, since it would then outlive what it reaches (RV-S606 for a token, RV-S607 for an entity).
+/// A lambda handed on to a Work is the one-thread rule's (RV-S632). Runs over the analyzed user bodies.
 /// </summary>
 internal sealed class BoundLambdaChecker(Action<SemanticError> report)
 {

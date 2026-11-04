@@ -9,14 +9,14 @@ namespace Builder.Declaration;
 /// Loads the standard library based on module declarations.
 /// Files declaring "module System" are loaded eagerly (auto-imported).
 /// Other modules are loaded on-demand when imported.
-/// Supports both Revare (.rr) and Mielia (.mie) stdlib files.
+/// Supports both Revare (.rvr) and Mielia (.mie) stdlib files.
 /// </summary>
 public sealed partial class StdlibLoader
 {
     /// <summary>
     /// The stdlib scan roots — each a (directory, glob) pair scanned in order. Revare is always
-    /// present (the RA-realm System, and — for a Mielia compile — the bridged delegation backend reached via
-    /// <c>RA::</c>). A Mielia compile ALSO scans <c>Standard/Mielia/*.mie</c> (the MI-realm System surface).
+    /// present (the RV-realm System, and — for a Mielia compile — the bridged delegation backend reached via
+    /// <c>RV::</c>). A Mielia compile ALSO scans <c>Standard/Mielia/*.mie</c> (the MI-realm System surface).
     /// Realm is stamped per file from its extension at registration (see StdlibLoader.Registration).
     /// </summary>
     private readonly List<(string Dir, string Glob)> _scanRoots;
@@ -66,9 +66,9 @@ public sealed partial class StdlibLoader
 
     private readonly List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> _rfBindings = [];
 
-    /// <summary>The <c>@ra("...")</c> declarations taken out of the parsed files, with the file and module of
-    /// each: Mielia's view of shared declarations, checked by <see cref="RaBindingCheck"/>.</summary>
-    public IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RaBindings => _rfBindings;
+    /// <summary>The <c>@rv("...")</c> declarations taken out of the parsed files, with the file and module of
+    /// each: Mielia's view of shared declarations, checked by <see cref="RvBindingCheck"/>.</summary>
+    public IReadOnlyList<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RvBindings => _rfBindings;
 
     private readonly List<string> _parseErrors = [];
 
@@ -126,11 +126,11 @@ public sealed partial class StdlibLoader
     {
         _language = language;
         _parsedStdlib = parsedStdlib;
-        // Revare is always scanned: it is the RA-realm System, and — under a Mielia compile — the bridged
-        // delegation backend an MI wrapper reaches via `RA::System.X`. A Mielia compile ALSO scans
+        // Revare is always scanned: it is the RV-realm System, and — under a Mielia compile — the bridged
+        // delegation backend an MI wrapper reaches via `RV::System.X`. A Mielia compile ALSO scans
         // Standard/Mielia/*.mie, the MI-realm System surface (types there declare `module System` too; they are
-        // stamped Realm="MI" at registration, so they key distinctly from the RA-realm `System.*`). Each file's
-        // realm is derived from its extension (`.mie`→MI, `.rr`→RA) — see StdlibLoader.Registration.RealmOf.
+        // stamped Realm="MI" at registration, so they key distinctly from the RV-realm `System.*`). Each file's
+        // realm is derived from its extension (`.mie`→MI, `.rvr`→RV) — see StdlibLoader.Registration.RealmOf.
         _scanRoots = Builder.Frontends.Languages.StandardLibraryRoots(stdlibRoot: stdlibRoot, language: language);
         _revareRoot = Path.Combine(path1: Path.GetFullPath(path: stdlibRoot),
             path2: Builder.Frontends.Languages.For(language: Language.Revare).Name) + Path.DirectorySeparatorChar;
@@ -152,7 +152,7 @@ public sealed partial class StdlibLoader
         // Scan all stdlib files and categorize by module
         ScanStdlibFiles();
 
-        // Mielia wrapper stdlib: append transparent inner-forwarders to each MI `entity X { inner: RA::Y }`
+        // Mielia wrapper stdlib: append transparent inner-forwarders to each MI `entity X { inner: RV::Y }`
         // so the wrapper presents Y's COMPLETE surface. Must run before registration so the synthesized
         // forwarders flow through the ordinary register/analyze/monomorph/codegen path as authored source.
         Builder.Frontends.Languages.For(language: _language).SynthesizeStandardLibrary(
@@ -381,14 +381,14 @@ public sealed partial class StdlibLoader
         // Scan every root (Revare always; Mielia too under an MI compile). Recursively find files
         // matching each root's glob. Each root's files are sorted by ordinal path so the scan/registration order is
         // identical on every OS (Directory.GetFiles order is OS-dependent) — otherwise memberRoutine resolution
-        // becomes order-dependent across platforms. The roots keep their order, so the RA-realm System registers
+        // becomes order-dependent across platforms. The roots keep their order, so the RV-realm System registers
         // first (the MI-realm System keys distinctly by realm, so order does not cause collision either way).
         foreach (string filePath in StdlibFilePaths())
         {
             try
             {
                 // Parse stdlib files by their own extension, not the user language: the stdlib is
-                // Revare source (`.rr`, uses `danger`/`extern`), so a Mielia compile must still
+                // Revare source (`.rvr`, uses `danger`/`extern`), so a Mielia compile must still
                 // parse it with the Revare grammar (else MI-G112 on the `danger` bang). The build
                 // driver may have parsed the file already for the import index.
                 Program ast = _parsedStdlib?.Take(filePath: filePath) is { } parsed
@@ -493,19 +493,19 @@ public sealed partial class StdlibLoader
 
     /// <summary>
     /// What the loader does to a standard library file right after it is parsed: the module from its folder, the
-    /// <c>@ra("...")</c> declarations taken out, the Revare library types noted, and a loose top-level
+    /// <c>@rv("...")</c> declarations taken out, the Revare library types noted, and a loose top-level
     /// statement rejected.
     /// </summary>
     private Program TakeParsedFacts(Program program, string filePath)
     {
         TakeModuleFromFolder(program: program, filePath: filePath);
 
-        // An `@ra("...")` declaration shows a shared Revare declaration in the file's language and creates
+        // An `@rv("...")` declaration shows a shared Revare declaration in the file's language and creates
         // nothing: it leaves the program here, before any pass sees it, and is checked against its target by
-        // validate-stdlib (RaBindingCheck). The documentation and the editor read it from the file itself.
+        // validate-stdlib (RvBindingCheck). The documentation and the editor read it from the file itself.
         string module = GetDeclaredModule(program: program) ?? DeriveModuleFromPath(filePath: filePath);
         foreach (SyntaxTree.Declaration binding in program.Declarations.OfType<SyntaxTree.Declaration>()
-                                               .Where(predicate: RaBindingCheck.IsBinding)
+                                               .Where(predicate: RvBindingCheck.IsBinding)
                                                .ToList())
         {
             _rfBindings.Add(item: (binding, filePath, module));
@@ -593,15 +593,15 @@ public sealed partial class StdlibLoader
     /// <summary>
     /// The module a standard library file is in: its folder relative to the library's root (the <c>Shared</c>
     /// folder of a language's library left out), registered under its namespace (<see cref="StandardModules.Identity"/>).
-    /// Example: Standard/Revare/Collections/SortedDict.rr is in Collections, and
-    /// Standard/Revare/System/Numerics/S64.rr in System.
+    /// Example: Standard/Revare/Collections/SortedDict.rvr is in Collections, and
+    /// Standard/Revare/System/Numerics/S64.rvr in System.
     /// </summary>
     private string DeriveModuleFromPath(string filePath) =>
         StandardModules.Identity(module: FolderModuleOf(filePath: filePath) ?? StandardModules.Base);
 
     /// <summary>
     /// The folder of a standard library file relative to the library's root, written as a module path: each folder
-    /// below the root joined by <c>/</c> (Standard/Revare/IO/Console/Console.rr is IO/Console). A file of a
+    /// below the root joined by <c>/</c> (Standard/Revare/IO/Console/Console.rvr is IO/Console). A file of a
     /// language's <c>Shared</c> folder is the module of its folder below <c>Shared</c>. A file directly in the root is
     /// in System. Null for a file outside the library (a module of the program that an import reached).
     /// </summary>
@@ -1005,7 +1005,7 @@ public sealed partial class StdlibLoader
         }
 
         // A name prefers the types of the realm it was written in: `List` in a Mielia library file is Mielia's
-        // list, `RA::System.List` there is Revare's. A type written without a source file keeps the realm
+        // list, `RV::System.List` there is Revare's. A type written without a source file keeps the realm
         // in effect.
         string realm = typeExpr.Realm ??
                        (Builder.Frontends.Languages.HasSourceExtension(fileName: typeExpr.Location.FileName)
@@ -1311,7 +1311,7 @@ public sealed partial class StdlibLoader
 
         // Own-module FIRST: a bare `List` in `module Mielia` (e.g. the overlay constructor's
         // `-> List[T]` return) must resolve to `Mielia.List`, not the auto-imported `System.List`
-        // (LookupType's System-prefix fast path). A dotted/RA::-qualified `System.List` misses the
+        // (LookupType's System-prefix fast path). A dotted/RV::-qualified `System.List` misses the
         // `Mielia.System.List` probe and correctly falls back to the Revare `System.List`.
         TypeSymbol? genericDef = (moduleName != null
             ? registry.LookupType(name: $"{moduleName}.{typeName}")

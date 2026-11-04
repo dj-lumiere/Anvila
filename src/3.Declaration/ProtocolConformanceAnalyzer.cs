@@ -626,10 +626,10 @@ internal sealed class ProtocolConformanceAnalyzer
     private void UpdateTypeProtocols(TypeSymbol type, List<TypeSymbol> protocols)
     {
         // Key by the type's REALM-AWARE registry key, not its realm-free FullName. Two coexisting shells of
-        // the same module-qualified name — an RA `.rr` type and its MI `.mie` wrapper (e.g. `Collections.BitList`
-        // in an MI compile) — would otherwise both resolve to the ambient (RA) shell by FullName, so analyzing
-        // the MI wrapper (which auto-derives only Equatable/EntityType) OVERWROTE the RA shell's declared
-        // Iterable/ModifyingIndexable/Sized → RA-S205 "BitList is not iterable" in its own display body.
+        // the same module-qualified name — an RV `.rvr` type and its MI `.mie` wrapper (e.g. `Collections.BitList`
+        // in an MI compile) — would otherwise both resolve to the ambient (RV) shell by FullName, so analyzing
+        // the MI wrapper (which auto-derives only Equatable/EntityType) OVERWROTE the RV shell's declared
+        // Iterable/ModifyingIndexable/Sized → RV-S205 "BitList is not iterable" in its own display body.
         string key = type is TypeSymbol ti
             ? _sa._registry.RealmRegistryKey(type: ti)
             : type.FullName;

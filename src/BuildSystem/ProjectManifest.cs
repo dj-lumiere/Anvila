@@ -130,7 +130,7 @@ public sealed class BuildTarget
 /// </summary>
 public sealed class DebugOptions
 {
-    /// <summary>Write the post-desugar AST to a <c>.rr.desugared</c> file alongside the build
+    /// <summary>Write the post-desugar AST to a <c>.rvr.desugared</c> file alongside the build
     /// (<c>dump-ast</c>).</summary>
     public bool DumpAst { get; set; }
 
@@ -155,7 +155,7 @@ public sealed class DebugOptions
     /// <c>.ll</c>) and suppresses the post-run <c>.ll</c> cleanup.</summary>
     public bool DumpIr { get; set; }
 
-    /// <summary>Write the program's Lapila translation as <c>&lt;entry&gt;.li</c> next to the source
+    /// <summary>Write the program's Lapila translation as <c>&lt;entry&gt;.lpa</c> next to the source
     /// (<c>dump-lapila</c>), whichever backend builds it.</summary>
     public bool DumpLapila { get; set; }
 

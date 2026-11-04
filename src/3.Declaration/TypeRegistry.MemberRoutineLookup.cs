@@ -44,9 +44,9 @@ public sealed partial class TypeRegistry
     /// signature but with DIFFERENT bodies, defined in DIFFERENT files. Registration is last-wins, so
     /// one silently shadows the other — the hazard class that made <c>B64(from: B128)</c> resolve to a
     /// recursive-forwarder stub instead of the real engine impl (infinite recursion), and that let
-    /// <c>B16.sin()</c> exist in both B16.rr and CoreMath/B16Sin.rr with no diagnostic. Surfaced as a
+    /// <c>B16.sin()</c> exist in both B16.rvr and CoreMath/B16Sin.rvr with no diagnostic. Surfaced as a
     /// build error by <see cref="Builder.Verification.SemanticVerifier"/>. Benign identical duplicates (same
-    /// body, e.g. <c>U16(from: U8)</c> in both U8.rr and U16.rr) are NOT recorded (equal body hash).
+    /// body, e.g. <c>U16(from: U8)</c> in both U8.rvr and U16.rvr) are NOT recorded (equal body hash).
     /// </summary>
     public List<(RoutineInfo First, RoutineInfo Second)> DivergentDuplicateRoutines { get; } = [];
 
@@ -100,7 +100,7 @@ public sealed partial class TypeRegistry
             return null;
         }
 
-        return body.Accept(visitor: new Builder.RaSyntaxTreePrinter())
+        return body.Accept(visitor: new Builder.RvSyntaxTreePrinter())
                    .GetHashCode(comparisonType: StringComparison.Ordinal);
     }
 
@@ -197,7 +197,7 @@ public sealed partial class TypeRegistry
     {
         TypeShapeVersion.Bump();
         // Realm-aware storage key: ambient-realm routines key bare (unchanged); a bridged-realm routine
-        // (e.g. the RA-realm System.List reached via RA:: inside an MI compile) is `{realm}::`-prefixed so it
+        // (e.g. the RV-realm System.List reached via RV:: inside an MI compile) is `{realm}::`-prefixed so it
         // never collides with / shadows the ambient same-signature routine — the two world-lines coexist.
         string registryKey = RealmRoutineKey(routine: routine);
         string baseName = routine.BaseName;
@@ -227,7 +227,7 @@ public sealed partial class TypeRegistry
         // unqualified call site: e.g. the `LLVM::atan2` intrinsic must not hide the free `atan2(y, x)`.
         // The first ambient overload therefore claims the bare slot AND displaces a foreign squatter
         // that merely registered first. (A foreign routine still takes the slot when it is the only
-        // one, so a bare call to a foreign-only name still reports the RA-S460 "call it as LLVM::…".)
+        // one, so a bare call to a foreign-only name still reports the RV-S460 "call it as LLVM::…".)
         bool bareExists = _routines.TryGetValue(key: baseName, value: out RoutineInfo? existingBare);
         if (!bareExists || (existingBare!.IsForeign && !routine.IsForeign))
         {
@@ -2663,7 +2663,7 @@ public sealed partial class TypeRegistry
             candidates: candidates);
 
         // Protocol abstract memberRoutines are never a valid dispatch target on a concrete receiver —
-        // RA protocols are abstract-only (no default impls). Including them would let lookup
+        // RV protocols are abstract-only (no default impls). Including them would let lookup
         // pick `Equatable.eq(Self)` for `S128 == S64`, masking the integer-promotion fallback
         // and emitting an unresolved `System.Equatable.eq` symbol at link time.
         if (type is not ProtocolTypeSymbol)
@@ -3249,7 +3249,7 @@ public sealed partial class TypeRegistry
             // based memberRoutine-generic inference at the call site needs this pattern to bind V. (The
             // Mielia entity `me`=Roamed[E] handle is substituted downstream in
             // GenericMonomorphizationPass, so it does not need owner substitution here — and doing it
-            // here mistyped some stdlib Hijacked `me` receivers, tripping RA-S627.)
+            // here mistyped some stdlib Hijacked `me` receivers, tripping RV-S627.)
             // `me` is the owner's own `me` form: a protocol's `Me` (or a universal `T`) bound to the concrete owner, and
             // for a shared entity its handle (the form the entity's own routines take), so a call through the handle
             // reaches the right body with the right receiver.
@@ -4268,7 +4268,7 @@ public sealed partial class TypeRegistry
     private List<RoutineInfo> DefinitionMemberRoutinesFor(TypeSymbol type)
     {
 
-        // Cache key is realm-QUALIFIED: RA and MI resolutions share a realm-free FullName
+        // Cache key is realm-QUALIFIED: RV and MI resolutions share a realm-free FullName
         // (`System.List[System.U64]`), so a FullName key would cross-contaminate — the first-computed realm's
         // member set (e.g. MI List's `inner`-forwarders) would be served for the other realm's instance.
         if (_memberRoutinesForTypeCache.TryGetValue(key: MemberRoutinesCacheKey(type: type),
@@ -4444,7 +4444,7 @@ public sealed partial class TypeRegistry
         // copy — checked BEFORE the RecordTypeSymbol branch (RC wrappers ARE records). AUTO-RETAIN IN BOTH
         // REALMS (2026-09-21): an RC copy IS an implicit `share` (a refcount bump), so `var b = rc` is allowed
         // and copy-lowering injects the retain here; release is already automatic (`destruct` at teardown IS
-        // the decrement — see Retained.rr). This is the store side of the copy-policy decoupling; thread-
+        // the decrement — see Retained.rvr). This is the store side of the copy-policy decoupling; thread-
         // boundary crossing stays barred separately via `IsThreadUnsafeReferenceWrapper`. (MI already relied on
         // this for `Roamed[E]` container elements; Revare now shares the retaining-copy path.)
         if (GetRcWrapperBaseName(type: type) is not null)

@@ -5,7 +5,7 @@ using TypeModel.Types;
 
 namespace Builder.Verification;
 
-// `Stamped[E]` (Standard/System/Memory/Stamped.rr): an entity type the program stamps keeps its slot of the runtime's
+// `Stamped[E]` (Standard/System/Memory/Stamped.rvr): an entity type the program stamps keeps its slot of the runtime's
 // stamp table in four bytes after its member variables. Only the user entity types named as `Stamped[...]`'s argument
 // in the program's own files get them: every other entity keeps its layout.
 public sealed partial class SemanticVerifier

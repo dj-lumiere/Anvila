@@ -2709,7 +2709,7 @@ internal static class GenericAstRewriter
         // Resolve the receiver name through the string substitution map first,
         // then fall back to the literal identifier name (already concrete).
         // Handles both IdentifierExpression("T") and TypeExpression("T") receivers ??
-        // the RA parser may produce either depending on context.
+        // the RV parser may produce either depending on context.
         string? typeName = callee.Object switch
         {
             IdentifierExpression { Name: "me" } when ctx.ParamTypes.TryGetValue(key: "me",
@@ -3181,7 +3181,7 @@ internal static class GenericAstRewriter
         RewriteContext ctx)
     {
         TypeSymbol? source = ResolveExpandSource(sourceType: expand.SourceType, ctx: ctx);
-        if (Environment.GetEnvironmentVariable(variable: "RA_DEBUG_EXPAND") != null)
+        if (Environment.GetEnvironmentVariable(variable: "RV_DEBUG_EXPAND") != null)
         {
             Console.Error.WriteLine(value: $"[expand] {expand.SourceType.Name} -> {source?.Name ?? "null"} clone={ctx.CloneOnly} subs=[{string.Join(separator: ",", values: ctx.TypeSubs?.Select(selector: kv => kv.Key + "=" + kv.Value.Name) ?? [])}] at {expand.Location.Line}");
             Console.Error.WriteLine(value: string.Join(separator: " < ", values: Environment.StackTrace.Split(separator: '\n').Select(selector: l => l.Trim()).Where(predicate: l => l.Contains(value: "Builder.") && !l.Contains(value: "GenericAstRewriter")).Take(4)));
@@ -3476,7 +3476,7 @@ internal static class GenericAstRewriter
 
     /// <summary>
     /// Buildtime type test: <c>&lt;T&gt; is &lt;Type&gt;</c> where <c>T</c> resolves to a concrete type in
-    /// this instantiation. RA has no inheritance, so this is exact type-identity equality. Returns null
+    /// this instantiation. RV has no inheritance, so this is exact type-identity equality. Returns null
     /// when it can't be decided here (operand not a substituted type parameter, or target unresolved).
     /// </summary>
     private static bool? TryEvalTypeParamIs(Expression operand, TypePattern typePattern,

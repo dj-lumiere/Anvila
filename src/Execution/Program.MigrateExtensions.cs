@@ -5,24 +5,24 @@ namespace Builder.Execution;
 
 internal partial class Program
 {
-    /// <summary>A diagnostic code spelled with a language's short name from before 0.5 (<c>RF-S625</c>,
+    /// <summary>A diagnostic code spelled with a language's short name from before (<c>RF-S625</c>, <c>RA-S625</c>,
     /// <c>SF-G010</c>), as a whole word.</summary>
-    private static readonly Regex OldDiagnosticCode = new(pattern: @"(?<![\w-])(RF|SF)-([SGWC]\d{3})(?!\w)",
+    private static readonly Regex OldDiagnosticCode = new(pattern: @"(?<![\w-])(RF|RA|SF)-([SGWC]\d{3})(?!\w)",
         options: RegexOptions.Compiled);
 
-    /// <summary>The realm qualifier of the shared standard library from before 0.5, <c>RF::</c>.</summary>
-    private static readonly Regex OldSharedRealm = new(pattern: @"(?<![\w`$])RF::", options: RegexOptions.Compiled);
+    /// <summary>The realm qualifier of the shared standard library from before, <c>RF::</c> or <c>RA::</c>.</summary>
+    private static readonly Regex OldSharedRealm = new(pattern: @"(?<![\w`$])R[FA]::", options: RegexOptions.Compiled);
 
-    /// <summary>The binding annotation from before 0.5, <c>@rf("Type.name")</c>.</summary>
-    private static readonly Regex OldBindingAnnotation = new(pattern: @"(?<![\w`$])@rf(?=\s*\()",
+    /// <summary>The binding annotation from before, <c>@rf("Type.name")</c> or <c>@ra("Type.name")</c>.</summary>
+    private static readonly Regex OldBindingAnnotation = new(pattern: @"(?<![\w`$])@r[fa](?=\s*\()",
         options: RegexOptions.Compiled);
 
     /// <summary>A code block of a page opened with a language's name from before 0.5 (<c>```razorforge</c>).</summary>
     private static readonly Regex OldFenceLanguage = new(pattern: @"(?m)^(\s*```+\s*)(razorforge|suflae)\b",
         options: RegexOptions.Compiled);
 
-    /// <summary>A manifest's <c>executable</c> naming a file with an extension from before 0.5.</summary>
-    private static readonly Regex OldExecutableFile = new(pattern: @"(?m)^(\s*executable\s*=\s*""[^""]*?)\.(rf|sf)("")",
+    /// <summary>A manifest's <c>executable</c> naming a file with an extension from before.</summary>
+    private static readonly Regex OldExecutableFile = new(pattern: @"(?m)^(\s*executable\s*=\s*""[^""]*?)\.(rf|rr|sf)("")",
         options: RegexOptions.Compiled);
 
     /// <summary>A manifest's language version key from before 0.5 (<c>razorforge-version</c>).</summary>
@@ -30,12 +30,13 @@ internal partial class Program
         options: RegexOptions.Compiled);
 
     /// <summary>
-    /// <c>--step extensions</c>: the sources of a program written before 0.5 get their language's new extension
-    /// (<c>.rf</c> is <c>.rr</c>, <c>.sf</c> is <c>.mie</c>), and a manifest's <c>executable</c> names the renamed file
-    /// (its <c>razorforge-version</c> and <c>suflae-version</c> are <c>revare-version</c> and <c>mielia-version</c>).
-    /// In each renamed file the shared library's qualifier <c>RF::</c> is <c>RA::</c> and the binding annotation
-    /// <c>@rf("...")</c> is <c>@ra("...")</c> (in code only), and a diagnostic code written with the old short name
-    /// (<c>RF-S625</c> in a comment) takes the new one (<c>RA-S625</c>). Code blocks of the folder's pages opened with
+    /// <c>--step extensions</c>: the sources of a program written before get their language's new extension
+    /// (<c>.rf</c> and <c>.rr</c> are <c>.rvr</c>, <c>.sf</c> is <c>.mie</c>), and a manifest's <c>executable</c> names
+    /// the renamed file (its <c>razorforge-version</c> and <c>suflae-version</c> are <c>revare-version</c> and
+    /// <c>mielia-version</c>). In each renamed file, and in each file that has its language's extension already, the
+    /// shared library's qualifier <c>RF::</c> or <c>RA::</c> is <c>RV::</c> and the binding annotation <c>@rf("...")</c>
+    /// or <c>@ra("...")</c> is <c>@rv("...")</c> (in code only), and a diagnostic code written with an old short name
+    /// (<c>RF-S625</c> or <c>RA-S625</c> in a comment) takes the new one (<c>RV-S625</c>). Code blocks of the folder's pages opened with
     /// <c>```razorforge</c> or <c>```suflae</c> take the new names. A file whose new name is already taken is listed and
     /// left as it is. With <c>--check</c> nothing is renamed or written.
     /// </summary>
@@ -85,6 +86,25 @@ internal partial class Program
             File.Delete(path: file);
         }
 
+        // A file that has its language's extension already can still hold the short name from before (RA::).
+        foreach (string file in FilesUnder(paths: paths, accept: f => Languages.All.Any(predicate: rules =>
+                     f.EndsWith(value: rules.FileExtension, comparisonType: StringComparison.OrdinalIgnoreCase))))
+        {
+            string source = File.ReadAllText(path: file);
+            string rewritten = RewriteOldLanguageNames(source: source);
+            if (rewritten == source)
+            {
+                continue;
+            }
+
+            Console.WriteLine(value: $"{file}: old names in it rewritten");
+            changed++;
+            if (!check)
+            {
+                File.WriteAllText(path: file, contents: rewritten);
+            }
+        }
+
         foreach (string file in FilesUnder(paths: paths, accept: f => Path.GetFileName(path: f) == "config.toml" ||
                                                                      f.EndsWith(value: ".md", comparisonType: StringComparison.Ordinal)))
         {
@@ -93,7 +113,7 @@ internal partial class Program
                 ? OldFenceLanguage.Replace(input: text,
                     evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "razorforge" ? "revare" : "mielia"))
                 : OldVersionKey.Replace(input: OldExecutableFile.Replace(input: text,
-                        evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "rf" ? Builder.Frontends.SourceExtensions.Revare : Builder.Frontends.SourceExtensions.Mielia) + m.Groups[3].Value),
+                        evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "sf" ? Builder.Frontends.SourceExtensions.Mielia : Builder.Frontends.SourceExtensions.Revare) + m.Groups[3].Value),
                     evaluator: m => m.Groups[1].Value + (m.Groups[2].Value == "razorforge" ? "revare" : "mielia") + "-version");
             if (rewritten == text)
             {
@@ -111,14 +131,14 @@ internal partial class Program
         return changed;
     }
 
-    /// <summary><c>RF::</c> and <c>@rf(</c> in code, and the old short names of diagnostic codes anywhere (they are
-    /// written in comments).</summary>
+    /// <summary><c>RF::</c>, <c>RA::</c>, <c>@rf(</c> and <c>@ra(</c> in code, and the old short names of diagnostic
+    /// codes anywhere (they are written in comments).</summary>
     private static string RewriteOldLanguageNames(string source)
     {
-        string text = ReplaceInCode(text: source, pattern: OldSharedRealm, replacement: _ => "RA::");
-        text = ReplaceInCode(text: text, pattern: OldBindingAnnotation, replacement: _ => "@ra");
+        string text = ReplaceInCode(text: source, pattern: OldSharedRealm, replacement: _ => "RV::");
+        text = ReplaceInCode(text: text, pattern: OldBindingAnnotation, replacement: _ => "@rv");
         return OldDiagnosticCode.Replace(input: text,
-            evaluator: m => (m.Groups[1].Value == "RF" ? "RA" : "MI") + "-" + m.Groups[2].Value);
+            evaluator: m => (m.Groups[1].Value == "SF" ? "MI" : "RV") + "-" + m.Groups[2].Value);
     }
 
     /// <summary>The files under <paramref name="paths"/> that have an extension from before 0.5.</summary>

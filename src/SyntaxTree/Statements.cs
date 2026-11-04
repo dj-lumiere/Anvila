@@ -484,7 +484,7 @@ public record WhileStatement(
 
     /// <summary>True for <c>until c</c>, kept as a loop that runs while <c>not (c)</c>: the condition is the negation
     /// of what was written, so the source prints back as written. False only for a loop written with the old
-    /// <c>while</c>, which the parser reads to report it (RA-G224) and for <c>migrate</c>.</summary>
+    /// <c>while</c>, which the parser reads to report it (RV-G224) and for <c>migrate</c>.</summary>
     public bool IsUntil { get; init; }
 
     /// <summary>True when the loop as written carried values (<c>with …</c>), which lowering takes off before it lowers

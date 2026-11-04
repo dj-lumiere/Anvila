@@ -26,7 +26,7 @@ public sealed record BackendInput
     public required TargetConfig Target { get; init; }
 
     /// <summary>The optimization mode.</summary>
-    public required RaBuildMode BuildMode { get; init; }
+    public required RvBuildMode BuildMode { get; init; }
 
     /// <summary>Bodies the builder wrote (derived operators, wired routines), keyed by routine.</summary>
     public IReadOnlyDictionary<string, Statement>? SynthesizedBodies { get; init; }

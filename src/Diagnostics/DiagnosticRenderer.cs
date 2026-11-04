@@ -9,7 +9,7 @@ namespace Builder.Diagnostics;
 /// Renders builder diagnostics with a source-line excerpt and column caret, in the style of
 /// modern compilers:
 /// <code>
-/// error[RA-S413]: playground\demo.rr:42:15: 'neighbors' cannot be directly assigned...
+/// error[RV-S413]: playground\demo.rvr:42:15: 'neighbors' cannot be directly assigned...
 ///     42 |   adj[i] = neighbors
 ///        |            ^
 /// </code>
@@ -60,7 +60,7 @@ public static class DiagnosticRenderer
 
     /// <summary>
     /// Renders a grammar (lexer/parser) error with excerpt + caret. The exception's message
-    /// is already in standard <c>error[RA-G###]: file:line:col: …</c> form.
+    /// is already in standard <c>error[RV-G###]: file:line:col: …</c> form.
     /// Pass <paramref name="writer"/> to override the stream; defaults to standard error
     /// (diagnostics go to stderr, leaving stdout for program / requested output).
     /// </summary>
@@ -233,7 +233,7 @@ public static class DiagnosticRenderer
 
         string sourceLine = lines[location.Line - 1];
         // Tabs would desynchronize the caret column; render them as single spaces
-        // (RA style is space-indented, so this is a degenerate case anyway).
+        // (RV style is space-indented, so this is a degenerate case anyway).
         sourceLine = sourceLine.Replace(oldChar: '\t', newChar: ' ');
 
         string lineNumber = location.Line.ToString();

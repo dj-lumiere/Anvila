@@ -7,7 +7,7 @@ namespace Builder.Verification;
 /// A Work made with an argument only one thread may use (a token, a <c>Retained</c>) runs on the thread that made
 /// it, as a fiber: it is started with <c>start_here()</c>, never with <c>start_now()</c>/<c>start_apart()</c> (or
 /// retrieved without being started, which starts it with <c>start_now()</c>), and it stays in the routine that made it,
-/// where what it borrows lives: it is not passed on, stored or returned (RA-S632). Runs over the analyzed user bodies.
+/// where what it borrows lives: it is not passed on, stored or returned (RV-S632). Runs over the analyzed user bodies.
 /// </summary>
 internal sealed class WorkOneThreadChecker(DiagnosticReporter report)
 {

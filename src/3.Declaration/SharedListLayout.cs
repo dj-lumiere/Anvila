@@ -151,6 +151,6 @@ public sealed record SharedListLayout(
     {
         return new InvalidOperationException(
             message: $"The builder lays a constant Guarded[List[T], ReadOnly] down as module data, and {what}. " +
-                     "SharedListLayout must follow the declarations in System/Memory/GuardManager.rr and System/List.rr.");
+                     "SharedListLayout must follow the declarations in System/Memory/GuardManager.rvr and System/List.rvr.");
     }
 }

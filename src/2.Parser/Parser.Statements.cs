@@ -137,7 +137,7 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Parses a loop written with the old <c>while condition</c>, after RA-G224 is reported (or while
+    /// Parses a loop written with the old <c>while condition</c>, after RV-G224 is reported (or while
     /// <c>migrate --step until</c> reads it). An optional <c>then</c> block runs once the loop is left.
     /// </summary>
     /// <returns>A <see cref="WhileStatement"/> AST node.</returns>
@@ -497,7 +497,7 @@ public partial class Parser
     /// <remarks>
     /// Two forms of when statements:
     /// 1. Subject-based: when expr { is Type =&gt; ..., LITERAL =&gt; ..., else =&gt; ... }
-    /// 2. Condition-based (RA only): when { condition1 =&gt; ..., condition2 =&gt; ..., else =&gt; ... }
+    /// 2. Condition-based (RV only): when { condition1 =&gt; ..., condition2 =&gt; ..., else =&gt; ... }
     ///
     /// Pattern types supported:
     /// - 'else' / 'else varName' - default case (wildcard or binding)
@@ -517,10 +517,10 @@ public partial class Parser
         // ═══════════════════════════════════════════════════════════════════════════
         // PHASE 1: Determine when form (subject-based vs condition-based)
         // ═══════════════════════════════════════════════════════════════════════════
-        // Subject-based:    when value { is Type => ... }     (RA)
+        // Subject-based:    when value { is Type => ... }     (RV)
         //                   when value\n    is Type => ...     (MI)
-        // Condition-based:  when { x > 0 => ... }             (RA only)
-        //                   when true { x > 0 => ... }        (RA only)
+        // Condition-based:  when { x > 0 => ... }             (RV only)
+        //                   when true { x > 0 => ... }        (RV only)
         // ═══════════════════════════════════════════════════════════════════════════
 
         Expression expression = ParseWhenStatementSubject(location: location,
@@ -661,7 +661,7 @@ public partial class Parser
             return ParseElseStatementPattern(clauseLocation: clauseLocation);
         }
 
-        // Case 2: Condition-based when (RA only) - parse full expression as pattern
+        // Case 2: Condition-based when (RV only) - parse full expression as pattern
         if (isConditionBased)
         {
             return ParseConditionBasedPattern(clauseLocation: clauseLocation);
@@ -708,7 +708,7 @@ public partial class Parser
 
     /// <summary>
     /// Parses a full expression as an <see cref="ExpressionPattern"/> inside a condition-based
-    /// <c>when</c> block (RA only), with the <c>_inWhenConditionContext</c> flag set for the duration
+    /// <c>when</c> block (RV only), with the <c>_inWhenConditionContext</c> flag set for the duration
     /// so the expression parser handles <c>=&gt;</c> correctly.
     /// </summary>
     private ExpressionPattern ParseConditionBasedPattern(SourceLocation clauseLocation)
@@ -1188,7 +1188,7 @@ public partial class Parser
         string name = CurrentToken.Text;
         Advance();
 
-        // A type of a named realm: `is RA::System.List[SerialValue] items` in a Mielia file.
+        // A type of a named realm: `is RV::System.List[SerialValue] items` in a Mielia file.
         string? realm = ReadRealmQualifier(name: ref name);
 
         // Check for qualified name: Type.CASE or Type.CASE.SubCase
@@ -1553,7 +1553,7 @@ public partial class Parser
         Expression expression = ParseExpression();
 
         // Whether the discarded expression is actually a routine call is a SEMANTIC check, not a
-        // grammatical one — the semantic verifier reports it (RA-S421). The parser just records the
+        // grammatical one — the semantic verifier reports it (RV-S421). The parser just records the
         // discarded expression, whatever its shape.
         ConsumeStatementTerminator();
         return new DropStatement(Expression: expression, Location: location);
@@ -1711,7 +1711,7 @@ public partial class Parser
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
-    // RA-ONLY CONSTRUCTS
+    // RV-ONLY CONSTRUCTS
     // ═══════════════════════════════════════════════════════════════════════════════
 
     /// <summary>

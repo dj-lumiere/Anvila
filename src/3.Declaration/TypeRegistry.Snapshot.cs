@@ -86,9 +86,9 @@ partial class TypeRegistry
         public Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
             pessimistic)> DeferredVariantBases { get; init; } = null!;
 
-        /// <summary>The loader's <c>@ra</c> declarations and Revare library types: a restored registry's loader
+        /// <summary>The loader's <c>@rv</c> declarations and Revare library types: a restored registry's loader
         /// does not parse the restored modules again, so it starts from these.</summary>
-        public List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RaBindings
+        public List<(SyntaxTree.Declaration Declaration, string FilePath, string Module)> RvBindings
         {
             get;
             init;
@@ -166,7 +166,7 @@ partial class TypeRegistry
             DeferredVariantBases =
                 new Dictionary<string, (RoutineInfo baseRoutine, SyntaxTree.Statement body, bool
                     pessimistic)>(dictionary: DeferredVariantBases),
-            RaBindings = [..RaBindings],
+            RvBindings = [..RvBindings],
             RevareLibraryTypes = [..RevareLibraryTypes]
         };
     }
@@ -334,7 +334,7 @@ partial class TypeRegistry
                     // are NOT reported as freshly-loaded (they'd be re-lowered and crash — the D128 ternary bug).
                     CoreResident = true
                 };
-            _stdlibLoader.SeedParsedFacts(bindings: snapshot.RaBindings,
+            _stdlibLoader.SeedParsedFacts(bindings: snapshot.RvBindings,
                 revareLibraryTypes: snapshot.RevareLibraryTypes);
         }
 

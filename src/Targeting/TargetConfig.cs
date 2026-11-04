@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Builder.Targeting;
 
 /// <summary>Requested build optimization mode.</summary>
-public enum RaBuildMode
+public enum RvBuildMode
 {
     /// <summary>Debug build — includes debug info, no optimization.</summary>
     Debug = 0,

@@ -49,7 +49,7 @@ internal static partial class ConstructDestructRewrite
     /// holding something.
     public static string Rewrite(string text)
     {
-        var holds = Holding([("generated.li", text)], unknownHolds: true);
+        var holds = Holding([("generated.lpa", text)], unknownHolds: true);
         return Rewrite(text, Declared([text]), holds);
     }
 

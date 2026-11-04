@@ -435,16 +435,16 @@ public partial class Parser
     }
 
     /// <summary>
-    /// Reads an optional realm qualifier (<c>RA::System.List</c>) starting after the head identifier. When
+    /// Reads an optional realm qualifier (<c>RV::System.List</c>) starting after the head identifier. When
     /// a <c>::</c> follows, the head is the realm tag and the <c>.</c>/<c>/</c>-segmented remainder is
     /// consumed into <paramref name="name"/>; returns the realm tag (or null when absent).
     /// </summary>
     private string? ReadRealmQualifier(ref string name)
     {
-        // Realm qualifier: `RA::System.List` — the identifier before `::` is a realm tag (RA/MI), and the
-        // rest is a qualified type name resolved in that realm. `RA::` reaches the Revare/bare realm
+        // Realm qualifier: `RV::System.List` — the identifier before `::` is a realm tag (RV/MI), and the
+        // rest is a qualified type name resolved in that realm. `RV::` reaches the Revare/bare realm
         // from a Mielia file (the resolver skips the entity->Roamed lowering for it). The qualified name
-        // after `::` uses `.`/`/` segment separators (e.g. `RA::System.List`), consumed here so the general
+        // after `::` uses `.`/`/` segment separators (e.g. `RV::System.List`), consumed here so the general
         // `/`-path loop below is a no-op.
         if (!CheckAndAdvance(type: TokenType.DoubleColon))
         {

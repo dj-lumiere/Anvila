@@ -43,7 +43,7 @@ internal partial class Program
         CliLanguage = cliLanguage;
         RuntimeShadowLoader.Install();
 
-        // Make the build driver byte-faithful for UTF-8. RA child processes write UTF-8 and
+        // Make the build driver byte-faithful for UTF-8. RV child processes write UTF-8 and
         // we forward their stdout/stderr to ours; if Console encodings default to the
         // system ACP (Korean CP949, Western CP1252, ...), every non-ASCII byte gets
         // rewritten as `?` somewhere in the read/write chain. Forcing UTF-8 on both input
@@ -70,7 +70,7 @@ internal partial class Program
 
         // Check if first arg is a command or a file
         bool isCommand = command is "new" or "migrate" or "parse" or "tokenize" or "codegen" or BuildCommand
-            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "ra-stubs";
+            or RunCommand or "test" or "lint" or "buildandrun" or "check" or "validate-stdlib" or "emit-prebuilt" or "emit-ingrid" or "help" or "fmt" or "docs" or "rv-stubs";
 
         if (!isCommand)
         {
@@ -88,7 +88,7 @@ internal partial class Program
     /// </summary>
     private static readonly (string Variable, string Key)[] RetiredEnvironmentVariables =
     [
-        ("RA_DEADLOCK_DETECT", "deadlock-check = true under [debug]")
+        ("RV_DEADLOCK_DETECT", "deadlock-check = true under [debug]")
     ];
 
     /// <summary>Writes one warning line for each retired environment variable that is set: it is not read any more,
@@ -209,8 +209,8 @@ internal partial class Program
             case "fmt":
                 return RunFormatCommand(args: args);
 
-            case "ra-stubs":
-                return RunRaStubsCommand(args: args);
+            case "rv-stubs":
+                return RunRvStubsCommand(args: args);
 
             case "docs":
                 return RunDocsCommand(args: args);
@@ -503,7 +503,7 @@ internal partial class Program
     /// </summary>
     private sealed record Phase2Context(
         Language Language,
-        RaBuildMode BuildMode,
+        RvBuildMode BuildMode,
         bool SaTiming,
         bool ShowBuildStages,
         bool RequireStartRoutine,
@@ -529,7 +529,7 @@ internal partial class Program
         string EntryFile,
         string? OutputFile,
         TargetConfig Target,
-        RaBuildMode BuildMode,
+        RvBuildMode BuildMode,
         bool SaTiming,
         bool DumpAst,
         bool ShowBuildStages,
@@ -559,7 +559,7 @@ internal partial class Program
         public string? OutputFile { get; init; }
 
         /// <summary>The build optimization mode.</summary>
-        public RaBuildMode BuildMode { get; init; } = RaBuildMode.Debug;
+        public RvBuildMode BuildMode { get; init; } = RvBuildMode.Debug;
 
         /// <summary>Whether to dump the post-desugar AST alongside the build.</summary>
         public bool DumpAst { get; init; }
@@ -573,7 +573,7 @@ internal partial class Program
         /// <summary>Whether to print build-stage banners.</summary>
         public bool ShowBuildStages { get; init; }
 
-        /// <summary>External RA library dependency directories (import search roots).</summary>
+        /// <summary>External RV library dependency directories (import search roots).</summary>
         public IReadOnlyList<string> LibraryRoots { get; init; } = [];
 
         /// <summary>Simple name-only C libraries to link (the <c>-l</c> names).</summary>
@@ -742,7 +742,7 @@ internal partial class Program
             ProjectManifest manifest = ManifestLoader.Load(tomlPath: nearbyManifest,
                 resolveExecutable: false);
             BuildTarget target = manifest.Target;
-            RaBuildMode buildMode = ParseBuildMode(mode: target.Mode);
+            RvBuildMode buildMode = ParseBuildMode(mode: target.Mode);
 
             if (manifest.Debug.ShowBuildStages)
             {
@@ -834,7 +834,7 @@ internal partial class Program
             ProjectManifest manifest = ManifestLoader.Load(tomlPath: manifestPath);
             BuildTarget target = manifest.Target;
 
-            RaBuildMode buildMode = ParseBuildMode(mode: target.Mode);
+            RvBuildMode buildMode = ParseBuildMode(mode: target.Mode);
 
             bool showBuildStages = manifest.Debug.ShowBuildStages;
             if (showBuildStages)
@@ -880,19 +880,19 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Maps a [target] mode string to its <see cref="RaBuildMode"/>; throws on unknown modes.
+    /// Maps a [target] mode string to its <see cref="RvBuildMode"/>; throws on unknown modes.
     /// </summary>
-    private static RaBuildMode ParseBuildMode(string mode)
+    private static RvBuildMode ParseBuildMode(string mode)
     {
         return mode.ToLowerInvariant() switch
         {
             // `debug-jit` = the in-process ORC-JIT dev loop (same -O0 codegen as `debug`, but JIT-and-run
             // instead of AOT build+run). The JIT choice is derived from the mode string separately (see
             // ModeUsesJit); the optimization level here is Debug for both.
-            "debug" or "debug-jit" => RaBuildMode.Debug,
-            "release" => RaBuildMode.Release,
-            "release-time" => RaBuildMode.ReleaseTime,
-            "release-space" => RaBuildMode.ReleaseSpace,
+            "debug" or "debug-jit" => RvBuildMode.Debug,
+            "release" => RvBuildMode.Release,
+            "release-time" => RvBuildMode.ReleaseTime,
+            "release-space" => RvBuildMode.ReleaseSpace,
             _ => throw new InvalidOperationException(
                 message: $"Unknown build mode '{mode}' in [target]. " +
                          "Valid modes are: debug-jit, debug, release, release-time, release-space.")
@@ -907,14 +907,14 @@ internal partial class Program
             comparisonType: StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Env kill-switch: <c>RA_NO_DAEMON=1</c> forces every build onto the cold in-process path,
+    /// <summary>Env kill-switch: <c>RV_NO_DAEMON=1</c> forces every build onto the cold in-process path,
     /// bypassing the warm daemon entirely. A safety valve for when the daemon misbehaves (e.g. a wedged
     /// pipe read in a constrained sandbox) — cold builds are slower but never depend on the daemon.
     /// The ORC-JIT dev loop still runs in-process (its daemon IR fetch is optional, with a cold branch),
     /// so <c>buildandrun</c> in <c>debug-jit</c> mode stays fast; only the daemon round-trip is skipped.</summary>
     private static bool DaemonDisabledByEnv()
     {
-        string? v = Environment.GetEnvironmentVariable(variable: "RA_NO_DAEMON");
+        string? v = Environment.GetEnvironmentVariable(variable: "RV_NO_DAEMON");
         // A build for one @test routine changes the entry file's start(), which a warm daemon's caches don't know of.
         return !string.IsNullOrEmpty(value: v) && v != "0" ||
                !string.IsNullOrEmpty(value: Environment.GetEnvironmentVariable(variable: TestEntryVariable));
@@ -922,7 +922,7 @@ internal partial class Program
 
     /// <summary>The environment variable the <c>test</c> command sets to the name of the <c>@test</c> routine a build
     /// runs in place of the program's own <c>start()</c>.</summary>
-    private const string TestEntryVariable = "RA_TEST_ENTRY";
+    private const string TestEntryVariable = "RV_TEST_ENTRY";
 
     /// <summary>
     /// Populates the process-wide <see cref="DiagnosticFlags"/> from a manifest's <c>[debug]</c> section,
@@ -1127,7 +1127,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// Prints the doc comment notes (RA-W305 to RA-W308) of the language's own standard library files. The library is
+    /// Prints the doc comment notes (RV-W305 to RV-W308) of the language's own standard library files. The library is
     /// held to the rule like any other library, and a build never shows these notes, so this is where they are read.
     /// A note does not fail the validation.
     /// </summary>
@@ -1209,11 +1209,11 @@ internal partial class Program
                 return 1;
             }
 
-            // A language's view of shared declarations (`@ra("...")`) must still match what it names.
-            List<string> bindingErrors = analyzer.CheckRaBindings();
+            // A language's view of shared declarations (`@rv("...")`) must still match what it names.
+            List<string> bindingErrors = analyzer.CheckRvBindings();
             if (bindingErrors.Count > 0)
             {
-                Console.WriteLine(value: $"=== @ra DECLARATIONS THAT NO LONGER MATCH REVARE ({bindingErrors.Count}) ===");
+                Console.WriteLine(value: $"=== @rv DECLARATIONS THAT NO LONGER MATCH REVARE ({bindingErrors.Count}) ===");
                 foreach (string bindingError in bindingErrors)
                 {
                     Console.WriteLine(value: $"    - {bindingError}");
@@ -1358,7 +1358,7 @@ internal partial class Program
         WarmProviders? warm = null)
     {
         string? projectRoot = config.ProjectRoot;
-        RaBuildMode buildMode = config.BuildMode;
+        RvBuildMode buildMode = config.BuildMode;
         bool dumpAst = config.DumpAst;
         bool saTiming = config.SaTiming;
         bool requireStartRoutine = config.RequireStartRoutine;
@@ -1723,7 +1723,7 @@ internal partial class Program
         string entryFile = p3.EntryFile;
         string? outputFile = p3.OutputFile;
         TargetConfig target = p3.Target;
-        RaBuildMode buildMode = p3.BuildMode;
+        RvBuildMode buildMode = p3.BuildMode;
         // OR with the process-wide PhaseTiming flag so codegen [CG] stage timings honor `[debug] timing` on
         // EVERY path (the daemon server-compile sets DiagnosticFlags.PhaseTiming from the request but does not
         // thread p3.SaTiming through) — mirrors the analyze-side merge (RunMultipleFullPipeline).
@@ -1795,14 +1795,14 @@ internal partial class Program
             // emission is the DELTA — it skips defining resident symbols and extern-declares them instead.
             ResidentSymbols = p3.ResidentSymbols,
             // An executable built ahead of time reads its crash trace from the stack where Lapila's table supports
-            // the target. The JIT and its resident base keep the shadow stack (RA_TRACE_SHADOW=1 keeps it too).
+            // the target. The JIT and its resident base keep the shadow stack (RV_TRACE_SHADOW=1 keeps it too).
             TraceFromStack = irCallback == null && (p3.ResidentSymbols?.Count ?? 0) == 0 &&
                              Builder.Collection.TraceFrames.Enabled(mode: buildMode) &&
                              Lapila.TraceTable.Supports(arch: target.TargetArch, os: target.TargetOS) &&
-                             Environment.GetEnvironmentVariable(variable: "RA_TRACE_SHADOW") != "1",
+                             Environment.GetEnvironmentVariable(variable: "RV_TRACE_SHADOW") != "1",
             Timing = saTiming,
             SourceDumpPath = DiagnosticFlags.DumpLapila
-                ? Path.ChangeExtension(path: entryFile, extension: ".li")
+                ? Path.ChangeExtension(path: entryFile, extension: Builder.Frontends.SourceExtensions.Lapila)
                 : null
         };
 
@@ -1856,15 +1856,15 @@ internal partial class Program
 
     /// <summary>
     /// Writes the codegen-input AST snapshot (the exact AST LLVM codegen consumes, after all
-    /// desugaring/monomorphization + CancellationInstrumentation) to <c>&lt;entry&gt;.rr.desugared</c>.
+    /// desugaring/monomorphization + CancellationInstrumentation) to <c>&lt;entry&gt;.rvr.desugared</c>.
     /// </summary>
     private static void DumpCodegenInputAst(string entryFile,
         List<(SyntaxTree.Program Program, string FilePath, string Module)> userPrograms,
         List<(SyntaxTree.Program Program, string FilePath, string Module)> stdlibPrograms,
         AnalysisResult result, bool showBuildStages)
     {
-        string astPath = Path.ChangeExtension(path: entryFile, extension: ".rr.desugared");
-        string astText = new RaSyntaxTreePrinter().PrintMultiProgram(programs: userPrograms,
+        string astPath = Path.ChangeExtension(path: entryFile, extension: ".rvr.desugared");
+        string astText = new RvSyntaxTreePrinter().PrintMultiProgram(programs: userPrograms,
             synthesizedBodies: result.SynthesizedBodies,
             registry: result.Registry,
             stdlibPrograms: stdlibPrograms,
@@ -2129,7 +2129,7 @@ internal partial class Program
     }
 
     /// <summary>
-    /// The file with the same name in the other language's extension (<c>foo.mie</c> beside <c>foo.rr</c>), if there is
+    /// The file with the same name in the other language's extension (<c>foo.mie</c> beside <c>foo.rvr</c>), if there is
     /// one: both would build the same executable and intermediate files.
     /// </summary>
     private static string? SameNameInOtherLanguage(string entryFile)
@@ -2236,7 +2236,7 @@ internal partial class Program
     /// <see cref="BuildExecutable"/> to reduce its cognitive complexity.
     /// </summary>
     private static int LinkAndStageExecutable(string exeFile, string llFile, string optFile,
-        RaBuildMode buildMode, List<string> allCLibraries, IReadOnlyList<string> libraryPaths,
+        RvBuildMode buildMode, List<string> allCLibraries, IReadOnlyList<string> libraryPaths,
         IReadOnlyDictionary<string, CLibrary> libraryConfigs)
     {
         string exeDir;
@@ -2282,7 +2282,7 @@ internal partial class Program
         // Optimize the emitted IR, then link it into a native executable. Ingrid's Lapila library goes
         // in first (its routines are not in the runtime DLL: the allocators, the divide primitives, the
         // math), and optimized builds (anything but -O0 debug) internalize during opt, so those inline
-        // across the RA / runtime seam.
+        // across the RV / runtime seam.
         // The tools pass bitcode to each other: the module's text is parsed once, by llvm-link, and everything after
         // reads bitcode. Text stays where a reader needs it: `[debug] dump-ir` keeps `.ingrid.ll` and `.opt.ll` to read,
         // ThreadSanitizer marks routines in the text, and the crash trace table annotates the optimized text.
@@ -2307,7 +2307,7 @@ internal partial class Program
         int optResult = NativeToolchain.OptimizeIr(llFile: withIngrid,
             optFile: optFile,
             buildMode: buildMode,
-            internalizeForLto: buildMode != RaBuildMode.Debug);
+            internalizeForLto: buildMode != RvBuildMode.Debug);
         if (optResult != 0)
         {
             return optResult;

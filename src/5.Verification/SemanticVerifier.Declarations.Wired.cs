@@ -142,12 +142,12 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.MieliaNoCInterop,
                 message:
                 $"You declare the foreign routine '{external.Name}' here, but a {_registry.Rules.Name} program " +
-                "cannot reach C directly. Declare it in a `.rr` module and import that module from this program.",
+                "cannot reach C directly. Declare it in a `.rvr` module and import that module from this program.",
                 location: external.Location);
         }
 
         // Resolve the parameter + return types — WITHOUT this the routine registers with zero
-        // parameters, so every `C::foo(arg)` call fails RA-S501 "expects at most 0 arguments" (the
+        // parameters, so every `C::foo(arg)` call fails RV-S501 "expects at most 0 arguments" (the
         // stdlib load path already does this in RegisterExternalDeclaration; the user-file path had
         // silently dropped them). A generic-param context stub lets ResolveType recognize the
         // external's own `[T]` params; ordinary FFI param types (S32/U64/CStr/Hijacked[T]/a choice)

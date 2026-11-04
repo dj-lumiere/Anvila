@@ -96,7 +96,7 @@ internal sealed class TypeBodyResolver
     }
 
     /// <summary>
-    /// A type with no member variables and no body: its body is the line <c>nothing</c> (RA-S211), which the quick fix
+    /// A type with no member variables and no body: its body is the line <c>nothing</c> (RV-S211), which the quick fix
     /// writes under the header.
     /// </summary>
     private void ReportEmptyTypeBody(string kind, string name, SourceLocation location)
@@ -181,7 +181,7 @@ internal sealed class TypeBodyResolver
 
     /// <summary>
     /// A <c>record</c> is a value: it is copied, and a copy of one that held an entity would make two of the one
-    /// entity. So a record may hold neither an entity nor a type parameter that could be one (RA-S409). An entity
+    /// entity. So a record may hold neither an entity nor a type parameter that could be one (RV-S409). An entity
     /// laid out in place (<c>Slots</c>) is kept in one place, so it may. The rule is Revare's (in Mielia an entity
     /// is shared, and a record holding one copies the handle).
     /// </summary>

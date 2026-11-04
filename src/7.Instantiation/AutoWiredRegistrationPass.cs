@@ -189,9 +189,9 @@ internal sealed class AutoWiredRegistrationPass
         }
 
         // Cycle-collector per-type hooks on EVERY non-wrapper type (like destroy). The universal
-        // `roam_trace`/`roam_free` derives (DeriveText.rr) walk each member, so a member of ANY kind —
+        // `roam_trace`/`roam_free` derives (DeriveText.rvr) walk each member, so a member of ANY kind —
         // scalar, record, entity, variant — must carry the hook for the walk to resolve. A wrapper
-        // (Roamed/Hijacked) hand-writes its own override in its .rr file. A container with a raw
+        // (Roamed/Hijacked) hand-writes its own override in its .rvr file. A container with a raw
         // `Hijacked` element buffer hand-writes `roam_trace`/`roam_free` (skipped here — already present).
         if (bundle.NoneType != null && !IsWrapperType(type: type))
         {
@@ -276,7 +276,7 @@ internal sealed class AutoWiredRegistrationPass
 
     /// <summary>
     /// Registers the copy step <c>share</c> on a record (choice, flags, tuple, variant, crashable) that <c>=</c>
-    /// copies, unless it defines its own. Its body is the field walk of <c>Derivation.rr</c>. A generic
+    /// copies, unless it defines its own. Its body is the field walk of <c>Derivation.rvr</c>. A generic
     /// definition gets it too, so every instance can be given it when it is made. Handles and tokens are left
     /// out: an RC handle defines its own, a token is never copied.
     /// </summary>
@@ -609,7 +609,7 @@ internal sealed class AutoWiredRegistrationPass
 
         // `S32(from: ChoiceType)` and `S64(from: ChoiceType)` are NOT registered as phantom creators here. A choice IS its S32
         // discriminant (both i32), so reading it back as S32 is a representation no-op — modelled as the
-        // universal template `routine S32(from: ChoiceType T)` in Derivation.rr (`LLVM::reinterpret_bits`),
+        // universal template `routine S32(from: ChoiceType T)` in Derivation.rvr (`LLVM::reinterpret_bits`),
         // which the demand collector materializes into a real bitcast body per concrete choice. A bodyless
         // phantom here would resolve as a call to a never-defined symbol (link error); the template gives it
         // a real definition. The choice eq/compare/represent derives + `is` pattern lowering consume it.
@@ -679,7 +679,7 @@ internal sealed class AutoWiredRegistrationPass
         // crash_title() is @generated — synthesized from type name, overridable
         if (textType != null)
         {
-            // crash_message has no default: every crashable writes its own (RA-S704).
+            // crash_message has no default: every crashable writes its own (RV-S704).
             MaybeRegisterWired(owner: type,
                 name: "crash_title",
                 returnType: textType,
@@ -768,7 +768,7 @@ internal sealed class AutoWiredRegistrationPass
 
         // `U64(from: FlagsType)` is NOT registered as a phantom creator here. A flags value IS its U64
         // bitmask (both i64), so reading it back as U64 is a representation no-op — modelled as the
-        // universal template `routine U64(from: FlagsType T)` in Derivation.rr (`LLVM::reinterpret_bits`),
+        // universal template `routine U64(from: FlagsType T)` in Derivation.rvr (`LLVM::reinterpret_bits`),
         // which the demand collector materializes into a real bitcast body per concrete flags. A bodyless
         // phantom here would resolve as a call to a never-defined symbol (link error). The flags eq/represent
         // derives consume it.
@@ -858,7 +858,7 @@ internal sealed class AutoWiredRegistrationPass
         //   V.create(from: Arm)  -> V    — box a branch value into the variant.
         //   Arm.create!(from: V) -> Arm  — failable extraction (absent when the active arm
         //                                   is not this one). The `from:` param type (not the
-        //                                   arm name) carries the overload, so no RA-S770 clash
+        //                                   arm name) carries the overload, so no RV-S770 clash
         //                                   with a same-named type (e.g. the `List` arm).
         // A generic variant registers them on its definition, so each instance (`Pick[S64]`) gets them substituted
         // like any generic type's creators.
@@ -1138,7 +1138,7 @@ internal sealed class AutoWiredRegistrationPass
         if (isDerivedOperator)
         {
             // A DERIVED operator registers here ONLY when a universal derive-template body exists for
-            // it (DeriveText.rr lt/le/gt/ge → `me.compare(you) == ME_SMALL` etc.). Routing these through
+            // it (DeriveText.rvr lt/le/gt/ge → `me.compare(you) == ME_SMALL` etc.). Routing these through
             // the everywhere-derive template mechanism (registered + materialized by the collector) is
             // what makes `a < b` resolve uniformly for Char/numerics/records — the C#
             // DerivedOperatorPass bodies did not survive the collector/warm codegen path. Delegation
@@ -1188,7 +1188,7 @@ internal sealed class AutoWiredRegistrationPass
         // operator (lt/le/gt/ge) is NOT gated by this: LookupMemberRoutine resolves the abstract
         // Comparable.lt SUBSTITUTED to the implementer (owner rewritten to the type, so the
         // `OwnerType is protocol` test can't see it's the abstract obligation), which would wrongly
-        // block the template-derived registration and re-open RA-S702. The derived operator is only
+        // block the template-derived registration and re-open RV-S702. The derived operator is only
         // ever provided by this template path (DerivedOperatorPass no longer emits it), so register it.
         return _registry.LookupMemberRoutine(type: type, memberRoutineName: member.Name) is
             { OwnerType: not ProtocolTypeSymbol };

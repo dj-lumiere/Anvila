@@ -59,13 +59,13 @@ public static class Languages
     public static IReadOnlyList<LanguageRules> All =>
         Registered.Select(selector: rules => rules).OfType<LanguageRules>().ToList();
 
-    /// <summary>The registered source file extensions, with their dots (<c>.rr</c>), Revare first.</summary>
+    /// <summary>The registered source file extensions, with their dots (<c>.rvr</c>), Revare first.</summary>
     public static IEnumerable<string> FileExtensions => All.Select(selector: rules => rules.FileExtension);
 
-    /// <summary>A directory search pattern per registered source extension (<c>*.rr</c>), Revare first.</summary>
+    /// <summary>A directory search pattern per registered source extension (<c>*.rvr</c>), Revare first.</summary>
     public static IEnumerable<string> SourceGlobs => FileExtensions.Select(selector: ext => "*" + ext);
 
-    /// <summary>The short name (<c>RA</c>) of the language <paramref name="fileName"/> is written in: the
+    /// <summary>The short name (<c>RV</c>) of the language <paramref name="fileName"/> is written in: the
     /// realm its declarations register under.</summary>
     public static string RealmOf(string? fileName)
     {
@@ -111,12 +111,19 @@ public static class Languages
     {
         return fileName == null
             ? null
-            : All.FirstOrDefault(predicate: rules => rules.PreviousFileExtension is { } old &&
-                                                      fileName.EndsWith(value: old, comparisonType: StringComparison.OrdinalIgnoreCase));
+            : All.FirstOrDefault(predicate: rules => PreviousExtensionOf(rules: rules, fileName: fileName) != null);
+    }
+
+    /// <summary>The extension from before that <paramref name="fileName"/> ends in, for <paramref name="rules"/>'s
+    /// language, or null.</summary>
+    public static string? PreviousExtensionOf(LanguageRules rules, string fileName)
+    {
+        return rules.PreviousFileExtensions.FirstOrDefault(predicate: old =>
+            fileName.EndsWith(value: old, comparisonType: StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>The build error for a source file that still has its language's extension from before 0.5
-    /// (<c>hello.rf</c>), or null for any other file. It names the new extension and the <c>migrate</c> step that
+    /// (<c>hello.rf</c>, <c>hello.rr</c>), or null for any other file. It names the new extension and the <c>migrate</c> step that
     /// renames a folder's files.</summary>
     public static string? PreviousExtensionMessage(string? fileName)
     {
@@ -126,7 +133,7 @@ public static class Languages
         }
 
         string renamed = Path.ChangeExtension(path: Path.GetFileName(path: fileName!), extension: rules.FileExtension);
-        return $"error: {fileName} has the old extension {rules.PreviousFileExtension}: {rules.Name} sources end in " +
+        return $"error: {fileName} has the old extension {PreviousExtensionOf(rules: rules, fileName: fileName!)}: {rules.Name} sources end in " +
                $"{rules.FileExtension} now. Rename it to {renamed} ({rules.ToolName} migrate --step extensions <folder> " +
                "renames every file of a folder).";
     }

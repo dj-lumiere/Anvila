@@ -115,7 +115,7 @@ public partial class Parser
     [
         "readonly", "writable", "reshaping", "discardable", "positional", "infix", "inline", "noinline", "no_optimize",
         "override", "overridable", "innate", "generated", "crash_only", "untraced", "blocking", "hands_over",
-        RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "ra",
+        RuntimeContract.RoamedMemberRoutine.SelfLockingAnnotation, "layout", "link", "target", "llvm", "llvm_ir", "rv",
         "test", "case", "time_limit", "memory_limit", "skip", "throws", "reflectable"
     ];
 

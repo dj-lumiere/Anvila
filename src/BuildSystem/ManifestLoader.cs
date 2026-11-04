@@ -375,9 +375,9 @@ public static class ManifestLoader
             }
         }
 
-        if (table.TryGetValue(key: "revare-version", value: out object? raVersion))
+        if (table.TryGetValue(key: "revare-version", value: out object? rvVersion))
         {
-            pkg.RevareVersion = raVersion?.ToString();
+            pkg.RevareVersion = rvVersion?.ToString();
         }
 
         if (table.TryGetValue(key: "mielia-version", value: out object? miVersion))
@@ -535,7 +535,7 @@ public static class ManifestLoader
             throw new InvalidOperationException(message: $"{ManifestFileName}: executable: {oldExtension}");
         }
 
-        // File-based executable (the standard): `executable = "foo.rr"` / a path to a source file runs
+        // File-based executable (the standard): `executable = "foo.rvr"` / a path to a source file runs
         // that single file directly (module inferred from its path — no `module` declaration needed).
         if (LooksLikeSourceFile(name: target.Executable))
         {
@@ -568,7 +568,7 @@ public static class ManifestLoader
         target.Executable = resolvedFile;
     }
 
-    /// <summary>True when the manifest <c>executable</c> value names a source FILE (.rr/.mie) rather
+    /// <summary>True when the manifest <c>executable</c> value names a source FILE (.rvr/.mie) rather
     /// than a module — file-based single-file execution is the standard entry form.</summary>
     private static bool LooksLikeSourceFile(string name)
     {
@@ -594,7 +594,7 @@ public static class ManifestLoader
     }
 
     /// <summary>
-    /// Scans all .rr and .mie files under <paramref name="projectDir"/> and builds a
+    /// Scans all .rvr and .mie files under <paramref name="projectDir"/> and builds a
     /// map of module name -> file path by reading module declarations.
     /// </summary>
     /// <remarks>
@@ -638,13 +638,13 @@ public static class ManifestLoader
         Dictionary<string, string> index, HashSet<string> entryModules)
     {
         // Skip debug AST dump files — they share the module name with the real source
-        if (filePath.EndsWith(value: ".rr.desugared",
+        if (filePath.EndsWith(value: ".rvr.desugared",
                 comparisonType: StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        // File-granularity conditional compilation: skip a `.rr` file whose leading
+        // File-granularity conditional compilation: skip a `.rvr` file whose leading
         // `#@target(...)` directive doesn't match the build target (Revare-only).
         if (!Builder.Targeting.TargetGate.ShouldCompile(filePath: filePath))
         {
@@ -706,7 +706,7 @@ public static class ManifestLoader
     /// <summary>
     /// True if the file writes its own <c>routine start()</c>. Unlike <see cref="FileDeclaresEntryPoint"/>, top-level
     /// statements do not count: whether a file is a script is the parser's call, and the build reports a script that
-    /// is not an entry file (RA-S443) instead of leaving it out.
+    /// is not an entry file (RV-S443) instead of leaving it out.
     /// </summary>
     internal static bool FileDeclaresExplicitStart(string filePath)
     {

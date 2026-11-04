@@ -295,7 +295,7 @@ public partial class Parser
     /// <param name="visibility">Access modifier for the routine.</param>
     /// <param name="annotations">List of annotations applied to the routine.</param>
     /// <param name="isCommon">Whether this is a <c>common</c> (type-level static) member routine.</param>
-    /// <param name="isDangerous">Whether the routine is marked as dangerous (RA only).</param>
+    /// <param name="isDangerous">Whether the routine is marked as dangerous (RV only).</param>
     /// <returns>A <see cref="RoutineDeclaration"/> AST node.</returns>
     private RoutineDeclaration ParseRoutineDeclaration(
         VisibilityModifier visibility = VisibilityModifier.Open, List<string>? annotations = null,
@@ -548,9 +548,9 @@ public partial class Parser
     /// </summary>
     private BlockStatement ParseRoutineBody(List<string>? annotations, SourceLocation location)
     {
-        // An `@ra("...")` routine shows a Revare routine in the file's language: its body is Revare's.
+        // An `@rv("...")` routine shows a Revare routine in the file's language: its body is Revare's.
         bool isInnate = annotations != null && (annotations.Contains(item: "innate") ||
-                                                annotations.Any(predicate: a => a.StartsWith(value: "ra(",
+                                                annotations.Any(predicate: a => a.StartsWith(value: "rv(",
                                                     comparisonType: StringComparison.Ordinal)));
         // A body exists when the next tokens are Newline+Indent or just Indent.
         // A bare Newline without a following Indent means no body (next declaration follows).

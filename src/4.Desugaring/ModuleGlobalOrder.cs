@@ -7,14 +7,14 @@ namespace Builder.Desugaring;
 /// The order a program's module-level <c>global</c>s are initialized in, shared by every language that has them. Each
 /// global's initializer is taken off its declaration (which stays, so analysis registers the global) and the globals
 /// are ordered so one whose initializer reads another comes after it. A cycle, including a read hidden in a called
-/// free routine, is RA-S436.
+/// free routine, is RV-S436.
 /// </summary>
 public static class ModuleGlobalOrder
 {
     /// <summary>
     /// Collects the globals of <paramref name="orderedFiles"/> (within one module the last declaration of a name wins,
     /// two modules may each have a global of the same name), strips their
-    /// initializers, and orders them. Returns false after reporting RA-S436 when they read each other in a cycle, and
+    /// initializers, and orders them. Returns false after reporting RV-S436 when they read each other in a cycle, and
     /// true with an empty list when there are none.
     /// </summary>
     public static bool TryOrder(List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
@@ -110,7 +110,7 @@ public static class ModuleGlobalOrder
     }
 
     /// <summary>The block of the entry file's <c>routine start()</c> (the last in <paramref name="orderedFiles"/>), with its program, or
-    /// null after reporting RA-S438 when there is none.</summary>
+    /// null after reporting RV-S438 when there is none.</summary>
     public static (SyntaxTree.Program Program, BlockStatement Block)? FindStart(
         List<(SyntaxTree.Program Program, string FilePath)> orderedFiles,
         Action<SemanticDiagnosticCode, string, SourceLocation> report, SourceLocation at)
@@ -406,7 +406,7 @@ public static class ModuleGlobalOrder
 
     /// <summary>Kahn's topological sort over the dependency edges (dependency j before dependent i), stable
     /// in source order among ready nodes. A returned order shorter than <paramref name="n"/> signals a cycle
-    /// (the caller reports the un-ordered globals as RA-S436).</summary>
+    /// (the caller reports the un-ordered globals as RV-S436).</summary>
     private static List<int> KahnOrder(List<HashSet<int>> deps, int n)
     {
         int[] indegree = new int[n];

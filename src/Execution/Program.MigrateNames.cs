@@ -67,7 +67,7 @@ internal partial class Program
         pattern: @"(?<![\w$])(?<name>[a-z][a-z0-9_]*)(?![\w])", options: RegexOptions.Compiled);
 
     /// <summary><c>--step names</c>: the math and operator routines are renamed where they are called, declared
-    /// and quoted in comments, and in the <c>@ra("Type.name")</c> bindings of a Mielia library.</summary>
+    /// and quoted in comments, and in the <c>@rv("Type.name")</c> bindings of a Mielia library.</summary>
     /// <summary>Old names a comment keeps as plain words: English words and C function names.</summary>
     private static readonly HashSet<string> PlainWordKept = new(collection:
     [
@@ -106,7 +106,7 @@ internal partial class Program
                 bool formatted = i > 0 && (line[i - 1] == 'f' || line[i - 1] == 'F');
                 int end = StringEnd(line: line, start: i, formatted: formatted);
                 string literal = line[i..end];
-                bool binding = Regex.IsMatch(input: line[..i], pattern: @"@ra\(\s*$");
+                bool binding = Regex.IsMatch(input: line[..i], pattern: @"@rv\(\s*$");
                 result.Append(value: binding ? RenameBinding(literal: literal)
                     : formatted ? RenameHoles(literal: literal) : literal);
                 from = end;

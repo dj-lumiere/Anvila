@@ -267,12 +267,12 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Realm-marked mangle base (option-b, ambient-bare): the ambient RA realm renders BARE
-    /// (<see cref="TypeSymbol.FullName"/>) so pure-RA IR is byte-identical (zero golden regold); a
+    /// Realm-marked mangle base (option-b, ambient-bare): the ambient RV realm renders BARE
+    /// (<see cref="TypeSymbol.FullName"/>) so pure-RV IR is byte-identical (zero golden regold); a
     /// non-ambient realm (the MI wrapper world-line) gets a <c>{Realm}::</c> prefix so an MI
-    /// <c>System.List[S32]</c> (layout <c>{ inner }</c>) never collides with the RA <c>System.List[S32]</c>
+    /// <c>System.List[S32]</c> (layout <c>{ inner }</c>) never collides with the RV <c>System.List[S32]</c>
     /// (real element storage) — they are DISTINCT LLVM structs/symbols in a mixed binary (bare `List`
-    /// in a `.mie` file → MI wrapper delegating to an RA inner, both live at once). Generic args stay in
+    /// in a `.mie` file → MI wrapper delegating to an RV inner, both live at once). Generic args stay in
     /// FullName (ambient/bare) — only the owner's own realm is marked.
     /// </summary>
     private static string RealmMangleBase(TypeSymbol t)
@@ -431,7 +431,7 @@ public partial class LlvmEmitter
     /// Stores the TBAA metadata section state used by this builder phase.
     /// </summary>
     private static readonly string TbaaMetadataSection = "; TBAA metadata\n" +
-                                                         "!0 = !{!\"RA TBAA Root\"}\n" +
+                                                         "!0 = !{!\"RV TBAA Root\"}\n" +
                                                          "!1 = !{!\"i1\", !0}\n" +
                                                          "!2 = !{!\"i8\", !0}\n" +
                                                          "!3 = !{!\"i16\", !0}\n" +

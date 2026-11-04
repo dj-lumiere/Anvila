@@ -83,6 +83,6 @@
        in the package (NETSDK1152). lapila.dll still reaches the executables as Anvila's dependency. -->
   <ItemGroup>
     <ProjectReference Include="..\Lapila\Lapila.csproj" PrivateAssets="all"/>
-    <Content Include="..\Lapila\Standard\**\*.li" LinkBase="lapila-stdlib" CopyToOutputDirectory="PreserveNewest"/>
+    <Content Include="..\Lapila\Standard\**\*.lpa" LinkBase="lapila-stdlib" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 </Project>

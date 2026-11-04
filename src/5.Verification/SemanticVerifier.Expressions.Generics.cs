@@ -197,7 +197,7 @@ public sealed partial class SemanticVerifier
                     location: generic.TypeArguments[index: i].Location) with
                 {
                     KnownType = full,
-                    // The completed argument names the same language's type as the written one (`RA::List`).
+                    // The completed argument names the same language's type as the written one (`RV::List`).
                     Realm = generic.TypeArguments[index: i].Realm
                 };
         }
@@ -544,7 +544,7 @@ public sealed partial class SemanticVerifier
             // resolve to the FOREIGN routine, not the bare-name slot — which an ambient same-named free
             // routine may now own (the free `atan2(y, x)` vs the `LLVM::atan2` intrinsic). The realm-
             // qualified index and the generic-overload index both reach the intrinsic; the ambient
-            // `LookupRoutine(bareName)` would wrongly bind the ambient routine and then trip RA-S460.
+            // `LookupRoutine(bareName)` would wrongly bind the ambient routine and then trip RV-S460.
             // LookupGenericOverload covers generic free routines, which register only in the
             // generic-overload index — without it an explicit `gen_id[T](...)` call to a generic
             // routine in another module fails to resolve (concrete free routines resolve fine).
@@ -862,7 +862,7 @@ public sealed partial class SemanticVerifier
         // Tracks whether the routine is fully monomorphized below. When true, its ReturnType is
         // already the substituted form, so the typeSubs re-substitution further down must be
         // skipped — re-applying the map to an already-substituted return double-wraps nested
-        // type args (RA-S301).
+        // type args (RV-S301).
         bool routineMonomorphized = false;
         if (routine.IsGenericDefinition)
         {
@@ -1000,10 +1000,10 @@ public sealed partial class SemanticVerifier
         GenericMemberRoutineCallExpression generic, IdentifierExpression typeId, TypeSymbol typeSymbol,
         List<TypeSymbol> typeArgs)
     {
-        // Honor an explicit `RA::`/`MI::` realm on a generic construction (`RA::System.List[T]()`): the
+        // Honor an explicit `RV::`/`MI::` realm on a generic construction (`RV::System.List[T]()`): the
         // Object was resolved realm-blind (prefers the file's resolution realm), so inside an MI file
-        // `RA::System.List[T]()` would resolve to the MI-realm list and the MI wrapper's constructor
-        // `return List[T](inner: RA::System.List[T]())` would self-recurse. Swap the generic DEF to the
+        // `RV::System.List[T]()` would resolve to the MI-realm list and the MI wrapper's constructor
+        // `return List[T](inner: RV::System.List[T]())` would self-recurse. Swap the generic DEF to the
         // qualified realm before resolving, so the inner construction reaches the Revare list.
         if (typeId.Realm is { } genCtorRealm && typeSymbol.Realm != genCtorRealm &&
             _registry.ReResolveInRealm(type: typeSymbol, realm: genCtorRealm) is TypeSymbol
@@ -1363,7 +1363,7 @@ public sealed partial class SemanticVerifier
 
 
     /// <summary>
-    /// Reports RA-S (FlagsMemberNotFound) for each name in <paramref name="flagNames"/> that is not a
+    /// Reports RV-S (FlagsMemberNotFound) for each name in <paramref name="flagNames"/> that is not a
     /// member of <paramref name="flagsType"/>.
     /// </summary>
     private void ValidateFlagNamesExist(FlagsTypeSymbol flagsType, IEnumerable<string> flagNames,

@@ -70,7 +70,7 @@ public partial class LlvmEmitter
         _currentDbgLoc = prev;
     }
 
-    /// <summary>Records a DISubprogram descriptor for an RA routine define. No-op unless debug mode.</summary>
+    /// <summary>Records a DISubprogram descriptor for an RV routine define. No-op unless debug mode.</summary>
     private void RecordDebugSubprogram(string funcName, SourceLocation? location)
     {
         _currentRoutineSymbol = StripQuotes(sym: funcName);
@@ -88,7 +88,7 @@ public partial class LlvmEmitter
             : full;
         if (string.IsNullOrEmpty(value: file))
         {
-            file = "unknown.rr";
+            file = "unknown.rvr";
         }
 
         _debugSubprograms[key: StripQuotes(sym: funcName)] =
@@ -96,7 +96,7 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Attaches line-tables-only debug metadata to the finished IR: <c>!dbg</c> on each RA-routine
+    /// Attaches line-tables-only debug metadata to the finished IR: <c>!dbg</c> on each RV-routine
     /// <c>define</c> (→ a distinct DISubprogram) and on each single-line instruction inside it (→ a
     /// DILocation for the current source line/col, tracked from the trace calls). Appends the module's
     /// <c>!llvm.dbg.cu</c> / <c>!llvm.module.flags</c> and the metadata block. No-op unless debug mode.

@@ -559,7 +559,7 @@ public sealed class BuildDriver
 
     /// <summary>
     /// Resolves and processes a directory-as-module import: several files in one directory that
-    /// all declare the same <c>module</c> name (e.g. <c>Fun2/A.rr</c> and <c>Fun2/B.rr</c> both
+    /// all declare the same <c>module</c> name (e.g. <c>Fun2/A.rvr</c> and <c>Fun2/B.rvr</c> both
     /// declaring <c>module Fun2</c>), gathered by a bare/selective import (<c>import Fun2</c> or
     /// <c>import Fun2.[A, B]</c>) that no single-file resolution can satisfy.
     /// Only files whose <c>module</c> declaration equals <paramref name="moduleName"/> are taken,
@@ -601,7 +601,7 @@ public sealed class BuildDriver
 
     /// <summary>
     /// Discovers and processes the other files of <paramref name="filePath"/>'s own module: sibling
-    /// <c>.rr</c>/<c>.mie</c> files in the same directory that declare the same
+    /// <c>.rvr</c>/<c>.mie</c> files in the same directory that declare the same
     /// <paramref name="modulePath"/>. This makes a module's files mutually visible without an explicit
     /// import, including when one of them is the compilation entry and nothing imports the module.
     /// Only same-directory siblings are gathered, matching the one-module-per-directory convention
@@ -637,7 +637,7 @@ public sealed class BuildDriver
                 continue;
             }
 
-            // File-granularity conditional compilation: skip a `.rr` sibling whose leading
+            // File-granularity conditional compilation: skip a `.rvr` sibling whose leading
             // `#@target(...)` directive doesn't match the build target (Revare-only).
             if (!Targeting.TargetGate.ShouldCompile(filePath: fullCandidate))
             {
@@ -656,7 +656,7 @@ public sealed class BuildDriver
             // that happens to share the module name (`main.mie` next to a draft `main.next.mie`), not a part of this
             // one: it stays out of the build, so its errors, a parse error included, are not this build's. Also a
             // line scan, so it answers for a file that does not parse. A sibling that only looks like a script is
-            // built: the parser decides whether it is one, and a script that is not an entry file is RA-S443
+            // built: the parser decides whether it is one, and a script that is not an entry file is RV-S443
             // (ReportScriptsOutsideEntryFiles), never a silent omission.
             if (BuildHasEntryPoint() && ManifestLoader.FileDeclaresExplicitStart(filePath: fullCandidate))
             {
@@ -748,11 +748,11 @@ public sealed class BuildDriver
                 return null;
             }
 
-            // A Mielia project MAY import Revare modules — MI's System IS RA's System, and a Mielia
+            // A Mielia project MAY import Revare modules — MI's System IS RV's System, and a Mielia
             // program consuming a Revare library (e.g. an engine module) is the whole point of the
-            // realm split. The `.rr` file is parsed with the Revare grammar below, so its entities
-            // stay RA-realm (bare, not auto-roamed) — an MI↔RA boundary reference, same as `RA::`.
-            // (Importing a non-stdlib `.rr` from MI was blocked; lifted to wire the MI→RA-module handoff.)
+            // realm split. The `.rvr` file is parsed with the Revare grammar below, so its entities
+            // stay RV-realm (bare, not auto-roamed) — an MI↔RV boundary reference, same as `RV::`.
+            // (Importing a non-stdlib `.rvr` from MI was blocked; lifted to wire the MI→RV-module handoff.)
             bool isStdlibFile = Path.GetFullPath(path: filePath)
                                     .StartsWith(value: Path.GetFullPath(path: _stdlibRoot),
                                          comparisonType: StringComparison.OrdinalIgnoreCase);
@@ -841,7 +841,7 @@ public sealed class BuildDriver
     /// Extracts the declared module path and import declarations from a parsed AST. A file with no
     /// <c>module</c> header gets one DERIVED from its path relative to the project root (the config.toml
     /// directory): each path segment is PascalCased (spaces removed), '.'/'..' segments dropped, the
-    /// extension stripped, joined with '/'. E.g. <c>../SomeFolder/SomeMoreFolder/file a.rr</c> ->
+    /// extension stripped, joined with '/'. E.g. <c>../SomeFolder/SomeMoreFolder/file a.rvr</c> ->
     /// <c>SomeFolder/SomeMoreFolder/FileA</c>. A synthetic ModuleDeclaration is inserted at the top of
     /// the AST so every downstream reader (type/routine registration, protocol conformance) sees the
     /// same module uniformly.
@@ -1042,7 +1042,7 @@ public sealed class BuildDriver
     }
 
     /// <summary>
-    /// Scans one <c>module_paths</c> folder for <c>*.rr</c> and <c>*.mie</c> sources and registers each into the resolver
+    /// Scans one <c>module_paths</c> folder for <c>*.rvr</c> and <c>*.mie</c> sources and registers each into the resolver
     /// index.
     /// </summary>
     private void PreRegisterLibraryRoot(string libraryRoot)
@@ -1078,7 +1078,7 @@ public sealed class BuildDriver
             return;
         }
 
-        // A file without a `module` line is the module its place in the folder names (`money/tax.rr` is Money/Tax).
+        // A file without a `module` line is the module its place in the folder names (`money/tax.rvr` is Money/Tax).
         string moduleName = ast.Declarations.OfType<ModuleDeclaration>().FirstOrDefault()?.Path ??
                             DeriveModuleFromPath(filePath: filePath);
         _resolver.RegisterFile(filePath: filePath, moduleName: moduleName, ast: ast);

@@ -104,7 +104,7 @@ public partial class LlvmEmitter
     private readonly StringBuilder _functionDeclarations = new();
 
     /// <summary>
-    /// RA function forward declarations keyed by mangled name.
+    /// RV function forward declarations keyed by mangled name.
     /// Entries whose name is in <see cref="_generatedRoutineDefs"/> are suppressed at output
     /// time to avoid declare+define conflicts in the same LLVM module.
     /// </summary>
@@ -252,7 +252,7 @@ public partial class LlvmEmitter
     private string CpuAttributes => _target.FunctionAttributes;
 
     /// <summary>Requested build optimization mode.</summary>
-    private readonly RaBuildMode _buildMode;
+    private readonly RvBuildMode _buildMode;
 
     /// <summary>Pointer bit width for the target platform (64 for x86_64, 32 for x86).</summary>
     private readonly int _pointerBitWidth;
@@ -775,8 +775,8 @@ public partial class LlvmEmitter
     /// <summary>
     /// Whether a routine needs no external <c>declare</c>: generic definitions / unresolved-type /
     /// generic-owner / synthesized / protocol-abstract routines, and non-extern routines that have
-    /// an emitted body. C-externs are always declared (they never have an RA body and their bare
-    /// symbol can collide with a same-named RA wrapper overload).
+    /// an emitted body. C-externs are always declared (they never have an RV body and their bare
+    /// symbol can collide with a same-named RV wrapper overload).
     /// </summary>
     private static bool ShouldSkipRoutineDeclaration(RoutineInfo routine,
         HashSet<string> routinesWithBodies)
@@ -934,12 +934,12 @@ public partial class LlvmEmitter
 
     /// <summary>
     /// Generates runtime support functions.
-    /// External("C") routines from NativeDeclarations.rr are declared via GenerateRoutineDeclarations().
+    /// External("C") routines from NativeDeclarations.rvr are declared via GenerateRoutineDeclarations().
     /// </summary>
     private static void GenerateRuntimeSupport()
     {
         // No-op: external("C") routines are handled by GenerateRoutineDeclarations()
-        // via the TypeRegistry (registered from NativeDeclarations.rr).
+        // via the TypeRegistry (registered from NativeDeclarations.rvr).
     }
 
     /// <summary>
@@ -974,7 +974,7 @@ public partial class LlvmEmitter
             output.Append(value: _functionDeclarations);
         }
 
-        AppendRaForwardDeclarations(output: output);
+        AppendRvForwardDeclarations(output: output);
 
         // Shadow-stack helpers, in every mode: System's crash_report reads the trace through the accessors
         // (a build without a trace pushes nothing, so its depth stays 0).
@@ -1067,12 +1067,12 @@ public partial class LlvmEmitter
     }
 
     /// <summary>
-    /// Appends the RA function forward declarations, skipping any symbol that now has a definition
-    /// (define wins). A symbol with BOTH a declare and a define is an RA routine, so the two MUST
+    /// Appends the RV function forward declarations, skipping any symbol that now has a definition
+    /// (define wins). A symbol with BOTH a declare and a define is an RV routine, so the two MUST
     /// describe the same function type — the signatures are asserted equal before the declare is
     /// dropped (a mismatch is an internal codegen bug).
     /// </summary>
-    private void AppendRaForwardDeclarations(StringBuilder output)
+    private void AppendRvForwardDeclarations(StringBuilder output)
     {
         foreach ((string name, string line) in _rfRoutineDeclarations)
         {
@@ -1484,7 +1484,7 @@ public partial class LlvmEmitter
         // Trace mode: 2=shadow (debug+release), 0=none (release-time/space).
         int traceMode = _buildMode switch
         {
-            RaBuildMode.Debug or RaBuildMode.Release => 2,
+            RvBuildMode.Debug or RvBuildMode.Release => 2,
             _ => 0
         };
 
@@ -1516,7 +1516,7 @@ public partial class LlvmEmitter
         output.AppendLine(value: "; Entry point");
         output.AppendLine(value: $"define i32 @main(i32 %argc, ptr %argv) {CpuAttributes} {{");
         output.AppendLine(value: EntryLabel);
-        // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RA_MEMORY_LIMIT).
+        // A routine test with @memory_limit counts the heap from the start (Ingrid's memory library, RV_MEMORY_LIMIT).
         output.AppendLine(value: "  call void @rf_heap_limit_init()");
         output.AppendLine(value: "  call void @rf_runtime_init()");
         // Every flow's failure mold holds the program's largest crashable: the main thread's is reserved here.
@@ -1552,10 +1552,10 @@ public partial class LlvmEmitter
     /// opposite orders wait on each other: with globals the check is on in every mode, so that ends as a
     /// <c>DeadlockError</c> instead of a hang. It runs only when a job is about to wait.</summary>
     internal static (int DeadlockCheck, int AccessOrder, int Language) AccessChecks(TypeRegistry registry,
-        RaBuildMode mode)
+        RvBuildMode mode)
     {
         bool deadlockCheck = Diagnostics.DiagnosticFlags.DeadlockCheck ??
-                             (mode == RaBuildMode.Debug || HasModuleGlobals(registry: registry));
+                             (mode == RvBuildMode.Debug || HasModuleGlobals(registry: registry));
         return (deadlockCheck ? 1 : 0, Diagnostics.DiagnosticFlags.AccessOrder ? 1 : 0,
             registry.Language == Language.Mielia ? 2 : 1);
     }

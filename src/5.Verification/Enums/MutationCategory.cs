@@ -38,7 +38,7 @@ public enum MutationCategory
 
     /// <summary>
     /// Can relocate memory buffers (e.g., List.push causing reallocation).
-    /// Banned during iteration to prevent iterator invalidation (RA-S625).
+    /// Banned during iteration to prevent iterator invalidation (RV-S625).
     /// Needs ownership or exclusive access outside iteration.
     /// The MOST restrictive category for callers — it must be claimed EXPLICITLY (@reshaping); it is
     /// NOT a default. (It once was the field default on RoutineInfo, which silently made any

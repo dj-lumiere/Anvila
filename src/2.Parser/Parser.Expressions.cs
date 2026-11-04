@@ -232,7 +232,7 @@ public partial class Parser
     /// <summary>
     /// Parses a primary starting with an identifier / <c>me</c> token that has already been consumed:
     /// the <c>me</c> receiver, a single-hole <c>_</c> lambda placeholder, a realm-qualified reference
-    /// (<c>RA::System.List</c>), or a plain identifier.
+    /// (<c>RV::System.List</c>), or a plain identifier.
     /// </summary>
     private IdentifierExpression ParseIdentifierPrimary(SourceLocation location)
     {
@@ -254,8 +254,8 @@ public partial class Parser
             return new IdentifierExpression(Name: HoleParamName, Location: location);
         }
 
-        // Realm-qualified reference in expression position: `RA::System.List` (e.g. a
-        // `RA::System.List[S64]()` constructor call inside a Mielia wrapper). The leading ident is the
+        // Realm-qualified reference in expression position: `RV::System.List` (e.g. a
+        // `RV::System.List[S64]()` constructor call inside a Mielia wrapper). The leading ident is the
         // realm tag; consume the `.`/`/`-segmented qualified name and carry the realm so SA resolves
         // it in the Revare/bare realm. Postfix `[..]` / `(..)` then apply as usual.
         if (Check(type: TokenType.DoubleColon))

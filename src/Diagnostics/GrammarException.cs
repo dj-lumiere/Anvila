@@ -61,7 +61,7 @@ public class GrammarException(
 
     /// <summary>
     /// Formats the error message in the standard format:
-    /// error[RA-G001]: filename.rr:10:5: message
+    /// error[RV-G001]: filename.rvr:10:5: message
     /// </summary>
     private static string FormatMessage(GrammarDiagnosticCode code, string message,
         string fileName, int line, int column,

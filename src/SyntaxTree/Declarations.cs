@@ -23,7 +23,7 @@ public abstract record Declaration(SourceLocation Location) : SyntaxTreeNode(Loc
 {
     /// <summary>
     /// The annotations written above a type declaration whose node has no annotation list of its own (entity,
-    /// choice, flags, crashable, variant, protocol). Only the standard library's <c>@ra("...")</c> binding is
+    /// choice, flags, crashable, variant, protocol). Only the standard library's <c>@rv("...")</c> binding is
     /// allowed there; the parser rejects any other as having no effect.
     /// </summary>
     public List<string>? LeadingAnnotations { get; init; }

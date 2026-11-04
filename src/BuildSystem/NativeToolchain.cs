@@ -242,10 +242,10 @@ internal static class NativeToolchain
         var files = new List<string>();
         AddFiles(files: files, dir: nativeDir, pattern: "CMakeLists.txt", recursive: false);
         AddFiles(files: files, dir: nativeDir, pattern: "*.cmake", recursive: false);
-        AddFiles(files: files, dir: Path.Combine(path1: ingridDir, path2: "runtime-lapila"), pattern: "*.li",
+        AddFiles(files: files, dir: Path.Combine(path1: ingridDir, path2: "runtime-lapila"), pattern: "*.lpa",
             recursive: false);
         AddFiles(files: files, dir: Path.Combine(path1: workspace, path2: "Lapila", path3: "Standard"),
-            pattern: "*.li", recursive: true);
+            pattern: "*.lpa", recursive: true);
         string cache = Path.Combine(path1: nativeBuildDir, path2: "CMakeCache.txt");
         files.Add(item: cache);
         files.Add(item: Path.Combine(path1: nativeBuildDir, path2: "build.ninja"));
@@ -678,13 +678,13 @@ internal static class NativeToolchain
     }
 
     /// <summary>Maps a build mode to the LLVM optimization level token (O0/O2/O3/Os).</summary>
-    private static string OptLevelString(RaBuildMode buildMode)
+    private static string OptLevelString(RvBuildMode buildMode)
     {
         return buildMode switch
         {
-            RaBuildMode.Release => "O2",
-            RaBuildMode.ReleaseTime => "O3",
-            RaBuildMode.ReleaseSpace => "Os",
+            RvBuildMode.Release => "O2",
+            RvBuildMode.ReleaseTime => "O3",
+            RvBuildMode.ReleaseSpace => "Os",
             _ => "O0"
         };
     }
@@ -694,7 +694,7 @@ internal static class NativeToolchain
     /// Debug builds run mem2reg+sroa at O0 (readability without semantic change); optimized builds
     /// run the full pipeline at the requested level. Returns 0 on success or 1 if opt fails.
     /// </summary>
-    internal static int OptimizeIr(string llFile, string optFile, RaBuildMode buildMode,
+    internal static int OptimizeIr(string llFile, string optFile, RvBuildMode buildMode,
         bool internalizeForLto = false)
     {
         string optPipelineLevel = OptLevelString(buildMode: buildMode);
@@ -717,7 +717,7 @@ internal static class NativeToolchain
         // ones. Every other symbol in a whole-program executable is internal by construction, so preserving
         // `main` alone is the standard LTO-of-an-exe behavior (callbacks are passed by address, which
         // internalize keeps alive).
-        string basePipeline = buildMode == RaBuildMode.Debug
+        string basePipeline = buildMode == RvBuildMode.Debug
             ? $"default<{optPipelineLevel}>,mem2reg,sroa"
             : $"default<{optPipelineLevel}>";
         string optPipeline = internalizeForLto
@@ -781,7 +781,7 @@ internal static class NativeToolchain
     }
 
     // ========================================================================
-    // Dev-loop LTO: llvm-link the hot native-runtime bitcode into the RA module
+    // Dev-loop LTO: llvm-link the hot native-runtime bitcode into the RV module
     // ========================================================================
 
     /// <summary>
@@ -831,7 +831,7 @@ internal static class NativeToolchain
     }
 
     /// <summary>
-    /// llvm-links the emitted RA module (<paramref name="llFile"/>) with Ingrid's Lapila library
+    /// llvm-links the emitted RV module (<paramref name="llFile"/>) with Ingrid's Lapila library
     /// (<see cref="IngridLapila"/>) into <paramref name="linkedFile"/>. Unlike the hot-runtime LTO below this isn't
     /// optional: the library's routines are not in the runtime DLL, so a module that calls one links only with it.
     /// Only what the module reaches is linked (<c>--only-needed</c>): the library holds every export, generated
@@ -1075,9 +1075,9 @@ internal static class NativeToolchain
     // The modes that print a crash trace (debug, release) write a PDB next to the Windows executable: DbgHelp names
     // the trace's frames, with file and line, from it and from nothing else (the emitter writes the debug information
     // as CodeView on Windows). lld-link takes /DEBUG, the mingw linker --pdb= (empty: next to the output).
-    private static string WindowsDebugInfoFragment(RaBuildMode buildMode)
+    private static string WindowsDebugInfoFragment(RvBuildMode buildMode)
     {
-        if (!OperatingSystem.IsWindows() || buildMode is not (RaBuildMode.Debug or RaBuildMode.Release))
+        if (!OperatingSystem.IsWindows() || buildMode is not (RvBuildMode.Debug or RvBuildMode.Release))
         {
             return "";
         }
@@ -1102,7 +1102,7 @@ internal static class NativeToolchain
     /// stdlib fingerprint, then the dev-loop client loads that object and JITs only the per-run delta,
     /// instead of re-JIT-compiling the whole stdlib IR every run. Returns 0 on success, 1 on failure.
     /// </summary>
-    internal static int CompileIrToObject(string optFile, string objFile, RaBuildMode buildMode)
+    internal static int CompileIrToObject(string optFile, string objFile, RvBuildMode buildMode)
     {
         // clang uses -Ox flag style (not opt's -passes=). Same target codegen flags as the link path so the
         // object's ABI/target matches the delta the JIT layers on top of it.
@@ -1152,7 +1152,7 @@ internal static class NativeToolchain
 
         TargetConfig target = TargetConfig.ForCurrentHost();
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        bool timing = Environment.GetEnvironmentVariable(variable: "RA_TRACE_TIMING") == "1";
+        bool timing = Environment.GetEnvironmentVariable(variable: "RV_TRACE_TIMING") == "1";
         Lapila.TraceTable.Annotation annotation = Lapila.TraceTable.Annotate(ir: ir);
         if (timing)
         {
@@ -1185,7 +1185,7 @@ internal static class NativeToolchain
         {
             Console.Error.WriteLine(value: $"[trace] patch {clock.ElapsedMilliseconds} ms");
         }
-        if (Environment.GetEnvironmentVariable(variable: "RA_TRACE_KEEP") != "1")
+        if (Environment.GetEnvironmentVariable(variable: "RV_TRACE_KEEP") != "1")
         {
             File.Delete(path: annotated);
         }
@@ -1283,7 +1283,7 @@ internal static class NativeToolchain
     }
 
     internal static int LinkExecutable(string optFile, string exeFile, string runtimeLibDir,
-        RaBuildMode buildMode, IReadOnlyList<string>? cLibraries = null,
+        RvBuildMode buildMode, IReadOnlyList<string>? cLibraries = null,
         IReadOnlyList<string>? libraryPaths = null)
     {
         // Compile .ll -> .exe using clang (clang uses -Ox flag style, not opt's -passes= form)
@@ -1307,7 +1307,7 @@ internal static class NativeToolchain
         optFile = linkInput;
         // Preserve frame pointers in debug/release for accurate platform stack unwinding.
         // release-time/release-space omit frame pointers for maximum performance.
-        string framePointerFlag = buildMode is RaBuildMode.Debug or RaBuildMode.Release
+        string framePointerFlag = buildMode is RvBuildMode.Debug or RvBuildMode.Release
             ? " -fno-omit-frame-pointer"
             : "";
         string windowsThreadingLibs = WindowsThreadingLibsFragment();
@@ -1377,7 +1377,7 @@ internal static class NativeToolchain
             stderrThread.Join();
             // The trace table's assembly is a step of the build, not a byproduct to keep (it is as large as the IR).
             if (optFile.EndsWith(value: ".s", comparisonType: StringComparison.Ordinal) &&
-                Environment.GetEnvironmentVariable(variable: "RA_TRACE_KEEP") != "1")
+                Environment.GetEnvironmentVariable(variable: "RV_TRACE_KEEP") != "1")
             {
                 File.Delete(path: optFile);
             }

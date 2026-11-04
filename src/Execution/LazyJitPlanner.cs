@@ -13,7 +13,7 @@ internal sealed record LazyJitInputs(
     List<(SyntaxTree.Program Program, string FilePath, string Module)> UserPrograms,
     AnalysisResult Result,
     TargetConfig Target,
-    RaBuildMode BuildMode,
+    RvBuildMode BuildMode,
     string? EntryModule);
 
 /// <summary>

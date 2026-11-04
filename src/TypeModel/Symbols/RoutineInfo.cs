@@ -75,7 +75,7 @@ public sealed class RoutineInfo
     /// <para>REALM: a routine whose owner belongs to a NON-ambient (bridged) realm is prefixed
     /// <c>{realm}::</c> so the two world-lines' same-signature routines are distinct EVERYWHERE this key
     /// is used in lockstep — the routine registry, <c>InstantiatedGenericBodies</c>, reachability's
-    /// <c>LiveRoutineKeys</c>, and codegen's body lookup. The ambient realm is <c>RA</c> (bare), so every
+    /// <c>LiveRoutineKeys</c>, and codegen's body lookup. The ambient realm is <c>RV</c> (bare), so every
     /// Revare routine's key is byte-identical to before; only a Mielia-realm (MI) routine gains the
     /// prefix. Keeping this on the ONE identity all consumers already share is what makes the realm split
     /// consistent without desyncing the handshake between reachability, monomorphization, and codegen.</para>
@@ -131,7 +131,7 @@ public sealed class RoutineInfo
                 key = $"{surface}~{key}";
             }
 
-            // Bridged-realm owner → realm-prefixed key (ambient realm "RA" stays bare = RA byte-identical).
+            // Bridged-realm owner → realm-prefixed key (ambient realm "RV" stays bare = RV byte-identical).
             if (OwnerType is { Realm: not Realms.Shared and { } r })
             {
                 return $"{r}::{key}";
@@ -274,7 +274,7 @@ public sealed class RoutineInfo
     /// TypeBodyResolver): a routine mutates unless marked <c>@readonly</c>, and <c>@reshaping</c> is a
     /// STRONGER claim that must be explicit. (A <c>Reshaping</c> default was a latent bug: any construction
     /// or copy path that forgot to set the category silently made the routine look maximally-mutating,
-    /// e.g. tripping the RA-S625 reshaping-during-iteration ban on a plainly <c>@readonly</c> call.)</summary>
+    /// e.g. tripping the RV-S625 reshaping-during-iteration ban on a plainly <c>@readonly</c> call.)</summary>
     public MutationCategory DeclaredMutation { get; init; } = MutationCategory.Writable;
 
     /// <summary>
@@ -317,8 +317,8 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// Structural hash of a CONSTRUCTOR body, set at registration for the divergent-duplicate guard.
-    /// Two constructors can share a signature across files (e.g. <c>U16(from: U8)</c> in both U8.rr and
-    /// U16.rr) — benign when the bodies are identical (same hash), but a DIVERGENT one (same signature,
+    /// Two constructors can share a signature across files (e.g. <c>U16(from: U8)</c> in both U8.rvr and
+    /// U16.rvr) — benign when the bodies are identical (same hash), but a DIVERGENT one (same signature,
     /// different body) means one silently shadows the other under last-wins registration, the hazard
     /// class that made <c>B64(from: B128)</c> resolve to a recursive-forwarder stub. Null for non-creators
     /// / extern bodies. See <see cref="Builder.Declaration.TypeRegistry.RegisterRoutine"/>.
@@ -339,7 +339,7 @@ public sealed class RoutineInfo
         Annotations.Contains(value: "readonly") || MutationCategory == MutationCategory.Readonly;
 
     /// <summary>Whether this routine RESHAPES its receiver (a container mutator that can invalidate an
-    /// in-progress iteration — drives the RA-S625 reshaping-during-iteration ban). The <c>@reshaping</c>
+    /// in-progress iteration — drives the RV-S625 reshaping-during-iteration ban). The <c>@reshaping</c>
     /// annotation is the authoritative marker (container authors put it on mutators); the category is a
     /// fallback, and is NOT trusted alone because some registration paths leave it at the default.</summary>
     public bool IsReshaping =>
@@ -402,7 +402,7 @@ public sealed class RoutineInfo
 
     /// <summary>
     /// The actual exported symbol name to link against, when it differs from <see cref="Name"/> — from
-    /// <c>@link(Lib, symbol: "…")</c>. Handles the "same RA name, different link name" cases (versioned
+    /// <c>@link(Lib, symbol: "…")</c>. Handles the "same RV name, different link name" cases (versioned
     /// symbols, <c>stat</c>→<c>stat64</c>, decorated names). Null = link by the bare routine name.
     /// </summary>
     public string? LinkSymbol { get; init; }
@@ -411,7 +411,7 @@ public sealed class RoutineInfo
     /// The realm this routine's implementation lives in. DERIVED from <see cref="CallingConvention"/> for
     /// the foreign realms (so it rides along automatically wherever CallingConvention is copied —
     /// monomorphization, reachability, etc.), falling back to the native realm otherwise. A `C::`/`LLVM::`
-    /// declaration sets CallingConvention "C"/"llvm"; a native routine leaves it null and is RA (or MI via
+    /// declaration sets CallingConvention "C"/"llvm"; a native routine leaves it null and is RV (or MI via
     /// <see cref="NativeRealm"/>). Replaces the old <c>RoutineKind.External</c> flag.
     /// </summary>
     public RoutineRealm Realm => CallingConvention switch
@@ -421,9 +421,9 @@ public sealed class RoutineInfo
         _ => NativeRealm
     };
 
-    /// <summary>Native realm for a non-foreign routine (RA for a <c>.rr</c> body, MI for a <c>.mie</c> body).
-    /// Defaults to RA; ignored when the routine is C/LLVM foreign.</summary>
-    public RoutineRealm NativeRealm { get; init; } = RoutineRealm.RA;
+    /// <summary>Native realm for a non-foreign routine (RV for a <c>.rvr</c> body, MI for a <c>.mie</c> body).
+    /// Defaults to RV; ignored when the routine is C/LLVM foreign.</summary>
+    public RoutineRealm NativeRealm { get; init; } = RoutineRealm.RV;
 
     /// <summary>True if this routine is a FOREIGN declaration (C extern or LLVM intrinsic) — no native
     /// body; must be called with its realm qualifier. Supersedes <c>Kind == RoutineKind.External</c>.</summary>

@@ -1515,7 +1515,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         // would reach codegen as an invalid `%Record.Int 1` constant. An Int step is the
         // static Int record LiteralLoweringPass builds for the start/end literals. Another
         // element type with a `from_literal` constructor builds `T.from_literal(text: "1")`.
-        // Scalar element types (RA's S64) have no `from_literal` and keep the raw literal.
+        // Scalar element types (RV's S64) have no `from_literal` and keep the raw literal.
         if (elemType is { Name: "Int" } && long.TryParse(s: text.Replace(oldValue: "_", newValue: ""),
                 result: out long integerStep))
         {
@@ -2735,7 +2735,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
             }
         }
 
-        // Entity `x is T`: RA entities have no subtyping, so a concrete-entity `is` a concrete-entity is
+        // Entity `x is T`: RV entities have no subtyping, so a concrete-entity `is` a concrete-entity is
         // BUILDTIME-decidable — same type = always true, different = always false. Fold to a Bool literal
         // so codegen never sees an entity type-test (the old "optimistic match" hack disappears). A
         // protocol/Unknown operand carries a runtime type_id and is handled by its own path, not here.
@@ -2751,7 +2751,7 @@ internal sealed class ExpressionLoweringPass(PostprocessingContext ctx)
         return null;
     }
 
-    // Entity `x is T`: fold to a Bool literal since RA entities have no subtyping.
+    // Entity `x is T`: fold to a Bool literal since RV entities have no subtyping.
     // Returns null when the target is not a concrete entity (falls through to pass-through path).
     private (List<Statement> Hoisted, Expression Expr)? TryLowerEntityIsPattern(
         IsPatternExpression ipe, TypePattern tp, TypeSymbol operandType,

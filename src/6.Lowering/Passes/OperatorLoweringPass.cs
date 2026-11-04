@@ -174,7 +174,7 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // The token IS the element's own pointer (Viewing/Modifying and an entity share one pointer
         // representation), so the call or field access on it dispatches on the ELEMENT type, exactly as
         // a wrapper forwarder would after unwrapping. The read/write intent and the container freeze
-        // were already checked at analysis (RA-S639). An entity-typed temporary is not torn down, so
+        // were already checked at analysis (RV-S639). An entity-typed temporary is not torn down, so
         // the element stays owned by the container.
         return new CallExpression(Callee: callee, Arguments: [FirstOperand(argument: IndexOperand(index: index, routine: mint), routine: mint)],
             Location: element.Location)
@@ -1889,10 +1889,10 @@ internal sealed class OperatorLoweringPass(PostprocessingContext ctx) : AstRewri
         // IndexOutOfBoundsError on overshoot). `^` carries no runtime type; the offset is the `^n`
         // operand, already typed U64 by semantic analysis (see AnalyzeBackIndexExpression).
         // NOTE: do NOT filter on `isFailable: true`. `back_resolve` has no `!` marker — its failability
-        // is INFERRED from the body's `throw` (RA-S753). Under the demand pipeline this lowering runs on
-        // the USER body BEFORE the collector analyzes BackIndex.rr on reach, so at this point back_resolve
+        // is INFERRED from the body's `throw` (RV-S753). Under the demand pipeline this lowering runs on
+        // the USER body BEFORE the collector analyzes BackIndex.rvr on reach, so at this point back_resolve
         // is registered (signature/return-type resolved) but not yet marked failable — an `isFailable:true`
-        // filter would spuriously reject it and the unresolved call would trip RA-S959 at codegen. The name
+        // filter would spuriously reject it and the unresolved call would trip RV-S959 at codegen. The name
         // is a unique builtin (no failable/non-failable overload pair), so failability is not a disambiguator.
         // A Mielia collection counts with `Int`: its position is resolved by the `back_resolve` taking
         // `Int`, picked by the count's type.

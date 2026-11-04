@@ -284,8 +284,8 @@ public class EntityTypeSymbol : TypeSymbol
     // (it drives LLVM mangling and the resolution-cache short alias).
     // …and REALM-qualified too: `System.List` exists in BOTH the Revare realm (real list) and the
     // Mielia realm (the `{ inner }` wrapper). They share module AND bare resolved name, so a realm-free
-    // cycleKey lets an in-progress MI `System.List[S32]` be handed back for an RA `System.List[S32]`
-    // CreateInstance (and vice versa) — the wrapper's `RA::System.List[T]()` inner would then resolve to
+    // cycleKey lets an in-progress MI `System.List[S32]` be handed back for an RV `System.List[S32]`
+    // CreateInstance (and vice versa) — the wrapper's `RV::System.List[T]()` inner would then resolve to
     // the MI entity and self-recurse. Prefix the non-ambient realm to keep the two world-lines distinct.
     private string BuildCycleKey(string resolvedName)
     {

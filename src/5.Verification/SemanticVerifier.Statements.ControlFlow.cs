@@ -91,7 +91,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Reports a binding from outside a branching statement that <c>steal</c> takes on some of the paths going on past
-    /// it and not on others (RA-S616). Only the bindings still in scope after it count: one declared inside a branch
+    /// it and not on others (RV-S616). Only the bindings still in scope after it count: one declared inside a branch
     /// ends with that branch anyway.
     /// </summary>
     private void CheckTakenOnEveryPath(List<(HashSet<string> Dead, bool Exits)> paths, HashSet<string> before,
@@ -491,7 +491,7 @@ public sealed partial class SemanticVerifier
     /// name, innermost last.</summary>
     private readonly Stack<(string Subject, string Binding)> _matchedSubjects = new();
 
-    /// <summary>RA-S264 for giving <paramref name="target"/> a new value inside an arm that named what it holds.</summary>
+    /// <summary>RV-S264 for giving <paramref name="target"/> a new value inside an arm that named what it holds.</summary>
     private void ReportAssignWhileMatched(Expression target)
     {
         if (target is not IdentifierExpression id)
@@ -1053,7 +1053,7 @@ public sealed partial class SemanticVerifier
                             ret.Value is IdentifierExpression { Name: "None" } blankId &&
                             blankId.Location == ret.Location;
 
-        // RA-S301: a bare `return` in a routine that gives back a value leaves the caller without one.
+        // RV-S301: a bare `return` in a routine that gives back a value leaves the caller without one.
         if (isBareReturn && !givesNothing)
         {
             string written = WrittenTypeName(type: declaredResult!);
@@ -1076,7 +1076,7 @@ public sealed partial class SemanticVerifier
             // A token may be returned only when it is taken from `me` (Revare only)
             ValidateNotTokenReturnType(type: returnType, location: ret.Location, returned: ret.Value);
 
-            // RA-S413: returning a field or a container element hands the caller an entity its owner
+            // RV-S413: returning a field or a container element hands the caller an entity its owner
             // still keeps. A returned local is a move, so a bare variable is not flagged here.
             if (ChecksHolderOf(type: returnType) &&
                 ReadsKeptEntity(value: ret.Value, includeVariables: false) &&
@@ -1088,7 +1088,7 @@ public sealed partial class SemanticVerifier
                     location: ret.Value.Location);
             }
 
-            // RA-S301: a value returned from a routine that gives nothing back would be dropped without a word.
+            // RV-S301: a value returned from a routine that gives nothing back would be dropped without a word.
             // The declaration states the result type, so the value never turns the routine into one that has one.
             if (!isBareReturn && givesNothing && !returnType.IsNone && returnType is not ErrorTypeSymbol)
             {
@@ -1200,7 +1200,7 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>Reports RA-W259 on a written <c>steal</c> of a local that ends at the return, with the quick fix that
+    /// <summary>Reports RV-W259 on a written <c>steal</c> of a local that ends at the return, with the quick fix that
     /// removes the word, and returns null so the steal stays as written.</summary>
     private Expression? WarnStealInReturn(StealExpression steal, IdentifierExpression local)
     {
@@ -1357,7 +1357,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// <c>drop x</c>: tears a local binding the routine owns down here and ends the name, as <c>steal x</c> does
-    /// (a later use is RA-S615, and the scope's end does not tear it down again). A global, <c>me</c>
+    /// (a later use is RV-S615, and the scope's end does not tear it down again). A global, <c>me</c>
     /// and an access token (<c>Viewing</c> / <c>Modifying</c>, which someone else owns) cannot be dropped.
     /// </summary>
     private void AnalyzeDropBinding(DropStatement dropped, IdentifierExpression ended)
@@ -1400,7 +1400,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FeatureNotInMielia,
                 message:
                 $"A {_registry.Rules.Name} program has no `danger` block: memory is never handled directly here. " +
-                "Code that must handle memory or call C goes in a `.rr` module this program imports.",
+                "Code that must handle memory or call C goes in a `.rvr` module this program imports.",
                 location: danger.Location);
             return;
         }
@@ -1460,7 +1460,7 @@ public sealed partial class SemanticVerifier
             DeclareUsingParts(usingStmt: usingStmt, boundType: boundType);
         }
 
-        // Analyze the body. (A token's use after its source changed is Revare's TokenLifetimeChecker's, RA-S643.)
+        // Analyze the body. (A token's use after its source changed is Revare's TokenLifetimeChecker's, RV-S643.)
         AnalyzeStatement(statement: usingStmt.Body);
         _registry.ExitScope();
     }
@@ -1540,9 +1540,9 @@ public sealed partial class SemanticVerifier
     /// <c>FileStorage</c>, any type with <c>view_enter</c> / <c>modify_enter</c> and the matching exit), an access token
     /// (only checked to differ from the others), or an entity (whose token the block gives), and its name inside the
     /// block is a <c>Viewing</c> or <c>Modifying</c> token, a <c>Optional</c> of it in a <c>try</c> block. A target named
-    /// twice is RA-S650, one that can't be opened with its verb RA-S651, an enter that gives no token RA-S654, a
-    /// <c>try</c> on one the block doesn't enter RA-S611, and a <c>Guarded</c> an enclosing block of the routine
-    /// already opened RA-S630.
+    /// twice is RV-S650, one that can't be opened with its verb RV-S651, an enter that gives no token RV-S654, a
+    /// <c>try</c> on one the block doesn't enter RV-S611, and a <c>Guarded</c> an enclosing block of the routine
+    /// already opened RV-S630.
     /// </summary>
     private void AnalyzeAccessStatement(AccessStatement access)
     {
@@ -1810,7 +1810,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The name's type for a target the block enters: analyzes <c>t.view_enter()</c> (<c>try t.view_enter()</c> in a
     /// <c>try</c> block) and <c>t.view_exit()</c> (the <c>modify_</c> pair for <c>modifying</c>) onto the target, on
-    /// the target itself when it is a name or a member path, else on a variable the block holds it in. Reports RA-S654
+    /// the target itself when it is a name or a member path, else on a variable the block holds it in. Reports RV-S654
     /// when the enter gives no token of the block's kind or the exit is missing.
     /// </summary>
     private TypeSymbol? EnteredTargetToken(AccessTarget target, TypeSymbol type, bool isTry, string shown,
@@ -1892,7 +1892,7 @@ public sealed partial class SemanticVerifier
         };
     }
 
-    /// <summary>RA-S611: <c>try viewing</c> / <c>try modifying</c> on a target the block doesn't enter, which can't
+    /// <summary>RV-S611: <c>try viewing</c> / <c>try modifying</c> on a target the block doesn't enter, which can't
     /// fail to open.</summary>
     private void ReportTryOnUntryable(AccessTarget target, string shown, string why)
     {
@@ -1903,7 +1903,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RA-S630: reports opening the Guarded at <paramref name="path"/> while an enclosing block of the same routine has
+    /// RV-S630: reports opening the Guarded at <paramref name="path"/> while an enclosing block of the same routine has
     /// it (or an alias of it) open, for reading or for writing.
     /// </summary>
     private void CheckGuardedOpenedAgain(string path, bool isWrite, SourceLocation location)

@@ -30,7 +30,7 @@ public sealed partial class SemanticVerifier
             // annotated collection type (`var l: List[S64]` ⇒ `Roamed[List[S64]]`); it MUST be
             // transparent here too, else a bare literal element loses its S64 context and falls back
             // to the Mielia `Int` default — producing `List[Int]` that won't assign to the
-            // `Roamed[List[S64]]` slot (RA-S201). Inferring the element type through the wrapper is
+            // `Roamed[List[S64]]` slot (RV-S201). Inferring the element type through the wrapper is
             // exactly the builder's job.
             if (current is RecordTypeSymbol { TypeArguments: { Count: 1 } recArgs } recRT &&
                 GetTypeBaseName(type: recRT) is Declaration.RuntimeContract.Retained or Declaration.RuntimeContract.Tracked
@@ -736,7 +736,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Determines a dict literal's key/value types: from an explicit annotation, inferred from the first
-    /// pair, taken from the expected type for an empty literal, else RA-S (empty, no annotation) with
+    /// pair, taken from the expected type for an empty literal, else RV-S (empty, no annotation) with
     /// error types.
     /// </summary>
     private (TypeSymbol? keyType, TypeSymbol? valueType) InferDictKeyValueTypes(
@@ -821,7 +821,7 @@ public sealed partial class SemanticVerifier
                     ? elemExpected
                     : elementType);
 
-            // RA-S413: a tuple owns its items, so a variable, field or container element placed in one
+            // RV-S413: a tuple owns its items, so a variable, field or container element placed in one
             // without `steal` would have two owners (both tear it down).
             if (ChecksHolderOf(type: elementType) &&
                 ReadsKeptEntity(value: tuple.Elements[i], includeVariables: true) &&
@@ -898,7 +898,7 @@ public sealed partial class SemanticVerifier
 
         // Bare unsuffixed integer literals default to S64; re-infer them against the chain's concrete
         // integer operand so `0 < n < 100` (n: S32) conforms the literals to S32 instead of tripping
-        // RA-S060. A single pivot (the first non-literal fixed-width operand) covers the whole chain,
+        // RV-S060. A single pivot (the first non-literal fixed-width operand) covers the whole chain,
         // so even `0 < 5 < n` conforms both literals. Mirrors the pairwise literal re-inference in
         // AnalyzeBinaryExpression.
         // A float or decimal pivot takes the bare numbers too (`-1.0 <= x <= 1.0` with a B128 `x`).

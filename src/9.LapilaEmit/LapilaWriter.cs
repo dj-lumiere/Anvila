@@ -61,7 +61,7 @@ internal sealed class LapilaWriter
         foreach (string name in new[]
                  {
                      LapilaTrace.Push, LapilaTrace.Pop, LapilaTrace.UpdateLocation, "rf_runtime_init", "start", "c_rf_exit_code",
-                     "c_rf_set_trace_mode", "RaTraceFrame", "RA_TRACE_STACK", "RA_TRACE_DEPTH", "rf_trace_get_depth",
+                     "c_rf_set_trace_mode", "RvTraceFrame", "RV_TRACE_STACK", "RV_TRACE_DEPTH", "rf_trace_get_depth",
                      "rf_trace_get_frames"
                  })
         {
@@ -460,7 +460,7 @@ internal sealed class LapilaWriter
     /// </summary>
     public string VariantRecord(VariantTypeSymbol variant)
     {
-        // Mielia's own types share full names with the shared library's (MI `System.List` and RA `System.List`), so
+        // Mielia's own types share full names with the shared library's (MI `System.List` and RV `System.List`), so
         // the realm-marked name keys and names each Lapila record.
         if (_variantRecords.TryGetValue(key: variant.InstanceArgumentName, value: out string? name))
         {
@@ -636,7 +636,7 @@ internal sealed class LapilaWriter
             return name;
         }
 
-        name = UniqueName(wanted: $"RA_DATA_{_texts.Count}");
+        name = UniqueName(wanted: $"RV_DATA_{_texts.Count}");
         _texts[key: key] = name;
         _globals.Append(value: $"preset {name}: {type} = {initial}\n\n");
         // The value is a pointer to the first element, taken from the view of every element.
@@ -671,7 +671,7 @@ internal sealed class LapilaWriter
             return (global, preset.Type);
         }
 
-        global = UniqueName(wanted: $"RA_PRESET_{_presets.Count}");
+        global = UniqueName(wanted: $"RV_PRESET_{_presets.Count}");
         _presets[key: preset.QualifiedName] = global;
         var elements = ((ListLiteralExpression)preset.PresetValue!).Elements;
         string type = TypeText(type: preset.Type);
@@ -723,7 +723,7 @@ internal sealed class LapilaWriter
                 return known;
             }
 
-            string global = UniqueName(wanted: $"RA_GLOBAL_{(string.IsNullOrEmpty(value: programModule) ? name : $"{programModule.Replace(oldChar: '/', newChar: '_')}_{name}")}");
+            string global = UniqueName(wanted: $"RV_GLOBAL_{(string.IsNullOrEmpty(value: programModule) ? name : $"{programModule.Replace(oldChar: '/', newChar: '_')}_{name}")}");
             // The global's value is written at the top of `start` before anything reads it, and a type that holds a
             // pointer has no all-zero value to start from, so the cell is declared `lateinit`.
             _globals.Append(value: $"lateinit global {global}: &{TypeText(type: type)}\n\n");
@@ -739,7 +739,7 @@ internal sealed class LapilaWriter
     /// on first use. An entity value is the block's address; a field is read through this record.</summary>
     public string EntityRecord(EntityTypeSymbol entity)
     {
-        // Realm-marked like the variant records: MI `System.List` and RA `System.List` have different fields.
+        // Realm-marked like the variant records: MI `System.List` and RV `System.List` have different fields.
         if (_entityRecords.TryGetValue(key: entity.InstanceArgumentName, value: out string? name))
         {
             return name;

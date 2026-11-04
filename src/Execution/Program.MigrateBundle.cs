@@ -334,7 +334,7 @@ internal partial class Program
             string standard = StdlibLoader.GetDefaultStdlibPath();
             if (Directory.Exists(path: standard))
             {
-                library = Directory.EnumerateFiles(path: standard, searchPattern: "*.rr", searchOption: SearchOption.AllDirectories)
+                library = Directory.EnumerateFiles(path: standard, searchPattern: "*.rvr", searchOption: SearchOption.AllDirectories)
                                    .Select(selector: File.ReadAllText);
             }
         }

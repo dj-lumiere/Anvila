@@ -711,7 +711,7 @@ public static class LspServer
     /// has no resolved type.</summary>
     private static string? ResolveHoverFallbackLabel(DocState doc, Token hit, Expression? best)
     {
-        // A realm tag (`C`/`LLVM`/`RA`/`MI` before `::`) is a qualifier, not a value — don't report it
+        // A realm tag (`C`/`LLVM`/`RV`/`MI` before `::`) is a qualifier, not a value — don't report it
         // as the return type. If the qualified call resolved, the routine branch already handled it.
         if (IsRealmQualifier(doc: doc, hit: hit))
         {
@@ -1742,7 +1742,7 @@ public static class LspServer
         }
     }
 
-    /// <summary>True when the token is a realm tag (<c>C</c>/<c>LLVM</c>/<c>RA</c>/<c>MI</c>) — i.e. the
+    /// <summary>True when the token is a realm tag (<c>C</c>/<c>LLVM</c>/<c>RV</c>/<c>MI</c>) — i.e. the
     /// very next token on the line is the <c>::</c> separator. Such a token is a qualifier, not a value,
     /// so hover must not fall back to reporting it as a typed expression.</summary>
     private static bool IsRealmQualifier(DocState doc, Token hit)
@@ -1767,9 +1767,9 @@ public static class LspServer
 
         if (type is EntityTypeSymbol)
         {
-            return Ko(english: "🔒 **entity** — single owner. Hand it off with `steal` (a plain `=` is RA-S413); after " +
+            return Ko(english: "🔒 **entity** — single owner. Hand it off with `steal` (a plain `=` is RV-S413); after " +
                                "that the source binding is dead.",
-                korean: "🔒 **entity** — 소유자는 하나입니다. `steal`로 넘깁니다(그냥 `=`는 RA-S413). 넘긴 뒤에는 원래 " +
+                korean: "🔒 **entity** — 소유자는 하나입니다. `steal`로 넘깁니다(그냥 `=`는 RV-S413). 넘긴 뒤에는 원래 " +
                         "바인딩을 쓸 수 없습니다.");
         }
 
@@ -2209,7 +2209,7 @@ public static class LspServer
     private static void PopulateCompletionItems(DocState doc, int line0, int char0,
         List<Dictionary<string, object?>> items, HashSet<string> seen)
     {
-        // After a `Realm::` (C / LLVM / RA / MI) list ONLY that realm's routines.
+        // After a `Realm::` (C / LLVM / RV / MI) list ONLY that realm's routines.
         string? realm = RealmQualifierBefore(doc: doc, line0: line0, char0: char0);
         if (realm != null)
         {
@@ -2251,7 +2251,7 @@ public static class LspServer
         {
             "C" => RoutineRealm.C,
             "LLVM" => RoutineRealm.LLVM,
-            "RA" => RoutineRealm.RA,
+            "RV" => RoutineRealm.RV,
             "MI" => RoutineRealm.MI,
             _ => null
         };
@@ -4433,7 +4433,7 @@ public static class LspServer
 
     /// <summary>
     /// <c>textDocument/codeAction</c>: quick-fixes for the diagnostics in range. Currently one — an
-    /// unused Bool-returning call (RA-W007) gets a "Prepend drop" edit. The structure takes more.
+    /// unused Bool-returning call (RV-W007) gets a "Prepend drop" edit. The structure takes more.
     /// </summary>
     private static void HandleCodeAction(Stream stdout, JsonElement id, JsonElement root)
     {
@@ -4883,9 +4883,9 @@ public static class LspServer
 
     /// <summary>
     /// The source a standard library file was copied from. The build lays the stdlib out next to the executable
-    /// (<c>bin/.../Standard/Revare/System/X.rr</c>), and the editor runs the server from a copy of that folder
+    /// (<c>bin/.../Standard/Revare/System/X.rvr</c>), and the editor runs the server from a copy of that folder
     /// (whose build folder it names in <c>ANVILA_BUILD_DIR</c>). A location in either copy is shown in the project's
-    /// <c>Standard/System/X.rr</c>, so go-to-definition opens the file that is edited, not one a build overwrites. Any
+    /// <c>Standard/System/X.rvr</c>, so go-to-definition opens the file that is edited, not one a build overwrites. Any
     /// other file, or one whose source isn't there, is itself.
     /// </summary>
     private static string SourceFileOf(string fileName)
@@ -5569,8 +5569,8 @@ public static class LspServer
             return uri;
         }
 
-        // Clients escape the drive colon (JetBrains IDEs send `file:///l%3A/x.rr`), which Uri.LocalPath leaves as
-        // `/l:/x.rr`. Unescape, drop the slashes, and give a path without a drive letter its root back.
+        // Clients escape the drive colon (JetBrains IDEs send `file:///l%3A/x.rvr`), which Uri.LocalPath leaves as
+        // `/l:/x.rvr`. Unescape, drop the slashes, and give a path without a drive letter its root back.
         string path = Uri.UnescapeDataString(stringToUnescape: uri["file:".Length..])
                          .TrimStart('/');
         if (!(path.Length >= 2 && path[index: 1] == ':'))

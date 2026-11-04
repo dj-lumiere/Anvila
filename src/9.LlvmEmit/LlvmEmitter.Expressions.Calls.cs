@@ -254,7 +254,7 @@ public partial class LlvmEmitter
         // TypeConstructor intercept using the SA-stamped `create`. Any DirectMemberRoutine that
         // still reaches here with no resolved memberRoutine is a semantic-verifier contract violation.
         // SA contract: a member call either resolves to a concrete routine (stamped on the call)
-        // or is rejected (RA-S458 for `.field()` typos, the dynamic-field `ptr` closure call is
+        // or is rejected (RV-S458 for `.field()` typos, the dynamic-field `ptr` closure call is
         // classified DynamicCall and handled above). A non-null resolvedRoutine that codegen can't
         // re-find is a registry bug, not a fallback to paper over. The former zero-arg field-read
         // fallback ("`obj.field()` means read the field") was removed: `.field` (access) and
@@ -287,7 +287,7 @@ public partial class LlvmEmitter
         // concrete argument types are known, resolve the exact overload here so failable operators
         // like add!/sub! do not degrade to undecorated placeholder symbols (System.S32.add). This
         // is resolution for SA-bypassing bodies, NOT intent-rediscovery on user calls — every
-        // SA-analyzed member call is already stamped or rejected (RA-S458). The former bare
+        // SA-analyzed member call is already stamped or rejected (RV-S458). The former bare
         // `LookupMemberRoutine(name)` that resolved a non-failable name to its failable variant was
         // removed: that failability-masking is now an SA error (`obj.foo()` when only `foo!`
         // exists), so codegen no longer needs to paper over it (task #23).
@@ -1514,7 +1514,7 @@ public partial class LlvmEmitter
         // Failable routines return T directly -> they crash on failure, no carrier needed
 
         // Struct returns classified Indirect by the ABI come back through a hidden sret pointer:
-        // external("C") returning structs > 8 bytes (Win-x64 MSVC), or an RA routine whose return
+        // external("C") returning structs > 8 bytes (Win-x64 MSVC), or an RV routine whose return
         // is ABI-Indirect. The declaration, definition, and every return already agree (see
         // ReturnsViaSret); the call must pass the result slot as the first argument and load it back.
         // Coerced (Phase 2) struct return: the callee returns the ABI integer form; call it as that,

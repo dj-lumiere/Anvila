@@ -356,7 +356,7 @@ internal sealed class PresetInliningPass(DesugaringContext ctx) : AstRewriter
         // A `secret preset` is MODULE-private: inline it inside any file of the module that declares
         // it (same granularity as `secret record`/`secret entity`). A reference from ANOTHER module is
         // left un-inlined — since it stays a bare identifier that resolves to a preset, the
-        // backend-entry validator flags it (RA-S958), so a secret constant cannot silently be used
+        // backend-entry validator flags it (RV-S958), so a secret constant cannot silently be used
         // from another module. Public presets always inline. When there is no current module
         // (`_currentModule == null` for synthesized variant bodies), a secret with a known module is
         // treated as foreign and left un-inlined, preserving the prior variant-body behavior.

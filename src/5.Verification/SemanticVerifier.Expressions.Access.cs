@@ -119,7 +119,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports the Mielia RA-S nullable-entity-dereference error for a member access on a possibly-none
+    /// Reports the Mielia RV-S nullable-entity-dereference error for a member access on a possibly-none
     /// entity receiver, tailoring the receiver description and hint to the receiver expression shape.
     /// </summary>
     private void ReportNullableEntityDeref(MemberExpression member)
@@ -906,7 +906,7 @@ public sealed partial class SemanticVerifier
             RestoreEndedNames(names: parameterNames, ended: endedOuterNames);
         }
 
-        // RA-S413, as for `return`: a lambda that gives back a member variable or a container element of an entity
+        // RV-S413, as for `return`: a lambda that gives back a member variable or a container element of an entity
         // (`t => t.members` over teams) hands its caller an entity the holder still keeps.
         if (ChecksHolderOf(type: returnType) &&
             ReadsKeptEntity(value: lambda.Body, includeVariables: false) &&
@@ -1489,7 +1489,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Adapts bare-literal range bounds to match the other concrete numeric endpoint type when no forced
-    /// <c>Range[T]</c> context is present (RA-S767): <c>0 til me.count()</c> where <c>count()</c> is U64
+    /// <c>Range[T]</c> context is present (RV-S767): <c>0 til me.count()</c> where <c>count()</c> is U64
     /// makes <c>0</c> a U64, not the S64 literal default. Returns the (possibly re-analyzed) start/end types.
     /// </summary>
     private (TypeSymbol StartType, TypeSymbol EndType) AdaptLiteralRangeBounds(
@@ -1920,7 +1920,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// The values of a construction no creator takes fill the member variables in order (<c>Pair[S32, S32](1, 2)</c> is
     /// <c>Pair[S32, S32](first: 1, second: 2)</c>), one for each. A value that is the bare name of another member
-    /// variable needs a label (RA-S510). Returns false when the count differs.
+    /// variable needs a label (RV-S510). Returns false when the count differs.
     /// </summary>
     private bool NamePositionalArgumentsByFieldOrder(TypeSymbol type, CreatorExpression creator)
     {

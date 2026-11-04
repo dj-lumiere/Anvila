@@ -27,41 +27,41 @@ internal static class LapilaTrace
     /// <summary>The frame stack, the depth, and the routines over them.</summary>
     public const string Support = """
         ### One frame of the crash trace, laid out as the runtime's printer reads it.
-        record RaTraceFrame
+        record RvTraceFrame
             `routine`: Addr
             file: Addr
             line: S32
             column: S32
 
         @threadlocal
-        global RA_TRACE_STACK: &Items[RaTraceFrame, 32]
+        global RV_TRACE_STACK: &Items[RvTraceFrame, 32]
 
         @threadlocal
-        global RA_TRACE_DEPTH: &S32
+        global RV_TRACE_DEPTH: &S32
 
         ### Pushes a frame. The depth wraps at 32, so a deeper stack overwrites its oldest frames.
         routine rf_trace_push(routine_name: @Byte, file: @Byte, line: S32, column: S32) -> Void
-            depth: S32 = RA_TRACE_DEPTH.load()
+            depth: S32 = RV_TRACE_DEPTH.load()
             index: U64 = zext[S32, U64](band[S32](depth, 31))
-            frame: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(index)
+            frame: @RvTraceFrame = RV_TRACE_STACK.getview().to[@RvTraceFrame]().stride(index)
             frame.`routine`.poke(routine_name)
             frame.file.poke(file)
             frame.line.poke(line)
             frame.column.poke(column)
-            add[S32](depth, 1).poke_into(RA_TRACE_DEPTH)
+            add[S32](depth, 1).poke_into(RV_TRACE_DEPTH)
             return
 
         routine rf_trace_pop() -> Void
-            sub[S32](RA_TRACE_DEPTH.load(), 1).poke_into(RA_TRACE_DEPTH)
+            sub[S32](RV_TRACE_DEPTH.load(), 1).poke_into(RV_TRACE_DEPTH)
             return
 
         ### Moves the top frame to the position of the call about to be made.
         routine rf_trace_update_loc(line: S32, column: S32) -> Void
-            depth: S32 = RA_TRACE_DEPTH.load()
+            depth: S32 = RV_TRACE_DEPTH.load()
             if depth.le(0)
                 return
             index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
-            frame: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(index)
+            frame: @RvTraceFrame = RV_TRACE_STACK.getview().to[@RvTraceFrame]().stride(index)
             frame.line.poke(line)
             frame.column.poke(column)
             return
@@ -69,61 +69,61 @@ internal static class LapilaTrace
         ### The trace's depth, under the name the LLVM emitter exports it by: Ingrid's crash handler reads it.
         @export("_rf_trace_get_depth_shared")
         routine rf_trace_get_depth() -> S32
-            depth: S32 = RA_TRACE_DEPTH.load()
+            depth: S32 = RV_TRACE_DEPTH.load()
             return depth
 
         ### The trace's 32 frames, under the name the LLVM emitter exports them by.
         @export("_rf_trace_get_frames_shared")
-        routine rf_trace_get_frames() -> @RaTraceFrame
-            frames: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]()
+        routine rf_trace_get_frames() -> @RvTraceFrame
+            frames: @RvTraceFrame = RV_TRACE_STACK.getview().to[@RvTraceFrame]()
             return frames
 
         ### The trace's innermost frame, under the name the LLVM emitter exports it by: Ingrid's place of an access reads
         ### it. 1 when there is one, 0 for an empty trace.
         @export("_rf_trace_get_innermost_shared")
-        routine rf_trace_get_innermost(out: @RaTraceFrame) -> S32
-            depth: S32 = RA_TRACE_DEPTH.load()
+        routine rf_trace_get_innermost(out: @RvTraceFrame) -> S32
+            depth: S32 = RV_TRACE_DEPTH.load()
             if depth.le(0)
                 return 0
             index: U64 = zext[S32, U64](band[S32](sub[S32](depth, 1), 31))
-            frame: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(index)
+            frame: @RvTraceFrame = RV_TRACE_STACK.getview().to[@RvTraceFrame]().stride(index)
             out.poke(frame.peek())
             return 1
 
         ### One failure a thread remembers: its number, the depth of the trace when it was thrown, and the trace.
-        record RaFailure
+        record RvFailure
             seq: U64
             depth: S32
-            frames: Items[RaTraceFrame, 32]
+            frames: Items[RvTraceFrame, 32]
 
         ### The program's most recent failures, a ring of 64: a failure a Work threw is reported where it is retrieved,
         ### on another thread.
-        global RA_FAILURES: &Items[RaFailure, 64]
+        global RV_FAILURES: &Items[RvFailure, 64]
 
         ### The number of the last failure, on every thread.
-        global RA_FAILURE_COUNT: &U64
+        global RV_FAILURE_COUNT: &U64
 
         ### Notes the running thread's trace as a new failure's, in the entry its number picks, and gives the failure's
         ### number (never 0), which a caught error keeps so a report of it thrown again shows where it began.
         routine rf_failure_note() -> U64
-            previous: U64 = RA_FAILURE_COUNT.fetch_add_unbroken[RELAXED](1)
+            previous: U64 = RV_FAILURE_COUNT.fetch_add_unbroken[RELAXED](1)
             seq: U64 = add[U64](previous, 1)
-            entry: @RaFailure = RA_FAILURES.getview().to[@RaFailure]().stride(band[U64](previous, 63))
+            entry: @RvFailure = RV_FAILURES.getview().to[@RvFailure]().stride(band[U64](previous, 63))
             entry.seq.poke_unbroken(0)
-            RA_TRACE_DEPTH.load().poke_into(entry.depth)
+            RV_TRACE_DEPTH.load().poke_into(entry.depth)
             for i in 0 til 32
-                from: @RaTraceFrame = RA_TRACE_STACK.getview().to[@RaTraceFrame]().stride(i)
-                to: @RaTraceFrame = entry.frames.getview().to[@RaTraceFrame]().stride(i)
+                from: @RvTraceFrame = RV_TRACE_STACK.getview().to[@RvTraceFrame]().stride(i)
+                to: @RvTraceFrame = entry.frames.getview().to[@RvTraceFrame]().stride(i)
                 to.poke(from.peek())
             entry.seq.poke_unbroken(seq)
             return seq
 
         ### The entry of failure `seq`, or None when the thread doesn't remember it.
-        infallible routine rf_failure_find(seq: U64) -> @RaFailure?
+        infallible routine rf_failure_find(seq: U64) -> @RvFailure?
             if ieq[U64](seq, 0)
                 return None()
             for i in 0 til 64
-                entry: @RaFailure = RA_FAILURES.getview().to[@RaFailure]().stride(i)
+                entry: @RvFailure = RV_FAILURES.getview().to[@RvFailure]().stride(i)
                 if ieq[U64](entry.seq.peek_unbroken(), seq)
                     return entry
             return None()
@@ -133,14 +133,14 @@ internal static class LapilaTrace
         @export("_rf_failure_get_frames_shared")
         routine rf_failure_get_frames(seq: U64) -> Addr
             when rf_failure_find(seq)
-                is @RaFailure as entry => return entry.frames.getview().to[@RaTraceFrame]()
+                is @RvFailure as entry => return entry.frames.getview().to[@RvTraceFrame]()
                 is None => return Addr.zero()
 
         ### The depth of failure `seq`'s trace, under the name the LLVM emitter exports it by, or 0.
         @export("_rf_failure_get_depth_shared")
         routine rf_failure_get_depth(seq: U64) -> S32
             when rf_failure_find(seq)
-                is @RaFailure as entry => return entry.depth.peek()
+                is @RvFailure as entry => return entry.depth.peek()
                 is None => return 0
 
 

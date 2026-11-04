@@ -61,12 +61,12 @@ public abstract class TypeSymbol
     public List<string>? Annotations { get; init; }
 
     /// <summary>
-    /// The stdlib "world-line" this type identity belongs to: <c>"RA"</c> (Revare realm — bare
+    /// The stdlib "world-line" this type identity belongs to: <c>"RV"</c> (Revare realm — bare
     /// single-owner entities, deterministic teardown) or <c>"MI"</c> (Mielia realm — <c>entity</c> lowers
     /// to <c>Roamed</c>, cycle-collected). A structured attribute (like <c>IsFailable</c> /
     /// <c>TypeArguments</c>), never string-parsed off the name. The SAME stdlib source instantiates under
-    /// BOTH realms as DISTINCT identities: <c>RA::System.List</c> ≠ <c>MI::System.List</c>. The ambient realm
-    /// comes from the source file (.rr ⇒ RA, .mie ⇒ MI); an explicit <c>RA::</c>/<c>MI::</c> qualifier
+    /// BOTH realms as DISTINCT identities: <c>RV::System.List</c> ≠ <c>MI::System.List</c>. The ambient realm
+    /// comes from the source file (.rvr ⇒ RV, .mie ⇒ MI); an explicit <c>RV::</c>/<c>MI::</c> qualifier
     /// overrides it. Both realms are rendered explicitly in <see cref="FullName"/> (and therefore in LLVM
     /// symbols) so the two world-lines never collide when they coexist in one binary.
     /// </summary>
@@ -121,9 +121,9 @@ public abstract class TypeSymbol
 
     /// <summary>
     /// <see cref="FullName"/> with the structured <see cref="Realm"/> rendered as an explicit
-    /// <c>RA::</c>/<c>MI::</c> prefix (recursively over generic args), e.g. <c>RA::System.List[RA::System.S64]</c>.
+    /// <c>RV::</c>/<c>MI::</c> prefix (recursively over generic args), e.g. <c>RV::System.List[RV::System.S64]</c>.
     /// This is the SYMMETRIC identity used for LLVM symbol mangling (both world-lines always marked) and as
-    /// the cross-realm registry key when RA and MI instances of the same type coexist in one binary.
+    /// the cross-realm registry key when RV and MI instances of the same type coexist in one binary.
     /// </summary>
     public string RealmQualifiedName
     {

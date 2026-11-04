@@ -270,14 +270,14 @@ public sealed partial class SemanticVerifier
     private readonly Dictionary<VariableInfo, bool> _lockBackedTokens = new(comparer: ReferenceEqualityComparer.Instance);
 
     /// <summary>The argument lists of the calls already reported for passing one lock-backed write token twice
-    /// (RA-S603), so the general same-container check (RA-S623) does not report the same mistake again.</summary>
+    /// (RV-S603), so the general same-container check (RV-S623) does not report the same mistake again.</summary>
     private readonly HashSet<List<Expression>> _lockTokenDuplicateCalls = new(comparer: ReferenceEqualityComparer.Instance);
 
     /// <summary>The Guarded accesses the enclosing <c>viewing</c> / <c>modifying</c> blocks of the routine hold. Each
     /// hold records the syntactic handle path AND the controller identity it resolves to (see
     /// <see cref="_sharedHandleIdentity"/>), so aliased handles (<c>s2 = s.share()</c>) count as the same one even
     /// though their names differ. Pushed on a block's entry, popped on its exit, so a nested block sees the holds it
-    /// overlaps: opening one again is RA-S630.</summary>
+    /// overlaps: opening one again is RV-S630.</summary>
     private readonly List<(string Handle, int Identity, bool IsWriter, SourceLocation Location)>
         _activeAccessHolds = [];
 
@@ -358,7 +358,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Stores the build mode state used by this builder phase.
     /// </summary>
-    private readonly RaBuildMode _buildMode;
+    private readonly RvBuildMode _buildMode;
 
     /// <summary>
     /// True when this instance was constructed from a pre-analyzed stdlib snapshot.
@@ -379,7 +379,7 @@ public sealed partial class SemanticVerifier
     /// <param name="parsedStdlib">Standard library files the build driver already parsed for its import index
     /// (<see cref="BuildDriver.TakeParsedStdlib"/>), taken in place of parsing them again.</param>
     public SemanticVerifier(Language language, string? stdlibPath = null,
-        TargetConfig? target = null, RaBuildMode buildMode = RaBuildMode.Debug, ParsedStdlibFiles? parsedStdlib = null)
+        TargetConfig? target = null, RvBuildMode buildMode = RvBuildMode.Debug, ParsedStdlibFiles? parsedStdlib = null)
     {
         _registry = new TypeRegistry(language: language, stdlibPath: stdlibPath, parsedStdlib: parsedStdlib);
         _registry.CurrentModule = GetCurrentModuleName;
@@ -398,7 +398,7 @@ public sealed partial class SemanticVerifier
     /// first <see cref="Analyze"/> call — use with <see cref="SaOnly"/> = true only.
     /// </summary>
     public SemanticVerifier(Language language, TypeRegistry.StdlibSnapshot snapshot,
-        TargetConfig? target = null, RaBuildMode buildMode = RaBuildMode.Debug)
+        TargetConfig? target = null, RvBuildMode buildMode = RvBuildMode.Debug)
     {
         _registry = new TypeRegistry(language: language, snapshot: snapshot);
         _registry.CurrentModule = GetCurrentModuleName;
@@ -658,14 +658,14 @@ public sealed partial class SemanticVerifier
     /// <summary>Phase 1: Collect all type shapes and routine stubs -> no names resolved.</summary>
     private void RunPhase1Declarations(Program program)
     {
-        // The standard library takes its `@ra("...")` declarations out as it loads them, so one that reaches here
+        // The standard library takes its `@rv("...")` declarations out as it loads them, so one that reaches here
         // is in a program: there it would declare a routine with no body or a second type of an existing name.
         foreach (SyntaxTree.Declaration binding in program.Declarations.OfType<SyntaxTree.Declaration>()
-                                                          .Where(predicate: RaBindingCheck.IsBinding)
+                                                          .Where(predicate: RvBindingCheck.IsBinding)
                                                           .ToList())
         {
             ReportError(code: SemanticDiagnosticCode.InvalidAnnotation,
-                message: "You wrote @ra on a declaration in your program. Only the standard library uses @ra. " +
+                message: "You wrote @rv on a declaration in your program. Only the standard library uses @rv. " +
                          "Remove it, and give a routine its body.",
                 location: binding.Location);
             // Reported once: the rest of the analysis does not see it, so its missing body is not reported again.
@@ -715,7 +715,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>True while analyzing the body of a buildtime <c>expand</c> statement. Expansion is
-    /// single-level, so a nested <c>expand</c> is rejected (RA-S635).</summary>
+    /// single-level, so a nested <c>expand</c> is rejected (RV-S635).</summary>
     private bool _inExpandBody;
 
     private SharedEntities? _sharedEntities;
@@ -870,7 +870,7 @@ public sealed partial class SemanticVerifier
         // Build the bodies of all on-demand-synthesized variants (Phase-5 demand + transitive) BEFORE the
         // desugaring pipeline, so they flow through the same variant-body lowering (PresetInlining,
         // control-flow, operator, etc.) the eager `emit` bodies get — otherwise a body's preset identifiers
-        // (e.g. S64_MIN in try variant of floordiv) survive to codegen (RA-S958).
+        // (e.g. S64_MIN in try variant of floordiv) survive to codegen (RV-S958).
         DrainVariantBodyGenQueue();
 
         var ctx = new DesugaringContext(registry: _registry,
@@ -1231,7 +1231,7 @@ public sealed partial class SemanticVerifier
 
         tempTeardownPass.RunOnBodies(bodies: markerCtx.VariantBodies);
 
-        // MarkerProtocolDesugarPass. The warm-daemon RA-S413 false positive is ALREADY fixed by routing
+        // MarkerProtocolDesugarPass. The warm-daemon RV-S413 false positive is ALREADY fixed by routing
         // marker protocols through the ordinary generic-bound desugar in SignatureResolver: a param is now
         // a bound generic, never a bare marker protocol, so RewriteAllSignatures finds no marker param to
         // erase in place — the shared/cached RoutineInfo is no longer mutated, so the cache can't be
@@ -1396,7 +1396,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Runs the v0.2.0 may-suspend fixpoint over the call graph that
     /// <c>RoutineReachabilityPass</c> populated, storing the result for codegen's 9-2
-    /// cancellation instrumentation. Optional <c>RA_MAYSUSPEND_DUMP</c> writes the set for probes.
+    /// cancellation instrumentation. Optional <c>RV_MAYSUSPEND_DUMP</c> writes the set for probes.
     /// </summary>
     private void ComputeMaySuspend(InstantiationContext ctx)
     {
@@ -1753,12 +1753,12 @@ public sealed partial class SemanticVerifier
         return _registry.StdlibParseErrors().ToList();
     }
 
-    /// <summary>Checks the standard library's <c>@ra("...")</c> declarations against the Revare ones they name,
+    /// <summary>Checks the standard library's <c>@rv("...")</c> declarations against the Revare ones they name,
     /// and returns one line per problem.</summary>
-    public List<string> CheckRaBindings()
+    public List<string> CheckRvBindings()
     {
-        RaBindingCheck.LoadModules(registry: _registry);
-        return RaBindingCheck.Check(registry: _registry);
+        RvBindingCheck.LoadModules(registry: _registry);
+        return RvBindingCheck.Check(registry: _registry);
     }
 
     /// <summary>True while <see cref="ValidateStdlibBodies"/> runs its reduced-phase stdlib check, so
@@ -1834,10 +1834,10 @@ public sealed partial class SemanticVerifier
         // Mark the registry so that any concrete generic instances created as side-effects
         // of stdlib body analysis are tagged IsStdlibLazy and excluded from GMP iteration.
         // Types the user program actually needs will be materialized when user SA references them.
-        // The stdlib is always Revare source (MI ≡ RA grammar; MI's System IS RA's System). Analyze
+        // The stdlib is always Revare source (MI ≡ RV grammar; MI's System IS RV's System). Analyze
         // its bodies in Revare mode so language-sensitive SA — unsuffixed-literal defaults, the
         // danger/extern gates, generic-call resolution — matches how the stdlib was authored. Under
-        // Mielia mode the RA stdlib's generic calls fail to resolve and survive lowering (RA-S954).
+        // Mielia mode the RV stdlib's generic calls fail to resolve and survive lowering (RV-S954).
         TypeRegistry.StdlibSourceScope stdlibSource = _registry.AnalyzingStdlibSource();
         _registry.BeginStdlibAnalysis();
         try
@@ -1903,8 +1903,8 @@ public sealed partial class SemanticVerifier
         _currentFilePath = filePath;
         _currentModuleName = module;
         // Prefer this file's own realm when resolving its bare type names: an MI-realm (`.mie`) stdlib
-        // file's bare `List` resolves to the MI-realm `System.List` (bridged) it declares, while an RA file
-        // keeps the ambient RA resolution. Zero effect on RA (resolution realm == ambient there).
+        // file's bare `List` resolves to the MI-realm `System.List` (bridged) it declares, while an RV file
+        // keeps the ambient RV resolution. Zero effect on RV (resolution realm == ambient there).
         _registry.ResolutionRealm = Builder.Frontends.Languages.RealmOf(fileName: filePath);
         _importedModules.Clear();
         _importedSymbolNames.Clear();
@@ -1937,7 +1937,7 @@ public sealed partial class SemanticVerifier
             _importedModules.Add(item: importModule);
         }
 
-        // Kept so a body the builder later takes from this file (a derive in Derivation.rr instantiated for
+        // Kept so a body the builder later takes from this file (a derive in Derivation.rvr instantiated for
         // some other type) is analyzed with this file's imports.
         CaptureCurrentImportStateSnapshot(filePath: filePath);
 
@@ -2123,7 +2123,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Ensures the stdlib file declaring <paramref name="routineKey"/> has been body-analyzed, running the
     /// per-file setup + analysis exactly as the eager sweep would — but only when the collector actually
-    /// reaches a routine in it. Wraps the same RA-language / stdlib-analysis-mode toggles as
+    /// reaches a routine in it. Wraps the same RV-language / stdlib-analysis-mode toggles as
     /// <see cref="AnalyzeStdlibBodies"/>. No-op if the file is already analyzed or the key is not a stdlib
     /// routine. This is the hook <see cref="InstantiationContext.AnalyzeRoutineOnDemand"/> is bound to.
     /// </summary>
@@ -2172,9 +2172,9 @@ public sealed partial class SemanticVerifier
         TypeRegistry.StdlibSourceScope stdlibSource = _registry.AnalyzingStdlibSource();
         _registry.BeginStdlibAnalysis();
         // Suppress the operator-protocol conformance gate for stdlib bodies: a demand-analyzed file's
-        // cross-file operators (e.g. ByteSize's wrapping-multiply used in List.rr) resolve against derived
+        // cross-file operators (e.g. ByteSize's wrapping-multiply used in List.rvr) resolve against derived
         // operators only fully materialized by the whole pipeline — per-file demand SA under-reports
-        // structural conformance and the gate false-fires (RA-S065). The gate stays active for USER code,
+        // structural conformance and the gate false-fires (RV-S065). The gate stays active for USER code,
         // where an operator mis-bind actually matters. Mirrors ValidateStdlibBodies' rationale.
         bool prevReduced = _isReducedStdlibValidation;
         _isReducedStdlibValidation = true;
@@ -2182,7 +2182,7 @@ public sealed partial class SemanticVerifier
         // the eager path does this by RemoveRange-ing everything AnalyzeStdlibBodies() reports (Phase 5).
         // The demand path analyzes each reached stdlib file HERE instead, so it must discard its diagnostics
         // the same way; otherwise a stdlib-internal diagnostic that the eager sweep silently drops (a bare
-        // foreign call RA-S460, a teardown-injected `destruct` RA-S609, an iterator-protocol RA-S205) leaks
+        // foreign call RV-S460, a teardown-injected `destruct` RV-S609, an iterator-protocol RV-S205) leaks
         // into the user build and fails it — the demand-only regression across the stdlib fixtures.
         int errorsBeforeStdlib = _errors.Count;
         int warningsBeforeStdlib = _warnings.Count;
@@ -2692,7 +2692,7 @@ public sealed partial class SemanticVerifier
         // resolution can drop a protocol whose definition wasn't loaded yet — e.g. a user module
         // record obeying a System protocol (FloorDivisible) registered before that protocol's file
         // loaded — leaving ImplementedProtocols short. Re-resolving here (before signature
-        // resolution runs the generic-constraint checks, RA-S150) fills them in.
+        // resolution runs the generic-constraint checks, RV-S150) fills them in.
         foreach ((Program program, string _) in files)
         {
             StdlibLoader.ResolveProgramProtocolConformances(registry: _registry, program: program);
@@ -2749,7 +2749,7 @@ public sealed partial class SemanticVerifier
         }
 
         // The same routine declared twice in one file: one declaration is kept silently, so the other body is
-        // never called (two `T.lacks` in Derivation.rr answered "not all" for "none").
+        // never called (two `T.lacks` in Derivation.rvr answered "not all" for "none").
         foreach ((RoutineInfo first, RoutineInfo second) in _registry.RepeatedRoutineDeclarations)
         {
             string parameterTypes =
@@ -2866,8 +2866,8 @@ public sealed partial class SemanticVerifier
 
         // Per-file resolution realm is a body-analysis convenience only; global passes (synthesis,
         // instantiation, GMP) re-resolve concrete instantiations and must run at the ambient realm so
-        // an explicit `RA::` inside an MI-realm body (the wrapper's `inner: RA::System.List[T]()`) keeps
-        // its RA binding instead of being re-resolved under a leaked MI resolution realm.
+        // an explicit `RV::` inside an MI-realm body (the wrapper's `inner: RV::System.List[T]()`) keeps
+        // its RV binding instead of being re-resolved under a leaked MI resolution realm.
         _registry.ResolutionRealm = _registry.AmbientRealm;
         Mark(label: $"Phase 5 per-file -> {nameof(AnalyzeBodies)} (user)");
 
@@ -3366,7 +3366,7 @@ public sealed partial class SemanticVerifier
     {
         bool restored = TryRestoreImportStateForRoutine(routineInfo: routineInfo);
 
-        // The body also sees what the file it was written in imports: a derive template from Derivation.rr
+        // The body also sees what the file it was written in imports: a derive template from Derivation.rvr
         // instantiated for a type declared elsewhere, or a body whose routine's own file left no snapshot.
         if (body?.Location.FileName is { Length: > 0 } bodyFile)
         {
@@ -3463,7 +3463,7 @@ public sealed partial class SemanticVerifier
 
         // Prefer this file's own realm when resolving its bare type names. A user `.mie` file's bare
         // `List` resolves to the MI-realm (bridged) `System.List` — the approachable MI wrapper — while an
-        // `.rr` file keeps ambient RA resolution. Mirrors the stdlib-body loop; zero effect on RA
+        // `.rvr` file keeps ambient RV resolution. Mirrors the stdlib-body loop; zero effect on RV
         // (resolution realm == ambient there). Restored to AmbientRealm by the caller after the phase.
         _registry.ResolutionRealm = Builder.Frontends.Languages.OfFile(fileName: filePath) != Language.Revare
             ? Builder.Frontends.Languages.RealmOf(fileName: filePath)
@@ -3622,11 +3622,11 @@ public sealed partial class SemanticVerifier
     /// <param name="code">The diagnostic code for this error.</param>
     /// <param name="message">The error message.</param>
     /// <param name="location">The source location of the error.</param>
-    /// <summary>Debug aid: with <c>RA_TRACE_STDLIB_ERRORS</c> set, prints the diagnostics from index
+    /// <summary>Debug aid: with <c>RV_TRACE_STDLIB_ERRORS</c> set, prints the diagnostics from index
     /// <paramref name="from"/> on before they are dropped (stdlib and builder-written bodies).</summary>
     private void TraceDroppedErrors(int from)
     {
-        if (Environment.GetEnvironmentVariable(variable: "RA_TRACE_STDLIB_ERRORS") is not { Length: > 0 })
+        if (Environment.GetEnvironmentVariable(variable: "RV_TRACE_STDLIB_ERRORS") is not { Length: > 0 })
         {
             return;
         }

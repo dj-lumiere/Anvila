@@ -4,7 +4,7 @@ using Builder.LapilaEmit;
 namespace Builder;
 
 /// <summary>
-/// Ingrid's libraries written in Lapila (<c>Ingrid/lapila/*.li</c>): the math, hashing, and random-number code both
+/// Ingrid's libraries written in Lapila (<c>Ingrid/lapila/*.lpa</c>): the math, hashing, and random-number code both
 /// languages build on. The standard library calls them through <c>C::</c> declarations, and their bodies are not in the
 /// runtime DLL, so every Revare module is llvm-linked with this library before <c>opt</c>. That puts the bodies in
 /// the module being optimized, where LLVM can inline them (<c>#inline</c> routines are <c>alwaysinline</c>).
@@ -44,7 +44,7 @@ internal static class IngridLapila
                                  $"executable and no '{IrFileName}' next to it.");
             }
 
-            string[] sources = Directory.GetFiles(path: sourceDir, searchPattern: "*.li",
+            string[] sources = Directory.GetFiles(path: sourceDir, searchPattern: "*.lpa",
                     searchOption: SearchOption.AllDirectories)
                 .Order(comparer: StringComparer.Ordinal)
                 .ToArray();
@@ -146,7 +146,7 @@ internal static class IngridLapila
 
             // A file of this process's own, so a build in another process can't see it half written.
             string tmp = $"{obj}.{Environment.ProcessId}.tmp";
-            if (NativeToolchain.CompileIrToObject(optFile: ir, objFile: tmp, buildMode: RaBuildMode.Release) != 0)
+            if (NativeToolchain.CompileIrToObject(optFile: ir, objFile: tmp, buildMode: RvBuildMode.Release) != 0)
             {
                 TryDelete(path: tmp);
                 return null;
@@ -233,10 +233,10 @@ internal static class IngridLapila
         var watchers = new List<FileSystemWatcher>();
         if (TryFindSourceDir(exeDir: exeDir, sourceDir: out string sourceDir))
         {
-            Watch(watchers: watchers, dir: sourceDir, recursive: true, filters: ["*.li"]);
+            Watch(watchers: watchers, dir: sourceDir, recursive: true, filters: ["*.lpa"]);
         }
 
-        Watch(watchers: watchers, dir: LapilaBackend.StdlibDirectory(), recursive: true, filters: ["*.li"]);
+        Watch(watchers: watchers, dir: LapilaBackend.StdlibDirectory(), recursive: true, filters: ["*.lpa"]);
         string[] builders = BuilderLocation.BuildFiles(typeof(Lapila.Compiler), typeof(IngridLapila))
                                            .Where(predicate: b => Path.TrimEndingDirectorySeparator(path: Path.GetDirectoryName(path: b) ?? "") ==
                                                          Path.TrimEndingDirectorySeparator(path: exeDir))
@@ -296,7 +296,7 @@ internal static class IngridLapila
     {
         DateTime cachedAt = File.GetLastWriteTimeUtc(path: cached);
         string[] builders = [.. BuilderLocation.BuildFiles(typeof(Lapila.Compiler), typeof(IngridLapila))];
-        IEnumerable<string> stdlib = Directory.GetFiles(path: LapilaBackend.StdlibDirectory(), searchPattern: "*.li",
+        IEnumerable<string> stdlib = Directory.GetFiles(path: LapilaBackend.StdlibDirectory(), searchPattern: "*.lpa",
             searchOption: SearchOption.AllDirectories);
         return sources.Concat(second: stdlib).Any(predicate: s => File.GetLastWriteTimeUtc(path: s) > cachedAt)
                || builders.Any(predicate: b => File.GetLastWriteTimeUtc(path: b) > cachedAt);

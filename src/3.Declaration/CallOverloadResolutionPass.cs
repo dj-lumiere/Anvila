@@ -985,7 +985,7 @@ internal sealed class CallOverloadResolutionPass
             // Not a free routine — a TYPE-CONSTRUCTION call `TypeName(args)` (a buildtime-`expand` monomorph
             // body's `throw IndexOutOfBoundsError(index:, count:)`, unresolved because the body was never
             // SA'd). SA normally stamps ConstructedType + `create` here; do the same so codegen's constructor
-            // path emits it instead of tripping the RA-S959 gate. Only fires on an unresolved call whose name
+            // path emits it instead of tripping the RV-S959 gate. Only fires on an unresolved call whose name
             // is a concrete type (idempotent; no effect on resolved calls or real free-routine names).
             if (call is { ConstructedType: null } &&
                 _registry.LookupType(name: name) is { IsGenericDefinition: false } ctorType)

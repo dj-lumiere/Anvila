@@ -11,7 +11,7 @@ namespace Builder.Lowering.Passes;
 /// field READ or WRITE through a <c>Roamed[E]</c> handle must be wrapped in
 /// <c>handle.lock_enter()</c> … <c>handle.lock_exit()</c> so that — once the object has ESCAPED to
 /// another worker — the field touch is serialized. The lock is a no-op while the object is LOCAL and a
-/// <b>reentrant</b>, task-keyed acquire once escaped (see <c>Roamed.rr</c>).
+/// <b>reentrant</b>, task-keyed acquire once escaped (see <c>Roamed.rvr</c>).
 ///
 /// <para>Previously codegen inserted <c>call void @lock_enter/@lock_exit(handle)</c> itself, with NO
 /// surface AST call, bracketing each individual field read/write. This pass makes it a REAL AST rewrite

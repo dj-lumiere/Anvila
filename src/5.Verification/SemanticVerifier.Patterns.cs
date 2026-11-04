@@ -1029,7 +1029,7 @@ public sealed partial class SemanticVerifier
     /// The one type an <c>else as name</c> arm gives its name: what is left of <paramref name="matchedType"/> after the
     /// unguarded arms before it. A <c>Optional</c> is its value or <c>None</c>, a <c>Check</c> is its value or the caught
     /// error (every crashable together counts as one type), a variant is its member types, and anything else is
-    /// itself. When more than one type is left, reports RA-S359 and returns null.
+    /// itself. When more than one type is left, reports RV-S359 and returns null.
     /// </summary>
     private TypeSymbol? ResolveElseRemainder(ElsePattern elsePat, TypeSymbol matchedType,
         IEnumerable<WhenClause> priorClauses)

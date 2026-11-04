@@ -15,7 +15,7 @@ namespace Builder.Execution;
 /// The emitted <c>@main</c> is self-contained: it calls <c>rf_runtime_init()</c>, sets trace mode, runs
 /// <c>start()</c>, and returns 0 — so calling it directly does full runtime initialization exactly as the
 /// AOT entry point would. The JIT runs IN THIS PROCESS, so the program's stdout/stderr/stdin are the
-/// caller's own streams (no forwarding) and a program crash (RA fails loudly by aborting) surfaces as this
+/// caller's own streams (no forwarding) and a program crash (RV fails loudly by aborting) surfaces as this
 /// process's crash — identical to running the AOT exe. That is why JIT-and-run happens client-side, never
 /// in the daemon (whose stdio the user can't see).
 ///
@@ -44,7 +44,7 @@ internal static unsafe class OrcJitExecutor
 
     // --- Fully-lazy on-demand materialization (resident-JIT incremental (B), M2a) ---
     // Set for the duration of one JitAndRunLazy call. The ORC custom definition generator fires (under the
-    // ExecutionSession lock) with the batch of unresolved RA symbols a materialization needs; the callback
+    // ExecutionSession lock) with the batch of unresolved RV symbols a materialization needs; the callback
     // codegens each one's external-linkage one-routine module on demand and adds it, so ONLY what @main
     // transitively reaches AT RUNTIME is ever emitted + JIT-compiled — no caller-side closure walk.
     private static Func<string, string?>? _lazyMaterialize;
@@ -103,7 +103,7 @@ internal static unsafe class OrcJitExecutor
                         >)fromCtxPtr;
 
                 // Load the native runtime so its rf_* exports are visible to ORC's process-wide symbol
-                // search (this is what lets JIT'd RA code link against rf_console_show, the scheduler, …).
+                // search (this is what lets JIT'd RV code link against rf_console_show, the scheduler, …).
                 // The handle is intentionally not stored: the library stays loaded for the process lifetime
                 // by virtue of NativeLibrary.Load, so no explicit reference is needed.
                 string rtName = OperatingSystem.IsWindows() ? "revare_runtime.dll"
@@ -151,7 +151,7 @@ internal static unsafe class OrcJitExecutor
     /// <summary>
     /// JITs <paramref name="llvmIr"/> and calls its <c>@main</c> with the given program arguments (argv[0]
     /// is <paramref name="programName"/>). Returns the program's exit code. The JIT and code stay mapped
-    /// for the life of the process — RA's runtime spawns scheduler threads that may outlive <c>main</c>'s
+    /// for the life of the process — RV's runtime spawns scheduler threads that may outlive <c>main</c>'s
     /// return, so we deliberately do NOT tear the JIT down (the process exit that follows a one-shot run
     /// reclaims everything, exactly as the AOT exe's process exit does).
     /// </summary>
@@ -605,7 +605,7 @@ internal static unsafe class OrcJitExecutor
     /// <summary>
     /// Resident-JIT incremental (B) FULLY-LAZY on-demand materialization (M2a). JITs <paramref name="mainIr"/>
     /// (@main + user routines + shared runtime globals; every stdlib callee an extern <c>declare</c>) and
-    /// attaches an ORC custom definition generator: when a materialization needs an unresolved RA symbol,
+    /// attaches an ORC custom definition generator: when a materialization needs an unresolved RV symbol,
     /// <paramref name="materialize"/> is called with that symbol's IR name (ORC's name without the global prefix)
     /// and returns its external-linkage one-routine IR module (or null → defer to the process-search generator for <c>rf_*</c>
     /// runtime symbols). Codegen happens strictly on demand as ORC resolves each symbol — only what <c>@main</c>
@@ -656,7 +656,7 @@ internal static unsafe class OrcJitExecutor
         return RunMain(jit: jit, programName: programName, programArgs: programArgs);
     }
 
-    /// <summary>The ORC custom-definition-generator callback: for each requested RA symbol, codegen its
+    /// <summary>The ORC custom-definition-generator callback: for each requested RV symbol, codegen its
     /// external-linkage one-routine module (via the materialize delegate) and add it to the dylib on demand.
     /// Runs under the ExecutionSession lock — adding the module here IS re-entrancy-safe (the added module's
     /// definitions satisfy the in-flight lookup, and its own unresolved callees re-fire this generator). A

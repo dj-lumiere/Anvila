@@ -15,7 +15,7 @@ namespace Builder.Collection.Passes;
 /// Writes ObjectHacker's routine tables (<c>call</c>, <c>create</c>, <c>types(in:)</c>, <c>routines(in:)</c>) once the
 /// demand walk has settled. A table lists only routines the walk reached, so it is written after the walk: written
 /// during it, its dispatch calls would make every routine of a type reached. Each table routine is declared in the
-/// library (<c>ObjectHacker/Reflect.rr</c>) with a body that lists nothing, and the walk builds it like any other
+/// library (<c>ObjectHacker/Reflect.rvr</c>) with a body that lists nothing, and the walk builds it like any other
 /// routine. Afterwards this pass gives each reached table the body for what the walk reached, analyzes and lowers
 /// it, and the caller walks once more, so the helpers a dispatch body calls (argument conversions, the
 /// <c>Unknown</c> of a result type) are built too. A rewritten table can make more types described (the type of a
@@ -82,7 +82,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
             }
 
             _written[key: key] = text;
-            if (Environment.GetEnvironmentVariable(variable: "RA_DEBUG_REFLECT") is { Length: > 0 })
+            if (Environment.GetEnvironmentVariable(variable: "RV_DEBUG_REFLECT") is { Length: > 0 })
             {
                 Console.Error.WriteLine(value: $"[reflect] {key}\n{text}");
             }
@@ -154,7 +154,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
         RoutineInfo definition = info.GenericDefinition ?? info;
         return TableNames.Contains(item: info.Name) && definition.Module == ModuleName &&
                definition.Location?.FileName is { } file &&
-               file.EndsWith(value: "Reflect.rr", comparisonType: StringComparison.Ordinal);
+               file.EndsWith(value: "Reflect.rvr", comparisonType: StringComparison.Ordinal);
     }
 
     /// <summary>The type a per-type table is for (its one type argument), and the type whose routines it lists: a
@@ -866,7 +866,7 @@ internal sealed class ReflectionTablePass(InstantiationContext ctx, DesugaringCo
 
     private static Statement Parse(string text, RoutineInfo info)
     {
-        string file = (info.GenericDefinition ?? info).Location?.FileName ?? "Reflect.rr";
+        string file = (info.GenericDefinition ?? info).Location?.FileName ?? "Reflect.rvr";
         string source = $"module {ModuleName}\n\nroutine reflected_table()\n{text}";
         Language language = Builder.Frontends.Languages.OfFile(fileName: file);
         List<Builder.Tokenizer.Token> tokens =

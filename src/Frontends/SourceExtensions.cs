@@ -7,15 +7,21 @@ namespace Builder.Frontends;
 /// </summary>
 public static class SourceExtensions
 {
-    /// <summary>Revare sources: <c>.rr</c>.</summary>
-    public const string Revare = ".rr";
+    /// <summary>Revare sources: <c>.rvr</c>.</summary>
+    public const string Revare = ".rvr";
 
     /// <summary>Mielia sources: <c>.mie</c>.</summary>
     public const string Mielia = ".mie";
 
-    /// <summary>Revare sources before 0.5: <c>.rf</c>.</summary>
-    public const string PreviousRevare = ".rf";
+    /// <summary>Lapila sources: <c>.lpa</c>.</summary>
+    public const string Lapila = ".lpa";
 
-    /// <summary>Mielia sources before 0.5: <c>.sf</c>.</summary>
-    public const string PreviousMielia = ".sf";
+    /// <summary>The extensions Revare sources had before: <c>.rf</c>, then <c>.rr</c>.</summary>
+    public static readonly IReadOnlyList<string> PreviousRevare = [".rf", ".rr"];
+
+    /// <summary>The extension Mielia sources had before: <c>.sf</c>.</summary>
+    public static readonly IReadOnlyList<string> PreviousMielia = [".sf"];
+
+    /// <summary>The extensions Lapila sources had before: <c>.te</c>, then <c>.li</c>.</summary>
+    public static readonly IReadOnlyList<string> PreviousLapila = [".te", ".li"];
 }

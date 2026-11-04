@@ -11,7 +11,7 @@ namespace Builder.Documentation;
 public sealed record DocNote(SemanticWarningCode Code, string Message, SourceLocation Location);
 
 /// <summary>
-/// The notes about doc comments (<c>note[RA-W305]</c> to <c>note[RA-W308]</c>). Every routine of a library or
+/// The notes about doc comments (<c>note[RV-W305]</c> to <c>note[RV-W308]</c>). Every routine of a library or
 /// example file carries a <c>###</c> doc comment right above it: what it does, a <c>:param name:</c> line for each
 /// parameter but <c>me</c>, and a <c>:returns:</c> line when it gives a result. Revare holds every routine to
 /// all four notes. Mielia asks for the comment only on a routine of a module another file imports, and for its

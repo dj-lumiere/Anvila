@@ -7,7 +7,7 @@ using TypeModel.Types;
 namespace Builder.Verification;
 
 /// <summary>
-/// RA-S657: a <c>Viewing</c> promises that nothing reachable from it can be changed, so a value that holds a way to
+/// RV-S657: a <c>Viewing</c> promises that nothing reachable from it can be changed, so a value that holds a way to
 /// change an entity (a stamp, a manager handle, a write token, or a record, tuple or variant with such a member
 /// variable) is read in place there and never copied out of it. Copying one into a variable, an assignment, a return, a
 /// call argument, a construction or a collection literal would hand out the way to change what the view reached.

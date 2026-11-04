@@ -87,7 +87,7 @@ internal sealed class DerivedOperatorPass
         }
 
         // lt/le/gt/ge are NOT generated here: they are registered by the everywhere-derive pass and their
-        // bodies materialized by the collector from the DeriveText.rr `T.lt/le/gt/ge` universal templates
+        // bodies materialized by the collector from the DeriveText.rvr `T.lt/le/gt/ge` universal templates
         // (`me.compare(you) == ME_SMALL` etc.). Routing them through the template mechanism — the same path as
         // compare/represent — is what makes them survive the collector/warm codegen path (the C#-synthesized
         // bodies here did not), so `a < b` resolves uniformly for Char/numerics/records.

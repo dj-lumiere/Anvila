@@ -195,7 +195,7 @@ public sealed partial class SemanticVerifier
     private readonly HashSet<(string File, int Line)> _tokenTypeArgumentReported = [];
 
     /// <summary>
-    /// Rejects a token as a type argument (RA-S601): a token holds the address of the place an entity or value is in,
+    /// Rejects a token as a type argument (RV-S601): a token holds the address of the place an entity or value is in,
     /// and a container, a <c>Optional</c>, a tuple, a variant or a generic type holding one could keep it after that
     /// place is gone (the block that held the entity ended, or the entity was torn down). A token lives in a variable
     /// of its own. <paramref name="carrierAllowed"/> lets a routine's result be <c>Optional</c> of a token (an
@@ -252,7 +252,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Rejects a generic routine whose type parameter a call makes a token (RA-S601): <c>same(x: l.view())</c> makes
+    /// Rejects a generic routine whose type parameter a call makes a token (RV-S601): <c>same(x: l.view())</c> makes
     /// <c>T</c> a <c>Viewing[Cell]</c>, and the routine's body is free to keep a <c>T</c> (in a list, a result, a
     /// field of a value it builds), so the token could outlive the place it points at. Inferred and written type
     /// arguments alike. A builder-written body is left alone.
@@ -350,7 +350,7 @@ public sealed partial class SemanticVerifier
     /// </list>
     /// Anything else (a bare entity passed by copy, a record transitively owning a single-threaded wrapper
     /// such as <c>Retained</c>/<c>Tracked</c>/<c>Viewing</c>/<c>Modifying</c>) would alias unsynchronized state
-    /// across work running in parallel, so it is rejected (RA-S632). Synchronization must be MARKED, never
+    /// across work running in parallel, so it is rejected (RV-S632). Synchronization must be MARKED, never
     /// implied.
     /// </summary>
     /// <returns>The first argument that only one thread may use (a token, a <c>Retained</c>), described for a message,
@@ -566,7 +566,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// A lambda that captured a token or a single-thread handle (a <c>Retained</c>) can't be handed to a routine that
     /// hands that routine value to a Work: the work may run on another thread, and every call of the lambda counts the
-    /// captured handle there without atomics (RA-S632). The routine values a routine hands to Work, directly or through
+    /// captured handle there without atomics (RV-S632). The routine values a routine hands to Work, directly or through
     /// another routine, are known once every body is analyzed.
     /// </summary>
     private void CheckWorkBoundCallables()
@@ -812,7 +812,7 @@ public sealed partial class SemanticVerifier
         // call (e.g. ScopeTeardownLoweringPass's injected `local.destruct()`), which is the builder's
         // own teardown, not user code invoking a dangerous routine. Under the demand pipeline teardown is
         // injected before the stdlib body is SA'd on reach, so without this exemption the re-analysis
-        // would false-fire RA-S609 on every scope-exit destroy (the eager pipeline SA'd stdlib first).
+        // would false-fire RV-S609 on every scope-exit destroy (the eager pipeline SA'd stdlib first).
         if (routine.IsDangerous && !InDangerBlock && !isCompilerSynthesized)
         {
             ReportError(code: SemanticDiagnosticCode.DangerousCallOutsideDangerBlock,
@@ -822,7 +822,7 @@ public sealed partial class SemanticVerifier
         }
     }
 
-    /// <summary>The RA-S420 message for a token copied from a name or a member variable (<c>w = m</c>): a token is
+    /// <summary>The RV-S420 message for a token copied from a name or a member variable (<c>w = m</c>): a token is
     /// taken from its entity where it is used, never copied from another token, which may belong to a block that ends
     /// before the copy does.</summary>
     private static string TokenCopyMessage(Expression copied, TypeSymbol type)
@@ -836,7 +836,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RA-S609 for a dangerous routine the builder calls for a piece of syntax that shows no call: an operator
+    /// RV-S609 for a dangerous routine the builder calls for a piece of syntax that shows no call: an operator
     /// (<c>a + b</c> on a dangerous <c>add</c>), an f-text insertion (<c>f"{p}"</c> on a dangerous <c>represent</c>).
     /// The syntax is the call, so it stands inside <c>danger</c> like the call would.
     /// </summary>
@@ -1057,7 +1057,7 @@ public sealed partial class SemanticVerifier
         return _registry.IsStandardLibraryFile(filePath: filePath);
     }
 
-    /// <summary>Analyzes a call, then applies the inline-token source check (RA-S639).</summary>
+    /// <summary>Analyzes a call, then applies the inline-token source check (RV-S639).</summary>
     private TypeSymbol AnalyzeCallWithInlineTokens(CallExpression call, TypeSymbol? expectedType)
     {
         // Every pass over this call's arguments (overload resolution, then the per-parameter check) knows which
@@ -1076,7 +1076,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RA-S639 for a token passed inline to one call (<c>f(m: a.modify(), x: steal a)</c>,
+    /// RV-S639 for a token passed inline to one call (<c>f(m: a.modify(), x: steal a)</c>,
     /// <c>a.modify().absorb(x: steal a)</c>): the token lives for that call, so a <c>steal</c> of its source
     /// elsewhere in the same call is rejected. (A statement working on an entity element in place is
     /// checked after all bodies are analyzed, see <c>CheckShapeEffects</c>.) Runs after the call is
@@ -1087,7 +1087,7 @@ public sealed partial class SemanticVerifier
     /// type, whether the stamp's type is written (<c>var s: Stamped[Node] = n.stamp()</c>) or inferred
     /// (<c>var s = n.stamp()</c>, <c>[n.stamp()]</c>), and whether the call is on the entity or on a token: an entity type
     /// of the program gets its slot here (<see cref="EntityTypeSymbol.KeepsStamp"/>, read when the layout and the
-    /// <c>keeps_stamp</c> query are lowered, after analysis). RA-S656 for a type that can't have one: a standard
+    /// <c>keeps_stamp</c> query are lowered, after analysis). RV-S656 for a type that can't have one: a standard
     /// library entity, or a stamp reached only through a type parameter.
     /// </summary>
     private void CheckStampHasSlot(CallExpression call, TypeSymbol type)

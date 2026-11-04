@@ -18,14 +18,14 @@ env:
   # CMake 4.x refuses outright. This is CMake's own escape hatch; honored as an env var by CMake >= 4 and
   # ignored by older CMakes.
   CMAKE_POLICY_VERSION_MINIMUM: '3.5'
-  RA_TESTS: Revare/tests/Revare.Tests.csproj
+  RV_TESTS: Revare/tests/Revare.Tests.csproj
   MI_TESTS: Mielia/tests/Mielia.Tests.csproj
   # Tests that assert a wall-clock bound carry the Timing category: the numbers depend on the runner and on what
   # runs beside them, so CI leaves them out. A local `dotnet test` runs them.
   TEST_FILTER: Category!=Timing
   # The tests' limits on a child process (a build, a built program) catch hangs. A hosted runner builds the stdlib
   # bundle in 2 to 4.5 minutes, near the 5-minute base limit, so the limits are doubled here (TestHelpers.ChildTimeoutMs).
-  RA_TEST_TIMEOUT_SCALE: '2'
+  RV_TEST_TIMEOUT_SCALE: '2'
 
 jobs:
   # Two parallel Linux legs share one definition: `test` is the plain build + test gate, `sonar` repeats it
@@ -100,7 +100,7 @@ jobs:
 
       - name: Restore dependencies
         run: |
-          dotnet restore "$RA_TESTS"
+          dotnet restore "$RV_TESTS"
           dotnet restore "$MI_TESTS"
 
       # The scanner sees every project the build compiles, so the other workspace repositories are excluded:
@@ -122,7 +122,7 @@ jobs:
 
       - name: Build
         run: |
-          dotnet build "$RA_TESTS" --configuration Release --no-restore
+          dotnet build "$RV_TESTS" --configuration Release --no-restore
           dotnet build "$MI_TESTS" --configuration Release --no-restore
 
       # A test that gives up on a hung child takes its thread stacks first (HangDiagnostics in the test
@@ -137,7 +137,7 @@ jobs:
       - name: Test
         if: matrix.leg == 'test'
         run: |
-          dotnet test "$RA_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
+          dotnet test "$RV_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
           dotnet test "$MI_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
 
       # The builder a test starts as a child process runs the coverage-instrumented assemblies from the test output
@@ -145,9 +145,9 @@ jobs:
       - name: Test with coverage
         if: matrix.leg == 'sonar'
         env:
-          RA_TEST_TIMEOUT_SCALE: '3'
+          RV_TEST_TIMEOUT_SCALE: '3'
         run: |
-          for t in "$RA_TESTS" "$MI_TESTS"; do
+          for t in "$RV_TESTS" "$MI_TESTS"; do
             dotnet test "$t" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER" \
               --collect:"XPlat Code Coverage" \
               -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
@@ -209,7 +209,7 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          dotnet build $env:RA_TESTS --configuration Release
+          dotnet build $env:RV_TESTS --configuration Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build $env:MI_TESTS --configuration Release
 
@@ -222,7 +222,7 @@ jobs:
       - name: Test
         shell: pwsh
         run: |
-          dotnet test $env:RA_TESTS --configuration Release --no-build --verbosity normal --filter $env:TEST_FILTER
+          dotnet test $env:RV_TESTS --configuration Release --no-build --verbosity normal --filter $env:TEST_FILTER
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet test $env:MI_TESTS --configuration Release --no-build --verbosity normal --filter $env:TEST_FILTER
 
@@ -265,7 +265,7 @@ jobs:
 
       - name: Build
         run: |
-          dotnet build "$RA_TESTS" --configuration Release
+          dotnet build "$RV_TESTS" --configuration Release
           dotnet build "$MI_TESTS" --configuration Release
 
       - name: Install hang diagnostics
@@ -275,5 +275,5 @@ jobs:
 
       - name: Test
         run: |
-          dotnet test "$RA_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
+          dotnet test "$RV_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"
           dotnet test "$MI_TESTS" --configuration Release --no-build --verbosity normal --filter "$TEST_FILTER"

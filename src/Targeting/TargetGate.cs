@@ -1,7 +1,7 @@
 namespace Builder.Targeting;
 
 /// <summary>
-/// File-granularity conditional compilation for Revare. A <c>.rr</c> file may carry a leading
+/// File-granularity conditional compilation for Revare. A <c>.rvr</c> file may carry a leading
 /// <c>@target(...)</c> annotation; when its conditions do not match the build target, the file is
 /// EXCLUDED from the compile set before it is ever parsed.
 ///
@@ -11,8 +11,8 @@ namespace Builder.Targeting;
 /// <c>module</c>); keeping it a genuine <c>@</c>-annotation rather than a comment is what gives it editor
 /// highlighting. FILE granularity (a whole file is in or out) avoids an in-file preprocessor — those
 /// read badly in an indentation-based language, where <c>#if</c> blocks fight the significant
-/// whitespace. Platform-specific code is split into separate files (<c>foo_windows.rr</c> /
-/// <c>foo_linux.rr</c>) each guarded by its own directive.</para>
+/// whitespace. Platform-specific code is split into separate files (<c>foo_windows.rvr</c> /
+/// <c>foo_linux.rvr</c>) each guarded by its own directive.</para>
 ///
 /// <para>Revare-only: <c>.mie</c> files are never gated (Mielia targets a REPL, not AOT
 /// cross-builds). The directive must appear BEFORE any real code (before <c>module</c>) — the scan

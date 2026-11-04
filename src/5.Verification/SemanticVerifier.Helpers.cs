@@ -144,7 +144,7 @@ public sealed partial class SemanticVerifier
     /// Named-argument punning (field-init shorthand): a bare identifier that matches a target parameter/field name is
     /// that name's argument, <c>name: name</c>. So <c>Point(x, y)</c> == <c>Point(x: x, y: y)</c> and
     /// <c>make_user(name, age: 31)</c> == <c>make_user(name: name, age: 31)</c> — bound by NAME (reorder-safe) and valid
-    /// under the RA-S510 "3+ params need names" rule. All-or-nothing over the arguments written without a name: when one
+    /// under the RV-S510 "3+ params need names" rule. All-or-nothing over the arguments written without a name: when one
     /// of them is not a bare identifier matching a distinct name nobody else takes, none is punned, so the call follows
     /// the normal positional rules (and a mix of names and positions stays the S512 error it is).
     /// </summary>
@@ -398,7 +398,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// An argument without a label that is a bare name of ANOTHER parameter of the routine, in a place that is not that
     /// parameter's (<c>f(n - 1, from, to, tmp)</c> where <c>to</c> sits in the place of <c>tmp</c>): the call would mean
-    /// the order and the names at once, so it says which with a label (RA-S510).
+    /// the order and the names at once, so it says which with a label (RV-S510).
     /// </summary>
     private void ReportArgumentInAnotherParametersPlace(Expression arg, RoutineInfo routine,
         List<ParamInfo> parameters, int index, string? calledName = null)
@@ -722,9 +722,9 @@ public sealed partial class SemanticVerifier
                 {
                     ReportError(code: SemanticDiagnosticCode.ArgumentTypeMismatch,
                         message:
-                        $"Argument '{param.Name}' of '{routine.Name}' takes RA::{crossing.BareName}, and this is " +
+                        $"Argument '{param.Name}' of '{routine.Name}' takes RV::{crossing.BareName}, and this is " +
                         $"MI::{crossing.BareName}: the two languages each have their own, which don't cross as they " +
-                        $"are. Convert it at the boundary: '.to[RA::{crossing.BareName}]()'.",
+                        $"are. Convert it at the boundary: '.to[RV::{crossing.BareName}]()'.",
                         location: argExpr.Location);
                 }
                 else
@@ -812,7 +812,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports RA-S420 (implicit wrapper copy) when a non-trivially-copyable argument is passed by
+    /// Reports RV-S420 (implicit wrapper copy) when a non-trivially-copyable argument is passed by
     /// reference into a non-borrow parameter without an explicit copy verb. Extracted from
     /// <see cref="AnalyzeCallArguments"/>.
     /// </summary>
@@ -834,7 +834,7 @@ public sealed partial class SemanticVerifier
                 // A scoped access token (Viewing/Modifying) has NO copy verb —
                 // it is a can't-escape borrow. Passing one as a call argument is always a by-reference
                 // borrow (into a marker-bound / token param), never an implicit copy, so there is
-                // nothing to force. Emitting RA-S420 here would ask the user to "spell out (none)".
+                // nothing to force. Emitting RV-S420 here would ask the user to "spell out (none)".
                 if (verb == Wrappers.ScopedNoEscapeHint)
                 {
                     return;
@@ -866,7 +866,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Reports RA-S413 when a bare entity is passed to a consuming (bare-entity) parameter without an
+    /// Reports RV-S413 when a bare entity is passed to a consuming (bare-entity) parameter without an
     /// explicit <c>steal</c>. Extracted from <see cref="AnalyzeCallArguments"/>.
     /// </summary>
     private void ValidateBareEntityConsumingArg(RoutineInfo routine, ParamInfo param,
@@ -919,14 +919,14 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <summary>Whether putting a value of <paramref name="type"/> into a second place is checked here: everywhere a
     /// language checks every entity's holder, and in a program of a language whose entities are shared, for an entity
-    /// from a `.rr` module, which is not shared there either (two names holding it would each release it).</summary>
+    /// from a `.rvr` module, which is not shared there either (two names holding it would each release it).</summary>
     private bool ChecksHolderOf(TypeSymbol type)
     {
         return ChecksOwnershipHere || HoldsRevareEntity(type: type);
     }
 
-    /// <summary>Whether <paramref name="type"/> is a Revare library entity (`RA::System.List`) met in a program file
-    /// of a language whose entities are shared. An entity of a `.rr` module the program imports is held there by a
+    /// <summary>Whether <paramref name="type"/> is a Revare library entity (`RV::System.List`) met in a program file
+    /// of a language whose entities are shared. An entity of a `.rvr` module the program imports is held there by a
     /// shared handle, as the language's own entities are.</summary>
     private bool HoldsRevareEntity(TypeSymbol type)
     {
@@ -934,7 +934,7 @@ public sealed partial class SemanticVerifier
                !_isInCompilerGeneratedBody && !IsStdlibFile(filePath: _currentFilePath);
     }
 
-    /// <summary>Whether <paramref name="type"/> is an entity declared in a source file of the program (a `.rr`
+    /// <summary>Whether <paramref name="type"/> is an entity declared in a source file of the program (a `.rvr`
     /// module it imports), not in the standard library.</summary>
     private bool IsProgramModuleEntity(TypeSymbol type)
     {
@@ -943,7 +943,7 @@ public sealed partial class SemanticVerifier
                Builder.Frontends.Languages.HasSourceExtension(fileName: file) && !IsStdlibFile(filePath: file);
     }
 
-    /// <summary>Whether <paramref name="type"/> is an entity written in Revare: one declared in a `.rr` file, or
+    /// <summary>Whether <paramref name="type"/> is an entity written in Revare: one declared in a `.rvr` file, or
     /// a Revare library entity with no declaring file of its own. A program's own entities of the build's
     /// language are not, whatever realm they are registered in.</summary>
     internal static bool IsRevareEntity(TypeSymbol type)
@@ -976,7 +976,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// The RA-S413 message for a read that <see cref="ReadsKeptEntity"/> flags. <paramref name="action"/>
+    /// The RV-S413 message for a read that <see cref="ReadsKeptEntity"/> flags. <paramref name="action"/>
     /// opens the sentence ("You are returning", "You are storing", ...) and the fix depends on the
     /// form: an element comes out of its container through a removing routine or is worked on where it
     /// sits, anything else is moved with <c>steal</c>. An explicit copy is offered only when the type has one.
@@ -1214,7 +1214,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     /// <summary>
     /// The Mielia type handed where the Revare type of the same name is wanted (`MI::System.List[S64]` for
-    /// `RA::System.List[S64]`, either one maybe behind a shared handle), or null.
+    /// `RV::System.List[S64]`, either one maybe behind a shared handle), or null.
     /// </summary>
     private static TypeSymbol? OtherRealmOfSameType(TypeSymbol source, TypeSymbol target)
     {
@@ -1253,8 +1253,8 @@ public sealed partial class SemanticVerifier
     {
         if (source.Name == target.Name || source.FullName == target.FullName)
         {
-            // One stdlib source makes a type in each language (`MI::System.List` and `RA::System.List`): the same name in
-            // two realms is two types, which a value crosses only through a conversion (`xs.to[RA::List]()`).
+            // One stdlib source makes a type in each language (`MI::System.List` and `RV::System.List`): the same name in
+            // two realms is two types, which a value crosses only through a conversion (`xs.to[RV::List]()`).
             return source.Realm == target.Realm || source.Category == TypeCategory.Error;
         }
 
@@ -1730,7 +1730,7 @@ public sealed partial class SemanticVerifier
 
         // Use LookupMemberRoutine which handles generic resolutions (e.g., Hijacked[Point].eq).
         // A resolution whose owner is a ProtocolTypeSymbol is the ABSTRACT protocol declaration
-        // (RA protocols have no default implementations) — for a CONCRETE receiver it would link
+        // (RV protocols have no default implementations) — for a CONCRETE receiver it would link
         // to nothing (e.g. `record Cat` with no `eq` resolving `==` to `Equatable.eq`). Only a
         // concrete implementation counts as support here; generic-parameter receivers get their
         // constraint-based support from the dedicated branch below.
@@ -2225,7 +2225,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RA-S061 for <c>==</c> / <c>!=</c> on a <c>Stamped[E]</c>: a stamp names an entity, so two compare by identity
+    /// RV-S061 for <c>==</c> / <c>!=</c> on a <c>Stamped[E]</c>: a stamp names an entity, so two compare by identity
     /// (<c>===</c> / <c>!==</c>, the same entity), and a stamp has no value equality and no hash. Returns whether it
     /// reported one.
     /// </summary>

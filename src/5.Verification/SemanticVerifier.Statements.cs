@@ -309,7 +309,7 @@ public sealed partial class SemanticVerifier
             }
 
             // An entity the program stamps ends its slot right after the hollow check: every stamp of it fails from
-            // there on (the derived destruct does the same, Derivation.rr). Every entity type of the program gets the
+            // there on (the derived destruct does the same, Derivation.rvr). Every entity type of the program gets the
             // call: whether it keeps a slot is known only once every body is analyzed (a `stamp()` whose type is
             // inferred gives one), and `release_stamp` asks `keeps_stamp()`, which the builder answers after that.
             if (routineInfo is { Name: "destruct", OwnerType: EntityTypeSymbol { Location.FileName: { } entityFile } } &&
@@ -334,7 +334,7 @@ public sealed partial class SemanticVerifier
             ReportError(code: SemanticDiagnosticCode.FeatureNotInMielia,
                 message:
                 $"You mark '{routine.Name}' `dangerous`, but a {_registry.Rules.Name} program has no memory-unsafe " +
-                "routines. Remove `dangerous`, or move the routine into a `.rr` module this program imports.",
+                "routines. Remove `dangerous`, or move the routine into a `.rvr` module this program imports.",
                 location: routine.Location);
         }
 
@@ -1588,11 +1588,11 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Registers post-declaration side-effects for variables with special tracking needs:
-    /// Guarded/Witnessed handle identity (RA-S630) and Check dismantlement tracking (#161).
+    /// Guarded/Witnessed handle identity (RV-S630) and Check dismantlement tracking (#161).
     /// </summary>
     private void TrackSpecialVariableRegistrations(VariableDeclaration varDecl, TypeSymbol varType)
     {
-        // RA-S630: track the controller identity of a Guarded/Witnessed handle so the
+        // RV-S630: track the controller identity of a Guarded/Witnessed handle so the
         // readers-XOR-writer check keys on the shared DATA, not the variable name — a clone
         // (`var s2 = s.share()`) inherits `s`'s identity and so conflicts with it.
         if (ChecksOwnershipHere &&
@@ -1646,7 +1646,7 @@ public sealed partial class SemanticVerifier
         // Duplicate-handle prohibition is enforced at copy sites (the block above).
 
         // A variant is copied like the values it holds: one holding only values copies (decided 2026-10-14), one that
-        // may hold an entity is the kept-entity case above (RA-S413).
+        // may hold an entity is the kept-entity case above (RV-S413).
 
         // #81: Check cannot be copied from variable to variable
         // `var r = check parse(data)` then `when r` is allowed (call result)
@@ -1662,7 +1662,7 @@ public sealed partial class SemanticVerifier
 
         // A token (`var v = a.view()`, `var m = a.modify()`, `var b = boxes[0]`) is a variable like any other:
         // Revare's TokenLifetimeChecker follows where it came from and rejects a use after that object changed.
-        // A Guarded's `view()` / `modify()` is held for one call, so it goes only where an argument does (RA-S652,
+        // A Guarded's `view()` / `modify()` is held for one call, so it goes only where an argument does (RV-S652,
         // GuardAccessArgumentChecker).
         if (!(_registry.Rules.ChecksAccessTokens && IsInlineOnlyTokenType(type: varType)))
         {
@@ -1716,7 +1716,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Reports a binding from outside a loop that a turn of the loop takes with <c>steal</c> and goes on without: the
-    /// next turn would find it gone (RA-S616). A take followed by leaving the loop (`return`, `break`) is fine: the
+    /// next turn would find it gone (RV-S616). A take followed by leaving the loop (`return`, `break`) is fine: the
     /// branch that leaves does not reach the loop's next turn.
     /// </summary>
     private void ReportTakenInLoop(LoopStatement loop, HashSet<string> before, HashSet<string> atContinue)
@@ -2369,7 +2369,7 @@ public sealed partial class SemanticVerifier
         return new ExpressionStatement(Expression: invalidate, Location: location);
     }
 
-    /// <summary>The statement <c>me.release_stamp()</c> (Stamped.rr).</summary>
+    /// <summary>The statement <c>me.release_stamp()</c> (Stamped.rvr).</summary>
     private static ExpressionStatement StampRelease(SourceLocation location)
     {
         var me = new IdentifierExpression(Name: "me", Location: location);

@@ -12,7 +12,7 @@ internal static class ModulePathDerivation
     /// the project root (the config.toml directory). Path segments are PascalCased (whitespace
     /// removed, each word's first letter capitalized), <c>.</c>/<c>..</c> segments are dropped, the
     /// file extension is stripped, and segments are joined with <c>/</c>. E.g.
-    /// <c>../SomeFolder/SomeMoreFolder/file a.rr</c> -> <c>SomeFolder/SomeMoreFolder/FileA</c>.
+    /// <c>../SomeFolder/SomeMoreFolder/file a.rvr</c> -> <c>SomeFolder/SomeMoreFolder/FileA</c>.
     /// </summary>
     internal static string FromFile(string projectRoot, string filePath)
     {
@@ -36,7 +36,7 @@ internal static class ModulePathDerivation
     /// <summary>
     /// The module path of a header-less file that may sit in a <c>module_paths</c> folder: derived from its place in the
     /// innermost root that holds it (the project folder or one of <paramref name="moduleRoots"/>), so
-    /// <c>../shared/money/tax.rr</c> under <c>module_paths = ["../shared"]</c> is <c>Money/Tax</c>.
+    /// <c>../shared/money/tax.rvr</c> under <c>module_paths = ["../shared"]</c> is <c>Money/Tax</c>.
     /// </summary>
     internal static string FromFile(string projectRoot, IEnumerable<string> moduleRoots, string filePath)
     {

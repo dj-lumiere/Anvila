@@ -472,7 +472,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
                 choiceCti.Cases.Any(predicate: c =>
                     c.Name == LastNameSegment(name: choiceTp.Type.Name)),
 
-            // Entity `is T`: RA entities have no subtyping, so it is BUILDTIME-decidable (same concrete
+            // Entity `is T`: RV entities have no subtyping, so it is BUILDTIME-decidable (same concrete
             // type = always match, different = never) — lowerable to a constant condition + optional binding.
             TypePattern when subjectType is EntityTypeSymbol => true,
 
@@ -891,7 +891,7 @@ internal sealed class PatternLoweringPass(PostprocessingContext ctx) : AstRewrit
     }
 
     /// <summary>
-    /// Lowers an entity <c>is T</c> <see cref="TypePattern"/> to a BUILDTIME-constant condition: RA entities
+    /// Lowers an entity <c>is T</c> <see cref="TypePattern"/> to a BUILDTIME-constant condition: RV entities
     /// have no subtyping, so a concrete-entity subject `is` a concrete-entity target is statically known —
     /// same type always matches (null condition = the arm is unconditional; binds `is T name` to the subject),
     /// a different type never matches (a `false` literal). No runtime type test reaches codegen.

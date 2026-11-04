@@ -9,8 +9,8 @@ namespace TypeModel.Enums;
 /// </summary>
 public enum RoutineRealm
 {
-    /// <summary>Native Revare routine (a body defined in a <c>.rr</c> source file).</summary>
-    RA,
+    /// <summary>Native Revare routine (a body defined in a <c>.rvr</c> source file).</summary>
+    RV,
 
     /// <summary>Native Mielia routine (a body defined in a <c>.mie</c> source file).</summary>
     MI,

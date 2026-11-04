@@ -268,7 +268,7 @@ public record TupleLiteralExpression(List<Expression> Elements, SourceLocation L
 /// </summary>
 /// <param name="Name">The identifier name to look up in the symbol table</param>
 /// <param name="Location">Source location information</param>
-/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RA"</c>) from a <c>Realm::Name</c> prefix.</param>
+/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RV"</c>) from a <c>Realm::Name</c> prefix.</param>
 /// <remarks>
 /// Identifier resolution follows lexical scoping rules:
 /// <list type="bullet">
@@ -1051,7 +1051,7 @@ public record Parameter(
 /// <param name="GenericArguments">Optional list of type arguments for generic types</param>
 /// <param name="Location">Source location information</param>
 /// <param name="IsRvalue">True if this type was written with the `T` prefix mark (entity rvalue, return-position only). SA enforces position validity.</param>
-/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RA"</c>); null = ambient realm of the file.</param>
+/// <param name="Realm">Optional cross-language realm qualifier (e.g. <c>"RV"</c>); null = ambient realm of the file.</param>
 /// <param name="SpliceHandle">Buildtime type-position splice handle name (e.g. from <c>$typeof(m)</c>); null for ordinary types.</param>
 /// <param name="BuildtimeValue">Buildtime const-generic expression for a value type-arg slot; null for ordinary type-args.</param>
 /// <remarks>
@@ -1068,9 +1068,9 @@ public record TypeExpression(
     List<TypeExpression>? GenericArguments,
     SourceLocation Location,
     bool IsRvalue = false,
-    // Cross-language realm tag from a `Realm::Name` qualifier (e.g. `RA::System.List`). "RA" = the
+    // Cross-language realm tag from a `Realm::Name` qualifier (e.g. `RV::System.List`). "RV" = the
     // Revare/bare realm (the resolver skips Mielia's entity->Roamed lowering for it); null = the
-    // ambient realm of the file. Only "RA" is wired for now (Mielia wrappers holding a bare RA entity).
+    // ambient realm of the file. Only "RV" is wired for now (Mielia wrappers holding a bare RV entity).
     string? Realm = null,
     // Buildtime type-position splice: when non-null this whole type IS the `${handle.type}` projection
     // of an expand handle (e.g. `${m.type}` in `Array[${m.type}, N]`). At expansion it resolves to the

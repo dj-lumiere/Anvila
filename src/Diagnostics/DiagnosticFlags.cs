@@ -15,8 +15,8 @@ public static class DiagnosticFlags
     /// <summary>Print per-phase <c>[SA]</c>/<c>[phase]</c> timing. Was <c>REVARE_PHASE_TIMING</c>.</summary>
     public static bool PhaseTiming { get; set; }
 
-    /// <summary>Survey unresolved marker-protocol conformances. Was <c>RA_MARKER_SURVEY</c>.</summary>
-    /// <summary>Print codegen DCE prune statistics. Was <c>RA_PRUNE_STATS</c>.</summary>
+    /// <summary>Survey unresolved marker-protocol conformances. Was <c>RV_MARKER_SURVEY</c>.</summary>
+    /// <summary>Print codegen DCE prune statistics. Was <c>RV_PRUNE_STATS</c>.</summary>
     public static bool PruneStats { get; set; }
 
     /// <summary>Trace ORC-JIT lowering stages. Was <c>REVARE_JIT_TRACE</c>.</summary>
@@ -27,19 +27,19 @@ public static class DiagnosticFlags
     /// never write a <c>.ll</c>) and the <c>.ll</c> is NOT cleaned up — so the IR is inspectable after a run.</summary>
     public static bool DumpIr { get; set; }
 
-    /// <summary>Keep the Lapila source the Lapila backend writes as <c>&lt;entry&gt;.li</c> next to the
+    /// <summary>Keep the Lapila source the Lapila backend writes as <c>&lt;entry&gt;.lpa</c> next to the
     /// source (<c>dump-lapila</c>).</summary>
     public static bool DumpLapila { get; set; }
 
-    /// <summary>Path to dump the routine-reachability set, or null. Was <c>RA_REACHABILITY_DUMP</c>.</summary>
+    /// <summary>Path to dump the routine-reachability set, or null. Was <c>RV_REACHABILITY_DUMP</c>.</summary>
     public static string? ReachabilityDump { get; set; }
 
-    /// <summary>Path to dump the maysuspend analysis, or null. Was <c>RA_MAYSUSPEND_DUMP</c>.</summary>
+    /// <summary>Path to dump the maysuspend analysis, or null. Was <c>RV_MAYSUSPEND_DUMP</c>.</summary>
     public static string? MaySuspendDump { get; set; }
 
     /// <summary><c>[debug] deadlock-check</c>: whether jobs waiting on each other for access stop the program, or
     /// null for the build mode's default (on in debug). The emitted <c>main</c> passes it to the runtime's
-    /// AccessManager. It replaces the <c>RA_DEADLOCK_DETECT</c> environment variable.</summary>
+    /// AccessManager. It replaces the <c>RV_DEADLOCK_DETECT</c> environment variable.</summary>
     public static bool? DeadlockCheck { get; set; }
 
     /// <summary><c>[debug] access-order</c>: whether accesses taken in opposite orders stop the program.</summary>

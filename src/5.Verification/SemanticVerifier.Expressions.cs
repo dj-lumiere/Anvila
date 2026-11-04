@@ -252,7 +252,7 @@ public sealed partial class SemanticVerifier
             return ErrorTypeSymbol.Instance;
         }
 
-        // A name whose module-level `var` was already rejected (RA-S435) is reported once, there.
+        // A name whose module-level `var` was already rejected (RV-S435) is reported once, there.
         if (_rejectedModuleVarNames.Contains(item: id.Name))
         {
             return ErrorTypeSymbol.Instance;
@@ -267,7 +267,7 @@ public sealed partial class SemanticVerifier
 
     private readonly HashSet<(RoutineInfo Routine, string Name)> _reportedScriptVariables = [];
 
-    /// <summary>Names of module-level <c>var</c> declarations already rejected with RA-S435.</summary>
+    /// <summary>Names of module-level <c>var</c> declarations already rejected with RV-S435.</summary>
     private readonly HashSet<string> _rejectedModuleVarNames = [];
 
     /// <summary>
@@ -626,7 +626,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// RA-S615 for a use of <paramref name="name"/> after a <c>steal</c> moved its value out: names the line of the
+    /// RV-S615 for a use of <paramref name="name"/> after a <c>steal</c> moved its value out: names the line of the
     /// steal and where the value went when that is known, and points at the new owner or at using the name
     /// before the steal.
     /// </summary>
@@ -690,7 +690,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// If a <c>secret</c> (module-private) type whose bare name matches <paramref name="name"/> exists
     /// in a module OTHER than the current one, resolution deliberately hid it — report a dedicated
-    /// RA-S402 explaining that (instead of letting the caller emit a misleading "unknown type/identifier"
+    /// RV-S402 explaining that (instead of letting the caller emit a misleading "unknown type/identifier"
     /// that reads like a typo), and return true. Returns false when no such type exists.
     /// </summary>
     internal bool TryReportSecretTypeAccess(string name, SourceLocation location)
@@ -745,7 +745,7 @@ public sealed partial class SemanticVerifier
                type.TypeArguments is [{ BareName: Declaration.RuntimeContract.StampedTypeName }];
     }
 
-    /// <summary>Reports RA-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>
+    /// <summary>Reports RV-S440 if an <c>===</c>/<c>!==</c> operand is a value type, not a reference.</summary>
     private bool ValidateIdentityOperand(TypeSymbol type, BinaryOperator op,
         SourceLocation location)
     {
@@ -2001,7 +2001,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// An assignment to the name a <c>for</c> loop binds each element to (RA-S251): the loop binds it again every
+    /// An assignment to the name a <c>for</c> loop binds each element to (RV-S251): the loop binds it again every
     /// round, so the assignment would change nothing the loop sees. Reports it and returns true, else false.
     /// </summary>
     private bool ReportLoopVariableAssignment(IdentifierExpression id, SourceLocation location)
@@ -2093,7 +2093,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Records the <c>setitem</c> a subscript write calls (<see cref="IndexExpression.ResolvedSetItem"/>, for the shape
     /// check of the indirect cases), and reports <c>d[k] = v</c> on the container a <c>for</c> loop is walking when
-    /// that <c>setitem</c> is <c>@reshaping</c> (a <c>Dict</c>'s may add the key): RA-S625, as a call of a reshaping
+    /// that <c>setitem</c> is <c>@reshaping</c> (a <c>Dict</c>'s may add the key): RV-S625, as a call of a reshaping
     /// routine on it would be. A language that checks shapes as the program runs (Mielia) leaves this to that check.
     /// </summary>
     private void CheckIndexWriteReshape(IndexExpression index, SourceLocation location)
@@ -2172,7 +2172,7 @@ public sealed partial class SemanticVerifier
     }
 
     /// <summary>
-    /// Post-target-validation checks shared by all scalar assignment forms: RA entity bare-assignment
+    /// Post-target-validation checks shared by all scalar assignment forms: RV entity bare-assignment
     /// prohibition, implicit non-trivially-assignable wrapper copy detection, type-compatibility, and
     /// <c>??=</c> flow-narrowing.
     /// </summary>
@@ -2406,7 +2406,7 @@ public sealed partial class SemanticVerifier
     /// <summary>
     /// Checks the right-hand side of a compound assignment against the operator it dispatches to, with the
     /// same rules as the binary form: <c>t += v</c> must be rejected exactly when <c>t = t + v</c> is. Two
-    /// fixed-width types of different width are RA-S767, and a value no in-place or regular overload
+    /// fixed-width types of different width are RV-S767, and a value no in-place or regular overload
     /// accepts (a Mielia <c>Int += S64</c>) is a conversion error. Without this check the operator is
     /// resolved by name alone and the emitter passes the wrong value representation to it. Returns true
     /// when a violation was reported.
@@ -2658,7 +2658,7 @@ public sealed partial class SemanticVerifier
 
     /// <summary>
     /// Analyzes the force-unwrap operator (<c>!!</c>): a carrier's payload type, else the type's <c>unwrap</c>
-    /// member routine return, else RA-S (unsupported operator).
+    /// member routine return, else RV-S (unsupported operator).
     /// </summary>
     private TypeSymbol AnalyzeForceUnwrap(UnaryExpression unary, TypeSymbol operandType)
     {

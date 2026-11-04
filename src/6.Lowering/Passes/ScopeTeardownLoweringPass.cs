@@ -32,7 +32,7 @@ namespace Builder.Lowering.Passes;
 /// <c>.retain()</c>/<c>.track()</c>) is not torn down at any exit: what it held left the binding. A local moved by
 /// the value of a <c>return</c> or a <c>throw</c> is moved on that path only, and the other exits still tear it
 /// down. A move by any other statement counts for the whole routine: a binding taken on some paths that go on past
-/// the join and kept on others is a build error (RA-S616), so no path reaches a join with the binding in doubt and
+/// the join and kept on others is a build error (RV-S616), so no path reaches a join with the binding in doubt and
 /// no flag is kept at run time.</para>
 /// </summary>
 internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
@@ -530,7 +530,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // ownership in — a bare ENTITY the caller relinquished) OR handing over a borrow. A RECORD param
         // (value record / Text / RC wrapper / access token) is always a BORROW — the caller retains
         // ownership and tears it down at ITS scope exit, so the callee must NOT destroy it. Only a bare
-        // `EntityTypeSymbol` param is consuming (RA-S413 forces `steal` at the call site), owned by the
+        // `EntityTypeSymbol` param is consuming (RV-S413 forces `steal` at the call site), owned by the
         // routine and torn down at every exit exactly like a top-level local. The retain that used to
         // balance a callee-owned record param at the arg boundary is gone (RecordCopyLoweringPass no
         // longer stores at the boundary); retain now lives at the DESTINATION (store primitive / field
@@ -540,7 +540,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
         // ownership, so destroying it here double-frees the caller's live entity. After representation
         // unification (SignatureResolver.MaybeRoamMieliaEntity) an MI entity param resolves to `Roamed[E]`
         // (a RecordTypeSymbol) which is a record → borrow by the rule above anyway; a bare `EntityTypeSymbol`
-        // param in MI is skipped here (it would otherwise be consuming per the RA rule).
+        // param in MI is skipped here (it would otherwise be consuming per the RV rule).
         bool entitiesAreShared = ctx.Registry.EntitiesAreSharedIn(filePath: r.Location.FileName);
         var paramLive = new List<Owned>();
         // The late run tracks no parameter: the first run already tore the owned ones down.
@@ -1261,7 +1261,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ResolvedRoutine = owned.Destroy,
             ResolvedType = _blankType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: owned.Destroy),
-            // Builder-injected teardown: exempt from the RA-S609 dangerous-call gate. `destruct` is a
+            // Builder-injected teardown: exempt from the RV-S609 dangerous-call gate. `destruct` is a
             // dangerous routine, but this call is the builder's own scope-exit teardown, not a user
             // calling it outside a `danger` block. Under the demand pipeline this destroy is injected
             // (Phase 7) BEFORE the stdlib body is SA'd on reach, so the dangerous-call check would see it
@@ -1287,7 +1287,7 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             ResolvedRoutine = destroy,
             ResolvedType = _blankType,
             LoweringKind = CallClassifier.ClassifyMemberRoutineCall(memberRoutine: destroy),
-            // Builder-injected teardown — exempt from the RA-S609 dangerous-call gate (see MakeDestroyStmt).
+            // Builder-injected teardown — exempt from the RV-S609 dangerous-call gate (see MakeDestroyStmt).
             IsSynthesizedLowering = true
         };
         return new ExpressionStatement(Expression: call, Location: loc);

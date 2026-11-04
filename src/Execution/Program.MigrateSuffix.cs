@@ -575,7 +575,7 @@ internal partial class Program
                 start.Environment[key: "FORGE_STDLIB"] = standard;
             }
 
-            start.Environment[key: "RA_NO_DAEMON"] = "1";
+            start.Environment[key: "RV_NO_DAEMON"] = "1";
             using Process child = Process.Start(startInfo: start)!;
             child.WaitForExit();
             if (!File.Exists(path: output))

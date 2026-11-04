@@ -12,16 +12,16 @@ namespace Builder.Documentation;
 /// <param name="Types">The types bound.</param>
 /// <param name="Routines">The routines bound.</param>
 /// <param name="Problems">The files that could not be read, each with the reason.</param>
-internal sealed record RaStubResult(int Files, int Types, int Routines, List<string> Problems);
+internal sealed record RvStubResult(int Files, int Types, int Routines, List<string> Problems);
 
 /// <summary>
-/// Writes <c>@ra("...")</c> stub files for the shared Revare declarations a Mielia program sees and the Mielia
+/// Writes <c>@rv("...")</c> stub files for the shared Revare declarations a Mielia program sees and the Mielia
 /// library does not show yet: one file per Revare source file, at the same relative path, in the same module.
 /// Each stub carries Revare's doc comment as a first draft, to be reworded in Mielia's words. A declaration the
 /// Mielia library already binds, or a routine it replaces with one of the same call shape, is left out, so a later
 /// run writes only what Revare added since.
 /// </summary>
-internal sealed class RaStubWriter
+internal sealed class RvStubWriter
 {
     /// <summary>Revare folders whose types a Mielia program never works with: buildtime reflection (Mielia reflects
     /// at runtime through ObjectHacker), C structures, and SIMD lanes.</summary>
@@ -39,13 +39,13 @@ internal sealed class RaStubWriter
     /// and its handles (a Mielia program works with none of them, only with `ByteSize` from the same folder).</summary>
     private static readonly string[] UnsharedFiles =
     [
-        "System/NativeDeclarations.rr", "System/Memory/Closure.rr", "System/Memory/CycleCollector.rr",
-        "System/Memory/Exclusive.rr", "System/Memory/GuardManager.rr", "System/Memory/AccessPolicy.rr",
-        "System/Memory/MultiRead.rr", "System/Memory/ReadOnly.rr", "System/Memory/RetainManager.rr",
-        "System/Memory/RoamManager.rr", "System/Memory/Guarded.rr",
-        "System/Memory/Hijacked.rr", "System/Memory/Modifying.rr",
-        "System/Memory/Retained.rr", "System/Memory/Roamed.rr", "System/Memory/Tracked.rr",
-        "System/Memory/Viewing.rr", "System/Memory/Watched.rr", "System/Memory/Witnessed.rr"
+        "System/NativeDeclarations.rvr", "System/Memory/Closure.rvr", "System/Memory/CycleCollector.rvr",
+        "System/Memory/Exclusive.rvr", "System/Memory/GuardManager.rvr", "System/Memory/AccessPolicy.rvr",
+        "System/Memory/MultiRead.rvr", "System/Memory/ReadOnly.rvr", "System/Memory/RetainManager.rvr",
+        "System/Memory/RoamManager.rvr", "System/Memory/Guarded.rvr",
+        "System/Memory/Hijacked.rvr", "System/Memory/Modifying.rvr",
+        "System/Memory/Retained.rvr", "System/Memory/Roamed.rvr", "System/Memory/Tracked.rvr",
+        "System/Memory/Viewing.rvr", "System/Memory/Watched.rvr", "System/Memory/Witnessed.rvr"
     ];
 
     /// <summary>
@@ -90,14 +90,14 @@ internal sealed class RaStubWriter
 
     /// <summary>Creates a writer over the Revare library at <paramref name="sharedRoot"/> and the Mielia library
     /// at <paramref name="ownRoot"/>.</summary>
-    public RaStubWriter(string sharedRoot, string ownRoot)
+    public RvStubWriter(string sharedRoot, string ownRoot)
     {
         _sharedRoot = System.IO.Path.GetFullPath(path: sharedRoot);
         _ownRoot = System.IO.Path.GetFullPath(path: ownRoot);
     }
 
     /// <summary>Writes the stub files under <paramref name="outputRoot"/>. An existing file is not overwritten.</summary>
-    public RaStubResult Write(string outputRoot)
+    public RvStubResult Write(string outputRoot)
     {
         List<Source> own = Read(root: _ownRoot, language: Language.Mielia);
         List<Source> shared = Read(root: _sharedRoot, language: Language.Revare)
@@ -115,7 +115,7 @@ internal sealed class RaStubWriter
         foreach (SyntaxTree.Declaration declaration in own.SelectMany(selector: s =>
                      s.Program.Declarations.OfType<SyntaxTree.Declaration>()))
         {
-            if (RaBindingCheck.TargetOf(declaration: declaration) is { } target)
+            if (RvBindingCheck.TargetOf(declaration: declaration) is { } target)
             {
                 bound.Add(item: declaration is RoutineDeclaration r
                     ? Shape(target: target, routine: r)
@@ -193,7 +193,7 @@ internal sealed class RaStubWriter
                     }
 
                     AppendDoc(text: text, source: source, line: routine.Location.Line, indent: "");
-                    text.Append(value: $"@ra(\"{target}\")\n{CleanSignature(signature: signature)}\n\n");
+                    text.Append(value: $"@rv(\"{target}\")\n{CleanSignature(signature: signature)}\n\n");
                     routineCount++;
                 }
             }
@@ -213,14 +213,14 @@ internal sealed class RaStubWriter
 
             Directory.CreateDirectory(path: System.IO.Path.GetDirectoryName(path: file)!);
             File.WriteAllText(path: file,
-                contents: $"module {source.Module}\n\n# Each declaration below creates nothing: `@ra` names the shared " +
+                contents: $"module {source.Module}\n\n# Each declaration below creates nothing: `@rv` names the shared " +
                           "declaration it shows, and validate-stdlib\n# checks that the two still match.\n\n" +
                           text.ToString()
                                                                     .TrimEnd() + "\n");
             fileCount++;
         }
 
-        return new RaStubResult(Files: fileCount, Types: typeCount, Routines: routineCount, Problems: _problems);
+        return new RvStubResult(Files: fileCount, Types: typeCount, Routines: routineCount, Problems: _problems);
     }
 
     private List<Source> Read(string root, Language language)
@@ -260,7 +260,7 @@ internal sealed class RaStubWriter
         string name)
     {
         AppendDoc(text: text, source: source, line: type.Location.Line, indent: "");
-        text.Append(value: $"@ra(\"{name}\")\n");
+        text.Append(value: $"@rv(\"{name}\")\n");
         string header = CleanSignature(signature: Signature(source: source, printer: printer, declaration: type));
         text.Append(value: header)
             .Append(value: '\n');
@@ -421,7 +421,7 @@ internal sealed class RaStubWriter
         }
     }
 
-    /// <summary>The name an <c>@ra</c> binding of the routine gives: <c>Type.name</c> for a member routine, the type's
+    /// <summary>The name an <c>@rv</c> binding of the routine gives: <c>Type.name</c> for a member routine, the type's
     /// name for a creator, the name alone for a free routine.</summary>
     private static string TargetFor(RoutineDeclaration routine)
     {
