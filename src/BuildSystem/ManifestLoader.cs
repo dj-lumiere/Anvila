@@ -248,6 +248,21 @@ public static class ManifestLoader
         {
             d.TraceStdlib = ts is true;
         }
+
+        if (debugTable.TryGetValue(key: "sanitize", value: out object? sz))
+        {
+            string name = sz?.ToString() ?? "";
+            if (name is "thread")
+            {
+                d.Sanitize = name;
+            }
+            else if (name is not ("" or "none"))
+            {
+                throw new InvalidOperationException(
+                    message: $"{ManifestFileName}: [debug] sanitize = \"{name}\" is not a sanitizer. Write \"thread\" " +
+                             "(ThreadSanitizer) or \"none\".");
+            }
+        }
     }
 
     /// <summary>Resolves each external library dependency directory relative to the manifest,

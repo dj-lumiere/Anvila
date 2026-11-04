@@ -1969,7 +1969,8 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         private void SeedImplicitCodegenInserts(TypeSymbol type)
         {
             foreach ((TypeSymbol owner, string mn) in ImplicitCallContract.ForLiveType(
-                         liveType: type, tasksCross: _ctx.Registry.TasksCross))
+                         liveType: type, tasksCross: _ctx.Registry.TasksCross,
+                         sharingCheck: _ctx.Registry.SharingCheck))
             {
                 Discover(r: _ctx.Registry.LookupMemberRoutine(type: owner, memberRoutineName: mn));
             }

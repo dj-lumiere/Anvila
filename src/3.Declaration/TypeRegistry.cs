@@ -771,6 +771,13 @@ public sealed partial class TypeRegistry
     /// </summary>
     public bool TasksCross { get; set; } = true;
 
+    /// <summary>
+    /// Whether the build checks the sharing invariant: a debug build takes an entity's access lock with
+    /// <c>lock_enter_checked</c>, which also stops the program when the entity has escaped to another task and holds a
+    /// handle that has not. A release build never does, and its code is the same as before.
+    /// </summary>
+    public bool SharingCheck { get; set; }
+
     /// <summary>All registered routines by their full name. Written only through <see cref="SetRoutineEntry"/>,
     /// which keeps <see cref="_routineKeysByBaseName"/> in step.</summary>
     private readonly Dictionary<string, RoutineInfo> _routines = new();

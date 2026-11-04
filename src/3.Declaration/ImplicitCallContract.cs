@@ -25,7 +25,7 @@ internal static class ImplicitCallContract
     /// synthesized) AST call are walked normally and must NOT be listed.
     /// </summary>
     public static IEnumerable<(TypeSymbol owner, string memberRoutineName)> ForLiveType(
-        TypeSymbol liveType, bool tasksCross = true)
+        TypeSymbol liveType, bool tasksCross = true, bool sharingCheck = false)
     {
         // Structured base-name classification (canonical helper — prefers the generic definition's
         // BareName, no ad-hoc bracket parsing). Returns null for anything that isn't an RC wrapper.
@@ -55,7 +55,7 @@ internal static class ImplicitCallContract
             yield return (liveType, RuntimeContract.RoamedMemberRoutine.Promote);
             yield return (liveType, RuntimeContract.RoamedMemberRoutine.PromoteInto);
             yield return (liveType, RuntimeContract.RoamedMemberRoutine.ControllerAddress);
-            yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockEnter);
+            yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockEnterFor(sharingCheck: sharingCheck));
             yield return (liveType, RuntimeContract.RoamedMemberRoutine.LockExit);
         }
 

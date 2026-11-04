@@ -700,6 +700,17 @@ internal static class NativeToolchain
         bool internalizeForLto = false)
     {
         string optPipelineLevel = OptLevelString(buildMode: buildMode);
+        bool threadSanitizer = Diagnostics.DiagnosticFlags.Sanitize == "thread";
+        if (threadSanitizer)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Console.WriteLine(value: "[debug] sanitize = \"thread\" needs Linux or macOS: ThreadSanitizer does not run on Windows.");
+                return 1;
+            }
+
+            llFile = WriteThreadSanitizedCopy(llFile: llFile);
+        }
 
         // Use -passes='default<Ox>,...' syntax (LLVM 14+; replaces the -Ox -passes=... split form).
         // With internalizeForLto, `internalize` runs FIRST (preserving only `main`), so the module's
@@ -714,11 +725,18 @@ internal static class NativeToolchain
         string optPipeline = internalizeForLto
             ? $"internalize,{basePipeline}"
             : basePipeline;
+        if (threadSanitizer)
+        {
+            // The instrumentation runs after the optimizer, so it sees the accesses that are left. The calls and
+            // returns of routines are not recorded: a coroutine switches stacks, and a shadow call stack that
+            // follows the calls would run out of step with the stack a thread is on.
+            optPipeline += ",tsan-module,function(tsan)";
+        }
         string internalizeArgs = internalizeForLto
             ? " -internalize-public-api-list=main"
             : "";
         string optArgs =
-            $"-S -passes={optPipeline}{internalizeArgs} \"{llFile}\" -o \"{optFile}\"";
+            $"-S -passes={optPipeline}{internalizeArgs}{(threadSanitizer ? " -tsan-instrument-func-entry-exit=0" : "")} \"{llFile}\" -o \"{optFile}\"";
         var optPsi = new ProcessStartInfo
         {
             FileName = OptTool.Value,
@@ -1161,12 +1179,110 @@ internal static class NativeToolchain
         return asm;
     }
 
+    /// <summary>The attribute that makes ThreadSanitizer instrument a routine. Clang puts it on every routine it
+    /// compiles under <c>-fsanitize=thread</c>, but IR written by a builder carries none.</summary>
+    private const string ThreadSanitizerAttribute = " sanitize_thread";
+
+    /// <summary>Marks every routine <paramref name="ir"/> defines for ThreadSanitizer. The attribute goes after the
+    /// routine's other attributes and before its <c>comdat</c>, <c>section</c>, alignment and debug metadata.</summary>
+    internal static string MarkForThreadSanitizer(string ir)
+    {
+        string[] lines = ir.Split(separator: '\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i];
+            if (!line.StartsWith(value: "define ", comparisonType: StringComparison.Ordinal) ||
+                !line.EndsWith(value: " {", comparisonType: StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string head = line[..^2];
+            // Metadata attachments (!dbg !12) trail the header.
+            int end = MetadataAttachmentsRegex.Match(input: head).Groups[groupnum: 2].Index;
+            string attrs = head[..end];
+            int at = TrailingAttachmentStart(header: attrs);
+            lines[i] = attrs[..at] + ThreadSanitizerAttribute + attrs[at..] + head[end..] + " {";
+        }
+
+        return string.Join(separator: '\n', value: lines);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex MetadataAttachmentsRegex =
+        new(pattern: @"^(.*?)((?: !\w+ !\d+)*)$");
+
+    /// <summary>Where the trailing <c>comdat</c>, <c>section</c>, <c>align</c> and <c>gc</c> of a routine header
+    /// begin, or its length when it has none.</summary>
+    private static int TrailingAttachmentStart(string header)
+    {
+        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(input: header,
+            pattern: "((?: comdat(?:\\([^)]*\\))?)?(?: section \"[^\"]*\")?(?: align \\d+)?(?: gc \"[^\"]*\")?)$");
+        return m.Groups[groupnum: 1].Index;
+    }
+
+    /// <summary>Writes <paramref name="llFile"/> with every routine marked for ThreadSanitizer next to it, and gives
+    /// the new file's path.</summary>
+    private static string WriteThreadSanitizedCopy(string llFile)
+    {
+        string marked = Path.ChangeExtension(path: llFile, extension: ".tsan.ll");
+        File.WriteAllText(path: marked, contents: MarkForThreadSanitizer(ir: File.ReadAllText(path: llFile)));
+        return marked;
+    }
+
+    /// <summary>
+    /// The runtime of a development checkout (<c>ingrid_runtime_tessera.ll</c>, beside the library folder) compiled
+    /// with ThreadSanitizer instrumentation into <c>ingrid_runtime_tessera.tsan.o</c> beside it, rebuilt when the IR is
+    /// newer. Null, with the reason printed, when the IR is not there or clang fails.
+    /// </summary>
+    private static string? BuildThreadSanitizedRuntime(string runtimeLibDir)
+    {
+        string runtimeIr = Path.GetFullPath(path: Path.Combine(path1: runtimeLibDir, path2: "..",
+            path3: "ingrid_runtime_tessera.ll"));
+        if (!File.Exists(path: runtimeIr))
+        {
+            Console.WriteLine(
+                value: $"[debug] sanitize = \"thread\" needs the runtime's IR ({runtimeIr}), which only a development checkout builds.");
+            return null;
+        }
+
+        string runtimeObject = Path.ChangeExtension(path: runtimeIr, extension: ".tsan.o");
+        if (File.Exists(path: runtimeObject) &&
+            File.GetLastWriteTimeUtc(path: runtimeObject) >= File.GetLastWriteTimeUtc(path: runtimeIr))
+        {
+            return runtimeObject;
+        }
+
+        string marked = Path.ChangeExtension(path: runtimeIr, extension: ".tsan.ll");
+        File.WriteAllText(path: marked, contents: MarkForThreadSanitizer(ir: File.ReadAllText(path: runtimeIr)));
+        int rc = RunToolCapture(toolPath: ClangTool.Value,
+            args:
+            $"-c -O1 -fPIC -fsanitize=thread -mllvm -tsan-instrument-func-entry-exit=0 -Wno-override-module -o \"{runtimeObject}\" \"{marked}\"",
+            stderr: out string err);
+        if (rc != 0)
+        {
+            Console.WriteLine(value: $"The runtime could not be compiled for ThreadSanitizer (clang exited with code {rc}).");
+            Console.WriteLine(value: err);
+            return null;
+        }
+
+        return runtimeObject;
+    }
+
     internal static int LinkExecutable(string optFile, string exeFile, string runtimeLibDir,
         RfBuildMode buildMode, IReadOnlyList<string>? cLibraries = null,
         IReadOnlyList<string>? libraryPaths = null)
     {
         // Compile .ll -> .exe using clang (clang uses -Ox flag style, not opt's -passes= form)
         string clangOptLevel = $"-{OptLevelString(buildMode: buildMode)}";
+        if (Diagnostics.DiagnosticFlags.Sanitize == "thread")
+        {
+            // opt instrumented the module already: clang gets it without the mark, or it would instrument it again.
+            string unmarked = Path.ChangeExtension(path: optFile, extension: ".link.ll");
+            File.WriteAllText(path: unmarked,
+                contents: File.ReadAllText(path: optFile).Replace(oldValue: ThreadSanitizerAttribute, newValue: ""));
+            optFile = unmarked;
+        }
+
         // A build that reads its crash trace from the stack: the optimized IR gets its chains, the assembly marks the
         // calls' return addresses, and that assembly is linked (Tessera's TraceTable).
         if (WriteTraceTableAssembly(optFile: optFile, clangOptLevel: clangOptLevel) is not { } linkInput)
@@ -1195,8 +1311,22 @@ internal static class NativeToolchain
         // after the user object + runtime so `-l` symbol resolution sees the referencing objects first.
         string userLibArgs =
             BuildUserLibraryArgs(cLibraries: cLibraries, libraryPaths: libraryPaths);
+        // Under ThreadSanitizer the runtime is linked as an object compiled with the instrumentation, in place of the
+        // runtime library: the locks, the queues and the scheduler's atomics are what orders the program's accesses.
+        bool threadSanitizer = Diagnostics.DiagnosticFlags.Sanitize == "thread";
+        string runtimeArg = $"-L\"{runtimeLibDir}\" -lrazorforge_runtime";
+        if (threadSanitizer)
+        {
+            if (BuildThreadSanitizedRuntime(runtimeLibDir: runtimeLibDir) is not { } runtimeObject)
+            {
+                return 1;
+            }
+
+            runtimeArg = $"-fsanitize=thread \"{runtimeObject}\"";
+        }
+
         string clangArgs =
-            $"{clangOptLevel}{framePointerFlag}{TargetCodegenFlags()}{lldFlag}{macSysrootArg} -o \"{exeFile}\" \"{optFile}\" -L\"{runtimeLibDir}\" -lrazorforge_runtime{userLibArgs}{compilerRtArg}{windowsThreadingLibs}{unixRuntimeLibs}{linkerErrorLimitFlag}{manifestUacFlag}{WindowsDebugInfoFragment(buildMode: buildMode)}{MainStackFragment()}";
+            $"{clangOptLevel}{framePointerFlag}{TargetCodegenFlags()}{lldFlag}{macSysrootArg} -o \"{exeFile}\" \"{optFile}\" {runtimeArg}{userLibArgs}{compilerRtArg}{windowsThreadingLibs}{unixRuntimeLibs}{linkerErrorLimitFlag}{manifestUacFlag}{WindowsDebugInfoFragment(buildMode: buildMode)}{MainStackFragment()}";
 
         var clangPsi = new ProcessStartInfo
         {

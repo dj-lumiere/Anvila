@@ -919,6 +919,10 @@ internal sealed class TemporaryTeardownPass(PostprocessingContext ctx)
         bool receiverConsumed = (m.MemberName == "duplicate" || m.MemberName == "share" && !receiverIsHandle) &&
                                 !receiverIsIndexRead ||
                                 m.MemberName == RuntimeContract.RoamedMemberRoutine.ReleaseInner ||
+                                // `promote_into` gives its receiver back as the handle the member variable keeps, so on
+                                // a recovery variant body (where this pass sees the call the lock bracket pass wrote)
+                                // the share it reads is not a temporary to tear down.
+                                m.MemberName == RuntimeContract.RoamedMemberRoutine.PromoteInto ||
                                 m.Object.ResolvedType is EntityTypeSymbol &&
                                 call.ResolvedType is { } rcCtorRes &&
                                 TypeRegistry.GetRcWrapperBaseName(type: rcCtorRes) is not null;

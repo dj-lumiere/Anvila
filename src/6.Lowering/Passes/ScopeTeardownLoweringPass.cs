@@ -1143,10 +1143,15 @@ internal sealed class ScopeTeardownLoweringPass(PostprocessingContext ctx)
             };
         }
 
-        stmts.Add(item: MakeMemberDestroyStmt(receiver: target,
-            destroy: destroy,
-            loc: original.Location));
-        stmts.Add(item: rebuild(arg: finalRhs));
+        // The old handle is destroyed and the new one stored under one hold of the entity's access lock. With a
+        // lock per statement, another task could read the member variable between the two and get a handle that is
+        // already freed.
+        var swap = new List<Statement>
+        {
+            MakeMemberDestroyStmt(receiver: target, destroy: destroy, loc: original.Location),
+            rebuild(arg: finalRhs)
+        };
+        stmts.Add(item: new BlockStatement(Statements: swap, Location: original.Location) { HoldsAccessLock = true });
         return new BlockStatement(Statements: stmts, Location: original.Location);
     }
 

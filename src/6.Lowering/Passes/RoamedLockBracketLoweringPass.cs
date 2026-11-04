@@ -684,24 +684,45 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         };
     }
 
-    /// <summary>Whether the work <paramref name="call"/> waits for is a handle held in a place (a name or a member
-    /// variable path), reached directly or through the coercion the projection pass put on the receiver.</summary>
+    /// <summary>Whether the receiver of the wait <paramref name="call"/> is a handle held in a place (a name or a member
+    /// variable path, or an element read from one: <c>jobs[0]</c>), reached directly or through the coercion the
+    /// projection pass put on the receiver.</summary>
     private static bool WorkIsHeld(CallExpression call)
     {
-        Expression? receiver = (call.Callee as MemberExpression)?.Object;
-        if (receiver is CallExpression { Callee: MemberExpression coercion } && RoamedCoercionReceiver(member: coercion) is { } handle)
+        Expression? receiver = PeelCoercion(expr: (call.Callee as MemberExpression)?.Object);
+        if (receiver is CallExpression { Callee: MemberExpression { MemberName: "getitem", Object: { } container } })
         {
-            receiver = handle;
+            receiver = PeelCoercion(expr: container);
         }
 
         return receiver != null && IsHeldPlace(handle: receiver);
     }
 
-    /// <summary>Whether <paramref name="call"/> waits for a <c>Work</c> to finish.</summary>
+    private static Expression? PeelCoercion(Expression? expr)
+    {
+        return expr is CallExpression { Callee: MemberExpression coercion } && RoamedCoercionReceiver(member: coercion) is { } handle
+            ? handle
+            : expr;
+    }
+
+    /// <summary>Whether <paramref name="call"/> waits for another job: a <c>Work</c> to finish, the jobs of a list
+    /// (<c>gather</c>, <c>race</c>, ...), a mailbox to have room or a value, or a channel to hold one.</summary>
     private static bool WaitsForWork(CallExpression call)
     {
-        return call.ResolvedRoutine is { Name: "retrieve", OwnerType: { } owner } &&
-               (TypeRegistry.GetRcWrapperBaseName(type: owner) ?? owner.BareName) == "Work";
+        if (call.ResolvedRoutine is not { OwnerType: { } owner } routine)
+        {
+            return false;
+        }
+
+        string ownerName = TypeRegistry.GetRcWrapperBaseName(type: owner) ?? owner.BareName;
+        return ownerName switch
+        {
+            "Work" => routine.Name == "retrieve",
+            "List" => routine.Name is "gather" or "gather_all" or "race" or "next_finished" or "cancel_all",
+            "Mailbox" => routine.Name is "remove_first" or "add_last",
+            "ChannelDrain" => routine.Name == "emit",
+            _ => false
+        };
     }
 
     /// <summary>Replaces the eagerly evaluated waits nested in an expression with temps computed just before the
@@ -1176,6 +1197,11 @@ internal sealed class RoamedLockBracketLoweringPass(PostprocessingContext ctx)
         if (handle.ResolvedType is not { } recvType)
         {
             return null;
+        }
+
+        if (memberRoutine == RuntimeContract.RoamedMemberRoutine.LockEnter)
+        {
+            memberRoutine = RuntimeContract.RoamedMemberRoutine.LockEnterFor(sharingCheck: Registry.SharingCheck);
         }
 
         RoutineInfo? routine =

@@ -332,7 +332,8 @@ internal partial class Program
         // `[debug] dump-ir`: the ORC-JIT and warm-daemon paths keep the IR in-memory / in the daemon and
         // never write a `<entry>.ll`, so skip BOTH and take the local AOT build+run, which emits (and keeps)
         // `<entry>.ll` + `.opt.ll` beside the source for inspection.
-        bool dumpIr = DiagnosticFlags.DumpIr;
+        // A sanitized program is built by the local build too: the JIT and the daemon do not instrument.
+        bool dumpIr = DiagnosticFlags.DumpIr || DiagnosticFlags.Sanitize != null;
 
         // ORC-JIT dev-loop path (RAZORFORGE_JIT=1): JIT the module in-process — no opt/clang/link,
         // no exe, no spawn. IR comes warm from the daemon when it's up, else a local cold compile.
@@ -923,6 +924,7 @@ internal partial class Program
         DiagnosticFlags.DeadlockCheck = manifest.Debug.DeadlockCheck;
         DiagnosticFlags.AccessOrder = manifest.Debug.AccessOrder;
         DiagnosticFlags.TraceStdlib = manifest.Debug.TraceStdlib;
+        DiagnosticFlags.Sanitize = manifest.Debug.Sanitize;
     }
 
     /// <summary>

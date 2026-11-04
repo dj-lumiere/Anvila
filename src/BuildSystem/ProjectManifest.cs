@@ -177,6 +177,12 @@ public sealed class DebugOptions
     /// for work on the library itself. Off unless the manifest turns it on: a program's trace shows its own routines,
     /// and where it called into the library.</summary>
     public bool TraceStdlib { get; set; }
+
+    /// <summary>The sanitizer the build runs the program under (<c>sanitize</c>): <c>"thread"</c> instruments every
+    /// memory access of the program and of the runtime with ThreadSanitizer, so a race between two threads that no
+    /// lock or atomic orders is reported when it happens. Null for none. The program is built by the local build, never the
+    /// warm daemon or the JIT, and runs several times slower.</summary>
+    public string? Sanitize { get; set; }
 }
 
 /// <summary>How a foreign C library is linked.</summary>

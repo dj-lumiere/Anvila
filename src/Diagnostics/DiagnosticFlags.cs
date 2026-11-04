@@ -49,6 +49,9 @@ public static class DiagnosticFlags
     /// too, for work on the library itself.</summary>
     public static bool TraceStdlib { get; set; }
 
+    /// <summary><c>[debug] sanitize</c>: the sanitizer (<c>"thread"</c>) the program is built and run under, or null.</summary>
+    public static string? Sanitize { get; set; }
+
     /// <summary>Clears every flag. Call at the start of each build (esp. each daemon request) so a prior
     /// request's flags never leak into the next.</summary>
     public static void Reset()
@@ -63,5 +66,6 @@ public static class DiagnosticFlags
         DeadlockCheck = null;
         AccessOrder = false;
         TraceStdlib = false;
+        Sanitize = null;
     }
 }

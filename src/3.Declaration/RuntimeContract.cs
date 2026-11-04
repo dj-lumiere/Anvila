@@ -179,6 +179,17 @@ public static class RuntimeContract
         /// <summary>Acquire the roam lock before a direct member-variable read.</summary>
         public const string LockEnter = "lock_enter";
 
+        /// <summary>The lock entry of a debug build: <see cref="LockEnter"/>, then the sharing check (an escaped entity may
+        /// hold only escaped handles).</summary>
+        public const string LockEnterChecked = "lock_enter_checked";
+
+        /// <summary>The lock entry a build takes: the checked one in a build that checks the sharing invariant.</summary>
+        /// <param name="sharingCheck">Whether the build checks the sharing invariant.</param>
+        public static string LockEnterFor(bool sharingCheck)
+        {
+            return sharingCheck ? LockEnterChecked : LockEnter;
+        }
+
         /// <summary>Release the roam lock after a direct member-variable read.</summary>
         public const string LockExit = "lock_exit";
 

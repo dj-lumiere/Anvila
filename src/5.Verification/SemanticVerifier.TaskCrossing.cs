@@ -1,3 +1,4 @@
+using Builder.Targeting;
 using Builder.Declaration;
 using SyntaxTree;
 using TypeModel.Symbols;
@@ -21,6 +22,7 @@ public sealed partial class SemanticVerifier
     /// </summary>
     private void DecideTasksCross()
     {
+        _registry.SharingCheck = _buildMode == RfBuildMode.Debug;
         if (!PrunesTaskChecks || !_registry.CompilationRules.EntitiesAreShared)
         {
             return;

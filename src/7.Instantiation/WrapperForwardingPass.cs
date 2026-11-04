@@ -46,7 +46,6 @@ internal sealed class WrapperForwardingPass
         Column: 0,
         Position: 0);
 
-    private const string LockEnter = "lock_enter";
     private const string LockExit = "lock_exit";
 
     /// <summary>
@@ -991,7 +990,8 @@ internal sealed class WrapperForwardingPass
         CallExpression innerCall, ForwarderCallContext ctx)
     {
         RoutineInfo? lockEnter =
-            _registry.LookupMemberRoutine(type: wrapperType, memberRoutineName: LockEnter);
+            _registry.LookupMemberRoutine(type: wrapperType,
+                memberRoutineName: RuntimeContract.RoamedMemberRoutine.LockEnterFor(sharingCheck: _registry.SharingCheck));
         RoutineInfo? lockExit =
             _registry.LookupMemberRoutine(type: wrapperType, memberRoutineName: LockExit);
 
@@ -1064,7 +1064,7 @@ internal sealed class WrapperForwardingPass
                         Location: _synthLoc)
                 ],
                 Location: _synthLoc);
-            return [MkLock(m: lockEnter, verb: LockEnter), rawDecl, ctrlDecl, whenStmt];
+            return [MkLock(m: lockEnter, verb: RuntimeContract.RoamedMemberRoutine.LockEnterFor(sharingCheck: _registry.SharingCheck)), rawDecl, ctrlDecl, whenStmt];
         }
 
         if (ctx.HasReturnValue)
@@ -1084,14 +1084,14 @@ internal sealed class WrapperForwardingPass
                 Location: _synthLoc);
             return
             [
-                MkLock(m: lockEnter, verb: LockEnter), rawDecl, ctrlDecl, resultDecl,
+                MkLock(m: lockEnter, verb: RuntimeContract.RoamedMemberRoutine.LockEnterFor(sharingCheck: _registry.SharingCheck)), rawDecl, ctrlDecl, resultDecl,
                 MkLock(m: lockExit, verb: LockExit), retStmt
             ];
         }
 
         return
         [
-            MkLock(m: lockEnter, verb: LockEnter), rawDecl, ctrlDecl,
+            MkLock(m: lockEnter, verb: RuntimeContract.RoamedMemberRoutine.LockEnterFor(sharingCheck: _registry.SharingCheck)), rawDecl, ctrlDecl,
             new ExpressionStatement(Expression: innerCall, Location: _synthLoc),
             MkLock(m: lockExit, verb: LockExit)
         ];
