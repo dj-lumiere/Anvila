@@ -251,10 +251,55 @@ internal static unsafe class OrcJitExecutor
             what: "AddLLVMIRModule(ingrid)");
     }
 
+    /// <summary>
+    /// Makes the JIT compile the way a debug build wants: no optimizing code generation, so the fast instruction
+    /// selector runs and a module compiles in a fraction of the time. The default LLJIT optimizes its machine code,
+    /// which is the wrong trade for a program that runs once after each edit. When the host's target machine cannot
+    /// be described, the builder keeps the default.
+    /// </summary>
+    private static void UseFastInstructionSelection(LLVMOrcOpaqueLLJITBuilder* builder)
+    {
+        LLVMOrcOpaqueJITTargetMachineBuilder* host;
+        LLVMOpaqueError* detectError = LLVM.OrcJITTargetMachineBuilderDetectHost(Result: &host);
+        if (detectError != null)
+        {
+            LLVM.ConsumeError(Err: detectError);
+            return;
+        }
+
+        sbyte* triple = LLVM.OrcJITTargetMachineBuilderGetTargetTriple(JTMB: host);
+        LLVMOpaqueTargetMachine* machine = null;
+        LLVMTarget* target;
+        sbyte* targetError;
+        if (triple != null && LLVM.GetTargetFromTriple(Triple: triple, T: &target, ErrorMessage: &targetError) == 0)
+        {
+            sbyte* cpu = LLVM.GetHostCPUName();
+            sbyte* features = LLVM.GetHostCPUFeatures();
+            machine = LLVM.CreateTargetMachine(T: target,
+                Triple: triple,
+                CPU: cpu,
+                Features: features,
+                Level: LLVMCodeGenOptLevel.LLVMCodeGenLevelNone,
+                Reloc: LLVMRelocMode.LLVMRelocDefault,
+                CodeModel: LLVMCodeModel.LLVMCodeModelJITDefault);
+            LLVM.DisposeMessage(Message: cpu);
+            LLVM.DisposeMessage(Message: features);
+        }
+
+        LLVM.OrcDisposeJITTargetMachineBuilder(JTMB: host);
+        if (machine != null)
+        {
+            // The builder takes the machine's description and the machine itself.
+            LLVM.OrcLLJITBuilderSetJITTargetMachineBuilder(Builder: builder,
+                JTMB: LLVM.OrcJITTargetMachineBuilderCreateFromTargetMachine(TM: machine));
+        }
+    }
+
     /// <summary>Creates the LLJIT the builder describes. On Windows every object it compiles has its constant-pool
     /// symbols made local before it is linked (see <see cref="OrcCoffConstantPools"/>).</summary>
     private static LLVMOrcOpaqueLLJIT* CreateLljit(LLVMOrcOpaqueLLJITBuilder* builder)
     {
+        UseFastInstructionSelection(builder: builder);
         LLVMOrcOpaqueLLJIT* jit;
         CheckErr(err: LLVM.OrcCreateLLJIT(Result: &jit, Builder: builder), what: OrcCreateLljitWhat);
         if (OperatingSystem.IsWindows())

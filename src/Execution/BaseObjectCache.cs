@@ -51,8 +51,8 @@ public sealed class BaseObjectCache
         "    di[10] = 100\n" +
         "    show(f\"di: {di} size {di.count()}\")\n" +
         "    var s = Set[S64]()\n" +
-        "    drop s.add(value: 7)\n" +
-        "    drop s.add(value: 8)\n" +
+        "    s.add(value: 7)\n" +
+        "    s.add(value: 8)\n" +
         "    show(f\"s: {s} size {s.count()} has 7 {s.has(7)}\")\n" +
         "    var b = true\n" +
         "    var n: S64 = 42\n" +
@@ -60,6 +60,51 @@ public sealed class BaseObjectCache
         "    show(f\"scalars: {b} {n} {u} {n + 1} {n // 2}\")\n" +
         "    show(\"BASE_SEED_DONE\")\n" +
         "    return\n";
+
+    /// <summary>
+    /// The seed program for Suflae. Suflae spells the integer type <c>Int</c> and its collections are shared handles
+    /// the builder wraps, so the RazorForge seed would warm the wrong instances (and its sized integer types are not
+    /// Suflae words). Same shape as <see cref="SeedProgramSource"/>, valid and warning free in Suflae.
+    /// </summary>
+    public const string SuflaeSeedProgramSource =
+        "module Base\n" +
+        "import IO/Console\n" +
+        "routine start()\n" +
+        "    var xs = [1, 2, 3]\n" +
+        "    xs.add_last(value: 4)\n" +
+        "    xs.add_first(value: 0)\n" +
+        "    show(f\"xs: {xs} size {xs.count()} first {xs[0]}\")\n" +
+        "    var sum = 0\n" +
+        "    for x in xs\n" +
+        "        sum = sum + x\n" +
+        "    show(f\"sum: {sum}\")\n" +
+        "    var names = [\"alpha\", \"beta\"]\n" +
+        "    names.add_last(value: \"gamma\")\n" +
+        "    show(f\"names: {names} has beta {names.has(\"beta\")}\")\n" +
+        "    var d = Dict[Text, Int]()\n" +
+        "    d[\"one\"] = 1\n" +
+        "    d[\"two\"] = 2\n" +
+        "    show(f\"d: {d} d[one] {d[\"one\"]} has two {d.has_key(\"two\")}\")\n" +
+        "    var di = Dict[Int, Int]()\n" +
+        "    di[10] = 100\n" +
+        "    show(f\"di: {di} size {di.count()}\")\n" +
+        "    var s = Set[Int]()\n" +
+        "    s.add(value: 7)\n" +
+        "    s.add(value: 8)\n" +
+        "    show(f\"s: {s} size {s.count()} has 7 {s.has(7)}\")\n" +
+        "    var b = true\n" +
+        "    var n: Int = 42\n" +
+        "    show(f\"scalars: {b} {n} {n + 1} {n // 2}\")\n" +
+        "    show(\"BASE_SEED_DONE\")\n" +
+        "    return\n";
+
+    /// <summary>The seed program (and the file name it is analyzed under) for <paramref name="language"/>.</summary>
+    public static (string Source, string FileName) SeedFor(TypeModel.Enums.Language language)
+    {
+        return language == TypeModel.Enums.Language.Suflae
+            ? (SuflaeSeedProgramSource, "base.sf")
+            : (SeedProgramSource, "base.rf");
+    }
 
     private readonly string _dir;
 

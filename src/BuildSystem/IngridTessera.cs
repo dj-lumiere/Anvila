@@ -179,7 +179,7 @@ internal static class IngridTessera
 
     /// <summary>The extension of the compiled library next to the IR. It names the JIT's object, whose constant-pool
     /// symbols are already local, apart from the plain object earlier builders wrote as <c>ingrid_tessera.o</c>.</summary>
-    private const string ObjectExtension = ".jit.o";
+    private const string ObjectExtension = ".jit-sections.o";
 
     private static readonly object WatchLock = new();
     private static List<FileSystemWatcher>? _watchers;

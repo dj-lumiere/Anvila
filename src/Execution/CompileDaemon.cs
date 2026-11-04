@@ -334,40 +334,57 @@ internal partial class Program
             try
             {
                 // REALISTIC-SEED base (NOT SeedAll): analyze a representative program that exercises the common
-                // generic instances most programs share (BaseObjectCache.SeedProgramSource). The normal demand
+                // generic instances most programs share (BaseObjectCache.SeedFor). The normal demand
                 // pipeline materializes exactly that reached closure into InstantiatedGenericBodies — no
                 // speculative Hijacked[…] explosion — and we feed the FULL set to the base. A program's own
                 // uncommon instances fall to the per-run DELTA (base∪delta coverage stays complete).
-                var baseSa = new SemanticVerifier(language: language) { CrashablesRoomFloor = crashablesRoom };
-                System.Collections.Generic.List<Builder.Tokenizer.Token> toks =
-                    Builder.Tokenizer.Lexers.Tokenize(source: BaseObjectCache.SeedProgramSource,
-                        fileName: "base.rf", language: language);
-                var baseParser = new Builder.Parser.Parser(tokens: toks, language: language, fileName: "base.rf")
+                // The seed is built by the same driver as a program, from a file of the language's own extension:
+                // a Suflae seed needs Suflae's library and its checks, which a bare verifier does not set up.
+                (string seedSource, string seedFile) = BaseObjectCache.SeedFor(language: language);
+                string seedDir = Path.Combine(path1: Path.GetTempPath(),
+                    path2: $"rf_base_seed_{language}_{Environment.ProcessId}");
+                Directory.CreateDirectory(path: seedDir);
+                string seedPath = Path.Combine(path1: seedDir, path2: seedFile);
+                File.WriteAllText(path: seedPath, contents: seedSource);
+                LazyJitInputs? seedInputs;
+                int seedExit;
+                try
                 {
-                    PrintsErrors = false
-                };
-                SyntaxTree.Program baseProgram = baseParser.Parse();
-                if (baseParser.HasErrors)
+                    seedExit = BuildToLazyJitInputs(entryFile: seedPath,
+                        inputs: out seedInputs,
+                        config: new ResolvedEntry
+                        {
+                            EntryFile = seedPath,
+                            ProjectRoot = seedDir,
+                            BuildMode = buildMode,
+                            RequireStartRoutine = true,
+                            Backend = backend.Name,
+                            CrashablesRoomFloor = crashablesRoom
+                        },
+                        warm: new WarmProviders(WarmProvider: GetWarm,
+                            IrCallback: null,
+                            StdlibIndexProvider: GetStdlibIndex));
+                }
+                finally
+                {
+                    try
+                    {
+                        Directory.Delete(path: seedDir, recursive: true);
+                    }
+                    catch (IOException)
+                    {
+                        // a leftover temp folder is harmless
+                    }
+                }
+
+                if (seedExit != 0 || seedInputs == null)
                 {
                     Console.Error.WriteLine(
-                        value:
-                        $"[daemon] resident-JIT base seed did not parse: {baseParser.GetErrors()[index: 0]}");
+                        value: $"[daemon] resident-JIT base seed did not build (exit {seedExit}), see its diagnostics above.");
                     return null;
                 }
 
-                Builder.Verification.Results.AnalysisResult baseR = baseSa.Analyze(program: baseProgram);
-                if (baseR.Errors.Count > 0)
-                {
-                    Console.Error.WriteLine(
-                        value:
-                        $"[daemon] resident-JIT base seed had {baseR.Errors.Count} error(s): {baseR.Errors[index: 0].Message}");
-                    return null;
-                }
-
-                Builder.Lowering.Passes.CancellationInstrumentationPass.Run(
-                    programs: baseR.Registry.UserPrograms,
-                    instantiatedBodies: baseR.InstantiatedGenericBodies,
-                    maySuspendKeys: baseR.MaySuspendRoutineKeys);
+                Builder.Verification.Results.AnalysisResult baseR = seedInputs.Result;
 
                 Builder.Backends.ResidentBase residentBase = backend.EmitResidentBase(
                     input: new Builder.Backends.BackendInput
@@ -393,7 +410,7 @@ internal partial class Program
                 string irHash = Convert.ToHexString(inArray: System.Security.Cryptography.SHA256.HashData(
                     source: System.Text.Encoding.UTF8.GetBytes(s: baseIr)));
                 string? obj = new BaseObjectCache().GetOrBuild(
-                    fingerprint: $"{fp}-{(int)buildMode}-{backend.Name}-room{crashablesRoom}-{irHash}",
+                    fingerprint: $"{fp}-{(int)buildMode}-{backend.Name}-room{crashablesRoom}-sections-{irHash}",
                     baseIr: baseIr,
                     buildMode: buildMode,
                     wasCached: out bool wasCached);
@@ -722,13 +739,29 @@ internal partial class Program
                 // Only a backend with a resident base has one to split off. A client asks for the split only on the
                 // incremental path, which such a backend alone takes.
                 Builder.Backends.IBuilderBackend backend = Builder.Backends.BuilderBackends.Get(name: req.Backend);
-                if (req.BaseDelta && backend.SupportsResidentBase)
+                // The delta is laid out for its own room of `Crashables`, and the base it links to is built for one room
+                // size. The daemon remembers the room each entry file needed, so an edit of a program whose largest
+                // crashable needs more than the default is built once, against the base of its room.
+                int roomKey = RoomByEntry.GetValueOrDefault(key: req.EntryFile,
+                    defaultValue: SemanticVerifier.CrashableRoomBytes);
+
+                void PrepareResidents(int room)
                 {
+                    residentSymbols = null;
+                    residentInstanceKeys = null;
+                    baseObjectPath = null;
+                    layerObjectPaths = [];
+                    layer = null;
+                    if (!req.BaseDelta || !backend.SupportsResidentBase)
+                    {
+                        return;
+                    }
+
                     Language lang = CliLanguage;
                     (string ObjPath, IReadOnlyCollection<string> Syms,
                         IReadOnlySet<string> InstanceKeys)? baseArtifact =
                             EnsureBaseArtifact(language: lang, buildMode: (RfBuildMode)req.BuildMode,
-                                backend: backend);
+                                backend: backend, crashablesRoom: room);
                     // The resident layers are LLVM emitter modules: another backend links its delta to the base
                     // alone.
                     if (baseArtifact is { } baseOnly && backend is not Builder.LlvmEmit.LlvmBackend)
@@ -739,7 +772,7 @@ internal partial class Program
                     }
                     else if (baseArtifact is { } ba)
                     {
-                        layer = LayerFor(language: lang, buildMode: (RfBuildMode)req.BuildMode);
+                        layer = LayerFor(language: lang, buildMode: (RfBuildMode)req.BuildMode, room: room);
                         layer.AdoptFinished();
                         residentSymbols = layer.Symbols.Count > 0
                             ? new HashSet<string>(collection: ba.Syms.Concat(second: layer.Symbols),
@@ -754,44 +787,13 @@ internal partial class Program
                     }
                 }
 
-                exit = BuildToIr(entryFile: req.EntryFile,
-                    ir: out ir,
-                    config: new ResolvedEntry
-                    {
-                        ProjectRoot = req.ProjectRoot,
-                        BuildMode = (RfBuildMode)req.BuildMode,
-                        RequireStartRoutine = req.RequireStart,
-                        LibraryRoots = req.LibraryRoots,
-                        Backend = req.Backend
-                    },
-                    warm: new WarmProviders(WarmProvider: GetWarm,
-                        IrCallback: null,
-                        StdlibIndexProvider: GetStdlibIndex,
-                        ResidentSymbols: residentSymbols,
-                        ResidentInstanceKeys: residentInstanceKeys,
-                        BuildObserver: layer == null || residentSymbols == null
-                            ? null
-                            : observation => layer.Observe(observation: observation,
-                                residentSymbols: residentSymbols,
-                                residentInstanceKeys: residentInstanceKeys!)));
-
-                // The delta is laid out for its own room of `Crashables`: a program whose largest crashable needs
-                // a bigger one than the base was built with gets a base built for that size, and is built again
-                // against it (without the resident layers, which share the first base's layout). When that base
-                // cannot be built, the program is built as the full IR.
-                if (exit == 0 && baseObjectPath != null && MoldSizeOf(ir: ir) is { } room &&
-                    room != SemanticVerifier.CrashableRoomBytes)
+                int BuildDelta(out string deltaIr)
                 {
-                    (string ObjPath, IReadOnlyCollection<string> Syms, IReadOnlySet<string> InstanceKeys)? sized =
-                        EnsureBaseArtifact(language: CliLanguage, buildMode: (RfBuildMode)req.BuildMode,
-                            backend: backend, crashablesRoom: room);
-                    residentSymbols = sized?.Syms;
-                    residentInstanceKeys = sized?.InstanceKeys;
-                    baseObjectPath = sized?.ObjPath;
-                    layerObjectPaths = [];
-                    layer = null;
-                    exit = BuildToIr(entryFile: req.EntryFile,
-                        ir: out ir,
+                    ResidentLayer? observing = layer;
+                    IReadOnlyCollection<string>? observedSymbols = residentSymbols;
+                    IReadOnlySet<string>? observedKeys = residentInstanceKeys;
+                    return BuildToIr(entryFile: req.EntryFile,
+                        ir: out deltaIr,
                         config: new ResolvedEntry
                         {
                             ProjectRoot = req.ProjectRoot,
@@ -803,13 +805,27 @@ internal partial class Program
                         warm: new WarmProviders(WarmProvider: GetWarm,
                             IrCallback: null,
                             StdlibIndexProvider: GetStdlibIndex,
-                            ResidentSymbols: residentSymbols,
-                            ResidentInstanceKeys: residentInstanceKeys,
-                            BuildObserver: layer == null || residentSymbols == null
+                            ResidentSymbols: observedSymbols,
+                            ResidentInstanceKeys: observedKeys,
+                            BuildObserver: observing == null || observedSymbols == null
                                 ? null
-                                : observation => layer.Observe(observation: observation,
-                                    residentSymbols: residentSymbols,
-                                    residentInstanceKeys: residentInstanceKeys!)));
+                                : observation => observing.Observe(observation: observation,
+                                    residentSymbols: observedSymbols,
+                                    residentInstanceKeys: observedKeys!)));
+                }
+
+                PrepareResidents(room: roomKey);
+                exit = BuildDelta(deltaIr: out ir);
+
+                // The program needs another room than the base it was built against: it gets a base built for that
+                // size and is built again against it. When that base cannot be built, the program is built as the
+                // full IR.
+                if (exit == 0 && baseObjectPath != null && MoldSizeOf(ir: ir) is { } needed && needed != roomKey)
+                {
+                    RoomByEntry[key: req.EntryFile] = needed;
+                    layer?.ForgetObserved();
+                    PrepareResidents(room: needed);
+                    exit = BuildDelta(deltaIr: out ir);
                 }
             }
             catch (Exception ex)

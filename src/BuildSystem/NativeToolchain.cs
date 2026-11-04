@@ -1104,9 +1104,12 @@ internal static class NativeToolchain
         // on Windows — so the AOT'd base object MUST also use emulated TLS, else the base defines native-TLS
         // `_rf_trace_stack` while the delta references emutls `__emutls_v._rf_trace_stack` → "symbol not found"
         // at JIT link (the shared trace globals). Emulated TLS makes both sides agree on the symbol names.
+        // -ffunction-sections and -fdata-sections give each routine and global its own section. The JIT's linker
+        // works out, for every symbol an object defines, what that symbol's section reaches: with one section for
+        // all of Ingrid's routines that is every symbol times every symbol, which took 2.4 s on each run.
         string clangOptLevel = $"-{OptLevelString(buildMode: buildMode)}";
         string clangArgs =
-            $"-c -femulated-tls {clangOptLevel}{TargetCodegenFlags()} -o \"{objFile}\" \"{optFile}\"";
+            $"-c -femulated-tls -ffunction-sections -fdata-sections {clangOptLevel}{TargetCodegenFlags()} -o \"{objFile}\" \"{optFile}\"";
         int rc = RunToolCapture(toolPath: ClangTool.Value, args: clangArgs, stderr: out string err);
         if (rc != 0)
         {

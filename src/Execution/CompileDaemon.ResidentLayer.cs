@@ -15,9 +15,13 @@ internal partial class Program
         /// <summary>The daemon's resident layers, one per language and build mode.</summary>
         private static readonly Dictionary<string, ResidentLayer> ResidentLayers = new();
 
-        private static ResidentLayer LayerFor(Language language, RfBuildMode buildMode)
+        /// <summary>The room of the failure molds each entry file needed, as the last build of it found. A resident
+        /// base and its layers are built for one room, so a program is built against the one of its own.</summary>
+        private static readonly Dictionary<string, int> RoomByEntry = new(comparer: StringComparer.Ordinal);
+
+        private static ResidentLayer LayerFor(Language language, RfBuildMode buildMode, int room)
         {
-            string key = language + "\u0001" + (int)buildMode;
+            string key = language + "\u0001" + (int)buildMode + "\u0001" + room;
             if (!ResidentLayers.TryGetValue(key: key, value: out ResidentLayer? layer))
             {
                 layer = new ResidentLayer(buildMode: buildMode);
@@ -57,6 +61,13 @@ internal partial class Program
 
             private sealed record AdoptableLayer(string ObjectPath, IReadOnlyCollection<string> Symbols,
                 IReadOnlyCollection<string> InstanceKeys);
+
+            /// <summary>Drops the build this layer last observed: that build was laid out for another room of the
+            /// failure molds than this layer's, so a layer made from it would not fit the base.</summary>
+            public void ForgetObserved()
+            {
+                _observed = null;
+            }
 
             /// <summary>Takes in a layer whose compile has finished since the last build.</summary>
             public void AdoptFinished()

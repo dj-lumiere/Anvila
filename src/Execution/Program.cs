@@ -508,7 +508,8 @@ internal partial class Program
         bool RequireStartRoutine,
         Func<Language, SemanticVerifier.CompiledStdlibState?>? WarmProvider,
         Func<TypeModel.Symbols.RoutineInfo, bool>? InstanceCheckSkip = null,
-        IReadOnlySet<string>? ResidentInstanceKeys = null);
+        IReadOnlySet<string>? ResidentInstanceKeys = null,
+        int CrashablesRoomFloor = SemanticVerifier.CrashableRoomBytes);
 
     /// <summary>Groups the parameters for <see cref="RunPhase1BuildDriver"/>.</summary>
     private sealed record Phase1Context(
@@ -597,6 +598,10 @@ internal partial class Program
         /// per-routine IR cache. Also enables the resident-JIT base/delta split (daemon AOTs the stdlib base
         /// once + ships only the per-run delta IR) — base/delta has no separate opt-in.</summary>
         public bool Incremental { get; init; }
+
+        /// <summary>The least room the failure molds get, in bytes. Only the resident base's own build raises it,
+        /// to the room of the program the base serves.</summary>
+        public int CrashablesRoomFloor { get; init; } = SemanticVerifier.CrashableRoomBytes;
     }
 
     /// <summary>
@@ -1373,7 +1378,8 @@ internal partial class Program
                 RequireStartRoutine: requireStartRoutine,
                 WarmProvider: warmProvider,
                 InstanceCheckSkip: instanceCheckSkip,
-                ResidentInstanceKeys: residentInstanceKeys);
+                ResidentInstanceKeys: residentInstanceKeys,
+                CrashablesRoomFloor: config.CrashablesRoomFloor);
             int phase2Result = RunPhase2SemanticAnalysis(ctx: phase2Ctx,
                 driver: driver,
                 orderedFiles: orderedFiles,
@@ -1447,14 +1453,16 @@ internal partial class Program
                 target: target,
                 buildMode: ctx.BuildMode)
             {
-                SaTiming = ctx.SaTiming || DiagnosticFlags.PhaseTiming
+                SaTiming = ctx.SaTiming || DiagnosticFlags.PhaseTiming,
+                CrashablesRoomFloor = ctx.CrashablesRoomFloor
             }
             : new SemanticVerifier(language: ctx.Language,
                 target: target,
                 buildMode: ctx.BuildMode,
                 parsedStdlib: driver.TakeParsedStdlib())
             {
-                SaTiming = ctx.SaTiming || DiagnosticFlags.PhaseTiming
+                SaTiming = ctx.SaTiming || DiagnosticFlags.PhaseTiming,
+                CrashablesRoomFloor = ctx.CrashablesRoomFloor
             };
         if (swBuild != null)
         {
