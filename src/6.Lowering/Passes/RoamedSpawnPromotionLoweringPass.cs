@@ -23,8 +23,8 @@ namespace Builder.Lowering.Passes;
 /// spawning with the same handle is identical to the old codegen — codegen now just translates the real
 /// call.</para>
 ///
-/// <para>Reachability already seeds <c>promote</c> for every live <c>Roamed[T]</c> via
-/// <c>ImplicitCallContract.ForLiveType</c>, so the target is live/monomorphized. Mirrors
+/// <para>The call it inserts is in the body before the collector walks it, so the target is
+/// live/monomorphized. Mirrors
 /// <see cref="RoamedProjectionLoweringPass"/> (immutable node construction) and
 /// <see cref="CancellationInstrumentationPass"/> (statement insertion around spawn sites). Runs after
 /// <see cref="RoamedProjectionLoweringPass"/>.</para>

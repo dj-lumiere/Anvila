@@ -328,7 +328,7 @@ internal sealed class RoamedProjectionLoweringPass(PostprocessingContext ctx) : 
 
     // Build `receiver.control()` : the inner entity, via the Controlling marker-protocol deref (Roamed
     // obeys Controlling[T]). Stamps the resolved control routine and inner type so codegen emits it as a
-    // real, already-resolved call. Reachability seeds control via ImplicitCallContract.ForLiveType, so
+    // real, already-resolved call. The collector walks this call, so
     // the target is live/monomorphized. The access lock is applied around the enclosing statement by
     // RoamedLockBracketLoweringPass (which recognizes this control() coercion), so the deref is safe.
     private Expression MakeControlCall(Expression receiver, TypeSymbol receiverType,

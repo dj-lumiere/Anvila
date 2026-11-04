@@ -28,8 +28,8 @@ namespace Builder.Lowering.Passes;
 /// acquire) while keeping this pass simple and safe under NESTED access (multiple Roamed reads in one
 /// statement). A single enter…exit spanning the statement cannot leave any field touch unguarded.</para>
 ///
-/// <para>Reachability already seeds <c>lock_enter</c>/<c>lock_exit</c> for every live <c>Roamed[T]</c>
-/// via <c>ImplicitCallContract.ForLiveType</c>, so the targets are live/monomorphized. Mirrors
+/// <para>The calls it inserts are in the body before the collector walks it, so the targets are
+/// live/monomorphized. Mirrors
 /// <see cref="RoamedSpawnPromotionLoweringPass"/> (statement insertion around a site). Runs after the
 /// other Roamed passes so the field accesses it brackets are in final form.</para>
 /// </summary>

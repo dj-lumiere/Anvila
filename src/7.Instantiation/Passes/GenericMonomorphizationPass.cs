@@ -1915,8 +1915,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                     continue;
                 }
 
-                // The OPERATOR family is call-driven too. Skip every call-driven operator kind; the genuinely
-                // non-discoverable framework hook (cyclic_visit / CycleTrace) and the denylist names above stay.
+                // The OPERATOR family is call-driven too. Skip every call-driven operator kind.
                 if (WiredRoutineCatalog.TryGet(name: wiredName, entry: out WiredEntry seedEntry) &&
                     IsCallDrivenWiredKind(kind: seedEntry.Kind))
                 {
@@ -1955,10 +1954,13 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 or WiredKind.ArithmeticClamp or WiredKind.ArithmeticUnchecked or WiredKind.Bitwise
                 or WiredKind.Shift or WiredKind.Unary or WiredKind.Unwrap
                 or WiredKind.InPlaceArithmetic or WiredKind.InPlaceBitwise
-                or WiredKind.InPlaceShift;
+                or WiredKind.InPlaceShift
+                // cyclic_visit: a container's trace walk calls it on each element, so the walk reaches it.
+                or WiredKind.CycleTrace;
         }
 
-        // (2) Implicit codegen inserts (RC copy verb; Roamed promote/lock/raw_inner; display transparency).
+        // (2) Implicit codegen inserts. The lowering passes that insert a routine call (the RC copy verb, a Roamed
+        //   promote, lock bracket or projection) run before a body is walked, so those calls are reached like any other.
         // (2b) Crash path — `throw X` is genuinely NON-discoverable (control flow, no AST call): codegen's
         //   EmitThrow calls `X.crash_message()`, whose body formats via `X.represent()`. Seed both per reached
         //   throwable owner. represent is on the call-driven denylist (f-string/show), so seed it explicitly here.
@@ -1968,13 +1970,6 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
         //   reached access policy so codegen's access-field init links. Demand-scoped to a reached policy type.
         private void SeedImplicitCodegenInserts(TypeSymbol type)
         {
-            foreach ((TypeSymbol owner, string mn) in ImplicitCallContract.ForLiveType(
-                         liveType: type, tasksCross: _ctx.Registry.TasksCross,
-                         sharingCheck: _ctx.Registry.SharingCheck))
-            {
-                Discover(r: _ctx.Registry.LookupMemberRoutine(type: owner, memberRoutineName: mn));
-            }
-
             if (_ctx.Registry.LookupMemberRoutine(type: type,
                     memberRoutineName: RuntimeContract.CrashMessage) is { } crashMsg)
             {
@@ -2021,8 +2016,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
                 memberRoutineName: RuntimeContract.RawPointer.Invalidate));
         }
 
-        // (3b) Per-type LIFECYCLE HOOKS (destroy / roam_free / roam_trace). Codegen synthesizes
-        // teardown + cycle-trace calls per reached type with NO source AST call (scope-exit destroy of a
+        // (3b) Per-type destroy. Codegen synthesizes teardown calls per reached type with NO source AST call (a
         // temporary, a wrapper/routine-value's destroy). Base mode seeds these over ALL registered instances
         // (MaterializeEntitySelfFreeInIsolation); mirror that DEMAND-scoped on each reached concrete owner.
         // Also seeds the exact lifecycle-destroy GetLifecycle returns — routine-VALUEs carry a `destruct`
@@ -2036,9 +2030,7 @@ public sealed class GenericMonomorphizationPass(DesugaringContext ctx)
 
             foreach (string hook in new[]
                      {
-                         DestroyMemberRoutineName,
-                         "roam_free",
-                         "roam_trace"
+                         DestroyMemberRoutineName
                      })
             {
                 if (_ctx.Registry.LookupMemberRoutine(type: type, memberRoutineName: hook) is

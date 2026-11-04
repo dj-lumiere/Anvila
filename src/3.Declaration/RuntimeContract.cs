@@ -160,11 +160,11 @@ public static class RuntimeContract
         }
     }
 
-    /// <summary><c>Roamed[T]</c> memberRoutines that codegen inserts implicitly (no surface AST call),
-    /// so RoutineReachabilityPass must anticipate them via the ImplicitCallContract.</summary>
-    /// <remarks>Sites: LlvmEmitter (promote at spawn boundary, lock_enter/lock_exit around
-    /// direct field access, raw_inner for display-transparency projection) mirrored by
-    /// ImplicitCallContract.ForLiveType — keep both bound to these constants, never bare literals.</remarks>
+    /// <summary><c>Roamed[T]</c> memberRoutines that the lowering passes and the emitter insert
+    /// without a surface AST call.</summary>
+    /// <remarks>Sites: the Roamed lowering passes (promote at spawn boundary, lock_enter/lock_exit around
+    /// direct field access, raw_inner for display-transparency projection) — keep them bound to these constants,
+    /// never bare literals.</remarks>
     public static class RoamedMemberRoutine
     {
         /// <summary>Spawn-boundary promotion of a single-thread handle to a shareable one.</summary>
@@ -404,7 +404,7 @@ public static class RuntimeContract
     public const string CrashReportRethrown = "crash_report_rethrown";
 
     /// <summary><c>crash_title()</c> on error types — the second Crashable protocol member.</summary>
-    /// <remarks>Sites: CrashableExpansionPass (dispatchable-member set), ImplicitCallContract (reachability seed).</remarks>
+    /// <remarks>Sites: CrashableExpansionPass (dispatchable-member set).</remarks>
     public const string CrashTitle = "crash_title";
 
     /// <summary>The stdlib record any caught crashable is seen as: <c>is Crashables e</c>.</summary>
