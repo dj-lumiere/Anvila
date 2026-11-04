@@ -778,6 +778,13 @@ public sealed partial class SemanticVerifier
     {
         AnalyzeBodies(program: program);
         CheckSharedDeclarationsAreBound(program: program);
+        if (program.Location.FileName is { Length: > 0 } ownFile)
+        {
+            ReportDocNotes(files: [(program, ownFile)],
+                importSnapshots: new Dictionary<string, HashSet<string>>(),
+                moduleNameSnapshots: new Dictionary<string, string?>());
+        }
+
         CheckShapeEffects(programs: [program]);
         AnalyzeSynthesizedBodies();
         // The routines written for `to[Work]` conversions are analyzed by now, so the routines a Work reaches are known.
@@ -2854,6 +2861,7 @@ public sealed partial class SemanticVerifier
 
         _registry.SourceFile = string.Empty;
 
+        ReportDocNotes(files: files, importSnapshots: importSnapshots, moduleNameSnapshots: moduleNameSnapshots);
         CheckShapeEffects(programs: files.Select(selector: f => f.Program));
 
         // Per-file resolution realm is a body-analysis convenience only; global passes (synthesis,
@@ -3686,6 +3694,42 @@ public sealed partial class SemanticVerifier
         {
             IsNotice = true, EndLine = endLine, NeverRuns = neverRuns, Fix = fix
         });
+    }
+
+    /// <summary>
+    /// The notes about doc comments (see <see cref="Builder.Documentation.DocLint"/>) for the user's files. A Suflae
+    /// routine needs its comment only when another file of the build imports its module.
+    /// </summary>
+    private void ReportDocNotes(List<(Program Program, string FilePath)> files,
+        Dictionary<string, HashSet<string>> importSnapshots, Dictionary<string, string?> moduleNameSnapshots)
+    {
+        var imported = new HashSet<string>(comparer: StringComparer.Ordinal);
+        foreach ((string importer, HashSet<string> modules) in importSnapshots)
+        {
+            string? own = moduleNameSnapshots.GetValueOrDefault(key: importer);
+            foreach (string module in modules.Where(predicate: m => m != own))
+            {
+                imported.Add(item: module);
+            }
+        }
+
+        foreach ((Program program, string filePath) in files)
+        {
+            if (IsStdlibFile(filePath: filePath) || !Builder.Frontends.Languages.HasSourceExtension(fileName: filePath))
+            {
+                continue;
+            }
+
+            string? module = moduleNameSnapshots.GetValueOrDefault(key: filePath);
+            bool isImported = !string.IsNullOrEmpty(value: module) && imported.Contains(item: module);
+            foreach (Builder.Documentation.DocNote note in Builder.Documentation.DocLint.Check(program: program,
+                         file: filePath,
+                         language: Builder.Frontends.Languages.OfFile(fileName: filePath),
+                         isImported: isImported))
+            {
+                ReportNotice(code: note.Code, message: note.Message, location: note.Location);
+            }
+        }
     }
 
     /// <summary>The last source line of <paramref name="statement"/>: its own line, or the last line of the

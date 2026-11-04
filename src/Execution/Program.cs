@@ -1120,6 +1120,55 @@ internal partial class Program
     }
 
     /// <summary>
+    /// Prints the doc comment notes (RF-W305 to RF-W308) of the language's own standard library files. The library is
+    /// held to the rule like any other library, and a build never shows these notes, so this is where they are read.
+    /// A note does not fail the validation.
+    /// </summary>
+    private static void ReportStdlibDocNotes(SemanticVerifier analyzer, Language language)
+    {
+        var shown = new List<Builder.Documentation.DocNote>();
+        string? root = analyzer.Registry.StdlibPath;
+        string folder = root == null
+            ? ""
+            : Path.Combine(path1: root, path2: Builder.Frontends.Languages.For(language: language).Name);
+        if (!Directory.Exists(path: folder))
+        {
+            return;
+        }
+
+        foreach (string filePath in Directory.EnumerateFiles(path: folder, searchPattern: "*", searchOption: SearchOption.AllDirectories)
+                                             .Where(predicate: Builder.Frontends.Languages.HasSourceExtension)
+                                             .Order(comparer: StringComparer.Ordinal))
+        {
+            Language fileLanguage = Builder.Frontends.Languages.OfFile(fileName: filePath);
+            var parser = new Builder.Parser.Parser(
+                tokens: Builder.Tokenizer.Lexers.Tokenize(source: File.ReadAllText(path: filePath),
+                    fileName: filePath,
+                    language: fileLanguage),
+                language: fileLanguage,
+                fileName: filePath) { PrintsErrors = false };
+            shown.AddRange(collection: Builder.Documentation.DocLint.Check(program: parser.Parse(),
+                file: filePath,
+                language: fileLanguage,
+                isImported: true));
+        }
+
+        if (shown.Count == 0)
+        {
+            return;
+        }
+
+        Console.WriteLine(value: $"=== DOC COMMENT NOTES ({shown.Count}) ===");
+        foreach (Builder.Documentation.DocNote note in shown)
+        {
+            Console.WriteLine(value:
+                $"  note[{note.Code.ToCodeString(language: language)}]: {note.Location.FileName}:{note.Location.Line}: {note.Message}");
+        }
+
+        Console.WriteLine();
+    }
+
+    /// <summary>
     /// Runs the semantic analyzer over the standard library routine bodies for the given language
     /// and reports any errors found. Returns 0 if all bodies are valid, or 1 if errors were found.
     /// </summary>
@@ -1169,6 +1218,8 @@ internal partial class Program
                     return 1;
                 }
             }
+
+            ReportStdlibDocNotes(analyzer: analyzer, language: language);
 
             if (stdlibErrors.Count == 0 && contractErrors.Count == 0)
             {

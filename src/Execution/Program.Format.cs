@@ -131,16 +131,10 @@ internal partial class Program
 
     /// <summary>
     /// Prints the notices of <paramref name="file"/> (likely slips that build as written, such as a Suflae result
-    /// left unused) and returns how many there were. Only a language that reports some is analyzed, so linting a
-    /// RazorForge file stays a style check.
+    /// left unused, or a routine without a doc comment) and returns how many there were.
     /// </summary>
     private static int ReportNotices(string file)
     {
-        if (Builder.Frontends.Languages.For(language: SourceLanguage(path: file)).MarksDroppedResults)
-        {
-            return 0;
-        }
-
         ResolvedEntry resolved = ResolveExplicitEntry(explicitEntry: file, outputFile: null, acceptOldManifest: true);
         if (resolved.EntryFile == null)
         {

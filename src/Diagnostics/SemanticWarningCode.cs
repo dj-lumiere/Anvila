@@ -186,6 +186,19 @@ public enum SemanticWarningCode
     /// <summary>`until false`: a loop that ends only at a `break`, `return` or `throw`, which `loop` says.</summary>
     EndlessUntil = 304,
 
+    /// <summary>A routine has no <c>###</c> doc comment (a note: RazorForge asks for one on every routine, Suflae on the
+    /// routines of a module another file imports).</summary>
+    RoutineHasNoDocComment = 305,
+
+    /// <summary>A doc comment has no <c>:param</c> line for one of the routine's parameters (a note).</summary>
+    DocCommentLacksParam = 306,
+
+    /// <summary>A doc comment has a <c>:param</c> line for a name that is not a parameter of the routine (a note).</summary>
+    DocCommentNamesUnknownParam = 307,
+
+    /// <summary>A RazorForge doc comment has no <c>:returns:</c> line, and the routine gives a result (a note).</summary>
+    DocCommentLacksReturns = 308,
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PERFORMANCE WARNINGS (RF-W350 - RF-W399)
     // ═══════════════════════════════════════════════════════════════════════════
