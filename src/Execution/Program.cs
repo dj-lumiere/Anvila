@@ -395,6 +395,12 @@ internal partial class Program
 
     private static int EmitPrebuilt(string[] args)
     {
+        if (!Builder.Serialization.PbrfSerializer.IsSupported)
+        {
+            Console.WriteLine(value: "[emit-prebuilt] this build writes no prebuilt snapshot (it has no emitted code), nothing to do");
+            return 0;
+        }
+
         string? outDir = args.Length > 1 && !args[1]
            .StartsWith(value: "--")
             ? args[1]
@@ -457,7 +463,7 @@ internal partial class Program
             catch (Exception ex)
             {
                 Console.Error.WriteLine(
-                    value: $"[emit-prebuilt] {lang} FAILED (non-fatal): {ex.Message}");
+                    value: $"[emit-prebuilt] {lang} FAILED (non-fatal): {ex}");
             }
         }
 

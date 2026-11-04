@@ -50,6 +50,14 @@ public static class StdlibSnapshotCache
     private static SemanticVerifier.CompiledStdlibState LoadOrCaptureUncached(Language language,
         Action<string>? log)
     {
+        if (!PbrfSerializer.IsSupported)
+        {
+            var swFresh = System.Diagnostics.Stopwatch.StartNew();
+            SemanticVerifier.CompiledStdlibState captured = SemanticVerifier.CaptureCompiledStdlib(language: language);
+            log?.Invoke(obj: $"captured {language} stdlib fresh ({swFresh.ElapsedMilliseconds} ms), this build has no prebuilt snapshot");
+            return captured;
+        }
+
         // Prefer the MODULAR build-output artifacts (emitted by `emit-prebuilt` as a dotnet-build byproduct) —
         // reassembled via the shell two-phase loader, guarded by a source-hash stamp so a stale set is never
         // loaded. This is the "cold under 1 s" path: no capture, no monolithic 40 MB read.
@@ -258,11 +266,11 @@ public static class StdlibSnapshotCache
         // prebuilt file must not be loaded against them.
         try
         {
-            string asm = typeof(PbrfSerializer).Assembly.Location;
-            if (!string.IsNullOrEmpty(value: asm) && File.Exists(path: asm))
+            long built = BuilderLocation.NewestBuildTicks(typeof(PbrfSerializer));
+            if (built != 0)
             {
                 sb.Append(value: "asm|")
-                  .Append(value: new FileInfo(fileName: asm).LastWriteTimeUtc.Ticks);
+                  .Append(value: built);
             }
         }
         catch

@@ -61,9 +61,7 @@ internal static class NativeToolchain
     /// </summary>
     internal static string ResolveExecutableDirectory()
     {
-        string? exeDir = Path.GetDirectoryName(path: typeof(NativeToolchain).Assembly.Location);
-        return exeDir ?? throw new InvalidOperationException(
-            message: "Unable to resolve the RazorForge executable directory.");
+        return BuilderLocation.Directory;
     }
 
     /// <summary>

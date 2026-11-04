@@ -237,11 +237,12 @@ internal static class IngridTessera
         }
 
         Watch(watchers: watchers, dir: TesseraBackend.StdlibDirectory(), recursive: true, filters: ["*.te"]);
-        string builder = typeof(Tessera.Compiler).Assembly.Location;
+        string[] builders = BuilderLocation.BuildFiles(typeof(Tessera.Compiler), typeof(IngridTessera))
+                                           .Where(predicate: b => Path.TrimEndingDirectorySeparator(path: Path.GetDirectoryName(path: b) ?? "") ==
+                                                         Path.TrimEndingDirectorySeparator(path: exeDir))
+                                           .Select(selector: b => Path.GetFileName(path: b)).ToArray();
         Watch(watchers: watchers, dir: exeDir, recursive: false,
-            filters: builder.Length > 0
-                ? [Path.GetFileNameWithoutExtension(path: IrFileName) + ".*", Path.GetFileName(path: builder)]
-                : [Path.GetFileNameWithoutExtension(path: IrFileName) + ".*"]);
+            filters: [Path.GetFileNameWithoutExtension(path: IrFileName) + ".*", .. builders]);
         return watchers;
     }
 
@@ -294,11 +295,11 @@ internal static class IngridTessera
     private static bool IsStale(string cached, string[] sources)
     {
         DateTime cachedAt = File.GetLastWriteTimeUtc(path: cached);
-        string[] builders = [typeof(Tessera.Compiler).Assembly.Location, typeof(IngridTessera).Assembly.Location];
+        string[] builders = [.. BuilderLocation.BuildFiles(typeof(Tessera.Compiler), typeof(IngridTessera))];
         IEnumerable<string> stdlib = Directory.GetFiles(path: TesseraBackend.StdlibDirectory(), searchPattern: "*.te",
             searchOption: SearchOption.AllDirectories);
         return sources.Concat(second: stdlib).Any(predicate: s => File.GetLastWriteTimeUtc(path: s) > cachedAt)
-               || builders.Any(predicate: b => b.Length > 0 && File.GetLastWriteTimeUtc(path: b) > cachedAt);
+               || builders.Any(predicate: b => File.GetLastWriteTimeUtc(path: b) > cachedAt);
     }
 
     private static string Compile(string sourceDir, string[] sources)

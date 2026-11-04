@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
@@ -12,6 +13,11 @@ namespace Builder.LlvmEmit;
 /// Computes <see cref="Expression.ResolvedRepr"/> for all backend-visible expressions
 /// before backend-entry validation runs.
 /// </summary>
+[UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2077", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2057", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
 public sealed class BackendRepresentationPass
 {
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> ChildPropertyCache = new();

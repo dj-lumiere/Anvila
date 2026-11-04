@@ -1396,7 +1396,7 @@ public sealed partial class StdlibLoader
         }
 
         // Try to find standard library relative to the executable
-        string? exeDir = Path.GetDirectoryName(path: typeof(StdlibLoader).Assembly.Location);
+        string? exeDir = BuilderLocation.Directory;
         if (exeDir != null)
         {
             string stdlibPath = Path.Combine(path1: exeDir, path2: "Standard");

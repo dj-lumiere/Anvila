@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -24,6 +25,11 @@ namespace Builder.Serialization;
 /// objects (dicts, AST bodies, ParamInfo, SourceLocation) stay local to an artifact and may duplicate —
 /// proven safe by the partition de-risk (the only shared interiors are identity-insensitive leaves).</para>
 /// </summary>
+[UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2077", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2057", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
 public static class ModularStdlibCache
 {
     /// <summary>Pseudo-module label for monomorphized (instantiated) generic symbols.</summary>

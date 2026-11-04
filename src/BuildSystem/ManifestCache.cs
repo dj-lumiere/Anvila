@@ -121,10 +121,7 @@ internal static class ManifestCache
     /// <summary>The cache file for this manifest path, text, and builder build.</summary>
     private static string CacheFile(string fullPath, string content)
     {
-        string? compiler = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-        long compilerTicks = !string.IsNullOrEmpty(value: compiler) && File.Exists(path: compiler)
-            ? File.GetLastWriteTimeUtc(path: compiler).Ticks
-            : 0;
+        long compilerTicks = BuilderLocation.NewestBuildTicks();
         ulong hash = Fnv1a(text: $"{FormatVersion}\0{compilerTicks}\0{fullPath}\0{content}");
         return Path.Combine(path1: Path.GetTempPath(),
             path2: "razorforge",

@@ -561,8 +561,7 @@ internal partial class Program
             {
                 UseShellExecute = false
             };
-            string? entry = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-            if (entry != null && entry.EndsWith(value: ".dll", comparisonType: StringComparison.OrdinalIgnoreCase))
+            if (BuilderLocation.RunsThroughDotnetHost && BuilderLocation.EntryDll is { } entry)
             {
                 start.ArgumentList.Add(item: entry);
             }

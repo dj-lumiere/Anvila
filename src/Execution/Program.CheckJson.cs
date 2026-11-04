@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Text;
 using Builder.Declaration;
 using Builder.Diagnostics;
 using Builder.Parser;
@@ -45,11 +45,7 @@ internal partial class Program
             diagnostics.AddRange(collection: result.Notices.Select(selector: n => Entry(diagnostic: n)));
         }
 
-        Console.WriteLine(value: JsonSerializer.Serialize(value: diagnostics,
-            options: new JsonSerializerOptions
-            {
-                WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            }));
+        Console.WriteLine(value: Encoding.UTF8.GetString(bytes: JsonTreeWriter.ToUtf8(tree: diagnostics, indented: true)));
         return diagnostics.Any(predicate: d => (string?)d[key: "severity"] == "error") ? 1 : 0;
     }
 

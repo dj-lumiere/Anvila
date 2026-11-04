@@ -418,15 +418,15 @@ internal static class PresetEvaluation
     private static (int Exit, string Output, string Errors) RunChild(string evaluatorEntry)
     {
         // The language's own builder, next to this library (the entry assembly may be a test host).
-        string here = Path.GetDirectoryName(path: typeof(PresetEvaluation).Assembly.Location)!;
-        string builder = Path.Combine(path1: here,
-            path2: Builder.Frontends.Languages.OfFile(fileName: evaluatorEntry) == Language.Suflae
-                ? "Suflae.dll"
-                : "RazorForge.dll");
+        string name = Builder.Frontends.Languages.OfFile(fileName: evaluatorEntry) == Language.Suflae
+            ? "Suflae"
+            : "RazorForge";
+        string executable = Path.Combine(path1: BuilderLocation.Directory,
+            path2: name + (OperatingSystem.IsWindows() ? ".exe" : ""));
         var psi = new ProcessStartInfo
         {
-            FileName = "dotnet",
-            ArgumentList = { builder, "buildandrun", evaluatorEntry },
+            FileName = executable,
+            ArgumentList = { "buildandrun", evaluatorEntry },
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,

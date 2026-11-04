@@ -1406,12 +1406,7 @@ internal partial class Program
             long ticks = 0;
             try
             {
-                string? loc = System.Reflection.Assembly.GetEntryAssembly()
-                                   ?.Location;
-                if (!string.IsNullOrEmpty(value: loc) && File.Exists(path: loc))
-                {
-                    ticks = new FileInfo(fileName: loc).LastWriteTimeUtc.Ticks;
-                }
+                ticks = BuilderLocation.NewestBuildTicks();
             }
             catch
             {
@@ -1593,10 +1588,9 @@ internal partial class Program
         /// launched. Returns null when the host/DLL paths can't be resolved or the process fails to start.</summary>
         private static System.Diagnostics.Process? SpawnDaemonProcess()
         {
-            string? dll = System.Reflection.Assembly.GetEntryAssembly()
-                               ?.Location;
             string? host = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(value: dll) || string.IsNullOrEmpty(value: host))
+            string? dll = BuilderLocation.EntryDll;
+            if (string.IsNullOrEmpty(value: host) || (BuilderLocation.RunsThroughDotnetHost && dll == null))
             {
                 return null;
             }
@@ -1615,12 +1609,9 @@ internal partial class Program
             //     where every buildandrun re-spawned a stillborn daemon and fell back to a cold compile).
             //   • via the muxer `dotnet RazorForge.dll` → ProcessPath is dotnet(.exe) → spawn `dotnet
             //     RazorForge.dll daemon`.
-            bool hostIsApphost = Path.GetFileNameWithoutExtension(path: host)
-                                     .Equals(value: Path.GetFileNameWithoutExtension(path: dll),
-                                          comparisonType: StringComparison.OrdinalIgnoreCase);
-            if (!hostIsApphost)
+            if (BuilderLocation.RunsThroughDotnetHost)
             {
-                psi.ArgumentList.Add(item: dll);
+                psi.ArgumentList.Add(item: dll!);
             }
 
             psi.ArgumentList.Add(item: "daemon");

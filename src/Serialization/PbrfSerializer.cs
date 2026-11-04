@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Collections;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -29,8 +30,20 @@ namespace Builder.Serialization;
 /// Format is versioned (<see cref="FormatVersion"/>); the cache key (stdlib content + assembly hash) is
 /// the caller's responsibility (<c>StdlibSnapshotCache</c>).
 /// </summary>
+[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "The emitted accessors are used only when dynamic code is supported, and every array type it creates is one the model holds, so its code exists.")]
+[UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2077", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2057", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
 public static class PbrfSerializer
 {
+    /// <summary>Whether this build can write and read the snapshot. The serializer walks the model's fields by reflection,
+    /// emits accessors with <c>DynamicMethod</c>, and rebuilds the .NET collections and their comparers from type names. A
+    /// NativeAOT build has no emitted code and keeps no reflection data for the framework's own types, so it would write
+    /// a snapshot with fields missing. Such a build captures the standard library fresh instead.</summary>
+    public static bool IsSupported => RuntimeFeature.IsDynamicCodeSupported;
+
     private const uint Magic = 0x46524250; // "PBRF"
     internal const int FormatVersion = 2;
 

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
@@ -14,6 +15,11 @@ namespace Builder.LlvmEmit;
 /// Validates that programs crossing the backend boundary no longer contain AST shapes that
 /// earlier phases have committed to eliminate before code generation.
 /// </summary>
+[UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2077", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2057", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
 public sealed class BackendEntryValidator
 {
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> ChildPropertyCache = new();

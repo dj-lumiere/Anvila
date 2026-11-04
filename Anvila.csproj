@@ -73,7 +73,6 @@
                       Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"/>
     <PackageReference Include="libLLVM.runtime.osx-arm64" Version="22.1.8"
                       Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"/>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
     <PackageReference Include="Tomlyn" Version="0.17.0"/>
   </ItemGroup>
 

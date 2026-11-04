@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using Builder.Diagnostics;
@@ -31,14 +32,13 @@ namespace Builder.Execution;
 /// bytes; every other write (the pipeline's own Console output) is redirected to stderr so it
 /// cannot corrupt the channel.
 /// </summary>
+[UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2077", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
+[UnconditionalSuppressMessage("Trimming", "IL2057", Justification = "The builder executables root the Anvila assembly (TrimmerRootAssembly), so the reflection data of every model type stays.")]
 public static class LspServer
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        DefaultIgnoreCondition =
-            System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-    };
-
     // Repeated JSON property name constants (avoids repeated string literals flagged by S1192).
     private const string PropParams = "params";
     private const string PropTextDocument = "textDocument";
@@ -5477,8 +5477,7 @@ public static class LspServer
 
     private static void WriteMessage(Stream stdout, object payload)
     {
-        string json = JsonSerializer.Serialize(value: payload, options: JsonOptions);
-        byte[] bodyBytes = Encoding.UTF8.GetBytes(s: json);
+        byte[] bodyBytes = JsonTreeWriter.ToUtf8(tree: payload, indented: false);
         byte[] header = Encoding.ASCII.GetBytes(s: $"Content-Length: {bodyBytes.Length}\r\n\r\n");
         stdout.Write(buffer: header, offset: 0, count: header.Length);
         stdout.Write(buffer: bodyBytes, offset: 0, count: bodyBytes.Length);

@@ -73,8 +73,7 @@ internal static unsafe class OrcJitExecutor
 
             try
             {
-                string dir =
-                    Path.GetDirectoryName(path: typeof(OrcJitExecutor).Assembly.Location) ?? ".";
+                string dir = BuilderLocation.Directory;
 
                 // libLLVM: the LLVM-C library from the libLLVM.runtime.<rid> package, the same version as the
                 // LLVMSharp bindings. The runtime resolves it from runtimes/<rid>/native through the deps file,
@@ -282,20 +281,46 @@ internal static unsafe class OrcJitExecutor
         LLVM.OrcJITDylibAddGenerator(JD: dylib, DG: gen);
         if (_runtimePath != null && !OperatingSystem.IsWindows())
         {
-            LLVMOrcOpaqueDefinitionGenerator* runtimeGen;
-            byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(s: _runtimePath + "\0");
-            fixed (byte* pathPtr = pathBytes)
-            {
-                CheckErr(err: LLVM.OrcCreateDynamicLibrarySearchGeneratorForPath(Result: &runtimeGen,
-                        FileName: (sbyte*)pathPtr,
-                        GlobalPrefix: prefix,
-                        Filter: null,
-                        FilterCtx: null),
-                    what: "GeneratorForPath");
-            }
-            LLVM.OrcJITDylibAddGenerator(JD: dylib, DG: runtimeGen);
+            AddPathGenerator(dylib: dylib, prefix: prefix, path: _runtimePath, required: true);
         }
+
+        // Compiler support routines the emitted code calls (__floattidf and the other 128-bit conversions). A managed
+        // builder gets them from the libgcc_s that the .NET host process already has loaded. A NativeAOT builder links
+        // no libgcc_s, so the JIT is pointed at it.
+        if (OperatingSystem.IsLinux())
+        {
+            AddPathGenerator(dylib: dylib, prefix: prefix, path: "libgcc_s.so.1", required: false);
+        }
+
         return dylib;
+    }
+
+    /// <summary>Lets the JIT resolve symbols from the shared library at <paramref name="path"/>. A library that is not
+    /// required and cannot be opened is skipped.</summary>
+    private static void AddPathGenerator(LLVMOrcOpaqueJITDylib* dylib, sbyte prefix, string path, bool required)
+    {
+        LLVMOrcOpaqueDefinitionGenerator* generator;
+        byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(s: path + "\0");
+        fixed (byte* pathPtr = pathBytes)
+        {
+            if (!required)
+            {
+                // dlopen the name first: the generator would raise an error for a library that is not there.
+                if (!NativeLibrary.TryLoad(libraryPath: path, handle: out _))
+                {
+                    return;
+                }
+            }
+
+            CheckErr(err: LLVM.OrcCreateDynamicLibrarySearchGeneratorForPath(Result: &generator,
+                    FileName: (sbyte*)pathPtr,
+                    GlobalPrefix: prefix,
+                    Filter: null,
+                    FilterCtx: null),
+                what: "GeneratorForPath");
+        }
+
+        LLVM.OrcJITDylibAddGenerator(JD: dylib, DG: generator);
     }
 
     /// <summary>Resolves <c>@main</c> in the JIT and returns its address (throwing if unresolved).</summary>
